@@ -10,6 +10,7 @@ import { normalizePhone } from "../lib/phone";
 // Removed: useActiveRole import - not used
 
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { useOrderActions } from "./Orders/hooks/useOrderActions";
 
 // Dynamic import for Tauri WebviewWindow (only when needed)
 // In Tauri v2, WebviewWindow is imported from @tauri-apps/api/webviewWindow
@@ -265,6 +266,8 @@ export type TicketEx = Ticket & {
   
   diagnosticText?: string; // text diagnostiky
   diagnosticPhotos?: string[]; // URL diagnostických fotek
+  
+  version?: number; // optimistic locking version
 };
 
 type NewOrderDraft = {
@@ -401,136 +404,6 @@ function formatCZ(dtIso: string) {
   });
 }
 
-function normalizePrefix(raw: string): string {
-  if (!raw || typeof raw !== "string") {
-    return "SRV";
-  }
-  
-  // trim
-  let normalized = raw.trim();
-  
-  // toUpperCase
-  normalized = normalized.toUpperCase();
-  
-  // Remove diacritics (normalize NFD and remove combining marks)
-  normalized = normalized
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  
-  // Allow only [A-Z0-9]
-  normalized = normalized.replace(/[^A-Z0-9]/g, "");
-  
-  // Max length 6 characters
-  normalized = normalized.slice(0, 6);
-  
-  // Fallback if empty
-  if (!normalized) {
-    return "SRV";
-  }
-  
-  return normalized;
-}
-
-async function loadServiceSettingsForCode(
-  supabase: any,
-  activeServiceId: string | null
-): Promise<string> {
-  if (!supabase || !activeServiceId) {
-    return "SRV";
-  }
-  
-  try {
-    const { data, error } = await supabase
-      .from("service_settings")
-      .select("config")
-      .eq("service_id", activeServiceId)
-      .single();
-    
-    if (error || !data) {
-      return "SRV";
-    }
-    
-    const typedData = data as { config: any };
-    if (!typedData.config) {
-      return "SRV";
-    }
-    
-    const abbreviation = typedData.config.abbreviation;
-    if (typeof abbreviation === "string") {
-      return normalizePrefix(abbreviation);
-    }
-    
-    return "SRV";
-  } catch (err) {
-    console.error("[makeCode] Error loading service settings:", err);
-    return "SRV";
-  }
-}
-
-async function makeCode(
-  cloudTickets: TicketEx[],
-  supabase: any,
-  activeServiceId: string | null
-): Promise<string> {
-  // Load and normalize prefix from DB
-  const prefix = await loadServiceSettingsForCode(supabase, activeServiceId);
-  
-  // Get year (YY)
-  const year = new Date().getFullYear().toString().slice(-2);
-  const prefixYear = `${prefix}${year}`;
-  
-  // Find existing codes with same prefix + year
-  let existingCodes: string[] = [];
-  
-  if (cloudTickets.length > 0) {
-    // Use tickets from memory - filter by prefix + year pattern
-    existingCodes = cloudTickets
-      .map(t => t.code || "")
-      .filter(code => code.startsWith(prefixYear));
-  } else if (supabase && activeServiceId) {
-    // Query Supabase for codes matching prefix + year pattern
-    // Note: includes deleted tickets (deleted_at IS NOT NULL) for sequence number calculation
-    try {
-      const { data, error } = await (supabase
-        .from("tickets") as any)
-        .select("code")
-        .eq("service_id", activeServiceId)
-        .like("code", `${prefixYear}%`)
-        // Note: includes deleted tickets (deleted_at IS NOT NULL) for sequence number calculation
-        .order("code", { ascending: false })
-        .limit(100);
-      
-      if (!error && data) {
-        existingCodes = data
-          .map((t: any) => t.code || "")
-          .filter((code: string) => code.startsWith(prefixYear));
-      }
-    } catch (err) {
-      console.error("[makeCode] Error querying tickets:", err);
-      // Continue with empty array (will default to 000001)
-    }
-  }
-  
-  // Extract sequence numbers from existing codes
-  // Format: PREFIXYY######, extract last 6 digits
-  const existingNumbers = existingCodes
-    .map(code => {
-      // Get last 6 characters (should be the sequence number)
-      const seqPart = code.slice(-6);
-      const num = parseInt(seqPart, 10);
-      return isNaN(num) ? 0 : num;
-    })
-    .filter(n => n > 0);
-  
-  // Find the next number
-  const nextNumber = existingNumbers.length > 0 
-    ? Math.max(...existingNumbers) + 1 
-    : 1;
-  
-  // Format as PREFIXYY######
-  const sequence = String(nextNumber).padStart(6, "0");
-  return `${prefixYear}${sequence}`;
-}
 
 function defaultDraft(): NewOrderDraft {
   return {
@@ -645,108 +518,6 @@ function isIcoValid(v: string) {
 }
 
 
-function isAnonymousCustomerName(name: string | null | undefined): boolean {
-  if (!name) return false;
-  
-  // Normalize: trim, lowercase, remove diacritics, remove spaces
-  const normalized = name
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
-    .replace(/\s+/g, ""); // Remove spaces
-  
-  return normalized === "anonymnizakaznik" || normalized === "anonymouscustomer";
-}
-
-/**
- * Ensures a customer exists in the database and returns its ID.
- * Creates the customer if it doesn't exist (based on phone_norm).
- * Only works in cloud mode (requires supabase and activeServiceId).
- * 
- * @param snapshot - Ticket snapshot with customer data
- * @param activeServiceId - Service ID for filtering
- * @returns Customer ID or null if customer cannot be created/found
- */
-async function ensureCustomerIdForTicketSnapshot(
-  snapshot: {
-    customer_phone?: string | null;
-    customer_name?: string | null;
-    customer_email?: string | null;
-    customer_company?: string | null;
-    customer_ico?: string | null;
-    customer_address_street?: string | null;
-    customer_address_city?: string | null;
-    customer_address_zip?: string | null;
-  },
-  activeServiceId: string
-): Promise<string | null> {
-  if (!supabase) return null;
-  
-  // Skip if no phone - phone is required for lookup
-  if (!snapshot.customer_phone) return null;
-
-  const phoneNorm = normalizePhone(snapshot.customer_phone);
-  if (!phoneNorm) return null;
-
-  // 1) Try to find existing customer by phone_norm (priority: phone > name)
-  const found = await (supabase
-    .from("customers") as any)
-    .select("id")
-    .eq("service_id", activeServiceId)
-    .eq("phone_norm", phoneNorm)
-    .maybeSingle();
-
-  if (found.data?.id) {
-    // Found existing customer - return ID even if name is anonymous
-    return found.data.id;
-  }
-
-  // 2) Try to create new customer (only if name is not anonymous)
-  const isAnonymous = isAnonymousCustomerName(snapshot.customer_name);
-  if (isAnonymous) {
-    // Don't create new customer if name is anonymous
-    return null;
-  }
-
-  const payload = {
-    service_id: activeServiceId,
-    name: snapshot.customer_name ?? "Zákazník",
-    phone: snapshot.customer_phone ?? null,
-    phone_norm: phoneNorm,
-    email: snapshot.customer_email ?? null,
-    company: snapshot.customer_company ?? null,
-    ico: snapshot.customer_ico ?? null,
-    address_street: snapshot.customer_address_street ?? null,
-    address_city: snapshot.customer_address_city ?? null,
-    address_zip: snapshot.customer_address_zip ?? null,
-    note: null,
-  };
-
-  const created = await (supabase
-    .from("customers") as any)
-    .insert([payload])
-    .select("id")
-    .single();
-
-  if (created.data?.id) {
-    return created.data.id;
-  }
-
-  // 3) On conflict (23505), retry find
-  if (created.error?.code === "23505") {
-    const retry = await (supabase
-      .from("customers") as any)
-      .select("id")
-      .eq("service_id", activeServiceId)
-      .eq("phone_norm", phoneNorm)
-      .maybeSingle();
-
-    return retry.data?.id ?? null;
-  }
-
-  return null;
-}
 
 export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
   const ticket: TicketEx = {
@@ -779,6 +550,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
     discountType: supabaseTicket.discount_type ?? null,
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
+    version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
   };
   // Store service_id for debugging (not part of TicketEx type)
   (ticket as any).service_id = supabaseTicket.service_id;
@@ -4953,7 +4725,7 @@ export default function Orders({
   onOpenCustomer,
   onReturnToPage,
 }: OrdersProps) {
-  const { statuses, getByKey, isFinal, fallbackKey } = useStatuses();
+  const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
   const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
@@ -5062,7 +4834,7 @@ export default function Orders({
       try {
         const { data, error } = await (supabase!
           .from("tickets") as any)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at")
+          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
           .eq("service_id", activeServiceId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
@@ -5101,6 +4873,10 @@ export default function Orders({
       ticketsReqIdRef.current++;
     };
   }, [activeServiceId, supabase]);
+
+  // State declarations (moved up to fix dependency order)
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   // Realtime subscription for tickets
   useEffect(() => {
@@ -5169,6 +4945,22 @@ export default function Orders({
                   newStatus: newTicket.status,
                   oldStatus: existing?.status,
                 });
+                
+                // Check if this is the currently edited ticket and if version conflict occurred
+                if (existing && isEditing && detailId === newTicket.id) {
+                  const existingVersion = existing.version ?? 0;
+                  const newVersion = newTicket.version ?? 0;
+                  if (newVersion > existingVersion) {
+                    // Remote update detected during editing - show banner/toast
+                    console.log("[RT tickets] Remote update detected for edited ticket", {
+                      ticketId: newTicket.id,
+                      existingVersion,
+                      newVersion,
+                    });
+                    showToast("Zakázka se změnila na pozadí", "info");
+                  }
+                }
+                
                 if (existing) {
                   // Update existing
                   return prev.map((t) => (t.id === newTicket.id ? newTicket : t));
@@ -5203,7 +4995,7 @@ export default function Orders({
         supabase.removeChannel(channel);
       }
     };
-  }, [activeServiceId]);
+  }, [activeServiceId, isEditing, detailId]);
 
   // Cloud mode only: show only cloud tickets
   const tickets = useMemo(() => {
@@ -5231,8 +5023,6 @@ export default function Orders({
   const lastLookupPhoneNormRef = useRef<string | null>(null);
   const phoneLookupDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
   const [editedTicket, setEditedTicket] = useState<Partial<TicketEx>>({});
   const [returnToPage, setReturnToPage] = useState<NavKey | null>(null);
   const [matchedCustomerEdit, setMatchedCustomerEdit] = useState<{
@@ -5524,18 +5314,59 @@ export default function Orders({
   };
 
   const statusKeysSet = useMemo(() => new Set(statuses.map((s) => s.key)), [statuses]);
-  const statusesReady = statuses.length > 0;
+  const statusesReady = !statusesLoading && statuses.length > 0;
 
   const normalizeStatus = useCallback(
     (key: string): string | null => {
-      // If statuses are not loaded yet (empty array), return null to indicate placeholder
-      if (!statusesReady) {
+      // If statuses are not loaded yet, return null to indicate placeholder
+      if (statusesLoading || statuses.length === 0) {
         return null;
       }
       return statusKeysSet.has(key) ? key : fallbackKey;
     },
-    [statusKeysSet, fallbackKey, statusesReady]
+    [statusKeysSet, fallbackKey, statusesLoading, statuses.length]
   );
+
+  // Order actions hook
+  // Re-fetch single ticket by ID (for conflict resolution)
+  const refetchTicketById = useCallback(async (ticketId: string): Promise<TicketEx | null> => {
+    if (!activeServiceId || !supabase) return null;
+    
+    try {
+      const { data, error } = await (supabase
+        .from("tickets") as any)
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .eq("id", ticketId)
+        .eq("service_id", activeServiceId)
+        .single();
+      
+      if (error) {
+        console.error("[Orders] Error re-fetching ticket:", error);
+        return null;
+      }
+      
+      if (data) {
+        return mapSupabaseTicketToTicketEx(data);
+      }
+      
+      return null;
+    } catch (err) {
+      console.error("[Orders] Exception re-fetching ticket:", err);
+      return null;
+    }
+  }, [activeServiceId, supabase]);
+
+  const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
+    activeServiceId,
+    cloudTickets,
+    setCloudTickets,
+    setStatusById,
+    statusesReady,
+    statuses,
+    statusKeysSet,
+    normalizeStatus,
+    refetchTicketById,
+  });
 
   const selectedQuickKeys = uiCfg.home.orderFilters.selectedQuickStatusFilters;
 
@@ -5957,174 +5788,16 @@ export default function Orders({
 
 
   const saveTicketChanges = useCallback(async (): Promise<boolean> => {
-    console.log("[Save] started", { ticketId: detailedTicket?.id });
-    console.log("[SaveTicket] START", { 
-      activeServiceId, 
-      hasSupabase: !!supabase, 
-      ticketId: detailedTicket?.id 
-    });
-    
     if (!detailedTicket) {
-      console.log("[SaveTicket] END (no detailedTicket)");
       return false;
     }
 
-    // Použij aktuální hodnoty z detailedTicket (které mohou obsahovat změny z diagnostiky)
-    // nebo hodnoty z editedTicket pokud jsou definované (v edit módu)
-        const updated: TicketEx = {
-      ...detailedTicket,
-      customerId: editedTicket.customerId !== undefined ? editedTicket.customerId : detailedTicket.customerId,
-      customerName: editedTicket.customerName !== undefined ? editedTicket.customerName : detailedTicket.customerName,
-      customerPhone: editedTicket.customerPhone !== undefined ? (editedTicket.customerPhone.trim() || undefined) : detailedTicket.customerPhone,
-      customerEmail: editedTicket.customerEmail !== undefined ? (editedTicket.customerEmail.trim() || undefined) : detailedTicket.customerEmail,
-      customerAddressStreet: editedTicket.customerAddressStreet !== undefined ? (editedTicket.customerAddressStreet.trim() || undefined) : detailedTicket.customerAddressStreet,
-      customerAddressCity: editedTicket.customerAddressCity !== undefined ? (editedTicket.customerAddressCity.trim() || undefined) : detailedTicket.customerAddressCity,
-      customerAddressZip: editedTicket.customerAddressZip !== undefined ? (editedTicket.customerAddressZip.trim() || undefined) : detailedTicket.customerAddressZip,
-      customerCompany: editedTicket.customerCompany !== undefined ? (editedTicket.customerCompany.trim() || undefined) : detailedTicket.customerCompany,
-      customerIco: editedTicket.customerIco !== undefined ? (editedTicket.customerIco.trim() || undefined) : detailedTicket.customerIco,
-      customerInfo: editedTicket.customerInfo !== undefined ? (editedTicket.customerInfo.trim() || undefined) : detailedTicket.customerInfo,
-      deviceLabel: editedTicket.deviceLabel !== undefined ? editedTicket.deviceLabel : detailedTicket.deviceLabel,
-      serialOrImei: editedTicket.serialOrImei !== undefined ? (editedTicket.serialOrImei.trim() || undefined) : detailedTicket.serialOrImei,
-      devicePasscode: editedTicket.devicePasscode !== undefined ? (editedTicket.devicePasscode.trim() || undefined) : detailedTicket.devicePasscode,
-      deviceCondition: editedTicket.deviceCondition !== undefined ? (editedTicket.deviceCondition.trim() || undefined) : detailedTicket.deviceCondition,
-      requestedRepair: editedTicket.requestedRepair !== undefined ? (editedTicket.requestedRepair.trim() || undefined) : detailedTicket.requestedRepair,
-      handoffMethod: editedTicket.handoffMethod !== undefined ? editedTicket.handoffMethod : detailedTicket.handoffMethod,
-      deviceNote: editedTicket.deviceNote !== undefined ? (editedTicket.deviceNote.trim() || undefined) : detailedTicket.deviceNote,
-      externalId: editedTicket.externalId !== undefined ? (editedTicket.externalId.trim() || undefined) : detailedTicket.externalId,
-      diagnosticText: editedTicket.diagnosticText !== undefined 
-        ? (editedTicket.diagnosticText.trim() || undefined) 
-        : (detailedTicket.diagnosticText?.trim() || undefined),
-      diagnosticPhotos: editedTicket.diagnosticPhotos !== undefined 
-        ? editedTicket.diagnosticPhotos 
-        : detailedTicket.diagnosticPhotos,
-      performedRepairs: editedTicket.performedRepairs !== undefined
-        ? editedTicket.performedRepairs
-        : (detailedTicket.performedRepairs ?? []),
-      discountType: editedTicket.discountType !== undefined
-        ? editedTicket.discountType
-        : (detailedTicket.discountType ?? null),
-      discountValue: editedTicket.discountValue !== undefined
-        ? editedTicket.discountValue
-        : (detailedTicket.discountValue ?? undefined),
-    };
-
-    if (activeServiceId && supabase && detailedTicket.id) {
-      try {
-        // Resolve customer_id: editedTicket has priority (explicit customer change)
-        let resolvedCustomerId: string | null = null;
-        if (editedTicket.customerId !== undefined) {
-          // editedTicket.customerId has priority (explicit change via "Změnit zákazníka")
-          resolvedCustomerId = editedTicket.customerId;
-        } else if (updated.customerId) {
-          // Use customerId from updated (which may be from detailedTicket)
-          resolvedCustomerId = updated.customerId;
-        } else {
-          // Try to find/create customer from snapshot
-          resolvedCustomerId = await ensureCustomerIdForTicketSnapshot(
-            {
-              customer_phone: updated.customerPhone || null,
-              customer_name: updated.customerName || null,
-              customer_email: updated.customerEmail || null,
-              customer_company: updated.customerCompany || null,
-              customer_ico: updated.customerIco || null,
-              customer_address_street: updated.customerAddressStreet || null,
-              customer_address_city: updated.customerAddressCity || null,
-              customer_address_zip: updated.customerAddressZip || null,
-            },
-            activeServiceId
-          );
-        }
-
-        const payload: any = {
-          title: updated.deviceLabel || "Nová zakázka",
-          status: updated.status,
-          notes: updated.requestedRepair || updated.issueShort || "",
-          customer_id: resolvedCustomerId ?? null,
-          customer_name: updated.customerName || null,
-          customer_phone: updated.customerPhone || null,
-          customer_email: updated.customerEmail || null,
-          customer_address_street: updated.customerAddressStreet || null,
-          customer_address_city: updated.customerAddressCity || null,
-          customer_address_zip: updated.customerAddressZip || null,
-          customer_company: updated.customerCompany || null,
-          customer_ico: updated.customerIco || null,
-          customer_info: updated.customerInfo || null,
-          device_serial: updated.serialOrImei || null,
-          device_passcode: updated.devicePasscode || null,
-          device_condition: updated.deviceCondition || null,
-          device_note: updated.deviceNote || null,
-          external_id: updated.externalId || null,
-          handoff_method: updated.handoffMethod || null,
-          estimated_price: updated.estimatedPrice || null,
-          performed_repairs: updated.performedRepairs ?? [],
-          diagnostic_text: updated.diagnosticText ?? "",
-          diagnostic_photos: updated.diagnosticPhotos ?? [],
-          discount_type: updated.discountType ?? null,
-          discount_value: updated.discountValue ?? null,
-        };
-        
-        // Audit: Log customer snapshot fields in payload
-        console.log("[SaveTicket] PAYLOAD - Customer snapshot fields:", {
-          customer_id: payload.customer_id,
-          customer_name: payload.customer_name,
-          customer_phone: payload.customer_phone,
-          customer_email: payload.customer_email,
-          customer_address_street: payload.customer_address_street,
-          customer_address_city: payload.customer_address_city,
-          customer_address_zip: payload.customer_address_zip,
-          customer_company: payload.customer_company,
-          customer_ico: payload.customer_ico,
-          customer_info: payload.customer_info,
-        });
-        console.log("[SaveTicket] PAYLOAD (full)", payload);
-        
-        const { data, error } = await (supabase
-          .from("tickets") as any)
-          .update(payload)
-          .eq("id", detailedTicket.id)
-          .eq("service_id", activeServiceId)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at")
-          .single();
-
-        console.log("[SaveTicket] RESULT", { data, error });
-
-        if (error) {
-          console.error("[SaveTicket] update error", error);
-          showToast(`Chyba při ukládání zakázky: ${error.message}`, "error");
-          console.log("[SaveTicket] END (error)");
-          return false;
-        }
-
-        if (!data) {
-          console.error("[SaveTicket] update returned no data");
-          showToast("Chyba: server nevrátil data", "error");
-          console.log("[SaveTicket] END (no data)");
-          return false;
-        }
-
-        // Check if customer_id changed and dispatch refresh event
-        const oldCustomerId = detailedTicket.customerId || null;
-        const newCustomerId = data.customer_id || null;
-        if (oldCustomerId !== newCustomerId) {
-          console.log("[SaveTicket] Customer ID changed:", { oldCustomerId, newCustomerId });
-          window.dispatchEvent(
-            new CustomEvent("jobsheet:customer-tickets-refresh", {
-              detail: { customerId: newCustomerId, oldCustomerId },
-            })
-          );
-        }
-
-        const updatedTicket = mapSupabaseTicketToTicketEx(data);
-        console.log("[SaveTicket] cloudTickets updated:", {
-          ticketId: updatedTicket.id,
-          performedRepairs: updatedTicket.performedRepairs,
-          diagnosticText: updatedTicket.diagnosticText,
-          diagnosticPhotos: updatedTicket.diagnosticPhotos,
-          fromSelect: true
-        });
-        setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? updatedTicket : t)));
-    setIsEditing(false);
-    setEditedTicket({});
+    return saveTicketChangesAction({
+      detailedTicket,
+      editedTicket,
+      onSuccess: (updatedTicket) => {
+        setIsEditing(false);
+        setEditedTicket({});
         // Aktualizovat původní hodnotu po úspěšném uložení
         originalTicketRef.current = JSON.parse(JSON.stringify(updatedTicket));
         // Reset dirty flags after successful save
@@ -6133,23 +5806,9 @@ export default function Orders({
           diagnosticPhotos: false,
           performedRepairs: false,
         });
-        console.log("[SaveTicket] END");
-        return true;
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
-        console.error("[SaveTicket] update exception", err);
-        showToast(`Chyba při ukládání zakázky: ${errorMessage}`, "error");
-        console.log("[SaveTicket] END");
-        return false;
-      }
-    } else {
-      // Missing requirements
-      setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? updated : t)));
-      showToast("Úpravy nejsou k dispozici - chybí požadavky na cloud", "info");
-      console.log("[SaveTicket] END");
-      return false;
-    }
-  }, [detailedTicket, editedTicket, activeServiceId, supabase]);
+      },
+    });
+  }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId]);
 
   const handleCloseDetail = useCallback(async () => {
     console.log("[Close] clicked - about to save?");
@@ -6249,126 +5908,25 @@ export default function Orders({
       return;
     }
 
-    // Ensure statuses are loaded before creating ticket
-    if (!statusesReady || statuses.length === 0) {
-      showToast("Statusy se ještě načítají. Zkuste to prosím za chvíli.", "error");
-      return;
-    }
-
-    // Create cloud ticket if activeServiceId exists
-    if (activeServiceId && supabase) {
-      (async () => {
-        try {
-    // Use first available status if "received" doesn't exist, otherwise use "received"
-    const preferredStatus = statusKeysSet.has("received") ? "received" : statuses[0]?.key;
-    if (!preferredStatus) {
-      showToast("Chyba: žádné statusy nejsou k dispozici. Kontaktujte administrátora.", "error");
-      return;
-    }
-    const statusKey = normalizeStatus(preferredStatus);
-    if (statusKey === null) {
-      showToast("Načítání statusů... Zkuste to prosím znovu za chvíli.", "error");
-      return;
-    }
-
-    const customerName = newDraft.customerName.trim() || "Anonymní zákazník";
-    const issueShort = newDraft.requestedRepair.trim() || "—";
-
-          // Generate code asynchronously using cloud data
-          const code = await makeCode(cloudTickets, supabase, activeServiceId);
-          // Ensure customer exists and get customer_id
-          // If user explicitly rejected customer match, don't lookup/create customer
-          let customerId: string | null = null;
-          if (customerMatchDecision === "rejected" && !newDraft.customerId) {
-            // User rejected match and no customer_id is set - don't assign customer
-            customerId = null;
-          } else {
-            // Normal flow: lookup or create customer
-            customerId = await ensureCustomerIdForTicketSnapshot(
-            {
-              customer_phone: newDraft.customerPhone.trim() || null,
-              customer_name: customerName,
-              customer_email: newDraft.customerEmail.trim() || null,
-              customer_company: newDraft.company.trim() || null,
-              customer_ico: newDraft.ico.trim() || null,
-              customer_address_street: newDraft.addressStreet.trim() || null,
-              customer_address_city: newDraft.addressCity.trim() || null,
-              customer_address_zip: newDraft.addressZip.trim() || null,
-            },
-            activeServiceId
-          );
-          }
-
-          const payload = {
-            service_id: activeServiceId,
-            code,
-            title: newDraft.deviceLabel.trim() || "Nová zakázka",
-            status: statusKey,
-            notes: issueShort || "",
-            customer_id: customerId ?? newDraft.customerId ?? null,
-            customer_name: customerName,
-            customer_phone: newDraft.customerPhone.trim() || null,
-            customer_email: newDraft.customerEmail.trim() || null,
-            customer_address_street: newDraft.addressStreet.trim() || null,
-            customer_address_city: newDraft.addressCity.trim() || null,
-            customer_address_zip: newDraft.addressZip.trim() || null,
-            customer_company: newDraft.company.trim() || null,
-            customer_ico: newDraft.ico.trim() || null,
-            customer_info: newDraft.customerInfo.trim() || null,
-            device_serial: newDraft.serialOrImei.trim() || null,
-            device_passcode: newDraft.devicePasscode.trim() || null,
-            device_condition: newDraft.deviceCondition.trim() || null,
-            device_note: newDraft.deviceNote.trim() || null,
-            external_id: newDraft.externalId.trim() || null,
-            handoff_method: newDraft.handoffMethod || null,
-            estimated_price: newDraft.estimatedPrice || null,
-            performed_repairs: (newDraft as any).performedRepairs ?? [],
-            diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
-            diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
-            discount_type: (newDraft as any).discountType ?? null,
-            discount_value: (newDraft as any).discountValue ?? null,
-          };
-          
-          const { data, error } = await (supabase
-            .from("tickets") as any)
-            .insert(payload)
-            .select()
-            .single();
-
-          if (error) {
-            console.error("[SaveTicket] create error", error);
-            showToast(`Chyba při vytváření zakázky: ${error.message}`, "error");
-            return;
-          }
-
-          const newTicket = mapSupabaseTicketToTicketEx(data);
-          setCloudTickets((prev) => [newTicket, ...prev]);
-          setStatusById((prev) => ({ ...prev, [newTicket.id]: statusKey }));
-          setNewDraft(defaultDraft());
-          setIsNewOpen(false);
-          setSubmitAttempted(false);
-          setCustomerMatchDecision("undecided");
-          setMatchedCustomer(null);
-          lastLookupPhoneNormRef.current = null;
-          if (phoneLookupDebounceTimerRef.current) {
-            clearTimeout(phoneLookupDebounceTimerRef.current);
-            phoneLookupDebounceTimerRef.current = null;
-          }
-          safeSaveDraft(null);
-          window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
-          setDetailId(newTicket.id);
-          showToast("Zakázka vytvořena", "success");
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
-          console.error("[SaveTicket] create exception", err);
-          showToast(`Chyba při vytváření zakázky: ${errorMessage}`, "error");
+    createTicketAction({
+      newDraft,
+      customerMatchDecision,
+      onSuccess: (newTicket) => {
+        setNewDraft(defaultDraft());
+        setIsNewOpen(false);
+        setSubmitAttempted(false);
+        setCustomerMatchDecision("undecided");
+        setMatchedCustomer(null);
+        lastLookupPhoneNormRef.current = null;
+        if (phoneLookupDebounceTimerRef.current) {
+          clearTimeout(phoneLookupDebounceTimerRef.current);
+          phoneLookupDebounceTimerRef.current = null;
         }
-      })();
-      return;
-    }
-
-    // Cloud mode required - should not reach here due to early return check
-    showToast("Vytváření zakázek vyžaduje přihlášení a aktivní službu", "error");
+        safeSaveDraft(null);
+        window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
+        setDetailId(newTicket.id);
+      },
+    });
   };
 
   const commentsFor = (ticketId: string): TicketComment[] => {
@@ -6507,9 +6065,14 @@ export default function Orders({
       )}
 
       {/* Loading/Error states */}
-      {!statusesReady && (
+      {statusesLoading && (
         <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
           Načítání statusů...
+        </div>
+      )}
+      {statusesError && (
+        <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
+          Chyba při načítání statusů: {statusesError}
         </div>
       )}
       {ticketsLoading && (

@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev:check": "concurrently \"npm run tauri dev\" \"tsc --noEmit --watch\"",
-    "tauri:build": "npm run build:prod && tauri build"
+    "tauri:build": "npm run build:prod && tauri build",
+    "tauri:build:universal": "bash scripts/build-universal.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

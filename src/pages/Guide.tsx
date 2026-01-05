@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import { useState } from "react";
 import { normalizePhone } from "../lib/phone";
 
 type NavKey = "orders" | "customers" | "settings" | "inventory" | "devices" | "statistics" | "guide";

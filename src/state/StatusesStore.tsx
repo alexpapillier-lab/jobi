@@ -14,6 +14,8 @@ export type StatusMeta = {
 
 type StatusesContextValue = {
   statuses: StatusMeta[];
+  loading: boolean;
+  error: string | null;
   upsertStatus: (s: StatusMeta) => Promise<void>;
   removeStatus: (key: StatusKey) => void;
   resetToDefaults: () => void;
@@ -30,8 +32,8 @@ const Ctx = createContext<StatusesContextValue | null>(null);
 
 export function StatusesProvider({ children, activeServiceId }: { children: React.ReactNode; activeServiceId: string | null }) {
   const [statuses, setStatuses] = useState<StatusMeta[]>([]);
-  const [_loading, setLoading] = useState(false);
-  const [_error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // If activeServiceId is null, don't load statuses
@@ -181,7 +183,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         .eq("key", key)
         .maybeSingle();
       
-      orderIndex = existingDbStatus?.order_index ?? statuses.length;
+      orderIndex = (existingDbStatus as any)?.order_index ?? statuses.length;
     } else {
       // New status: append to end (max order_index + 1)
       const { data: maxOrder } = await supabase
@@ -192,12 +194,12 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         .limit(1)
         .maybeSingle();
       
-      orderIndex = maxOrder?.order_index !== undefined ? maxOrder.order_index + 1 : statuses.length;
+      orderIndex = (maxOrder as any)?.order_index !== undefined ? (maxOrder as any).order_index + 1 : statuses.length;
     }
 
     // Perform Supabase upsert
-    const { error } = await supabase
-      .from("service_statuses")
+    const { error } = await (supabase
+      .from("service_statuses") as any)
       .upsert(
         {
           service_id: activeServiceId,
@@ -249,6 +251,8 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
   const value = useMemo<StatusesContextValue>(
     () => ({
       statuses,
+      loading,
+      error,
       upsertStatus,
       removeStatus,
       resetToDefaults,
@@ -256,7 +260,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       isFinal,
       fallbackKey: FALLBACK_KEY,
     }),
-    [statuses]
+    [statuses, loading, error]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

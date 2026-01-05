@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { showToast } from "../components/Toast";
 import { supabase } from "../lib/supabaseClient";
+import { typedSupabase } from "../lib/typedSupabase";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { normalizePhone } from "../lib/phone";
 import { useStatuses } from "../state/StatusesStore";
@@ -21,6 +22,7 @@ type CustomerRecord = {
   ticketIds: string[];
   createdAt: string;
   updatedAt: string;
+  version?: number; // optimistic locking version
 };
 
 type TicketLite = {
@@ -178,6 +180,7 @@ export default function Customers({
       ticketIds: [], // Will be populated separately from tickets table
       createdAt: supabaseCustomer.created_at || new Date().toISOString(),
       updatedAt: supabaseCustomer.updated_at || new Date().toISOString(),
+      version: typeof supabaseCustomer.version === "number" ? supabaseCustomer.version : undefined,
     };
   };
 
@@ -201,9 +204,10 @@ export default function Customers({
       }
 
       try {
-        const { data, error } = await (supabase
-          .from("customers") as any)
-          .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at")
+        // ✅ Použití typovaného Supabase clientu - bez 'as any'!
+        const { data, error } = await typedSupabase
+          .from("customers")
+          .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
           .eq("service_id", activeServiceId)
           .order("created_at", { ascending: false });
 
@@ -284,6 +288,27 @@ export default function Customers({
         async (payload) => {
           console.log("[Customers] customers changed", payload);
           
+          // Check if this is the currently edited customer and if version conflict occurred
+          if (payload.eventType === "UPDATE" && editOpen && openId) {
+            const updatedCustomer = payload.new as any;
+            if (updatedCustomer.id === openId) {
+              const existingCustomer = cloudCustomers.find((c) => c.id === openId);
+              if (existingCustomer) {
+                const existingVersion = existingCustomer.version ?? 0;
+                const newVersion = typeof updatedCustomer.version === "number" ? updatedCustomer.version : 0;
+                if (newVersion > existingVersion) {
+                  // Remote update detected during editing - show banner/toast
+                  console.log("[RT customers] Remote update detected for edited customer", {
+                    customerId: openId,
+                    existingVersion,
+                    newVersion,
+                  });
+                  showToast("Zákazník se změnil na pozadí", "info");
+                }
+              }
+            }
+          }
+          
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
             const newCustomer = mapSupabaseCustomerToCustomerRecord(payload.new);
             
@@ -321,7 +346,7 @@ export default function Customers({
         supabase.removeChannel(channel);
       }
     };
-  }, [activeServiceId]);
+  }, [activeServiceId, editOpen, openId, cloudCustomers]);
 
   const customers = cloudCustomers;
 
@@ -578,7 +603,7 @@ export default function Customers({
     // Load original customer record from DB for accurate diff
     const { data: originalData, error: fetchError } = await (supabase
       .from("customers") as any)
-      .select("name,phone,email,address_street,address_city,address_zip,company,ico,note,phone_norm")
+      .select("name,phone,email,address_street,address_city,address_zip,company,ico,note,phone_norm,version")
       .eq("id", opened.id)
       .eq("service_id", activeServiceId)
       .single();
@@ -674,13 +699,23 @@ export default function Customers({
       }
     }
 
-    // Update customer in Supabase
-    const { data, error } = await (supabase
+    // Get expected version for optimistic locking
+    const expectedVersion = opened.version;
+    
+    // Build update query with optimistic locking
+    let updateQuery = (supabase
       .from("customers") as any)
       .update(payload)
       .eq("id", opened.id)
-      .eq("service_id", activeServiceId)
-      .select()
+      .eq("service_id", activeServiceId);
+    
+    // Add version check for optimistic locking (if version is available)
+    if (expectedVersion !== undefined) {
+      updateQuery = updateQuery.eq("version", expectedVersion);
+    }
+    
+    const { data, error } = await updateQuery
+      .select("id,name,phone,email,address_street,address_city,address_zip,company,ico,note,created_at,updated_at,version")
       .single();
 
     if (error) {
@@ -694,6 +729,68 @@ export default function Customers({
       
       showToast("Chyba při ukládání zákazníka: " + (error.message || "Neznámá chyba"), "error");
       return; // Don't close modal on error
+    }
+
+    // Detect conflict: no error but no data returned (0 rows updated due to version mismatch)
+    if (!data && expectedVersion !== undefined) {
+      console.warn("[Customers] CONFLICT DETECTED - no data returned, version mismatch likely");
+      showToast("Zákazník byl mezitím upraven jinde. Načetl jsem aktuální verzi.", "error");
+      
+      // Re-fetch the customer from DB
+      try {
+        const { data: refreshedData, error: refetchError } = await (supabase
+          .from("customers") as any)
+          .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
+          .eq("id", opened.id)
+          .eq("service_id", activeServiceId)
+          .single();
+        
+        if (refetchError) {
+          console.error("[Customers] Error re-fetching customer after conflict:", refetchError);
+          return; // Don't close modal
+        }
+        
+        if (refreshedData) {
+          const refreshedCustomer = mapSupabaseCustomerToCustomerRecord(refreshedData);
+          
+          // Load ticket IDs for refreshed customer
+          const { data: ticketsData } = await (supabase
+            .from("tickets") as any)
+            .select("id")
+            .eq("service_id", activeServiceId)
+            .eq("customer_id", refreshedCustomer.id)
+            .is("deleted_at", null);
+          
+          if (ticketsData) {
+            refreshedCustomer.ticketIds = ticketsData.map((t: any) => t.id);
+          }
+          
+          // Update local state with refreshed customer
+          setCloudCustomers((prev) => {
+            const updated = prev.map((c) => (c.id === refreshedCustomer.id ? refreshedCustomer : c));
+            // If customer was not in the list, add it
+            if (!prev.find((c) => c.id === refreshedCustomer.id)) {
+              return [...updated, refreshedCustomer];
+            }
+            return updated;
+          });
+          
+          // Update edit draft if editing this customer
+          if (editOpen && openId === refreshedCustomer.id) {
+            setEditDraft(draftFromCustomer(refreshedCustomer));
+          }
+        }
+      } catch (refetchErr) {
+        console.error("[Customers] Exception re-fetching customer after conflict:", refetchErr);
+      }
+      
+      return; // Don't close modal on conflict
+    }
+    
+    if (!data) {
+      console.error("[Customers] update returned no data (and no version check was used)");
+      showToast("Chyba: server nevrátil data", "error");
+      return; // Don't close modal
     }
 
     // Update successful - update local state from returned data
@@ -723,6 +820,7 @@ export default function Customers({
         ticketIds: old.ticketIds || [],
         createdAt: data.created_at || old.createdAt,
         updatedAt: data.updated_at || nowIso,
+        version: typeof data.version === "number" ? data.version : undefined,
       };
 
       const existingIdx = clone.findIndex((c) => c.id === nextId);
@@ -734,6 +832,7 @@ export default function Customers({
           ticketIds: Array.from(new Set([...(target.ticketIds ?? []), ...(old.ticketIds ?? [])])),
           createdAt: target.createdAt ?? old.createdAt,
           updatedAt: nowIso,
+          version: typeof data.version === "number" ? data.version : updatedBase.version,
         };
         clone.splice(oldIdx, 1);
         const targetNowIdx = clone.findIndex((c) => c.id === nextId);
@@ -1071,7 +1170,7 @@ export default function Customers({
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {customerHistory.map((entry, idx) => {
+                    {customerHistory.map((entry) => {
                       const fieldLabels: Record<string, string> = {
                         name: "Jméno",
                         phone: "Telefon",
