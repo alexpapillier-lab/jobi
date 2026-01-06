@@ -8,7 +8,7 @@ import { safeLoadCompanyData } from "./Orders";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
-import { Card, FieldLabel, TextInput } from "../lib/settingsUi";
+import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DocumentsSettings } from "./Settings/DocumentsSettings";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 
@@ -1546,7 +1546,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {/* ZAKÁZKY - SMAZANÉ */}
       {section.subsection === "orders_deleted" && (
-        <DeletedTicketsSettings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} />
+        <DeletedTicketsSettings activeServiceId={activeServiceId} />
       )}
     </div>
   );

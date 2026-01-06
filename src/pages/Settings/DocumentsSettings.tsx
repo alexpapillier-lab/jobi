@@ -1215,6 +1215,14 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
     
     printStyle.textContent = `
       @media print {
+        /* Force border-box to prevent padding overflow issues */
+        .page, .page * {
+          box-sizing: border-box !important;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
         /* Hide everything by default */
         body.printing-document * {
           display: none !important;
@@ -1224,7 +1232,13 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
         body.printing-document .document-preview-wrapper * {
           display: revert !important;
         }
-        /* Reset body */
+        /* Reset body and html */
+        html, body {
+          height: auto !important;
+          min-height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
+        }
         body.printing-document {
           margin: 0 !important;
           padding: 0 !important;
@@ -1237,7 +1251,7 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           top: 0 !important;
           left: 0 !important;
           width: 100% !important;
-          height: 100% !important;
+          height: auto !important;
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
@@ -1272,6 +1286,36 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           word-wrap: break-word !important;
           overflow-wrap: break-word !important;
           box-sizing: border-box !important;
+        }
+        /* Page layout in document preview - A4 box with flex */
+        body.printing-document .document-preview .page {
+          box-sizing: border-box !important;
+          width: 210mm !important;
+          height: 297mm !important;
+          padding: 12mm !important;
+          display: flex !important;
+          flex-direction: column !important;
+          overflow: hidden !important; /* zabrání vyjetí na druhou stránku */
+          margin: 0 !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        body.printing-document .document-preview .content,
+        body.printing-document .document-preview .document-content {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important; /* aby obsah nevytlačil footer */
+        }
+        /* Footer - always at bottom, no fixed/absolute */
+        body.printing-document .document-preview .footer {
+          flex: 0 0 auto !important;
+          position: static !important;
+          bottom: auto !important;
+          left: auto !important;
+          right: auto !important;
+          margin-top: 0 !important;
         }
       }
     `;
@@ -1339,26 +1383,55 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
         </div>
         <style>
           @media print {
+            @page { size: A4; margin: 0; }
+            
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            
+            /* ZÁSADNÍ: Force border-box everywhere */
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+            }
+            
             .no-print { display: none !important; }
-            /* Page layout - always flex column */
+            /* Force border-box to prevent padding overflow issues */
+            .page, .page * {
+              box-sizing: border-box !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            
+            /* Page layout - A4 box with flex layout */
             .page {
-              overflow: visible !important;
+              box-sizing: border-box !important;
+              width: 210mm !important;
+              height: 297mm !important;
+              padding: 12mm !important;
               display: flex !important;
               flex-direction: column !important;
+              overflow: visible !important;
+              margin: 0 !important;
             }
             /* Content area - can be scaled for fit-to-page */
-            .content {
+            .content, .document-content {
+              flex: 1 1 auto !important;
+              min-height: 0 !important;
               overflow: visible !important;
             }
-            .content.fit-to-page {
-              transform-origin: top left !important;
-            }
-            /* Footer - always visible, never scaled */
+            /* Footer - always at bottom, no fixed/absolute positioning */
             .footer {
+              flex: 0 0 auto !important;
               overflow: visible !important;
               z-index: 10 !important;
-              position: relative !important;
-              flex-shrink: 0 !important;
+              position: static !important;
+              bottom: auto !important;
+              left: auto !important;
+              right: auto !important;
+              margin-top: 0 !important;
             }
             .document-footer {
               overflow: visible !important;
@@ -1388,6 +1461,14 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             html, body {
               margin: 0 !important;
               padding: 0 !important;
+              height: auto !important;
+              min-height: auto !important;
+              max-height: none !important;
+              overflow: visible !important;
+            }
+            /* Override any min-height: 100vh from generated HTML */
+            body {
+              min-height: auto !important;
             }
             body > .page {
               margin: 0 !important;
@@ -1473,115 +1554,76 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             const allowMultiPage = ${allowMultiPage ? 'true' : 'false'};
             console.log("[PrintWindow] Auto-print script loaded, allowMultiPage:", allowMultiPage);
             
-            // Fit-to-page function: ensures document fits on one A4 page
-            // Only applies scale to .content, not to .page (footer stays unscaled)
-            function fitToPage() {
+            // Layout measurement function (no scaling, just logging)
+            function measureLayout() {
               const pageElement = document.querySelector('.page');
-              const contentElement = document.querySelector('.content');
+              const contentElement = document.querySelector('.content') || document.querySelector('.document-content');
               const footerElement = document.querySelector('.footer');
               
               if (!pageElement) {
                 console.warn("[PrintWindow] .page element not found");
-                return 1.0;
+                return;
               }
               
               if (!contentElement) {
-                console.warn("[PrintWindow] .content element not found");
-                return 1.0;
+                console.warn("[PrintWindow] .content or .document-content element not found");
+                return;
               }
               
-              // A4 dimensions: 210mm x 297mm
-              const A4_WIDTH_MM = 210;
-              const A4_HEIGHT_MM = 297;
+              // Ensure no scaling is applied
+              contentElement.style.zoom = '';
+              contentElement.style.transform = '';
+              contentElement.style.transformOrigin = '';
+              contentElement.classList.remove('fit-to-page');
               
-              // Convert pixels to mm (96 DPI: 1mm = 3.779527559px)
-              const MM_TO_PX = 3.779527559;
-              const A4_WIDTH_PX = A4_WIDTH_MM * MM_TO_PX;
-              const A4_HEIGHT_PX = A4_HEIGHT_MM * MM_TO_PX;
-              
-              // Get footer height (if exists)
-              const footerHeight = footerElement ? footerElement.offsetHeight : 0;
-              
-              // Available height for content = A4 height - footer height
-              const availableContentHeight = A4_HEIGHT_PX - footerHeight;
-              
-              // Measure content element (without footer)
-              const contentHeight = contentElement.scrollHeight;
-              const contentWidth = contentElement.scrollWidth;
-              
-              console.log("[PrintWindow] Dimensions:", {
-                contentHeight: contentHeight.toFixed(2) + "px (" + (contentHeight / MM_TO_PX).toFixed(2) + "mm)",
-                contentWidth: contentWidth.toFixed(2) + "px (" + (contentWidth / MM_TO_PX).toFixed(2) + "mm)",
-                footerHeight: footerHeight.toFixed(2) + "px (" + (footerHeight / MM_TO_PX).toFixed(2) + "mm)",
-                availableContentHeight: availableContentHeight.toFixed(2) + "px (" + (availableContentHeight / MM_TO_PX).toFixed(2) + "mm)",
-                A4Width: A4_WIDTH_PX.toFixed(2) + "px (" + A4_WIDTH_MM + "mm)",
-                A4Height: A4_HEIGHT_PX.toFixed(2) + "px (" + A4_HEIGHT_MM + "mm)"
-              });
-              
-              // If content fits, no scaling needed
-              if (contentHeight <= availableContentHeight && contentWidth <= A4_WIDTH_PX) {
-                console.log("[PrintWindow] Content fits on one page, no scaling needed");
-                contentElement.style.transform = '';
-                contentElement.style.transformOrigin = '';
-                contentElement.classList.remove('fit-to-page');
-                return 1.0;
-              }
-              
-              // Calculate scale needed (use the more restrictive scale)
-              const heightScale = availableContentHeight / contentHeight;
-              const widthScale = A4_WIDTH_PX / contentWidth;
-              let scale = Math.min(heightScale, widthScale);
-              
-              // Minimum scale: 0.85 (don't shrink too much)
-              const MIN_SCALE = 0.85;
-              scale = Math.max(scale, MIN_SCALE);
-              
-              // Round to 2 decimal places for cleaner output
-              scale = Math.round(scale * 100) / 100;
-              
-              // Apply scale ONLY to content element, not to page
-              contentElement.style.transform = 'scale(' + scale + ')';
-              contentElement.style.transformOrigin = 'top left';
-              contentElement.classList.add('fit-to-page');
-              
-              // Ensure footer is not scaled
               if (footerElement) {
+                footerElement.style.zoom = '';
                 footerElement.style.transform = '';
                 footerElement.style.transformOrigin = '';
               }
               
-              console.log("[PrintWindow] Applied scale to .content:", scale, "(" + (scale * 100).toFixed(1) + "%)");
-              
-              // Verify it fits after scaling
-              const scaledContentHeight = contentHeight * scale;
-              const scaledContentWidth = contentWidth * scale;
-              console.log("[PrintWindow] Scaled dimensions:", {
-                contentWidth: scaledContentWidth.toFixed(2) + "px (" + (scaledContentWidth / MM_TO_PX).toFixed(2) + "mm)",
-                contentHeight: scaledContentHeight.toFixed(2) + "px (" + (scaledContentHeight / MM_TO_PX).toFixed(2) + "mm)",
-                totalHeight: (scaledContentHeight + footerHeight).toFixed(2) + "px (" + ((scaledContentHeight + footerHeight) / MM_TO_PX).toFixed(2) + "mm)",
-                fits: scaledContentHeight <= availableContentHeight && scaledContentWidth <= A4_WIDTH_PX
-              });
-              
-              return scale;
+              // Measure layout heights after CSS is applied
+              setTimeout(function() {
+                const pageClientHeight = pageElement ? pageElement.clientHeight : 0;
+                const pageScrollHeight = pageElement ? pageElement.scrollHeight : 0;
+                const contentClientHeight = contentElement ? contentElement.clientHeight : 0;
+                const contentScrollHeight = contentElement ? contentElement.scrollHeight : 0;
+                const footerClientHeight = footerElement ? footerElement.clientHeight : 0;
+                const footerScrollHeight = footerElement ? footerElement.scrollHeight : 0;
+                
+                console.log("[PrintWindow] Layout heights:", {
+                  page_client: pageClientHeight,
+                  page_scroll: pageScrollHeight,
+                  content_client: contentClientHeight,
+                  content_scroll: contentScrollHeight,
+                  footer_client: footerClientHeight,
+                  footer_scroll: footerScrollHeight,
+                  pageFits: pageScrollHeight <= pageClientHeight,
+                  contentOverflow: contentScrollHeight > contentClientHeight
+                });
+                
+                // Verify page fits
+                if (pageScrollHeight > pageClientHeight) {
+                  console.warn("[PrintWindow] WARNING: page_scroll > page_client (" + pageScrollHeight + " > " + pageClientHeight + ") - may cause second page");
+                } else {
+                  console.log("[PrintWindow] Layout OK: page_scroll <= page_client (" + pageScrollHeight + " <= " + pageClientHeight + ")");
+                }
+              }, 100);
             }
             
-            // Print function with fit-to-page (only if multi-page is not allowed)
+            // Print function (no scaling, layout-based approach)
             function doPrint() {
               console.log("[PrintWindow] Starting print, allowMultiPage:", allowMultiPage);
               
-              if (!allowMultiPage) {
-                const scale = fitToPage();
-                console.log("[PrintWindow] Final scale:", scale);
-              } else {
-                console.log("[PrintWindow] Multi-page allowed, skipping fit-to-page");
-              }
+              // Measure layout (no scaling applied)
+              measureLayout();
               
-              // Small delay to ensure transform is applied
+              // Small delay to ensure layout is stable
               setTimeout(function() {
                 window.focus();
                 window.print();
                 console.log("[PrintWindow] Print dialog opened");
-              }, 100);
+              }, 150);
             }
             
             // Make doPrint available globally for toolbar button
@@ -1751,6 +1793,21 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           ` : ""}
         }
         @media print {
+          @page { size: A4; margin: 0; }
+          
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          
+          /* ZÁSADNÍ: Force border-box everywhere */
+          *, *::before, *::after {
+            box-sizing: border-box !important;
+          }
           body.printing-document {
             margin: 0 !important;
             padding: 0 !important;
@@ -1761,7 +1818,7 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             top: 0 !important;
             left: 0 !important;
             width: 100% !important;
-            height: 100% !important;
+            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
@@ -1790,6 +1847,39 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           @page {
             size: A4;
             margin: 0;
+          }
+          /* Page layout - A4 box with flex for footer */
+          .page {
+            width: 210mm !important;
+            height: 297mm !important;
+            padding: 12mm !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important; /* zabrání vyjetí na druhou stránku */
+            margin: 0 !important;
+            box-sizing: border-box !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .content, .document-content {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow: hidden !important; /* aby obsah nevytlačil footer */
+          }
+          /* Footer - always at bottom, no fixed/absolute */
+          .footer {
+            flex: 0 0 auto !important;
+            margin: 0 !important;
+            position: static !important;
+            bottom: auto !important;
+            left: auto !important;
+            right: auto !important;
+          }
+          /* Override any min-height: 100vh from generated HTML */
+          body {
+            min-height: auto !important;
           }
         }
       `}</style>

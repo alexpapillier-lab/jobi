@@ -7,11 +7,9 @@ import { Card } from "../../lib/settingsUi";
 
 type DeletedTicketsSettingsProps = {
   activeServiceId: string | null;
-  setActiveServiceId: (serviceId: string | null) => void;
-  services: Array<{ service_id: string; service_name: string; role: string }>;
 };
 
-export function DeletedTicketsSettings({ activeServiceId, setActiveServiceId, services }: DeletedTicketsSettingsProps) {
+export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettingsProps) {
   const { session } = useAuth();
   const [deletedTickets, setDeletedTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
