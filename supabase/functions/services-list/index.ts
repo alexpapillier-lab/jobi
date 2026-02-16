@@ -13,7 +13,20 @@ serve(async (req) => {
   }
 
   try {
-    // Get authorization header
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !anonKey || !serviceKey) {
+      return new Response(
+        JSON.stringify({
+          error: "Server configuration error",
+          code: "missing_env",
+          message: "Required environment variables are not set.",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
     if (!authHeader) {
       return new Response(
@@ -22,9 +35,6 @@ serve(async (req) => {
       );
     }
 
-    // Create user client with anon key and Authorization header
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -38,16 +48,58 @@ serve(async (req) => {
     }
     const userId = userRes.user.id;
 
-    // Create service client for DB operations
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
 
-    // Fetch services where user is owner
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
+
+    // Root owner: vrátí všechny servisy v systému (včetně active a member_count)
+    if (isRootOwner) {
+      const { data: allServices, error: allErr } = await svc
+        .from("services")
+        .select("id, name, active");
+
+      if (allErr) {
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch services: ${allErr.message}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const ids = (allServices || []).map((s: { id: string }) => s.id);
+      let memberCounts: Record<string, number> = {};
+      if (ids.length > 0) {
+        const { data: counts } = await svc
+          .from("service_memberships")
+          .select("service_id")
+          .in("service_id", ids);
+        const byService: Record<string, number> = {};
+        for (const sid of ids) byService[sid] = 0;
+        for (const row of counts || []) {
+          byService[row.service_id] = (byService[row.service_id] || 0) + 1;
+        }
+        memberCounts = byService;
+      }
+
+      const servicesWithRole = (allServices || []).map((s: { id: string; name?: string; active?: boolean }) => ({
+        service_id: s.id,
+        service_name: s.name || "Unnamed service",
+        role: "owner",
+        active: s.active !== false,
+        member_count: memberCounts[s.id] ?? 0,
+      }));
+
+      return new Response(
+        JSON.stringify({ services: servicesWithRole }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Ostatní uživatelé: servisy, kde jsou členem (jakákoli role)
     const { data: memberships, error: membersError } = await svc
       .from("service_memberships")
       .select("service_id, role")
-      .eq("user_id", userId)
-      .eq("role", "owner");
+      .eq("user_id", userId);
 
     if (membersError) {
       return new Response(
@@ -63,11 +115,10 @@ serve(async (req) => {
       );
     }
 
-    // Fetch service names
     const serviceIds = memberships.map((m) => m.service_id);
-    const { data: services, error: servicesError } = await svc
+    const { data: servicesRaw, error: servicesError } = await svc
       .from("services")
-      .select("id, name")
+      .select("id, name, active")
       .in("id", serviceIds);
 
     if (servicesError) {
@@ -77,13 +128,15 @@ serve(async (req) => {
       );
     }
 
-    // Combine memberships with service names
-    const servicesWithRole = (services || []).map((s) => {
-      const membership = memberships.find((m) => m.service_id === s.id);
+    // Pro ne-root: zobrazit jen aktivní servisy (deaktivované skrýt ze seznamu)
+    const services = (servicesRaw || []).filter((s: { id: string; name?: string; active?: boolean }) => s.active !== false);
+
+    const servicesWithRole = services.map((s: { id: string; name?: string; active?: boolean }) => {
+      const membership = memberships.find((m: { service_id: string; role: string }) => m.service_id === s.id);
       return {
         service_id: s.id,
         service_name: s.name || "Unnamed service",
-        role: membership?.role || "owner",
+        role: membership?.role || "member",
       };
     });
 

@@ -1,9 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { showToast } from "./Toast";
 
 type OnlineGateProps = {
   children: React.ReactNode;
 };
+
+/** Vrátí uživatelsky srozumitelnou chybovou zprávu podle typu chyby */
+function getConnectionErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+
+  // Supabase projekt obnovuje / maintenance (503, 502, service unavailable)
+  if (
+    lower.includes("503") ||
+    lower.includes("502") ||
+    lower.includes("service unavailable") ||
+    lower.includes("bad gateway") ||
+    lower.includes("maintenance") ||
+    lower.includes("restoring") ||
+    lower.includes("dočasně nedostupn")
+  ) {
+    return "Cloud je dočasně nedostupný (pravděpodobně probíhá obnova projektu). Zkuste to za několik minut.";
+  }
+
+  // Síťové chyby (offline, timeout, connection refused)
+  if (
+    lower.includes("fetch") ||
+    lower.includes("network") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("load failed") ||
+    lower.includes("timeout") ||
+    lower.includes("connection") ||
+    lower.includes("err_connection") ||
+    lower.includes("pgrst301")
+  ) {
+    return "Nelze se připojit k cloudu. Zkontrolujte připojení k internetu a zkuste to znovu.";
+  }
+
+  return "Cloud je nedostupný. Zkuste to za chvíli nebo zkontrolujte připojení k internetu.";
+}
 
 /**
  * OnlineGate komponenta kontroluje dostupnost Supabase připojení.
@@ -12,54 +48,78 @@ type OnlineGateProps = {
 export function OnlineGate({ children }: OnlineGateProps) {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const wasOnlineRef = useRef<boolean | null>(null);
+
+  const checkConnection = useCallback(async () => {
+    if (!supabase) {
+      setError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
+      setIsOnline(false);
+      return;
+    }
+
+    try {
+      const { error: pingError } = await supabase
+        .from("services")
+        .select("id")
+        .limit(1);
+
+      if (pingError) {
+        if (
+          pingError.message.includes("fetch") ||
+          pingError.message.includes("network") ||
+          pingError.message.includes("Failed to fetch") ||
+          pingError.message.includes("Load failed") ||
+          pingError.code === "PGRST301"
+        ) {
+          const msg = getConnectionErrorMessage(pingError);
+          setError(msg);
+          if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
+          setIsOnline(false);
+          return;
+        }
+        const msg = (pingError.message || "").toLowerCase();
+        if (
+          msg.includes("503") ||
+          msg.includes("502") ||
+          msg.includes("unavailable") ||
+          msg.includes("maintenance") ||
+          msg.includes("restoring")
+        ) {
+          const errMsg = getConnectionErrorMessage(pingError);
+          setError(errMsg);
+          if (wasOnlineRef.current === true) showToast("Cloud je dočasně nedostupný", "error");
+          setIsOnline(false);
+          return;
+        }
+      }
+
+      wasOnlineRef.current = true;
+      setIsOnline(true);
+      setError(null);
+    } catch (err) {
+      console.error("[OnlineGate] Connection check error:", err);
+      const errMsg = getConnectionErrorMessage(err);
+      setError(errMsg);
+      if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
+      setIsOnline(false);
+    } finally {
+      setIsChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const checkConnection = async () => {
-      // Check if Supabase client exists
-      if (!supabase) {
-        setError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
-        setIsOnline(false);
-        return;
-      }
+    wasOnlineRef.current = isOnline;
+  }, [isOnline]);
 
-      try {
-        // Try to ping Supabase (simple query to check connectivity)
-        const { error: pingError } = await supabase
-          .from("services")
-          .select("id")
-          .limit(1);
-
-        // If we get here, connection is available (even if query fails due to permissions)
-        // We only care about network/connection errors
-        if (pingError) {
-          // Check if it's a network/connection error
-          if (pingError.message.includes("fetch") || 
-              pingError.message.includes("network") || 
-              pingError.message.includes("Failed to fetch") ||
-              pingError.code === "PGRST301") {
-            setError("Nelze se připojit k cloudu. Zkontrolujte připojení k internetu.");
-            setIsOnline(false);
-            return;
-          }
-          // Other errors (like permissions) are fine - connection works
-        }
-
-        setIsOnline(true);
-        setError(null);
-      } catch (err) {
-        console.error("[OnlineGate] Connection check error:", err);
-        setError("Nelze se připojit k cloudu. Zkontrolujte připojení k internetu.");
-        setIsOnline(false);
-      }
-    };
-
+  useEffect(() => {
+    setIsChecking(true);
     checkConnection();
-
-    // Re-check connection periodically (every 30 seconds)
-    const interval = setInterval(checkConnection, 30000);
-
+    const interval = setInterval(() => {
+      checkConnection();
+    }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkConnection]);
 
   // Show loading state while checking
   if (isOnline === null) {
@@ -159,24 +219,32 @@ export function OnlineGate({ children }: OnlineGateProps) {
               lineHeight: 1.6,
             }}
           >
-            {error || "Nelze se připojit k cloudu. Zkontrolujte připojení k internetu."}
+            {error || "Cloud je nedostupný. Zkuste to za chvíli nebo zkontrolujte připojení k internetu."}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (isChecking) return;
+              setIsChecking(true);
+              checkConnection();
+            }}
+            disabled={isChecking}
             style={{
               padding: "12px 24px",
               borderRadius: 12,
               border: "none",
-              background: "var(--accent, #2563eb)",
+              background: isChecking ? "var(--muted, #999)" : "var(--accent, #2563eb)",
               color: "white",
               fontSize: 14,
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: isChecking ? "wait" : "pointer",
               fontFamily: "system-ui, -apple-system, sans-serif",
             }}
           >
-            Zkusit znovu
+            {isChecking ? "Kontroluji připojení…" : "Zkusit znovu"}
           </button>
+          <p style={{ marginTop: 12, fontSize: 12, color: "var(--muted)" }}>
+            Připojení se kontroluje každých 30 s. Při obnovení se aplikace znovu načte automaticky.
+          </p>
         </div>
       </div>
     );

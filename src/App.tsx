@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
 import Customers from "./pages/Customers";
@@ -20,7 +20,11 @@ import { supabase } from "./lib/supabaseClient";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
 import { showToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
+import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
+import { pushContextToJobiDocs } from "./lib/jobidocs";
+import { safeLoadDocumentsConfig, safeLoadCompanyData } from "./pages/Orders";
+import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
 
 type OpenTicketIntent = {
   ticketId: string;
@@ -74,7 +78,7 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" ? displayMode : d.orders.displayMode,
+        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
       },
     };
   } catch {
@@ -84,6 +88,7 @@ function safeLoadUIConfig(): UIConfig {
 
 export default function App() {
   const { session } = useAuth();
+  const { profile: userProfile } = useUserProfile();
   const [authenticated, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
@@ -115,12 +120,20 @@ export default function App() {
   const [draftCount, setDraftCount] = useState(0);
 
   // Load services and set activeServiceId when session changes
+  const servicesListRunRef = useRef(0);
   useEffect(() => {
     if (!session || !supabase) return;
-    
+    const runId = ++servicesListRunRef.current;
     (async () => {
       try {
-        const { data, error } = await supabase.functions.invoke("services-list");
+        // Explicitní JWT v hlavičce (v Tauri jinak často 401 Invalid JWT – stejně jako u týmových funkcí)
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (runId !== servicesListRunRef.current) return;
+        const accessToken = sessionData?.session?.access_token;
+        const { data, error } = await supabase.functions.invoke("services-list", {
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+        });
+        if (runId !== servicesListRunRef.current) return;
         if (error || !data?.services) {
           return;
         }
@@ -150,15 +163,57 @@ export default function App() {
           // Validate that current activeServiceId exists in services list
           const isValid = servicesList.some(s => s.service_id === activeServiceId);
           if (!isValid) {
-            // Current activeServiceId is invalid, use first service
             setActiveServiceId(servicesList[0].service_id);
           }
         }
       } catch (err) {
-        console.error("[App] Error loading services:", err);
+        if (runId === servicesListRunRef.current) {
+          console.error("[App] Error loading services:", err);
+        }
       }
     })();
   }, [session, supabase]);
+
+  const refreshServices = useCallback(async () => {
+    if (!session?.user?.id || !supabase) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const { data, error } = await supabase.functions.invoke("services-list", {
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+      });
+      if (error || !data?.services) return;
+      const list = (data.services as Array<{ service_id: string; service_name: string; role: string }>) || [];
+      if (list.length > 0) {
+        setServices(list);
+        const currentActive = activeServiceId;
+        const isValid = currentActive && list.some((s) => s.service_id === currentActive);
+        if (!isValid) setActiveServiceId(list[0].service_id);
+      }
+    } catch (err) {
+      console.error("[App] refreshServices error:", err);
+    }
+  }, [session, supabase, activeServiceId]);
+
+  // Push services + activeServiceId + documentsConfig + companyData to JobiDocs
+  useEffect(() => {
+    if (services.length === 0) return;
+    const documentsConfig = safeLoadDocumentsConfig();
+    const companyData = safeLoadCompanyData();
+    pushContextToJobiDocs(services, activeServiceId, {
+      documentsConfig: documentsConfig ?? null,
+      companyData: companyData ?? null,
+    });
+    const id = setInterval(() => {
+      const doc = safeLoadDocumentsConfig();
+      const comp = safeLoadCompanyData();
+      pushContextToJobiDocs(services, activeServiceId, {
+        documentsConfig: doc ?? null,
+        companyData: comp ?? null,
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [services, activeServiceId]);
 
   // Clear service-scoped cache when activeServiceId changes
   useEffect(() => {
@@ -335,6 +390,7 @@ export default function App() {
   }
 
   // App shell - only rendered when session exists
+  useCheckForAppUpdate(); // OTA: check once when app is ready (Tauri only)
   return (
     <ThemeProvider>
       <ThemeAnimations />
@@ -345,6 +401,7 @@ export default function App() {
           activePage={activePage} 
           onNavigate={setActivePage}
           userEmail={session?.user?.email || null}
+          userProfile={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null}
           onSignOut={async () => {
             // Sign out is handled in AppLayout.handleSignOut
           }}
@@ -394,13 +451,13 @@ export default function App() {
             />
           )}
 
-          {activePage === "inventory" && <Inventory />}
+          {activePage === "inventory" && <Inventory activeServiceId={activeServiceId} />}
 
           {activePage === "devices" && <Devices />}
 
           {activePage === "statistics" && <Statistics />}
 
-          {activePage === "settings" && <Settings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} />}
+          {activePage === "settings" && <Settings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} refreshServices={refreshServices} />}
 
           {activePage === "guide" && <Guide onNavigate={setActivePage} />}
 

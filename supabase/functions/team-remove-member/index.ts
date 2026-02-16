@@ -68,26 +68,30 @@ serve(async (req) => {
       );
     }
 
-    // Verify caller is owner or admin in service_memberships
-    const { data: callerMembership, error: callerError } = await supabase
-      .from("service_memberships")
-      .select("role")
-      .eq("service_id", serviceId)
-      .eq("user_id", userId)
-      .single();
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
-    if (callerError || !callerMembership) {
-      return new Response(
-        JSON.stringify({ error: "Caller is not a member of this service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (!isRootOwner) {
+      const { data: callerMembership, error: callerError } = await supabase
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", serviceId)
+        .eq("user_id", userId)
+        .single();
 
-    if (callerMembership.role !== "owner" && callerMembership.role !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "Caller must be owner or admin to remove members" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (callerError || !callerMembership) {
+        return new Response(
+          JSON.stringify({ error: "Caller is not a member of this service" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (callerMembership.role !== "owner" && callerMembership.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Caller must be owner or admin to remove members" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Check target user's current role

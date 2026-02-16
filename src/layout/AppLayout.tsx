@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { Sidebar, type NavKey } from "./Sidebar";
+import { Sidebar, type NavKey, type SidebarProps } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
+import { JobiDocsStatus } from "../components/JobiDocsStatus";
 
 export function AppLayout({
   children,
@@ -9,6 +10,7 @@ export function AppLayout({
   activePage,
   onNavigate,
   userEmail,
+  userProfile,
   onSignOut,
   services,
   activeServiceId,
@@ -19,6 +21,7 @@ export function AppLayout({
   activePage: NavKey;
   onNavigate: (k: NavKey) => void;
   userEmail: string | null;
+  userProfile?: { nickname: string | null; avatarUrl: string | null } | null;
   onSignOut: () => Promise<void>;
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
@@ -72,26 +75,46 @@ export function AppLayout({
         }}
       >
         <Sidebar 
-          expanded={sidebarExpanded} 
-          active={activePage} 
-          onNavigate={onNavigate}
-          userEmail={userEmail}
-          onSignOut={handleSignOut}
-          services={services}
-          activeServiceId={activeServiceId}
-          setActiveServiceId={setActiveServiceId}
+          {...({
+            expanded: sidebarExpanded,
+            active: activePage,
+            onNavigate,
+            userEmail,
+            userProfile: userProfile ?? null,
+            onSignOut: handleSignOut,
+            services,
+            activeServiceId,
+            setActiveServiceId,
+          } satisfies SidebarProps)}
         />
       </aside>
 
-      <div style={{ 
-        flex: 1, 
-        display: "flex", 
-        flexDirection: "column", 
-        minWidth: 0,
-        marginLeft: "var(--sidebar-collapsed)",
-        transition: "margin-left 180ms ease",
-      }}>
-        <main style={{ flex: 1, padding: "var(--pad-24)", overflow: "auto" }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+          marginLeft: "var(--sidebar-collapsed)",
+          transition: "margin-left 180ms ease",
+          position: "relative",
+          background: "var(--bg)",
+        }}
+      >
+        <div style={{ position: "absolute", top: 12, right: 12, zIndex: 100 }}>
+          <JobiDocsStatus />
+        </div>
+        <main
+          style={{
+            flex: 1,
+            padding: "var(--pad-24)",
+            paddingBottom: "calc(var(--pad-24) + 8px)",
+            overflow: "auto",
+            transform: "translateZ(0)",
+            contain: "paint",
+            background: "var(--bg)",
+          }}
+        >
           {children}
         </main>
       </div>

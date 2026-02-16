@@ -78,12 +78,6 @@ function ToastItem({ toast }: { toast: Toast }) {
   const isError = toast.type === "error";
   const bg = isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
 
-  const handleClose = () => {
-    if (!isClosing) {
-      setIsClosing(true);
-    }
-  };
-
   const handleAnimationEnd = (e: React.AnimationEvent) => {
     if (e.animationName === "toastSlideOut" && isClosing) {
       removeToast(toast.id);
@@ -92,7 +86,6 @@ function ToastItem({ toast }: { toast: Toast }) {
 
   return (
     <div
-      onMouseEnter={handleClose}
       onAnimationEnd={handleAnimationEnd}
       style={{
         background: bg,
@@ -110,7 +103,9 @@ function ToastItem({ toast }: { toast: Toast }) {
         fontSize: 14,
         fontWeight: 500,
         animation: isClosing || toast.isClosing ? "toastSlideOut 0.3s ease-in forwards" : "toastSlideIn 0.3s ease-out",
-        cursor: "pointer",
+        cursor: "default",
+        userSelect: "text",
+        WebkitUserSelect: "text",
       }}
     >
       {isSuccess && (
@@ -132,7 +127,7 @@ function ToastItem({ toast }: { toast: Toast }) {
           <line x1="12" y1="8" x2="12.01" y2="8" />
         </svg>
       )}
-      <span style={{ flex: 1 }}>{toast.message}</span>
+      <span style={{ flex: 1, userSelect: "text" }}>{toast.message}</span>
     </div>
   );
 }

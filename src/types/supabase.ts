@@ -259,6 +259,27 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          id: string
+          nickname: string | null
+          avatar_url: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id: string
+          nickname?: string | null
+          avatar_url?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          nickname?: string | null
+          avatar_url?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       // TODO: Přidat další tabulky po vygenerování správných typů
       // service_memberships, service_invites, service_settings, atd.
     }

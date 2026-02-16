@@ -39,8 +39,6 @@ export function OrderRow({
         borderRadius: 16,
         border: meta?.bg ? `2px solid ${meta.bg}80` : "1px solid var(--border)",
         background: meta?.bg ? `${meta.bg}30` : "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
         cursor: "pointer",
         boxShadow: meta?.bg ? `0 4px 16px ${meta.bg}40, 0 0 0 1px ${meta.bg}20` : "var(--shadow-soft)",
         transition: "var(--transition-smooth)",

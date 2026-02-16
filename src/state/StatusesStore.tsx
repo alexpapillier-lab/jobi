@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
+import { normalizeError } from "../utils/errorNormalizer";
 
 export type StatusKey = string;
 
@@ -77,7 +78,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
           console.error("[Statuses] load failed", dbError);
           setStatuses([]);
           setLoading(false);
-          setError(dbError.message || "Chyba při načítání statusů z databáze");
+          setError(normalizeError(dbError) || "Chyba při načítání statusů z databáze");
           return;
         }
 
@@ -105,7 +106,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
           console.error("[Statuses] load failed", initError);
           setStatuses([]);
           setLoading(false);
-          setError(initError.message || "Chyba při inicializaci výchozích statusů");
+          setError(normalizeError(initError) || "Chyba při inicializaci výchozích statusů");
           return;
         }
 
@@ -128,7 +129,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
           console.error("[Statuses] load failed", reloadError);
           setStatuses([]);
           setLoading(false);
-          setError(reloadError.message || "Chyba při načítání statusů po inicializaci");
+          setError(normalizeError(reloadError) || "Chyba při načítání statusů po inicializaci");
           return;
         }
 
@@ -150,7 +151,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         console.error("[Statuses] load failed", err);
         setStatuses([]);
         setLoading(false);
-        setError(err?.message || "Neznámá chyba při načítání statusů");
+        setError(normalizeError(err) || "Neznámá chyba při načítání statusů");
       }
     })();
   }, [activeServiceId]);

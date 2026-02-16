@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useIsRootOwner } from "../hooks/useIsRootOwner";
 
 export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings" | "guide";
 
@@ -99,25 +100,29 @@ function GuideIcon({ size = 20 }: { size?: number }) {
 
 // NAV items are created inside the component to access expanded state
 
+export type SidebarProps = {
+  expanded: boolean;
+  active: NavKey;
+  onNavigate: (k: NavKey) => void;
+  userEmail: string | null;
+  userProfile?: { nickname: string | null; avatarUrl: string | null } | null;
+  onSignOut: () => Promise<void>;
+  services: Array<{ service_id: string; service_name: string; role: string }>;
+  activeServiceId: string | null;
+  setActiveServiceId: (serviceId: string | null) => void;
+};
+
 export function Sidebar({
   expanded,
   active,
   onNavigate,
   userEmail,
+  userProfile,
   onSignOut,
   services,
   activeServiceId,
   setActiveServiceId,
-}: {
-  expanded: boolean;
-  active: NavKey;
-  onNavigate: (k: NavKey) => void;
-  userEmail: string | null;
-  onSignOut: () => Promise<void>;
-  services: Array<{ service_id: string; service_name: string; role: string }>;
-  activeServiceId: string | null;
-  setActiveServiceId: (serviceId: string | null) => void;
-}) {
+}: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -127,9 +132,13 @@ export function Sidebar({
   const serviceMenuButtonRef = useRef<HTMLButtonElement>(null);
   const serviceMenuDropdownRef = useRef<HTMLDivElement>(null);
 
+  const isRootOwner = useIsRootOwner();
   const activeService = services.find(s => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Service desk";
   const hasMultipleServices = services.length > 1;
+  const showServiceDropdown = hasMultipleServices || (isRootOwner && services.length === 0);
+  const displayName = (userProfile?.nickname?.trim() || userEmail?.split("@")[0] || "Admin").trim() || "Admin";
+  const avatarUrl = userProfile?.avatarUrl?.trim() || null;
 
   // Close user menu when clicking outside
   useEffect(() => {
@@ -268,7 +277,7 @@ export function Sidebar({
           }}>
             jobi
           </div>
-          {hasMultipleServices ? (
+          {showServiceDropdown ? (
             <div 
               ref={serviceMenuRef}
               style={{ 
@@ -350,7 +359,12 @@ export function Sidebar({
                     e.stopPropagation();
                   }}
                 >
-                  {services.map((service) => (
+                  {services.length === 0 ? (
+                    <div style={{ padding: "12px 12px", color: "var(--muted)", fontSize: 12 }}>
+                      Zatím žádné servisy
+                    </div>
+                  ) : (
+                  services.map((service) => (
                     <button
                       key={service.service_id}
                       onClick={(e) => {
@@ -393,7 +407,8 @@ export function Sidebar({
                         <span style={{ fontSize: 12 }}>✓</span>
                       )}
                     </button>
-                  ))}
+                  ))
+                  )}
                 </div>,
                 document.body
               )}
@@ -559,6 +574,25 @@ export function Sidebar({
               padding: 0,
             }}
           >
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 16,
+                  objectFit: "cover",
+                  border: "1px solid var(--border)",
+                  flex: "0 0 auto",
+                }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                  const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.style.display = "grid";
+                }}
+              />
+            ) : null}
             <div
               style={{
                 width: 38,
@@ -566,7 +600,7 @@ export function Sidebar({
                 borderRadius: 16,
                 background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
                 color: "white",
-                display: "grid",
+                display: avatarUrl ? "none" : "grid",
                 placeItems: "center",
                 fontWeight: 700,
                 transition: "var(--transition-smooth)",
@@ -574,7 +608,7 @@ export function Sidebar({
                 flex: "0 0 auto",
               }}
             >
-              {(userEmail || "A").charAt(0).toUpperCase()}
+              {(displayName || "A").charAt(0).toUpperCase()}
             </div>
             <div
               style={{
@@ -595,7 +629,7 @@ export function Sidebar({
                   color: "var(--text)",
                 }}
               >
-                {userEmail || "Admin"}
+                {displayName}
               </div>
               <div
                 style={{

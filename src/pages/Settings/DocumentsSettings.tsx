@@ -1193,14 +1193,12 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
   // Use useEffect to set up print event listeners and global print styles
   useEffect(() => {
     const handleBeforePrint = () => {
-      console.log("[ReactDocumentPreview] Before print event");
       if (printRef.current) {
         document.body.classList.add("printing-document");
       }
     };
     
     const handleAfterPrint = () => {
-      console.log("[ReactDocumentPreview] After print event");
       document.body.classList.remove("printing-document");
     };
     
@@ -1335,8 +1333,6 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
   
   const handlePrint = async () => {
     try {
-      console.log("[ReactDocumentPreview] Starting print, document type:", documentType);
-      
       // Generate HTML using existing HTML generators (same as in "Dokumenty" section)
       // Determine if multi-page is allowed (only for diagnostic protocol)
       const allowMultiPage = documentType === "diagnosticProtocol";
@@ -1355,7 +1351,8 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
       
       // Inject toolbar and auto-print script into HTML
       // Toolbar provides manual print button (more reliable than auto-print)
-      const printToolbar = `
+      // Split into HTML (for body) and CSS (for head) to ensure CSS order
+      const printToolbarHtml = `
         <div class="print-toolbar no-print" style="
           position: fixed;
           top: 0;
@@ -1381,7 +1378,10 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             font-weight: 600;
           ">🖨️ Tisknout</button>
         </div>
-        <style>
+      `;
+      
+      const printToolbarCss = `
+        <style id="print-toolbar-styles">
           @media print {
             @page { size: A4; margin: 0; }
             
@@ -1405,8 +1405,8 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
               padding: 0 !important;
             }
             
-            /* Page layout - A4 box with flex layout */
-            .page {
+            /* Page layout - A4 box with flex layout (pouze pro staré .page třídy, ne .doc-page) */
+            .page:not(.doc-page) {
               box-sizing: border-box !important;
               width: 210mm !important;
               height: 297mm !important;
@@ -1416,14 +1416,14 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
               overflow: visible !important;
               margin: 0 !important;
             }
-            /* Content area - can be scaled for fit-to-page */
-            .content, .document-content {
+            /* Content area - can be scaled for fit-to-page (pouze pro staré .content třídy, ne .doc-content) */
+            .content:not(.doc-content), .document-content:not(.doc-content) {
               flex: 1 1 auto !important;
               min-height: 0 !important;
               overflow: visible !important;
             }
-            /* Footer - always at bottom, no fixed/absolute positioning */
-            .footer {
+            /* Footer - always at bottom, no fixed/absolute positioning (pouze pro staré .footer třídy, ne .doc-footer) */
+            .footer:not(.doc-footer) {
               flex: 0 0 auto !important;
               overflow: visible !important;
               z-index: 10 !important;
@@ -1470,7 +1470,7 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             body {
               min-height: auto !important;
             }
-            body > .page {
+            body > .page:not(.doc-page) {
               margin: 0 !important;
               overflow: visible !important;
             }
@@ -1503,12 +1503,39 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
                 break-inside: avoid !important;
               }
             ` : `
-              /* Single-page: prevent page breaks */
-              .page {
-                page-break-inside: avoid !important;
-                break-inside: avoid !important;
+              /* Single-page: bezpečné okraje pro tisk + vertikální rozložení */
+              @page { 
+                size: A4; 
+                margin: 10mm; 
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              /* DŮLEŽITÉ: kotva pro absolute footer */
+              .doc-page {
+                position: relative !important;
+                padding-top: 0 !important; /* top řeší @page margin */
+                margin-top: 0 !important;
+                padding-bottom: 0 !important; /* footer řešíme absolutně */
                 page-break-after: avoid !important;
-                page-break-before: avoid !important;
+                break-after: avoid-page !important;
+              }
+              /* kill top margin prvního elementu */
+              .doc-page > :first-child {
+                margin-top: 0 !important;
+              }
+              /* Footer vždy dole v rámci tisknutelné oblasti */
+              .doc-footer {
+                position: absolute !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important; /* bude dole uvnitř .doc-page */
+              }
+              /* Rezerva, aby se obsah nepřekryl s footerem */
+              .doc-content {
+                padding-bottom: var(--doc-footer-reserve, 28mm) !important;
+                box-sizing: border-box !important;
               }
             `}
           }
@@ -1528,7 +1555,7 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           }
           @media screen {
             body { 
-              padding-top: 60px !important; 
+              /* padding-top removed - toolbar is fixed, no need for body padding */
               margin: 0 !important;
               padding-left: 16px !important;
               padding-right: 16px !important;
@@ -1552,21 +1579,235 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
         <script>
           (function() {
             const allowMultiPage = ${allowMultiPage ? 'true' : 'false'};
-            console.log("[PrintWindow] Auto-print script loaded, allowMultiPage:", allowMultiPage);
             
-            // Layout measurement function (no scaling, just logging)
-            function measureLayout() {
-              const pageElement = document.querySelector('.page');
-              const contentElement = document.querySelector('.content') || document.querySelector('.document-content');
-              const footerElement = document.querySelector('.footer');
+            // Collect debug info for copy
+            function collectPrintDebug() {
+              const html = document.documentElement;
+              const body = document.body;
+              const root = document.getElementById('print-root');
+              const pageEl = document.querySelector('.doc-page') || document.querySelector('.page') || document.querySelector('.print-page');
+              const footerEl = document.querySelector('.doc-footer') || document.querySelector('.footer') || document.querySelector('.print-footer');
               
-              if (!pageElement) {
-                console.warn("[PrintWindow] .page element not found");
-                return;
+              const debug = {
+                location: {
+                  href: location.href,
+                },
+                allowMultiPage: allowMultiPage,
+                devicePixelRatio: window.devicePixelRatio || 1,
+                htmlBody: {
+                  htmlMarginTop: html ? window.getComputedStyle(html).marginTop : null,
+                  htmlPaddingTop: html ? window.getComputedStyle(html).paddingTop : null,
+                  bodyMarginTop: body ? window.getComputedStyle(body).marginTop : null,
+                  bodyPaddingTop: body ? window.getComputedStyle(body).paddingTop : null,
+                  bodyDisplay: body ? window.getComputedStyle(body).display : null,
+                  bodyPosition: body ? window.getComputedStyle(body).position : null,
+                  bodyOverflow: body ? window.getComputedStyle(body).overflow : null,
+                },
+                printRoot: root ? {
+                  exists: true,
+                  computed: {
+                    position: window.getComputedStyle(root).position,
+                    display: window.getComputedStyle(root).display,
+                    marginTop: window.getComputedStyle(root).marginTop,
+                    paddingTop: window.getComputedStyle(root).paddingTop,
+                  },
+                  rect: root.getBoundingClientRect(),
+                } : { exists: false },
+                page: pageEl ? {
+                  className: pageEl.className,
+                  computed: {
+                    position: window.getComputedStyle(pageEl).position,
+                    height: window.getComputedStyle(pageEl).height,
+                    minHeight: window.getComputedStyle(pageEl).minHeight,
+                    overflow: window.getComputedStyle(pageEl).overflow,
+                  },
+                  rect: pageEl.getBoundingClientRect(),
+                } : null,
+                footer: footerEl ? {
+                  className: footerEl.className,
+                  computed: {
+                    position: window.getComputedStyle(footerEl).position,
+                    bottom: window.getComputedStyle(footerEl).bottom,
+                  },
+                  rect: footerEl.getBoundingClientRect(),
+                  parent: footerEl.parentElement ? {
+                    tag: footerEl.parentElement.tagName,
+                    class: footerEl.parentElement.className,
+                  } : null,
+                  parentParent: footerEl.parentElement?.parentElement ? {
+                    tag: footerEl.parentElement.parentElement.tagName,
+                    class: footerEl.parentElement.parentElement.className,
+                  } : null,
+                } : null,
+                bodyChildren: Array.from(body.children).map(child => ({
+                  tag: child.tagName,
+                  class: child.className,
+                  id: child.id,
+                  rect: {
+                    top: child.getBoundingClientRect().top,
+                    height: child.getBoundingClientRect().height,
+                  },
+                })),
+              };
+              
+              return debug;
+            }
+            
+            // Normalize DOM for single-page: create #print-root wrapper
+            function normalizeDOMForSinglePage() {
+              if (allowMultiPage) return;
+              
+              // Check if already normalized
+              if (document.getElementById('print-root')) return;
+              
+              // Preserve debug UI
+              const debugButton = document.getElementById('copy-print-debug');
+              const debugPre = document.getElementById('print-debug');
+              
+              const existing = Array.from(document.body.childNodes);
+              const root = document.createElement("div");
+              root.id = "print-root";
+              
+              // Move all nodes from body to root (except debug UI, script/style)
+              for (const node of existing) {
+                if (node === root) continue;
+                if (node === debugButton || node === debugPre) continue;
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  const el = node;
+                  if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') {
+                    continue;
+                  }
+                }
+                root.appendChild(node);
               }
               
-              if (!contentElement) {
-                console.warn("[PrintWindow] .content or .document-content element not found");
+              // Clear body (except debug UI)
+              const scriptsAndStyles = Array.from(document.body.querySelectorAll('script, style'));
+              const bodyHTML = document.body.innerHTML;
+              document.body.innerHTML = "";
+              
+              // Add debug UI back if it existed
+              if (debugButton) document.body.appendChild(debugButton);
+              if (debugPre) document.body.appendChild(debugPre);
+              
+              // Add root
+              document.body.appendChild(root);
+              
+              // Re-append scripts and styles
+              scriptsAndStyles.forEach(el => document.body.appendChild(el));
+              
+              // Find and mark page wrapper: prefer .doc-page, fallback .page, fallback first child #print-root
+              let pageWrapper = document.querySelector('.doc-page') || document.querySelector('.page');
+              if (!pageWrapper && root.firstElementChild) {
+                pageWrapper = root.firstElementChild;
+              }
+              if (pageWrapper) {
+                pageWrapper.classList.add('print-page');
+              }
+              
+              // Find and mark content: .doc-content/.content -> print-content
+              const content = document.querySelector('.doc-content') || document.querySelector('.content') || document.querySelector('.document-content');
+              if (content) {
+                content.classList.add('print-content');
+              }
+              
+              // Find and mark footer: .doc-footer/.footer -> print-footer
+              const footer = document.querySelector('.doc-footer') || document.querySelector('.footer');
+              if (footer) {
+                footer.classList.add('print-footer');
+              }
+            }
+            
+            // Apply last overrides for single-page (works for screen and print, not just @media print)
+            function applyLastOverridesSinglePage() {
+              // jen pro single-page režim
+              if (allowMultiPage) return;
+              
+              // Apply CSS in head (for @media print)
+              const css = '@page { size: A4; margin: 4mm 10mm 20mm 10mm; } html, body { margin: 0 !important; padding: 0 !important; border: 0 !important; } body { display: block !important; position: static !important; height: auto !important; min-height: 0 !important; } @media print { #print-root > .print-page { position: relative !important; height: calc(297mm - 4mm - 20mm) !important; overflow: hidden !important; box-sizing: border-box !important; margin: 0 !important; padding: 0 !important; } #print-root .print-footer { position: absolute !important; left: 0 !important; right: 0 !important; bottom: 4mm !important; break-inside: avoid !important; page-break-inside: avoid !important; margin: 0 !important; } #print-root .print-content { box-sizing: border-box !important; padding-bottom: calc(var(--doc-footer-reserve, 32mm) + 4mm) !important; overflow: hidden !important; margin-top: 0 !important; padding-top: 0 !important; } }';
+              
+              const id = "last-print-overrides-runtime";
+              let style = document.getElementById(id);
+              if (!style) {
+                style = document.createElement("style");
+                style.id = id;
+                document.head.appendChild(style);
+              }
+              style.textContent = css;
+              
+              // CRITICAL: Apply inline styles directly to elements (works in screen preview too)
+              // This ensures styles are applied even if @media print doesn't work in preview
+              const pageEl = document.querySelector('.print-page') || document.querySelector('.doc-page') || document.querySelector('.page');
+              const contentEl = document.querySelector('.print-content') || document.querySelector('.doc-content') || document.querySelector('.content') || document.querySelector('.document-content');
+              const footerEl = document.querySelector('.print-footer') || document.querySelector('.doc-footer') || document.querySelector('.footer');
+              const rootEl = document.getElementById('print-root');
+              
+              // Calculate exact height: 297mm (A4) - 4mm (top margin) - 20mm (bottom margin) = 273mm
+              // Convert to pixels: 273mm * 3.779527559 = ~1032px at 96 DPI
+              // But devicePixelRatio affects rendering, so use mm units which are more reliable
+              const pageHeight = 'calc(297mm - 4mm - 20mm)'; // 273mm
+              
+              if (rootEl instanceof HTMLElement) {
+                rootEl.style.setProperty('margin', '0', 'important');
+                rootEl.style.setProperty('padding', '0', 'important');
+                rootEl.style.setProperty('height', 'auto', 'important');
+                rootEl.style.setProperty('min-height', '0', 'important');
+                rootEl.style.setProperty('max-height', pageHeight, 'important');
+                rootEl.style.setProperty('overflow', 'hidden', 'important');
+              }
+              
+              if (pageEl instanceof HTMLElement) {
+                pageEl.style.setProperty('position', 'relative', 'important');
+                pageEl.style.setProperty('height', pageHeight, 'important');
+                pageEl.style.setProperty('max-height', pageHeight, 'important');
+                pageEl.style.setProperty('min-height', pageHeight, 'important');
+                pageEl.style.setProperty('overflow', 'hidden', 'important');
+                pageEl.style.setProperty('box-sizing', 'border-box', 'important');
+                pageEl.style.setProperty('margin', '0', 'important');
+                pageEl.style.setProperty('padding', '0', 'important');
+                pageEl.style.setProperty('width', '100%', 'important');
+              }
+              
+              if (contentEl instanceof HTMLElement) {
+                const reserve = pageEl?.style.getPropertyValue('--doc-footer-reserve') || '32mm';
+                contentEl.style.setProperty('box-sizing', 'border-box', 'important');
+                contentEl.style.setProperty('padding-bottom', 'calc(' + reserve + ' + 4mm)', 'important');
+                contentEl.style.setProperty('overflow', 'hidden', 'important');
+                contentEl.style.setProperty('margin-top', '0', 'important');
+                contentEl.style.setProperty('padding-top', '0', 'important');
+                contentEl.style.setProperty('height', 'auto', 'important');
+              }
+              
+              if (footerEl instanceof HTMLElement) {
+                footerEl.style.setProperty('position', 'absolute', 'important');
+                footerEl.style.setProperty('left', '0', 'important');
+                footerEl.style.setProperty('right', '0', 'important');
+                footerEl.style.setProperty('bottom', '4mm', 'important');
+                footerEl.style.setProperty('margin', '0', 'important');
+                footerEl.style.setProperty('width', '100%', 'important');
+              }
+              
+              // Reset html/body styles
+              document.documentElement.style.margin = '0';
+              document.documentElement.style.padding = '0';
+              document.body.style.margin = '0';
+              document.body.style.padding = '0';
+              document.body.style.display = 'block';
+              document.body.style.position = 'static';
+              document.body.style.height = 'auto';
+              document.body.style.minHeight = '0';
+              document.body.style.overflow = 'hidden';
+            }
+            
+            // Layout measurement and single-page footer setup
+            function measureLayout() {
+              // Use normalized classes (print-page, print-content, print-footer) or fallback to original
+              const pageElement = document.querySelector('.print-page') || document.querySelector('.doc-page') || document.querySelector('.page');
+              const contentElement = document.querySelector('.print-content') || document.querySelector('.doc-content') || document.querySelector('.content') || document.querySelector('.document-content');
+              const footerElement = document.querySelector('.print-footer') || document.querySelector('.doc-footer') || document.querySelector('.footer');
+              
+              if (!pageElement || !contentElement) {
+                console.error("[PrintWindow] Page or content element not found");
                 return;
               }
               
@@ -1582,71 +1823,115 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
                 footerElement.style.transformOrigin = '';
               }
               
-              // Measure layout heights after CSS is applied
-              setTimeout(function() {
-                const pageClientHeight = pageElement ? pageElement.clientHeight : 0;
-                const pageScrollHeight = pageElement ? pageElement.scrollHeight : 0;
-                const contentClientHeight = contentElement ? contentElement.clientHeight : 0;
-                const contentScrollHeight = contentElement ? contentElement.scrollHeight : 0;
-                const footerClientHeight = footerElement ? footerElement.clientHeight : 0;
-                const footerScrollHeight = footerElement ? footerElement.scrollHeight : 0;
-                
-                console.log("[PrintWindow] Layout heights:", {
-                  page_client: pageClientHeight,
-                  page_scroll: pageScrollHeight,
-                  content_client: contentClientHeight,
-                  content_scroll: contentScrollHeight,
-                  footer_client: footerClientHeight,
-                  footer_scroll: footerScrollHeight,
-                  pageFits: pageScrollHeight <= pageClientHeight,
-                  contentOverflow: contentScrollHeight > contentClientHeight
-                });
-                
-                // Verify page fits
-                if (pageScrollHeight > pageClientHeight) {
-                  console.warn("[PrintWindow] WARNING: page_scroll > page_client (" + pageScrollHeight + " > " + pageClientHeight + ") - may cause second page");
-                } else {
-                  console.log("[PrintWindow] Layout OK: page_scroll <= page_client (" + pageScrollHeight + " <= " + pageClientHeight + ")");
-                }
-              }, 100);
+              // For single-page documents: set dynamic padding-bottom based on footer height
+              if (!allowMultiPage && footerElement && pageElement) {
+                // Wait for layout to settle, then measure footer and set CSS variable
+                setTimeout(function() {
+                  const footerH = Math.ceil(footerElement.getBoundingClientRect().height);
+                  const EXTRA = 20; // px - větší rezerva kvůli zaokrouhlení a bezpečnosti (WebKit je citlivý)
+                  const reserve = footerH + EXTRA;
+                  
+                  // Set CSS variable for padding-bottom reserve on page element
+                  if (pageElement instanceof HTMLElement) {
+                    pageElement.style.setProperty('--doc-footer-reserve', reserve + 'px');
+                  }
+                  
+                  // Also reset any top margin/padding on content to prevent top gap
+                  if (contentElement instanceof HTMLElement) {
+                    contentElement.style.marginTop = '0';
+                    contentElement.style.paddingTop = '0';
+                  }
+                  
+                  // Ensure page has no margin/padding that could cause gap
+                  if (pageElement instanceof HTMLElement) {
+                    const exactHeight = 'calc(297mm - 4mm - 20mm)';
+                    pageElement.style.setProperty('margin-top', '0', 'important');
+                    pageElement.style.setProperty('padding-top', '0', 'important');
+                    // Force exact height again after measurement
+                    pageElement.style.setProperty('height', exactHeight, 'important');
+                    pageElement.style.setProperty('max-height', exactHeight, 'important');
+                    pageElement.style.setProperty('min-height', exactHeight, 'important');
+                  }
+                  
+                  // Re-apply all overrides after measurement to ensure everything is correct
+                  applyLastOverridesSinglePage();
+                }, 100);
+              }
             }
             
             // Print function (no scaling, layout-based approach)
             function doPrint() {
-              console.log("[PrintWindow] Starting print, allowMultiPage:", allowMultiPage);
+              // Normalize DOM for single-page (if not already done)
+              normalizeDOMForSinglePage();
               
-              // Measure layout (no scaling applied)
+              // Apply overrides immediately (don't wait)
+              applyLastOverridesSinglePage();
+              
+              // Measure layout and setup single-page footer (no scaling applied)
               measureLayout();
               
-              // Small delay to ensure layout is stable
+              // Wait for footer setup and layout measurement (padding-bottom needs time to apply)
+              // For single-page: need more time for padding-bottom to be applied and measured
+              const delay = allowMultiPage ? 150 : 300;
               setTimeout(function() {
+                // Re-apply overrides after layout measurement (in case footer reserve changed)
+                applyLastOverridesSinglePage();
+                
                 window.focus();
                 window.print();
-                console.log("[PrintWindow] Print dialog opened");
-              }, 150);
+              }, delay);
             }
+            
+            // Setup debug button
+            window.addEventListener("DOMContentLoaded", function() {
+              const debugButton = document.getElementById('copy-print-debug');
+              const debugPre = document.getElementById('print-debug');
+              
+              if (debugButton && debugPre) {
+                debugButton.addEventListener('click', function() {
+                  const debug = collectPrintDebug();
+                  debugPre.textContent = JSON.stringify(debug, null, 2);
+                  debugPre.style.display = 'block';
+                  
+                  // Copy to clipboard
+                  navigator.clipboard.writeText(JSON.stringify(debug, null, 2)).then(function() {
+                    debugButton.textContent = 'Copied!';
+                    setTimeout(function() {
+                      debugButton.textContent = 'Copy debug';
+                    }, 2000);
+                  }).catch(function(err) {
+                    console.error("[PrintWindow] Failed to copy debug info:", err);
+                  });
+                });
+              }
+            });
             
             // Make doPrint available globally for toolbar button
             window.doPrint = doPrint;
             
             window.addEventListener("load", async function() {
-              console.log("[PrintWindow] Window loaded");
               try {
+                // Normalize DOM for single-page
+                normalizeDOMForSinglePage();
+                
+                // Apply overrides immediately after normalization
+                applyLastOverridesSinglePage();
+                
                 // Wait for fonts to load if available
                 if (document.fonts && document.fonts.ready) {
                   await document.fonts.ready;
-                  console.log("[PrintWindow] Fonts ready");
                 }
                 
                 // Wait a bit more for layout to stabilize
                 requestAnimationFrame(function() {
                   setTimeout(function() {
-                    console.log("[PrintWindow] Attempting auto-print with fit-to-page");
+                    // Re-apply overrides before print (in case anything changed)
+                    applyLastOverridesSinglePage();
                     doPrint();
                   }, 200);
                 });
               } catch (err) {
-                console.warn("[PrintWindow] Auto-print failed:", err);
+                console.error("[PrintWindow] Auto-print failed:", err);
                 // Manual button is available as fallback
               }
             });
@@ -1657,11 +1942,73 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
         </script>
       `;
       
-      // Insert toolbar after <body> tag and script before closing </body> tag
-      let htmlWithPrintScript = htmlContent.replace('<body>', '<body>' + printToolbar);
+      // Add debug UI to body
+      const debugUI = `
+        <button id="copy-print-debug" style="position:fixed; top:8px; right:8px; z-index:999999; padding:6px 12px; background:#007bff; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Copy debug</button>
+        <pre id="print-debug" style="position:fixed; top:40px; right:8px; max-width:520px; max-height:80vh; overflow:auto; background:#fff; border:1px solid #ccc; padding:8px; font-size:11px; z-index:999999; display:none; font-family:monospace; white-space:pre-wrap; word-wrap:break-word;"></pre>
+      `;
+      
+      // Insert toolbar HTML and debug UI after <body> tag and script before closing </body> tag
+      let htmlWithPrintScript = htmlContent.replace('<body>', '<body>' + printToolbarHtml + debugUI);
       htmlWithPrintScript = htmlWithPrintScript.replace('</body>', autoPrintScript + '</body>');
       
-      console.log("[ReactDocumentPreview] HTML generated with auto-print script, length:", htmlWithPrintScript.length);
+      // Insert printToolbar CSS into <head> (before lastPrintOverrides to ensure runtime overrides win)
+      htmlWithPrintScript = htmlWithPrintScript.replace('</head>', printToolbarCss + '</head>');
+      
+      // Add "LAST PRINT OVERRIDES" style tag at the end of <head> (for single-page documents)
+      // This comes after printToolbarCss, so runtime overrides (injected via JS) will still win
+      const lastPrintOverrides = !allowMultiPage ? `
+        <style id="last-print-overrides">
+          @media print {
+            /* Zruš default marginy browseru (často dělají top gap) */
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            
+            /* Tohle řeší tvůj top gap přes @page (menší top, větší bottom pro footer bezpečnost) */
+            @page {
+              size: A4;
+              margin: 4mm 10mm 20mm 10mm; /* top right bottom left - větší bottom margin pro footer */
+            }
+            
+            /* Přinutíme doc-page být "page box" vysoký jako printable area - FIXNÍ výška, ne min-height */
+            body > .doc-page {
+              position: relative !important;
+              display: block !important;
+              box-sizing: border-box !important;
+              /* klíč: FIXNÍ výška místo min-height - zabrání expanzi a druhé stránce */
+              height: calc(297mm - 4mm - 20mm) !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            
+            /* Obsah dostane rezervu podle CSS proměnné, kterou už nastavujete */
+            body > .doc-page > .doc-content {
+              box-sizing: border-box !important;
+              padding-bottom: calc(var(--doc-footer-reserve, 32mm) + 4mm) !important;
+              overflow: hidden !important;
+              margin-top: 0 !important;
+              padding-top: 0 !important;
+            }
+            
+            /* Podpisy ukotvit opravdu dolů */
+            body > .doc-page > .doc-footer {
+              position: absolute !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 4mm !important;
+              margin: 0 !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+          }
+        </style>
+      ` : '';
+      
+      // Insert LAST PRINT OVERRIDES at the end of <head> (after printToolbarCss)
+      htmlWithPrintScript = htmlWithPrintScript.replace('</head>', lastPrintOverrides + '</head>');
       
       // Check if running in Tauri
       const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -1671,8 +2018,6 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
         // Create blob URL (more reliable than data URL in Tauri)
         const blob = new Blob([htmlWithPrintScript], { type: "text/html;charset=utf-8" });
         const blobUrl = URL.createObjectURL(blob);
-        
-        console.log("[ReactDocumentPreview] Created blob URL for print window");
         
         try {
           // Dynamic import for WebviewWindow
@@ -1688,13 +2033,11 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
           try {
             const existingPrint = await WebviewWindow.getByLabel("print");
             if (existingPrint) {
-              console.log("[ReactDocumentPreview] Closing existing print window");
               await existingPrint.close();
               await new Promise(resolve => setTimeout(resolve, 100));
             }
           } catch (err) {
             // Window doesn't exist, that's fine
-            console.log("[ReactDocumentPreview] No existing print window to close");
           }
           
           // Create new window for printing
@@ -1709,21 +2052,16 @@ function ReactDocumentPreview({ documentType, config }: { documentType: "ticketL
             visible: true,
           });
           
-          console.log("[ReactDocumentPreview] Print window created with blob URL");
-          
           // Wait for window to be created and loaded
           printWindow.once("tauri://created", async () => {
-            console.log("[ReactDocumentPreview] Print window created successfully");
             try {
               await printWindow.setFocus();
               await printWindow.center();
-              console.log("[ReactDocumentPreview] Print window focused and centered");
               
               // Auto-print script in HTML will handle printing
               // Clean up blob URL after a delay
               setTimeout(() => {
                 URL.revokeObjectURL(blobUrl);
-                console.log("[ReactDocumentPreview] Blob URL revoked");
               }, 5000);
             } catch (showErr) {
               console.error("[ReactDocumentPreview] Error showing print window:", showErr);

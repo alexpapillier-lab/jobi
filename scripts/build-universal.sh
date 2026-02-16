@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Tauri CLI expects CI=true or CI=false; unset or CI=1 breaks the build
+export CI=false
+
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Change to project root (parent of scripts directory)

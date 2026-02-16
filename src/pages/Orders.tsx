@@ -3,49 +3,22 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { showToast } from "../components/Toast";
+import { isJobiDocsRunning, printDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs } from "../lib/jobidocs";
+import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { supabase } from "../lib/supabaseClient";
+import {
+  uploadDiagnosticPhoto,
+  deleteDiagnosticPhotoFromStorage,
+  isDiagnosticPhotoStorageUrl,
+} from "../lib/diagnosticPhotosStorage";
 import { normalizePhone } from "../lib/phone";
-// Removed: useActiveRole import - not used
-
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
-
-// Dynamic import for Tauri WebviewWindow (only when needed)
-// In Tauri v2, WebviewWindow is imported from @tauri-apps/api/webviewWindow
-let WebviewWindowClass: any = null;
-async function getWebviewWindow() {
-  if (WebviewWindowClass) return WebviewWindowClass;
-  try {
-    // In Tauri v2, the correct import path is @tauri-apps/api/webviewWindow
-    const webviewModule = await import('@tauri-apps/api/webviewWindow');
-    
-    // WebviewWindow should be a named export
-    WebviewWindowClass = webviewModule.WebviewWindow;
-    
-    // If not found as named export, try default
-    if (!WebviewWindowClass || typeof WebviewWindowClass !== 'function') {
-      WebviewWindowClass = (webviewModule as any).default;
-    }
-    
-    // Log available exports for debugging
-    if (!WebviewWindowClass || typeof WebviewWindowClass !== 'function') {
-      console.error('[getWebviewWindow] Module structure:', {
-        keys: Object.keys(webviewModule),
-        module: webviewModule,
-      });
-      throw new Error('WebviewWindow class not found in @tauri-apps/api/webviewWindow. Check Tauri v2 documentation.');
-    }
-    
-    return WebviewWindowClass;
-  } catch (err) {
-    console.error('[getWebviewWindow] Failed to import WebviewWindow:', err);
-    // Provide helpful error message
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Failed to import WebviewWindow: ${errorMsg}. Make sure you're using Tauri v2 and @tauri-apps/api is installed.`);
-  }
-}
+import { useAuth } from "../auth/AuthProvider";
+import { useUserProfile } from "../hooks/useUserProfile";
+import { useActiveRole } from "../hooks/useActiveRole";
 
 type CompanyData = {
   abbreviation: string;
@@ -206,7 +179,7 @@ type GroupKey = "all" | "active" | "final";
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: "list" | "grid" | "compact" };
+  orders: { displayMode: "list" | "grid" | "compact" | "compact-extra" };
 };
 
 type OpenTicketIntent = {
@@ -267,6 +240,7 @@ export type TicketEx = Ticket & {
   diagnosticText?: string; // text diagnostiky
   diagnosticPhotos?: string[]; // URL diagnostických fotek
   
+  expectedDoneAt?: string; // předpokládané dokončení (ISO)
   version?: number; // optimistic locking version
 };
 
@@ -300,6 +274,9 @@ type TicketComment = {
   text: string;
   createdAt: string;
   pinned?: boolean;
+  author_id?: string | null;
+  author_nickname?: string | null;
+  author_avatar_url?: string | null;
 };
 
 // ========================
@@ -338,7 +315,7 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" ? displayMode : d.orders.displayMode,
+        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
       },
     };
   } catch {
@@ -567,149 +544,87 @@ function handoffLabel(m?: TicketEx["handoffMethod"]) {
   return "Na pobočce";
 }
 
-async function previewDocument(ticketId: string, docType: "ticket" | "diagnostic" | "warranty", autoPrint: boolean = false) {
-  // Check if running in Tauri
-  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:1420';
-  const params = new URLSearchParams({
-    ticketId,
-    docType,
-  });
-  if (autoPrint) {
-    params.set('autoPrint', '1');
-  }
-  const previewUrl = `${origin}/preview?${params.toString()}`;
-  
-  console.log("[previewDocument] Opening preview URL:", previewUrl);
-  
-  if (isTauri) {
-    try {
-      const WebviewWindow = await getWebviewWindow();
-      
-      // Check if preview window already exists and close it
-      try {
-        const existingPreview = await WebviewWindow.getByLabel("preview");
-        if (existingPreview) {
-          console.log("[previewDocument] Closing existing preview window");
-          await existingPreview.close();
-          // Wait a bit for window to close
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      } catch (err) {
-        // Window doesn't exist, that's fine
-        console.log("[previewDocument] No existing preview window to close");
-      }
-      
-      const win = new WebviewWindow("preview", {
-        url: previewUrl,
-        title: "Náhled dokumentu",
-        width: 900,
-        height: 700,
-        center: true,
-        closable: true,
-      });
-      
-      console.log("[previewDocument] Creating preview webview window with URL");
-      
-      // Listen for window creation
-      win.once("tauri://created", async () => {
-        console.log("[previewDocument] Preview window created successfully");
-        try {
-          await win.show();
-          await win.setFocus();
-          await win.center();
-          console.log("[previewDocument] Preview window shown, focused, and centered");
-        } catch (err) {
-          console.error("[previewDocument] Error showing/focusing window:", err);
-        }
-      });
-      
-      // Listen for window errors
-      win.once("tauri://error", (e: any) => {
-        console.error("[previewDocument] Preview window error:", e);
-      });
-    } catch (error) {
-      console.error('[previewDocument] Error opening preview:', error);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      showToast(`Chyba při otevírání náhledu: ${errorMsg}. Zkontrolujte oprávnění aplikace.`, "error");
-    }
-  } else {
-    // Browser method - open URL in new window
-    const previewWindow = window.open(previewUrl, "_blank", "width=900,height=700,scrollbars=yes");
-    if (!previewWindow) {
-      showToast("Nelze otevřít okno pro náhled. Zkontrolujte, zda není blokováno vyskakovací okna.", "error");
-      return;
-    }
-  }
+function escapeHtmlForDoc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-async function exportDocumentToPDF(htmlContent: string, filename: string) {
-  // Check if running in Tauri
-  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  
-  if (isTauri) {
-    try {
-      // Use Tauri API for saving file
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-      
-      // Save as HTML file (user can open in browser and print to PDF)
-      const filePath = await save({
-        defaultPath: filename.replace('.pdf', '.html'),
-        filters: [{
-          name: 'HTML',
-          extensions: ['html']
-        }, {
-          name: 'All Files',
-          extensions: ['*']
-        }]
-      });
-      
-      if (filePath) {
-        await writeTextFile(filePath, htmlContent);
-        showToast('Dokument uložen', 'success');
-      }
-    } catch (error) {
-      console.error('Error saving document in Tauri:', error);
-      // Fallback to browser method
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-        printWindow.onload = () => {
-          setTimeout(() => {
-            printWindow.print();
-          }, 250);
-        };
-      } else {
-        showToast("Nelze otevřít okno pro export. Zkontrolujte, zda není blokováno vyskakovací okna.", "error");
-      }
-    }
-  } else {
-    // Browser method: Open in new window and trigger print dialog
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      showToast("Nelze otevřít okno pro export. Zkontrolujte, zda není blokováno vyskakovací okna.", "error");
-      return;
-    }
+/** Sestaví obsah sekcí pro tisk přes JobiDocs (vzor) – vrací HTML fragmenty pro customer, device, repairs, diag, photos, dates. */
+function buildTicketSectionsForJobiDocs(
+  ticket: TicketEx,
+  _config: any,
+  _docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
+): Partial<Record<string, string>> {
+  const e = escapeHtmlForDoc;
+  const customerLines: string[] = [];
+  if (ticket.customerName) customerLines.push(`<div>${e(ticket.customerName)}</div>`);
+  if (ticket.customerPhone) customerLines.push(`<div>${e(ticket.customerPhone)}</div>`);
+  if (ticket.customerEmail) customerLines.push(`<div>${e(ticket.customerEmail)}</div>`);
+  const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
+  if (addr) customerLines.push(`<div>${e(addr)}</div>`);
+  if (ticket.customerCompany) customerLines.push(`<div>${e(ticket.customerCompany)}</div>`);
+  if (ticket.customerIco) customerLines.push(`<div>IČO: ${e(ticket.customerIco)}</div>`);
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+  const deviceLines: string[] = [];
+  if (ticket.deviceLabel) deviceLines.push(`<div>${e(ticket.deviceLabel)}</div>`);
+  if (ticket.serialOrImei) deviceLines.push(`<div>SN/IMEI: ${e(ticket.serialOrImei)}</div>`);
+  if (ticket.deviceCondition) deviceLines.push(`<div>Stav: ${e(ticket.deviceCondition)}</div>`);
+  const problem = ticket.requestedRepair || ticket.issueShort;
+  if (problem) deviceLines.push(`<div>Problém: ${e(problem)}</div>`);
 
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 250);
-    };
+  let repairsHtml = "";
+  if (ticket.performedRepairs && ticket.performedRepairs.length > 0) {
+    repairsHtml = ticket.performedRepairs
+      .map(
+        (r) =>
+          `<div style="display:flex;justify-content:space-between;gap:12px;width:100%"><span>${e(r.name)}</span>${r.price != null ? `<span style="white-space:nowrap">${r.price} Kč</span>` : ""}</div>`
+      )
+      .join("");
+    const total = ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0);
+    repairsHtml += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.12);display:flex;justify-content:space-between;gap:12px;width:100%;font-weight:600;font-size:12px"><span>Celková cena</span><span style="white-space:nowrap">${total} Kč</span></div>`;
   }
+
+  const diagHtml = ticket.diagnosticText ? `<div>${e(ticket.diagnosticText)}</div>` : "";
+
+  let photosHtml = "";
+  if (ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0) {
+    photosHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap">${ticket.diagnosticPhotos
+      .map(
+        (url) =>
+          `<img src="${e(url)}" alt="Foto" style="width:60px;height:60px;object-fit:cover;border-radius:6px" />`
+      )
+      .join("")}</div>`;
+  }
+
+  const dateLines: string[] = [];
+  dateLines.push(`<div>Přijato: ${e(new Date(ticket.createdAt).toLocaleDateString("cs-CZ"))}</div>`);
+  if (ticket.expectedDoneAt) dateLines.push(`<div>Předpokládané dokončení: ${e(new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ"))}</div>`);
+  dateLines.push(`<div>Kód zakázky: ${e(ticket.code)}</div>`);
+
+  const sections: Partial<Record<string, string>> = {};
+  if (customerLines.length) sections.customer = customerLines.join("");
+  if (deviceLines.length) sections.device = deviceLines.join("");
+  if (repairsHtml) sections.repairs = repairsHtml;
+  if (diagHtml) sections.diag = diagHtml;
+  if (photosHtml) sections.photos = photosHtml;
+  sections.dates = dateLines.join("");
+
+  return sections;
 }
 
-// printDocument() removed - all print functions now use previewDocument() with autoPrint=true
-// This ensures consistent behavior and avoids permission issues with opener.openPath()
+// Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
 
-function previewTicket(ticket: TicketEx) {
-  previewDocument(ticket.id, "ticket", false);
+async function getConfigWithProfile(
+  serviceId: string | null,
+  docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
+): Promise<any> {
+  const base = (await loadDocumentsConfigFromDB(serviceId)) || safeLoadDocumentsConfig();
+  const profile = await getProfileFromJobiDocs(serviceId ?? "", docType);
+  if (!profile) return base;
+  const section = docType === "zakazkovy_list" ? "ticketList" : docType === "zarucni_list" ? "warrantyCertificate" : "diagnosticProtocol";
+  return {
+    ...base,
+    [section]: { ...base[section], ...profile },
+  };
 }
 
 async function loadDocumentsConfigFromDB(serviceId: string | null): Promise<any | null> {
@@ -788,7 +703,7 @@ async function loadDocumentsConfigFromDB(serviceId: string | null): Promise<any 
 
 export function safeLoadDocumentsConfig(): any {
   try {
-    const raw = localStorage.getItem("jobsheet_documents_config_v1");
+    const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
     if (!raw) return {
       ticketList: {
         includeServiceInfo: true,
@@ -1325,8 +1240,8 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
             <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
           </div>
         ` : ""}
-        <div class="page">
-        <div class="content">
+        <div class="doc-page">
+        <div class="doc-content">
         <div class="header">
           <div class="header-left">
             ${documentsConfig.logoUrl ? `<img src="${documentsConfig.logoUrl}" alt="Logo servisu" class="logo" />` : ""}
@@ -1454,8 +1369,7 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         ` : ""}
         
         </div>
-        </div>
-        <div class="footer">
+        <div class="doc-footer">
         <div class="document-footer">
         <div class="signatures">
           <div class="signature-box">
@@ -1483,14 +1397,53 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
   `;
 }
 
-function exportTicketToPDF(ticket: TicketEx) {
-  const htmlContent = generateTicketHTML(ticket, true);
-  exportDocumentToPDF(htmlContent, `zakazka-${ticket.code}.pdf`);
+async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
+    return;
+  }
+  try {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const filePath = await save({
+      defaultPath: `zakazka-${ticket.code}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+    });
+    if (filePath) {
+      const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
+      const htmlContent = generateTicketHTML(ticket, true, config);
+      const res = await exportViaJobiDocs(htmlContent, filePath);
+      if (res.ok) {
+        showToast("PDF uložen", "success");
+      } else {
+        showToast(`JobiDocs: ${res.error}`, "error");
+      }
+    }
+  } catch (e) {
+    showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+  }
 }
 
-function printTicket(ticket: TicketEx) {
-  // Use previewDocument with autoPrint for consistency with other documents
-  previewDocument(ticket.id, "ticket", true);
+async function printTicket(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
+    return;
+  }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+  const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
+  const companyData = safeLoadCompanyData();
+  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
+  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections);
+  if (res.ok) {
+    showToast("Úloha odeslána do fronty", "success");
+  } else {
+    showToast(`JobiDocs: ${res.error}`, "error");
+  }
 }
 
 export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: any, forPrint: boolean = true, config?: any, _includeActions: boolean = false): string {
@@ -1953,8 +1906,8 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
             <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
           </div>
         ` : ""}
-        <div class="page">
-        <div class="content">
+        <div class="doc-page">
+        <div class="doc-content">
         <div class="document-content">
         <div class="header">
           <div class="header-left">
@@ -2042,7 +1995,7 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
         
         </div>
         </div>
-        <div class="footer">
+        <div class="doc-footer">
         <div class="document-footer">
         <div class="signatures" style="display: flex; justify-content: flex-end;">
           <div class="signature-box" style="position: relative;">
@@ -2062,18 +2015,54 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
   `;
 }
 
-function previewDiagnosticProtocol(ticket: TicketEx) {
-  previewDocument(ticket.id, "diagnostic", false);
+async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
+    return;
+  }
+  try {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const filePath = await save({
+      defaultPath: `diagnostika-${ticket.code}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+    });
+    if (filePath) {
+      const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
+      const companyData = safeLoadCompanyData();
+      const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
+      const res = await exportViaJobiDocs(htmlContent, filePath);
+      if (res.ok) {
+        showToast("PDF uložen", "success");
+      } else {
+        showToast(`JobiDocs: ${res.error}`, "error");
+      }
+    }
+  } catch (e) {
+    showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+  }
 }
 
-function exportDiagnosticProtocolToPDF(ticket: TicketEx) {
+async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
+    return;
+  }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+  const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
   const companyData = safeLoadCompanyData();
-  const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true);
-  exportDocumentToPDF(htmlContent, `diagnostika-${ticket.code}.pdf`);
-}
-
-function printDiagnosticProtocol(ticket: TicketEx) {
-  previewDocument(ticket.id, "diagnostic", true);
+  const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
+  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections);
+  if (res.ok) {
+    showToast("Úloha odeslána do fronty", "success");
+  } else {
+    showToast(`JobiDocs: ${res.error}`, "error");
+  }
 }
 
 export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrint: boolean = true, config?: any, _includeActions: boolean = false): string {
@@ -2511,8 +2500,8 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
             <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
           </div>
         ` : ""}
-        <div class="page">
-        <div class="content">
+        <div class="doc-page">
+        <div class="doc-content">
         <div class="document-content">
         <div class="header">
           <div class="header-left">
@@ -2689,8 +2678,7 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
         ` : ""}
         
         </div>
-        </div>
-        <div class="footer">
+        <div class="doc-footer">
         <div class="document-footer">
         <div class="signatures" style="display: flex; justify-content: flex-end;">
           <div class="signature-box" style="position: relative;">
@@ -2710,18 +2698,64 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
   `;
 }
 
-function previewWarranty(ticket: TicketEx) {
-  previewDocument(ticket.id, "warranty", false);
+async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
+    return;
+  }
+  try {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const filePath = await save({
+      defaultPath: `zarucni-list-${ticket.code}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+    });
+    if (filePath) {
+      const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
+      const companyData = safeLoadCompanyData();
+      const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
+      const res = await exportViaJobiDocs(htmlContent, filePath);
+      if (res.ok) {
+        showToast("PDF uložen", "success");
+      } else {
+        showToast(`JobiDocs: ${res.error}`, "error");
+      }
+    }
+  } catch (e) {
+    showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+  }
 }
 
-function exportWarrantyToPDF(ticket: TicketEx) {
+async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
+    return;
+  }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+  const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
   const companyData = safeLoadCompanyData();
-  const htmlContent = generateWarrantyHTML(ticket, companyData, true);
-  exportDocumentToPDF(htmlContent, `zarucni-list-${ticket.code}.pdf`);
+  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
+  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections);
+  if (res.ok) {
+    showToast("Úloha odeslána do fronty", "success");
+  } else {
+    showToast(`JobiDocs: ${res.error}`, "error");
+  }
 }
 
-function printWarranty(ticket: TicketEx) {
-  previewDocument(ticket.id, "warranty", true);
+async function quickPrintFromList(
+  ticket: TicketEx,
+  docType: "ticket" | "diagnostic" | "warranty",
+  serviceId: string | null
+) {
+  if (docType === "ticket") await printTicket(ticket, serviceId);
+  else if (docType === "diagnostic") await printDiagnosticProtocol(ticket, serviceId);
+  else await printWarranty(ticket, serviceId);
 }
 
 // Document Action Picker Component (for each document type)
@@ -2730,7 +2764,7 @@ function DocumentActionPicker({
   onSelect
 }: { 
   label: string;
-  onSelect: (action: "preview" | "export" | "print") => void;
+  onSelect: (action: "export" | "print") => void;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -2770,7 +2804,6 @@ function DocumentActionPicker({
   }, [open]);
 
   const actions = [
-    { value: "preview" as const, label: "👁️ Náhled" },
     { value: "export" as const, label: "💾 Export" },
     { value: "print" as const, label: "🖨️ Tisk" },
   ];
@@ -4726,6 +4759,10 @@ export default function Orders({
   onReturnToPage,
 }: OrdersProps) {
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
+  const { session } = useAuth();
+  const { profile: userProfile } = useUserProfile();
+  const { hasCapability } = useActiveRole(activeServiceId);
+  const canPrintExport = hasCapability("can_print_export");
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
   const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
@@ -4802,7 +4839,7 @@ export default function Orders({
           if (dbConfig) {
             setDocumentsConfig(dbConfig);
             // Sync to localStorage as fallback
-            localStorage.setItem("jobsheet_documents_config_v1", JSON.stringify(dbConfig));
+            localStorage.setItem(STORAGE_KEYS.DOCUMENTS_CONFIG, JSON.stringify(dbConfig));
           }
         }
       )
@@ -4861,7 +4898,7 @@ export default function Orders({
           return; // This request is stale, ignore it
         }
         console.error("[Orders] Error loading tickets:", err);
-        setTicketsError(err instanceof Error ? err.message : "Neznámá chyba při načítání zakázek");
+        setTicketsError(normalizeError(err) || "Neznámá chyba při načítání zakázek");
         setCloudTickets([]);
         setTicketsLoading(false);
       }
@@ -4877,6 +4914,7 @@ export default function Orders({
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
 
   // Realtime subscription for tickets
   useEffect(() => {
@@ -5035,6 +5073,7 @@ export default function Orders({
   const returnToCustomerIdRef = useRef<string | undefined>(undefined);
   const originalTicketRef = useRef<TicketEx | null>(null);
   const lastDetailIdRef = useRef<string | null>(null);
+  const ticketsLoadHasRunRef = useRef(false);
 
   // Dirty tracking for diagnostic text, photos, and performed repairs
   const [dirtyFlags, setDirtyFlags] = useState({
@@ -5044,6 +5083,10 @@ export default function Orders({
   });
 
   const [commentDraftByTicket, setCommentDraftByTicket] = useState<Record<string, string>>({});
+  const [openQuickPrintTicket, setOpenQuickPrintTicket] = useState<TicketEx | null>(null);
+  const [quickPrintDropdownRect, setQuickPrintDropdownRect] = useState<{ top: number; left: number; right: number; height: number } | null>(null);
+
+  const [ordersPage, setOrdersPage] = useState(0);
 
   // Delete ticket dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -5073,6 +5116,39 @@ export default function Orders({
     setStatusById(next);
   }, [tickets]);
 
+  useLayoutEffect(() => {
+    if (!openQuickPrintTicket) {
+      setQuickPrintDropdownRect(null);
+      return;
+    }
+    const el = document.querySelector(`[data-quick-print-trigger-id="${openQuickPrintTicket.id}"]`);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setQuickPrintDropdownRect({ top: rect.bottom, left: rect.left, right: rect.right, height: rect.height });
+    } else {
+      setQuickPrintDropdownRect(null);
+    }
+  }, [openQuickPrintTicket]);
+
+  useEffect(() => {
+    if (!openQuickPrintTicket) return;
+    const handleClick = (e: MouseEvent) => {
+      const el = e.target as Element;
+      if (el?.closest?.("[data-quick-print-menu]") || el?.closest?.("[data-quick-print-trigger]")) return;
+      setOpenQuickPrintTicket(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [openQuickPrintTicket]);
+
+  // When navigating from Customers (click on ticket): open that ticket's detail once tickets are loaded.
+  // Don't consume intent until we've opened the detail or confirmed the ticket isn't in the list (after load).
+  // On first mount tickets is [] and ticketsLoading is false (initial state), so we must not consume until
+  // we have either found the ticket or load has completed (ticketsLoadHasRunRef set when ticketsLoading was true).
+  useEffect(() => {
+    if (ticketsLoading) ticketsLoadHasRunRef.current = true;
+  }, [ticketsLoading]);
+
   useEffect(() => {
     if (!openTicketIntent) return;
 
@@ -5083,22 +5159,24 @@ export default function Orders({
       if ((mode ?? "detail") === "detail") {
         setDetailId(ticketId);
         setReturnToPage(returnPage || null);
-        // Store returnToCustomerId for later use in close handler
         returnToCustomerIdRef.current = returnToCustomerId;
-    } else {
-      setDetailId(null);
+      } else {
+        setDetailId(null);
         setReturnToPage(null);
         returnToCustomerIdRef.current = undefined;
       }
+      onOpenTicketIntentConsumed();
     } else {
       setDetailId(null);
       setReturnToPage(null);
       returnToCustomerIdRef.current = undefined;
+      // Consume when load has finished: either we have data, or we've seen loading complete (ref set when ticketsLoading was true).
+      if (!ticketsLoading && (tickets.length > 0 || ticketsLoadHasRunRef.current)) {
+        onOpenTicketIntentConsumed();
+      }
     }
-
-    onOpenTicketIntentConsumed();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTicketIntent, tickets]);
+  }, [openTicketIntent, tickets, ticketsLoading]);
 
   const devicesData: DevicesData = useMemo(() => safeLoadDevicesData(), []);
   const inventoryData: InventoryData = useMemo(() => safeLoadInventoryData(), []);
@@ -5147,20 +5225,21 @@ export default function Orders({
   useEffect(() => {
     if (!newOrderPrefill) return;
     setShouldOpenNew(true);
-    onNewOrderPrefillConsumed();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newOrderPrefill]);
+    if (!newOrderPrefill.customerId) onNewOrderPrefillConsumed();
+  }, [newOrderPrefill, onNewOrderPrefillConsumed]);
 
-  // Load customer detail and prefill form when newOrderPrefill.customerId is set
+  // Load customer detail and prefill form when newOrderPrefill.customerId is set (e.g. "Vytvořit zakázku" u zákazníka)
   useEffect(() => {
-    if (!newOrderPrefill?.customerId || !supabase || !activeServiceId) return;
+    const customerId = newOrderPrefill?.customerId;
+    if (!customerId || !supabase || !activeServiceId) return;
 
+    onNewOrderPrefillConsumed();
     (async () => {
       try {
         const { data, error } = await (supabase
           .from("customers") as any)
           .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-          .eq("id", newOrderPrefill.customerId)
+          .eq("id", customerId)
           .eq("service_id", activeServiceId)
           .single();
 
@@ -5169,14 +5248,11 @@ export default function Orders({
           return;
         }
 
-        // Prefill only empty fields, or if customerId is not set (draft not yet linked to customer)
         setNewDraft((prev) => {
-          const shouldPrefill = !prev.customerId; // If draft not linked to customer, prefill everything
-          
+          const shouldPrefill = !prev.customerId;
           return {
             ...prev,
             customerId: data.id,
-            // Prefill only if field is empty OR draft not linked to customer
             customerName: shouldPrefill || !prev.customerName.trim() ? (data.name || "") : prev.customerName,
             customerPhone: shouldPrefill || !prev.customerPhone.trim() ? (data.phone || "") : prev.customerPhone,
             customerEmail: shouldPrefill || !prev.customerEmail.trim() ? (data.email || "") : prev.customerEmail,
@@ -5192,7 +5268,7 @@ export default function Orders({
         console.error("[Orders] Error loading customer for prefill:", err);
       }
     })();
-  }, [newOrderPrefill?.customerId, supabase, activeServiceId]);
+  }, [newOrderPrefill?.customerId, supabase, activeServiceId, onNewOrderPrefillConsumed]);
 
   useEffect(() => {
     const onReq = () => setShouldOpenNew(true);
@@ -5422,6 +5498,21 @@ export default function Orders({
         );
       });
   }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
+
+  const ORDERS_PAGE_SIZE = 50;
+  const totalOrdersPages = Math.max(1, Math.ceil(filtered.length / ORDERS_PAGE_SIZE));
+  const paginatedTickets = useMemo(
+    () => filtered.slice(ordersPage * ORDERS_PAGE_SIZE, (ordersPage + 1) * ORDERS_PAGE_SIZE),
+    [filtered, ordersPage]
+  );
+
+  useEffect(() => {
+    setOrdersPage(0);
+  }, [query, activeStatusKey, activeGroup]);
+
+  useEffect(() => {
+    if (ordersPage >= totalOrdersPages && totalOrdersPages > 0) setOrdersPage(totalOrdersPages - 1);
+  }, [ordersPage, totalOrdersPages]);
 
   const detailedTicket: TicketEx | undefined = useMemo(
     () => (detailId ? tickets.find((t) => t.id === detailId) : undefined),
@@ -5864,6 +5955,35 @@ export default function Orders({
     return () => window.removeEventListener("keydown", onKey);
   }, [detailId, isNewOpen, handleCloseDetail]);
 
+  // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
+  useEffect(() => {
+    if (!detailId) return;
+    const prevBody = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const main = document.querySelector("main");
+    if (main instanceof HTMLElement) {
+      main.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = prevBody;
+      if (main instanceof HTMLElement) {
+        main.style.overflow = "auto";
+      }
+    };
+  }, [detailId]);
+
+  useEffect(() => {
+    if (!detailedTicket) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+        e.preventDefault();
+        printTicket(detailedTicket, activeServiceId);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailedTicket, activeServiceId]);
+
   const startEditing = useCallback(() => {
     if (!detailedTicket) return;
     setEditedTicket({
@@ -5891,7 +6011,6 @@ export default function Orders({
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
     if (!newDraft.deviceLabel.trim()) e.deviceLabel = "Vyplň zařízení.";
-    if (!newDraft.requestedRepair.trim()) e.requestedRepair = "Vyplň požadovanou opravu.";
     if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
     if (!isEmailValid(newDraft.customerEmail)) e.customerEmail = "E-mail vypadá neplatně.";
     if (!isZipValid(newDraft.addressZip)) e.addressZip = "PSČ musí mít 5 číslic.";
@@ -5950,13 +6069,17 @@ export default function Orders({
     const map = safeLoadCommentsMap();
     const list = map[ticketId] ?? [];
 
+    const displayName = userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Servis";
     const c: TicketComment = {
       id: uuid(),
       ticketId,
-      author: "Servis",
+      author: displayName,
       text,
       createdAt: new Date().toISOString(),
       pinned: false,
+      author_id: session?.user?.id ?? null,
+      author_nickname: userProfile?.nickname?.trim() || null,
+      author_avatar_url: userProfile?.avatarUrl?.trim() || null,
     };
 
     map[ticketId] = [...list, c];
@@ -6091,15 +6214,17 @@ export default function Orders({
       <div style={{ 
         marginTop: 16, 
         display: uiCfg.orders.displayMode === "grid" ? "grid" : "grid",
-        gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(350px, 1fr))" : "1fr",
-        gap: uiCfg.orders.displayMode === "grid" ? 16 : 8,
+        gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(350px, 1fr))" : "minmax(260px, 1fr)",
+        gap: uiCfg.orders.displayMode === "grid" ? 16 : uiCfg.orders.displayMode === "compact-extra" ? 2 : 8,
+        minWidth: 0,
       }}>
-        {filtered.map((t) => {
+        {paginatedTickets.map((t) => {
           const raw = (t.status as any) ?? statusById[t.id];
           const currentStatus = normalizeStatus(raw);
           const meta = currentStatus !== null ? getByKey(currentStatus) : null;
           const cardKey = t.id;
 
+          const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
           return (
             <div
               key={cardKey}
@@ -6107,7 +6232,7 @@ export default function Orders({
               style={{
                 textAlign: "left",
                 padding: 0,
-                borderRadius: 16,
+                borderRadius: isCompactExtra ? 8 : 16,
                 border: meta?.bg ? `2px solid ${meta.bg}80` : "1px solid var(--border)",
                 background: meta?.bg ? `${meta.bg}30` : "var(--panel)",
                 backdropFilter: "var(--blur)",
@@ -6132,7 +6257,7 @@ export default function Orders({
             >
               <div
                 style={{
-                  width: 10,
+                  width: isCompactExtra ? 6 : 10,
                   background: meta?.bg || "var(--border)",
                   flexShrink: 0,
                   boxShadow: meta?.bg ? `0 0 24px ${meta.bg}90, inset 0 0 12px ${meta.bg}60, 0 0 8px ${meta.bg}50` : "none",
@@ -6141,13 +6266,30 @@ export default function Orders({
 
               <div style={{ 
                 flex: 1, 
-                padding: uiCfg.orders.displayMode === "grid" ? 14 : 16, 
+                minWidth: 0,
+                padding: isCompactExtra ? "6px 10px" : uiCfg.orders.displayMode === "grid" ? 14 : 16, 
                 display: "flex", 
                 flexDirection: "column", 
-                gap: uiCfg.orders.displayMode === "grid" ? 10 : 12 
+                gap: isCompactExtra ? 0 : uiCfg.orders.displayMode === "grid" ? 10 : 12 
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: uiCfg.orders.displayMode === "grid" ? 8 : 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+                {isCompactExtra ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+                    <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
+                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{t.deviceLabel || "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.customerName}</div>
+                    {meta?.isFinal && <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}>✓</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
+                      {currentStatus !== null ? <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" /> : <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>}
+                      {canPrintExport && (
+                      <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, minWidth: 26, minHeight: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>🖨️</button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: uiCfg.orders.displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
                     <div
                       style={{
                         fontWeight: 950,
@@ -6155,11 +6297,12 @@ export default function Orders({
                         letterSpacing: "-0.01em",
                         color: "var(--text)",
                         whiteSpace: "nowrap",
+                        flexShrink: 0,
                       }}
                     >
                       {t.code}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{formatCZ(t.createdAt)}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
                     {meta?.isFinal && (
                       <span
                         style={{
@@ -6179,7 +6322,7 @@ export default function Orders({
                     )}
                   </div>
 
-                  <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 100 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
                     {currentStatus !== null ? (
                     <StatusPicker
                       value={currentStatus}
@@ -6201,6 +6344,32 @@ export default function Orders({
                       >
                         …
                       </div>
+                    )}
+                    {canPrintExport && (
+                    <button
+                      type="button"
+                      data-quick-print-trigger-id={t.id}
+                      onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }}
+                      title="Tisk dokumentu"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 32,
+                        height: 32,
+                        minWidth: 32,
+                        minHeight: 32,
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: "var(--panel)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🖨️
+                    </button>
                     )}
                   </div>
                 </div>
@@ -6441,10 +6610,41 @@ export default function Orders({
                     })()}
                   </>
                 )}
+                </>
+                )}
               </div>
             </div>
           );
         })}
+
+        {filtered.length > ORDERS_PAGE_SIZE && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16, padding: "12px 16px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              Zobrazeno {ordersPage * ORDERS_PAGE_SIZE + 1}–{Math.min((ordersPage + 1) * ORDERS_PAGE_SIZE, filtered.length)} z {filtered.length} zakázek
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
+                disabled={ordersPage === 0}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage === 0 ? "not-allowed" : "pointer", opacity: ordersPage === 0 ? 0.5 : 1 }}
+              >
+                ◀ Předchozí
+              </button>
+              <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 80, textAlign: "center" }}>
+                Strana {ordersPage + 1} z {totalOrdersPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
+                disabled={ordersPage >= totalOrdersPages - 1}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage >= totalOrdersPages - 1 ? "not-allowed" : "pointer", opacity: ordersPage >= totalOrdersPages - 1 ? 0.5 : 1 }}
+              >
+                Další ▶
+              </button>
+            </div>
+          </div>
+        )}
 
         {filtered.length === 0 && (
           <div
@@ -6856,14 +7056,13 @@ export default function Orders({
               placeholder="Např. rozbitý displej, prasklé zadní sklo, oděrky…"
             />
 
-            <div style={fieldLabel}>Požadovaná oprava *</div>
+            <div style={fieldLabel}>Požadovaná oprava</div>
             <textarea
               value={newDraft.requestedRepair}
               onChange={(e) => setNewDraft((p) => ({ ...p, requestedRepair: e.target.value }))}
-              style={{ ...baseFieldTextArea, border: showError("requestedRepair") ? borderError : border }}
+              style={baseFieldTextArea}
               placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
             />
-            {showError("requestedRepair") && <div style={fieldHint}>{errors.requestedRepair}</div>}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
@@ -6906,6 +7105,9 @@ export default function Orders({
         <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button
             onClick={() => {
+              setNewDraft(defaultDraft());
+              safeSaveDraft(null);
+              window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
               setIsNewOpen(false);
               setCustomerMatchDecision("undecided");
               setMatchedCustomer(null);
@@ -6932,26 +7134,28 @@ export default function Orders({
         </div>
       </div>
 
-      {/* ===== Full detail modal ===== */}
-      <div
-        onClick={handleCloseDetail}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.42)",
-          opacity: detailId ? 1 : 0,
-          pointerEvents: detailId ? "auto" : "none",
-          transition: "opacity 160ms ease",
-          zIndex: 300,
-        }}
-      />
+      {/* ===== Full detail modal (portal do body, aby fixed byl vůči viewportu, ne main s transform) ===== */}
+      {createPortal(
+        <>
+          <div
+            onClick={handleCloseDetail}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.42)",
+              opacity: detailId ? 1 : 0,
+              pointerEvents: detailId ? "auto" : "none",
+              transition: "opacity 160ms ease",
+              zIndex: 300,
+            }}
+          />
 
-      <div
+          <div
         style={{
           position: "fixed",
           left: "50%",
           top: "50%",
-          transform: detailId ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -48%) scale(0.99)",
+          transform: detailId ? "translate(-50%, -50%) scale(1) translateZ(0)" : "translate(-50%, -48%) scale(0.99) translateZ(0)",
           opacity: detailId ? 1 : 0,
           pointerEvents: detailId ? "auto" : "none",
           transition: "transform 160ms ease, opacity 160ms ease",
@@ -6968,6 +7172,7 @@ export default function Orders({
           padding: 18,
           zIndex: 310,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+          willChange: detailId ? "transform" : "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -7074,32 +7279,29 @@ export default function Orders({
               </>
             )}
 
-            {detailedTicket && (
+            {detailedTicket && canPrintExport && (
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <DocumentActionPicker
                   label="📄 Zakázkový list"
                   onSelect={(action) => {
-                    if (action === "preview") previewTicket(detailedTicket);
-                    else if (action === "export") exportTicketToPDF(detailedTicket);
-                    else if (action === "print") printTicket(detailedTicket);
+                    if (action === "export") exportTicketToPDF(detailedTicket, activeServiceId);
+                    else if (action === "print") printTicket(detailedTicket, activeServiceId);
                   }}
                 />
                 {(detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0)) && (
                   <DocumentActionPicker
                     label="🔍 Diagnostický protokol"
                     onSelect={(action) => {
-                      if (action === "preview") previewDiagnosticProtocol(detailedTicket);
-                      else if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket);
-                      else if (action === "print") printDiagnosticProtocol(detailedTicket);
+                      if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId);
+                      else if (action === "print") printDiagnosticProtocol(detailedTicket, activeServiceId);
                     }}
                   />
                 )}
                 <DocumentActionPicker
                   label="📋 Záruční list"
                   onSelect={(action) => {
-                    if (action === "preview") previewWarranty(detailedTicket);
-                    else if (action === "export") exportWarrantyToPDF(detailedTicket);
-                    else if (action === "print") printWarranty(detailedTicket);
+                    if (action === "export") exportWarrantyToPDF(detailedTicket, activeServiceId);
+                    else if (action === "print") printWarranty(detailedTicket, activeServiceId);
                   }}
                 />
               </div>
@@ -7849,7 +8051,15 @@ export default function Orders({
                               }}
                             />
                             <button
-                              onClick={() => {
+                              onClick={async () => {
+                                const photoUrl = (detailedTicket.diagnosticPhotos || [])[idx];
+                                if (photoUrl && isDiagnosticPhotoStorageUrl(photoUrl)) {
+                                  try {
+                                    await deleteDiagnosticPhotoFromStorage(supabase, photoUrl);
+                                  } catch (_) {
+                                    // Orphan v Storage; odstraníme jen z UI
+                                  }
+                                }
                                 setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
@@ -7886,27 +8096,71 @@ export default function Orders({
                         type="file"
                         accept="image/*"
                         multiple
-                        onChange={(e) => {
+                        disabled={diagnosticPhotosUploading}
+                        onChange={async (e) => {
                           const files = Array.from(e.target.files || []);
-                          files.forEach((file) => {
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                              const result = event.target?.result as string;
+                          e.target.value = "";
+                          if (!files.length) return;
+                          const hasId = !!(activeServiceId && detailedTicket.id);
+                          if (hasId && supabase) {
+                            setDiagnosticPhotosUploading(true);
+                            try {
+                              const urls: string[] = [];
+                              for (const file of files) {
+                                const url = await uploadDiagnosticPhoto(
+                                  supabase,
+                                  activeServiceId!,
+                                  detailedTicket.id!,
+                                  file
+                                );
+                                urls.push(url);
+                              }
                               setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                               setCloudTickets((prev) =>
                                 prev.map((t) =>
                                   t.id === detailedTicket.id
-                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), result] }
+                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
                                     : t
                                 )
                               );
-                            };
-                            reader.readAsDataURL(file);
-                          });
-                          e.target.value = "";
+                            } catch (err) {
+                              showToast(
+                                `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
+                                "error"
+                              );
+                            } finally {
+                              setDiagnosticPhotosUploading(false);
+                            }
+                          } else {
+                            const reader = (file: File) =>
+                              new Promise<string>((resolve, reject) => {
+                                const r = new FileReader();
+                                r.onload = () => resolve(r.result as string);
+                                r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                                r.readAsDataURL(file);
+                              });
+                            try {
+                              const results = await Promise.all(files.map(reader));
+                              setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                              setCloudTickets((prev) =>
+                                prev.map((t) =>
+                                  t.id === detailedTicket.id
+                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
+                                    : t
+                                )
+                              );
+                            } catch (_) {
+                              showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                            }
+                          }
                         }}
-                        style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: "pointer" }}
+                        style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
                       />
+                      {diagnosticPhotosUploading && (
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>
+                          Nahrávám…
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -7918,7 +8172,10 @@ export default function Orders({
               <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>💬 Interní komentáře (chat)</div>
 
               <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {commentsFor(detailedTicket.id).map((c) => (
+                {commentsFor(detailedTicket.id).map((c) => {
+                  const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
+                  const commentAvatarUrl = c.author_avatar_url?.trim() || null;
+                  return (
                   <div
                     key={c.id}
                     style={{
@@ -7931,7 +8188,37 @@ export default function Orders({
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <div style={{ fontWeight: 950 }}>{c.author || "Servis"}</div>
+                        {commentAvatarUrl ? (
+                          <img
+                            src={commentAvatarUrl}
+                            alt=""
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 10,
+                              objectFit: "cover",
+                              border: "1px solid var(--border)",
+                            }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 10,
+                              background: "var(--accent-soft)",
+                              color: "var(--accent)",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: 12,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {(commentAuthorName || "?").charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div style={{ fontWeight: 950 }}>{commentAuthorName}</div>
                         {c.pinned && (
                           <div
                             style={{
@@ -7972,7 +8259,8 @@ export default function Orders({
 
                     <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
                   </div>
-                ))}
+                  );
+                })}
 
                 {commentsFor(detailedTicket.id).length === 0 && <div style={{ color: "var(--muted)" }}>Zatím žádné komentáře.</div>}
 
@@ -8004,6 +8292,9 @@ export default function Orders({
           </>
         )}
       </div>
+        </>,
+        document.body
+      )}
 
       {/* ConfirmDialog for soft delete */}
       <ConfirmDialog
@@ -8070,6 +8361,52 @@ export default function Orders({
           setLowStockCallback(null);
         }}
       />
+
+      {canPrintExport && openQuickPrintTicket && quickPrintDropdownRect && (() => {
+        const dropdownWidth = 200;
+        const margin = 8;
+        let left = quickPrintDropdownRect.left;
+        if (left + dropdownWidth > window.innerWidth - margin) left = quickPrintDropdownRect.right - dropdownWidth;
+        if (left < margin) left = margin;
+        const top = quickPrintDropdownRect.top + 6;
+        const maxBottom = window.innerHeight - margin;
+        return createPortal(
+        <div
+          data-quick-print-menu
+          role="listbox"
+          style={{
+            position: "fixed",
+            left,
+            top: Math.min(top, maxBottom - 120),
+            minWidth: dropdownWidth,
+            maxHeight: Math.min(240, window.innerHeight - top - margin),
+            overflowY: "auto",
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+            zIndex: 10001,
+            padding: 6,
+          }}
+        >
+          {[
+            { type: "ticket" as const, label: "Zakázkový list" },
+            { type: "warranty" as const, label: "Zárůční list" },
+            ...((openQuickPrintTicket.diagnosticText?.trim() || (openQuickPrintTicket.diagnosticPhotos && openQuickPrintTicket.diagnosticPhotos.length > 0)) ? [{ type: "diagnostic" as const, label: "Diagnostický protokol" }] : []),
+          ].map(({ type, label }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket(null); quickPrintFromList(openQuickPrintTicket, type, activeServiceId); }}
+              style={{ display: "block", width: "100%", padding: "10px 14px", textAlign: "left", border: "none", background: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "var(--text)" }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      );
+      })()}
     </div>
   );
 }

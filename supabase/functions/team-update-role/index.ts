@@ -6,6 +6,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/** Default capabilities when changing role to member (all allowed). Must match invite-accept and set_member_capabilities whitelist. */
+const DEFAULT_MEMBER_CAPABILITIES: Record<string, boolean> = {
+  can_manage_tickets_basic: true,
+  can_change_ticket_status: true,
+  can_delete_tickets: true,
+  can_manage_ticket_archive: true,
+  can_manage_customers: true,
+  can_manage_statuses: true,
+  can_manage_documents: true,
+  can_print_export: true,
+  can_edit_devices: true,
+  can_edit_inventory: true,
+  can_adjust_inventory_quantity: true,
+  can_edit_service_settings: true,
+};
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -62,26 +78,30 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
 
-    // Verify caller is owner or admin
-    const { data: callerMembership, error: callerError } = await svc
-      .from("service_memberships")
-      .select("role")
-      .eq("service_id", serviceId)
-      .eq("user_id", userId)
-      .single();
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
-    if (callerError || !callerMembership) {
-      return new Response(
-        JSON.stringify({ error: "Caller is not a member of this service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (!isRootOwner) {
+      const { data: callerMembership, error: callerError } = await svc
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", serviceId)
+        .eq("user_id", userId)
+        .single();
 
-    if (callerMembership.role !== "owner" && callerMembership.role !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "Caller must be owner or admin to update roles" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (callerError || !callerMembership) {
+        return new Response(
+          JSON.stringify({ error: "Caller is not a member of this service" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (callerMembership.role !== "owner" && callerMembership.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Caller must be owner or admin to update roles" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Check target user's current role
@@ -116,10 +136,14 @@ serve(async (req) => {
       }
     }
 
-    // Update role
+    // Update role (when switching to member, set default capabilities so they have all allowed)
+    const updatePayload: { role: string; capabilities?: Record<string, boolean> } = { role: roleNorm };
+    if (roleNorm === "member") {
+      updatePayload.capabilities = DEFAULT_MEMBER_CAPABILITIES;
+    }
     const { error: updateError } = await svc
       .from("service_memberships")
-      .update({ role: roleNorm })
+      .update(updatePayload)
       .eq("service_id", serviceId)
       .eq("user_id", targetUserId);
 

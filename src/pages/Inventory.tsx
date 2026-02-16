@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { useActiveRole } from "../hooks/useActiveRole";
 
 const STORAGE_KEY = "jobsheet_inventory_v1";
 const DEVICES_STORAGE_KEY = "jobsheet_devices_v1";
@@ -386,7 +387,12 @@ function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" 
   );
 }
 
-export default function Inventory() {
+type InventoryProps = { activeServiceId: string | null };
+
+export default function Inventory({ activeServiceId }: InventoryProps) {
+  const { hasCapability } = useActiveRole(activeServiceId);
+  const canAdjustInventoryQuantity = hasCapability("can_adjust_inventory_quantity");
+
   const [data, setData] = useState<InventoryData>(() => safeLoadData());
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -430,6 +436,10 @@ export default function Inventory() {
   useEffect(() => {
     safeSaveData(data);
   }, [data]);
+
+  useEffect(() => {
+    if (!canAdjustInventoryQuantity && editingStock) setEditingStock(null);
+  }, [canAdjustInventoryQuantity, editingStock]);
 
   useEffect(() => {
     localStorage.setItem(PRODUCT_DISPLAY_MODE_KEY, productDisplayMode);
@@ -1595,7 +1605,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               ✕
                       </button>
                           </div>
-                        ) : (
+                        ) : canAdjustInventoryQuantity ? (
                       <button
                             onClick={() => setEditingStock(product.id)}
                         style={{
@@ -1612,7 +1622,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       >
                             Upravit sklad
                       </button>
-                        )}
+                        ) : null}
                     </div>
                   </div>
                   );

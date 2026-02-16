@@ -51,8 +51,6 @@ export function OrderList({
             borderRadius: "var(--radius-lg)",
             border: "1px solid var(--border)",
             background: "var(--panel)",
-            backdropFilter: "var(--blur)",
-            WebkitBackdropFilter: "var(--blur)",
             boxShadow: "var(--shadow-soft)",
             textAlign: "center",
             color: "var(--muted)",

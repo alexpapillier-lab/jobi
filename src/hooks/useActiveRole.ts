@@ -9,6 +9,9 @@ type UseActiveRoleReturn = {
   isOwner: boolean;
   isAdmin: boolean; // admin OR owner
   canManageTickets: boolean; // owner/admin OR member with can_manage_ticket_archive capability
+  capabilities: Record<string, boolean>;
+  /** Owner/admin vždy true, u membera podle capabilities */
+  hasCapability: (key: string) => boolean;
 };
 
 export function useActiveRole(activeServiceId: string | null): UseActiveRoleReturn {
@@ -52,12 +55,15 @@ export function useActiveRole(activeServiceId: string | null): UseActiveRoleRetu
   const isOwner = role === "owner";
   const isAdmin = role === "admin" || role === "owner";
   const canManageTickets = isAdmin || (role === "member" && capabilities?.can_manage_ticket_archive === true);
+  const hasCapability = (key: string) => isAdmin || (capabilities?.[key] === true);
 
   return {
     role,
     isOwner,
     isAdmin,
     canManageTickets,
+    capabilities,
+    hasCapability,
   };
 }
 

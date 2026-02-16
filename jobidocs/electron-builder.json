@@ -1,0 +1,30 @@
+{
+  "appId": "com.jobsheet.jobidocs",
+  "productName": "JobiDocs",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist",
+    "dist-electron"
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": [
+      "dir",
+      "dmg",
+      "zip"
+    ]
+  },
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ]
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "alexpapillier-lab",
+    "repo": "jobi"
+  }
+}

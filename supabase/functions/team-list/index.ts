@@ -69,44 +69,54 @@ serve(async (req) => {
       );
     }
 
-    // Verify user is owner or admin in service_memberships (authorization via SQL filter)
-    // All queries run as authenticated user (via RLS)
-    const { data: membership, error: membershipError } = await supabase
-      .from("service_memberships")
-      .select("service_id, role, capabilities")
-      .eq("service_id", serviceId)
-      .eq("user_id", userId)
-      .single();
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
-    // Debug: log first DB query (membership check)
-    console.log("[team-list] membership query err:", {
-      code: membershipError?.code ?? null,
-      message: membershipError?.message ?? null,
-      hasData: !!membership,
-      userId: userId,
-      serviceId: serviceId
-    });
+    let memberships: { user_id: string; service_id: string; role: string; created_at: string; capabilities: unknown }[] | null = null;
+    let membersError: { message: string } | null = null;
 
-    if (membershipError || !membership) {
-      return new Response(
-        JSON.stringify({ error: "User is not a member of this service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (isRootOwner) {
+      // Root owner can view team for any service – use service role to fetch
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const adminClient = createClient(supabaseUrl, serviceKey);
+      const res = await adminClient
+        .from("service_memberships")
+        .select("user_id, service_id, role, created_at, capabilities")
+        .eq("service_id", serviceId)
+        .order("created_at", { ascending: true });
+      memberships = res.data;
+      membersError = res.error;
+    } else {
+      // Verify user is owner or admin in service_memberships
+      const { data: membership, error: membershipError } = await supabase
+        .from("service_memberships")
+        .select("service_id, role, capabilities")
+        .eq("service_id", serviceId)
+        .eq("user_id", userId)
+        .single();
+
+      if (membershipError || !membership) {
+        return new Response(
+          JSON.stringify({ error: "User is not a member of this service" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (membership.role !== "owner" && membership.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "User must be owner or admin to view team members" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const res = await supabase
+        .from("service_memberships")
+        .select("user_id, service_id, role, created_at, capabilities")
+        .eq("service_id", serviceId)
+        .order("created_at", { ascending: true });
+      memberships = res.data;
+      membersError = res.error;
     }
-
-    if (membership.role !== "owner" && membership.role !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "User must be owner or admin to view team members" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Fetch members from service_memberships (including capabilities)
-    const { data: memberships, error: membersError } = await supabase
-      .from("service_memberships")
-      .select("user_id, service_id, role, created_at, capabilities")
-      .eq("service_id", serviceId)
-      .order("created_at", { ascending: true });
 
     // Debug: log memberships list query
     console.log(
@@ -167,8 +177,26 @@ serve(async (req) => {
       })
     );
 
+    // Pending invites – root owner uses adminClient (RLS may block), others use supabase
+    const invitesClient = isRootOwner ? adminClient : supabase;
+    const { data: invites, error: invitesError } = await invitesClient
+      .from("service_invites")
+      .select("id, email, role, created_at, expires_at")
+      .eq("service_id", serviceId)
+      .is("accepted_at", null)
+      .order("created_at", { ascending: false });
+
+    if (invitesError) {
+      console.error("[team-list] invites query err:", invitesError.message);
+      // Vrátíme aspoň members, invites prázdné
+      return new Response(
+        JSON.stringify({ members: membersWithEmails, invites: [] }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ members: membersWithEmails }),
+      JSON.stringify({ members: membersWithEmails, invites: invites ?? [] }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

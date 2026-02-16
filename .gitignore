@@ -28,6 +28,13 @@ dist-ssr
 .env.*
 !.env.example
 
+# OTA signing secrets (local only)
+docs/OTA_SIGNING_SECRETS.md
+
+# DB backup (obsahuje citlivé cesty/URL)
+backup/
+.env.backup
+
 # Tauri
 src-tauri/target
 src-tauri/gen
@@ -38,3 +45,8 @@ src-tauri/gen
 
 # Coverage
 coverage
+
+# Build / release artefakty (zip, test release složka)
+jobi-test-release/
+jobi-test-release.zip
+jobi-jobidocs-instalace.zip

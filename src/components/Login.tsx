@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../auth/AuthProvider";
-import { getPendingInviteToken, setPendingInviteToken } from "../lib/pendingInvite";
+import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const { signIn, signUp, configError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [inviteToken, setInviteToken] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [prefillLoading, setPrefillLoading] = useState(false);
+  const [prefillError, setPrefillError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -98,6 +101,23 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
     };
   }, []);
 
+  const fetchInvitePrefill = async () => {
+    const token = inviteToken.trim();
+    if (!token || !supabase) return;
+    setPrefillError("");
+    setPrefillLoading(true);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("invite-info", { body: { token } });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+      if (data?.email) setEmail(data.email);
+    } catch (err: any) {
+      setPrefillError(err?.message || "Nepodařilo načíst pozvánku");
+    } finally {
+      setPrefillLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -105,12 +125,22 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
 
     try {
       if (isSignUp) {
-        // Validate that invite token is required for registration
         if (!inviteToken || !inviteToken.trim()) {
-          setError("Registrační token je povinný pro vytvoření účtu.");
+          setError("Kód z pozvánky je povinný.");
           setIsLoading(false);
           return;
         }
+        if (password !== confirmPassword) {
+          setError("Hesla se neshodují.");
+          setIsLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          setError("Heslo musí mít alespoň 6 znaků.");
+          setIsLoading(false);
+          return;
+        }
+        setPendingInviteToken(inviteToken.trim());
         await signUp(email, password);
         setError("Registrace úspěšná! Zkontrolujte svůj email pro potvrzení.");
         setIsLoading(false);
@@ -282,6 +312,170 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
             </div>
           )}
 
+          {isSignUp && (
+            <>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#1e293b",
+                    marginBottom: 8,
+                  }}
+                >
+                  Kód z pozvánky
+                </label>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <input
+                    type="text"
+                    value={inviteToken}
+                    onChange={(e) => {
+                      const newToken = e.target.value;
+                      setInviteToken(newToken);
+                      setPrefillError("");
+                      if (newToken.trim()) {
+                        setPendingInviteToken(newToken.trim());
+                      } else {
+                        clearPendingInviteToken();
+                      }
+                    }}
+                    placeholder="Zadej kód z e-mailu"
+                    required
+                    style={{
+                      flex: 1,
+                      padding: "16px 18px",
+                      borderRadius: 12,
+                      border: error && !inviteToken.trim() ? "2px solid #ef4444" : "1px solid #e2e8f0",
+                      background: "#ffffff",
+                      color: "#1e293b",
+                      fontSize: 15,
+                      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                      outline: "none",
+                      transition: "all 0.2s ease",
+                      boxShadow: error && !inviteToken.trim() ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "#8b5cf6";
+                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "#e2e8f0";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={fetchInvitePrefill}
+                    disabled={!inviteToken.trim() || prefillLoading}
+                    style={{
+                      padding: "16px 18px",
+                      borderRadius: 12,
+                      border: "1px solid #8b5cf6",
+                      background: prefillLoading ? "#e2e8f0" : "#8b5cf6",
+                      color: "#fff",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: prefillLoading ? "not-allowed" : "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {prefillLoading ? "…" : "Načíst pozvánku"}
+                  </button>
+                </div>
+                {prefillError && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#dc2626" }}>{prefillError}</div>
+                )}
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#1e293b",
+                    marginBottom: 8,
+                  }}
+                >
+                  Email (doplněn z pozvánky)
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="vas@email.cz"
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "16px 18px",
+                    borderRadius: 12,
+                    border: error ? "2px solid #ef4444" : "1px solid #e2e8f0",
+                    background: "#ffffff",
+                    color: "#1e293b",
+                    fontSize: 15,
+                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                    outline: "none",
+                    transition: "all 0.2s ease",
+                    boxShadow: error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "#8b5cf6";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = error ? "#ef4444" : "#e2e8f0";
+                    e.currentTarget.style.boxShadow = error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none";
+                  }}
+                />
+              </div>
+            </>
+          )}
+
+          {!isSignUp && (
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#1e293b",
+                  marginBottom: 8,
+                }}
+              >
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="vas@email.cz"
+                autoFocus
+                required
+                style={{
+                  width: "100%",
+                  padding: "16px 18px",
+                  borderRadius: 12,
+                  border: error ? "2px solid #ef4444" : "1px solid #e2e8f0",
+                  background: "#ffffff",
+                  color: "#1e293b",
+                  fontSize: 15,
+                  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                  outline: "none",
+                  transition: "all 0.2s ease",
+                  boxShadow: error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "#8b5cf6";
+                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = error ? "#ef4444" : "#e2e8f0";
+                  e.currentTarget.style.boxShadow = error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none";
+                }}
+              />
+            </div>
+          )}
+
           <div>
             <label
               style={{
@@ -292,14 +486,13 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                 marginBottom: 8,
               }}
             >
-              Email
+              Heslo
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="vas@email.cz"
-              autoFocus
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={isSignUp ? "Alespoň 6 znaků" : "••••••••"}
               required
               style={{
                 width: "100%",
@@ -336,86 +529,38 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                   marginBottom: 8,
                 }}
               >
-                Registrační token
+                Heslo znovu
               </label>
               <input
-                type="text"
-                value={inviteToken}
-                onChange={(e) => {
-                  const newToken = e.target.value;
-                  setInviteToken(newToken);
-                  if (newToken.trim()) {
-                    setPendingInviteToken(newToken.trim());
-                  }
-                }}
-                placeholder="Token z pozvánky"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
                 required
                 style={{
                   width: "100%",
                   padding: "16px 18px",
                   borderRadius: 12,
-                  border: error && !inviteToken.trim() ? "2px solid #ef4444" : "1px solid #e2e8f0",
+                  border: error && password !== confirmPassword ? "2px solid #ef4444" : "1px solid #e2e8f0",
                   background: "#ffffff",
                   color: "#1e293b",
                   fontSize: 15,
                   fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                   outline: "none",
                   transition: "all 0.2s ease",
-                  boxShadow: error && !inviteToken.trim() ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                  boxShadow: error && password !== confirmPassword ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.borderColor = "#8b5cf6";
                   e.currentTarget.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#e2e8f0";
-                  e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.borderColor = error && password !== confirmPassword ? "#ef4444" : "#e2e8f0";
+                  e.currentTarget.style.boxShadow = error && password !== confirmPassword ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none";
                 }}
               />
             </div>
           )}
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: 13,
-                fontWeight: 600,
-                color: "#1e293b",
-                marginBottom: 8,
-              }}
-            >
-              Heslo
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={{
-                width: "100%",
-                padding: "16px 18px",
-                borderRadius: 12,
-                border: error ? "2px solid #ef4444" : "1px solid #e2e8f0",
-                background: "#ffffff",
-                color: "#1e293b",
-                fontSize: 15,
-                fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                outline: "none",
-                transition: "all 0.2s ease",
-                boxShadow: error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#8b5cf6";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(139, 92, 246, 0.1)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = error ? "#ef4444" : "#e2e8f0";
-                e.currentTarget.style.boxShadow = error ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none";
-              }}
-            />
-          </div>
 
           {!isSignUp && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -566,6 +711,8 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
             onClick={() => {
               setIsSignUp(!isSignUp);
               setError("");
+              setPrefillError("");
+              if (!isSignUp) setConfirmPassword("");
             }}
             style={{
               background: "none",
@@ -588,9 +735,14 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
               e.currentTarget.style.background = "transparent";
             }}
           >
-            {isSignUp ? "Mám už účet" : "Mám registrační token"}
+            {isSignUp ? "Mám už účet" : "Mám kód z pozvánky"}
           </button>
         </div>
+        {isSignUp && (
+          <p style={{ marginTop: 12, fontSize: 13, color: "var(--muted)", textAlign: "center", maxWidth: 320 }}>
+            Už máš účet? Zadej kód z pozvánky, přepni na „Mám už účet“ a přihlas se – přidáš se do servisu bez nové registrace.
+          </p>
+        )}
       </div>
     </div>
   );

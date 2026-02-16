@@ -6,6 +6,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/** Default capabilities for new members: all allowed (admin can turn off later). Must match whitelist in set_member_capabilities RPC. */
+const DEFAULT_MEMBER_CAPABILITIES: Record<string, boolean> = {
+  can_manage_tickets_basic: true,
+  can_change_ticket_status: true,
+  can_delete_tickets: true,
+  can_manage_ticket_archive: true,
+  can_manage_customers: true,
+  can_manage_statuses: true,
+  can_manage_documents: true,
+  can_print_export: true,
+  can_edit_devices: true,
+  can_edit_inventory: true,
+  can_adjust_inventory_quantity: true,
+  can_edit_service_settings: true,
+};
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -164,20 +180,25 @@ serve(async (req) => {
       );
     }
 
-    // Create membership
+    // Create membership (for role 'member' set default capabilities to all true)
+    const insertPayload: { service_id: string; user_id: string; role: string; capabilities?: Record<string, boolean> } = {
+      service_id: invite.service_id,
+      user_id: userId,
+      role: invite.role,
+    };
+    if (invite.role === "member") {
+      insertPayload.capabilities = DEFAULT_MEMBER_CAPABILITIES;
+    }
     console.log("[invite-accept] Creating membership", { 
       service_id: invite.service_id, 
       user_id: userId, 
-      role: invite.role 
+      role: invite.role,
+      hasDefaultCapabilities: invite.role === "member",
     });
     
     const { data: membership, error: membershipErr } = await adminClient
       .from("service_memberships")
-      .insert({
-        service_id: invite.service_id,
-        user_id: userId,
-        role: invite.role,
-      })
+      .insert(insertPayload)
       .select("service_id, user_id, role")
       .single();
 

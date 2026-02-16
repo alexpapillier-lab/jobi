@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useMemo, useState, useEffect, useRef, useLayoutEffect, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
@@ -8,15 +8,20 @@ import { safeLoadCompanyData } from "./Orders";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
+import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DocumentsSettings } from "./Settings/DocumentsSettings";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
+import { useUserProfile } from "../hooks/useUserProfile";
+import { useIsRootOwner } from "../hooks/useIsRootOwner";
+import { showToast } from "../components/Toast";
 
-type SettingsCategory = "service" | "orders" | "appearance";
+type SettingsCategory = "service" | "orders" | "appearance" | "profile";
 type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_team"
+  | "service_basic" | "service_contact" | "service_team" | "service_owner"
   | "orders_statuses" | "orders_filters" | "orders_documents" | "orders_deleted"
-  | "appearance_theme" | "appearance_ui";
+  | "appearance_theme" | "appearance_ui"
+  | "profile_me";
 
 type SettingsSection = {
   category: SettingsCategory;
@@ -34,7 +39,7 @@ type UIConfig = {
     };
   };
   orders: {
-    displayMode: "list" | "grid" | "compact";
+    displayMode: "list" | "grid" | "compact" | "compact-extra";
   };
 };
 
@@ -71,7 +76,7 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" ? displayMode : d.orders.displayMode,
+        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
       },
     };
   } catch {
@@ -87,7 +92,7 @@ function saveUIConfig(cfg: UIConfig) {
 
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
-
+const APP_VERSION = "0.1.0";
 
 type CompanyData = {
   abbreviation: string;
@@ -107,17 +112,113 @@ type CompanyData = {
 // safeLoadCompanyData is imported from Orders.tsx
 // defaultCompanyData is not needed here as it's only used internally in Orders.tsx
 
+function ProfileSettingsSection() {
+  const { profile, loading, error, setProfile } = useUserProfile();
+  const [nickname, setNickname] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setNickname(profile.nickname ?? "");
+      setAvatarUrl(profile.avatarUrl ?? "");
+    }
+  }, [profile]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await setProfile({ nickname: nickname.trim() || null, avatarUrl: avatarUrl.trim() || null });
+      showToast("Profil uložen", "success");
+    } catch {
+      showToast("Nepodařilo se uložit profil", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const border = "1px solid var(--border)";
+  return (
+    <Card>
+      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Fotka a přezdívka</div>
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+        Vaše přezdívka a fotka se zobrazí u komentářů a u aktivit v zakázkách, aby ostatní viděli, kdo co napsal nebo upravil.
+      </div>
+      {loading ? (
+        <div style={{ color: "var(--muted)", fontSize: 13 }}>Načítání…</div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {error && (
+            <div style={{ padding: 12, borderRadius: 12, background: "var(--panel-2)", border, color: "var(--text)", fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+          <div>
+            <FieldLabel>Přezdívka (nick)</FieldLabel>
+            <TextInput
+              value={nickname}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setNickname(e.target.value)}
+              placeholder="např. Honza, Servisák"
+            />
+          </div>
+          <div>
+            <FieldLabel>URL fotky (avatar)</FieldLabel>
+            <TextInput
+              type="url"
+              value={avatarUrl}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setAvatarUrl(e.target.value)}
+              placeholder="https://… nebo nechte prázdné"
+            />
+          </div>
+          {avatarUrl && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>Náhled:</span>
+              <img
+                src={avatarUrl}
+                alt="Avatar"
+                style={{ width: 40, height: 40, borderRadius: 12, objectFit: "cover", border }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: "12px 24px",
+              borderRadius: 12,
+              border: "none",
+              background: "var(--accent)",
+              color: "var(--accent-fg)",
+              fontWeight: 900,
+              fontSize: 13,
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.7 : 1,
+              transition: "var(--transition-smooth)",
+              boxShadow: "var(--shadow-soft)",
+            }}
+          >
+            {saving ? "Ukládám…" : "Uložit profil"}
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 type SettingsProps = {
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
-  services: Array<{ service_id: string; service_name: string; role: string }>;
+  services: Array<{ service_id: string; service_name: string; role: string; active?: boolean }>;
+  refreshServices?: () => Promise<void>;
 };
 
-export default function Settings({ activeServiceId, setActiveServiceId, services }: SettingsProps) {
+export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices }: SettingsProps) {
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
-  const { isAdmin } = useActiveRole(activeServiceId);
+  const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const isRootOwner = useIsRootOwner();
+  const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
   const { createStatus, deleteStatus, saveServiceSettings } = useSettingsActions({ activeServiceId });
   
   // Helper to handle status create/update (they use the same upsert function)
@@ -127,6 +228,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [section, setSection] = useState<SettingsSection>({ category: "service", subsection: "service_basic" });
   const [uiCfg, setUiCfg] = useState<UIConfig>(defaultUIConfig());
   const [companyData, setCompanyData] = useState<CompanyData>(() => safeLoadCompanyData());
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
+  const [inviteAcceptLoading, setInviteAcceptLoading] = useState(false);
   
   
   // Calculate tooltip position
@@ -328,7 +431,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     fontSize: 13,
   };
 
-  const categories = [
+  const categories = useMemo(() => [
     {
       category: "service" as const,
       label: "Servis",
@@ -340,8 +443,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         { key: "service_basic" as const, label: "Základní údaje" },
-        { key: "service_contact" as const, label: "Kontaktní údaje" },
-        { key: "service_team" as const, label: "Tým / Přístupy" },
+        ...(canManageDocuments ? [{ key: "service_contact" as const, label: "Kontaktní údaje" }] : []),
+        ...(isAdmin ? [{ key: "service_team" as const, label: "Tým / Přístupy" }] : []),
+        ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner" }] : []),
       ],
     },
     {
@@ -359,7 +463,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "orders_statuses" as const, label: "Statusy zakázek" },
         { key: "orders_filters" as const, label: "Filtry zakázek" },
-        { key: "orders_documents" as const, label: "Dokumenty" },
+        ...(canManageDocuments ? [{ key: "orders_documents" as const, label: "Dokumenty" }] : []),
         { key: "orders_deleted" as const, label: "Smazané zakázky" },
       ],
     },
@@ -380,7 +484,37 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_theme" as const, label: "Barevné téma" },
       ],
     },
-  ];
+    {
+      category: "profile" as const,
+      label: "Můj profil",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      ),
+      subsections: [
+        { key: "profile_me" as const, label: "Fotka a přezdívka" },
+      ],
+    },
+  ], [isRootOwner, isAdmin, canManageDocuments]);
+
+  // Member nemá přístup k Tým/Přístupy – při výběru servisu kde je member přesměruj z service_team
+  useEffect(() => {
+    if (section.subsection === "service_team" && !isAdmin) {
+      setSection((prev) => ({ ...prev, subsection: "service_basic" }));
+    }
+  }, [section.subsection, isAdmin]);
+
+  // Bez can_manage_documents skrýt Kontaktní údaje a Dokumenty – při přepnutí role přesměruj
+  useEffect(() => {
+    if (!canManageDocuments && (section.subsection === "service_contact" || section.subsection === "orders_documents")) {
+      setSection((prev) => ({
+        ...prev,
+        subsection: prev.subsection === "service_contact" ? "service_basic" : "orders_statuses",
+      }));
+    }
+  }, [section.subsection, canManageDocuments]);
 
   const activeCategory = categories.find((cat) => cat.category === section.category) || categories[0];
 
@@ -721,6 +855,84 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {section.subsection === "service_team" && (
         <TeamSettings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} />
       )}
+
+      {/* Owner – pouze pro root ownera; správa servisů (vytvoření, mazání, deaktivace atd.) */}
+      {section.subsection === "service_owner" && refreshServices && (
+        <OwnerSettings services={services} refreshServices={refreshServices} />
+      )}
+
+      {/* Přidat servis pomocí kódu pozvánky – pro přihlášené uživatele */}
+      {section.category === "service" && (
+        <div style={{ marginTop: 24 }}>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Přidat servis pomocí pozvánky</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Máš kód z e-mailu pozvánky do dalšího servisu? Zadej ho a přidáš se bez odhlášení.
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                <FieldLabel>Kód z e-mailu</FieldLabel>
+                <TextInput
+                  type="text"
+                  value={inviteCodeInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setInviteCodeInput(e.target.value)}
+                  placeholder="Vlož kód z pozvánky"
+                  disabled={inviteAcceptLoading}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={!inviteCodeInput.trim() || inviteAcceptLoading}
+                onClick={async () => {
+                  const token = inviteCodeInput.trim();
+                  if (!token || !refreshServices || !supabase) return;
+                  setInviteAcceptLoading(true);
+                  try {
+                    const { data, error } = await supabase.functions.invoke("invite-accept", { body: { token } });
+                  if (error) {
+                    const res = (error as any)?.context as Response | undefined;
+                    let detail = "";
+                    if (res) {
+                      try {
+                        detail = await res.clone().text();
+                      } catch {}
+                    }
+                    showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
+                    return;
+                  }
+                  if (data?.serviceId) {
+                    showToast("Pozvánka byla přijata – servis je přidaný", "success");
+                    setInviteCodeInput("");
+                    await refreshServices();
+                  }
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
+                } finally {
+                  setInviteAcceptLoading(false);
+                }
+              }}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                border: "none",
+                background: "var(--accent)",
+                color: "var(--accent-text)",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: inviteCodeInput.trim() && !inviteAcceptLoading ? "pointer" : "not-allowed",
+                opacity: inviteCodeInput.trim() && !inviteAcceptLoading ? 1 : 0.6,
+              }}
+            >
+              {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MŮJ PROFIL - FOTKA A PŘEZDÍVKA */}
+      {section.subsection === "profile_me" && <ProfileSettingsSection />}
 
       {/* VZHLED A CHOVÁNÍ - BAREVNÉ TÉMA */}
       {section.subsection === "appearance_theme" && (
@@ -1419,6 +1631,45 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     </div>
                   )
                 },
+                { 
+                  value: "compact-extra", 
+                  label: "Kompaktní extra", 
+                  description: "Nejvíce zakázek na obrazovku, jeden řádek na zakázku",
+                  preview: (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8 }}>
+                      <div style={{ 
+                        padding: "4px 8px", 
+                        borderRadius: 4, 
+                        border: "1px solid var(--border)", 
+                        background: "var(--panel)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 8,
+                      }}>
+                        <span style={{ fontWeight: 700, minWidth: 52 }}>#ORD-001</span>
+                        <span style={{ color: "var(--muted)", minWidth: 36 }}>12.12.</span>
+                        <span style={{ fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>iPhone 15 Pro</span>
+                        <span style={{ color: "var(--muted)" }}>J. Novák</span>
+                      </div>
+                      <div style={{ 
+                        padding: "4px 8px", 
+                        borderRadius: 4, 
+                        border: "1px solid var(--border)", 
+                        background: "var(--panel)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 8,
+                      }}>
+                        <span style={{ fontWeight: 700, minWidth: 52 }}>#ORD-002</span>
+                        <span style={{ color: "var(--muted)", minWidth: 36 }}>13.12.</span>
+                        <span style={{ fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Samsung S23</span>
+                        <span style={{ color: "var(--muted)" }}>M. Svobodová</span>
+                      </div>
+                    </div>
+                  )
+                },
               ].map((mode) => {
                 const isSelected = uiCfg.orders?.displayMode === mode.value;
                 return (
@@ -1428,7 +1679,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       e.preventDefault();
                       const newCfg = {
                         ...uiCfg,
-                        orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" },
+                        orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" | "compact-extra" },
                       };
                       setUiCfg(newCfg);
                       saveUIConfig(newCfg);
@@ -1466,7 +1717,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         onChange={() => {
                           const newCfg = {
                             ...uiCfg,
-                            orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" },
+                            orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" | "compact-extra" },
                           };
                           setUiCfg(newCfg);
                           saveUIConfig(newCfg);
@@ -1548,12 +1799,56 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {section.subsection === "orders_deleted" && (
         <DeletedTicketsSettings activeServiceId={activeServiceId} />
       )}
+
+      {/* Pro podporu – identifikátory pro diagnostiku */}
+      <div style={{ marginTop: 24 }}>
+      <Card>
+        <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pro podporu</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+          Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
+          <div
+            title="Kliknutím zkopírovat"
+            onClick={() => activeServiceId && navigator.clipboard.writeText(activeServiceId)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: "var(--panel-2)",
+              border: "1px solid var(--border)",
+              cursor: activeServiceId ? "pointer" : "default",
+              userSelect: "text",
+              color: "var(--text)",
+            }}
+          >
+            <span style={{ color: "var(--muted)", marginRight: 8 }}>serviceId:</span>
+            {activeServiceId ?? "—"}
+          </div>
+          <div
+            title="Kliknutím zkopírovat"
+            onClick={() => navigator.clipboard.writeText(APP_VERSION)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: "var(--panel-2)",
+              border: "1px solid var(--border)",
+              cursor: "pointer",
+              userSelect: "text",
+              color: "var(--text)",
+            }}
+          >
+            <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
+            {APP_VERSION}
+          </div>
+        </div>
+      </Card>
+      </div>
     </div>
   );
 }
 
-// Service Picker Component (similar to LanguagePicker)
-function ServicePicker({ 
+// Service Picker Component (similar to LanguagePicker) – reserved for future use
+export function ServicePicker({ 
   value, 
   onChange, 
   services 
@@ -1711,8 +2006,8 @@ function ServicePicker({
   );
 }
 
-// Role Picker Component
-function RolePicker({ 
+// Role Picker Component – reserved for future use
+export function RolePicker({ 
   value, 
   onChange, 
   disabled,
