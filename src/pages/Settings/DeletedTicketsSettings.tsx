@@ -12,33 +12,29 @@ type DeletedTicketsSettingsProps = {
 export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettingsProps) {
   const { session } = useAuth();
   const [deletedTickets, setDeletedTickets] = useState<any[]>([]);
+  const [deletedByMap, setDeletedByMap] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Restore dialog states
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [restoreTicketId, setRestoreTicketId] = useState<string | null>(null);
 
-  // Load deleted tickets when activeServiceId changes
+  // Load deleted tickets and who deleted them (from ticket_history)
   useEffect(() => {
     if (!activeServiceId || !session || !supabase) {
       setDeletedTickets([]);
+      setDeletedByMap({});
       setError(null);
       return;
     }
 
     const loadDeletedTickets = async () => {
+      if (!supabase) return;
       setLoading(true);
       setError(null);
 
       try {
-        if (!supabase) {
-          setError("Chyba konfigurace: Supabase client není dostupný");
-          setDeletedTickets([]);
-          setLoading(false);
-                                return;
-                              }
-
         const { data, error: fetchError } = await supabase
           .from("tickets")
           .select("id, title, status, customer_name, customer_phone, created_at, deleted_at")
@@ -49,21 +45,49 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
         if (fetchError) {
           setError(`Chyba při načítání smazaných zakázek: ${fetchError.message}`);
           setDeletedTickets([]);
+          setDeletedByMap({});
           setLoading(false);
-                                return;
-                              }
-
-        if (data) {
-          setDeletedTickets(data || []);
-          setError(null);
-        } else {
-          setDeletedTickets([]);
+          return;
         }
-        setLoading(false);
-                            } catch (err) {
+
+        const tickets = data || [];
+        setDeletedTickets(tickets);
+
+        if (tickets.length === 0) {
+          setDeletedByMap({});
+          setLoading(false);
+          return;
+        }
+
+        const ticketIds = tickets.map((t: any) => t.id);
+        const { data: historyRows } = await (supabase as any)
+          .from("ticket_history")
+          .select("ticket_id, changed_by")
+          .in("ticket_id", ticketIds)
+          .eq("action", "deleted");
+
+        const userIds = [...new Set((historyRows || []).map((r: any) => r.changed_by).filter(Boolean))];
+        let nicknames: Record<string, string> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
+          if (profiles) {
+            for (const p of profiles) {
+              if (p.nickname) nicknames[p.id] = p.nickname;
+            }
+          }
+        }
+
+        const map: Record<string, string | null> = {};
+        for (const r of historyRows || []) {
+          map[r.ticket_id] = (r.changed_by && nicknames[r.changed_by]) || r.changed_by ? `${String(r.changed_by).slice(0, 8)}…` : null;
+        }
+        setDeletedByMap(map);
+      } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
         setError(`Chyba při načítání smazaných zakázek: ${errorMessage}`);
         setDeletedTickets([]);
+        setDeletedByMap({});
+      } finally {
         setLoading(false);
       }
     };
@@ -143,6 +167,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
                   {ticket.deleted_at && (
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                       Smazáno: {new Date(ticket.deleted_at).toLocaleString("cs-CZ")}
+                      {deletedByMap[ticket.id] && ` · ${deletedByMap[ticket.id]}`}
                     </div>
                   )}
                 </div>

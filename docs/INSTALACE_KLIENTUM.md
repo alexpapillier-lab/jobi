@@ -59,4 +59,102 @@ Potřebuješ **Apple Developer účet** (cca 99 USD/rok): https://developer.appl
 - **Podpis** (Apple Developer ID na Macu) zlepší důvěru a sníží varování; pro hladkou instalaci na současných Macích je ideální i **notarizace**.
 - **Nemusíš** mít nic podepsané, aby OTA fungovalo – OTA podepisování (Tauri updater) je nezávislé na tom, jestli je samotná .app podepsaná Apple certifikátem.
 
-Když budeš chtít konkrétní kroky pro Tauri (signingIdentity, notarize skript) nebo pro JobiDocs (CSC_*, notarize), můžeme je doplnit do tohoto návodu nebo do OTA_SETUP_KROKY.
+---
+
+## Notarizace Jobi – konkrétní kroky
+
+Notarizace = pošleš Apple podepsanou .app (v zipu), Apple ji proskenuje a vrátí „schváleno“. Ty pak k .app připíchneš notarizační lístek. Na cizích Macích pak Gatekeeper aplikaci neblokuje.
+
+### 1. App-specific heslo (jednou)
+
+- Jdi na **https://appleid.apple.com** → přihlášení → **Sign-In and Security** → **App-Specific Passwords**.
+- Vytvoř nové heslo (název např. „Notarization Jobi“) a **ulož si ho** – zobrazí se jen jednou.
+
+### 2. Build podepsané aplikace
+
+- V `tauri.conf.json` máš už `signingIdentity` (Developer ID Application).
+- Pro notarizaci Apple vyžaduje **Hardened Runtime**. V `tauri.conf.json` v `bundle.macOS` nastav `"hardenedRuntime": true`. (Pokud notarizace selže s chybou v logu, může být potřeba doplnit `entitlements` – pak dle chyby.)
+- Spusť build:  
+  `npm run tauri:build:universal:signed`  
+  Výstup: `src-tauri/target/release/bundle/macos/jobi.app` (a OTA artefakty).
+
+### 3. Odeslání k Apple (notarytool)
+
+V terminálu (nahraď e-mail a heslo):
+
+```bash
+cd /Volumes/backup/jobi
+
+# .app zabal do zipu (Apple chce zip)
+ditto -c -k --keepParent src-tauri/target/release/bundle/macos/jobi.app jobi-notarize.zip
+
+# Odeslat k Apple (--wait = počkat na výsledek)
+xcrun notarytool submit jobi-notarize.zip \
+  --apple-id "TVŮJ_APPLE_ID_EMAIL" \
+  --password "APP-SPECIFIC-HESLO" \
+  --team-id "8ZC264M873" \
+  --wait
+```
+
+- **Apple ID** = e-mail tvého Apple účtu (stejný jako Developer).
+- **Password** = app-specific heslo z kroku 1 (ne běžné heslo k účtu).
+- **Team ID** = `8ZC264M873` (z certifikátu).
+
+Pokud je vše v pořádku, ukončí to s „Accepted“.
+
+### 4. Připíchnutí notarizačního lístku (staple)
+
+Po „Accepted“ připoj lístek k .app:
+
+```bash
+xcrun stapler staple src-tauri/target/release/bundle/macos/jobi.app
+```
+
+Ověření:
+
+```bash
+xcrun stapler validate src-tauri/target/release/bundle/macos/jobi.app
+```
+
+### 5. Distribuce
+
+Notarizovaná je teď **jobi.app** v `src-tauri/target/release/bundle/macos/`. Můžeš:
+
+- Znovu zabalit do **.dmg** nebo **.zip** a dát klientům (např. na web / GitHub Releases).
+- Nebo použít už existující `jobi.app.tar.gz` pro OTA – ale pro OTA updater se obvykle používá stejný podepsaný .app; pokud chceš notarizovaný i pro OTA, musíš notarizovat .app a z ní pak vytvořit .tar.gz (nebo notarizovat až výsledný .tar.gz – Apple ale notarizuje .app, .dmg, .pkg, .zip; pro .app v zipu notarizuješ zip, pak staple na .app uvnitř, jak výše).
+
+**Jobi .dmg (jeden soubor ke sdílení):** Stačí nasdílet Jobi .dmg – klient si nainstaluje jen Jobi. JobiDocs si stáhne až v aplikaci (dialog „Stáhnout JobiDocs“ otevře odkaz na GitHub Releases). Pro vytvoření .dmg z notarizované .app spusť po notarizaci:  
+`./scripts/create-jobi-dmg.sh`  
+Výstup: `jobi-<verze>.dmg` v kořeni projektu; ten nahraj na release.
+
+**Poznámka:** Skript `scripts/notarize-jobi.sh` (viz níže) to dělá za tebe, když nastavíš env proměnné.
+
+### 6. OTA s notarizovanou .app (každý release)
+
+Aby i updaty stažené přes aplikaci byly notarizované:
+
+1. Build: `npm run tauri:build:universal:signed`
+2. Notarizace: `export NOTARY_APPLE_ID=... NOTARY_APPLE_PASSWORD=... NOTARY_TEAM_ID=...` a `./scripts/notarize-jobi.sh`
+3. Po „Accepted“ spusť **`./scripts/pack-notarized-ota.sh`** (načte klíč z `~/.tauri/jobi.key`). Skript zabalí notarizovanou .app do .tar.gz, podepíše pro OTA a vygeneruje `latest.json`.
+4. Volitelně: **`./scripts/create-jobi-dmg.sh`** – vytvoří `jobi-<verze>.dmg` pro přímé sdílení (klient stáhne jeden .dmg, JobiDocs pak přes odkaz v aplikaci).
+5. Nahraj na GitHub Release: `latest.json`, `jobi.app.tar.gz`, `jobi.app.tar.gz.sig`; pokud jsi vytvořil .dmg, přidej i `jobi-<verze>.dmg`.
+
+---
+
+## Skript pro notarizaci (volitelně)
+
+V repozitáři je skript `scripts/notarize-jobi.sh`. Před spuštěním nastav v terminálu:
+
+```bash
+export NOTARY_APPLE_ID="tvuj@email.com"
+export NOTARY_APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx"   # app-specific heslo
+export NOTARY_TEAM_ID="8ZC264M873"
+```
+
+Pak (z kořene projektu, po buildu):
+
+```bash
+./scripts/notarize-jobi.sh
+```
+
+Skript zabalí `src-tauri/target/release/bundle/macos/jobi.app` do zipu, pošle ho do notarytool, počká na výsledek a v případě úspěchu spustí `stapler staple` na .app.

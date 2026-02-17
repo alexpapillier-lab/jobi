@@ -37,8 +37,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "signingIdentity": null,
-      "hardenedRuntime": false,
+      "signingIdentity": "Developer ID Application: Alex Papillier (8ZC264M873)",
+      "hardenedRuntime": true,
       "entitlements": null
     }
   },

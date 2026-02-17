@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { playSaved, playDeleted, areSoundsEnabled } from "../lib/sounds";
 
 type Toast = {
   id: string;
@@ -16,7 +17,14 @@ function notify() {
   listeners.forEach((fn) => fn());
 }
 
+function playToastSound(type: "success" | "error" | "info") {
+  if (!areSoundsEnabled()) return;
+  if (type === "success") playSaved();
+  if (type === "error") playDeleted();
+}
+
 export function showToast(message: string, type: "success" | "error" | "info" = "success") {
+  playToastSound(type);
   const id = `toast-${++toastId}`;
   toasts.push({ id, message, type });
   notify();
@@ -73,7 +81,7 @@ export function ToastContainer() {
 }
 
 function ToastItem({ toast }: { toast: Toast }) {
-  const [isClosing, setIsClosing] = useState(toast.isClosing || false);
+  const isClosing = toast.isClosing ?? false;
   const isSuccess = toast.type === "success";
   const isError = toast.type === "error";
   const bg = isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";

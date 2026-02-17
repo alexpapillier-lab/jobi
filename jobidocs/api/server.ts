@@ -19,16 +19,19 @@ const MAX_ACTIVITY = 20;
 type ServiceEntry = { service_id: string; service_name: string; role: string };
 type CompanyData = Record<string, unknown>;
 type DocumentsConfig = Record<string, unknown>;
+type JobiDocsLogoColors = { background: string; jInner: string; foreground: string };
 let jobiContext: {
   services: ServiceEntry[];
   activeServiceId: string | null;
   documentsConfig?: DocumentsConfig | null;
   companyData?: CompanyData | null;
+  jobidocsLogo?: JobiDocsLogoColors | null;
 } = {
   services: [],
   activeServiceId: null,
   documentsConfig: null,
   companyData: null,
+  jobidocsLogo: null,
 };
 
 function pushActivity(action: "print" | "export", status: "ok" | "error" | "pending", detail?: string) {
@@ -81,6 +84,7 @@ export async function startApiServer(
       activeServiceId?: string | null;
       documentsConfig?: DocumentsConfig | null;
       companyData?: CompanyData | null;
+      jobidocsLogo?: JobiDocsLogoColors | null;
     };
   }>("/v1/context", async (req) => {
     const body = req.body || {};
@@ -88,6 +92,7 @@ export async function startApiServer(
     if (body.activeServiceId !== undefined) jobiContext.activeServiceId = body.activeServiceId ?? null;
     if (body.documentsConfig !== undefined) jobiContext.documentsConfig = body.documentsConfig ?? null;
     if (body.companyData !== undefined) jobiContext.companyData = body.companyData ?? null;
+    if (body.jobidocsLogo !== undefined) jobiContext.jobidocsLogo = body.jobidocsLogo ?? null;
     return jobiContext;
   });
 

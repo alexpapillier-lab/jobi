@@ -151,23 +151,31 @@ function setupAutoUpdate() {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("update-available", (info) => {
-    dialog.showMessageBox(mainWindow ?? undefined, {
-      type: "info",
+    const opts = {
+      type: "info" as const,
       title: "Aktualizace JobiDocs",
       message: `Je k dispozici nová verze ${info.version}.`,
       detail: "Stahování proběhne na pozadí. Po dokončení můžete aplikaci restartovat.",
       buttons: ["OK"],
-    }).catch(() => {});
+    };
+    (mainWindow && !mainWindow.isDestroyed()
+      ? dialog.showMessageBox(mainWindow, opts)
+      : dialog.showMessageBox(opts)
+    ).catch(() => {});
   });
 
   autoUpdater.on("update-downloaded", () => {
-    dialog.showMessageBox(mainWindow ?? undefined, {
-      type: "info",
+    const opts = {
+      type: "info" as const,
       title: "Aktualizace stažena",
       message: "Nová verze je připravena. Restartovat nyní?",
       buttons: ["Restartovat", "Později"],
       defaultId: 0,
-    }).then(({ response }) => {
+    };
+    (mainWindow && !mainWindow.isDestroyed()
+      ? dialog.showMessageBox(mainWindow, opts)
+      : dialog.showMessageBox(opts)
+    ).then(({ response }) => {
       if (response === 0) autoUpdater.quitAndInstall(false, true);
     }).catch(() => {});
   });

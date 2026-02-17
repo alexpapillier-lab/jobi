@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { showToast } from "../components/Toast";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
-const STORAGE_KEY = "jobsheet_devices_v1";
+const STORAGE_KEY = STORAGE_KEYS.DEVICES;
 const INVENTORY_STORAGE_KEY = "jobsheet_inventory_v1";
 
 type Brand = {
@@ -149,6 +150,22 @@ export default function Devices() {
     safeSaveData(data);
   }, [data]);
 
+  // Sync from other tabs (e.g. Sklad or second Devices tab)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as DevicesData;
+          if (parsed.brands && parsed.categories && parsed.models && parsed.repairs) {
+            setData(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [STORAGE_KEY]);
+
   useEffect(() => {
     // Load inventory data to get products
     const loaded = safeLoadInventoryData();
@@ -231,7 +248,9 @@ export default function Devices() {
   const addBrand = () => {
     if (!newBrandName.trim()) return;
     const brand: Brand = { id: uuid(), name: newBrandName.trim(), createdAt: new Date().toISOString() };
-    setData((d) => ({ ...d, brands: [...d.brands, brand] }));
+    const next: DevicesData = { ...data, brands: [...data.brands, brand] };
+    setData(next);
+    safeSaveData(next);
     setNewBrandName("");
     showToast("Značka přidána", "success");
   };
@@ -244,7 +263,9 @@ export default function Devices() {
       name: newCategoryName.trim(),
       createdAt: new Date().toISOString(),
     };
-    setData((d) => ({ ...d, categories: [...d.categories, cat] }));
+    const next: DevicesData = { ...data, categories: [...data.categories, cat] };
+    setData(next);
+    safeSaveData(next);
     setNewCategoryName("");
     showToast("Kategorie přidána", "success");
   };
@@ -257,7 +278,9 @@ export default function Devices() {
       name: newModelName.trim(),
       createdAt: new Date().toISOString(),
     };
-    setData((d) => ({ ...d, models: [...d.models, model] }));
+    const next: DevicesData = { ...data, models: [...data.models, model] };
+    setData(next);
+    safeSaveData(next);
     setNewModelName("");
     showToast("Model přidán", "success");
   };
@@ -275,7 +298,9 @@ export default function Devices() {
       productIds: newRepair.productIds.length > 0 ? newRepair.productIds : undefined,
       createdAt: new Date().toISOString(),
     };
-    setData((d) => ({ ...d, repairs: [...d.repairs, repair] }));
+    const next: DevicesData = { ...data, repairs: [...data.repairs, repair] };
+    setData(next);
+    safeSaveData(next);
     setNewRepair({ name: "", price: "", time: "", details: "", costs: "", productIds: [], modelIds: [], productSearch: "", modelSearch: "" });
     showToast("Oprava přidána", "success");
   };
@@ -283,65 +308,79 @@ export default function Devices() {
   const deleteBrand = (id: string) => {
     const catIds = data.categories.filter((c) => c.brandId === id).map((c) => c.id);
     const modelIds = data.models.filter((m) => catIds.includes(m.categoryId)).map((m) => m.id);
-    setData((d) => ({
-      brands: d.brands.filter((b) => b.id !== id),
-      categories: d.categories.filter((c) => c.brandId !== id),
-      models: d.models.filter((m) => !catIds.includes(m.categoryId)),
-      repairs: d.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
-    }));
+    const next: DevicesData = {
+      brands: data.brands.filter((b) => b.id !== id),
+      categories: data.categories.filter((c) => c.brandId !== id),
+      models: data.models.filter((m) => !catIds.includes(m.categoryId)),
+      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
+    };
+    setData(next);
+    safeSaveData(next);
     if (selectedBrandId === id) setSelectedBrandId(null);
     showToast("Značka smazána", "success");
   };
 
   const deleteCategory = (id: string) => {
     const modelIds = data.models.filter((m) => m.categoryId === id).map((m) => m.id);
-    setData((d) => ({
-      ...d,
-      categories: d.categories.filter((c) => c.id !== id),
-      models: d.models.filter((m) => m.categoryId !== id),
-      repairs: d.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
-    }));
+    const next: DevicesData = {
+      ...data,
+      categories: data.categories.filter((c) => c.id !== id),
+      models: data.models.filter((m) => m.categoryId !== id),
+      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
+    };
+    setData(next);
+    safeSaveData(next);
     if (selectedCategoryId === id) setSelectedCategoryId(null);
     showToast("Kategorie smazána", "success");
   };
 
   const deleteModel = (id: string) => {
-    setData((d) => ({
-      ...d,
-      models: d.models.filter((m) => m.id !== id),
-      repairs: d.repairs.filter((r) => !r.modelIds || !r.modelIds.includes(id)),
-    }));
+    const next: DevicesData = {
+      ...data,
+      models: data.models.filter((m) => m.id !== id),
+      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.includes(id)),
+    };
+    setData(next);
+    safeSaveData(next);
     if (selectedModelId === id) setSelectedModelId(null);
     showToast("Model smazán", "success");
   };
 
   const deleteRepair = (id: string) => {
-    setData((d) => ({ ...d, repairs: d.repairs.filter((r) => r.id !== id) }));
+    const next: DevicesData = { ...data, repairs: data.repairs.filter((r) => r.id !== id) };
+    setData(next);
+    safeSaveData(next);
     showToast("Oprava smazána", "success");
   };
 
   const updateBrand = (id: string, name: string) => {
-    setData((d) => ({ ...d, brands: d.brands.map((b) => (b.id === id ? { ...b, name } : b)) }));
+    const next: DevicesData = { ...data, brands: data.brands.map((b) => (b.id === id ? { ...b, name } : b)) };
+    setData(next);
+    safeSaveData(next);
     setEditingBrand(null);
     showToast("Značka upravena", "success");
   };
 
   const updateCategory = (id: string, name: string) => {
-    setData((d) => ({ ...d, categories: d.categories.map((c) => (c.id === id ? { ...c, name } : c)) }));
+    const next: DevicesData = { ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, name } : c)) };
+    setData(next);
+    safeSaveData(next);
     setEditingCategory(null);
     showToast("Kategorie upravena", "success");
   };
 
   const updateModel = (id: string, name: string) => {
-    setData((d) => ({ ...d, models: d.models.map((m) => (m.id === id ? { ...m, name } : m)) }));
+    const next: DevicesData = { ...data, models: data.models.map((m) => (m.id === id ? { ...m, name } : m)) };
+    setData(next);
+    safeSaveData(next);
     setEditingModel(null);
     showToast("Model upraven", "success");
   };
 
   const updateRepair = (id: string, repairData: { name: string; price: string; time: string; details: string; costs: string; productIds: string[]; modelIds: string[] }) => {
-    setData((d) => ({
-      ...d,
-      repairs: d.repairs.map((r) =>
+    const next: DevicesData = {
+      ...data,
+      repairs: data.repairs.map((r) =>
         r.id === id
           ? {
               ...r,
@@ -355,7 +394,9 @@ export default function Devices() {
             }
           : r
       ),
-    }));
+    };
+    setData(next);
+    safeSaveData(next);
     setEditingRepair(null);
     showToast("Oprava upravena", "success");
   };
@@ -957,7 +998,7 @@ DETALY: Výměna opotřebované baterie
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div data-tour="devices-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zařízení a opravy</div>

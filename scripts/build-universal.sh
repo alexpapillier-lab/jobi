@@ -6,8 +6,9 @@ export CI=false
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-# Change to project root (parent of scripts directory)
-cd "$SCRIPT_DIR/.."
+# Project root (parent of scripts directory)
+ROOT="$SCRIPT_DIR/.."
+cd "$ROOT"
 
 echo "🔨 Building Universal Binary for macOS..."
 
@@ -46,13 +47,47 @@ lipo -create \
 echo -e "${GREEN}Copying .app bundle structure...${NC}"
 # Copy the .app bundle from aarch64 build (structure is the same)
 cp -R "$AARCH64_DIR/bundle/macos/jobi.app" "$BUNDLE_DIR"
-# Replace the binary with universal binary
+# Replace the binary with universal binary (lipo output is unsigned)
 cp "$UNIVERSAL_DIR/jobi" "$BUNDLE_DIR/jobi.app/Contents/MacOS/jobi"
+
+# Re-sign for notarization: universal binary must be signed with hardened runtime + timestamp
+ROOT_ABS="$(cd "$ROOT" && pwd)"
+SIGNING_IDENTITY=$(node -e "try { const c=require('$ROOT_ABS/src-tauri/tauri.conf.json'); console.log(c.bundle.macOS.signingIdentity || ''); } catch(e) { console.log(''); }" 2>/dev/null || true)
+if [ -n "$SIGNING_IDENTITY" ] && [ "$SIGNING_IDENTITY" != "null" ]; then
+  echo -e "${GREEN}Re-signing universal .app (hardened runtime + timestamp) for notarization...${NC}"
+  codesign --force --options runtime --timestamp -s "$SIGNING_IDENTITY" "$BUNDLE_DIR/jobi.app/Contents/MacOS/jobi"
+  codesign --force --options runtime --timestamp -s "$SIGNING_IDENTITY" "$BUNDLE_DIR/jobi.app"
+else
+  echo -e "${YELLOW}Could not read signingIdentity from tauri.conf.json – universal .app not re-signed (notarization will fail).${NC}"
+fi
 
 echo -e "${GREEN}Creating ZIP archive...${NC}"
 cd "$BUNDLE_DIR"
 zip -r "../../../../jobi-universal.zip" jobi.app
 cd - > /dev/null
+
+echo -e "${GREEN}Creating .tar.gz for OTA updater...${NC}"
+cd "$BUNDLE_DIR"
+tar czf "jobi.app.tar.gz" jobi.app
+cd - > /dev/null
+
+# Sign and generate latest.json when signing key is available (one universal build → both archs in OTA)
+if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -f "$HOME/.tauri/jobi.key" ]; then
+  echo -e "${GREEN}Signing OTA bundle...${NC}"
+  if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+    export TAURI_PRIVATE_KEY="$TAURI_SIGNING_PRIVATE_KEY"
+  else
+    export TAURI_PRIVATE_KEY_PATH="$HOME/.tauri/jobi.key"
+  fi
+  [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && export TAURI_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+  npx tauri signer sign "$BUNDLE_DIR/jobi.app.tar.gz"
+  echo -e "${GREEN}Generating latest.json (universal – both darwin-aarch64 and darwin-x86_64)...${NC}"
+  bash "$SCRIPT_DIR/generate-jobi-latest-json.sh" universal "$ROOT/latest.json"
+  echo -e "${GREEN}✅ OTA artifacts ready: jobi.app.tar.gz, jobi.app.tar.gz.sig, latest.json${NC}"
+else
+  echo -e "${YELLOW}No TAURI_SIGNING_PRIVATE_KEY / ~/.tauri/jobi.key – skipping signing and latest.json.${NC}"
+  echo -e "${YELLOW}Set key and re-run to get OTA artifacts, or run: npm run generate-latest-json universal${NC}"
+fi
 
 echo -e "${GREEN}✅ Universal binary created: jobi-universal.zip${NC}"
 

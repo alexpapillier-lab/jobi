@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar, type NavKey, type SidebarProps } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
@@ -37,6 +37,11 @@ export function AppLayout({
     await onSignOut();
   };
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [activePage]);
 
   const sidebarStyle = useMemo<React.CSSProperties>(() => {
     return {
@@ -90,6 +95,7 @@ export function AppLayout({
       </aside>
 
       <div
+        data-app-content
         style={{
           flex: 1,
           display: "flex",
@@ -105,6 +111,7 @@ export function AppLayout({
           <JobiDocsStatus />
         </div>
         <main
+          ref={mainRef}
           style={{
             flex: 1,
             padding: "var(--pad-24)",

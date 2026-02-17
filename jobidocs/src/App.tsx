@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generateDocumentHtml } from "./documentToHtml";
+import { AppLogo } from "./components/AppLogo";
 import { getDesignStyles, type DocumentDesign, type LayoutSpec } from "./documentDesign";
 import {
   DndContext,
@@ -180,6 +181,15 @@ function defaultDocumentsConfig(): Record<string, unknown> {
     stampUrl: undefined,
     logoSize: 100,
     stampSize: 100,
+    reviewUrl: "",
+    reviewUrlType: "custom",
+    googlePlaceId: "",
+    reviewText: "Zde nám můžete napsat recenzi",
+    qrCodeSize: 120,
+    qrPosition: { x: 620, y: 15 },
+    qrOnTicketList: false,
+    qrOnDiagnostic: false,
+    qrOnWarranty: true,
     colorMode: "color",
     designAccentColor: "",
     designPrimaryColor: "",
@@ -385,17 +395,19 @@ function SortableSection({
   );
 }
 
-// Document preview - A4, no scroll, scale to fit, draggable sections
+// Document preview - A4, no scroll, scale to fit, draggable sections, draggable QR
 function DocumentPreview({
   docType,
   config,
   companyData,
   onSectionOrderChange,
+  onQrPositionChange,
 }: {
   docType: DocTypeKey;
   config: Record<string, unknown>;
   companyData: Record<string, unknown>;
   onSectionOrderChange?: (order: string[]) => void;
+  onQrPositionChange?: (pos: { x: number; y: number }) => void;
 }) {
   const docConfig = config[DOC_TYPE_TO_UI[docType]] as Record<string, unknown> | undefined;
   const design = (docConfig?.design as DocumentDesign) || "classic";
@@ -472,8 +484,63 @@ function DocumentPreview({
   );
 
   const legalText = (docConfig?.legalText as string) || "";
+  const reviewUrl =
+    (config.reviewUrlType as string) === "google" && config.googlePlaceId
+      ? `https://search.google.com/local/writereview?placeid=${config.googlePlaceId}`
+      : (config.reviewUrl as string) || "";
+  const reviewText = (config.reviewText as string) || "Zde nám můžete napsat recenzi";
+  const qrCodeSize = (config.qrCodeSize as number) ?? 120;
+  const showQr =
+    !!reviewUrl &&
+    (docType === "zakazkovy_list"
+      ? (config.qrOnTicketList as boolean) === true
+      : docType === "diagnosticky_protokol"
+        ? (config.qrOnDiagnostic as boolean) === true
+        : (config.qrOnWarranty as boolean) !== false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const documentRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.5);
+  const qrPosition = useMemo(() => {
+    const p = config.qrPosition as { x: number; y: number } | undefined;
+    return p && typeof p.x === "number" && typeof p.y === "number" ? p : { x: 620, y: 15 };
+  }, [config.qrPosition]);
+  const [isQrDragging, setIsQrDragging] = useState(false);
+  const [qrDragPosition, setQrDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const qrDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const qrDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!isQrDragging) return;
+    const onMove = (e: MouseEvent) => {
+      const start = qrDragStartRef.current;
+      if (!start || !documentRef.current) return;
+      const rect = documentRef.current.getBoundingClientRect();
+      const scaleX = 794 / rect.width;
+      const scaleY = 1123 / rect.height;
+      const dx = (e.clientX - start.clientX) * scaleX;
+      const dy = (e.clientY - start.clientY) * scaleY;
+      const newX = Math.max(0, Math.min(794 - qrCodeSize, start.x + dx));
+      const newY = Math.max(0, Math.min(1123 - qrCodeSize, start.y + dy));
+      const pos = { x: newX, y: newY };
+      qrDragCurrentRef.current = pos;
+      setQrDragPosition(pos);
+    };
+    const onUp = () => {
+      const final = qrDragCurrentRef.current ?? qrDragStartRef.current ? { x: qrDragStartRef.current!.x, y: qrDragStartRef.current!.y } : qrPosition;
+      if (onQrPositionChange) onQrPositionChange(final);
+      qrDragStartRef.current = null;
+      qrDragCurrentRef.current = null;
+      setQrDragPosition(null);
+      setIsQrDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isQrDragging, onQrPositionChange, qrCodeSize, qrPosition]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -506,6 +573,7 @@ function DocumentPreview({
       }}
     >
       <div
+        ref={documentRef}
         style={{
           position: "absolute",
           top: "50%",
@@ -558,6 +626,33 @@ function DocumentPreview({
               {String(companyData?.name ?? "Název servisu")}
             </div>
           </div>
+          {showQr && reviewUrl && (
+            <div
+              role="button"
+              tabIndex={0}
+              title="Tažením přesunete QR kód na požadované místo"
+              onMouseDown={(e) => {
+                if (e.button !== 0 || !onQrPositionChange) return;
+                e.preventDefault();
+                const pos = qrDragPosition ?? qrPosition;
+                qrDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
+                setIsQrDragging(true);
+              }}
+              style={{
+                position: "absolute",
+                left: (qrDragPosition ?? qrPosition).x,
+                top: (qrDragPosition ?? qrPosition).y,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                cursor: isQrDragging ? "grabbing" : "grab",
+                userSelect: "none",
+              }}
+            >
+              <div style={{ textAlign: "right", fontSize: 10, color: styles.secondaryColor, maxWidth: 140, lineHeight: 1.3 }}>{reviewText}</div>
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}`} alt="QR" style={{ width: qrCodeSize, height: qrCodeSize, display: "block", flexShrink: 0, pointerEvents: "none" }} draggable={false} />
+            </div>
+          )}
         </div>
 
         {/* Sortable sections */}
@@ -709,6 +804,7 @@ export default function App() {
     activeServiceId: string | null;
     documentsConfig?: Record<string, unknown> | null;
     companyData?: Record<string, unknown> | null;
+    jobidocsLogo?: { background: string; jInner: string; foreground: string } | null;
   }>({ services: [], activeServiceId: null });
   const [serviceId, setServiceId] = useState("");
   const [preferredPrinter, setPreferredPrinter] = useState("");
@@ -763,11 +859,12 @@ export default function App() {
         activeServiceId: d.activeServiceId ?? null,
         documentsConfig: d.documentsConfig ?? null,
         companyData: d.companyData ?? null,
+        jobidocsLogo: d.jobidocsLogo ?? null,
       });
       // Nepřepisujeme config z kontextu – uživatelské změny (viditelné sekce, šířky) by se jinak každé 2 s ztratily.
       // Config se načítá jen z fetchDocumentsConfig při výběru servisu.
     } catch {
-      setContext({ services: [], activeServiceId: null });
+      setContext({ services: [], activeServiceId: null, jobidocsLogo: null });
     }
   }, []);
 
@@ -1091,9 +1188,12 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", padding: 24 }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <header style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>JobiDocs</h1>
-          <p style={{ color: "var(--muted)", fontSize: 14 }}>Tisk a export dokumentů. Integrace s Jobi.</p>
+        <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <AppLogo size={48} colors={context.jobidocsLogo ?? undefined} modern />
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>JobiDocs</h1>
+            <p style={{ color: "var(--muted)", fontSize: 14 }}>Tisk a export dokumentů z Jobi.</p>
+          </div>
         </header>
 
         <div
@@ -1178,7 +1278,7 @@ export default function App() {
               <DocumentTypePicker value={docType} onChange={setDocType} />
 
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Logo</div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Logo v dokumentech</div>
                 <input ref={fileInputLogo} type="file" accept="image/*" onChange={handleFileLogo} style={{ display: "none" }} />
                 <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
                   <button type="button" onClick={() => fileInputLogo.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
@@ -1533,6 +1633,83 @@ export default function App() {
                 />
               </div>
 
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>QR kód (odkaz na recenze)</div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+                  <a href="https://support.google.com/business/answer/16816815?sjid=8982499859156130050-EU" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>Jak získat odkaz na Google recenze</a>
+                </p>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setConfig((prev) => ({ ...prev, reviewUrlType: "custom" }))}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      border: (config.reviewUrlType as string) === "custom" ? "2px solid var(--accent)" : "1px solid var(--border)",
+                      background: (config.reviewUrlType as string) === "custom" ? "var(--accent-soft)" : "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Vlastní odkaz
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfig((prev) => ({ ...prev, reviewUrlType: "google" }))}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      border: (config.reviewUrlType as string) === "google" ? "2px solid var(--accent)" : "1px solid var(--border)",
+                      background: (config.reviewUrlType as string) === "google" ? "var(--accent-soft)" : "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Google recenze (Place ID)
+                  </button>
+                </div>
+                {(config.reviewUrlType as string) === "google" ? (
+                  <input
+                    type="text"
+                    value={(config.googlePlaceId as string) || ""}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, googlePlaceId: e.target.value.trim() }))}
+                    placeholder="Google Place ID (např. ChIJ…)"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, marginBottom: 10 }}
+                  />
+                ) : (
+                  <input
+                    type="url"
+                    value={(config.reviewUrl as string) || ""}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, reviewUrl: e.target.value.trim() }))}
+                    placeholder="https://…"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, marginBottom: 10 }}
+                  />
+                )}
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 6, color: "var(--text)" }}>Text u QR kódu</label>
+                <input
+                  type="text"
+                  value={(config.reviewText as string) || ""}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, reviewText: e.target.value }))}
+                  placeholder="Zde nám můžete napsat recenzi"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, marginBottom: 10 }}
+                />
+                <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: "var(--text)" }}>Zobrazit QR na dokumentech</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <ModernCheckbox checked={(config.qrOnTicketList as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnTicketList: v }))} label="Zakázkový list" />
+                  <ModernCheckbox checked={(config.qrOnDiagnostic as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnDiagnostic: v }))} label="Diagnostický protokol" />
+                  <ModernCheckbox checked={(config.qrOnWarranty as boolean) !== false} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnWarranty: v }))} label="Záruční list" />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost QR: {((config.qrCodeSize as number) ?? 120)} px</span>
+                  <input type="range" min={80} max={200} value={((config.qrCodeSize as number) ?? 120)} onChange={(e) => setConfig((prev) => ({ ...prev, qrCodeSize: Number(e.target.value) }))} style={{ flex: 1 }} />
+                </div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Pozici QR kódu změníte tažením v náhledu dokumentu vpravo.</p>
+              </div>
+
               <p style={{ fontSize: 12, color: "var(--muted)" }}>Pořadí sekcí upravíte tažením přímo v dokumentu vpravo. Poloviční sekce se zobrazí dvě vedle sebe.</p>
 
               <button
@@ -1547,7 +1724,7 @@ export default function App() {
             <section className="glass-panel document-preview-section" style={{ overflow: "hidden" }}>
               <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Náhled dokumentu</h2>
               <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí.</p>
-              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} />
+              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} />
               <button
                 type="button"
                 onClick={handlePrintPreview}

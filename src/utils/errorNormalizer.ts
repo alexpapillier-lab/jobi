@@ -1,8 +1,15 @@
-export function normalizeError(error: any): string {
+function getErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error && typeof (error as { code: unknown }).code === "string") {
+    return (error as { code: string }).code;
+  }
+  return undefined;
+}
+
+export function normalizeError(error: unknown): string {
   if (!error) return "Neznámá chyba";
-  
+
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const errorCode = (error as any)?.code;
+  const errorCode = getErrorCode(error);
   
   // Permission errors
   if (errorMessage.includes("Not authorized") || errorMessage.includes("permission") || errorCode === "PGRST301") {

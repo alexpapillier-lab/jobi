@@ -518,6 +518,7 @@ export default function Customers({
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
         <input
+          data-tour="customers-search"
           placeholder="Vyhledávání zákazníků…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -537,7 +538,7 @@ export default function Customers({
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12 }}>
+      <div data-tour="customers-content" style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12 }}>
         <CustomerList
           customers={filtered}
           selectedCustomerId={openId}

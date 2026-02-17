@@ -332,6 +332,202 @@
   color-scheme: dark;
 }
 
+/* Aby padající vločky (ThemeAnimations canvas) byly vidět – obsah průhledný */
+[data-theme="christmas"] [data-app-content],
+[data-theme="christmas"] main {
+  background: transparent !important;
+}
+
+/* Tron Red – černé pozadí, tenké červené neonové linie (jako lightcycle); barva jen v obrysech */
+[data-theme="tron-red"] {
+  --bg: linear-gradient(135deg, #040405 0%, #0a0809 50%, #050406 100%);
+  --panel: rgba(18, 18, 20, 0.92);
+  --panel-2: rgba(24, 22, 23, 0.88);
+  --text: #e5e5e5;
+  --muted: #a3a3a3;
+  --border: rgba(221, 34, 0, 0.55);
+  --icon: #f87171;
+
+  --shadow: 0 0 0 1px rgba(221, 34, 0, 0.15);
+  --shadow-soft: 0 0 0 1px rgba(221, 34, 0, 0.08);
+  --shadow-hover: 0 0 12px rgba(255, 59, 26, 0.25);
+  --glow: 0 0 20px rgba(255, 59, 26, 0.2);
+
+  --accent: #DD2200;
+  --accent-soft: rgba(221, 34, 0, 0.08);
+  --accent-hover: #FF3B1A;
+  --accent-glow: rgba(255, 59, 26, 0.35);
+
+  color-scheme: dark;
+}
+
+/* Tron Cyan – velmi tmavé pozadí, tenké cyan neonové linie; barva jen v obrysech */
+[data-theme="tron-cyan"] {
+  --bg: linear-gradient(135deg, #040506 0%, #070b0e 50%, #05080a 100%);
+  --panel: rgba(14, 18, 20, 0.92);
+  --panel-2: rgba(18, 22, 25, 0.88);
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --border: rgba(4, 191, 191, 0.5);
+  --icon: #22d3ee;
+
+  --shadow: 0 0 0 1px rgba(4, 191, 191, 0.12);
+  --shadow-soft: 0 0 0 1px rgba(4, 191, 191, 0.06);
+  --shadow-hover: 0 0 12px rgba(24, 202, 230, 0.22);
+  --glow: 0 0 20px rgba(24, 202, 230, 0.18);
+
+  --accent: #04BFBF;
+  --accent-soft: rgba(4, 191, 191, 0.07);
+  --accent-hover: #18CAE6;
+  --accent-glow: rgba(24, 202, 230, 0.3);
+
+  color-scheme: dark;
+}
+
+/* Synthwave Neon – 80s outrun: tenké cyan / magenta / violet neonové linie, minimální záře */
+[data-theme="synthwave"] {
+  --bg: linear-gradient(160deg, #060510 0%, #0a0820 40%, #080618 100%);
+  --panel: rgba(12, 12, 28, 0.94);
+  --panel-2: rgba(18, 18, 38, 0.9);
+  --text: #EDEBFF;
+  --muted: #A8A4C8;
+  /* Cyan = tenká neonová linie (okraje panelů) */
+  --border: rgba(0, 229, 255, 0.65);
+  --icon: #A78BFA;
+
+  /* Jen tenké linie + 4–6px „neon tube“ bloom, žádné velké halo */
+  --shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 4px rgba(0, 229, 255, 0.06);
+  --shadow-soft: 0 0 0 1px rgba(0, 229, 255, 0.28);
+  --shadow-hover: 0 0 0 1px rgba(255, 43, 214, 0.6), 0 0 6px rgba(255, 43, 214, 0.1);
+  --glow: 0 0 6px rgba(255, 43, 214, 0.12);
+
+  /* Magenta = CTA, aktivní (čistá neonová barva) */
+  --accent: #FF2BD6;
+  /* Violet = highlight / vybrané pozadí */
+  --accent-soft: rgba(124, 58, 237, 0.18);
+  --accent-hover: #FF6AF0;
+  /* Velmi jemná záře, aby tlačítka nebyly „rozmazané“ */
+  --accent-glow: rgba(255, 43, 214, 0.16);
+
+  /* Cyan = focus, linky */
+  --accent-focus: #00E5FF;
+  --accent-secondary: #00E5FF;
+  --accent-tertiary: #7C3AED;
+
+  color-scheme: dark;
+}
+
+/* Synthwave: tlačítka a panely = tenká neonová linie, ne velký glow */
+[data-theme="synthwave"] .btn-primary {
+  box-shadow: 0 0 0 1px rgba(255, 43, 214, 0.75), 0 0 6px rgba(255, 43, 214, 0.12);
+}
+[data-theme="synthwave"] .btn-primary:hover {
+  box-shadow: 0 0 0 1px #FF6AF0, 0 0 8px rgba(255, 43, 214, 0.18);
+}
+[data-theme="synthwave"] .glass-panel {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.35), 0 0 4px rgba(0, 229, 255, 0.05);
+}
+[data-theme="synthwave"] .glass-panel:hover {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.5), 0 0 6px rgba(0, 229, 255, 0.08);
+}
+
+/* ========== Světlá témata (Paper Mint, Sand & Ink, Sky Blueprint, Lilac Frost) ========== */
+
+/* Paper Mint – čisté papírové UI s mint/teal akcentem */
+[data-theme="paper-mint"] {
+  --bg: #F7FBFA;
+  --panel: #FFFFFF;
+  --panel-2: #EFF7F5;
+  --text: #0F172A;
+  --muted: #475569;
+  --border: #D6E6E2;
+  --icon: #475569;
+
+  --shadow: 0 20px 60px rgba(20, 184, 166, 0.08);
+  --shadow-soft: 0 12px 32px rgba(20, 184, 166, 0.06);
+  --shadow-hover: 0 24px 72px rgba(20, 184, 166, 0.12);
+  --glow: 0 0 20px rgba(94, 234, 212, 0.25);
+
+  --accent: #14B8A6;
+  --accent-soft: rgba(20, 184, 166, 0.15);
+  --accent-hover: #0EA5A4;
+  --accent-glow: rgba(94, 234, 212, 0.35);
+  --accent-focus: #5EEAD4;
+
+  color-scheme: light;
+}
+
+/* Sand & Ink – teplé světlé téma (písek) s tlumeným oranžovým akcentem */
+[data-theme="sand-ink"] {
+  --bg: #FBF7F1;
+  --panel: #FFFFFF;
+  --panel-2: #F4EDE3;
+  --text: #111827;
+  --muted: #4B5563;
+  --border: #E6D7C5;
+  --icon: #4B5563;
+
+  --shadow: 0 20px 60px rgba(245, 158, 11, 0.08);
+  --shadow-soft: 0 12px 32px rgba(245, 158, 11, 0.06);
+  --shadow-hover: 0 24px 72px rgba(245, 158, 11, 0.12);
+  --glow: 0 0 20px rgba(252, 211, 77, 0.25);
+
+  --accent: #F59E0B;
+  --accent-soft: rgba(245, 158, 11, 0.15);
+  --accent-hover: #D97706;
+  --accent-glow: rgba(252, 211, 77, 0.35);
+  --accent-focus: #FCD34D;
+
+  color-scheme: light;
+}
+
+/* Sky Blueprint – světlé tech téma s chladnou modrou (blueprint/saas) */
+[data-theme="sky-blueprint"] {
+  --bg: #F5FAFF;
+  --panel: #FFFFFF;
+  --panel-2: #EAF3FF;
+  --text: #0B1220;
+  --muted: #3B4A66;
+  --border: #CFE3FF;
+  --icon: #3B4A66;
+
+  --shadow: 0 20px 60px rgba(37, 99, 235, 0.08);
+  --shadow-soft: 0 12px 32px rgba(37, 99, 235, 0.06);
+  --shadow-hover: 0 24px 72px rgba(37, 99, 235, 0.12);
+  --glow: 0 0 20px rgba(147, 197, 253, 0.3);
+
+  --accent: #2563EB;
+  --accent-soft: rgba(37, 99, 235, 0.15);
+  --accent-hover: #1D4ED8;
+  --accent-glow: rgba(147, 197, 253, 0.4);
+  --accent-focus: #93C5FD;
+
+  color-scheme: light;
+}
+
+/* Lilac Frost – jemně fialové světlé UI, creative ale business */
+[data-theme="lilac-frost"] {
+  --bg: #FAF8FF;
+  --panel: #FFFFFF;
+  --panel-2: #F1ECFF;
+  --text: #111827;
+  --muted: #4B5563;
+  --border: #DED7FF;
+  --icon: #4B5563;
+
+  --shadow: 0 20px 60px rgba(124, 58, 237, 0.08);
+  --shadow-soft: 0 12px 32px rgba(124, 58, 237, 0.06);
+  --shadow-hover: 0 24px 72px rgba(124, 58, 237, 0.12);
+  --glow: 0 0 20px rgba(196, 181, 253, 0.3);
+
+  --accent: #7C3AED;
+  --accent-soft: rgba(124, 58, 237, 0.15);
+  --accent-hover: #6D28D9;
+  --accent-glow: rgba(196, 181, 253, 0.4);
+  --accent-focus: #C4B5FD;
+
+  color-scheme: light;
+}
 
 
 html, body, #root {
@@ -393,7 +589,7 @@ button:hover:not(:disabled), a:hover, [role="button"]:hover {
 }
 
 button:focus-visible, input:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-focus, var(--accent));
   outline-offset: 2px;
 }
 
@@ -421,7 +617,7 @@ input:hover, textarea:hover, select:hover {
 
 input:focus, textarea:focus, select:focus {
   box-shadow: var(--shadow-hover);
-  border-color: var(--accent);
+  border-color: var(--accent-focus, var(--accent));
   outline: none;
 }
 

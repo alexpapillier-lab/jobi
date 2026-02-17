@@ -114,6 +114,7 @@ export type Database = {
           customer_ico: string | null
           customer_info: string | null
           device_condition: string | null
+          device_accessories: string | null
           device_note: string | null
           device_label: string | null
           device_brand: string | null
@@ -124,6 +125,7 @@ export type Database = {
           estimated_price: number | null
           external_id: string | null
           handoff_method: string | null
+          handback_method: string | null
           performed_repairs: Json
           diagnostic_text: string | null
           diagnostic_photos: Json
@@ -152,6 +154,7 @@ export type Database = {
           customer_ico?: string | null
           customer_info?: string | null
           device_condition?: string | null
+          device_accessories?: string | null
           device_note?: string | null
           device_label?: string | null
           device_brand?: string | null
@@ -162,6 +165,7 @@ export type Database = {
           estimated_price?: number | null
           external_id?: string | null
           handoff_method?: string | null
+          handback_method?: string | null
           performed_repairs?: Json
           diagnostic_text?: string | null
           diagnostic_photos?: Json
@@ -190,6 +194,7 @@ export type Database = {
           customer_ico?: string | null
           customer_info?: string | null
           device_condition?: string | null
+          device_accessories?: string | null
           device_note?: string | null
           device_label?: string | null
           device_brand?: string | null
@@ -200,6 +205,7 @@ export type Database = {
           estimated_price?: number | null
           external_id?: string | null
           handoff_method?: string | null
+          handback_method?: string | null
           performed_repairs?: Json
           diagnostic_text?: string | null
           diagnostic_photos?: Json
@@ -208,6 +214,138 @@ export type Database = {
           customer_id?: string | null
           code?: string | null
           deleted_at?: string | null
+        }
+        Relationships: []
+      }
+      warranty_claims: {
+        Row: {
+          id: string
+          service_id: string
+          source_ticket_id: string | null
+          code: string
+          status: string
+          notes: string
+          resolution_summary: string | null
+          received_at: string | null
+          released_at: string | null
+          created_at: string
+          updated_at: string | null
+          customer_id: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          customer_email: string | null
+          customer_address_street: string | null
+          customer_address_city: string | null
+          customer_address_zip: string | null
+          customer_address_country: string | null
+          customer_company: string | null
+          customer_ico: string | null
+          customer_info: string | null
+          device_condition: string | null
+          device_accessories: string | null
+          device_note: string | null
+          device_label: string | null
+          device_brand: string | null
+          device_model: string | null
+          device_serial: string | null
+          device_imei: string | null
+          device_passcode: string | null
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          source_ticket_id?: string | null
+          code: string
+          status?: string
+          notes?: string
+          resolution_summary?: string | null
+          received_at?: string | null
+          released_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          customer_email?: string | null
+          customer_address_street?: string | null
+          customer_address_city?: string | null
+          customer_address_zip?: string | null
+          customer_address_country?: string | null
+          customer_company?: string | null
+          customer_ico?: string | null
+          customer_info?: string | null
+          device_condition?: string | null
+          device_accessories?: string | null
+          device_note?: string | null
+          device_label?: string | null
+          device_brand?: string | null
+          device_model?: string | null
+          device_serial?: string | null
+          device_imei?: string | null
+          device_passcode?: string | null
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          source_ticket_id?: string | null
+          code?: string
+          status?: string
+          notes?: string
+          resolution_summary?: string | null
+          received_at?: string | null
+          released_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          customer_email?: string | null
+          customer_address_street?: string | null
+          customer_address_city?: string | null
+          customer_address_zip?: string | null
+          customer_address_country?: string | null
+          customer_company?: string | null
+          customer_ico?: string | null
+          customer_info?: string | null
+          device_condition?: string | null
+          device_accessories?: string | null
+          device_note?: string | null
+          device_label?: string | null
+          device_brand?: string | null
+          device_model?: string | null
+          device_serial?: string | null
+          device_imei?: string | null
+          device_passcode?: string | null
+        }
+        Relationships: []
+      }
+      warranty_claim_history: {
+        Row: {
+          id: string
+          warranty_claim_id: string
+          service_id: string
+          action: string
+          changed_by: string | null
+          details: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          warranty_claim_id: string
+          service_id: string
+          action: string
+          changed_by?: string | null
+          details?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          warranty_claim_id?: string
+          service_id?: string
+          action?: string
+          changed_by?: string | null
+          details?: Json
+          created_at?: string
         }
         Relationships: []
       }

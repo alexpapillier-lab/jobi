@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
-const STORAGE_KEY = "jobsheet_inventory_v1";
-const DEVICES_STORAGE_KEY = "jobsheet_devices_v1";
+const STORAGE_KEY = STORAGE_KEYS.INVENTORY;
+const DEVICES_STORAGE_KEY = STORAGE_KEYS.DEVICES;
 const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
 
 type Brand = {
@@ -606,16 +607,16 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   };
 
   const addProduct = () => {
-    if (!newProduct.name.trim() || !selectedModelId) return;
+    if (!newProduct.name.trim()) return;
+    const modelIds = selectedModelId ? [selectedModelId] : [];
     const stock = parseInt(newProduct.stock) || 0;
-    
-    // Warning if stock would be less than 1
+
     if (stock < 1) {
       setLowStockCallback(() => () => {
         const product: Product = {
           id: uuid(),
           name: newProduct.name.trim(),
-          modelIds: [selectedModelId], // start with selected model
+          modelIds,
           stock,
           price: parseFloat(newProduct.price) || 0,
           sku: newProduct.sku.trim() || undefined,
@@ -626,16 +627,16 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         };
         setData((d) => ({ ...d, products: [...d.products, product] }));
         setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-        showToast("Produkt přidán", "success");
+        showToast(modelIds.length > 0 ? "Produkt přidán" : "Nezávislý produkt přidán", "success");
       });
       setLowStockDialogOpen(true);
       return;
     }
-    
+
     const product: Product = {
       id: uuid(),
       name: newProduct.name.trim(),
-      modelIds: [selectedModelId], // start with selected model
+      modelIds,
       stock,
       price: parseFloat(newProduct.price) || 0,
       sku: newProduct.sku.trim() || undefined,
@@ -646,7 +647,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
     setData((d) => ({ ...d, products: [...d.products, product] }));
     setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-    showToast("Produkt přidán", "success");
+    showToast(modelIds.length > 0 ? "Produkt přidán" : "Nezávislý produkt přidán", "success");
   };
 
   // Brands, categories and models are managed in Devices page - no delete functions needed
@@ -901,7 +902,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     uniqueMatches.sort((a, b) => b.matchLength - a.matchLength);
     
     // Limit to max 2 matches and remove matchLength from result
-    return uniqueMatches.slice(0, 2).map(({ matchLength, ...rest }) => rest);
+    return uniqueMatches.slice(0, 2).map(({ matchLength: _matchLength, ...rest }) => rest);
   };
 
   // Parse import file
@@ -1323,7 +1324,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div data-tour="inventory-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Sklad</div>
@@ -1331,7 +1332,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           Spravujte produkty na skladě. Produkty mohou být pro více modelů.
         </div>
         </div>
-        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px" }}>
+        <button data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px" }}>
           Import
         </button>
       </div>
@@ -1928,13 +1929,17 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         </div>
 
         {/* PRODUCTS */}
-          <div style={{ ...card, maxHeight: "400px" }}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
-              Přidání produktu {selectedModel && `· ${selectedModel.name}`}
+          <div style={{ ...card, maxHeight: "none" }}>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>
+              {selectedModelId && selectedModel
+                ? `Přidání produktu · ${selectedModel.name}`
+                : "Přidání nezávislého produktu (bez přiřazení k modelu)"}
           </div>
-
-          {selectedModelId && (
-            <>
+          {!selectedModelId && (
+            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
+              Produkt nebude přiřazen k žádnému modelu zařízení. Můžete ho později přiřadit v editaci, nebo vyberte vlevo model a přidejte produkt k němu.
+            </div>
+          )}
               <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
                 <input
                   placeholder="Název produktu…"
@@ -2036,18 +2041,10 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                     </div>
                   )}
-                <button onClick={addProduct} style={primaryBtn}>
-                  Přidat produkt
+                <button onClick={addProduct} style={primaryBtn} disabled={!newProduct.name.trim()}>
+                  {selectedModelId ? "Přidat produkt k modelu" : "Přidat nezávislý produkt"}
                 </button>
               </div>
-              </>
-            )}
-
-            {!selectedModelId && (
-              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-                Vyberte model pro přidání produktu
-              </div>
-            )}
           </div>
         </div>
 
@@ -2190,8 +2187,8 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     style={{
                     padding: productDisplayMode === "compact" ? 12 : 16,
                     borderRadius: 12,
-                    border: hasNoModels ? "2px solid rgba(255, 140, 0, 0.5)" : border,
-                      background: hasNoModels ? "rgba(255, 140, 0, 0.05)" : "var(--panel)",
+                    border: hasNoModels ? "1px solid var(--border)" : border,
+                      background: "var(--panel)",
                     display: productDisplayMode === "list" ? "grid" : "flex",
                     gridTemplateColumns: productDisplayMode === "list" ? "2fr 1fr 1fr 1fr auto" : undefined,
                     flexDirection: productDisplayMode === "list" ? "row" : "column",
@@ -2350,6 +2347,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                             .filter((cat) => {
                               const product = data.products.find((p) => editingProduct === p.id);
                               if (!product) return true;
+                              if (product.modelIds.length === 0) return true;
                               return product.modelIds.some((mid) => (cat.modelIds || []).includes(mid));
                             })
                             .map((cat) => (
@@ -2424,21 +2422,19 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               {hasNoModels && (
                                 <span style={{
                                   padding: "2px 6px",
-                                  background: "rgba(255, 140, 0, 0.2)",
+                                  background: "var(--accent-soft)",
                                   borderRadius: 4,
                                   fontSize: 9,
                                   fontWeight: 700,
-                                  color: "rgba(255, 140, 0, 0.9)",
+                                  color: "var(--muted)",
                                 }}>
-                                  ⚠️ Bez modelu
+                                  Nezávislý produkt
                                 </span>
                               )}
                           </div>
-                            {productModels.length > 0 && (
-                              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                {productModels.map((m) => m.name).join(", ")}
-                        </div>
-                            )}
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                              {productModels.length > 0 ? productModels.map((m) => m.name).join(", ") : "—"}
+                            </div>
                         {p.sku && (
                               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                             SKU: {p.sku}
@@ -2498,13 +2494,13 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           {hasNoModels && (
                             <span style={{
                               padding: "2px 6px",
-                              background: "rgba(255, 140, 0, 0.2)",
+                              background: "var(--accent-soft)",
                               borderRadius: 4,
                               fontSize: 9,
                               fontWeight: 700,
-                              color: "rgba(255, 140, 0, 0.9)",
+                              color: "var(--muted)",
                             }}>
-                              ⚠️ Bez modelu
+                              Nezávislý produkt
                             </span>
                     )}
                   </div>

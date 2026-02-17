@@ -181,7 +181,7 @@ serve(async (req) => {
     const invitesClient = isRootOwner ? adminClient : supabase;
     const { data: invites, error: invitesError } = await invitesClient
       .from("service_invites")
-      .select("id, email, role, created_at, expires_at")
+      .select("id, email, role, token, created_at, expires_at")
       .eq("service_id", serviceId)
       .is("accepted_at", null)
       .order("created_at", { ascending: false });

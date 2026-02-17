@@ -14,7 +14,7 @@ export function normalizePhone(phone: string | null | undefined): string | null 
   if (!phone) return null;
   
   // Odstranění mezer, pomlček, závorek a dalších znaků
-  let cleaned = phone.replace(/[\s\-\(\)]/g, "");
+  let cleaned = phone.replace(/[\s\-()]/g, "");
   
   // Odstranění všech nečíselných znaků kromě +
   cleaned = cleaned.replace(/[^\d+]/g, "");

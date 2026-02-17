@@ -83,6 +83,19 @@ export function generateDocumentHtml(
   const accentOverride = (config.designAccentColor as string) || "";
   const logoSize = ((config.logoSize as number) ?? 100) / 100;
   const hasLogo = !!config.logoUrl;
+  const reviewUrl =
+    (config.reviewUrlType as string) === "google" && config.googlePlaceId
+      ? `https://search.google.com/local/writereview?placeid=${config.googlePlaceId}`
+      : (config.reviewUrl as string) || "";
+  const reviewText = (config.reviewText as string) || "Zde nám můžete napsat recenzi";
+  const qrCodeSize = (config.qrCodeSize as number) ?? 120;
+  const showQr =
+    !!reviewUrl &&
+    (docType === "zakazkovy_list"
+      ? (config.qrOnTicketList as boolean) === true
+      : docType === "diagnosticky_protokol"
+        ? (config.qrOnDiagnostic as boolean) === true
+        : (config.qrOnWarranty as boolean) !== false);
   const legalText = (docConfig.legalText as string) || "";
   const includeCustomerSignature = (docConfig.includeCustomerSignature as boolean) !== false;
   const includeStamp = (docConfig.includeStamp as boolean) === true && !!config.stampUrl;
@@ -151,6 +164,16 @@ export function generateDocumentHtml(
   const headerTitleSize = spec.headerLayout === "splitBox" ? 16 : 14;
   const headerTitleWeight = spec.headerLayout === "splitBox" ? 800 : 700;
   const headerLeftStripe = spec.headerLayout === "splitBox" && styles.accentColor ? `border-left:6px solid ${styles.accentColor};` : "";
+  const qrPos = (config.qrPosition as { x: number; y: number } | undefined);
+  const qrX = qrPos && typeof qrPos.x === "number" ? qrPos.x : 620;
+  const qrY = qrPos && typeof qrPos.y === "number" ? qrPos.y : 15;
+  const qrBlockHtml =
+    showQr && reviewUrl
+      ? `<div style="position:absolute;left:${qrX}px;top:${qrY}px;display:flex;align-items:center;gap:12px;">
+          <div style="text-align:right;font-size:10px;color:${styles.secondaryColor};max-width:140px;line-height:1.3">${escapeHtml(reviewText)}</div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width:${qrCodeSize}px;height:${qrCodeSize}px;display:block;flex-shrink:0" />
+        </div>`
+      : "";
   const headerHtml = `
     <div style="position:relative;min-height:50px;margin-bottom:12px;padding-bottom:10px;border-bottom:${styles.headerBorder};background:${styles.headerBg !== "transparent" ? styles.headerBg : "transparent"};padding:${styles.headerBg !== "transparent" ? "8px 12px 10px 0" : 0};border-radius:${headerRadius}px;${headerLeftStripe}">
       ${hasLogo ? `<img src="${config.logoUrl as string}" alt="Logo" style="position:absolute;left:0;top:50%;transform:translateY(-50%);max-width:${120 * logoSize}px;max-height:${50 * logoSize}px;object-fit:contain" />` : `<div style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:${120 * logoSize}px;height:${50 * logoSize}px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:9px">Logo</div>`}
@@ -158,6 +181,7 @@ export function generateDocumentHtml(
         <div style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</div>
         <div style="color:${styles.headerText};font-weight:${headerTitleWeight};font-size:${headerTitleSize}px">${escapeHtml(String(companyData?.name ?? "Název servisu"))}</div>
       </div>
+      ${qrBlockHtml}
     </div>`;
 
   const isTicketList = docType === "zakazkovy_list";

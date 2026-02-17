@@ -389,3 +389,6 @@ verify_jwt = false
 
 [functions.team-remove-member]
 verify_jwt = false
+
+[functions.invite-get-token]
+verify_jwt = false

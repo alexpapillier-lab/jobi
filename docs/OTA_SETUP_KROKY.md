@@ -16,7 +16,7 @@ Udělej to **před tím**, než poprvé vydáš Jobi a JobiDocs uživatelům. Do
 2. [ ] **Vložit pubkey** do `src-tauri/tauri.conf.json` (nahradit `REPLACE_AFTER_TAURI_SIGNER_GENERATE`) – viz Krok 2.
 3. [ ] **Nastavit endpoint** v `src-tauri/tauri.conf.json` v `plugins.updater.endpoints` – reálná URL (GitHub Releases nebo vlastní server). Pro GitHub např. `https://github.com/TVUJ_ORG/TVUJ_REPO/releases/latest/download/latest.json` – viz Krok 3.
 4. [ ] **Při buildu prvního releasu** (a každého dalšího) nastavit `TAURI_SIGNING_PRIVATE_KEY` – viz Krok 4.
-5. [ ] Po buildu **nahrát na endpoint** soubor `latest.json` + instalátor a `.sig` (z `src-tauri/target/release/bundle/...`) dle [Tauri Static JSON](https://v2.tauri.app/plugin/updater/#static-json-file).
+5. [ ] Po buildu **nahrát na endpoint** soubor `latest.json` + instalátor a `.sig` – viz níže **První release Jobi – upload**.
 
 ### JobiDocs (Electron)
 
@@ -93,6 +93,28 @@ npm run tauri build
 
 - **Lokálně:** příkazy spusť v terminálu.
 - **CI (GitHub Actions atd.):** ulož obsah `jobi.key` (nebo cestu a heslo) do **Secret** a v jobu nastav `TAURI_SIGNING_PRIVATE_KEY` (a volitelně `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`).
+
+### První release Jobi – upload (po buildu s podpisem)
+
+1. **Vygenerovat `latest.json`** (z výstupu Tauri buildu):
+
+   ```bash
+   bash scripts/generate-jobi-latest-json.sh
+   ```
+
+   Skript vytvoří v kořeni projektu soubor **`latest.json`** (verze, platforma `darwin-aarch64` nebo `darwin-x86_64` podle toho, na jakém Macu build běžel).
+
+2. **Vytvořit release na GitHubu** (repo `alexpapillier-lab/jobi`):
+   - Releases → Create a new release
+   - Tag: např. `v0.1.0` (shodný s `version` v `tauri.conf.json`)
+   - Do release nahraj tyto soubory:
+     - **`latest.json`** (právě vygenerovaný)
+     - **`jobi.app.tar.gz`** z `src-tauri/target/release/bundle/macos/`
+     - **`jobi.app.tar.gz.sig`** z `src-tauri/target/release/bundle/macos/`
+
+3. Aplikace v konfiguraci už má endpoint `https://github.com/alexpapillier-lab/jobi/releases/latest/download/latest.json` – po nahrání těchto tří souborů do **nejnovějšího** release bude OTA kontrola fungovat.
+
+**Jedna universal build pro obě architektury:** Můžeš použít jeden universal binary (Apple Silicon + Intel v jednom .app). Skript `scripts/build-universal.sh` vytvoří universal .app, z něj `.tar.gz`, podepíše ho (když je nastavený `TAURI_SIGNING_PRIVATE_KEY` nebo existuje `~/.tauri/jobi.key`) a vygeneruje `latest.json` s oběma platformami (`darwin-aarch64` a `darwin-x86_64`) odkazujícími na tentýž soubor. Na GitHub tedy nahraješ jeden `jobi.app.tar.gz`, jeden `.sig` a `latest.json` – jedna verze kompatibilní s oběma architekturami. Příkaz: `export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/jobi.key)"; npm run tauri:build:universal`
 
 ---
 

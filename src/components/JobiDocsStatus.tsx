@@ -25,6 +25,7 @@ export function JobiDocsStatus() {
 
   return (
     <div
+      data-tour="header-jobidocs"
       title={
         connected === true
           ? "JobiDocs připojen – tisk a export PDF přes JobiDocs"
@@ -45,7 +46,7 @@ export function JobiDocsStatus() {
         border: `1px solid ${connected === true ? "rgba(34,197,94,0.3)" : connected === false ? "rgba(156,163,175,0.3)" : "rgba(251,191,36,0.3)"}`,
       }}
     >
-      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "currentColor" }} />
+      <img src="/logos/jdlogo.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
       JobiDocs {connected === true ? "✓" : connected === false ? "✗" : "..."}
     </div>
   );

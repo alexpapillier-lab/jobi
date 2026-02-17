@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { normalizeError } from "../utils/errorNormalizer";
 
 type ConfirmDialogProps = {
@@ -52,7 +53,7 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  const overlay = (
     <div
       style={{
         position: "fixed",
@@ -131,5 +132,7 @@ export function ConfirmDialog({
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
 

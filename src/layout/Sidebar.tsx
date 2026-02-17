@@ -1,8 +1,11 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
+import { AppLogo } from "../components/AppLogo";
+import { useTheme } from "../theme/ThemeProvider";
+import { getLogoColors } from "../lib/logoPresets";
 
-export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings" | "guide";
+export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -61,8 +64,8 @@ function UsersIcon({ size = 20 }: { size?: number }) {
 function SettingsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/>
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
     </svg>
   );
 }
@@ -82,18 +85,6 @@ function StatisticsIcon({ size = 20 }: { size?: number }) {
       <line x1="18" y1="20" x2="18" y2="10"/>
       <line x1="12" y1="20" x2="12" y2="4"/>
       <line x1="6" y1="20" x2="6" y2="14"/>
-    </svg>
-  );
-}
-
-function GuideIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-      <path d="M8 7h8"/>
-      <path d="M8 11h8"/>
-      <path d="M8 15h4"/>
     </svg>
   );
 }
@@ -131,6 +122,19 @@ export function Sidebar({
   const serviceMenuRef = useRef<HTMLDivElement>(null);
   const serviceMenuButtonRef = useRef<HTMLButtonElement>(null);
   const serviceMenuDropdownRef = useRef<HTMLDivElement>(null);
+
+  const { theme } = useTheme();
+  const logoColors = useMemo(() => getLogoColors(theme, "auto"), [theme]);
+  const logoBackground = logoColors.background;
+  const isLogoBgLight = useMemo(() => {
+    const hex = logoBackground.replace(/^#/, "");
+    if (hex.length !== 6) return false;
+    const r = parseInt(hex.slice(0, 2), 16) / 255;
+    const g = parseInt(hex.slice(2, 4), 16) / 255;
+    const b = parseInt(hex.slice(4, 6), 16) / 255;
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    return luminance > 0.6;
+  }, [logoBackground]);
 
   const isRootOwner = useIsRootOwner();
   const activeService = services.find(s => s.service_id === activeServiceId);
@@ -231,7 +235,7 @@ export function Sidebar({
         transition: "var(--transition-smooth)",
       }}
     >
-      {/* Brand */}
+      {/* Brand – pozadí = barva pozadí aktuálně zvoleného loga Jobi */}
       <div style={{ 
         display: "flex", 
         alignItems: "center", 
@@ -239,9 +243,9 @@ export function Sidebar({
         padding: expanded ? "10px 12px" : "8px",
         borderRadius: expanded ? 16 : 14,
         justifyContent: expanded ? "flex-start" : "center",
-        background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+        background: logoBackground,
         transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1)",
-        boxShadow: `0 4px 16px var(--accent-glow)`,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
         minHeight: expanded ? "auto" : 40,
         position: "relative",
         overflow: "visible"
@@ -264,18 +268,29 @@ export function Sidebar({
           }}
         >
           <div style={{ 
-            fontWeight: 800, 
-            lineHeight: 1.2, 
-            whiteSpace: "nowrap", 
-            overflow: "hidden", 
-            textOverflow: "ellipsis", 
-            color: "white",
-            fontSize: 20,
-            letterSpacing: "-0.02em",
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            textShadow: "0 2px 8px rgba(0,0,0,0.1)"
+            display: "flex", 
+            alignItems: "center", 
+            gap: expanded ? 10 : 0, 
+            minWidth: 0,
+            flex: 1,
           }}>
-            jobi
+            <AppLogo size={expanded ? 28 : 24} colors={logoColors} style={{ flexShrink: 0 }} />
+            {expanded && (
+              <span style={{ 
+                fontWeight: 800, 
+                lineHeight: 1.2, 
+                whiteSpace: "nowrap", 
+                overflow: "hidden", 
+                textOverflow: "ellipsis", 
+                color: isLogoBgLight ? "#111827" : "white",
+                fontSize: 20,
+                letterSpacing: "-0.02em",
+                fontFamily: "system-ui, -apple-system, sans-serif",
+                textShadow: isLogoBgLight ? "none" : "0 2px 8px rgba(0,0,0,0.1)"
+              }}>
+                jobi
+              </span>
+            )}
           </div>
           {showServiceDropdown ? (
             <div 
@@ -307,7 +322,7 @@ export function Sidebar({
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "rgba(255, 255, 255, 0.9)",
+                  color: isLogoBgLight ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.9)",
                   fontSize: 11,
                   fontWeight: 500,
                   whiteSpace: "nowrap",
@@ -326,7 +341,7 @@ export function Sidebar({
                   position: "relative"
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.15)";
+                  e.currentTarget.style.background = isLogoBgLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.15)";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
@@ -443,15 +458,7 @@ export function Sidebar({
           left: 0,
           right: 0
         }}>
-          <span style={{ 
-            fontWeight: 900, 
-            letterSpacing: "-0.03em", 
-            fontSize: 16,
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            color: "white",
-            textShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            whiteSpace: "nowrap"
-          }}>jobi</span>
+          <AppLogo size={24} colors={logoColors} />
         </div>
       </div>
 
@@ -466,7 +473,6 @@ export function Sidebar({
           { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
           { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
           { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
-          { key: "guide" as const, label: "Návod", icon: GuideIcon },
         ].map((item) => {
           const isActive = item.key === active;
           const IconComponent = item.icon;

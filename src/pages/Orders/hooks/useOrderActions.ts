@@ -322,9 +322,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         device_serial: newDraft.serialOrImei.trim() || null,
         device_passcode: newDraft.devicePasscode.trim() || null,
         device_condition: newDraft.deviceCondition.trim() || null,
+        device_accessories: newDraft.deviceAccessories?.trim() || null,
         device_note: newDraft.deviceNote.trim() || null,
         external_id: newDraft.externalId.trim() || null,
         handoff_method: newDraft.handoffMethod || null,
+        handback_method: newDraft.handbackMethod?.trim() || null,
         estimated_price: newDraft.estimatedPrice || null,
         performed_repairs: (newDraft as any).performedRepairs ?? [],
         diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
@@ -408,8 +410,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         serialOrImei: editedTicket.serialOrImei !== undefined ? (editedTicket.serialOrImei.trim() || undefined) : detailedTicket.serialOrImei,
         devicePasscode: editedTicket.devicePasscode !== undefined ? (editedTicket.devicePasscode.trim() || undefined) : detailedTicket.devicePasscode,
         deviceCondition: editedTicket.deviceCondition !== undefined ? (editedTicket.deviceCondition.trim() || undefined) : detailedTicket.deviceCondition,
+        deviceAccessories: editedTicket.deviceAccessories !== undefined ? (editedTicket.deviceAccessories.trim() || undefined) : detailedTicket.deviceAccessories,
         requestedRepair: editedTicket.requestedRepair !== undefined ? (editedTicket.requestedRepair.trim() || undefined) : detailedTicket.requestedRepair,
-        handoffMethod: editedTicket.handoffMethod !== undefined ? editedTicket.handoffMethod : detailedTicket.handoffMethod,
+        handoffMethod: editedTicket.handoffMethod !== undefined ? (editedTicket.handoffMethod.trim() || undefined) : detailedTicket.handoffMethod,
+        handbackMethod: editedTicket.handbackMethod !== undefined ? (editedTicket.handbackMethod.trim() || undefined) : detailedTicket.handbackMethod,
         deviceNote: editedTicket.deviceNote !== undefined ? (editedTicket.deviceNote.trim() || undefined) : detailedTicket.deviceNote,
         externalId: editedTicket.externalId !== undefined ? (editedTicket.externalId.trim() || undefined) : detailedTicket.externalId,
         diagnosticText: editedTicket.diagnosticText !== undefined 
@@ -471,9 +475,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         device_serial: updated.serialOrImei || null,
         device_passcode: updated.devicePasscode || null,
         device_condition: updated.deviceCondition || null,
+        device_accessories: updated.deviceAccessories?.trim() || null,
         device_note: updated.deviceNote || null,
         external_id: updated.externalId || null,
         handoff_method: updated.handoffMethod || null,
+        handback_method: updated.handbackMethod || null,
         estimated_price: updated.estimatedPrice || null,
         performed_repairs: updated.performedRepairs ?? [],
         diagnostic_text: updated.diagnosticText ?? "",
@@ -511,7 +517,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
       
       const { data, error } = await updateQuery
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
         .single();
 
       console.log("[SaveTicket] RESULT", { data, error, expectedVersion });

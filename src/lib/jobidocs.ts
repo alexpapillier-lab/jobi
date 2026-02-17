@@ -8,6 +8,19 @@
 
 const JOBIDOCS_API = "http://127.0.0.1:3847";
 
+/** URL pro stažení JobiDocs (stránka release / konkrétní instalátor). */
+export const JOBIDOCS_DOWNLOAD_URL = "https://github.com/alexpapillier-lab/jobi/releases";
+
+/** Otevře URL v prohlížeči (v Tauri přes plugin-opener, jinak window.open). */
+export async function openJobiDocsDownload(): Promise<void> {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(JOBIDOCS_DOWNLOAD_URL);
+  } catch {
+    window.open(JOBIDOCS_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
+  }
+}
+
 let _jobidocsFetch: typeof fetch | null = null;
 
 async function getJobiDocsFetch(): Promise<typeof fetch> {
@@ -75,10 +88,16 @@ export async function getProfileFromJobiDocs(
   }
 }
 
+export type JobiDocsLogoColors = { background: string; jInner: string; foreground: string };
+
 export async function pushContextToJobiDocs(
   services: Array<{ service_id: string; service_name: string; role: string }>,
   activeServiceId: string | null,
-  options?: { documentsConfig?: Record<string, unknown> | null; companyData?: Record<string, unknown> | null }
+  options?: {
+    documentsConfig?: Record<string, unknown> | null;
+    companyData?: Record<string, unknown> | null;
+    jobidocsLogo?: JobiDocsLogoColors | null;
+  }
 ): Promise<void> {
   try {
     const f = await getJobiDocsFetch();
@@ -90,6 +109,7 @@ export async function pushContextToJobiDocs(
         activeServiceId,
         documentsConfig: options?.documentsConfig ?? null,
         companyData: options?.companyData ?? null,
+        jobidocsLogo: options?.jobidocsLogo ?? null,
       }),
       connectTimeout: 2000,
     } as RequestInit & { connectTimeout?: number });

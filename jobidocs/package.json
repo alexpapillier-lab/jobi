@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
-    "build:electron": "tsc -p tsconfig.electron.json && npm run copy-tray-icon && vite build",
+    "build:electron": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && vite build",
     "preview": "vite preview",
-    "electron:dev": "tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build:electron && electron-builder",
+    "electron:build:universal": "npm run build:electron && electron-builder --mac --universal",
     "api:dev": "tsx watch api/server.ts",
+    "copy-app-icon": "mkdir -p public/logos && cp \"../logos/jdlogo.png\" electron/icon.png && cp \"../logos/jdlogo.png\" electron/tray-icon.png && cp \"../logos/jdlogo.png\" public/logos/jdlogo.png",
     "copy-tray-icon": "cp electron/tray-icon.png dist-electron/electron/"
   },
   "dependencies": {
