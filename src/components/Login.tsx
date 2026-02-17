@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
+import { AppLogo } from "./AppLogo";
+import { getLogoColors } from "../lib/logoPresets";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const { signIn, signUp, configError } = useAuth();
@@ -242,41 +244,12 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              margin: "0 auto 20px",
-              borderRadius: 18,
-              background: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 8px 24px rgba(139, 92, 246, 0.4)",
-              transform: "rotate(-5deg)",
-              transition: "transform 0.3s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "rotate(0deg) scale(1.05)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "rotate(-5deg) scale(1)";
-            }}
-          >
-            <svg
-              width="36"
-              height="36"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <polyline points="17 21 17 13 7 13 7 21" />
-              <polyline points="7 3 7 8 15 8" />
-            </svg>
+          <div style={{ margin: "0 auto 20px", display: "flex", justifyContent: "center" }}>
+            <AppLogo
+              size={72}
+              colors={getLogoColors("dark", "purple")}
+              modern
+            />
           </div>
           <h1
             style={{

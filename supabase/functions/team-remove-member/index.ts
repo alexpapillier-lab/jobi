@@ -109,20 +109,12 @@ serve(async (req) => {
       );
     }
 
-    // Prevent removing last owner
+    // Ownera nelze nikdy odebrat – pouze admina nebo člena (member)
     if (targetMembership.role === "owner") {
-      const { data: ownerCount, error: countError } = await supabase
-        .from("service_memberships")
-        .select("user_id", { count: "exact", head: true })
-        .eq("service_id", serviceId)
-        .eq("role", "owner");
-
-      if (!countError && ownerCount && ownerCount.length <= 1) {
       return new Response(
-          JSON.stringify({ error: "Cannot remove the last owner" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Ownera nelze odebrat z týmu" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-      }
     }
 
     // Remove member using service role client for admin operations

@@ -75,27 +75,32 @@ serve(async (req) => {
       );
     }
 
-    // Check if user is admin/owner of the service
-    const { data: membership, error: membershipErr } = await userClient
-      .from("service_memberships")
-      .select("role")
-      .eq("service_id", serviceId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
-    if (membershipErr || !membership) {
-      return new Response(
-        JSON.stringify({ error: "Not a member of this service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (!isRootOwner) {
+      // Check if user is admin/owner of the service
+      const { data: membership, error: membershipErr } = await userClient
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", serviceId)
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    const userRole = membership.role;
-    if (userRole !== "owner" && userRole !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "Only owners and admins can delete invites" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (membershipErr || !membership) {
+        return new Response(
+          JSON.stringify({ error: "Not a member of this service" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const userRole = membership.role;
+      if (userRole !== "owner" && userRole !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Only owners and admins can delete invites" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Verify invite exists and belongs to this service

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "halloween" | "christmas";
+export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "halloween" | "christmas" | "tron-red" | "tron-cyan" | "synthwave" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
 
 type ThemeContextValue = {
   theme: ThemeMode;
@@ -12,22 +12,25 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = "jobsheet_theme";
-const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "dark", "blue", "green", "orange", "purple", "pink", "halloween", "christmas"];
+const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink", "halloween", "christmas", "tron-red", "tron-cyan", "synthwave"];
 
 function applyThemeToDom(theme: ThemeMode) {
   document.documentElement.setAttribute("data-theme", theme);
   window.dispatchEvent(new CustomEvent("jobsheet:theme-changed", { detail: { theme } }));
 }
 
+function getInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") return "light";
+  const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+  return AVAILABLE_THEMES.includes(saved as ThemeMode) ? (saved as ThemeMode) : "light";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>("light");
+  const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-    const initial: ThemeMode = AVAILABLE_THEMES.includes(saved as ThemeMode) ? (saved as ThemeMode) : "light";
-    setThemeState(initial);
-    applyThemeToDom(initial);
-  }, []);
+    applyThemeToDom(theme);
+  }, [theme]);
 
   const setTheme = (t: ThemeMode) => {
     setThemeState(t);

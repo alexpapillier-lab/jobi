@@ -45,16 +45,22 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { action, serviceId } = body;
+    const { action, serviceId, name } = body;
     if (!action || !serviceId) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: action, serviceId" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    if (action !== "deactivate" && action !== "activate" && action !== "hardDelete") {
+    if (action === "rename" && (name === undefined || typeof name !== "string")) {
       return new Response(
-        JSON.stringify({ error: "Invalid action. Must be deactivate, activate, or hardDelete" }),
+        JSON.stringify({ error: "Missing or invalid field: name (string required for rename)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (action !== "deactivate" && action !== "activate" && action !== "hardDelete" && action !== "rename") {
+      return new Response(
+        JSON.stringify({ error: "Invalid action. Must be deactivate, activate, hardDelete, or rename" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -96,8 +102,26 @@ serve(async (req) => {
       );
     }
 
-    // hardDelete
-    const { error: deleteErr } = await svc.from("services").delete().eq("id", serviceId);
+    if (action === "rename") {
+      const newName = String(name).trim() || "Servis";
+      const { error: updateErr } = await svc
+        .from("services")
+        .update({ name: newName })
+        .eq("id", serviceId);
+      if (updateErr) {
+        return new Response(
+          JSON.stringify({ error: `Failed to rename: ${updateErr.message}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ ok: true, action: "rename", name: newName }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // hardDelete – přes RPC, které nastaví session proměnnou, aby trigger neblokoval CASCADE delete (poslední owner)
+    const { error: deleteErr } = await svc.rpc("delete_service_for_root", { p_service_id: serviceId });
     if (deleteErr) {
       return new Response(
         JSON.stringify({ error: `Failed to delete service: ${deleteErr.message}` }),

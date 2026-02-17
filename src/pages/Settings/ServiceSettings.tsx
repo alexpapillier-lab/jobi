@@ -95,7 +95,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
               type="text"
               value={companyData.abbreviation}
               onChange={(e: any) => setCompanyData((p) => ({ ...p, abbreviation: e.target.value }))}
-              placeholder="např. IRP"
+              placeholder="Zkratka"
             />
           </div>
 
@@ -105,7 +105,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
               type="text"
               value={companyData.name}
               onChange={(e: any) => setCompanyData((p) => ({ ...p, name: e.target.value }))}
-              placeholder="např. iSwap Repair Point"
+              placeholder="Název servisu"
             />
           </div>
 
@@ -116,7 +116,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
                 type="text"
                 value={companyData.ico}
                 onChange={(e: any) => setCompanyData((p) => ({ ...p, ico: e.target.value }))}
-                placeholder="např. 01028359"
+                placeholder="12345678"
               />
             </div>
 
@@ -126,7 +126,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
                 type="text"
                 value={companyData.dic}
                 onChange={(e: any) => setCompanyData((p) => ({ ...p, dic: e.target.value }))}
-                placeholder="např. CZ01028359"
+                placeholder="CZ12345678"
               />
             </div>
           </div>
@@ -160,7 +160,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
                 type="text"
                 value={companyData.addressStreet}
                 onChange={(e: any) => setCompanyData((p) => ({ ...p, addressStreet: e.target.value }))}
-                placeholder="např. U Vokovické školy 299/4"
+                placeholder="Ulice a číslo popisné"
               />
             </div>
 
@@ -171,7 +171,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
                   type="text"
                   value={companyData.addressCity}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, addressCity: e.target.value }))}
-                  placeholder="např. Praha"
+                  placeholder="Město"
                 />
               </div>
 
@@ -181,7 +181,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
                   type="text"
                   value={companyData.addressZip}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, addressZip: e.target.value }))}
-                  placeholder="např. 160 00"
+                  placeholder="123 45"
                 />
               </div>
             </div>
@@ -197,7 +197,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
             onClick={async () => {
               try {
                 await onSave(companyData);
-              } catch (err) {
+              } catch (_err) {
                 // Error is already handled in onSave
               }
             }}

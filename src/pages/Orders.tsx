@@ -16,9 +16,14 @@ import {
 import { normalizePhone } from "../lib/phone";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
+import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
+import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useActiveRole } from "../hooks/useActiveRole";
+import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
+import { getDeviceOptions } from "../lib/deviceOptions";
+import { getHandoffOptions } from "../lib/handoffOptions";
 
 type CompanyData = {
   abbreviation: string;
@@ -174,12 +179,13 @@ function safeSaveInventoryData(data: InventoryData) {
   } catch {}
 }
 
-type GroupKey = "all" | "active" | "final";
+type GroupKey = "all" | "active" | "final" | "reklamace";
 
+const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: "list" | "grid" | "compact" | "compact-extra" };
+  orders: { displayMode: "list" | "grid" | "compact" | "compact-extra"; pageSize: number; customerPhoneRequired: boolean };
 };
 
 type OpenTicketIntent = {
@@ -204,6 +210,34 @@ type OrdersProps = {
 const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
 const COMMENTS_STORAGE_KEY = "jobsheet_ticket_comments_v1";
 
+/** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
+type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
+
+function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
+  if (!raw || !raw.trim()) return [];
+  const t = raw.trim();
+  if (t.startsWith("[")) {
+    try {
+      const arr = JSON.parse(t) as unknown;
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((x): x is ClaimResolutionItem => x && typeof x === "object" && typeof (x as any).id === "string" && typeof (x as any).name === "string").map((x) => ({
+        id: (x as any).id,
+        name: (x as any).name ?? "",
+        description: (x as any).description ?? undefined,
+        price: typeof (x as any).price === "number" ? (x as any).price : undefined,
+      }));
+    } catch {
+      return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
+    }
+  }
+  return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
+}
+
+function serializeClaimResolutionItems(items: ClaimResolutionItem[]): string {
+  if (items.length === 0) return "";
+  return JSON.stringify(items);
+}
+
 type PerformedRepair = {
   id: string;
   name: string;
@@ -227,11 +261,13 @@ export type TicketEx = Ticket & {
 
   devicePasscode?: string;
   deviceCondition?: string;
-  
+  deviceAccessories?: string;
+
   discountType?: "percentage" | "amount" | null; // typ slevy: procenta, částka, nebo žádná
   discountValue?: number; // hodnota slevy (% nebo Kč)
   requestedRepair?: string;
-  handoffMethod?: "branch" | "courier" | "post";
+  handoffMethod?: string;
+  handbackMethod?: string;
   deviceNote?: string;
   externalId?: string;
   estimatedPrice?: number;
@@ -260,8 +296,10 @@ type NewOrderDraft = {
   serialOrImei: string;
   devicePasscode: string;
   deviceCondition: string;
+  deviceAccessories: string;
   requestedRepair: string;
-  handoffMethod: "branch" | "courier" | "post";
+  handoffMethod: string;
+  handbackMethod: string;
   deviceNote: string;
   externalId: string;
   estimatedPrice?: number;
@@ -286,7 +324,7 @@ function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list" },
+    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
   };
 }
 
@@ -301,6 +339,11 @@ function safeLoadUIConfig(): UIConfig {
     const fab = parsed?.app?.fabNewOrderEnabled;
     const scale = parsed?.app?.uiScale;
     const displayMode = parsed?.orders?.displayMode;
+    const pageSize = parsed?.orders?.pageSize;
+    const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
+    const validPageSize = typeof pageSize === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(pageSize)
+      ? pageSize
+      : d.orders.pageSize;
 
     return {
       app: {
@@ -316,6 +359,8 @@ function safeLoadUIConfig(): UIConfig {
       },
       orders: {
         displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
+        pageSize: validPageSize,
+        customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
       },
     };
   } catch {
@@ -383,6 +428,9 @@ function formatCZ(dtIso: string) {
 
 
 function defaultDraft(): NewOrderDraft {
+  const handoffOpts = getHandoffOptions();
+  const defaultReceive = handoffOpts.receiveMethods.includes("Osobně") ? "Osobně" : "";
+  const defaultReturn = handoffOpts.returnMethods.includes("Osobně") ? "Osobně" : "";
   return {
     customerId: undefined,
     customerName: "",
@@ -399,8 +447,10 @@ function defaultDraft(): NewOrderDraft {
     serialOrImei: "",
     devicePasscode: "",
     deviceCondition: "",
+    deviceAccessories: "",
     requestedRepair: "",
-    handoffMethod: "branch",
+    handoffMethod: defaultReceive,
+    handbackMethod: defaultReturn,
     deviceNote: "",
     externalId: "",
     estimatedPrice: undefined,
@@ -517,8 +567,10 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     customerInfo: supabaseTicket.customer_info || undefined,
     devicePasscode: supabaseTicket.device_passcode || undefined,
     deviceCondition: supabaseTicket.device_condition || undefined,
+    deviceAccessories: (supabaseTicket as any).device_accessories || undefined,
     requestedRepair: supabaseTicket.notes || undefined,
     handoffMethod: supabaseTicket.handoff_method || undefined,
+    handbackMethod: (supabaseTicket as any).handback_method || undefined,
     deviceNote: supabaseTicket.device_note || undefined,
     externalId: supabaseTicket.external_id || undefined,
     estimatedPrice: supabaseTicket.estimated_price || undefined,
@@ -538,10 +590,9 @@ function uuid() {
   return (crypto as any)?.randomUUID ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
-function handoffLabel(m?: TicketEx["handoffMethod"]) {
-  if (m === "courier") return "Kurýrem";
-  if (m === "post") return "Poštou";
-  return "Na pobočce";
+function handoffLabel(m?: string) {
+  if (!m) return "—";
+  return m;
 }
 
 function escapeHtmlForDoc(s: string): string {
@@ -695,6 +746,15 @@ async function loadDocumentsConfigFromDB(serviceId: string | null): Promise<any 
         includeRepairs: typeof parsed?.warrantyCertificate?.includeRepairs === "boolean" ? parsed.warrantyCertificate.includeRepairs : defaultConfig.warrantyCertificate.includeRepairs,
         includeDates: typeof parsed?.warrantyCertificate?.includeDates === "boolean" ? parsed.warrantyCertificate.includeDates : defaultConfig.warrantyCertificate.includeDates,
       },
+      autoPrint: parsed?.autoPrint ? {
+        ticketListOnCreate: !!parsed.autoPrint.ticketListOnCreate,
+        ticketListOnStatusKey: parsed.autoPrint.ticketListOnStatusKey ?? null,
+        warrantyOnCreate: !!parsed.autoPrint.warrantyOnCreate,
+        warrantyOnStatusKey: parsed.autoPrint.warrantyOnStatusKey ?? null,
+        prijetiReklamaceOnCreate: !!parsed.autoPrint.prijetiReklamaceOnCreate,
+        prijetiReklamaceOnStatusKey: parsed.autoPrint.prijetiReklamaceOnStatusKey ?? null,
+        vydaniReklamaceOnStatusKey: parsed.autoPrint.vydaniReklamaceOnStatusKey ?? null,
+      } : undefined,
     };
   } catch {
     return null;
@@ -1242,12 +1302,30 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         ` : ""}
         <div class="doc-page">
         <div class="doc-content">
+        <div class="doc-code-block" style="margin-bottom: 16px; padding: 12px 16px; background: ${styles.bgColor}; border: 2px solid ${styles.borderColor}; border-radius: 8px; text-align: center;">
+          <div style="font-size: 11px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Kód zakázky</div>
+          <div style="font-size: 22px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.05em;">${ticket.code || "—"}</div>
+        </div>
         <div class="header">
           <div class="header-left">
             ${documentsConfig.logoUrl ? `<img src="${documentsConfig.logoUrl}" alt="Logo servisu" class="logo" />` : ""}
-        <h1>Zakázkový list - ${ticket.code}</h1>
+        <h1>Zakázkový list</h1>
         <div style="font-size: 11px; color: ${styles.secondaryColor}; margin-top: 4px;">Datum: ${new Date(ticket.createdAt).toLocaleDateString("cs-CZ")}</div>
           </div>
+          ${(() => {
+            if (!documentsConfig.qrOnTicketList) return "";
+            const reviewUrl = documentsConfig.reviewUrlType === "google" && documentsConfig.googlePlaceId
+              ? `https://search.google.com/local/writereview?placeid=${documentsConfig.googlePlaceId}`
+              : documentsConfig.reviewUrl;
+            return reviewUrl ? `
+            <div class="header-right" style="display: flex; align-items: center; gap: 12px;">
+              <div style="text-align: right; font-size: 11px; color: ${styles.secondaryColor}; max-width: 150px;">
+                ${documentsConfig.reviewText || "Zde nám můžete napsat recenzi"}
+              </div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=${documentsConfig.qrCodeSize ?? 120}x${documentsConfig.qrCodeSize ?? 120}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width: ${documentsConfig.qrCodeSize ?? 120}px; height: ${documentsConfig.qrCodeSize ?? 120}px; display: block; flex-shrink: 0;" />
+            </div>
+          ` : "";
+          })()}
         </div>
         
         ${documentsConfig.ticketList.includeServiceInfo && (companyData.name || companyData.addressStreet) ? `
@@ -1288,9 +1366,13 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
           ${documentsConfig.deviceInfoConfig?.serialOrImei !== false && ticket.serialOrImei ? `<div class="field"><span class="field-label">SN/IMEI:</span><span class="field-value">${ticket.serialOrImei}</span></div>` : ""}
           ${documentsConfig.deviceInfoConfig?.devicePasscode !== false && ticket.devicePasscode ? `<div class="field"><span class="field-label">Heslo/kód:</span><span class="field-value">${documentsConfig.deviceInfoConfig?.devicePasscodeVisible ? ticket.devicePasscode : "••••"}</span></div>` : ""}
           ${documentsConfig.deviceInfoConfig?.deviceCondition !== false && ticket.deviceCondition ? `<div class="field"><span class="field-label">Popis stavu:</span><span class="field-value">${ticket.deviceCondition}</span></div>` : ""}
+          ${documentsConfig.deviceInfoConfig?.deviceAccessories !== false && ticket.deviceAccessories ? `<div class="field"><span class="field-label">Příslušenství:</span><span class="field-value">${ticket.deviceAccessories}</span></div>` : ""}
           ${documentsConfig.deviceInfoConfig?.requestedRepair !== false ? `<div class="field"><span class="field-label">Požadovaná oprava:</span><span class="field-value">${ticket.requestedRepair || ticket.issueShort || "—"}</span></div>` : ""}
           ${documentsConfig.deviceInfoConfig?.deviceNote !== false && ticket.deviceNote ? `<div class="field"><span class="field-label">Poznámka:</span><span class="field-value">${ticket.deviceNote}</span></div>` : ""}
-          ${documentsConfig.deviceInfoConfig?.handoffMethod !== false && ticket.handoffMethod ? `<div class="field"><span class="field-label">Předání/převzetí:</span><span class="field-value">${handoffLabel(ticket.handoffMethod)}</span></div>` : ""}
+          ${documentsConfig.deviceInfoConfig?.handoffMethod !== false && (ticket.handoffMethod || ticket.handbackMethod) ? [
+            ticket.handoffMethod ? `<div class="field"><span class="field-label">Převzetí:</span><span class="field-value">${handoffLabel(ticket.handoffMethod)}</span></div>` : "",
+            ticket.handbackMethod ? `<div class="field"><span class="field-label">Předání:</span><span class="field-value">${handoffLabel(ticket.handbackMethod)}</span></div>` : "",
+          ].filter(Boolean).join("") : ""}
           ${documentsConfig.deviceInfoConfig?.externalId !== false && ticket.externalId ? `<div class="field"><span class="field-label">Externí ID:</span><span class="field-value">${ticket.externalId}</span></div>` : ""}
         </div>
         
@@ -1909,12 +1991,30 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
         <div class="doc-page">
         <div class="doc-content">
         <div class="document-content">
+        <div class="doc-code-block" style="margin-bottom: 16px; padding: 12px 16px; background: ${styles.bgColor}; border: 2px solid ${styles.borderColor}; border-radius: 8px; text-align: center;">
+          <div style="font-size: 11px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Kód zakázky</div>
+          <div style="font-size: 22px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.05em;">${ticket.code || "—"}</div>
+        </div>
         <div class="header">
           <div class="header-left">
             ${documentsConfig.logoUrl ? `<img src="${documentsConfig.logoUrl}" alt="Logo servisu" class="logo" />` : ""}
-        <h1>Diagnostický protokol - ${ticket.code}</h1>
+        <h1>Diagnostický protokol</h1>
         <div style="font-size: 11px; color: ${styles.secondaryColor}; margin-top: 4px;">Datum: ${new Date(ticket.createdAt).toLocaleDateString("cs-CZ")}</div>
           </div>
+          ${(() => {
+            if (!documentsConfig.qrOnDiagnostic) return "";
+            const reviewUrl = documentsConfig.reviewUrlType === "google" && documentsConfig.googlePlaceId
+              ? `https://search.google.com/local/writereview?placeid=${documentsConfig.googlePlaceId}`
+              : documentsConfig.reviewUrl;
+            return reviewUrl ? `
+            <div class="header-right" style="display: flex; align-items: center; gap: 12px;">
+              <div style="text-align: right; font-size: 11px; color: ${styles.secondaryColor}; max-width: 150px;">
+                ${documentsConfig.reviewText || "Zde nám můžete napsat recenzi"}
+              </div>
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=${documentsConfig.qrCodeSize ?? 120}x${documentsConfig.qrCodeSize ?? 120}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width: ${documentsConfig.qrCodeSize ?? 120}px; height: ${documentsConfig.qrCodeSize ?? 120}px; display: block; flex-shrink: 0;" />
+            </div>
+          ` : "";
+          })()}
         </div>
         
         ${documentsConfig.diagnosticProtocol.includeServiceInfo && companyData && (companyData.name || companyData.addressStreet) ? `
@@ -2503,20 +2603,25 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
         <div class="doc-page">
         <div class="doc-content">
         <div class="document-content">
+        <div class="doc-code-block" style="margin-bottom: 16px; padding: 12px 16px; background: ${styles.bgColor}; border: 2px solid ${styles.borderColor}; border-radius: 8px; text-align: center;">
+          <div style="font-size: 11px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Kód zakázky</div>
+          <div style="font-size: 22px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.05em;">${ticket.code || "—"}</div>
+        </div>
         <div class="header">
           <div class="header-left">
             ${documentsConfig.logoUrl ? `<img src="${documentsConfig.logoUrl}" alt="Logo servisu" class="logo" />` : ""}
-        <h1>Záruční list - ${ticket.code}</h1>
+        <h1>Záruční list</h1>
         <div style="font-size: 11px; color: ${styles.secondaryColor}; margin-top: 4px;">Datum: ${new Date(ticket.createdAt).toLocaleDateString("cs-CZ")}</div>
           </div>
           ${(() => {
+            if (documentsConfig.qrOnWarranty === false) return "";
             const reviewUrl = documentsConfig.reviewUrlType === "google" && documentsConfig.googlePlaceId
               ? `https://search.google.com/local/writereview?placeid=${documentsConfig.googlePlaceId}`
               : documentsConfig.reviewUrl;
             return reviewUrl ? `
             <div class="header-right" style="display: flex; align-items: center; gap: 12px;">
               <div style="text-align: right; font-size: 11px; color: ${styles.secondaryColor}; max-width: 150px;">
-                ${documentsConfig.reviewText || "Budeme rádi za Vaši recenzi"}
+                ${documentsConfig.reviewText || "Zde nám můžete napsat recenzi"}
               </div>
               <img src="https://api.qrserver.com/v1/create-qr-code/?size=${documentsConfig.qrCodeSize ?? 120}x${documentsConfig.qrCodeSize ?? 120}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width: ${documentsConfig.qrCodeSize ?? 120}px; height: ${documentsConfig.qrCodeSize ?? 120}px; display: block; flex-shrink: 0;" />
             </div>
@@ -2698,6 +2803,85 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
   `;
 }
 
+/** HTML pro dokument „Přijetí reklamace“ (tisk při vytvoření / při přepnutí do stavu). */
+export function generatePrijetiReklamaceHTML(claim: WarrantyClaimRow, _companyData: any, config?: any): string {
+  const documentsConfig = config || safeLoadDocumentsConfig();
+  const design = documentsConfig.ticketList?.design || "classic";
+  const colorMode = documentsConfig.colorMode || "color";
+  const primaryColor = colorMode === "bw" ? "#000" : (design === "modern" ? "#1e40af" : design === "professional" ? "#0f766e" : "#1e3a5f");
+  const secondaryColor = colorMode === "bw" ? "#333" : "#64748b";
+  const e = (s: string | null) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const addr = [claim.customer_address_street, claim.customer_address_city, claim.customer_address_zip].filter(Boolean).join(", ");
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"><title>Přijetí reklamace - ${e(claim.code)}</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #1e293b; font-size: 13px; }
+      .doc-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid ${primaryColor}; }
+      .logo { max-width: 120px; max-height: 50px; object-fit: contain; }
+      h1 { margin: 0; font-size: 20px; color: ${primaryColor}; }
+      .section { margin-bottom: 16px; }
+      .section-title { font-weight: 700; font-size: 12px; color: ${secondaryColor}; margin-bottom: 6px; text-transform: uppercase; }
+      .field { margin-bottom: 4px; }
+      .field-label { color: ${secondaryColor}; margin-right: 8px; }
+      .signatures { display: flex; gap: 24px; margin-top: 32px; flex-wrap: wrap; }
+      .signature-box { min-width: 140px; }
+      .signature-line { border-bottom: 1px solid #333; height: 20px; margin-bottom: 4px; }
+      .signature-label { font-size: 10px; color: ${secondaryColor}; }
+    </style>
+    </head>
+    <body>
+      <div class="doc-header">
+        ${documentsConfig.logoUrl ? `<img src="${documentsConfig.logoUrl}" alt="Logo" class="logo" />` : ""}
+        <h1>Přijetí reklamace</h1>
+      </div>
+      <div class="section">
+        <div class="section-title">Reklamace</div>
+        <div class="field"><span class="field-label">Kód:</span><span>${e(claim.code)}</span></div>
+        <div class="field"><span class="field-label">Datum přijetí:</span><span>${claim.created_at ? new Date(claim.created_at).toLocaleString("cs-CZ") : "—"}</span></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Zákazník</div>
+        <div class="field"><span class="field-label">Jméno / firma:</span><span>${e(claim.customer_name) || "—"}</span></div>
+        ${claim.customer_phone ? `<div class="field"><span class="field-label">Telefon:</span><span>${e(claim.customer_phone)}</span></div>` : ""}
+        ${claim.customer_email ? `<div class="field"><span class="field-label">E-mail:</span><span>${e(claim.customer_email)}</span></div>` : ""}
+        ${addr ? `<div class="field"><span class="field-label">Adresa:</span><span>${e(addr)}</span></div>` : ""}
+      </div>
+      <div class="section">
+        <div class="section-title">Zařízení</div>
+        <div class="field"><span class="field-label">Popis:</span><span>${e(claim.device_label) || "—"}</span></div>
+        ${claim.device_serial ? `<div class="field"><span class="field-label">SN/IMEI:</span><span>${e(claim.device_serial)}</span></div>` : ""}
+        ${claim.device_condition ? `<div class="field"><span class="field-label">Stav:</span><span>${e(claim.device_condition)}</span></div>` : ""}
+      </div>
+      ${claim.notes ? `<div class="section"><div class="section-title">Poznámka / důvod reklamace</div><div>${e(claim.notes)}</div></div>` : ""}
+      ${((): string => {
+        const raw = claim.resolution_summary || "";
+        if (!raw.trim()) return "";
+        const items = parseClaimResolutionItems(raw);
+        if (items.length === 0) return "";
+        const total = items.reduce((sum, r) => sum + (r.price || 0), 0);
+        return `
+      <div class="section">
+        <div class="section-title">Provedené zákroky</div>
+        ${items.map((it) => `
+        <div class="field" style="margin-bottom: 8px;">
+          <span style="font-weight: 700;">${e(it.name)}</span>
+          ${it.price != null && it.price > 0 ? `<span style="color: ${primaryColor}; font-weight: 700; margin-left: 8px;">${it.price.toLocaleString("cs-CZ")} Kč</span>` : ""}
+          ${it.description ? `<div style="font-size: 12px; color: ${secondaryColor}; margin-top: 2px;">${e(it.description)}</div>` : ""}
+        </div>`).join("")}
+        ${total > 0 ? `<div class="field" style="margin-top: 8px; font-weight: 700;">Celkem: ${total.toLocaleString("cs-CZ")} Kč</div>` : ""}
+      </div>`;
+      })()}
+      <div class="signatures">
+        <div class="signature-box"><div class="signature-line"></div><div class="signature-label">Podpis zákazníka</div></div>
+        <div class="signature-box">${documentsConfig.stampUrl ? `<img src="${documentsConfig.stampUrl}" alt="Razítko" style="max-width:100px;max-height:50px;object-fit:contain;margin-bottom:4px;" />` : ""}<div class="signature-line"></div><div class="signature-label">Razítko servisu</div></div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
   const running = await isJobiDocsRunning();
   if (!running) {
@@ -2758,13 +2942,37 @@ async function quickPrintFromList(
   else await printWarranty(ticket, serviceId);
 }
 
-// Document Action Picker Component (for each document type)
-function DocumentActionPicker({ 
+function openPreviewWindow(html: string, title: string = "Náhled") {
+  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700,scrollbars=yes");
+  if (!w) {
+    showToast("Povolte v prohlížeči vyskakovací okna pro náhled.", "error");
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.document.title = title;
+}
+
+/** Otevře náhled a po načtení automaticky spustí tisk (dialog Tisk). */
+function openPreviewWindowWithPrint(html: string, title: string = "Náhled") {
+  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700,scrollbars=yes");
+  if (!w) {
+    showToast("Povolte v prohlížeči vyskakovací okna pro automatický tisk.", "error");
+    return;
+  }
+  const printScript = "<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>";
+  w.document.write(html + printScript);
+  w.document.close();
+  w.document.title = title;
+}
+
+// Document Action Picker Component (for each document type) – pořadí: Tisk, Export, Náhled
+function DocumentActionPicker({
   label,
-  onSelect
-}: { 
+  onSelect,
+}: {
   label: string;
-  onSelect: (action: "export" | "print") => void;
+  onSelect: (action: "print" | "export" | "preview") => void;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -2804,8 +3012,9 @@ function DocumentActionPicker({
   }, [open]);
 
   const actions = [
-    { value: "export" as const, label: "💾 Export" },
     { value: "print" as const, label: "🖨️ Tisk" },
+    { value: "export" as const, label: "💾 Export" },
+    { value: "preview" as const, label: "👁 Náhled" },
   ];
 
   const menu = open ? (
@@ -3218,7 +3427,7 @@ function PerformedRepairItem({
                     try {
                       localStorage.setItem(STORAGE_KEYS.DEVICES, JSON.stringify(updatedDevices));
                       showToast("Uloženo do katalogu", "success");
-                    } catch (e) {
+                    } catch (_e) {
                       showToast("Chyba při ukládání", "error");
                     }
                   }}
@@ -3828,7 +4037,7 @@ function DeviceAutocomplete({ value, onChange, models, error }: DeviceAutocomple
             inputRef.current?.blur();
           }
         }}
-        placeholder="Např. iPhone 13 Pro / Dyson V15 / MacBook Air M1…"
+        placeholder="Název nebo typ zařízení…"
         style={{
           width: "100%",
           padding: "10px 12px",
@@ -3901,12 +4110,6 @@ function DeviceAutocomplete({ value, onChange, models, error }: DeviceAutocomple
     </div>
   );
 }
-
-// Modern Handoff Method Picker
-type HandoffMethodPickerProps = {
-  value: "branch" | "courier" | "post";
-  onChange: (value: "branch" | "courier" | "post") => void;
-};
 
 // ========================
 // Repair Picker (custom dropdown)
@@ -4087,6 +4290,184 @@ function RepairPicker({ value, repairs, placeholder = "Vyberte opravu...", onCha
       >
         <span>{selected ? selected.name : placeholder}</span>
         <span style={{ opacity: 0.65, fontWeight: 900, fontSize: 12 }}>▾</span>
+      </button>
+      {open ? createPortal(menu, document.body) : null}
+    </>
+  );
+}
+
+// ========================
+// Handoff method select (modern dropdown)
+// ========================
+type HandoffMethodSelectProps = {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  extraOption?: string;
+  triggerStyle?: React.CSSProperties;
+};
+
+function HandoffMethodSelect({ options, value, onChange, placeholder = "—", extraOption, triggerStyle }: HandoffMethodSelectProps) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: 0, top: 0, width: 0, maxHeight: 280 });
+
+  const displayValue = value || placeholder;
+  const listOptions = [
+    ...(extraOption && !options.includes(extraOption) ? [extraOption] : []),
+    ...options,
+  ];
+
+  useLayoutEffect(() => {
+    if (open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const estimatedHeight = Math.min(280, listOptions.length * 48 + 24);
+      const gap = 8;
+      const margin = 10;
+      const openUp = spaceBelow < estimatedHeight + margin && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(120, Math.min(280, openUp ? spaceAbove - gap - margin : spaceBelow - gap - margin));
+      setPos({
+        left: rect.left,
+        top: openUp ? rect.top - maxHeight - gap : rect.bottom + gap,
+        width: rect.width,
+        maxHeight,
+      });
+    }
+  }, [open, listOptions.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const border = "1px solid var(--border)";
+  const menu = open ? (
+    <div
+      ref={menuRef}
+      role="listbox"
+      style={{
+        position: "fixed",
+        left: pos.left,
+        top: pos.top,
+        width: pos.width,
+        borderRadius: 14,
+        border: "1px solid var(--border)",
+        background: "var(--panel)",
+        backdropFilter: "var(--blur)",
+        WebkitBackdropFilter: "var(--blur)",
+        boxShadow: "0 16px 48px rgba(0,0,0,0.18)",
+        padding: 6,
+        zIndex: 10000,
+        maxHeight: pos.maxHeight,
+        overflowY: "auto",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => { onChange(""); setOpen(false); }}
+        style={{
+          width: "100%",
+          textAlign: "left",
+          padding: "12px 14px",
+          borderRadius: 10,
+          border: "none",
+          background: !value ? "var(--accent-soft)" : "transparent",
+          color: !value ? "var(--accent)" : "var(--text)",
+          fontWeight: !value ? 600 : 500,
+          fontSize: 13,
+          cursor: "pointer",
+          fontFamily: "inherit",
+          transition: "var(--transition-smooth)",
+        }}
+        onMouseEnter={(e) => { if (value) e.currentTarget.style.background = "var(--panel-2)"; }}
+        onMouseLeave={(e) => { if (value) e.currentTarget.style.background = "transparent"; }}
+      >
+        {placeholder}
+      </button>
+      {listOptions.map((opt, i) => {
+        const active = opt === value;
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => { onChange(opt); setOpen(false); }}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              padding: "12px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: active ? "var(--accent-soft)" : "transparent",
+              color: active ? "var(--accent)" : "var(--text)",
+              fontWeight: active ? 600 : 500,
+              fontSize: 13,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              transition: "var(--transition-smooth)",
+            }}
+            onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--panel-2)"; }}
+            onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+          >
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          ...triggerStyle,
+          width: "100%",
+          padding: "10px 36px 10px 12px",
+          borderRadius: 12,
+          border: open ? "1px solid var(--accent)" : border,
+          outline: "none",
+          background: open ? "var(--panel-2)" : "var(--panel)",
+          backdropFilter: "var(--blur)",
+          WebkitBackdropFilter: "var(--blur)",
+          color: "var(--text)",
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxShadow: open ? "0 0 0 3px var(--accent-soft)" : "var(--shadow-soft)",
+          transition: "var(--transition-smooth)",
+        }}
+        onMouseEnter={(e) => {
+          if (!open) { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)"; }
+        }}
+        onMouseLeave={(e) => {
+          if (!open) { e.currentTarget.style.borderColor = ""; e.currentTarget.style.boxShadow = ""; }
+        }}
+      >
+        <span style={{ color: value ? "var(--text)" : "var(--muted)" }}>{displayValue}</span>
+        <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 8 }}>▾</span>
       </button>
       {open ? createPortal(menu, document.body) : null}
     </>
@@ -4314,170 +4695,6 @@ function DiscountPicker({ discountType, discountValue, onChange }: DiscountPicke
   );
 }
 
-function HandoffMethodPicker({ value, onChange }: HandoffMethodPickerProps) {
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: 0, top: 0, width: 0, maxHeight: 300 });
-
-  const options: Array<{ value: "branch" | "courier" | "post"; label: string; icon: string }> = [
-    { value: "branch", label: "Na pobočce", icon: "🏢" },
-    { value: "courier", label: "Kurýrem", icon: "🚚" },
-    { value: "post", label: "Poštou", icon: "📮" },
-  ];
-
-  const selected = options.find((o) => o.value === value) ?? options[0];
-
-  useLayoutEffect(() => {
-    if (open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-
-      const estimatedMenuHeight = 150;
-      const gap = 8;
-      const margin = 10;
-
-      const openUp = spaceBelow < estimatedMenuHeight + margin && spaceAbove > spaceBelow;
-
-      const maxHeight = Math.max(100, Math.min(300, openUp ? spaceAbove - gap - margin : spaceBelow - gap - margin));
-      const actualMenuHeight = Math.min(maxHeight, estimatedMenuHeight);
-
-      setPos({
-        left: rect.left,
-        top: openUp ? rect.top - actualMenuHeight - gap : rect.bottom + gap,
-        width: rect.width,
-        maxHeight,
-      });
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(e.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const menu = open ? (
-    <div
-      ref={menuRef}
-      role="listbox"
-      style={{
-        position: "fixed",
-        left: pos.left,
-        top: pos.top,
-        width: pos.width,
-        borderRadius: 14,
-        border: "1px solid var(--border)",
-        background: "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
-        boxShadow: "0 25px 60px rgba(0,0,0,0.22)",
-        padding: 6,
-        zIndex: 10000,
-        maxHeight: pos.maxHeight,
-        overflowY: "auto",
-      }}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => {
-              onChange(opt.value);
-              setOpen(false);
-            }}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "none",
-              background: active ? "var(--accent-soft)" : "transparent",
-              cursor: "pointer",
-              color: active ? "var(--accent)" : "var(--text)",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-              fontWeight: active ? 700 : 600,
-              fontSize: 13,
-              transition: "var(--transition-smooth)",
-            }}
-            onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.background = "var(--panel-2)";
-            }}
-            onMouseLeave={(e) => {
-              if (!active) e.currentTarget.style.background = "transparent";
-            }}
-          >
-            <span style={{ fontSize: 18 }}>{opt.icon}</span>
-            <span>{opt.label}</span>
-            {active && <span style={{ marginLeft: "auto", fontSize: 16, opacity: 0.8 }}>✓</span>}
-          </button>
-        );
-      })}
-    </div>
-  ) : null;
-
-  const border = "1px solid var(--border)";
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%",
-          padding: "10px 12px",
-          borderRadius: 12,
-          border: open ? "1px solid var(--accent)" : border,
-          outline: "none",
-          background: open ? "var(--panel-2)" : "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          color: "var(--text)",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          boxShadow: open ? "0 0 0 3px var(--accent-soft)" : "var(--shadow-soft)",
-          transition: "var(--transition-smooth)",
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.background = "var(--panel-2)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.background = "var(--panel)";
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 16 }}>{selected.icon}</span>
-          <span>{selected.label}</span>
-        </span>
-        <span style={{ opacity: 0.65, fontWeight: 900, fontSize: 12 }}>▾</span>
-      </button>
-      {open ? createPortal(menu, document.body) : null}
-    </>
-  );
-}
-
 // ========================
 // Modern Status Picker (PORTAL)
 // ========================
@@ -4545,7 +4762,7 @@ function StatusPicker({ value, statuses, getByKey, onChange, size = "md" }: Stat
   useLayoutEffect(() => {
     if (!open) return;
     recompute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, value, size]);
 
   useEffect(() => {
@@ -4580,7 +4797,7 @@ function StatusPicker({ value, statuses, getByKey, onChange, size = "md" }: Stat
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open]);
 
   const menu = open ? (
@@ -4768,11 +4985,15 @@ export default function Orders({
   const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
+  const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claimsError, setClaimsError] = useState<string | null>(null);
   
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
   
   // Refs for race condition protection
   const ticketsReqIdRef = useRef(0);
+  const claimsReqIdRef = useRef(0);
   const docsReqIdRef = useRef(0);
   const activeServiceIdRef = useRef<string | null>(activeServiceId);
   
@@ -4853,6 +5074,38 @@ export default function Orders({
     };
   }, [activeServiceId]);
 
+  // Load orders_show_claims_in_list from service_settings
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setOrdersShowClaimsInList(false);
+      return;
+    }
+    (supabase
+      .from("service_settings") as any)
+      .select("config")
+      .eq("service_id", activeServiceId)
+      .single()
+      .then(({ data }: any) => {
+        setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
+      })
+      .catch(() => setOrdersShowClaimsInList(false));
+  }, [activeServiceId]);
+  useEffect(() => {
+    const onUiUpdated = () => {
+      if (!activeServiceId || !supabase) return;
+      (supabase.from("service_settings") as any)
+        .select("config")
+        .eq("service_id", activeServiceId)
+        .single()
+        .then(({ data }: any) => {
+          setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("jobsheet:ui-updated" as any, onUiUpdated);
+    return () => window.removeEventListener("jobsheet:ui-updated" as any, onUiUpdated);
+  }, [activeServiceId]);
+
   // Load tickets from cloud when activeServiceId changes
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -4871,7 +5124,7 @@ export default function Orders({
       try {
         const { data, error } = await (supabase!
           .from("tickets") as any)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
           .eq("service_id", activeServiceId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
@@ -4911,8 +5164,57 @@ export default function Orders({
     };
   }, [activeServiceId, supabase]);
 
+  // Load warranty claims when activeServiceId changes
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setCloudClaims([]);
+      setClaimsLoading(false);
+      setClaimsError(null);
+      return;
+    }
+    const myReqId = ++claimsReqIdRef.current;
+    const client = supabase;
+    setClaimsLoading(true);
+    setClaimsError(null);
+    const loadClaims = async () => {
+      if (!client) return;
+      try {
+        const { data, error } = await (client
+          .from("warranty_claims") as any)
+          .select("*")
+          .eq("service_id", activeServiceId)
+          .order("created_at", { ascending: false });
+        if (myReqId !== claimsReqIdRef.current) return;
+        if (error) throw error;
+        setCloudClaims(data ?? []);
+      } catch (err) {
+        if (myReqId !== claimsReqIdRef.current) return;
+        setClaimsError(normalizeError(err) || "Chyba při načítání reklamací");
+        setCloudClaims([]);
+      } finally {
+        if (myReqId === claimsReqIdRef.current) setClaimsLoading(false);
+      }
+    };
+    loadClaims();
+    return () => { claimsReqIdRef.current++; };
+  }, [activeServiceId, supabase]);
+
+  const refetchClaims = useCallback(() => {
+    if (!activeServiceId || !supabase) return;
+    (supabase.from("warranty_claims") as any)
+      .select("*")
+      .eq("service_id", activeServiceId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }: any) => {
+        if (!error && data) setCloudClaims(data);
+      });
+  }, [activeServiceId, supabase]);
+
+  const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
+
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
 
@@ -5074,6 +5376,10 @@ export default function Orders({
   const originalTicketRef = useRef<TicketEx | null>(null);
   const lastDetailIdRef = useRef<string | null>(null);
   const ticketsLoadHasRunRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const openNewOrderRef = useRef<() => void>(() => {});
+  const startEditingRef = useRef<() => void>(() => {});
+  const saveTicketChangesRef = useRef<() => Promise<boolean>>(async () => false);
 
   // Dirty tracking for diagnostic text, photos, and performed repairs
   const [dirtyFlags, setDirtyFlags] = useState({
@@ -5091,9 +5397,119 @@ export default function Orders({
   // Delete ticket dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTicketId, setDeleteTicketId] = useState<string | null>(null);
+  const [ticketHistoryModalOpen, setTicketHistoryModalOpen] = useState(false);
+  const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
+  const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
+  const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
+  const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
+  const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
+  const [ticketHistoryExpandedId, setTicketHistoryExpandedId] = useState<string | null>(null);
+  const [isEditingClaim, setIsEditingClaim] = useState(false);
+  const [editedClaim, setEditedClaim] = useState<Partial<WarrantyClaimRow>>({});
+  /** Draft zákroků v náhledu reklamace – při změně reklamace se resetuje */
+  const [claimResolutionDraft, setClaimResolutionDraft] = useState<ClaimResolutionItem[] | null>(null);
+  const [claimHistoryModalOpen, setClaimHistoryModalOpen] = useState(false);
+  const [claimHistoryEntries, setClaimHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
+  const [claimHistoryLoading, setClaimHistoryLoading] = useState(false);
+  const [claimHistoryError, setClaimHistoryError] = useState<string | null>(null);
+  const [deleteClaimDialogOpen, setDeleteClaimDialogOpen] = useState(false);
+  const [deleteClaimId, setDeleteClaimId] = useState<string | null>(null);
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<string[]>([]);
   const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
+
+  // Load ticket history when history modal opens
+  useEffect(() => {
+    if (!ticketHistoryModalOpen || !detailId || !supabase || !activeServiceId) {
+      if (!ticketHistoryModalOpen) {
+        setTicketHistoryEntries([]);
+        setTicketHistoryError(null);
+        setTicketHistoryExpandedId(null);
+      }
+      return;
+    }
+    const ticketId = detailId;
+    setTicketHistoryLoading(true);
+    setTicketHistoryError(null);
+    (async () => {
+      try {
+        const { data: rows, error } = await (supabase as any)
+          .from("ticket_history")
+          .select("id, action, changed_by, created_at, details")
+          .eq("ticket_id", ticketId)
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        const entries = (rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>;
+        const userIds = [...new Set(entries.map((e) => e.changed_by).filter(Boolean))] as string[];
+        const nicknames: Record<string, string> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
+          if (profiles) {
+            for (const p of profiles) {
+              if (p.nickname) nicknames[p.id] = p.nickname;
+            }
+          }
+        }
+        setTicketHistoryEntries(
+          entries.map((e) => ({ ...e, nickname: (e.changed_by && nicknames[e.changed_by]) || null }))
+        );
+      } catch (err) {
+        console.error("[Orders] ticket history load error", err);
+        const code = (err as { code?: string })?.code;
+        const msg = code === "PGRST205"
+          ? "Historie zatím není k dispozici. V databázi chybí tabulka – spusť migraci (např. supabase db push)."
+          : (err instanceof Error ? err.message : "Nelze načíst historii");
+        setTicketHistoryError(msg);
+        setTicketHistoryEntries([]);
+      } finally {
+        setTicketHistoryLoading(false);
+      }
+    })();
+  }, [ticketHistoryModalOpen, detailId, activeServiceId, supabase]);
+
+  // Load claim history when claim history modal opens
+  useEffect(() => {
+    if (!claimHistoryModalOpen || !detailClaimId || !supabase || !activeServiceId) {
+      if (!claimHistoryModalOpen) {
+        setClaimHistoryEntries([]);
+        setClaimHistoryError(null);
+      }
+      return;
+    }
+    const claimId = detailClaimId;
+    setClaimHistoryLoading(true);
+    setClaimHistoryError(null);
+    (async () => {
+      try {
+        const { data: rows, error } = await (supabase as any)
+          .from("warranty_claim_history")
+          .select("id, action, changed_by, created_at, details")
+          .eq("warranty_claim_id", claimId)
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        const entries = (rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>;
+        const userIds = [...new Set(entries.map((e) => e.changed_by).filter(Boolean))] as string[];
+        const nicknames: Record<string, string> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
+          if (profiles) {
+            for (const p of profiles) {
+              if (p.nickname) nicknames[p.id] = p.nickname;
+            }
+          }
+        }
+        setClaimHistoryEntries(
+          entries.map((e) => ({ ...e, nickname: (e.changed_by && nicknames[e.changed_by]) || null }))
+        );
+      } catch (err) {
+        console.error("[Orders] claim history load error", err);
+        setClaimHistoryError(err instanceof Error ? err.message : "Nelze načíst historii");
+        setClaimHistoryEntries([]);
+      } finally {
+        setClaimHistoryLoading(false);
+      }
+    })();
+  }, [claimHistoryModalOpen, detailClaimId, activeServiceId, supabase]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -5274,7 +5690,7 @@ export default function Orders({
     const onReq = () => setShouldOpenNew(true);
     window.addEventListener("jobsheet:request-new-order" as any, onReq);
     return () => window.removeEventListener("jobsheet:request-new-order" as any, onReq);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {
@@ -5336,6 +5752,30 @@ export default function Orders({
       }
     }
 
+    // Vyhledání podle jména (když není telefon nebo telefon nenašel)
+    if (name && name.trim().length >= 2) {
+      const nameTrim = name.trim();
+      const { data: nameData, error: nameError } = await (supabase
+        .from("customers") as any)
+        .select("id,name,phone,email,company")
+        .eq("service_id", activeServiceId)
+        .ilike("name", `%${nameTrim.replace(/%/g, "\\%")}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!nameError && nameData) {
+        setMatchedCustomer({
+          id: nameData.id,
+          name: nameData.name || "",
+          phone: nameData.phone || undefined,
+          email: nameData.email || undefined,
+          company: nameData.company || undefined,
+        });
+        setCustomerMatchDecision("undecided");
+        return;
+      }
+    }
+
     // No match found
     setMatchedCustomer(null);
     setCustomerMatchDecision("undecided");
@@ -5385,6 +5825,29 @@ export default function Orders({
       }
     }
 
+    // Vyhledání podle jména (když není telefon nebo telefon nenašel)
+    if (name && name.trim().length >= 2) {
+      const nameTrim = name.trim();
+      const { data: nameData, error: nameError } = await (supabase
+        .from("customers") as any)
+        .select("id,name,phone,email,company")
+        .eq("service_id", activeServiceId)
+        .ilike("name", `%${nameTrim.replace(/%/g, "\\%")}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!nameError && nameData) {
+        setMatchedCustomerEdit({
+          id: nameData.id,
+          name: nameData.name || "",
+          phone: nameData.phone || undefined,
+          email: nameData.email || undefined,
+          company: nameData.company || undefined,
+        });
+        return;
+      }
+    }
+
     // No match found
     setMatchedCustomerEdit(null);
   };
@@ -5411,7 +5874,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -5499,16 +5962,58 @@ export default function Orders({
       });
   }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
-  const ORDERS_PAGE_SIZE = 50;
-  const totalOrdersPages = Math.max(1, Math.ceil(filtered.length / ORDERS_PAGE_SIZE));
+  const filteredClaims = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return cloudClaims;
+    return cloudClaims.filter(
+      (c) =>
+        (c.code?.toLowerCase().includes(q)) ||
+        (c.customer_name?.toLowerCase().includes(q)) ||
+        (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
+        (c.device_serial?.toLowerCase().includes(q)) ||
+        (c.device_label?.toLowerCase().includes(q)) ||
+        (c.notes?.toLowerCase().includes(q))
+    );
+  }, [cloudClaims, query]);
+
+  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active") && ordersShowClaimsInList;
+  const combinedList = useMemo(() => {
+    if (!showClaimsInOrdersList) return [];
+    const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
+    const claimItems = filteredClaims.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
+    return [...ticketItems, ...claimItems].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [showClaimsInOrdersList, filtered, filteredClaims]);
+
+  const pageSize = uiCfg.orders.pageSize ?? 50;
+  const listLength = activeGroup === "reklamace"
+    ? filteredClaims.length
+    : showClaimsInOrdersList
+      ? combinedList.length
+      : filtered.length;
+  const effectivePageSize = pageSize <= 0 ? listLength || 1 : pageSize;
+  const totalOrdersPages = Math.max(1, Math.ceil(listLength / effectivePageSize));
   const paginatedTickets = useMemo(
-    () => filtered.slice(ordersPage * ORDERS_PAGE_SIZE, (ordersPage + 1) * ORDERS_PAGE_SIZE),
-    [filtered, ordersPage]
+    () => (pageSize <= 0 ? filtered : filtered.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
+    [filtered, ordersPage, pageSize, effectivePageSize]
+  );
+  const paginatedClaims = useMemo(
+    () => (pageSize <= 0 ? filteredClaims : filteredClaims.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
+    [filteredClaims, ordersPage, pageSize, effectivePageSize]
+  );
+  const paginatedCombined = useMemo(
+    () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
+    [combinedList, ordersPage, pageSize, effectivePageSize]
   );
 
   useEffect(() => {
     setOrdersPage(0);
   }, [query, activeStatusKey, activeGroup]);
+
+  useEffect(() => {
+    setOrdersPage(0);
+  }, [pageSize]);
 
   useEffect(() => {
     if (ordersPage >= totalOrdersPages && totalOrdersPages > 0) setOrdersPage(totalOrdersPages - 1);
@@ -5517,6 +6022,11 @@ export default function Orders({
   const detailedTicket: TicketEx | undefined = useMemo(
     () => (detailId ? tickets.find((t) => t.id === detailId) : undefined),
     [detailId, tickets]
+  );
+
+  const detailedClaim: WarrantyClaimRow | undefined = useMemo(
+    () => (detailClaimId ? cloudClaims.find((c) => c.id === detailClaimId) : undefined),
+    [detailClaimId, cloudClaims]
   );
 
   // Save originalTicketRef when detailId changes and reset dirty flags
@@ -5827,6 +6337,99 @@ export default function Orders({
     setIsNewOpen(true);
   };
 
+  const setClaimStatus = async (claimId: string, next: string) => {
+    if (!statusKeysSet.has(next)) {
+      showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
+      return;
+    }
+    const prev = cloudClaims.find((c) => c.id === claimId)?.status;
+    setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: next } : c)));
+    const ok = await updateClaimStatus(claimId, next);
+    if (!ok) {
+      setCloudClaims((p) => p.map((c) => (c.id === claimId && prev ? { ...c, status: prev } : c)));
+    }
+  };
+
+  const startEditingClaim = useCallback(() => {
+    if (!detailedClaim) return;
+    setEditedClaim({
+      customer_name: detailedClaim.customer_name ?? "",
+      customer_phone: detailedClaim.customer_phone ?? "",
+      customer_email: detailedClaim.customer_email ?? "",
+      customer_address_street: detailedClaim.customer_address_street ?? "",
+      customer_address_city: detailedClaim.customer_address_city ?? "",
+      customer_address_zip: detailedClaim.customer_address_zip ?? "",
+      customer_company: detailedClaim.customer_company ?? "",
+      customer_ico: detailedClaim.customer_ico ?? "",
+      customer_info: detailedClaim.customer_info ?? "",
+      device_label: detailedClaim.device_label ?? "",
+      device_serial: detailedClaim.device_serial ?? "",
+      device_brand: detailedClaim.device_brand ?? "",
+      device_model: detailedClaim.device_model ?? "",
+      device_condition: detailedClaim.device_condition ?? "",
+      device_accessories: detailedClaim.device_accessories ?? "",
+      device_note: detailedClaim.device_note ?? "",
+      device_passcode: detailedClaim.device_passcode ?? "",
+      notes: detailedClaim.notes ?? "",
+      resolution_summary: detailedClaim.resolution_summary ?? "",
+      status: detailedClaim.status,
+    });
+    setIsEditingClaim(true);
+  }, [detailedClaim]);
+
+  /** Uložit pouze zákroky reklamace (bez přepnutí do režimu úprav) */
+  const saveClaimResolutionItems = useCallback(
+    async (claimId: string, items: ClaimResolutionItem[]): Promise<boolean> => {
+      const filtered = items.filter((x) => (x.name || "").trim());
+      const payload = { resolution_summary: filtered.length > 0 ? serializeClaimResolutionItems(filtered) : null };
+      const updated = await updateClaim(claimId, payload as any);
+      if (!updated) return false;
+      setCloudClaims((prev) => prev.map((cl) => (cl.id === claimId ? { ...cl, ...updated } : cl)));
+      setClaimResolutionDraft(null);
+      return true;
+    },
+    [updateClaim]
+  );
+
+  const saveClaimChanges = useCallback(async (): Promise<boolean> => {
+    if (!detailedClaim) return false;
+    const payload: Record<string, unknown> = {};
+    const c = { ...detailedClaim, ...editedClaim };
+    if (claimResolutionDraft !== null) {
+      const filtered = claimResolutionDraft.filter((x) => (x.name || "").trim());
+      payload.resolution_summary = filtered.length > 0 ? serializeClaimResolutionItems(filtered) : null;
+    } else if (c.resolution_summary !== undefined) {
+      const items = parseClaimResolutionItems(c.resolution_summary || null).filter((x) => (x.name || "").trim());
+      payload.resolution_summary = items.length > 0 ? serializeClaimResolutionItems(items) : null;
+    }
+    if (c.customer_name !== undefined) payload.customer_name = c.customer_name || null;
+    if (c.customer_phone !== undefined) payload.customer_phone = c.customer_phone || null;
+    if (c.customer_email !== undefined) payload.customer_email = c.customer_email || null;
+    if (c.customer_address_street !== undefined) payload.customer_address_street = c.customer_address_street || null;
+    if (c.customer_address_city !== undefined) payload.customer_address_city = c.customer_address_city || null;
+    if (c.customer_address_zip !== undefined) payload.customer_address_zip = c.customer_address_zip || null;
+    if (c.customer_company !== undefined) payload.customer_company = c.customer_company || null;
+    if (c.customer_ico !== undefined) payload.customer_ico = c.customer_ico || null;
+    if (c.customer_info !== undefined) payload.customer_info = c.customer_info || null;
+    if (c.device_label !== undefined) payload.device_label = c.device_label || null;
+    if (c.device_serial !== undefined) payload.device_serial = c.device_serial || null;
+    if (c.device_brand !== undefined) payload.device_brand = c.device_brand || null;
+    if (c.device_model !== undefined) payload.device_model = c.device_model || null;
+    if (c.device_condition !== undefined) payload.device_condition = c.device_condition || null;
+    if (c.device_accessories !== undefined) payload.device_accessories = c.device_accessories || null;
+    if (c.device_note !== undefined) payload.device_note = c.device_note || null;
+    if (c.device_passcode !== undefined) payload.device_passcode = c.device_passcode || null;
+    if (c.notes !== undefined) payload.notes = c.notes || "";
+    if (c.status !== undefined) payload.status = c.status;
+    const updated = await updateClaim(detailedClaim.id, payload as any);
+    if (!updated) return false;
+    setCloudClaims((prev) => prev.map((cl) => (cl.id === detailedClaim.id ? { ...cl, ...updated } : cl)));
+    setIsEditingClaim(false);
+    setEditedClaim({});
+    setClaimResolutionDraft(null);
+    return true;
+  }, [detailedClaim, editedClaim, claimResolutionDraft, updateClaim]);
+
   const setTicketStatus = async (ticketId: string, next: string) => {
     // Guard: check if selectedStatusKey is valid (exists in statuses array)
     if (!statusKeysSet.has(next)) {
@@ -5852,6 +6455,17 @@ export default function Orders({
         if (error) {
           console.error("[change_ticket_status] rpc error", error);
           throw error;
+        }
+
+        const config = await loadDocumentsConfigFromDB(activeServiceId);
+        const ticketUpdated = ticket ? { ...ticket, status: next as any } : tickets.find((t) => t.id === ticketId);
+        if (config?.autoPrint && ticketUpdated) {
+          if (config.autoPrint.ticketListOnStatusKey === next) {
+            openPreviewWindowWithPrint(generateTicketHTML(ticketUpdated as TicketEx, true, config), "Zakázkový list");
+          }
+          if (config.autoPrint.warrantyOnStatusKey === next) {
+            openPreviewWindowWithPrint(generateWarrantyHTML(ticketUpdated as TicketEx, safeLoadCompanyData(), true, config), "Záruční list");
+          }
         }
       } catch (err: any) {
         // Rollback optimistic update
@@ -5882,6 +6496,10 @@ export default function Orders({
     if (!detailedTicket) {
       return false;
     }
+    if (uiCfg.orders.customerPhoneRequired && !(editedTicket.customerPhone ?? detailedTicket.customerPhone ?? "").trim()) {
+      showToast("Telefon zákazníka je povinný. Vyplňte ho před uložením.", "error");
+      return false;
+    }
 
     return saveTicketChangesAction({
       detailedTicket,
@@ -5899,7 +6517,7 @@ export default function Orders({
         });
       },
     });
-  }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId]);
+  }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
 
   const handleCloseDetail = useCallback(async () => {
     console.log("[Close] clicked - about to save?");
@@ -5928,6 +6546,9 @@ export default function Orders({
     const page = returnToPage;
     const customerId = returnToCustomerIdRef.current;
     setDetailId(null);
+    setDetailClaimId(null);
+    setIsEditingClaim(false);
+    setEditedClaim({});
     setReturnToPage(null);
     returnToCustomerIdRef.current = undefined;
     if (page && onReturnToPage) {
@@ -5938,7 +6559,15 @@ export default function Orders({
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (detailId) {
+      if (ticketHistoryModalOpen) {
+        setTicketHistoryModalOpen(false);
+        return;
+      }
+      if (claimHistoryModalOpen) {
+        setClaimHistoryModalOpen(false);
+        return;
+      }
+      if (detailId || detailClaimId) {
         await handleCloseDetail();
       } else if (isNewOpen) {
         setIsNewOpen(false);
@@ -5953,11 +6582,11 @@ export default function Orders({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailId, isNewOpen, handleCloseDetail]);
+  }, [detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
   useEffect(() => {
-    if (!detailId) return;
+    if (!detailId && !detailClaimId) return;
     const prevBody = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const main = document.querySelector("main");
@@ -5970,12 +6599,16 @@ export default function Orders({
         main.style.overflow = "auto";
       }
     };
-  }, [detailId]);
+  }, [detailId, detailClaimId]);
+
+  useEffect(() => {
+    setClaimResolutionDraft(null);
+  }, [detailClaimId]);
 
   useEffect(() => {
     if (!detailedTicket) return;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      if (comboMatchesEvent(e, getShortcut("order_print"))) {
         e.preventDefault();
         printTicket(detailedTicket, activeServiceId);
       }
@@ -5983,6 +6616,29 @@ export default function Orders({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [detailedTicket, activeServiceId]);
+
+  // Enter v náhledu zakázky při úpravách = Uložit a zavřít (kromě textarea, kde Enter = nový řádek)
+  useEffect(() => {
+    if (!detailId || !isEditing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const target = e.target as Node | null;
+      if (target && typeof (target as HTMLElement).tagName === "string" && (target as HTMLElement).tagName === "TEXTAREA") return;
+      e.preventDefault();
+      saveTicketChanges().then((ok) => {
+        if (!ok) return;
+        showToast("Změny uloženy", "success");
+        const page = returnToPage;
+        const customerId = returnToCustomerIdRef.current;
+        setDetailId(null);
+        setReturnToPage(null);
+        returnToCustomerIdRef.current = undefined;
+        if (page && onReturnToPage) onReturnToPage(page, customerId);
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailId, isEditing, saveTicketChanges, returnToPage, onReturnToPage]);
 
   const startEditing = useCallback(() => {
     if (!detailedTicket) return;
@@ -6000,23 +6656,72 @@ export default function Orders({
       serialOrImei: detailedTicket.serialOrImei || "",
       devicePasscode: detailedTicket.devicePasscode || "",
       deviceCondition: detailedTicket.deviceCondition || "",
+      deviceAccessories: detailedTicket.deviceAccessories || "",
       requestedRepair: detailedTicket.requestedRepair || detailedTicket.issueShort || "",
-      handoffMethod: detailedTicket.handoffMethod,
+      handoffMethod: detailedTicket.handoffMethod || "",
+      handbackMethod: detailedTicket.handbackMethod || "",
       deviceNote: detailedTicket.deviceNote || "",
       externalId: detailedTicket.externalId || "",
     });
     setIsEditing(true);
   }, [detailedTicket]);
 
+  useEffect(() => {
+    openNewOrderRef.current = openNewOrder;
+    startEditingRef.current = startEditing;
+    saveTicketChangesRef.current = saveTicketChanges;
+  });
+
+  // Zkratky stránky Zakázky a detailu (capture, aby Ctrl+S v detailu měl přednost před globální navigací)
+  // Na přehledu zakázek také přímo obsloužíme Q/S/D/C atd. (vlastní událost), aby fungovaly i když window keydown nedojde
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (comboMatchesEvent(e, getShortcut("orders_search"))) {
+        e.preventDefault();
+        e.stopPropagation();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (isInputFocused()) return;
+      if (comboMatchesEvent(e, getShortcut("orders_new"))) {
+        e.preventDefault();
+        e.stopPropagation();
+        openNewOrderRef.current();
+        return;
+      }
+      if (detailId && !isEditing && comboMatchesEvent(e, getShortcut("order_detail_edit"))) {
+        e.preventDefault();
+        e.stopPropagation();
+        startEditingRef.current();
+        return;
+      }
+      if (detailId && isEditing && comboMatchesEvent(e, getShortcut("order_detail_save"))) {
+        e.preventDefault();
+        e.stopPropagation();
+        saveTicketChangesRef.current();
+        return;
+      }
+    };
+    const doc = document;
+    doc.addEventListener("keydown", onKey, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      doc.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [detailId, isEditing]);
+
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
     if (!newDraft.deviceLabel.trim()) e.deviceLabel = "Vyplň zařízení.";
-    if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
+    const phoneRequired = uiCfg.orders.customerPhoneRequired;
+    if (phoneRequired && !newDraft.customerPhone.trim()) e.customerPhone = "Telefon je povinný.";
+    else if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
     if (!isEmailValid(newDraft.customerEmail)) e.customerEmail = "E-mail vypadá neplatně.";
     if (!isZipValid(newDraft.addressZip)) e.addressZip = "PSČ musí mít 5 číslic.";
     if (!isIcoValid(newDraft.ico)) e.ico = "IČO musí mít 8 číslic.";
     return e;
-  }, [newDraft]);
+  }, [newDraft, uiCfg.orders.customerPhoneRequired]);
 
   const canCreate = Object.keys(errors).length === 0;
   const showError = (field: string) => submitAttempted && !!errors[field];
@@ -6030,7 +6735,7 @@ export default function Orders({
     createTicketAction({
       newDraft,
       customerMatchDecision,
-      onSuccess: (newTicket) => {
+      onSuccess: async (newTicket) => {
         setNewDraft(defaultDraft());
         setIsNewOpen(false);
         setSubmitAttempted(false);
@@ -6044,6 +6749,14 @@ export default function Orders({
         safeSaveDraft(null);
         window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
         setDetailId(newTicket.id);
+        const config = await loadDocumentsConfigFromDB(activeServiceId);
+        if (config?.autoPrint?.ticketListOnCreate) {
+          openPreviewWindowWithPrint(generateTicketHTML(newTicket, true, config), "Zakázkový list");
+        }
+        if (config?.autoPrint?.warrantyOnCreate) {
+          const companyData = safeLoadCompanyData();
+          openPreviewWindowWithPrint(generateWarrantyHTML(newTicket, companyData, true, config), "Záruční list");
+        }
       },
     });
   };
@@ -6096,6 +6809,199 @@ export default function Orders({
     setCommentDraftByTicket((p) => ({ ...p }));
   };
 
+  const renderTicketCard = (t: (typeof filtered)[number]) => {
+    const raw = (t.status as any) ?? statusById[t.id];
+    const currentStatus = normalizeStatus(raw);
+    const meta = currentStatus !== null ? getByKey(currentStatus) : null;
+    const cardKey = t.id;
+    const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+    return (
+      <div
+        key={cardKey}
+        onClick={() => { setDetailId(t.id); setDetailClaimId(null); }}
+        style={{
+          textAlign: "left",
+          padding: 0,
+          borderRadius: isCompactExtra ? 8 : 16,
+          border: meta?.bg ? `2px solid ${meta.bg}80` : "1px solid var(--border)",
+          background: meta?.bg ? `${meta.bg}30` : "var(--panel)",
+          cursor: "pointer",
+          boxShadow: meta?.bg ? `0 2px 8px ${meta.bg}30, 0 0 0 1px ${meta.bg}20` : "0 2px 8px rgba(0,0,0,0.06)",
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          color: "var(--text)",
+          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = meta?.bg ? `0 6px 16px ${meta.bg}40, 0 0 0 1px ${meta.bg}30` : "0 4px 12px rgba(0,0,0,0.1)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = meta?.bg ? `0 2px 8px ${meta.bg}30, 0 0 0 1px ${meta.bg}20` : "0 2px 8px rgba(0,0,0,0.06)";
+        }}
+      >
+        <div
+          style={{
+            width: isCompactExtra ? 6 : 10,
+            background: meta?.bg || "var(--border)",
+            flexShrink: 0,
+            boxShadow: meta?.bg ? `0 0 24px ${meta.bg}90, inset 0 0 12px ${meta.bg}60, 0 0 8px ${meta.bg}50` : "none",
+          }}
+        />
+
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          padding: isCompactExtra ? "6px 10px" : uiCfg.orders.displayMode === "grid" ? 14 : 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: isCompactExtra ? 0 : uiCfg.orders.displayMode === "grid" ? 10 : 12
+        }}>
+          {isCompactExtra ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+              <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
+              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{t.deviceLabel || "—"}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.customerName}</div>
+              {meta?.isFinal && <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}>✓</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
+                {currentStatus !== null ? <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" /> : <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>}
+                {canPrintExport && (
+                  <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, minWidth: 26, minHeight: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>🖨️</button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: uiCfg.orders.displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
+                  <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
+                  {meta?.isFinal && (
+                    <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>✓</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 100 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
+                  {currentStatus !== null ? (
+                    <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" />
+                  ) : (
+                    <div style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>
+                  )}
+                  {canPrintExport && (
+                    <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk dokumentu" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, minWidth: 32, minHeight: 32, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 14, flexShrink: 0 }}>🖨️</button>
+                  )}
+                </div>
+              </div>
+              {uiCfg.orders.displayMode === "compact" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 950, fontSize: 15, color: "var(--accent)", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                      <DeviceIcon size={14} color="var(--accent)" />
+                      <span>{t.deviceLabel || "—"}</span>
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{t.customerName}</div>
+                  </div>
+                  {(t.requestedRepair || t.issueShort) && (
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      <WrenchIcon size={12} color="var(--text)" />
+                      <span>{t.requestedRepair || t.issueShort}</span>
+                    </div>
+                  )}
+                  {(() => {
+                    const repairs = t.performedRepairs ?? [];
+                    const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
+                    const discountType = t.discountType;
+                    const discountValue = t.discountValue || 0;
+                    let discountAmount = 0;
+                    if (discountType === "percentage") discountAmount = (totalPrice * discountValue) / 100;
+                    else if (discountType === "amount") discountAmount = discountValue;
+                    const finalPrice = Math.max(0, totalPrice - discountAmount);
+                    const hasRepairs = repairs.length > 0;
+                    const hasPrice = finalPrice > 0;
+                    if (hasRepairs || hasPrice) {
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                          {hasRepairs && <span>{repairs.length} oprav</span>}
+                          {hasRepairs && hasPrice && <span>•</span>}
+                          {hasPrice && <span style={{ fontWeight: 700, color: "var(--accent)" }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0, marginTop: 2 }}>
+                      <DeviceIcon size={16} color="currentColor" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                        <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{t.deviceLabel || "—"}</div>
+                        <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{t.customerName}</div>
+                      </div>
+                      {t.serialOrImei && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {t.serialOrImei}</div>}
+                    </div>
+                  </div>
+                  {(t.requestedRepair || t.issueShort) && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
+                        <WrenchIcon size={16} color="currentColor" />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{t.requestedRepair || t.issueShort}</div>
+                      </div>
+                    </div>
+                  )}
+                  {(() => {
+                    const repairs = t.performedRepairs ?? [];
+                    const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
+                    const discountType = t.discountType;
+                    const discountValue = t.discountValue || 0;
+                    let discountAmount = 0;
+                    if (discountType === "percentage") discountAmount = (totalPrice * discountValue) / 100;
+                    else if (discountType === "amount") discountAmount = discountValue;
+                    const finalPrice = Math.max(0, totalPrice - discountAmount);
+                    const hasRepairs = repairs.length > 0;
+                    const hasPrice = finalPrice > 0;
+                    return (
+                      <>
+                        {(hasRepairs || hasPrice) && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--panel)", borderRadius: 8, border: "1px solid var(--border)", marginTop: 8 }}>
+                            {hasRepairs && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)" }}>
+                                <WrenchIcon size={12} color="currentColor" />
+                                <span>{repairs.length} {repairs.length === 1 ? "oprava" : repairs.length < 5 ? "opravy" : "oprav"}</span>
+                              </div>
+                            )}
+                            {hasPrice && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--accent)", marginLeft: hasRepairs ? "auto" : 0 }}>
+                                <span>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {t.customerPhone && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
+                            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{formatPhoneNumber(t.customerPhone)}</div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
@@ -6109,19 +7015,28 @@ export default function Orders({
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1 }}>
-          <input placeholder="Vyhledávání…" value={query} onChange={(e) => setQuery(e.target.value)} style={inputStyle} />
-          <button style={primaryBtn} onClick={openNewOrder}>
+          <input ref={searchInputRef} data-tour="orders-search" placeholder="Vyhledávání…" value={query} onChange={(e) => setQuery(e.target.value)} style={inputStyle} />
+          <button data-tour="orders-new-btn" style={primaryBtn} onClick={openNewOrder}>
             + Nová zakázka
+          </button>
+          <button
+            data-tour="orders-new-claim-btn"
+            type="button"
+            style={primaryBtn}
+            onClick={() => setCreateClaimModalOpen(true)}
+          >
+            + Nová reklamace
           </button>
         </div>
       </div>
 
       {/* Group tabs */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      <div data-tour="orders-groups" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {[
           { key: "all" as const, label: "Vše" },
           { key: "active" as const, label: "Aktivní" },
           { key: "final" as const, label: "Final" },
+          { key: "reklamace" as const, label: "Reklamace" },
         ].map((g) => {
           const active = g.key === activeGroup;
           return (
@@ -6150,7 +7065,7 @@ export default function Orders({
 
       {/* Secondary quick status filters */}
       {showSecondaryFiltersRow && (
-        <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div data-tour="orders-filters" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => setActiveStatusKey(null)}
             style={{
@@ -6203,424 +7118,125 @@ export default function Orders({
           Načítání zakázek...
         </div>
       )}
-      {ticketsError && (
+      {ticketsError && activeGroup !== "reklamace" && (
         <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
           {ticketsError}
         </div>
       )}
+      {claimsLoading && activeGroup === "reklamace" && (
+        <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Načítání reklamací…</div>
+      )}
+      {claimsError && (
+        <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
+          {claimsError}
+        </div>
+      )}
 
       {/* List/Grid - only render if statuses are ready and not loading and no error */}
-      {statusesReady && !ticketsLoading && !ticketsError && (
-      <div style={{ 
+      {statusesReady && (activeGroup === "reklamace" ? !claimsLoading && !claimsError : !ticketsLoading && !ticketsError) && (
+      <div data-tour="orders-list" style={{ 
         marginTop: 16, 
         display: uiCfg.orders.displayMode === "grid" ? "grid" : "grid",
         gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(350px, 1fr))" : "minmax(260px, 1fr)",
         gap: uiCfg.orders.displayMode === "grid" ? 16 : uiCfg.orders.displayMode === "compact-extra" ? 2 : 8,
         minWidth: 0,
       }}>
-        {paginatedTickets.map((t) => {
-          const raw = (t.status as any) ?? statusById[t.id];
-          const currentStatus = normalizeStatus(raw);
-          const meta = currentStatus !== null ? getByKey(currentStatus) : null;
-          const cardKey = t.id;
-
-          const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
-          return (
-            <div
-              key={cardKey}
-              onClick={() => setDetailId(t.id)}
-              style={{
-                textAlign: "left",
-                padding: 0,
-                borderRadius: isCompactExtra ? 8 : 16,
-                border: meta?.bg ? `2px solid ${meta.bg}80` : "1px solid var(--border)",
-                background: meta?.bg ? `${meta.bg}30` : "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                cursor: "pointer",
-                boxShadow: meta?.bg ? `0 4px 16px ${meta.bg}40, 0 0 0 1px ${meta.bg}20` : "var(--shadow-soft)",
-                transition: "var(--transition-smooth)",
-                color: "var(--text)",
-                fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                position: "relative",
-                overflow: "hidden",
-                display: "flex",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-1px)";
-                e.currentTarget.style.boxShadow = meta?.bg ? `0 6px 20px ${meta.bg}50, 0 0 0 1px ${meta.bg}30` : "var(--shadow-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = meta?.bg ? `0 4px 16px ${meta.bg}40, 0 0 0 1px ${meta.bg}20` : "var(--shadow-soft)";
-              }}
-            >
-              <div
-                style={{
-                  width: isCompactExtra ? 6 : 10,
-                  background: meta?.bg || "var(--border)",
-                  flexShrink: 0,
-                  boxShadow: meta?.bg ? `0 0 24px ${meta.bg}90, inset 0 0 12px ${meta.bg}60, 0 0 8px ${meta.bg}50` : "none",
-                }}
-              />
-
-              <div style={{ 
-                flex: 1, 
-                minWidth: 0,
-                padding: isCompactExtra ? "6px 10px" : uiCfg.orders.displayMode === "grid" ? 14 : 16, 
-                display: "flex", 
-                flexDirection: "column", 
-                gap: isCompactExtra ? 0 : uiCfg.orders.displayMode === "grid" ? 10 : 12 
-              }}>
-                {isCompactExtra ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
-                    <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
-                    <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{t.deviceLabel || "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.customerName}</div>
-                    {meta?.isFinal && <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}>✓</span>}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
-                      {currentStatus !== null ? <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" /> : <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>}
-                      {canPrintExport && (
-                      <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, minWidth: 26, minHeight: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>🖨️</button>
-                      )}
+        {activeGroup === "reklamace"
+          ? paginatedClaims.map((c) => {
+              const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+                  style={{
+                    textAlign: "left",
+                    padding: 0,
+                    borderRadius: isCompactExtra ? 8 : 12,
+                    border: "1px solid rgba(13, 148, 136, 0.4)",
+                    background: "var(--panel)",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                    color: "var(--text)",
+                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                    position: "relative",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.18)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.6)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.4)"; }}
+                >
+                  <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
+                  <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
+                      <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
                     </div>
-                  </div>
-                ) : (
-                <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: uiCfg.orders.displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
-                    <div
-                      style={{
-                        fontWeight: 950,
-                        fontSize: 15,
-                        letterSpacing: "-0.01em",
-                        color: "var(--text)",
-                        whiteSpace: "nowrap",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {t.code}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
-                    {meta?.isFinal && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 900,
-                          padding: "2px 5px",
-                          borderRadius: 4,
-                          background: "var(--accent-soft)",
-                          color: "var(--accent)",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.5px",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        ✓
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                      <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                        <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
                       </span>
-                    )}
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 100 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
-                    {currentStatus !== null ? (
-                    <StatusPicker
-                      value={currentStatus}
-                      statuses={statuses as any}
-                      getByKey={getByKey as any}
-                      onChange={(next) => setTicketStatus(t.id, next)}
-                      size="sm"
-                    />
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          background: "var(--panel-2)",
-                          color: "var(--muted)",
-                          fontWeight: 600,
-                        }}
-                      >
-                        …
-                      </div>
-                    )}
-                    {canPrintExport && (
-                    <button
-                      type="button"
-                      data-quick-print-trigger-id={t.id}
-                      onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }}
-                      title="Tisk dokumentu"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 32,
-                        height: 32,
-                        minWidth: 32,
-                        minHeight: 32,
-                        borderRadius: 8,
-                        border: "1px solid var(--border)",
-                        background: "var(--panel)",
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        fontSize: 14,
-                        flexShrink: 0,
-                      }}
-                    >
-                      🖨️
-                    </button>
-                    )}
+                    </div>
                   </div>
                 </div>
-
-                {uiCfg.orders.displayMode === "compact" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <div
-                      style={{
-                        fontWeight: 950,
-                        fontSize: 15,
-                        color: "var(--accent)",
-                        minWidth: 0,
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <DeviceIcon size={14} color="var(--accent)" />
-                      <span>{t.deviceLabel || "—"}</span>
-                    </div>
-                    <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                      {t.customerName}
-                    </div>
-                  </div>
-                  {(t.requestedRepair || t.issueShort) && (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "var(--text)",
-                        minWidth: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <WrenchIcon size={12} color="var(--text)" />
-                      <span>{t.requestedRepair || t.issueShort}</span>
-                    </div>
-                  )}
-                    {(() => {
-                      const repairs = t.performedRepairs ?? [];
-                      const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-                      const discountType = t.discountType;
-                      const discountValue = t.discountValue || 0;
-                      let discountAmount = 0;
-                      if (discountType === "percentage") {
-                        discountAmount = (totalPrice * discountValue) / 100;
-                      } else if (discountType === "amount") {
-                        discountAmount = discountValue;
-                      }
-                      const finalPrice = Math.max(0, totalPrice - discountAmount);
-                      const hasRepairs = repairs.length > 0;
-                      const hasPrice = finalPrice > 0;
-
-                      if (hasRepairs || hasPrice) {
-                        return (
-                          <div style={{ 
-                            display: "flex", 
-                            alignItems: "center", 
-                            gap: 6,
-                            fontSize: 10,
-                            color: "var(--muted)",
-                            whiteSpace: "nowrap",
-                          }}>
-                            {hasRepairs && <span>{repairs.length} oprav</span>}
-                            {hasRepairs && hasPrice && <span>•</span>}
-                            {hasPrice && <span style={{ fontWeight: 700, color: "var(--accent)" }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>}
-              </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ 
-                      display: "flex", 
-                      alignItems: "flex-start", 
-                      gap: 10,
-                    }}>
-                      <div style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        justifyContent: "center",
-                        width: 28,
-                        height: 28,
-                        borderRadius: 6,
-                        background: "var(--accent-soft)",
-                        color: "var(--accent)",
-                        flexShrink: 0,
-                        marginTop: 2,
-                      }}>
-                        <DeviceIcon size={16} color="currentColor" />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ 
-                          display: "flex",
-                          alignItems: "baseline",
-                          gap: 8,
-                          flexWrap: "wrap",
-                          marginBottom: 4,
-                        }}>
-                          <div style={{ 
-                            fontWeight: 950, 
-                            fontSize: 16, 
-                            color: "var(--text)",
-                            lineHeight: 1.4,
-                          }}>
-                            {t.deviceLabel || "—"}
-                          </div>
-                          <div style={{ 
-                            fontWeight: 600, 
-                            fontSize: 12, 
-                            color: "var(--muted)",
-                            whiteSpace: "nowrap",
-                          }}>
-                            {t.customerName}
-                          </div>
-                        </div>
-                        {t.serialOrImei && (
-                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                            SN: {t.serialOrImei}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {(t.requestedRepair || t.issueShort) && (
-                      <div style={{ 
-                        display: "flex", 
-                        alignItems: "flex-start", 
-                        gap: 10,
-                        marginTop: 4,
-                      }}>
-                        <div style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
-                          justifyContent: "center",
-                          width: 28,
-                          height: 28,
-                          borderRadius: 6,
-                          background: "var(--panel)",
-                          border: "1px solid var(--border)",
-                          color: "var(--text)",
-                          flexShrink: 0,
-                          marginTop: 2,
-                        }}>
-                          <WrenchIcon size={16} color="currentColor" />
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ 
-                            fontSize: 14, 
-                            fontWeight: 700, 
-                            color: "var(--text)",
-                            lineHeight: 1.4,
-                          }}>
-                            {t.requestedRepair || t.issueShort}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {(() => {
-                      const repairs = t.performedRepairs ?? [];
-                      const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-                      const discountType = t.discountType;
-                      const discountValue = t.discountValue || 0;
-                      let discountAmount = 0;
-                      if (discountType === "percentage") {
-                        discountAmount = (totalPrice * discountValue) / 100;
-                      } else if (discountType === "amount") {
-                        discountAmount = discountValue;
-                      }
-                      const finalPrice = Math.max(0, totalPrice - discountAmount);
-                      const hasRepairs = repairs.length > 0;
-                      const hasPrice = finalPrice > 0;
-
+              );
+            })
+          : showClaimsInOrdersList
+            ? paginatedCombined.map((row) =>
+                row.type === "claim"
+                  ? (() => {
+                      const c = row.data;
+                      const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
                       return (
-                        <>
-                          {(hasRepairs || hasPrice) && (
-                            <div style={{ 
-                              display: "flex", 
-                              alignItems: "center", 
-                              gap: 8,
-                              padding: "8px 10px",
-                              background: "var(--panel)",
-                              borderRadius: 8,
-                              border: "1px solid var(--border)",
-                              marginTop: 8,
-                            }}>
-                              {hasRepairs && (
-                                <div style={{ 
-                                  display: "flex", 
-                                  alignItems: "center", 
-                                  gap: 6,
-                                  fontSize: 11,
-                                  color: "var(--muted)",
-                                }}>
-                                  <WrenchIcon size={12} color="currentColor" />
-                                  <span>{repairs.length} {repairs.length === 1 ? "oprava" : repairs.length < 5 ? "opravy" : "oprav"}</span>
-                                </div>
-                              )}
-                              {hasPrice && (
-                                <div style={{ 
-                                  display: "flex", 
-                                  alignItems: "center", 
-                                  gap: 6,
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  color: "var(--accent)",
-                                  marginLeft: hasRepairs ? "auto" : 0,
-                                }}>
-                                  <span>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
-                                </div>
-                              )}
+                        <div
+                          key={`claim-${c.id}`}
+                          onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+                          style={{
+                            textAlign: "left",
+                            padding: 0,
+                            borderRadius: isCompactExtra ? 8 : 12,
+                            border: "1px solid rgba(13, 148, 136, 0.45)",
+                            background: "var(--panel)",
+                            cursor: "pointer",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                            color: "var(--text)",
+                            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                            position: "relative",
+                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.2)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.65)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.45)"; }}
+                        >
+                          <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
+                          <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
+                              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
                             </div>
-                          )}
-                          {t.customerPhone && (
-                            <div style={{ 
-                              display: "flex", 
-                              alignItems: "center", 
-                              gap: 12, 
-                              flexWrap: "wrap",
-                              paddingTop: 8,
-                              borderTop: "1px solid var(--border)",
-                              marginTop: 8,
-                            }}>
-                              <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                                {formatPhoneNumber(t.customerPhone)}
-                              </div>
+                            <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                              <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                              </span>
                             </div>
-                          )}
-                        </>
+                          </div>
+                        </div>
                       );
-                    })()}
-                  </>
-                )}
-                </>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                    })()
+                  : renderTicketCard(row.data)
+              )
+          : paginatedTickets.map((t) => renderTicketCard(t))
+        }
 
-        {filtered.length > ORDERS_PAGE_SIZE && (
+        {pageSize > 0 && listLength > pageSize && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16, padding: "12px 16px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, color: "var(--muted)" }}>
-              Zobrazeno {ordersPage * ORDERS_PAGE_SIZE + 1}–{Math.min((ordersPage + 1) * ORDERS_PAGE_SIZE, filtered.length)} z {filtered.length} zakázek
+              Zobrazeno {ordersPage * effectivePageSize + 1}–{Math.min((ordersPage + 1) * effectivePageSize, listLength)} z {listLength} {activeGroup === "reklamace" ? "reklamací" : "zakázek"}
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button
@@ -6646,7 +7262,7 @@ export default function Orders({
           </div>
         )}
 
-        {filtered.length === 0 && (
+        {listLength === 0 && (
           <div
             style={{
               padding: 48,
@@ -6664,9 +7280,13 @@ export default function Orders({
               gap: 12,
             }}
           >
-            <div style={{ fontSize: 48, opacity: 0.5 }}>📋</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Žádné zakázky neodpovídají filtru</div>
-            <div style={{ fontSize: 13 }}>Zkuste změnit filtry nebo vytvořte novou zakázku</div>
+            <div style={{ fontSize: 48, opacity: 0.5 }}>{activeGroup === "reklamace" ? "—" : "📋"}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+              {activeGroup === "reklamace" ? "Žádné reklamace neodpovídají filtru" : "Žádné zakázky neodpovídají filtru"}
+            </div>
+            <div style={{ fontSize: 13 }}>
+              {activeGroup === "reklamace" ? "Zkuste změnit vyhledávání nebo vytvořte reklamaci" : "Zkuste změnit filtry nebo vytvořte novou zakázku"}
+            </div>
           </div>
         )}
       </div>
@@ -6757,15 +7377,15 @@ export default function Orders({
                 setCustomerMatchDecision("undecided");
               }}
               onBlur={async () => {
-                if (newDraft.customerName.trim() && newDraft.customerPhone.trim()) {
-                  await lookupCustomer(newDraft.customerPhone, newDraft.customerName);
+                if (newDraft.customerName.trim()) {
+                  await lookupCustomer(newDraft.customerPhone.trim() || undefined, newDraft.customerName);
                 }
               }}
               style={{
                 ...baseFieldInput,
                 border: submitAttempted && !newDraft.customerName.trim() ? borderError : border,
               }}
-              placeholder="Např. Jan Novák"
+              placeholder="Jméno zákazníka"
               autoFocus
             />
             {submitAttempted && !newDraft.customerName.trim() && (
@@ -6774,7 +7394,7 @@ export default function Orders({
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <div style={fieldLabel}>Telefon</div>
+                <div style={fieldLabel}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
                 <input
                   value={formatPhoneNumber(newDraft.customerPhone)}
                   onChange={(e) => {
@@ -6822,20 +7442,19 @@ export default function Orders({
                     if (e.key === "Enter") {
                       const phone = newDraft.customerPhone.trim();
                       const name = newDraft.customerName.trim();
-                      if (phone) {
-                        await lookupCustomer(phone, name);
+                      if (phone || name) {
+                        await lookupCustomer(phone || undefined, name || undefined);
                       }
                     }
                   }}
                   onBlur={async () => {
-                    if (newDraft.customerPhone.trim()) {
-                      await lookupCustomer(newDraft.customerPhone, newDraft.customerName);
-                    } else {
-                      setMatchedCustomer(null);
-                    }
+                    await lookupCustomer(
+                      newDraft.customerPhone.trim() || undefined,
+                      newDraft.customerName.trim() || undefined
+                    );
                   }}
                   style={{ ...baseFieldInput, border: showError("customerPhone") ? borderError : border }}
-                  placeholder="+420 123 456 789"
+                  placeholder="+420 xxx xxx xxx"
                 />
                 {showError("customerPhone") && <div style={fieldHint}>{errors.customerPhone}</div>}
                 
@@ -6934,7 +7553,7 @@ export default function Orders({
                   value={newDraft.customerEmail}
                   onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
                   style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
-                  placeholder="např. jan@firma.cz"
+                  placeholder="email@example.cz"
                 />
                 {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
               </div>
@@ -6957,7 +7576,7 @@ export default function Orders({
                   value={newDraft.addressCity}
                   onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
                   style={baseFieldInput}
-                  placeholder="Praha"
+                  placeholder="Město"
                 />
               </div>
 
@@ -7049,12 +7668,32 @@ export default function Orders({
             </div>
 
             <div style={fieldLabel}>Popis stavu</div>
-            <textarea
+            <input
+              list="new-order-device-condition-list"
               value={newDraft.deviceCondition}
               onChange={(e) => setNewDraft((p) => ({ ...p, deviceCondition: e.target.value }))}
-              style={baseFieldTextArea}
-              placeholder="Např. rozbitý displej, prasklé zadní sklo, oděrky…"
+              style={baseFieldInput}
+              placeholder="Vyberte nebo napište vlastní (např. rozbitý displej, oděrky…)"
             />
+            <datalist id="new-order-device-condition-list">
+              {getDeviceOptions().deviceConditions.map((c, i) => (
+                <option key={i} value={c} />
+              ))}
+            </datalist>
+
+            <div style={fieldLabel}>Příslušenství</div>
+            <input
+              list="new-order-device-accessories-list"
+              value={newDraft.deviceAccessories}
+              onChange={(e) => setNewDraft((p) => ({ ...p, deviceAccessories: e.target.value }))}
+              style={baseFieldInput}
+              placeholder="Vyberte nebo napište vlastní (např. nabíječka, pouzdro…)"
+            />
+            <datalist id="new-order-device-accessories-list">
+              {getDeviceOptions().deviceAccessories.map((a, i) => (
+                <option key={i} value={a} />
+              ))}
+            </datalist>
 
             <div style={fieldLabel}>Požadovaná oprava</div>
             <textarea
@@ -7066,20 +7705,32 @@ export default function Orders({
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <div style={fieldLabel}>Způsob převzetí a předání</div>
-                <HandoffMethodPicker value={newDraft.handoffMethod} onChange={(value) => setNewDraft((p) => ({ ...p, handoffMethod: value }))} />
+                <div style={fieldLabel}>Způsob převzetí</div>
+                <HandoffMethodSelect
+                  options={getHandoffOptions().receiveMethods}
+                  value={newDraft.handoffMethod}
+                  onChange={(v) => setNewDraft((p) => ({ ...p, handoffMethod: v }))}
+                  triggerStyle={baseFieldInput}
+                />
               </div>
-
               <div>
-                <div style={fieldLabel}>Externí identifikace</div>
-                <input
-                  value={newDraft.externalId}
-                  onChange={(e) => setNewDraft((p) => ({ ...p, externalId: e.target.value }))}
-                  style={baseFieldInput}
-                  placeholder="Např. číslo zakázky partnera"
+                <div style={fieldLabel}>Způsob předání</div>
+                <HandoffMethodSelect
+                  options={getHandoffOptions().returnMethods}
+                  value={newDraft.handbackMethod}
+                  onChange={(v) => setNewDraft((p) => ({ ...p, handbackMethod: v }))}
+                  triggerStyle={baseFieldInput}
                 />
               </div>
             </div>
+
+            <div style={fieldLabel}>Externí identifikace</div>
+            <input
+              value={newDraft.externalId}
+              onChange={(e) => setNewDraft((p) => ({ ...p, externalId: e.target.value }))}
+              style={baseFieldInput}
+              placeholder="Např. číslo zakázky partnera"
+            />
 
             <div style={fieldLabel}>Předschválená cena</div>
             <input
@@ -7143,8 +7794,8 @@ export default function Orders({
               position: "fixed",
               inset: 0,
               background: "rgba(0,0,0,0.42)",
-              opacity: detailId ? 1 : 0,
-              pointerEvents: detailId ? "auto" : "none",
+              opacity: (detailId || detailClaimId) ? 1 : 0,
+              pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
               transition: "opacity 160ms ease",
               zIndex: 300,
             }}
@@ -7155,9 +7806,9 @@ export default function Orders({
           position: "fixed",
           left: "50%",
           top: "50%",
-          transform: detailId ? "translate(-50%, -50%) scale(1) translateZ(0)" : "translate(-50%, -48%) scale(0.99) translateZ(0)",
-          opacity: detailId ? 1 : 0,
-          pointerEvents: detailId ? "auto" : "none",
+          transform: (detailId || detailClaimId) ? "translate(-50%, -50%) scale(1) translateZ(0)" : "translate(-50%, -48%) scale(0.99) translateZ(0)",
+          opacity: (detailId || detailClaimId) ? 1 : 0,
+          pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
           transition: "transform 160ms ease, opacity 160ms ease",
           width: 1080,
           maxWidth: "calc(100vw - 24px)",
@@ -7172,15 +7823,20 @@ export default function Orders({
           padding: 18,
           zIndex: 310,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          willChange: detailId ? "transform" : "auto",
+          willChange: (detailId || detailClaimId) ? "transform" : "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)" }}>{detailedTicket ? detailedTicket.code : "—"}</div>
+            <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
+              {detailedClaim ? detailedClaim.code : (detailedTicket ? detailedTicket.code : "—")}
+              {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
+            </div>
             <div style={{ color: "var(--muted)", marginTop: 4 }}>
-              {detailedTicket ? (
+              {detailedClaim ? (
+                <>{detailedClaim.customer_name ?? "—"} · {formatCZ(detailedClaim.created_at)}</>
+              ) : detailedTicket ? (
                 <>
                   <span
                     onClick={() => {
@@ -7214,8 +7870,53 @@ export default function Orders({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            {!isEditing ? (
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {detailedClaim ? (
+              <>
+                {detailedClaim.source_ticket_id && (
+                  <button
+                    type="button"
+                    onClick={() => { setDetailId(detailedClaim.source_ticket_id!); setDetailClaimId(null); }}
+                    style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--panel-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+                    title="Otevřít původní zakázku"
+                  >
+                    Otevřít zakázku
+                  </button>
+                )}
+                {!isEditingClaim ? (
+                  <>
+                    <button onClick={startEditingClaim} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }} title="Upravit reklamaci">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                      Upravit
+                    </button>
+                    <button onClick={() => { setDeleteClaimId(detailedClaim.id); setDeleteClaimDialogOpen(true); }} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(239, 68, 68, 0.9)" }} title="Smazat reklamaci">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      Smazat reklamaci
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => saveClaimChanges().then((ok) => ok && showToast("Změny uloženy", "success"))} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }} title="Uložit změny">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                      Uložit
+                    </button>
+                    <button onClick={() => { setIsEditingClaim(false); setEditedClaim({}); }} style={softBtn} title="Zrušit úpravy">Zrušit</button>
+                  </>
+                )}
+                {canPrintExport && (
+                  <DocumentActionPicker
+                    label="Přijetí reklamace"
+                    onSelect={async (action) => {
+                      const config = await loadDocumentsConfigFromDB(activeServiceId);
+                      const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
+                      if (action === "preview") openPreviewWindow(html, "Náhled – Přijetí reklamace");
+                      else if (action === "print" || action === "export") openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                    }}
+                  />
+                )}
+                <button onClick={() => setClaimHistoryModalOpen(true)} style={softBtn} title="Historie změn reklamace">Historie</button>
+              </>
+            ) : !isEditing ? (
               <>
               <button
                 onClick={startEditing}
@@ -7279,13 +7980,14 @@ export default function Orders({
               </>
             )}
 
-            {detailedTicket && canPrintExport && (
+            {detailedTicket && !detailedClaim && canPrintExport && (
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <DocumentActionPicker
                   label="📄 Zakázkový list"
                   onSelect={(action) => {
                     if (action === "export") exportTicketToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printTicket(detailedTicket, activeServiceId);
+                    else if (action === "preview") openPreviewWindow(generateTicketHTML(detailedTicket, true), "Náhled – Zakázkový list");
                   }}
                 />
                 {(detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0)) && (
@@ -7294,6 +7996,7 @@ export default function Orders({
                     onSelect={(action) => {
                       if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId);
                       else if (action === "print") printDiagnosticProtocol(detailedTicket, activeServiceId);
+                      else if (action === "preview") openPreviewWindow(generateDiagnosticProtocolHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Diagnostický protokol");
                     }}
                   />
                 )}
@@ -7302,9 +8005,20 @@ export default function Orders({
                   onSelect={(action) => {
                     if (action === "export") exportWarrantyToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printWarranty(detailedTicket, activeServiceId);
+                    else if (action === "preview") openPreviewWindow(generateWarrantyHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Záruční list");
                   }}
                 />
               </div>
+            )}
+
+            {detailedTicket && !detailedClaim && (
+              <button
+                onClick={() => setTicketHistoryModalOpen(true)}
+                style={softBtn}
+                title="Historie změn zakázky"
+              >
+                Historie
+              </button>
             )}
 
             <button
@@ -7316,6 +8030,425 @@ export default function Orders({
           </div>
         </div>
 
+        {detailedClaim && (() => {
+          const c = { ...detailedClaim, ...editedClaim };
+          const sourceTicket = detailedClaim.source_ticket_id ? tickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
+          return (
+          <>
+          <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={card}>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>👤 Zákazník</div>
+              {!isEditingClaim ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.customer_name ?? "—"}</div>
+                  {c.customer_phone && (
+                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>📞</span>
+                      <span>{formatPhoneNumber(c.customer_phone)}</span>
+                    </div>
+                  )}
+                  {c.customer_email && (
+                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>✉️</span>
+                      <span>{c.customer_email}</span>
+                    </div>
+                  )}
+                  {[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).length > 0 && (
+                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                      <span>📍</span>
+                      <span>{[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).join(", ")}</span>
+                    </div>
+                  )}
+                  {(c.customer_company || c.customer_ico) && (
+                    <div style={{ fontSize: 13, color: "var(--text)", marginTop: 4 }}>{[c.customer_company, c.customer_ico].filter(Boolean).join(" · ")}</div>
+                  )}
+                  {c.customer_info && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, whiteSpace: "pre-wrap" }}>{c.customer_info}</div>}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input value={c.customer_name ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_name: e.target.value }))} placeholder="Jméno / firma" style={baseFieldInput} />
+                  <input value={c.customer_phone ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_phone: e.target.value }))} placeholder="Telefon" style={baseFieldInput} />
+                  <input value={c.customer_email ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_email: e.target.value }))} placeholder="E-mail" style={baseFieldInput} />
+                  <input value={c.customer_address_street ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_street: e.target.value }))} placeholder="Ulice, č.p." style={baseFieldInput} />
+                  <input value={c.customer_address_city ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_city: e.target.value }))} placeholder="Město" style={baseFieldInput} />
+                  <input value={c.customer_address_zip ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_zip: e.target.value }))} placeholder="PSČ" style={baseFieldInput} />
+                  <input value={c.customer_company ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_company: e.target.value }))} placeholder="Firma" style={baseFieldInput} />
+                  <input value={c.customer_ico ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_ico: e.target.value }))} placeholder="IČO" style={baseFieldInput} />
+                  <textarea value={c.customer_info ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_info: e.target.value }))} placeholder="Poznámka k zákazníkovi" rows={2} style={{ ...baseFieldInput, minHeight: 60 }} />
+                </div>
+              )}
+            </div>
+            <div style={card}>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📱 Zařízení</div>
+              {!isEditingClaim ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.device_label || c.device_serial || "—"}</div>
+                  {c.device_serial && (
+                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>🔢</span>
+                      <span>SN: {c.device_serial}</span>
+                    </div>
+                  )}
+                  {(c.device_brand || c.device_model) && (
+                    <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_brand, c.device_model].filter(Boolean).join(" ")}</div>
+                  )}
+                  {c.device_condition && <div style={{ fontSize: 13, color: "var(--text)" }}>{c.device_condition}</div>}
+                  {(c.device_accessories || c.device_note) && (
+                    <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_accessories, c.device_note].filter(Boolean).join(" · ")}</div>
+                  )}
+                  {c.device_passcode && <div style={{ fontSize: 13, color: "var(--text)" }}>Heslo/kód: {c.device_passcode}</div>}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input value={c.device_label ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_label: e.target.value }))} placeholder="Popis zařízení" style={baseFieldInput} />
+                  <input value={c.device_serial ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_serial: e.target.value }))} placeholder="SN / IMEI" style={baseFieldInput} />
+                  <input value={c.device_condition ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_condition: e.target.value }))} placeholder="Stav zařízení" style={baseFieldInput} />
+                  <input value={c.device_accessories ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_accessories: e.target.value }))} placeholder="Příslušenství" style={baseFieldInput} />
+                  <input value={c.device_note ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_note: e.target.value }))} placeholder="Poznámka k zařízení" style={baseFieldInput} />
+                  <input value={c.device_passcode ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_passcode: e.target.value }))} placeholder="Heslo/kód" style={baseFieldInput} />
+                </div>
+              )}
+            </div>
+            <div style={{ ...card, gridColumn: "1 / -1" }}>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📝 Poznámka / důvod reklamace</div>
+              {!isEditingClaim ? (
+                <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
+              ) : (
+                <textarea value={c.notes ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, notes: e.target.value }))} placeholder="Poznámka / důvod reklamace" rows={4} style={{ ...baseFieldInput, minHeight: 100 }} />
+              )}
+            </div>
+            <div style={{ ...card, gridColumn: "1 / -1" }}>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
+              {(() => {
+                const resolutionItems = claimResolutionDraft ?? parseClaimResolutionItems(detailedClaim?.resolution_summary ?? null);
+                const setResolutionItems = (next: ClaimResolutionItem[]) => setClaimResolutionDraft(next);
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {resolutionItems.length === 0 ? (
+                      <div style={{ fontSize: 14, color: "var(--muted)" }}>Zatím nebyly přidány žádné zákroky. Přidejte zákrok nebo opravu a u každého můžete nastavit cenu (0 Kč = zdarma při uznané reklamaci).</div>
+                    ) : (
+                      resolutionItems.map((item) => (
+                        <div key={item.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 10, background: "var(--panel)", border: "1px solid var(--border)" }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+                            <input
+                              value={item.name}
+                              onChange={(e) => setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, name: e.target.value } : x)))}
+                              placeholder="Název zákroku / opravy"
+                              style={{ ...baseFieldInput, flex: 1, minWidth: 180 }}
+                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Cena (Kč)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={item.price ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const num = v === "" ? undefined : Number(v);
+                                  setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, price: num } : x)));
+                                }}
+                                placeholder="0 = zdarma"
+                                title="Při uznané reklamaci 0 Kč, při neuznané uvedte cenu opravy"
+                                style={{ ...baseFieldInput, width: 100, fontWeight: 700 }}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setResolutionItems(resolutionItems.filter((x) => x.id !== item.id))}
+                              style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, cursor: "pointer", fontSize: 12 }}
+                            >
+                              Odstranit
+                            </button>
+                          </div>
+                          <textarea
+                            value={item.description ?? ""}
+                            onChange={(e) => setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, description: e.target.value || undefined } : x)))}
+                            placeholder="Popis (volitelné)"
+                            rows={2}
+                            style={{ ...baseFieldInput, minHeight: 50, fontSize: 12 }}
+                          />
+                        </div>
+                      ))
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setResolutionItems([...resolutionItems, { id: (crypto as any).randomUUID?.() ?? `z-${Date.now()}`, name: "" }])}
+                        style={{ ...primaryBtn, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px" }}
+                      >
+                        <span>+</span> Přidat zákrok
+                      </button>
+                      {claimResolutionDraft !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            saveClaimResolutionItems(detailedClaim!.id, claimResolutionDraft!).then((ok) => ok && showToast("Zákroky uloženy", "success"));
+                          }}
+                          style={{ ...primaryBtn, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--accent)", color: "var(--accent-fg)" }}
+                        >
+                          Uložit zákroky
+                        </button>
+                      )}
+                    </div>
+                    {resolutionItems.length > 0 && (() => {
+                      const total = resolutionItems.reduce((sum, r) => sum + (r.price || 0), 0);
+                      return (
+                        <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)", fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
+                          Celkem: {total.toLocaleString("cs-CZ")} Kč
+                          {total === 0 && resolutionItems.some((r) => r.price === 0 || r.price === undefined) && (
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginLeft: 8 }}>(vše zdarma)</span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{ ...card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 0 }}>Stav</div>
+              <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                {!isEditingClaim ? (
+                  <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(detailedClaim.id, next)} size="sm" />
+                ) : (
+                  <StatusPicker value={c.status ?? "received"} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setEditedClaim((p) => ({ ...p, status: next }))} size="sm" />
+                )}
+              </div>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Vytvořeno: {formatCZ(c.created_at)}</span>
+              {c.updated_at && <span style={{ fontSize: 12, color: "var(--muted)" }}>· Upraveno: {formatCZ(c.updated_at)}</span>}
+            </div>
+          </div>
+
+          {sourceTicket ? (
+            <>
+              <div style={{ ...card, marginTop: 16 }}>
+                <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>🔍 Diagnostika</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky. Pro uložení do databáze otevřete zakázku a klikněte na Uložit.</div>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <div style={fieldLabel}>Diagnostický protokol</div>
+                    <textarea
+                      value={sourceTicket.diagnosticText || ""}
+                      onChange={(e) =>
+                        setCloudTickets((prev) =>
+                          prev.map((t) => (t.id === sourceTicket.id ? { ...t, diagnosticText: e.target.value } : t))
+                        )
+                      }
+                      style={baseFieldTextArea}
+                      placeholder="Zadejte výsledky diagnostiky zařízení..."
+                      rows={6}
+                    />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Diagnostické fotografie</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                      {(sourceTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
+                        <div key={idx} style={{ position: "relative" }}>
+                          <img
+                            src={photoUrl}
+                            alt={`Diagnostika ${idx + 1}`}
+                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }}
+                          />
+                          <button
+                            onClick={async () => {
+                              const url = (sourceTicket.diagnosticPhotos || [])[idx];
+                              if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
+                                try {
+                                  await deleteDiagnosticPhotoFromStorage(supabase, url);
+                                } catch (_) {}
+                              }
+                              setCloudTickets((prev) =>
+                                prev.map((t) =>
+                                  t.id === sourceTicket.id ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) } : t
+                                )
+                              );
+                            }}
+                            style={{
+                              position: "absolute",
+                              top: 4,
+                              right: 4,
+                              width: 24,
+                              height: 24,
+                              borderRadius: "50%",
+                              background: "rgba(239, 68, 68, 0.9)",
+                              color: "white",
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 14,
+                              fontWeight: 700,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={diagnosticPhotosUploading}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        e.target.value = "";
+                        if (!files.length) return;
+                        const hasId = !!(activeServiceId && sourceTicket.id);
+                        if (hasId && supabase) {
+                          setDiagnosticPhotosUploading(true);
+                          try {
+                            const urls: string[] = [];
+                            for (const file of files) {
+                              const url = await uploadDiagnosticPhoto(supabase, activeServiceId!, sourceTicket.id!, file);
+                              urls.push(url);
+                            }
+                            setCloudTickets((prev) =>
+                              prev.map((t) =>
+                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
+                              )
+                            );
+                          } catch (err) {
+                            showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                          } finally {
+                            setDiagnosticPhotosUploading(false);
+                          }
+                        } else {
+                          const reader = (file: File) =>
+                            new Promise<string>((resolve, reject) => {
+                              const r = new FileReader();
+                              r.onload = () => resolve(r.result as string);
+                              r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                              r.readAsDataURL(file);
+                            });
+                          try {
+                            const results = await Promise.all(files.map(reader));
+                            setCloudTickets((prev) =>
+                              prev.map((t) =>
+                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
+                              )
+                            );
+                          } catch (_) {
+                            showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                          }
+                        }
+                      }}
+                      style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
+                    />
+                    {diagnosticPhotosUploading && (
+                      <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>Nahrávám…</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ ...card, marginTop: 16 }}>
+                <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>💬 Interní komentáře (chat)</div>
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  {commentsFor(sourceTicket.id).map((c) => {
+                    const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
+                    const commentAvatarUrl = c.author_avatar_url?.trim() || null;
+                    return (
+                      <div
+                        key={c.id}
+                        style={{
+                          border,
+                          borderRadius: 14,
+                          background: "var(--panel)",
+                          padding: 12,
+                          boxShadow: c.pinned ? "0 14px 30px rgba(0,0,0,0.16)" : "none",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            {commentAvatarUrl ? (
+                              <img
+                                src={commentAvatarUrl}
+                                alt=""
+                                style={{ width: 28, height: 28, borderRadius: 10, objectFit: "cover", border: "1px solid var(--border)" }}
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 10,
+                                  background: "var(--accent-soft)",
+                                  color: "var(--accent)",
+                                  display: "grid",
+                                  placeItems: "center",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {(commentAuthorName || "?").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div style={{ fontWeight: 950 }}>{commentAuthorName}</div>
+                            {c.pinned && (
+                              <div style={{ fontSize: 11, fontWeight: 950, padding: "4px 8px", borderRadius: 999, background: "var(--panel-2)", border, color: "var(--muted)" }}>
+                                PINNED
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            <div style={{ color: "var(--muted)", fontSize: 12 }}>{formatCZ(c.createdAt)}</div>
+                            <button
+                              onClick={() => togglePin(sourceTicket.id, c.id)}
+                              style={{
+                                padding: "8px 10px",
+                                borderRadius: 12,
+                                border,
+                                background: c.pinned ? "var(--panel-2)" : "var(--panel)",
+                                color: "var(--text)",
+                                fontWeight: 950,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                              title={c.pinned ? "Odepnout" : "Připnout"}
+                            >
+                              {c.pinned ? "Unpin" : "Pin"}
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
+                      </div>
+                    );
+                  })}
+                  {commentsFor(sourceTicket.id).length === 0 && <div style={{ color: "var(--muted)" }}>Zatím žádné komentáře.</div>}
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <textarea
+                      value={commentDraftByTicket[sourceTicket.id] ?? ""}
+                      onChange={(e) => setCommentDraftByTicket((p) => ({ ...p, [sourceTicket.id]: e.target.value }))}
+                      style={{ ...baseFieldTextArea, minHeight: 90 }}
+                      placeholder="Napiš interní komentář k zakázce…"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          addComment(sourceTicket.id);
+                        }
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                      <div style={{ color: "var(--muted)", fontSize: 12 }}>Tip: <b>Ctrl+Enter</b> pro odeslání.</div>
+                      <button style={{ ...primaryBtn, padding: "10px 14px" }} onClick={() => addComment(sourceTicket.id)}>
+                        Přidat komentář
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
+              Reklamace není napojená na zakázku. Diagnostiku a komentáře lze přidat u navázané zakázky.
+            </div>
+          )}
+          </>
+          );
+        })()}
         {detailedTicket && (
           <>
             {!isEditing ? (
@@ -7375,6 +8508,30 @@ export default function Orders({
                     </div>
                   </div>
 
+                  {(() => {
+                    const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
+                    return claimsForTicket.length > 0 ? (
+                      <div style={{ gridColumn: "1 / -1", ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
+                        <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {claimsForTicket.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+                              style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
+                            >
+                              <span style={{ fontWeight: 800 }}>{c.code}</span>
+                              <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+
                   <div style={card}>
                     <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📱 Zařízení</div>
                     <div style={{ display: "grid", gap: 8 }}>
@@ -7430,7 +8587,7 @@ export default function Orders({
                         />
                       </div>
                       <div>
-                        <div style={fieldLabel}>Telefon</div>
+                        <div style={fieldLabel}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
                         <input
                           type="text"
                           value={editedTicket.customerPhone || ""}
@@ -7694,12 +8851,33 @@ export default function Orders({
                       </div>
                       <div>
                         <div style={fieldLabel}>Popis stavu zařízení</div>
-                        <textarea
+                        <input
+                          list="edit-device-condition-list"
                           value={editedTicket.deviceCondition || ""}
                           onChange={(e) => setEditedTicket((p) => ({ ...p, deviceCondition: e.target.value }))}
-                          style={baseFieldTextArea}
-                          placeholder="Popis fyzického stavu zařízení..."
+                          style={baseFieldInput}
+                          placeholder="Vyberte nebo napište vlastní..."
                         />
+                        <datalist id="edit-device-condition-list">
+                          {getDeviceOptions().deviceConditions.map((c, i) => (
+                            <option key={i} value={c} />
+                          ))}
+                        </datalist>
+                      </div>
+                      <div>
+                        <div style={fieldLabel}>Příslušenství</div>
+                        <input
+                          list="edit-device-accessories-list"
+                          value={editedTicket.deviceAccessories || ""}
+                          onChange={(e) => setEditedTicket((p) => ({ ...p, deviceAccessories: e.target.value }))}
+                          style={baseFieldInput}
+                          placeholder="Vyberte nebo napište vlastní..."
+                        />
+                        <datalist id="edit-device-accessories-list">
+                          {getDeviceOptions().deviceAccessories.map((a, i) => (
+                            <option key={i} value={a} />
+                          ))}
+                        </datalist>
                       </div>
                       <div>
                         <div style={fieldLabel}>Poznámka k zařízení</div>
@@ -7711,10 +8889,23 @@ export default function Orders({
                         />
                       </div>
                       <div>
+                        <div style={fieldLabel}>Způsob převzetí</div>
+                        <HandoffMethodSelect
+                          options={getHandoffOptions().receiveMethods}
+                          value={editedTicket.handoffMethod || ""}
+                          onChange={(v) => setEditedTicket((p) => ({ ...p, handoffMethod: v }))}
+                          extraOption={editedTicket.handoffMethod || undefined}
+                          triggerStyle={baseFieldInput}
+                        />
+                      </div>
+                      <div>
                         <div style={fieldLabel}>Způsob předání</div>
-                        <HandoffMethodPicker
-                          value={editedTicket.handoffMethod || "branch"}
-                          onChange={(value) => setEditedTicket((p) => ({ ...p, handoffMethod: value }))}
+                        <HandoffMethodSelect
+                          options={getHandoffOptions().returnMethods}
+                          value={editedTicket.handbackMethod || ""}
+                          onChange={(v) => setEditedTicket((p) => ({ ...p, handbackMethod: v }))}
+                          extraOption={editedTicket.handbackMethod || undefined}
+                          triggerStyle={baseFieldInput}
                         />
                       </div>
                       <div>
@@ -7861,6 +9052,14 @@ export default function Orders({
                           </div>
                         </div>
                       )}
+                      {detailedTicket.deviceAccessories && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ color: "var(--muted)", marginBottom: 4 }}>Příslušenství:</div>
+                          <div style={{ padding: 8, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, lineHeight: 1.4 }}>
+                            {detailedTicket.deviceAccessories}
+                          </div>
+                        </div>
+                      )}
                       {detailedTicket.deviceNote && (
                         <div style={{ marginTop: 4 }}>
                           <div style={{ color: "var(--muted)", marginBottom: 4 }}>Poznámka:</div>
@@ -7870,9 +9069,16 @@ export default function Orders({
                         </div>
                       )}
                       <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                          <span>📦</span> {handoffLabel(detailedTicket.handoffMethod)}
-                        </div>
+                        {detailedTicket.handoffMethod && (
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                            <span>📥</span> Převzetí: {handoffLabel(detailedTicket.handoffMethod)}
+                          </div>
+                        )}
+                        {detailedTicket.handbackMethod && (
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                            <span>📤</span> Předání: {handoffLabel(detailedTicket.handbackMethod)}
+                          </div>
+                        )}
                         {detailedTicket.externalId && (
                           <div style={{ fontSize: 12, color: "var(--muted)" }}>
                             <span>🔗</span> Ext: {detailedTicket.externalId}
@@ -8003,7 +9209,7 @@ export default function Orders({
                         // Also add to current ticket
                         addPerformedRepair(detailedTicket.id, { name: repairData.name, type: "manual" });
                         showToast(`Oprava "${repairData.name}" byla přidána k modelu a do zakázky.`, "success");
-                      } catch (e) {
+                      } catch (_e) {
                         showToast("Chyba při ukládání opravy k modelu.", "error");
                       }
                     }}
@@ -8319,7 +9525,7 @@ export default function Orders({
           }
           
           showToast("Zakázka smazána", "success");
-          
+
           // Reuse returnTo navigation logic from "Zavřít" button
           const page = returnToPage;
           const customerId = returnToCustomerIdRef.current;
@@ -8338,6 +9544,290 @@ export default function Orders({
           setDeleteTicketId(null);
         }}
       />
+
+      <ConfirmDialog
+        open={deleteClaimDialogOpen}
+        title="Smazat reklamaci"
+        message="Opravdu chceš smazat tuto reklamaci? Tato akce je nevratná."
+        confirmLabel="Smazat"
+        cancelLabel="Zrušit"
+        variant="danger"
+        onConfirm={async () => {
+          if (!deleteClaimId) return;
+          const ok = await deleteClaim(deleteClaimId);
+          if (!ok) return;
+          refetchClaims();
+          setDetailClaimId(null);
+          setDeleteClaimDialogOpen(false);
+          setDeleteClaimId(null);
+        }}
+        onCancel={() => {
+          setDeleteClaimDialogOpen(false);
+          setDeleteClaimId(null);
+        }}
+      />
+
+      <CreateWarrantyClaimModal
+        open={createClaimModalOpen}
+        onClose={() => setCreateClaimModalOpen(false)}
+        activeServiceId={activeServiceId}
+        tickets={cloudTickets}
+        existingClaimCodes={cloudClaims.map((c) => ({ code: c.code }))}
+        onCreated={async (_claimCode, claim) => {
+          setCreateClaimModalOpen(false);
+          refetchClaims();
+          setActiveGroup("reklamace");
+          if (claim) {
+            const config = await loadDocumentsConfigFromDB(activeServiceId);
+            if (config?.autoPrint?.prijetiReklamaceOnCreate) {
+              openPreviewWindowWithPrint(generatePrijetiReklamaceHTML(claim, safeLoadCompanyData(), config), "Přijetí reklamace");
+            }
+          }
+        }}
+      />
+
+      {/* Ticket history modal */}
+      {ticketHistoryModalOpen && createPortal(
+        <div
+          role="dialog"
+          aria-label="Historie zakázky"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.4)",
+            padding: 24,
+          }}
+          onClick={() => setTicketHistoryModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-soft)",
+              maxWidth: 480,
+              width: "100%",
+              maxHeight: "80vh",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              color: "var(--text)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Historie zakázky</div>
+              <button type="button" onClick={() => setTicketHistoryModalOpen(false)} style={{ ...softBtn, padding: "6px 12px" }}>Zavřít</button>
+            </div>
+            <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+              {ticketHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
+              {ticketHistoryError && <div style={{ color: "rgba(239,68,68,0.9)", padding: 12 }}>{ticketHistoryError}</div>}
+              {!ticketHistoryLoading && !ticketHistoryError && ticketHistoryEntries.length === 0 && (
+                <div style={{ color: "var(--muted)", padding: 12 }}>Žádné záznamy v historii. Historie se vytváří po uložení zakázky na server.</div>
+              )}
+              {!ticketHistoryLoading && !ticketHistoryError && ticketHistoryEntries.length > 0 && (() => {
+                const FIELD_LABELS: Record<string, string> = {
+                  title: "Zakázka / zařízení",
+                  status: "Stav",
+                  notes: "Popis",
+                  estimated_price: "Odhadovaná cena",
+                  performed_repairs: "Provedené opravy",
+                  diagnostic_text: "Diagnostika",
+                  customer_name: "Zákazník",
+                  customer_phone: "Telefon",
+                  customer_email: "E-mail",
+                  device_label: "Zařízení",
+                  discount: "Sleva",
+                  device_condition: "Stav zařízení",
+                  device_note: "Poznámka k zařízení",
+                };
+                const formatHistoryVal = (key: string, val: unknown): string => {
+                  if (val === null || val === undefined) return "—";
+                  if (key === "estimated_price" && typeof val === "number") return `${val} Kč`;
+                  if (key === "performed_repairs" && Array.isArray(val)) {
+                    return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${r.price} Kč)` : ""}`).join(", ") || "—";
+                  }
+                  if (key === "discount" && val && typeof val === "object" && !Array.isArray(val)) {
+                    const o = val as { type?: string; value?: number };
+                    return [o.type, typeof o.value === "number" ? `${o.value} Kč` : ""].filter(Boolean).join(" · ") || "—";
+                  }
+                  return String(val);
+                };
+                const getHistoryChanges = (details: Record<string, unknown>): Array<{ label: string; oldVal: string; newVal: string }> => {
+                  const out: Array<{ label: string; oldVal: string; newVal: string }> = [];
+                  const changes = details?.changes as Record<string, { old?: unknown; new?: unknown }> | undefined;
+                  if (changes && typeof changes === "object") {
+                    for (const [field, v] of Object.entries(changes)) {
+                      if (!v || typeof v !== "object") continue;
+                      const label = FIELD_LABELS[field] ?? field;
+                      if (field === "discount") {
+                        const oldD = v.old as { type?: string; value?: number } | undefined;
+                        const newD = v.new as { type?: string; value?: number } | undefined;
+                        out.push({
+                          label,
+                          oldVal: oldD ? formatHistoryVal("discount", oldD) : "—",
+                          newVal: newD ? formatHistoryVal("discount", newD) : "—",
+                        });
+                      } else {
+                        out.push({
+                          label,
+                          oldVal: formatHistoryVal(field, v.old),
+                          newVal: formatHistoryVal(field, v.new),
+                        });
+                      }
+                    }
+                  } else if (details?.status_old !== undefined || details?.title_old !== undefined) {
+                    if (details.status_old !== undefined && details.status_new !== undefined) {
+                      out.push({ label: "Stav", oldVal: String(details.status_old), newVal: String(details.status_new) });
+                    }
+                    if (details.title_old !== undefined && details.title_new !== undefined) {
+                      out.push({ label: "Zakázka / zařízení", oldVal: String(details.title_old), newVal: String(details.title_new) });
+                    }
+                  }
+                  return out;
+                };
+                return (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {ticketHistoryEntries.map((e) => {
+                      const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action;
+                      const who = e.nickname || (e.changed_by ? `${String(e.changed_by).slice(0, 8)}…` : "Systém");
+                      const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
+                      const statusChange = changes.find((c) => c.label === "Stav");
+                      const isExpanded = ticketHistoryExpandedId === e.id;
+                      return (
+                        <li key={e.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                            <div>
+                              <div style={{ fontWeight: 700 }}>
+                                {actionLabel}
+                                {statusChange && (
+                                  <span style={{ fontWeight: 600, color: "var(--muted)", marginLeft: 6 }}>
+                                    · Stav: {statusChange.oldVal} → {statusChange.newVal}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
+                            </div>
+                            {changes.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setTicketHistoryExpandedId(isExpanded ? null : e.id)}
+                                style={{
+                                  padding: "4px 8px",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--bg)",
+                                  color: "var(--accent)",
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {isExpanded ? "Skrýt detail" : "Detail změn"}
+                              </button>
+                            )}
+                          </div>
+                          {isExpanded && changes.length > 0 && (
+                            <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                              {changes.map((c, i) => (
+                                <div key={i} style={{ marginBottom: i < changes.length - 1 ? 8 : 0, fontSize: 12 }}>
+                                  <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{c.label}</div>
+                                  <div style={{ color: "var(--muted)", display: "flex", flexWrap: "wrap", gap: "4px 8px" }}>
+                                    <span>{c.oldVal}</span>
+                                    <span style={{ color: "var(--text)" }}>→</span>
+                                    <span>{c.newVal}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Claim history modal */}
+      {claimHistoryModalOpen && createPortal(
+        <div
+          role="dialog"
+          aria-label="Historie reklamace"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.4)",
+            padding: 24,
+          }}
+          onClick={() => setClaimHistoryModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-soft)",
+              maxWidth: 480,
+              width: "100%",
+              maxHeight: "80vh",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              color: "var(--text)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Historie reklamace</div>
+              <button type="button" onClick={() => setClaimHistoryModalOpen(false)} style={{ ...softBtn, padding: "6px 12px" }}>Zavřít</button>
+            </div>
+            <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+              {claimHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
+              {claimHistoryError && <div style={{ color: "rgba(239,68,68,0.9)", padding: 12 }}>{claimHistoryError}</div>}
+              {!claimHistoryLoading && !claimHistoryError && claimHistoryEntries.length === 0 && (
+                <div style={{ color: "var(--muted)", padding: 12 }}>Žádné záznamy v historii.</div>
+              )}
+              {!claimHistoryLoading && !claimHistoryError && claimHistoryEntries.length > 0 && (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {claimHistoryEntries.map((e) => {
+                    const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "status_changed" ? "Změna stavu" : e.action === "updated" ? "Upravena" : e.action;
+                    const who = e.nickname || (e.changed_by ? `${String(e.changed_by).slice(0, 8)}…` : "Systém");
+                    const details = (e.details || {}) as Record<string, unknown>;
+                    const statusOld = details.status_old;
+                    const statusNew = details.status_new;
+                    return (
+                      <li key={e.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                        <div style={{ fontWeight: 700 }}>{actionLabel}</div>
+                        {e.action === "status_changed" && statusOld != null && statusNew != null && (
+                          <div style={{ fontWeight: 600, color: "var(--muted)", marginTop: 4 }}>
+                            Stav: {String(statusOld)} → {String(statusNew)}
+                          </div>
+                        )}
+                        <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ConfirmDialog for low stock warning */}
       <ConfirmDialog

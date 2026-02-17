@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useLayoutEffect, type ChangeEvent } from "react";
+import { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
@@ -10,23 +10,100 @@ import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
-import { DocumentsSettings } from "./Settings/DocumentsSettings";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { showToast } from "../components/Toast";
+import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
+import {
+  getShortcut,
+  setShortcut,
+  resetShortcuts,
+  keyEventToCombo,
+  isModifierOnlyKey,
+  formatShortcutForDisplay,
+  SHORTCUT_LABELS,
+  ALL_SHORTCUT_IDS,
+  DEFAULT_SHORTCUTS,
+  type ShortcutId,
+} from "../lib/keyboardShortcuts";
+import { getDeviceOptions, setDeviceOptions } from "../lib/deviceOptions";
+import { getHandoffOptions, setHandoffOptions } from "../lib/handoffOptions";
+import { loadDocumentsConfigRawFromDB, saveDocumentsConfigAutoPrint } from "../lib/documentSettings";
+import { STORAGE_KEYS } from "../constants/storageKeys";
+import { LOGO_PRESETS, getLogoColors, type LogoPresetId, type LogoColors } from "../lib/logoPresets";
+import { setAppIconFromPreset } from "../lib/setAppIcon";
+import { AppLogo } from "../components/AppLogo";
 
-type SettingsCategory = "service" | "orders" | "appearance" | "profile";
+function LogoPresetButton({
+  isActive,
+  label,
+  logoUrl,
+  fallbackColors,
+  onClick,
+}: {
+  isActive: boolean;
+  label: string;
+  logoUrl: string;
+  fallbackColors: LogoColors;
+  onClick: () => void;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: 0,
+        border: isActive ? "3px solid var(--accent)" : "2px solid var(--border)",
+        borderRadius: "var(--radius-md)",
+        background: "var(--panel)",
+        cursor: "pointer",
+        overflow: "hidden",
+        transition: "var(--transition-smooth)",
+        transform: isActive ? "scale(1.02)" : "scale(1)",
+        boxShadow: isActive ? "0 8px 24px var(--accent-glow)" : "var(--shadow-soft)",
+      }}
+    >
+      <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", background: fallbackColors.background }}>
+        {imgFailed ? (
+          <AppLogo size={56} colors={fallbackColors} modern />
+        ) : (
+          <img
+            src={logoUrl}
+            alt=""
+            style={{ width: 56, height: 56, objectFit: "contain" }}
+            onError={() => setImgFailed(true)}
+          />
+        )}
+      </div>
+      <div style={{ padding: "8px 10px", textAlign: "center", background: "var(--panel)", borderTop: "1px solid var(--border)" }}>
+        <span style={{ fontWeight: 700, fontSize: 12, color: "var(--text)" }}>{label}</span>
+      </div>
+    </button>
+  );
+}
+
+type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about";
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_team" | "service_owner"
-  | "orders_statuses" | "orders_filters" | "orders_documents" | "orders_deleted"
-  | "appearance_theme" | "appearance_ui"
-  | "profile_me";
+  | "orders_statuses" | "orders_filters" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
+  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts"
+  | "profile_me"
+  | "about_app";
 
 type SettingsSection = {
   category: SettingsCategory;
   subsection: SettingsSubsection;
 };
+
+const ORDERS_PAGE_SIZE_CHOICES: { value: number; label: string }[] = [
+  { value: 25, label: "25" },
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 200, label: "200" },
+  { value: 0, label: "Vše" },
+];
 
 type UIConfig = {
   app: {
@@ -40,6 +117,8 @@ type UIConfig = {
   };
   orders: {
     displayMode: "list" | "grid" | "compact" | "compact-extra";
+    pageSize: number;
+    customerPhoneRequired: boolean;
   };
 };
 
@@ -47,7 +126,7 @@ function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list" },
+    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
   };
 }
 
@@ -62,6 +141,11 @@ function safeLoadUIConfig(): UIConfig {
     const fab = parsed?.app?.fabNewOrderEnabled;
     const scale = parsed?.app?.uiScale;
     const displayMode = parsed?.orders?.displayMode;
+    const pageSize = parsed?.orders?.pageSize;
+    const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
+    const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
+      ? pageSize
+      : d.orders.pageSize;
 
     return {
       app: {
@@ -77,6 +161,8 @@ function safeLoadUIConfig(): UIConfig {
       },
       orders: {
         displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
+        pageSize: validPageSize,
+        customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
       },
     };
   } catch {
@@ -88,9 +174,6 @@ function saveUIConfig(cfg: UIConfig) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
-
-
-import { STORAGE_KEYS } from "../constants/storageKeys";
 
 const APP_VERSION = "0.1.0";
 
@@ -111,6 +194,281 @@ type CompanyData = {
 
 // safeLoadCompanyData is imported from Orders.tsx
 // defaultCompanyData is not needed here as it's only used internally in Orders.tsx
+
+function ShortcutsSettingsSection() {
+  const [recordingId, setRecordingId] = useState<ShortcutId | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    if (recordingId === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (isModifierOnlyKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      const combo = keyEventToCombo(e);
+      setShortcut(recordingId, combo);
+      setRecordingId(null);
+      forceUpdate((n) => n + 1);
+      showToast(`Zkratka nastavena: ${formatShortcutForDisplay(combo)}`, "success");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recordingId]);
+
+  const handleReset = () => {
+    resetShortcuts();
+    forceUpdate((n) => n + 1);
+    showToast("Zkratky obnoveny na výchozí", "success");
+  };
+
+  const border = "1px solid var(--border)";
+  return (
+    <Card>
+      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Klávesové zkratky</div>
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+        Klikněte na zkratku a stiskněte novou kombinaci kláves. Na macOS použijte Cmd místo Ctrl.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {ALL_SHORTCUT_IDS.map((id) => {
+          const isRecording = recordingId === id;
+          const current = getShortcut(id);
+          const isDefault = current === DEFAULT_SHORTCUTS[id];
+          return (
+            <div
+              key={id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 16,
+                padding: "12px 14px",
+                borderRadius: 10,
+                border,
+                background: isRecording ? "var(--accent-soft)" : "var(--panel)",
+                transition: "background 0.15s ease",
+              }}
+            >
+              <span style={{ color: "var(--text)", fontSize: 13, flex: 1 }}>{SHORTCUT_LABELS[id]}</span>
+              <button
+                type="button"
+                onClick={() => setRecordingId(isRecording ? null : id)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: isRecording ? "var(--accent)" : "var(--bg)",
+                  color: isRecording ? "var(--accent-fg)" : "var(--text)",
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  cursor: "pointer",
+                  minWidth: 100,
+                }}
+              >
+                {isRecording ? "Stiskněte klávesy…" : formatShortcutForDisplay(current)}
+              </button>
+              {!isDefault && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShortcut(id, DEFAULT_SHORTCUTS[id]);
+                    forceUpdate((n) => n + 1);
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "var(--panel-2)",
+                    color: "var(--muted)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                  title="Obnovit výchozí"
+                >
+                  Výchozí
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <button
+          type="button"
+          onClick={handleReset}
+          style={{
+            padding: "10px 16px",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--panel-2)",
+            color: "var(--text)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Obnovit všechny výchozí zkratky
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function DeviceOptionsSettingsSection() {
+  const [options, setOptions] = useState(() => getDeviceOptions());
+  const [newCondition, setNewCondition] = useState("");
+  const [newAccessory, setNewAccessory] = useState("");
+
+  const addCondition = () => {
+    const v = newCondition.trim();
+    if (!v || options.deviceConditions.includes(v)) return;
+    const next = { ...options, deviceConditions: [...options.deviceConditions, v] };
+    setDeviceOptions(next);
+    setOptions(next);
+    setNewCondition("");
+  };
+  const removeCondition = (idx: number) => {
+    const next = { ...options, deviceConditions: options.deviceConditions.filter((_, i) => i !== idx) };
+    setDeviceOptions(next);
+    setOptions(next);
+  };
+  const addAccessory = () => {
+    const v = newAccessory.trim();
+    if (!v || options.deviceAccessories.includes(v)) return;
+    const next = { ...options, deviceAccessories: [...options.deviceAccessories, v] };
+    setDeviceOptions(next);
+    setOptions(next);
+    setNewAccessory("");
+  };
+  const removeAccessory = (idx: number) => {
+    const next = { ...options, deviceAccessories: options.deviceAccessories.filter((_, i) => i !== idx) };
+    setDeviceOptions(next);
+    setOptions(next);
+  };
+  const border = "1px solid var(--border)";
+  const inputStyle = { padding: "8px 12px", borderRadius: 8, border, background: "var(--bg)", color: "var(--text)", fontSize: 13, width: "100%", maxWidth: 280 };
+  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "6px 0", flexWrap: "wrap" };
+  return (
+    <Card>
+      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Stavy zařízení a příslušenství</div>
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+        Přednastavené možnosti se zobrazí při zakládání zakázky v polích „Popis stavu“ a „Příslušenství“. Uživatel může vybrat z listu nebo napsat vlastní text. Změny se ukládají automaticky (tlačítko Uložit není potřeba).
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text)" }}>Stavy zařízení</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input value={newCondition} onChange={(e) => setNewCondition(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCondition())} placeholder="Přidat stav…" style={inputStyle} />
+            <button type="button" onClick={addCondition} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 600, cursor: "pointer" }}>Přidat</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {options.deviceConditions.map((item, idx) => (
+              <div key={idx} style={rowStyle}>
+                <span style={{ color: "var(--text)", fontSize: 13 }}>{item}</span>
+                <button type="button" onClick={() => removeCondition(idx)} style={{ padding: "4px 8px", fontSize: 11, border: "none", background: "var(--panel-2)", color: "var(--muted)", borderRadius: 6, cursor: "pointer" }}>Odstranit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text)" }}>Příslušenství</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input value={newAccessory} onChange={(e) => setNewAccessory(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addAccessory())} placeholder="Přidat položku…" style={inputStyle} />
+            <button type="button" onClick={addAccessory} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 600, cursor: "pointer" }}>Přidat</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {options.deviceAccessories.map((item, idx) => (
+              <div key={idx} style={rowStyle}>
+                <span style={{ color: "var(--text)", fontSize: 13 }}>{item}</span>
+                <button type="button" onClick={() => removeAccessory(idx)} style={{ padding: "4px 8px", fontSize: 11, border: "none", background: "var(--panel-2)", color: "var(--muted)", borderRadius: 6, cursor: "pointer" }}>Odstranit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function HandoffOptionsSettingsSection() {
+  const [options, setOptions] = useState(() => getHandoffOptions());
+  const [newReceive, setNewReceive] = useState("");
+  const [newReturn, setNewReturn] = useState("");
+
+  const addReceive = () => {
+    const v = newReceive.trim();
+    if (!v || options.receiveMethods.includes(v)) return;
+    const next = { ...options, receiveMethods: [...options.receiveMethods, v] };
+    setHandoffOptions(next);
+    setOptions(next);
+    setNewReceive("");
+  };
+  const removeReceive = (idx: number) => {
+    const next = { ...options, receiveMethods: options.receiveMethods.filter((_, i) => i !== idx) };
+    setHandoffOptions(next);
+    setOptions(next);
+  };
+  const addReturn = () => {
+    const v = newReturn.trim();
+    if (!v || options.returnMethods.includes(v)) return;
+    const next = { ...options, returnMethods: [...options.returnMethods, v] };
+    setHandoffOptions(next);
+    setOptions(next);
+    setNewReturn("");
+  };
+  const removeReturn = (idx: number) => {
+    const next = { ...options, returnMethods: options.returnMethods.filter((_, i) => i !== idx) };
+    setHandoffOptions(next);
+    setOptions(next);
+  };
+
+  const border = "1px solid var(--border)";
+  const inputStyle = { padding: "8px 12px", borderRadius: 8, border, background: "var(--bg)", color: "var(--text)", fontSize: 13, width: "100%", maxWidth: 280 };
+  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "6px 0", flexWrap: "wrap" };
+  return (
+    <Card>
+      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Způsoby převzetí a předání</div>
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+        Možnosti pro „Způsob převzetí“ a „Způsob předání“ při zakládání a úpravě zakázky. V zakázce lze vybírat pouze z tohoto seznamu (dropdown). Změny se ukládají automaticky.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text)" }}>Způsob převzetí</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input value={newReceive} onChange={(e) => setNewReceive(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addReceive())} placeholder="Přidat (např. Na pobočce, Poštou)…" style={inputStyle} />
+            <button type="button" onClick={addReceive} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 600, cursor: "pointer" }}>Přidat</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {options.receiveMethods.map((item, idx) => (
+              <div key={idx} style={rowStyle}>
+                <span style={{ color: "var(--text)", fontSize: 13 }}>{item}</span>
+                <button type="button" onClick={() => removeReceive(idx)} style={{ padding: "4px 8px", fontSize: 11, border: "none", background: "var(--panel-2)", color: "var(--muted)", borderRadius: 6, cursor: "pointer" }}>Odstranit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text)" }}>Způsob předání</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input value={newReturn} onChange={(e) => setNewReturn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addReturn())} placeholder="Přidat (např. Vyzvednutí na pobočce, Poštou)…" style={inputStyle} />
+            <button type="button" onClick={addReturn} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 600, cursor: "pointer" }}>Přidat</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {options.returnMethods.map((item, idx) => (
+              <div key={idx} style={rowStyle}>
+                <span style={{ color: "var(--text)", fontSize: 13 }}>{item}</span>
+                <button type="button" onClick={() => removeReturn(idx)} style={{ padding: "4px 8px", fontSize: 11, border: "none", background: "var(--panel-2)", color: "var(--muted)", borderRadius: 6, cursor: "pointer" }}>Odstranit</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 function ProfileSettingsSection() {
   const { profile, loading, error, setProfile } = useUserProfile();
@@ -211,9 +569,12 @@ type SettingsProps = {
   setActiveServiceId: (serviceId: string | null) => void;
   services: Array<{ service_id: string; service_name: string; role: string; active?: boolean }>;
   refreshServices?: () => Promise<void>;
+  onStartTour?: () => void;
+  /** When set (e.g. by app tour), switch to this category/subsection so the highlighted tab is visible. */
+  tourSection?: { category: string; subsection: string } | null;
 };
 
-export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices }: SettingsProps) {
+export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection }: SettingsProps) {
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
@@ -226,7 +587,43 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     await createStatus(status);
   };
   const [section, setSection] = useState<SettingsSection>({ category: "service", subsection: "service_basic" });
+  const [logoPreset, setLogoPresetState] = useState<LogoPresetId>(() => {
+    try {
+      const v = localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null;
+      return v && (v === "auto" || LOGO_PRESETS.some((p) => p.id === v)) ? v : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  const setLogoPreset = (value: LogoPresetId) => {
+    localStorage.setItem(STORAGE_KEYS.LOGO_PRESET, value);
+    setLogoPresetState(value);
+    window.dispatchEvent(new CustomEvent("jobsheet:logo-preset-changed"));
+    setAppIconFromPreset(value, theme);
+  };
+
+  // Průvodce: přepnutí na správnou záložku, aby byl zvýrazněný prvek viditelný
+  useEffect(() => {
+    if (tourSection?.category && tourSection?.subsection) {
+      setSection({
+        category: tourSection.category as SettingsCategory,
+        subsection: tourSection.subsection as SettingsSubsection,
+      });
+    }
+  }, [tourSection?.category, tourSection?.subsection]);
+
+  // Na stránce Klávesové zkratky vypnout globální zkratky (aby Ctrl+Q nevyhodilo jinam)
+  useEffect(() => {
+    if (section.subsection === "appearance_shortcuts") {
+      document.body.dataset.jobsheetShortcutsConfig = "true";
+      return () => {
+        delete document.body.dataset.jobsheetShortcutsConfig;
+      };
+    }
+  }, [section.subsection]);
+
   const [uiCfg, setUiCfg] = useState<UIConfig>(defaultUIConfig());
+  const [soundsEnabled, setSoundsEnabledState] = useState(() => areSoundsEnabled());
   const [companyData, setCompanyData] = useState<CompanyData>(() => safeLoadCompanyData());
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [inviteAcceptLoading, setInviteAcceptLoading] = useState(false);
@@ -236,9 +633,29 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   
   
   
-  // State for service settings from DB (currently unused, but kept for future use)
+  // State for service settings from DB
   const [_serviceSettingsLoading, setServiceSettingsLoading] = useState(false);
   const [_serviceSettingsError, setServiceSettingsError] = useState<string | null>(null);
+  const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
+  const [autoPrintForm, setAutoPrintForm] = useState<{
+    ticketListOnCreate: boolean;
+    ticketListOnStatusKey: string | null;
+    warrantyOnCreate: boolean;
+    warrantyOnStatusKey: string | null;
+    prijetiReklamaceOnCreate: boolean;
+    prijetiReklamaceOnStatusKey: string | null;
+    vydaniReklamaceOnStatusKey: string | null;
+  }>({
+    ticketListOnCreate: false,
+    ticketListOnStatusKey: null,
+    warrantyOnCreate: false,
+    warrantyOnStatusKey: null,
+    prijetiReklamaceOnCreate: false,
+    prijetiReklamaceOnStatusKey: null,
+    vydaniReklamaceOnStatusKey: null,
+  });
+  const [autoPrintFormLoading, setAutoPrintFormLoading] = useState(false);
+  const [autoPrintFormSaveSuccess, setAutoPrintFormSaveSuccess] = useState(false);
   
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
   
@@ -276,12 +693,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         }
 
         if (data?.config?.abbreviation) {
-          // Update companyData abbreviation from DB
           setCompanyData((prev) => ({
             ...prev,
             abbreviation: data.config.abbreviation || prev.abbreviation,
           }));
         }
+        setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
 
         setServiceSettingsLoading(false);
       } catch (err) {
@@ -294,8 +711,46 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     loadServiceSettings();
   }, [activeServiceId]);
 
+  // Load auto-print config when opening Tisk dokumentů
+  useEffect(() => {
+    if (section.subsection !== "orders_tisk_dokumentu" || !activeServiceId) return;
+    let cancelled = false;
+    setAutoPrintFormLoading(true);
+    loadDocumentsConfigRawFromDB(activeServiceId).then((raw) => {
+      if (cancelled) return;
+      setAutoPrintFormLoading(false);
+      if (raw?.config?.autoPrint) {
+        const ap = raw.config.autoPrint;
+        setAutoPrintForm({
+          ticketListOnCreate: !!ap.ticketListOnCreate,
+          ticketListOnStatusKey: ap.ticketListOnStatusKey ?? null,
+          warrantyOnCreate: !!ap.warrantyOnCreate,
+          warrantyOnStatusKey: ap.warrantyOnStatusKey ?? null,
+          prijetiReklamaceOnCreate: !!ap.prijetiReklamaceOnCreate,
+          prijetiReklamaceOnStatusKey: ap.prijetiReklamaceOnStatusKey ?? null,
+          vydaniReklamaceOnStatusKey: ap.vydaniReklamaceOnStatusKey ?? null,
+        });
+      }
+    }).catch(() => { if (!cancelled) setAutoPrintFormLoading(false); });
+    return () => { cancelled = true; };
+  }, [section.subsection, activeServiceId]);
 
-  
+  const saveOrdersShowClaimsInList = useCallback(async (value: boolean) => {
+    if (!activeServiceId || !supabase) return;
+    try {
+      await (supabase as any).rpc("update_service_settings", {
+        p_service_id: activeServiceId,
+        p_patch: { config: { orders_show_claims_in_list: value } },
+      });
+      setOrdersShowClaimsInList(value);
+      showToast("Uloženo", "success");
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    } catch (err) {
+      console.error("[Settings] saveOrdersShowClaimsInList", err);
+      showToast("Chyba při ukládání", "error");
+    }
+  }, [activeServiceId]);
+
   // Save only when explicitly changed, not on every render
   const prevUiCfgRef = useRef<UIConfig | null>(null);
   useEffect(() => {
@@ -463,7 +918,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "orders_statuses" as const, label: "Statusy zakázek" },
         { key: "orders_filters" as const, label: "Filtry zakázek" },
-        ...(canManageDocuments ? [{ key: "orders_documents" as const, label: "Dokumenty" }] : []),
+        { key: "orders_tisk_dokumentu" as const, label: "Tisk dokumentů" },
+        { key: "orders_reklamace" as const, label: "Reklamace" },
+        { key: "orders_device_options" as const, label: "Stavy zařízení a příslušenství" },
+        { key: "orders_handoff_options" as const, label: "Způsoby převzetí a předání" },
         { key: "orders_deleted" as const, label: "Smazané zakázky" },
       ],
     },
@@ -482,6 +940,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "appearance_ui" as const, label: "Rozhraní" },
         { key: "appearance_theme" as const, label: "Barevné téma" },
+        { key: "appearance_shortcuts" as const, label: "Klávesové zkratky" },
       ],
     },
     {
@@ -497,6 +956,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "profile_me" as const, label: "Fotka a přezdívka" },
       ],
     },
+    {
+      category: "about" as const,
+      label: "O aplikaci",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+      ),
+      subsections: [
+        { key: "about_app" as const, label: "O aplikaci" },
+      ],
+    },
   ], [isRootOwner, isAdmin, canManageDocuments]);
 
   // Member nemá přístup k Tým/Přístupy – při výběru servisu kde je member přesměruj z service_team
@@ -506,20 +979,24 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     }
   }, [section.subsection, isAdmin]);
 
-  // Bez can_manage_documents skrýt Kontaktní údaje a Dokumenty – při přepnutí role přesměruj
+  // Owner záložka jen pro root ownera – admin/member ji nevidí ani na ni nesmí zůstat (např. po přepnutí servisu)
   useEffect(() => {
-    if (!canManageDocuments && (section.subsection === "service_contact" || section.subsection === "orders_documents")) {
-      setSection((prev) => ({
-        ...prev,
-        subsection: prev.subsection === "service_contact" ? "service_basic" : "orders_statuses",
-      }));
+    if (section.subsection === "service_owner" && !isRootOwner) {
+      setSection((prev) => ({ ...prev, subsection: "service_basic" }));
+    }
+  }, [section.subsection, isRootOwner]);
+
+  // Bez can_manage_documents skrýt Kontaktní údaje – při přepnutí role přesměruj
+  useEffect(() => {
+    if (!canManageDocuments && section.subsection === "service_contact") {
+      setSection((prev) => ({ ...prev, subsection: "service_basic" }));
     }
   }, [section.subsection, canManageDocuments]);
 
   const activeCategory = categories.find((cat) => cat.category === section.category) || categories[0];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div data-tour="settings-content" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Nastavení</div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
@@ -528,19 +1005,23 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       </div>
 
       {/* Main Navigation - Categories */}
-      <div style={{ 
-        display: "flex", 
-        gap: 8, 
+      <div
+        data-tour="settings-categories"
+        style={{
+        display: "flex",
+        gap: 8,
         borderBottom: "2px solid var(--border)",
         paddingBottom: 0,
         overflow: "hidden",
         width: "100%",
-      }}>
+      }}
+      >
         {categories.map((cat) => {
           const isCategoryActive = section.category === cat.category;
           return (
             <button
               key={cat.category}
+              data-tour={`settings-cat-${cat.category}`}
               onClick={() => {
                 setSection({ category: cat.category, subsection: cat.subsections[0].key });
               }}
@@ -598,6 +1079,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             return (
               <button
                 key={sub.key}
+                data-tour={`settings-sub-${sub.key}`}
                 onClick={() => setSection({ category: activeCategory.category, subsection: sub.key })}
                 style={{
                   padding: "8px 16px",
@@ -647,7 +1129,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   type="text"
                   value={companyData.abbreviation}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, abbreviation: e.target.value }))}
-                  placeholder="např. IRP"
+                  placeholder="Zkratka"
                 />
               </div>
 
@@ -657,7 +1139,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   type="text"
                   value={companyData.name}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="např. iSwap Repair Point"
+                  placeholder="Název servisu"
                 />
               </div>
 
@@ -668,7 +1150,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     type="text"
                     value={companyData.ico}
                     onChange={(e: any) => setCompanyData((p) => ({ ...p, ico: e.target.value }))}
-                    placeholder="např. 01028359"
+                    placeholder="12345678"
                   />
                 </div>
 
@@ -678,7 +1160,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     type="text"
                     value={companyData.dic}
                     onChange={(e: any) => setCompanyData((p) => ({ ...p, dic: e.target.value }))}
-                    placeholder="např. CZ01028359"
+                    placeholder="CZ12345678"
                   />
                 </div>
               </div>
@@ -712,7 +1194,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     type="text"
                     value={companyData.addressStreet}
                     onChange={(e: any) => setCompanyData((p) => ({ ...p, addressStreet: e.target.value }))}
-                    placeholder="např. U Vokovické školy 299/4"
+                    placeholder="Ulice a číslo popisné"
                   />
                 </div>
 
@@ -723,7 +1205,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       type="text"
                       value={companyData.addressCity}
                       onChange={(e: any) => setCompanyData((p) => ({ ...p, addressCity: e.target.value }))}
-                      placeholder="např. Praha"
+                      placeholder="Město"
                     />
                   </div>
 
@@ -733,7 +1215,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       type="text"
                       value={companyData.addressZip}
                       onChange={(e: any) => setCompanyData((p) => ({ ...p, addressZip: e.target.value }))}
-                      placeholder="např. 160 00"
+                      placeholder="123 45"
                     />
                   </div>
                 </div>
@@ -743,7 +1225,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 onClick={async () => {
                   try {
                     await saveServiceSettings(companyData);
-                  } catch (err) {
+                  } catch (_err) {
                     // Error is already handled in saveServiceSettings
                   }
                 }}
@@ -791,7 +1273,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   type="tel"
                   value={companyData.phone}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="+420 773 118 472"
+                  placeholder="+420 123 456 789"
                 />
               </div>
 
@@ -801,7 +1283,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   type="email"
                   value={companyData.email}
                   onChange={(e: any) => setCompanyData((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="servis@example.cz"
+                  placeholder="kontakt@example.cz"
                 />
               </div>
 
@@ -819,7 +1301,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 onClick={async () => {
                   try {
                     await saveServiceSettings(companyData);
-                  } catch (err) {
+                  } catch (_err) {
                     // Error is already handled in saveServiceSettings
                   }
                 }}
@@ -856,9 +1338,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <TeamSettings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} />
       )}
 
-      {/* Owner – pouze pro root ownera; správa servisů (vytvoření, mazání, deaktivace atd.) */}
-      {section.subsection === "service_owner" && refreshServices && (
-        <OwnerSettings services={services} refreshServices={refreshServices} />
+      {/* Owner – pouze pro root ownera; správa servisů (vytvoření, mazání, deaktivace). Admin vidí vše kromě této záložky a nemůže přidávat/mazat servisy. */}
+      {section.subsection === "service_owner" && isRootOwner && refreshServices && (
+        <OwnerSettings services={services} refreshServices={refreshServices} setActiveServiceId={setActiveServiceId} />
       )}
 
       {/* Přidat servis pomocí kódu pozvánky – pro přihlášené uživatele */}
@@ -946,119 +1428,28 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
               {availableThemes.map((t) => {
                 const isActive = theme === t;
-                const themePreviews: Record<string, { title: string; desc: string; bg: string; panel: string; accent: string; text: string }> = {
-                  light: { 
-                    title: "Světlé", 
-                    desc: "Klasické světlé téma", 
-                    bg: "linear-gradient(135deg, #f6f7f9 0%, #eef0f4 100%)",
-                    panel: "rgba(255, 255, 255, 0.92)",
-                    accent: "#2563eb",
-                    text: "#111827"
-                  },
-                  dark: { 
-                    title: "Tmavé", 
-                    desc: "Tmavé téma pro noční práci", 
-                    bg: "linear-gradient(135deg, #0a0c10 0%, #141720 100%)",
-                    panel: "rgba(30, 32, 40, 0.85)",
-                    accent: "#60a5fa",
-                    text: "#f3f4f6"
-                  },
-                  blue: { 
-                    title: "Modré", 
-                    desc: "Syté modré odstíny", 
-                    bg: "linear-gradient(135deg, #0a1628 0%, #0f1e3a 100%)",
-                    panel: "rgba(14, 116, 184, 0.4)",
-                    accent: "#0ea5e9",
-                    text: "#e0f2fe"
-                  },
-                  green: { 
-                    title: "Zelené", 
-                    desc: "Uklidňující zelené tóny", 
-                    bg: "linear-gradient(135deg, #0a1f0e 0%, #0f2a14 100%)",
-                    panel: "rgba(34, 197, 94, 0.4)",
-                    accent: "#22c55e",
-                    text: "#dcfce7"
-                  },
-                  orange: { 
-                    title: "Oranžové", 
-                    desc: "Teplé oranžové barvy", 
-                    bg: "linear-gradient(135deg, #2a1a0a 0%, #3a2410 100%)",
-                    panel: "rgba(249, 115, 22, 0.4)",
-                    accent: "#f97316",
-                    text: "#fff7ed"
-                  },
-                  purple: { 
-                    title: "Fialové", 
-                    desc: "Elegantní fialové tóny", 
-                    bg: "linear-gradient(135deg, #1a0f2a 0%, #251438 100%)",
-                    panel: "rgba(139, 92, 246, 0.4)",
-                    accent: "#8b5cf6",
-                    text: "#faf5ff"
-                  },
-                  pink: { 
-                    title: "Růžové", 
-                    desc: "Jemné růžové odstíny", 
-                    bg: "linear-gradient(135deg, #2a0f1a 0%, #381420 100%)",
-                    panel: "rgba(236, 72, 153, 0.4)",
-                    accent: "#ec4899",
-                    text: "#fdf2f8"
-                  },
-                  "light-blue": {
-                    title: "Světle modré",
-                    desc: "Světlé modré tóny",
-                    bg: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)",
-                    panel: "rgba(255, 255, 255, 0.85)",
-                    accent: "#0ea5e9",
-                    text: "#0c4a6e"
-                  },
-                  "light-green": {
-                    title: "Světle zelené",
-                    desc: "Světlé zelené tóny",
-                    bg: "linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)",
-                    panel: "rgba(255, 255, 255, 0.85)",
-                    accent: "#22c55e",
-                    text: "#14532d"
-                  },
-                  "light-orange": {
-                    title: "Světle oranžové",
-                    desc: "Světlé oranžové tóny",
-                    bg: "linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)",
-                    panel: "rgba(255, 255, 255, 0.85)",
-                    accent: "#f97316",
-                    text: "#7c2d12"
-                  },
-                  "light-purple": {
-                    title: "Světle fialové",
-                    desc: "Světlé fialové tóny",
-                    bg: "linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)",
-                    panel: "rgba(255, 255, 255, 0.85)",
-                    accent: "#8b5cf6",
-                    text: "#4c1d95"
-                  },
-                  "light-pink": {
-                    title: "Světle růžové",
-                    desc: "Světlé růžové tóny",
-                    bg: "linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%)",
-                    panel: "rgba(255, 255, 255, 0.85)",
-                    accent: "#ec4899",
-                    text: "#831843"
-                  },
-                  halloween: {
-                    title: "🎃 Halloween",
-                    desc: "Strašidelné oranžovo-fialové s dýněmi",
-                    bg: "linear-gradient(135deg, #0a0505 0%, #1a0f0f 100%)",
-                    panel: "rgba(124, 58, 237, 0.35)",
-                    accent: "#f97316",
-                    text: "#fef3c7"
-                  },
-                  christmas: {
-                    title: "🎄 Vánoce",
-                    desc: "Vánoční zelené s vločkami a sněhulákem",
-                    bg: "linear-gradient(135deg, #0d1b1f 0%, #1a2e35 100%)",
-                    panel: "rgba(34, 197, 94, 0.35)",
-                    accent: "#22c55e",
-                    text: "#f0fdf4"
-                  },
+                const themePreviews: Record<string, { title: string; desc: string; bg: string; panel: string; accent: string; text: string; lineStyle?: boolean; previewLineColors?: string[] }> = {
+                  light: { title: "Světlé", desc: "Světlé téma s modrým akcentem.", bg: "linear-gradient(135deg, #f6f7f9 0%, #eef0f4 100%)", panel: "rgba(255, 255, 255, 0.92)", accent: "#2563eb", text: "#111827" },
+                  dark: { title: "Tmavé", desc: "Tmavé téma s modrým akcentem.", bg: "linear-gradient(135deg, #0a0c10 0%, #141720 100%)", panel: "rgba(30, 32, 40, 0.85)", accent: "#60a5fa", text: "#f3f4f6" },
+                  blue: { title: "Modré", desc: "Tmavé téma s modrým akcentem.", bg: "linear-gradient(135deg, #0a1628 0%, #0f1e3a 100%)", panel: "rgba(14, 116, 184, 0.4)", accent: "#0ea5e9", text: "#e0f2fe" },
+                  green: { title: "Zelené", desc: "Tmavé téma se zeleným akcentem.", bg: "linear-gradient(135deg, #0a1f0e 0%, #0f2a14 100%)", panel: "rgba(34, 197, 94, 0.4)", accent: "#22c55e", text: "#dcfce7" },
+                  orange: { title: "Oranžové", desc: "Tmavé téma s oranžovým akcentem.", bg: "linear-gradient(135deg, #2a1a0a 0%, #3a2410 100%)", panel: "rgba(249, 115, 22, 0.4)", accent: "#f97316", text: "#fff7ed" },
+                  purple: { title: "Fialové", desc: "Tmavé téma s fialovým akcentem.", bg: "linear-gradient(135deg, #1a0f2a 0%, #251438 100%)", panel: "rgba(139, 92, 246, 0.4)", accent: "#8b5cf6", text: "#faf5ff" },
+                  pink: { title: "Růžové", desc: "Tmavé téma s růžovým akcentem.", bg: "linear-gradient(135deg, #2a0f1a 0%, #381420 100%)", panel: "rgba(236, 72, 153, 0.4)", accent: "#ec4899", text: "#fdf2f8" },
+                  "light-blue": { title: "Světle modré", desc: "Světlé téma s modrým akcentem.", bg: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)", panel: "rgba(255, 255, 255, 0.85)", accent: "#0ea5e9", text: "#0c4a6e" },
+                  "light-green": { title: "Světle zelené", desc: "Světlé téma se zeleným akcentem.", bg: "linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)", panel: "rgba(255, 255, 255, 0.85)", accent: "#22c55e", text: "#14532d" },
+                  "light-orange": { title: "Světle oranžové", desc: "Světlé téma s oranžovým akcentem.", bg: "linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)", panel: "rgba(255, 255, 255, 0.85)", accent: "#f97316", text: "#7c2d12" },
+                  "light-purple": { title: "Světle fialové", desc: "Světlé téma s fialovým akcentem.", bg: "linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)", panel: "rgba(255, 255, 255, 0.85)", accent: "#8b5cf6", text: "#4c1d95" },
+                  "light-pink": { title: "Světle růžové", desc: "Světlé téma s růžovým akcentem.", bg: "linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%)", panel: "rgba(255, 255, 255, 0.85)", accent: "#ec4899", text: "#831843" },
+                  "paper-mint": { title: "Paper Mint", desc: "Světlé téma s mátovým akcentem. Čistý papírový dojem.", bg: "#F7FBFA", panel: "#FFFFFF", accent: "#14B8A6", text: "#0F172A" },
+                  "sand-ink": { title: "Sand & Ink", desc: "Světlé téma s jantarovým akcentem. Teplé písečné tóny.", bg: "#FBF7F1", panel: "#FFFFFF", accent: "#F59E0B", text: "#111827" },
+                  "sky-blueprint": { title: "Sky Blueprint", desc: "Světlé téma s modrým akcentem. Tech, blueprint styl.", bg: "#F5FAFF", panel: "#FFFFFF", accent: "#2563EB", text: "#0B1220" },
+                  "lilac-frost": { title: "Lilac Frost", desc: "Světlé téma s fialovým akcentem. Jemně creative.", bg: "#FAF8FF", panel: "#FFFFFF", accent: "#7C3AED", text: "#111827" },
+                  halloween: { title: "🎃 Halloween", desc: "Speciální téma. Oranžovo-fialové, halloween.", bg: "linear-gradient(135deg, #0a0505 0%, #1a0f0f 100%)", panel: "rgba(124, 58, 237, 0.35)", accent: "#f97316", text: "#fef3c7" },
+                  christmas: { title: "🎄 Vánoce", desc: "Speciální téma. Zelené a zlaté, vánoční.", bg: "linear-gradient(135deg, #0d1b1f 0%, #1a2e35 100%)", panel: "rgba(34, 197, 94, 0.35)", accent: "#22c55e", text: "#f0fdf4" },
+                  "tron-red": { title: "Tron Red", desc: "Tmavé téma. Tenké červené neonové linie.", bg: "linear-gradient(135deg, #040405 0%, #0a0809 100%)", panel: "rgba(18, 18, 20, 0.95)", accent: "#DD2200", text: "#e5e5e5", lineStyle: true },
+                  "tron-cyan": { title: "Tron Cyan", desc: "Tmavé téma. Tenké cyan neonové linie.", bg: "linear-gradient(135deg, #040506 0%, #070b0e 100%)", panel: "rgba(14, 18, 20, 0.95)", accent: "#04BFBF", text: "#e5e7eb", lineStyle: true },
+                  synthwave: { title: "Synthwave Neon", desc: "Speciální téma. 80s outrun, magenta, cyan a fialová.", bg: "linear-gradient(135deg, #070812 0%, #0d0e1e 100%)", panel: "rgba(15, 16, 38, 0.95)", accent: "#FF2BD6", text: "#EDEBFF", lineStyle: true, previewLineColors: ["#FF2BD6", "#00E5FF", "#7C3AED"] },
                 };
 
                 const info = themePreviews[t];
@@ -1090,25 +1481,45 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         padding: 16,
                       }}
                     >
-                      {/* Preview karty */}
+                      {/* Preview karty – u Tron témat jako tenké linie */}
                       <div
                         style={{
                           width: "80%",
                           height: "60%",
                           background: info.panel,
-                          backdropFilter: "blur(20px)",
-                          WebkitBackdropFilter: "blur(20px)",
-                          border: `1px solid ${info.accent}40`,
+                          backdropFilter: info.lineStyle ? "none" : "blur(20px)",
+                          WebkitBackdropFilter: info.lineStyle ? "none" : "blur(20px)",
+                          border: info.lineStyle ? `2px solid ${info.accent}` : `1px solid ${info.accent}40`,
                           borderRadius: 12,
-                          boxShadow: `0 8px 24px ${info.accent}30`,
+                          boxShadow: info.lineStyle ? `0 0 12px ${info.accent}40` : `0 8px 24px ${info.accent}30`,
                           display: "flex",
                           flexDirection: "column",
                           padding: 12,
                           gap: 8,
                         }}
                       >
-                        <div style={{ width: "60%", height: 8, background: info.accent, borderRadius: 4 }} />
-                        <div style={{ width: "40%", height: 6, background: `${info.accent}60`, borderRadius: 3 }} />
+                        {info.lineStyle ? (
+                          <>
+                            {(info.previewLineColors ?? [info.accent, info.accent, info.accent]).map((lineColor, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  width: i === 0 ? "75%" : i === 1 ? "55%" : "45%",
+                                  height: 2,
+                                  background: lineColor,
+                                  borderRadius: 1,
+                                  boxShadow: `0 0 8px ${lineColor}`,
+                                  opacity: 1 - i * 0.15,
+                                }}
+                              />
+                            ))}
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ width: "60%", height: 8, background: info.accent, borderRadius: 4 }} />
+                            <div style={{ width: "40%", height: 6, background: `${info.accent}60`, borderRadius: 3 }} />
+                          </>
+                        )}
                       </div>
                       
                       {isActive && (
@@ -1144,6 +1555,32 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               })}
             </div>
           </Card>
+
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Barvy loga Jobi</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Ikona aplikace v Docku, Finderu atd.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
+              <LogoPresetButton
+                isActive={logoPreset === "auto"}
+                label="Podle tématu"
+                logoUrl={`/logos/${theme}.png`}
+                fallbackColors={getLogoColors(theme, "auto")}
+                onClick={() => setLogoPreset("auto")}
+              />
+              {LOGO_PRESETS.map((p) => (
+                <LogoPresetButton
+                  key={p.id}
+                  isActive={logoPreset === p.id}
+                  label={p.label}
+                  logoUrl={`/logos/${p.id}.png`}
+                  fallbackColors={{ background: p.background, jInner: p.jInner, foreground: p.foreground }}
+                  onClick={() => setLogoPreset(p.id)}
+                />
+              ))}
+            </div>
+          </Card>
         </>
       )}
 
@@ -1157,7 +1594,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               <div>
                 <FieldLabel>Název (zobrazovaný text)</FieldLabel>
                 <TextInput
-                  placeholder="např. Přijato, Probíhá, Hotovo"
+                  placeholder="Přijato, V opravě, Hotovo"
                   value={draft.label}
                   onChange={(e: any) => {
                     const newLabel = e.target.value;
@@ -1491,15 +1928,81 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               }}
             >
               <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Zapnout FAB „Nová zakázka"</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Plovoucí tlačítko + „Nová zakázka"</div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                  Pokud vypnete, zůstane jen tlačítko na stránce Orders
+                  Zobrazit tlačítko + vpravo dole na všech stránkách. Pokud vypnete, zůstane jen tlačítko v záhlaví na stránce Zakázky.
                 </div>
               </div>
               <input
                 type="checkbox"
                 checked={uiCfg.app.fabNewOrderEnabled}
                 onChange={(e) => setUiCfg((p) => ({ ...p, app: { ...p.app, fabNewOrderEnabled: e.target.checked } }))}
+              />
+            </label>
+          </Card>
+
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Zvuky</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+              Krátké zvuky při založení zakázky, uložení změn a smazání.
+            </div>
+            <label
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: 12,
+                borderRadius: 10,
+                border,
+                background: "var(--panel)",
+                cursor: "pointer",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Přehrávat zvuky při akcích</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                  Zapnout nebo vypnout zvukové odezvy
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={soundsEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSoundsEnabled(v);
+                  setSoundsEnabledState(v);
+                }}
+              />
+            </label>
+          </Card>
+
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Povinná pole u zakázky</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+              U nové zakázky a při úpravě: která pole musí uživatel vyplnit.
+            </div>
+            <label
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: 12,
+                borderRadius: 10,
+                border,
+                background: "var(--panel)",
+                cursor: "pointer",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Telefon zákazníka povinný</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                  Pokud vypnete, lze zakázku uložit i bez telefonu (pole zůstane volitelné).
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={uiCfg.orders.customerPhoneRequired}
+                onChange={(e) => setUiCfg((p) => ({ ...p, orders: { ...p.orders, customerPhoneRequired: e.target.checked } }))}
               />
             </label>
           </Card>
@@ -1531,8 +2034,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           <div style={{ fontSize: 11, fontWeight: 700 }}>#ORD-001</div>
                           <div style={{ fontSize: 9, color: "var(--muted)" }}>12.12.2024</div>
                         </div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text)" }}>iPhone 15 Pro</div>
-                        <div style={{ fontSize: 9, color: "var(--muted)" }}>Jan Novák</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text)" }}>Zařízení</div>
+                        <div style={{ fontSize: 9, color: "var(--muted)" }}>Zákazník</div>
                       </div>
                       <div style={{ 
                         padding: "8px 10px", 
@@ -1572,8 +2075,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           <div style={{ fontSize: 10, fontWeight: 700 }}>#ORD-001</div>
                           <div style={{ fontSize: 8, color: "var(--muted)" }}>12.12</div>
                         </div>
-                        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text)" }}>iPhone 15 Pro</div>
-                        <div style={{ fontSize: 8, color: "var(--muted)" }}>Jan Novák</div>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text)" }}>Zařízení</div>
+                        <div style={{ fontSize: 8, color: "var(--muted)" }}>Zákazník</div>
                       </div>
                       <div style={{ 
                         padding: "8px 10px", 
@@ -1611,8 +2114,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         fontSize: 9,
                       }}>
                         <div style={{ fontWeight: 700, minWidth: 60 }}>#ORD-001</div>
-                        <div style={{ fontWeight: 600, flex: 1 }}>iPhone 15 Pro</div>
-                        <div style={{ color: "var(--muted)", fontSize: 8 }}>Jan Novák</div>
+                        <div style={{ fontWeight: 600, flex: 1 }}>Zařízení</div>
+                        <div style={{ color: "var(--muted)", fontSize: 8 }}>Zákazník</div>
                       </div>
                       <div style={{ 
                         padding: "6px 8px", 
@@ -1738,15 +2241,51 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </>
       )}
 
-      {/* ZAKÁZKY - DOKUMENTY (removed old legacy section) */}
+      {/* VZHLED - KLAVESOVÉ ZKRATKY */}
+      {section.subsection === "appearance_shortcuts" && (
+        <ShortcutsSettingsSection />
+      )}
 
-      {/* ZAKÁZKY - DOKUMENTY */}
-      {section.subsection === "orders_documents" && (
-        <DocumentsSettings activeServiceId={activeServiceId} />
+      {section.subsection === "orders_device_options" && (
+        <DeviceOptionsSettingsSection />
+      )}
+      {section.subsection === "orders_handoff_options" && (
+        <HandoffOptionsSettingsSection />
       )}
 
       {section.subsection === "orders_filters" && (
         <>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Stránkování</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+              Počet zakázek na stránce v seznamu. „Vše“ zobrazí všechny zakázky bez stránkování.
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {ORDERS_PAGE_SIZE_CHOICES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, pageSize: value } };
+                    setUiCfg(newCfg);
+                    saveUIConfig(newCfg);
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: uiCfg.orders.pageSize === value ? "var(--accent-soft)" : "var(--panel)",
+                    color: uiCfg.orders.pageSize === value ? "var(--accent)" : "var(--text)",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Card>
           <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Rychlé filtry zakázek</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
@@ -1795,54 +2334,183 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </>
       )}
 
+      {/* ZAKÁZKY - TISK DOKUMENTŮ */}
+      {section.subsection === "orders_reklamace" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Reklamace v seznamu</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+            Zobrazit reklamace mezi zakázkami v záložkách „Vše“ a „Aktivní“. Reklamace budou výrazně odlišené od běžných zakázek.
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={ordersShowClaimsInList}
+              onChange={(e) => saveOrdersShowClaimsInList(e.target.checked)}
+            />
+            Zobrazit reklamace v záložkách Vše a Aktivní
+          </label>
+        </Card>
+      )}
+
+      {section.subsection === "orders_tisk_dokumentu" && (
+        <>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Automatický tisk</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Zvolte, kdy se má automaticky otevřít dialog tisku při vytvoření zakázky/reklamace nebo při změně stavu.
+            </div>
+            {autoPrintFormLoading ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Načítání…</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {autoPrintFormSaveSuccess && (
+                  <div style={{ padding: 10, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 10, color: "var(--text)", fontSize: 13 }}>Nastavení uloženo.</div>
+                )}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Zakázkový list</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginBottom: 6 }}>
+                    <input type="checkbox" checked={autoPrintForm.ticketListOnCreate} onChange={async () => { const next = !autoPrintForm.ticketListOnCreate; setAutoPrintForm((p) => ({ ...p, ticketListOnCreate: next })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, ticketListOnCreate: next }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} />
+                    Tisknout při vytvoření zakázky
+                  </label>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Tisknout při přepnutí do stavu</div>
+                  <select value={autoPrintForm.ticketListOnStatusKey ?? ""} onChange={async (e) => { const v = e.target.value || null; setAutoPrintForm((p) => ({ ...p, ticketListOnStatusKey: v })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, ticketListOnStatusKey: v }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} style={{ width: "100%", maxWidth: 280, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13 }}>
+                    <option value="">— žádný —</option>
+                    {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Záruční list</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginBottom: 6 }}>
+                    <input type="checkbox" checked={autoPrintForm.warrantyOnCreate} onChange={async () => { const next = !autoPrintForm.warrantyOnCreate; setAutoPrintForm((p) => ({ ...p, warrantyOnCreate: next })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, warrantyOnCreate: next }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} />
+                    Tisknout při vytvoření zakázky
+                  </label>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Tisknout při přepnutí do stavu</div>
+                  <select value={autoPrintForm.warrantyOnStatusKey ?? ""} onChange={async (e) => { const v = e.target.value || null; setAutoPrintForm((p) => ({ ...p, warrantyOnStatusKey: v })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, warrantyOnStatusKey: v }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} style={{ width: "100%", maxWidth: 280, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13 }}>
+                    <option value="">— žádný —</option>
+                    {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Přijetí reklamace</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginBottom: 6 }}>
+                    <input type="checkbox" checked={autoPrintForm.prijetiReklamaceOnCreate} onChange={async () => { const next = !autoPrintForm.prijetiReklamaceOnCreate; setAutoPrintForm((p) => ({ ...p, prijetiReklamaceOnCreate: next })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, prijetiReklamaceOnCreate: next }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} />
+                    Tisknout při vytvoření reklamace
+                  </label>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Tisknout při přepnutí do stavu</div>
+                  <select value={autoPrintForm.prijetiReklamaceOnStatusKey ?? ""} onChange={async (e) => { const v = e.target.value || null; setAutoPrintForm((p) => ({ ...p, prijetiReklamaceOnStatusKey: v })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, prijetiReklamaceOnStatusKey: v }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} style={{ width: "100%", maxWidth: 280, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13 }}>
+                    <option value="">— žádný —</option>
+                    {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Vydání reklamace</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Tisknout při přepnutí do stavu</div>
+                  <select value={autoPrintForm.vydaniReklamaceOnStatusKey ?? ""} onChange={async (e) => { const v = e.target.value || null; setAutoPrintForm((p) => ({ ...p, vydaniReklamaceOnStatusKey: v })); const ok = await saveDocumentsConfigAutoPrint(activeServiceId, { ...autoPrintForm, vydaniReklamaceOnStatusKey: v }); if (ok) { setAutoPrintFormSaveSuccess(true); setTimeout(() => setAutoPrintFormSaveSuccess(false), 2000); } }} style={{ width: "100%", maxWidth: 280, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13 }}>
+                    <option value="">— žádný —</option>
+                    {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
       {/* ZAKÁZKY - SMAZANÉ */}
       {section.subsection === "orders_deleted" && (
         <DeletedTicketsSettings activeServiceId={activeServiceId} />
       )}
 
-      {/* Pro podporu – identifikátory pro diagnostiku */}
-      <div style={{ marginTop: 24 }}>
-      <Card>
-        <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pro podporu</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-          Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
+      {/* O APLIKACI */}
+      {section.subsection === "about_app" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <Card>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ width: 64, height: 64, flexShrink: 0 }}>
+                <AppLogo size={64} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 4, color: "var(--text)" }}>Jobi</div>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  Evidence zakázek a zákazníků pro servisy. Tisk a export dokumentů přes JobiDocs.
+                </div>
+              </div>
+            </div>
+          </Card>
+          {onStartTour && (
+            <Card>
+              <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Průvodce aplikací</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+                Spusťte průvodce – provede vás krok za krokem po celé aplikaci a u každé části ukáže, co a jak funguje.
+              </div>
+              <button
+                type="button"
+                onClick={onStartTour}
+                style={{
+                  padding: "10px 20px",
+                  background: "var(--accent)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: 14,
+                }}
+              >
+                Spustit průvodce
+              </button>
+            </Card>
+          )}
+          <Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "var(--muted)", minWidth: 80 }}>Verze</span>
+                <span style={{ color: "var(--text)" }}>{APP_VERSION}</span>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pro podporu</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+              Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
+              <div
+                title="Kliknutím zkopírovat"
+                onClick={() => activeServiceId && navigator.clipboard.writeText(activeServiceId)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "var(--panel-2)",
+                  border: "1px solid var(--border)",
+                  cursor: activeServiceId ? "pointer" : "default",
+                  userSelect: "text",
+                  color: "var(--text)",
+                }}
+              >
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>serviceId:</span>
+                {activeServiceId ?? "—"}
+              </div>
+              <div
+                title="Kliknutím zkopírovat"
+                onClick={() => navigator.clipboard.writeText(APP_VERSION)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "var(--panel-2)",
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  userSelect: "text",
+                  color: "var(--text)",
+                }}
+              >
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
+                {APP_VERSION}
+              </div>
+            </div>
+          </Card>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
-          <div
-            title="Kliknutím zkopírovat"
-            onClick={() => activeServiceId && navigator.clipboard.writeText(activeServiceId)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              background: "var(--panel-2)",
-              border: "1px solid var(--border)",
-              cursor: activeServiceId ? "pointer" : "default",
-              userSelect: "text",
-              color: "var(--text)",
-            }}
-          >
-            <span style={{ color: "var(--muted)", marginRight: 8 }}>serviceId:</span>
-            {activeServiceId ?? "—"}
-          </div>
-          <div
-            title="Kliknutím zkopírovat"
-            onClick={() => navigator.clipboard.writeText(APP_VERSION)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              background: "var(--panel-2)",
-              border: "1px solid var(--border)",
-              cursor: "pointer",
-              userSelect: "text",
-              color: "var(--text)",
-            }}
-          >
-            <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
-            {APP_VERSION}
-          </div>
-        </div>
-      </Card>
-      </div>
+      )}
     </div>
   );
 }

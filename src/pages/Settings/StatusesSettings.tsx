@@ -133,7 +133,7 @@ export function StatusesSettings({ uiCfg, setUiCfg, onCreateStatus, onDeleteStat
           <div>
             <FieldLabel>Název (zobrazovaný text)</FieldLabel>
             <TextInput
-              placeholder="např. Přijato, Probíhá, Hotovo"
+              placeholder="Přijato, V opravě, Hotovo"
               value={draft.label}
               onChange={(e: any) => {
                 const newLabel = e.target.value;

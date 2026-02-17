@@ -60,7 +60,7 @@ serve(async (req) => {
       );
     }
 
-    // Verify user is a member of this service
+    // Verify user is a member of this service (or root owner – může mít servisy vytvořené před opravou, kdy se tvůrce nepřidával do service_memberships)
     const { data: membership, error: membershipErr } = await userClient
       .from("service_memberships")
       .select("role")
@@ -68,7 +68,11 @@ serve(async (req) => {
       .eq("user_id", userId)
       .maybeSingle();
 
-    if (membershipErr || !membership) {
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
+    const isMember = !membershipErr && !!membership;
+
+    if (!isMember && !isRootOwner) {
       return new Response(
         JSON.stringify({ error: "Not a member of this service" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -121,6 +125,16 @@ serve(async (req) => {
         JSON.stringify({ error: `Failed to create default statuses: ${insertError.message}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Root owner bez členství (starý servis): doplnit do service_memberships, ať v Nastavení vidí Tým/Kontakt
+    if (isRootOwner && !isMember) {
+      await adminClient
+        .from("service_memberships")
+        .upsert(
+          { service_id: serviceId, user_id: userId, role: "owner" },
+          { onConflict: "service_id,user_id" }
+        );
     }
 
     return new Response(

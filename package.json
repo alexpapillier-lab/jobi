@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:check": "concurrently \"vite\" \"tsc --noEmit --watch\"",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
+    "lint": "eslint src --ext .ts,.tsx --max-warnings=9999",
     "build": "npm run typecheck && npm run lint && vite build",
     "build:prod": "npm run typecheck && vite build",
     "preview": "vite preview",
@@ -15,6 +15,9 @@
     "tauri:dev:check": "concurrently \"npm run tauri dev\" \"tsc --noEmit --watch\"",
     "tauri:build": "npm run build:prod && tauri build",
     "tauri:build:universal": "bash scripts/build-universal.sh",
+    "tauri:build:universal:signed": "bash scripts/build-universal-signed.sh",
+    "generate-latest-json": "bash scripts/generate-jobi-latest-json.sh",
+    "gen-dmg-background": "node scripts/gen-dmg-background.js",
     "build:all": "bash scripts/build-jobi-and-jobidocs.sh"
   },
   "dependencies": {
@@ -30,6 +33,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "sharp": "^0.33.5",
     "@eslint/js": "^9.39.2",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",

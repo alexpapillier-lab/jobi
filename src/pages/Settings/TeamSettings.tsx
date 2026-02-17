@@ -142,6 +142,10 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   const serviceDropdownButtonRef = useRef<HTMLButtonElement | null>(null);
   const serviceDropdownMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // Kódy pozvánek dočtené přes invite-get-token (když team-list token nevrátí)
+  const [fetchedInviteTokens, setFetchedInviteTokens] = useState<Record<string, string>>({});
+  const [loadingTokenForInviteId, setLoadingTokenForInviteId] = useState<string | null>(null);
+
   // Load team members and invites when activeServiceId or token changes (ne na celý session – ten mění referenci a spouští smyčku)
   useEffect(() => {
     const client = supabase;
@@ -149,6 +153,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     if (!activeServiceId || !accessToken || !client) {
       setTeamMembers([]);
       setPendingInvites([]);
+      setFetchedInviteTokens({});
       setError(null);
       return;
     }
@@ -175,9 +180,11 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         }
 
         lastStep = "team-list";
-        // Load team members
+        const accessToken = clientSession?.access_token ?? session?.access_token;
+        // Load team members (explicitní JWT kvůli Tauri webview – jinak 401 / failed to send)
         const { data: membersData, error: membersError } = await client.functions.invoke("team-list", {
           body: { serviceId: activeServiceId },
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
         });
 
         if (membersError) {
@@ -196,17 +203,31 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         // team-list vrací členy i pozvánky v jednom requestu (obchází 401 u druhého volání team-invite-list)
         let members = membersData?.members || [];
         if (rootOwnerId) members = members.filter((m: any) => m.user_id !== rootOwnerId);
+        // Admin a member nesmí vidět nikoho s rolí owner (majitel aplikace) v seznamu týmu
+        if (!isRootOwner) members = members.filter((m: any) => m.role !== "owner");
         setTeamMembers(members);
         setPendingInvites(membersData?.invites ?? []);
       } catch (err: any) {
         const step = err?.__step ?? lastStep;
-        console.error("[TeamSettings] Error loading team data:", {
+        // Podrobné logování pro diagnostiku (Tauri / Edge Function)
+        const res = err?.context as Response | undefined;
+        console.error("[TeamSettings] Error loading team data (raw):", {
           step,
           name: err?.name,
           message: err?.message,
-          context: err?.context,
+          cause: err?.cause != null ? (err.cause instanceof Error ? { message: err.cause.message, name: err.cause.name } : err.cause) : undefined,
+          hasContext: !!res,
+          contextType: res?.constructor?.name,
+          contextStatus: res?.status,
+          contextStatusText: res?.statusText,
+          errKeys: err && typeof err === "object" ? Object.keys(err) : [],
         });
-        const res = err?.context as Response | undefined;
+        if (res) {
+          res.clone().text().then(
+            (bodyText) => console.error("[TeamSettings] Error response body:", bodyText?.slice?.(0, 500)),
+            () => console.error("[TeamSettings] Could not read error response body")
+          );
+        }
         if (res) {
           const status = res.status;
           const statusText = res.statusText;
@@ -332,6 +353,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     }
 
     try {
+      const accessToken = session?.access_token;
       const { data, error } = await supabase.functions.invoke("invite_create", {
         body: {
           mode: "current",
@@ -339,6 +361,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
           email: inviteEmail.trim(),
           role: inviteRole,
         },
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
       });
 
       if (error) {
@@ -372,7 +395,13 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         return;
       }
 
-      if (data?.email_sent === false) {
+      const inviteToken = data?.token ?? null;
+      if (inviteToken) {
+        navigator.clipboard.writeText(inviteToken).then(
+          () => showToast("Pozvánka vytvořena. Kód pro registraci byl zkopírován do schránky – předejte ho pozvanému.", "success"),
+          () => showToast(`Pozvánka vytvořena. Kód pro registraci: ${inviteToken}`, "success")
+        );
+      } else if (data?.email_sent === false) {
         const raw = data?.email_skipped_reason || data?.email_error || "";
         const reason = formatInviteEmailReason(raw) || "E-mail se nepodařilo odeslat.";
         showToast(`Pozvánka vytvořena, ale e-mail nebyl odeslán: ${reason}`, "error");
@@ -387,6 +416,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       // Reload členy i pozvánky (jeden request team-list)
       const { data: listData } = await supabase.functions.invoke("team-list", {
         body: { serviceId: activeServiceId },
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
       });
       if (listData && !listData.error) {
         setTeamMembers(listData.members || []);
@@ -404,11 +434,13 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     }
 
     try {
+      const accessToken = session.access_token;
       const { data, error } = await supabase.functions.invoke("team-remove-member", {
         body: {
           serviceId: removeServiceId,
           userId: removeUserId,
         },
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
       });
 
       if (error) {
@@ -428,6 +460,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       // Reload team members
       const { data: membersData } = await supabase.functions.invoke("team-list", {
         body: { serviceId: removeServiceId },
+        ...(session?.access_token ? { headers: { Authorization: `Bearer ${session.access_token}` } } : {}),
       });
       if (membersData && !membersData.error) {
         setTeamMembers(membersData.members || []);
@@ -444,12 +477,14 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     }
 
     try {
+      const accessToken = session.access_token;
       const { data, error } = await supabase.functions.invoke("team-update-role", {
         body: {
           serviceId: roleChangeServiceId,
           userId: roleChangeUserId,
           role: roleChangeNewRole,
         },
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
       });
 
       if (error) {
@@ -470,6 +505,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       // Reload team members
       const { data: membersData } = await supabase.functions.invoke("team-list", {
         body: { serviceId: roleChangeServiceId },
+        ...(session?.access_token ? { headers: { Authorization: `Bearer ${session.access_token}` } } : {}),
       });
       if (membersData && !membersData.error) {
         setTeamMembers(membersData.members || []);
@@ -484,8 +520,10 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     if (!activeServiceId || !supabase) return;
 
     try {
+      const accessToken = session?.access_token;
       const { data: listData } = await supabase.functions.invoke("team-list", {
         body: { serviceId: activeServiceId },
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
       });
       if (listData && !listData.error) {
         setTeamMembers(listData.members || []);
@@ -759,10 +797,108 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   background: "var(--panel)",
                 }}
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{invite.email}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>
                     {invite.role === "admin" ? "Administrátor" : "Člen"}
+                  </div>
+                  <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Kód pro registraci:</span>
+                    {(invite.token ?? fetchedInviteTokens[invite.id]) ? (
+                      <>
+                        <code style={{ fontSize: 12, fontFamily: "monospace", background: "var(--bg)", padding: "4px 8px", borderRadius: 6, letterSpacing: "0.04em" }}>
+                          {invite.token ?? fetchedInviteTokens[invite.id]}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = invite.token ?? fetchedInviteTokens[invite.id];
+                            if (code) {
+                              navigator.clipboard.writeText(code).then(
+                                () => showToast("Kód zkopírován do schránky", "success"),
+                                () => showToast("Kopírování se nezdařilo", "error")
+                              );
+                            }
+                          }}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                            background: "var(--bg)",
+                            color: "var(--text)",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Kopírovat kód
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!activeServiceId || !supabase || loadingTokenForInviteId) return;
+                          setLoadingTokenForInviteId(invite.id);
+                          try {
+                            const { data: sessionData } = await supabase.auth.getSession();
+                            const accessToken = sessionData?.session?.access_token ?? session?.access_token;
+                            const { data, error } = await supabase.functions.invoke("invite-get-token", {
+                              body: { serviceId: activeServiceId, inviteId: invite.id },
+                              ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+                            });
+                            if (error) throw error;
+                            if (data?.error) {
+                              console.warn("[TeamSettings] invite-get-token data.error:", data.error, "detail:", (data as { detail?: string }).detail);
+                              showToast(data.error, "error");
+                              return;
+                            }
+                            if (data?.token) {
+                              setFetchedInviteTokens((prev) => ({ ...prev, [invite.id]: data.token }));
+                            }
+                          } catch (err: any) {
+                            const res = err?.context as Response | undefined;
+                            if (res?.status === 401) {
+                              res.clone().text().then(
+                                (body) => console.warn("[TeamSettings] invite-get-token 401 body:", body),
+                                () => {}
+                              );
+                            }
+                            if (res?.status === 404) {
+                              res.clone().text().then(
+                                (body) => {
+                                  try {
+                                    const parsed = JSON.parse(body) as { error?: string };
+                                    showToast(parsed?.error || "Pozvánka nebyla nalezena nebo již byla přijata.", "error");
+                                  } catch {
+                                    showToast("Pozvánka nebyla nalezena nebo již byla přijata.", "error");
+                                  }
+                                },
+                                () => showToast("Pozvánka nebyla nalezena nebo již byla přijata.", "error")
+                              );
+                              return;
+                            }
+                            showToast(normalizeError(err) || "Nepodařilo načíst kód", "error");
+                          } finally {
+                            setLoadingTokenForInviteId(null);
+                          }
+                        }}
+                        disabled={!!loadingTokenForInviteId}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: "1px solid var(--border)",
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: loadingTokenForInviteId ? "not-allowed" : "pointer",
+                          opacity: loadingTokenForInviteId ? 0.7 : 1,
+                        }}
+                      >
+                        {loadingTokenForInviteId === invite.id ? "Načítám…" : "Zobrazit kód"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -777,11 +913,13 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     }
 
                     try {
+                      const accessToken = session?.access_token;
                       const { data, error } = await supabase.functions.invoke("invite-delete", {
                         body: {
                           serviceId: activeServiceId,
                           inviteId: invite.id,
                         },
+                        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
                       });
 
                       if (error) {
@@ -856,7 +994,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="email@priklad.cz"
+                  placeholder="email@example.cz"
                   style={{
                     width: "100%",
                     padding: "10px 12px",

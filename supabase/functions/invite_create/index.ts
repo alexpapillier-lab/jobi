@@ -112,19 +112,10 @@ serve(async (req) => {
       const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
       if (!isRootOwner) {
-        const { data: ownerMemberships, error: ownerError } = await svc
-          .from("service_memberships")
-          .select("service_id")
-          .eq("user_id", userId)
-          .eq("role", "owner")
-          .limit(1);
-
-        if (ownerError || !ownerMemberships || ownerMemberships.length === 0) {
-          return new Response(
-            JSON.stringify({ error: "Only owners can create stock services" }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+        return new Response(
+          JSON.stringify({ error: "Pouze majitel aplikace může vytvářet nové servisy" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
       const { data: newService, error: serviceError } = await svc
@@ -142,19 +133,18 @@ serve(async (req) => {
 
       targetServiceId = newService.id;
 
-      if (!isRootOwner) {
-        const { error: membershipError } = await svc
-          .from("service_memberships")
-          .upsert(
-            { service_id: targetServiceId, user_id: userId, role: "owner" },
-            { onConflict: "service_id,user_id" }
-          );
-        if (membershipError) {
-          return new Response(
-            JSON.stringify({ error: `Failed to create membership: ${membershipError.message}` }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+      // Vždy přidat tvůrce servisu jako ownera (včetně root ownera), aby mohl servis používat (statusy, RLS, Tým/Kontakt v Nastavení).
+      const { error: membershipError } = await svc
+        .from("service_memberships")
+        .upsert(
+          { service_id: targetServiceId, user_id: userId, role: "owner" },
+          { onConflict: "service_id,user_id" }
+        );
+      if (membershipError) {
+        return new Response(
+          JSON.stringify({ error: `Failed to create membership: ${membershipError.message}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
       if (!willCreateInvite) {

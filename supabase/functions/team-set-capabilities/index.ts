@@ -50,15 +50,6 @@ serve(async (req) => {
       );
     }
 
-    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
-    const isRootOwner = !!rootOwnerId && user.id.toLowerCase() === rootOwnerId.toLowerCase();
-    if (!isRootOwner) {
-      return new Response(
-        JSON.stringify({ error: "Only root owner can use this endpoint for any service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const body = await req.json().catch(() => ({}));
     const { serviceId, userId: targetUserId, capabilities } = body;
     if (!serviceId || !targetUserId || capabilities === undefined) {
@@ -68,15 +59,40 @@ serve(async (req) => {
       );
     }
 
+    // Oprávnění má owner nebo admin servisu (nebo root owner pro libovolný servis)
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const svc = createClient(supabaseUrl, serviceKey);
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && user.id.toLowerCase() === rootOwnerId.toLowerCase();
+
+    if (!isRootOwner) {
+      const { data: callerMembership, error: callerErr } = await svc
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", serviceId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (callerErr || !callerMembership) {
+        return new Response(
+          JSON.stringify({ error: "Nejste členem tohoto servisu" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (callerMembership.role !== "owner" && callerMembership.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Změna oprávnění člena je jen pro ownera nebo admina" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const filtered: Record<string, boolean> = {};
     for (const key of Object.keys(capabilities)) {
       if (ALLOWED_KEYS.includes(key) && typeof capabilities[key] === "boolean") {
         filtered[key] = capabilities[key];
       }
     }
-
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const svc = createClient(supabaseUrl, serviceKey);
 
     const { data: targetRow, error: fetchErr } = await svc
       .from("service_memberships")

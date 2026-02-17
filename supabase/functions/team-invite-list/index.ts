@@ -62,28 +62,36 @@ serve(async (req) => {
       );
     }
 
-    const { data: membership, error: membershipError } = await supabase
-      .from("service_memberships")
-      .select("service_id, role")
-      .eq("service_id", serviceId)
-      .eq("user_id", user.id)
-      .single();
+    const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
+    const isRootOwner = !!rootOwnerId && user.id.toLowerCase() === rootOwnerId.toLowerCase();
 
-    if (membershipError || !membership) {
-      return new Response(
-        JSON.stringify({ error: "User is not a member of this service" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!isRootOwner) {
+      const { data: membership, error: membershipError } = await supabase
+        .from("service_memberships")
+        .select("service_id, role")
+        .eq("service_id", serviceId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (membershipError || !membership) {
+        return new Response(
+          JSON.stringify({ error: "User is not a member of this service" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (membership.role !== "owner" && membership.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "User must be owner or admin to view invites" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
-    if (membership.role !== "owner" && membership.role !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "User must be owner or admin to view invites" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { data: invites, error: invitesError } = await supabase
+    const invitesClient = isRootOwner
+      ? createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
+      : supabase;
+    const { data: invites, error: invitesError } = await invitesClient
       .from("service_invites")
       .select("id, email, role, created_at, expires_at")
       .eq("service_id", serviceId)

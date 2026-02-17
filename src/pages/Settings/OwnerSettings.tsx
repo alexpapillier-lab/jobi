@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { showToast } from "../../components/Toast";
 import { Card } from "../../lib/settingsUi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -11,13 +11,59 @@ type ServiceItem = { service_id: string; service_name: string; role: string; act
 type OwnerSettingsProps = {
   services: ServiceItem[];
   refreshServices: () => Promise<void>;
+  setActiveServiceId?: (id: string | null) => void;
 };
 
 function shortId(uuid: string): string {
   return uuid.replace(/-/g, "").slice(0, 8);
 }
 
-export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps) {
+/** Volá Edge Function service-manage přímo přes fetch, aby bylo vždy dostupné tělo odpovědi a skutečná chyba. */
+async function callServiceManage(body: { action: string; serviceId: string; name?: string }): Promise<void> {
+  const client = supabase;
+  if (!client) throw new Error("Supabase není k dispozici.");
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Chybí konfigurace Supabase (URL nebo anon key).");
+  }
+  // Aktuální JWT (v Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT)
+  const { data: refreshData } = await client.auth.refreshSession();
+  const token =
+    refreshData?.session?.access_token ??
+    (await client.auth.getSession()).data?.session?.access_token;
+  if (!token) {
+    throw new Error("Nejste přihlášeni.");
+  }
+  const res = await supabaseFetch(`${supabaseUrl}/functions/v1/service-manage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      apikey: supabaseAnonKey,
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await res.text();
+  let data: { error?: string; detail?: string; message?: string } = {};
+  try {
+    if (raw) data = JSON.parse(raw) as typeof data;
+  } catch {
+    // tělo není JSON (např. HTML od gateway)
+  }
+  if (!res.ok) {
+    const msg =
+      data?.error ||
+      data?.detail ||
+      data?.message ||
+      (raw && raw.length < 200 ? raw : null) ||
+      res.statusText ||
+      `Chyba serveru (${res.status})`;
+    console.error("[service-manage] non-2xx:", res.status, res.statusText, { body: data, raw: raw?.slice(0, 500) });
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+}
+
+export function OwnerSettings({ services, refreshServices, setActiveServiceId }: OwnerSettingsProps) {
   const [ownerSelectedServiceId, setOwnerSelectedServiceId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -27,6 +73,8 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
   const [deactivateConfirm, setDeactivateConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [manageSubmitting, setManageSubmitting] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
 
   const selectedService = ownerSelectedServiceId
     ? services.find((s) => s.service_id === ownerSelectedServiceId)
@@ -38,6 +86,27 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
       setOwnerSelectedServiceId(services[0].service_id);
     }
   }, [services, ownerSelectedServiceId]);
+
+  useEffect(() => {
+    if (selectedService) {
+      setEditNameValue(selectedService.service_name || "");
+    }
+  }, [selectedService?.service_id, selectedService?.service_name]);
+
+  const handleRenameService = async () => {
+    if (!ownerSelectedServiceId || !supabase) return;
+    const name = editNameValue.trim() || "Servis";
+    setRenameSubmitting(true);
+    try {
+      await callServiceManage({ action: "rename", serviceId: ownerSelectedServiceId, name });
+      await refreshServices();
+      showToast("Název servisu byl změněn", "success");
+    } catch (e: any) {
+      showToast(e?.message || "Nepodařilo se změnit název", "error");
+    } finally {
+      setRenameSubmitting(false);
+    }
+  };
 
   const handleCreateService = async () => {
     if (!supabase) return;
@@ -65,7 +134,10 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
       setCreateName("");
       setCreateEmail("");
       setCreateRole("admin");
-      if (data?.service_id) setOwnerSelectedServiceId(data.service_id);
+      if (data?.service_id) {
+        setOwnerSelectedServiceId(data.service_id);
+        setActiveServiceId?.(data.service_id);
+      }
       if (data?.email_sent === false && (data?.email_skipped_reason || data?.email_error)) {
         const raw = data?.email_skipped_reason || data?.email_error || "";
         const reason = formatInviteEmailReason(raw) || "E-mail se nepodařilo odeslat.";
@@ -89,14 +161,7 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
     if (!ownerSelectedServiceId || !supabase) return;
     setManageSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const { data, error } = await supabase.functions.invoke("service-manage", {
-        body: { action: "deactivate", serviceId: ownerSelectedServiceId },
-        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      await callServiceManage({ action: "deactivate", serviceId: ownerSelectedServiceId });
       await refreshServices();
       setDeactivateConfirm(false);
       showToast("Servis deaktivován", "success");
@@ -111,14 +176,7 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
     if (!ownerSelectedServiceId || !supabase) return;
     setManageSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const { data, error } = await supabase.functions.invoke("service-manage", {
-        body: { action: "activate", serviceId: ownerSelectedServiceId },
-        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      await callServiceManage({ action: "activate", serviceId: ownerSelectedServiceId });
       await refreshServices();
       showToast("Servis znovu aktivován", "success");
     } catch (e: any) {
@@ -132,14 +190,7 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
     if (!ownerSelectedServiceId || !supabase) return;
     setManageSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const { data, error } = await supabase.functions.invoke("service-manage", {
-        body: { action: "hardDelete", serviceId: ownerSelectedServiceId },
-        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      await callServiceManage({ action: "hardDelete", serviceId: ownerSelectedServiceId });
       await refreshServices();
       setOwnerSelectedServiceId(null);
       setDeleteConfirm(false);
@@ -266,8 +317,42 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
               {selectedService ? (
                 <>
                   <div style={{ marginBottom: 16, padding: "14px 16px", border, borderRadius: 12, background: "var(--panel)" }}>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text)", marginBottom: 6 }}>
-                      {selectedService.service_name || "Bez názvu"}
+                    <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text)", marginBottom: 8 }}>Název servisu</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                      <input
+                        type="text"
+                        value={editNameValue}
+                        onChange={(e) => setEditNameValue(e.target.value)}
+                        placeholder="Název servisu"
+                        style={{
+                          flex: "1 1 200px",
+                          minWidth: 0,
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          border,
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          fontSize: 14,
+                          fontFamily: "inherit",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRenameService}
+                        disabled={renameSubmitting || (editNameValue.trim() || "Servis") === (selectedService.service_name || "Bez názvu")}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: "var(--accent)",
+                          color: "white",
+                          fontWeight: 600,
+                          fontSize: 13,
+                          cursor: renameSubmitting ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {renameSubmitting ? "Ukládám…" : "Uložit název"}
+                      </button>
                     </div>
                     {typeof selectedService.member_count === "number" && (
                       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
@@ -439,7 +524,7 @@ export function OwnerSettings({ services, refreshServices }: OwnerSettingsProps)
                   type="email"
                   value={createEmail}
                   onChange={(e) => setCreateEmail(e.target.value)}
-                  placeholder="email@example.com"
+                  placeholder="email@example.cz"
                   style={{
                     width: "100%",
                     padding: "10px 12px",
