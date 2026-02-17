@@ -1343,78 +1343,78 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <OwnerSettings services={services} refreshServices={refreshServices} setActiveServiceId={setActiveServiceId} />
       )}
 
-      {/* Přidat servis pomocí kódu pozvánky – pro přihlášené uživatele */}
-      {section.category === "service" && (
-        <div style={{ marginTop: 24 }}>
-          <Card>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Přidat servis pomocí pozvánky</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-              Máš kód z e-mailu pozvánky do dalšího servisu? Zadej ho a přidáš se bez odhlášení.
-            </div>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                <FieldLabel>Kód z e-mailu</FieldLabel>
-                <TextInput
-                  type="text"
-                  value={inviteCodeInput}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setInviteCodeInput(e.target.value)}
-                  placeholder="Vlož kód z pozvánky"
-                  disabled={inviteAcceptLoading}
-                  style={{ width: "100%" }}
-                />
+      {/* MŮJ PROFIL - FOTKA A PŘEZDÍVKA + PŘIDAT SERVIS POZVÁNKOU */}
+      {section.subsection === "profile_me" && (
+        <>
+          <ProfileSettingsSection />
+          <div style={{ marginTop: 24 }}>
+            <Card>
+              <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Přidat servis pomocí pozvánky</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+                Máš kód z e-mailu pozvánky do dalšího servisu? Zadej ho a přidáš se bez odhlášení.
               </div>
-              <button
-                type="button"
-                disabled={!inviteCodeInput.trim() || inviteAcceptLoading}
-                onClick={async () => {
-                  const token = inviteCodeInput.trim();
-                  if (!token || !refreshServices || !supabase) return;
-                  setInviteAcceptLoading(true);
-                  try {
-                    const { data, error } = await supabase.functions.invoke("invite-accept", { body: { token } });
-                  if (error) {
-                    const res = (error as any)?.context as Response | undefined;
-                    let detail = "";
-                    if (res) {
-                      try {
-                        detail = await res.clone().text();
-                      } catch {}
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <FieldLabel>Kód z e-mailu</FieldLabel>
+                  <TextInput
+                    type="text"
+                    value={inviteCodeInput}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setInviteCodeInput(e.target.value)}
+                    placeholder="Vlož kód z pozvánky"
+                    disabled={inviteAcceptLoading}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!inviteCodeInput.trim() || inviteAcceptLoading}
+                  onClick={async () => {
+                    const token = inviteCodeInput.trim();
+                    if (!token || !refreshServices || !supabase) return;
+                    setInviteAcceptLoading(true);
+                    try {
+                      const { data, error } = await supabase.functions.invoke("invite-accept", { body: { token } });
+                      if (error) {
+                        const res = (error as any)?.context as Response | undefined;
+                        let detail = "";
+                        if (res) {
+                          try {
+                            detail = await res.clone().text();
+                          } catch {}
+                        }
+                        showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
+                        return;
+                      }
+                      if (data?.serviceId) {
+                        showToast("Pozvánka byla přijata – servis je přidaný", "success");
+                        setInviteCodeInput("");
+                        await refreshServices();
+                      }
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
+                    } finally {
+                      setInviteAcceptLoading(false);
                     }
-                    showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
-                    return;
-                  }
-                  if (data?.serviceId) {
-                    showToast("Pozvánka byla přijata – servis je přidaný", "success");
-                    setInviteCodeInput("");
-                    await refreshServices();
-                  }
-                } catch (err) {
-                  showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
-                } finally {
-                  setInviteAcceptLoading(false);
-                }
-              }}
-              style={{
-                padding: "10px 20px",
-                borderRadius: 10,
-                border: "none",
-                background: "var(--accent)",
-                color: "var(--accent-text)",
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: inviteCodeInput.trim() && !inviteAcceptLoading ? "pointer" : "not-allowed",
-                opacity: inviteCodeInput.trim() && !inviteAcceptLoading ? 1 : 0.6,
-              }}
-            >
-              {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
-              </button>
-            </div>
-          </Card>
-        </div>
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "var(--accent-text)",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: inviteCodeInput.trim() && !inviteAcceptLoading ? "pointer" : "not-allowed",
+                    opacity: inviteCodeInput.trim() && !inviteAcceptLoading ? 1 : 0.6,
+                  }}
+                >
+                  {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
+                </button>
+              </div>
+            </Card>
+          </div>
+        </>
       )}
-
-      {/* MŮJ PROFIL - FOTKA A PŘEZDÍVKA */}
-      {section.subsection === "profile_me" && <ProfileSettingsSection />}
 
       {/* VZHLED A CHOVÁNÍ - BAREVNÉ TÉMA */}
       {section.subsection === "appearance_theme" && (
