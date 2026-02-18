@@ -1068,7 +1068,31 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {cat.icon}
               </span>
-              <span>{cat.label}</span>
+              <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                {cat.label}
+                {cat.category === "about" && updateAvailable && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -10,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: "#dc2626",
+                      color: "white",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                    }}
+                  >
+                    1
+                  </span>
+                )}
+              </span>
             </button>
           );
         })}
@@ -1115,31 +1139,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   }
                 }}
               >
-                <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
-                  {sub.label}
-                  {((sub.key === "about_app" || sub.key === "about_updates") && updateAvailable) && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: -6,
-                        right: -10,
-                        minWidth: 18,
-                        height: 18,
-                        borderRadius: 9,
-                        background: "#dc2626",
-                        color: "white",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "0 4px",
-                      }}
-                    >
-                      1
-                    </span>
-                  )}
-                </span>
+                {sub.label}
             </button>
           );
         })}

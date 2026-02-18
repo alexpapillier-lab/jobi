@@ -41,7 +41,7 @@ fi
 echo -e "${GREEN}Creating .tar.gz from notarized .app...${NC}"
 cd "$BUNDLE_DIR"
 rm -f jobi.app.tar.gz jobi.app.tar.gz.sig
-tar czf jobi.app.tar.gz jobi.app
+COPYFILE_DISABLE=1 tar czf jobi.app.tar.gz jobi.app
 cd - > /dev/null
 
 echo -e "${GREEN}Signing .tar.gz for OTA...${NC}"

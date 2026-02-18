@@ -84,7 +84,7 @@ cd - > /dev/null
 
 echo -e "${GREEN}Creating .tar.gz for OTA updater...${NC}"
 cd "$BUNDLE_DIR"
-tar czf "jobi.app.tar.gz" jobi.app
+COPYFILE_DISABLE=1 tar czf "jobi.app.tar.gz" jobi.app
 cd - > /dev/null
 
 # Sign and generate latest.json when signing key is available (one universal build → both archs in OTA)
