@@ -92,10 +92,12 @@ if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -f "$HOME/.tauri/jobi.key" ]; then
   echo -e "${GREEN}Signing OTA bundle...${NC}"
   if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
     export TAURI_PRIVATE_KEY="$TAURI_SIGNING_PRIVATE_KEY"
+    # Předat i prázdné heslo, aby signer nepromptoval (klíč bez hesla)
+    export TAURI_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
   else
     export TAURI_PRIVATE_KEY_PATH="$HOME/.tauri/jobi.key"
+    export TAURI_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
   fi
-  [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && export TAURI_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
   npx tauri signer sign "$BUNDLE_DIR/jobi.app.tar.gz"
   echo -e "${GREEN}Generating latest.json (universal – both darwin-aarch64 and darwin-x86_64)...${NC}"
   bash "$SCRIPT_DIR/generate-jobi-latest-json.sh" universal "$ROOT/latest.json"
