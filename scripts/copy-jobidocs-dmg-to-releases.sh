@@ -24,9 +24,11 @@ fi
 
 DEST="$RELEASES_DIR/JobiDocs-${VERSION}.dmg"
 
-SRC=$(find "$ROOT/jobidocs/release" -maxdepth 1 -name "*.dmg" -type f 2>/dev/null | head -1)
+# Bereme jen DMG odpovídající verzi (JobiDocs-0.1.4-universal.dmg), ne náhodně první *.dmg
+SRC=$(find "$ROOT/jobidocs/release" -maxdepth 1 -name "JobiDocs-${VERSION}*.dmg" -type f 2>/dev/null | head -1)
 if [ -z "$SRC" ]; then
-  echo "JobiDocs DMG nenalezen v jobidocs/release/. Nejdřív spusť build v jobidocs/." >&2
+  echo "JobiDocs DMG pro verzi $VERSION nenalezen v jobidocs/release/." >&2
+  echo "Očekávaný vzor: JobiDocs-${VERSION}-universal.dmg. Nejdřív spusť build JobiDocs." >&2
   exit 1
 fi
 
