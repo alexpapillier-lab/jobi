@@ -48,7 +48,8 @@ echo -e "${GREEN}Building for aarch64 (Apple Silicon)...${NC}"
 npm run build:prod
 npx tauri build --target aarch64-apple-darwin
 
-echo -e "${GREEN}Building for x86_64 (Intel)...${NC}"
+echo -e "${GREEN}Building for x86_64 (Intel)...${NC}" >&2
+echo "Může trvat 5–10 minut na Apple Silicon; výstup se může na chvíli zdát zastavený." >&2
 npx tauri build --target x86_64-apple-darwin
 
 echo -e "${GREEN}Creating universal binary with lipo...${NC}"
