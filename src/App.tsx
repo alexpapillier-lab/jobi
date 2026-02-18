@@ -109,7 +109,7 @@ function safeLoadUIConfig(): UIConfig {
 export default function App() {
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
-  const [authenticated, setAuthenticatedState] = useState(() => isAuthenticated());
+  const [, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
     try {
@@ -669,6 +669,7 @@ export default function App() {
   // Po přihlášení: pokud je uložený invite token, nejdřív vyřídit pozvánku; při chybě automatický retry + refresh
   useEffect(() => {
     if (!session || !supabase) return;
+    const client = supabase;
 
     const token = getPendingInviteToken();
     if (!token) return;
@@ -681,7 +682,7 @@ export default function App() {
 
     const handleInvite = async (attempt = 0): Promise<void> => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
+        const { data: sessionData } = await client.auth.getSession();
         const accessToken = sessionData?.session?.access_token;
         if (!accessToken) {
           console.error("[App] No access token for invite-accept");
@@ -690,7 +691,7 @@ export default function App() {
           return;
         }
 
-        const { data, error } = await supabase.functions.invoke("invite-accept", {
+        const { data, error } = await client.functions.invoke("invite-accept", {
           body: { token },
         });
 
@@ -726,10 +727,10 @@ export default function App() {
 
         // Odpověď bez serviceId – zkusit refresh služeb (možná backend už pozvánku zpracoval)
         await refreshServices();
-        const { data: sessionData2 } = await supabase.auth.getSession();
+        const { data: sessionData2 } = await client.auth.getSession();
         const accessToken2 = sessionData2?.session?.access_token;
         if (accessToken2) {
-          const { data: listData } = await supabase.functions.invoke("services-list", {
+          const { data: listData } = await client.functions.invoke("services-list", {
             headers: { Authorization: `Bearer ${accessToken2}` },
           });
           const list = (listData?.services as Array<{ service_id: string }>) || [];
