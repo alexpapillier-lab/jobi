@@ -90,6 +90,18 @@ Uživatelé pak stáhnou oba DMG, nainstalují bez varování Gatekeeperu. Při 
 
 ---
 
+## 4b. Nastavení verze (před buildem)
+
+Když chceš vydat novou verzi, nastav ji **všude** jedním příkazem:
+
+```bash
+./scripts/set-version.sh 0.1.2
+```
+
+Skript přepíše verzi v: `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `jobidocs/package.json`. Pak můžeš buildit a release vytvořit s tagem `v0.1.2`. Release aplikace / nástroj může před buildem volat tento skript s číslem verze z řádku „Nová verze“.
+
+---
+
 ## 5. Pouze nové Jobi DMG (universal, v0.1.1)
 
 Když potřebuješ jen znovu vyrobit **universal** Jobi DMG (např. oprava po vydání jen pro Apple Silicon):

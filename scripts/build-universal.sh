@@ -10,6 +10,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
+# Rustup je často v ~/.cargo/bin; při spuštění z GUI nebo bez .profile tam PATH nemusí být
+export PATH="$HOME/.cargo/bin:$PATH"
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "Error: rustup not found. Nainstaluj z https://rustup.rs nebo přidej \$HOME/.cargo/bin do PATH." >&2
+  exit 1
+fi
+
 echo "🔨 Building Universal Binary for macOS..."
 
 # Colors for output
