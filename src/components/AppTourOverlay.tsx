@@ -10,6 +10,8 @@ export type TourStep = {
   selector?: string;
   /** When page is "settings", switch to this category and subsection so the target selector is visible. */
   settingsSection?: { category: string; subsection: string };
+  /** Icon key for card (welcome, orders, customers, inventory, devices, statistics, settings, jobidocs, doc, team, profile, keyboard). */
+  icon?: string;
 };
 
 type AppTourOverlayProps = {
@@ -22,8 +24,24 @@ type AppTourOverlayProps = {
   onClose: () => void;
 };
 
-const SPOTLIGHT_PADDING = 8;
-const BACKDROP_COLOR = "rgba(0, 0, 0, 0.45)";
+const SPOTLIGHT_PADDING = 10;
+const BACKDROP_COLOR = "rgba(15, 23, 42, 0.55)";
+
+const STEP_ICONS: Record<string, string> = {
+  welcome: "👋",
+  orders: "📋",
+  customers: "👥",
+  inventory: "📦",
+  devices: "📱",
+  statistics: "📊",
+  settings: "⚙️",
+  jobidocs: "🖨️",
+  doc: "📄",
+  team: "🤝",
+  profile: "👤",
+  keyboard: "⌨️",
+  reklamace: "🔄",
+};
 
 function useTourTarget(active: boolean, page: NavKey, selector: string | undefined) {
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -79,65 +97,165 @@ export function AppTourOverlay({
   const targetRect = useTourTarget(active && onStepPage, step.page, step.selector);
 
   const showSpotlight = !!step.selector && !!targetRect && targetRect.width > 0 && targetRect.height > 0;
+  const iconEmoji = step.icon ? STEP_ICONS[step.icon] ?? "◦" : "◦";
 
   const card = (
     <div
       style={{
         pointerEvents: "auto",
-        maxWidth: 420,
+        maxWidth: 440,
         width: "100%",
         background: "var(--panel)",
         border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lg)",
-        padding: 24,
+        borderLeft: "4px solid var(--accent)",
+        borderRadius: 20,
+        boxShadow: "0 24px 48px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.05)",
+        padding: 0,
+        overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--text)" }}>
-          {step.title}
-        </h3>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 16,
+          padding: "24px 24px 16px",
+        }}
+      >
+        <div
+          style={{
+            width: 52,
+            height: 52,
+            minWidth: 52,
+            minHeight: 52,
+            borderRadius: 14,
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
+            fontSize: 26,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {iconEmoji}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 800,
+                color: "var(--text)",
+                letterSpacing: "-0.02em",
+                lineHeight: 1.25,
+              }}
+            >
+              {step.title}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Zavřít průvodce"
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--muted)",
+                cursor: "pointer",
+                padding: 4,
+                fontSize: 22,
+                lineHeight: 1,
+                borderRadius: 8,
+                flexShrink: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <p
+            style={{
+              margin: "10px 0 0 0",
+              fontSize: 15,
+              color: "var(--muted)",
+              lineHeight: 1.6,
+              fontWeight: 500,
+            }}
+          >
+            {step.description}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress dots */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          padding: "12px 24px 8px",
+          flexWrap: "wrap",
+        }}
+      >
+        {steps.map((_, i) => (
+          <div
+            key={i}
+            style={{
+              width: i === stepIndex ? 20 : 8,
+              height: 8,
+              borderRadius: 4,
+              background: i === stepIndex ? "var(--accent)" : "var(--border)",
+              opacity: i === stepIndex ? 1 : 0.6,
+              transition: "width 0.2s ease, background 0.2s ease",
+            }}
+          />
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "16px 24px 24px",
+          borderTop: "1px solid var(--border)",
+          background: "rgba(0,0,0,0.02)",
+        }}
+      >
         <button
           type="button"
           onClick={onClose}
-          aria-label="Zavřít průvodce"
           style={{
             background: "none",
             border: "none",
             color: "var(--muted)",
+            fontSize: 13,
             cursor: "pointer",
-            padding: 4,
-            fontSize: 20,
-            lineHeight: 1,
+            fontWeight: 500,
+            padding: "4px 0",
           }}
         >
-          ×
+          Přeskočit průvodce
         </button>
-      </div>
-      <p style={{ margin: "0 0 20px 0", fontSize: 14, color: "var(--text)", lineHeight: 1.6 }}>
-        {step.description}
-      </p>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          Krok {stepIndex + 1} / {steps.length}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           {!isFirst && (
             <button
               type="button"
               onClick={onPrev}
               style={{
-                padding: "8px 16px",
+                padding: "10px 18px",
                 background: "var(--panel-2)",
                 color: "var(--text)",
                 border: "1px solid var(--border)",
-                borderRadius: "var(--radius-md)",
+                borderRadius: 12,
                 cursor: "pointer",
                 fontWeight: 600,
                 fontSize: 14,
               }}
             >
-              ← Předchozí
+              ← Zpět
             </button>
           )}
           {isLast ? (
@@ -145,31 +263,33 @@ export function AppTourOverlay({
               type="button"
               onClick={onClose}
               style={{
-                padding: "8px 16px",
+                padding: "10px 22px",
                 background: "var(--accent)",
                 color: "white",
                 border: "none",
-                borderRadius: "var(--radius-md)",
+                borderRadius: 12,
                 cursor: "pointer",
-                fontWeight: 600,
+                fontWeight: 700,
                 fontSize: 14,
+                boxShadow: "0 4px 14px var(--accent-glow)",
               }}
             >
-              Ukončit průvodce
+              Hotovo, začít
             </button>
           ) : (
             <button
               type="button"
               onClick={onNext}
               style={{
-                padding: "8px 16px",
+                padding: "10px 22px",
                 background: "var(--accent)",
                 color: "white",
                 border: "none",
-                borderRadius: "var(--radius-md)",
+                borderRadius: 12,
                 cursor: "pointer",
-                fontWeight: 600,
+                fontWeight: 700,
                 fontSize: 14,
+                boxShadow: "0 4px 14px var(--accent-glow)",
               }}
             >
               Další →
@@ -203,10 +323,10 @@ export function AppTourOverlay({
             top: targetRect!.y - SPOTLIGHT_PADDING,
             width: targetRect!.width + SPOTLIGHT_PADDING * 2,
             height: targetRect!.height + SPOTLIGHT_PADDING * 2,
-            borderRadius: 12,
+            borderRadius: 16,
             boxShadow: `0 0 0 9999px ${BACKDROP_COLOR}`,
             pointerEvents: "none",
-            border: "2px solid var(--accent)",
+            border: "3px solid var(--accent)",
             boxSizing: "border-box",
           }}
         />

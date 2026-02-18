@@ -25,9 +25,16 @@ npx supabase functions deploy invite_create --use-api --no-verify-jwt
    - **Value:** tvůj Resend API klíč
 
 4. **Volitelně – odesílatel (důležité pro pozvánky ostatním)**  
-   Secret `RESEND_FROM_EMAIL` (např. `Jobi <noreply@tvoje-domena.cz>`).  
+   Secret `RESEND_FROM_EMAIL` (např. `Jobi <invite@appjobi.com>`).  
    Bez něj se použije `Jobi <onboarding@resend.dev>` – Resend pak vrací **403** a píše: *"You can only send testing emails to your own email address. To send emails to other recipients, please verify a domain."*  
-   **Co udělat:** V [Resend](https://resend.com) → Domains přidej a ověř svou doménu (DNS záznamy). Pak v Supabase Secrets nastav `RESEND_FROM_EMAIL` na adresu z této domény (např. `Jobi <noreply@tvoje-domena.cz>`). Pozvánky pak půjdou na libovolné e-maily.
+   **Co udělat:** V [Resend](https://resend.com) → Domains přidej a ověř svou doménu (DNS záznamy). Pak v Supabase Secrets nastav `RESEND_FROM_EMAIL` na adresu z této domény. Pozvánky pak půjdou na libovolné e-maily.
+
+5. **Volitelně – jiná adresa pro obnovu hesla**  
+   E-maily s kódem pro obnovu hesla („Zapomněl jsem heslo“) používají stejný Resend. Pokud chceš posílat je z jiné adresy než pozvánky, přidej secret **RESEND_FROM_EMAIL_PASSWORD_RESET** (např. `Jobi <resetpassword@appjobi.com>`). Bez něj se pro obnovu hesla použije `RESEND_FROM_EMAIL`. Adresa musí být z ověřené domény v Resend (stejná doména appjobi.com stačí – můžeš mít invite@appjobi.com i resetpassword@appjobi.com).
+
+6. **Logo v e-mailu**  
+   Ve výchozím nastavení se v e-mailu použije **zabalené logo** (`logos/logos png/light-purple.png` zkopírované do složky Edge Function jako `logo.png`), vložené přímo do HTML jako base64. Logo se tak zobrazí i bez vlastního hostingu.  
+   Volitelně můžeš nastavit secret `RESEND_LOGO_URL` (plná URL obrázku) – pak se použije tato URL místo zabaleného obrázku.
 
 ### Jakou doménu tam mám dát?
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { normalizeError } from "../utils/errorNormalizer";
 
@@ -33,8 +33,7 @@ export function ConfirmDialog({
     }
   }, [open]);
 
-  const handleConfirm = async () => {
-    if (pending) return;
+  const handleConfirm = useCallback(async () => {
     setPending(true);
     setError(null);
     try {
@@ -44,12 +43,26 @@ export function ConfirmDialog({
       setError(errorMessage);
       setPending(false);
     }
-  };
+  }, [onConfirm]);
 
-  const handleCancel = () => {
-    if (pending) return;
+  const handleCancel = useCallback(() => {
     if (onCancel) onCancel();
-  };
+  }, [onCancel]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancel();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (!pending) handleConfirm();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [open, pending, handleCancel, handleConfirm]);
 
   if (!open) return null;
 

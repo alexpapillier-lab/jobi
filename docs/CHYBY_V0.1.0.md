@@ -40,10 +40,8 @@ Seznam zjištěných problémů z testu první notarizované verze + navržená 
 - **Navrhované řešení:** Zkontrolovat podmínky zobrazení záložek v Nastavení: záložka „Tým“ / „Přístupy“ by měla být viditelná pro roli `admin` i `owner`. Podobně záložka „Owner“ jen pro root ownera; ostatní záložky (Základní údaje, Tým, …) podle rolí. Projít `Settings.tsx` (nebo ekvivalent) a opravit `role === 'owner' || role === 'admin'` pro zobrazení týmu.
 - **Otázka:** Má admin vidět úplně stejné položky jako owner (kromě „Owner – správa servisů“), nebo má mít admin omezenou verzi (např. bez mazání servisu)? ma videt vse krome owner a nemuze mazat, pridavat servis atd. tom uze jen owner
 
-### [ ] Po založení nového servisu má owner dojem, že „pozvánka není potvrzená“ – chyba při načítání statusů (cloudová funkce tým)
-- **Popis:** Zalozil jsem novy servis a jako owner tam jakoby nemam povolenou/potvrzenou pozvanku. Zobrazuje se: *Chyba při načítání statusů: Nelze volat cloudovou funkci (tým). Zkontrolujte připojení k internetu a že je projekt Supabase dostupný. V desktopové aplikaci zkuste restartovat.* Stejná chyba se ukázala i po zaregistrování admina (účet A) – až po refreshi se zobrazilo „Pozvánka přijata“, chyba zmizela a vše fungovalo.
-- **Důležité:** Owner by v nově založeném servisu měl být úplně automaticky – žádnou pozvánku nepotřebuje a nemělo by to vyvolávat tyto chyby. Po vytvoření servisu musí být tvůrce okamžitě členem (owner) bez jakéhokoli flow s pozvánkou.
-- **Navrhované řešení:** (1) Na backendu / v Edge Function zajistit, že při vytvoření servisu je tvůrce hned přidaný jako owner (členství bez pozvánky). (2) Na frontendu po vytvoření nového servisu a po úspěšném přijetí pozvánky (u jiných rolí) ihned znovu načíst data (služby, členství, statusy) a zobrazit toast „Pozvánka přijata“, aby nebyl potřeba ruční refresh; po vytvoření servisu automaticky refreshnout seznam služeb a kontext tak, aby volání cloudové funkce (tým) nekončilo chybou.
+### [x] Po založení nového servisu má owner dojem, že „pozvánka není potvrzená“ – chyba při načítání statusů (cloudová funkce tým)
+- **Hotovo:** Backend při vytvoření servisu přidá tvůrce (root ownera) do memberships jako owner; frontend po create nastaví activeServiceId a refreshne kontext, takže owner je v novém servisu hned bez chyb.
 
 ---
 
@@ -70,14 +68,14 @@ Seznam zjištěných problémů z testu první notarizované verze + navržená 
 
 ## UI a chování
 
-### [ ] Velikost UI nefunguje
-- **Navrhované řešení:** Najít nastavení „Velikost UI“ / zoom / font scale a opravit jeho aplikaci (CSS variables, transform scale, nebo zoom v Tauri webview), aby se změna projevila v celé aplikaci. tady dej pozor, at to nic nerozbije. treba seznam zakazek, ruzna tlacitka, dropdowny atd.
+### [x] Velikost UI nefunguje
+- **Opraveno:** Místo `fontSize` na rootu (které nic neškálovalo, protože UI používá px) se teď aplikuje **zoom** na `document.documentElement`. Zoom škáluje celý obsah – seznamy, tlačítka, dropdowny. Rozsah 85 %–135 % z Nastavení → Vzhled a chování → Velikost UI.
 
 ### [ ] Když je Jobi ve fullscreenu a zavřu zakázku Escapem, zavře to celý fullscreen
 - **Navrhované řešení:** Při zpracování klávesy Escape nejdřív zavřít otevřený modal/detail zakázky; pokud nic takového není otevřené, teprve pak opustit fullscreen (nebo neřešit Escape pro fullscreen). Tj. v handleru Escape zkontrolovat stav (je otevřený detail zakázky?) a podle toho buď zavřít jen detail, nebo nic. idealne zakazat escape pro fullscreen. 
 
-### [ ] Vytvořit v Jobi vysvětlení, že je potřeba nastavit JobiDocs: vybrat tiskárnu, přidat logo, „právní texty“, razítko atd.
-- **Navrhované řešení:** Přidat sekci v Nastavení nebo samostatnou stránku / modál „Nastavení tisku a JobiDocs“ s krátkým návodem: nutnost spustit JobiDocs, vybrat tiskárnu, nastavit logo, právní texty, razítko atd. Případně odkaz do dokumentace. tohle zobrazit po te, co se uzivateli poprve "v jeho zivote" pripoji jobidocs k jobi. 
+### [x] Vytvořit v Jobi vysvětlení, že je potřeba nastavit JobiDocs: vybrat tiskárnu, přidat logo, „právní texty“, razítko atd.
+- **Hotovo:** Po prvním připojení JobiDocs k Jobi (indikátor „JobiDocs ✓“) se jednou zobrazí modál „Nastavení JobiDocs“ s krátkým návodem: vybrat tiskárnu, nastavit logo, právní texty, razítko. Po odkliknutí „Rozumím“ se návod znovu nezobrazí (klíč `JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN`). 
 
 ---
 
@@ -86,8 +84,8 @@ Seznam zjištěných problémů z testu první notarizované verze + navržená 
 ### [ ] JobiDocs nenabízí tiskárnu, která je připojená k Macu; ale tisk z ní jde, jen ji to nenabízí
 - **Navrhované řešení:** V JobiDocs zkontrolovat, jak se načítá seznam tiskáren (Electron `webContents.getPrinters()` nebo systémové API) a zda se správně zobrazuje v UI. Možná filtr/skrytí některých tiskáren nebo jiný formát výběru – upravit tak, aby připojená tiskárna byla v seznamu a vybraná. klidne udelat vic zpusobu ktere pobezi zaroven a vybrat ten, ktery nacte nejlepe disponible tiskarny, at mame jistotu, ze je to zobrazi, co na tohle rikas?
 
-### [ ] U automatického tisku při založení zakázky: „Povolte v prohlížeči vyskakovací okna.“ Při ručním kliknutí na tisk zakázkového listu to vytisklo normálně
-- **Navrhované řešení:** Automatický tisk pravděpodobně otevírá print dialog programově – v Electronu může být potřeba jiný postup (např. `window.print()` v určitý moment po načtení). Zkontrolovat rozdíl mezi „automatický tisk po vytvoření“ a „tisk po kliknutí“ a sjednotit chování tak, aby nebylo potřeba povolovat pop-up (např. použít stejné API pro oba případy). podivej se, jak se posila tisk kdyz clovek stiskne tlacitko tisknout zakazkovy list a uplne stejne to udelej tady pro tyhle automaticke akce
+### [x] U automatického tisku při založení zakázky: „Povolte v prohlížeči vyskakovací okna.“ Při ručním kliknutí na tisk zakázkového listu to vytisklo normálně
+- **Hotovo:** Automatický tisk (po vytvoření zakázky a po změně statusu) teď volá stejné funkce jako ruční tlačítka: `printTicket` a `printWarranty` → tisk jde přes JobiDocs API (`printDocumentViaJobiDocs`), bez otevírání okna a bez nutnosti povolovat vyskakovací okna. Reklamace (přijetí reklamace) zatím zůstává na `openPreviewWindowWithPrint`, dokud nebude v JobiDocs podpora.
 
 ### [ ] U zakázky nemám vyplněné žádné provedené opravy, ale i tak se vytiskly provedené opravy z ukázkového náhledu v JobiDocs
 - **Navrhované řešení:** Při tisku zakázkového listu (a dalších dokumentů) předávat z Jobi do JobiDocs skutečná data zakázky. Pokud pro „provedené opravy“ nejsou žádné položky, JobiDocs by neměl vykreslovat celý blok „Provedené opravy“ (odstavec) – tedy podmínka v šabloně/náhledu: pokud `sections.repairs` nebo ekvivalent je prázdný, daný odstavec vůbec nevykreslit. Upravit šablonu i generování HTML/sections v Jobi tak, aby prázdné sekce nebyly posílány nebo aby JobiDocs nezobrazoval placeholder/ukázkový obsah, když data chybí.
@@ -103,8 +101,8 @@ Seznam zjištěných problémů z testu první notarizované verze + navržená 
 ### [ ] Při zadávání zakázky nemáme „Načíst z ARES“
 - **Navrhované řešení:** Přidat tlačítko/funkci „Načíst z ARES“ (IČ → dotaz na ARES API), které předvyplní údaje zákazníka (firma, adresa, …) do formuláře zakázky. Implementace: volání ARES API (např. podle IČ), parsování odpovědi a mapování do polí formuláře.
 
-### [ ] Vytvořit v Jobi vysvětlení o nastavení JobiDocs (tiskárna, logo, právní texty, razítko)
-- *Viz výše v sekci „Tisk a JobiDocs“.*
+### [x] Vytvořit v Jobi vysvětlení o nastavení JobiDocs (tiskárna, logo, právní texty, razítko)
+- *Viz výše – návod se zobrazí po prvním připojení JobiDocs.*
 
 ---
 
@@ -124,7 +122,7 @@ Seznam zjištěných problémů z testu první notarizované verze + navržená 
 - **Escape:** Ideálně zakázat Escape pro výstup z fullscreenu – Escape jen zavře detail zakázky.
 - **Návod JobiDocs (tiskárna, logo, razítko…):** Zobrazit v Jobi po tom, co se uživateli poprvé „v životě“ připojí JobiDocs k Jobi.
 - **Tiskárny v JobiDocs:** Použít víc způsobů načtení (paralelně) a vybrat ten, který vrátí nejlepší seznam dostupných tiskáren.
-- **Automatický tisk:** Stejný způsob jako při kliknutí na „Tisknout zakázkový list“.
+- **Automatický tisk:** Stejný způsob jako při kliknutí na „Tisknout zakázkový list“. (hotovo)
 - **Provedené opravy:** Když v zakázce žádné nejsou, v dokumentu celý blok nevykreslovat.
 
 ---

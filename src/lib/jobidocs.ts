@@ -21,6 +21,17 @@ export async function openJobiDocsDownload(): Promise<void> {
   }
 }
 
+/** Spustí aplikaci JobiDocs (na macOS volá open -a JobiDocs). Vrací true pokud se příkaz provedl. */
+export async function launchJobiDocsApp(): Promise<boolean> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const ok = await invoke<boolean>("launch_jobidocs");
+    return ok === true;
+  } catch {
+    return false;
+  }
+}
+
 let _jobidocsFetch: typeof fetch | null = null;
 
 async function getJobiDocsFetch(): Promise<typeof fetch> {
@@ -45,6 +56,16 @@ export async function isJobiDocsRunning(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Pro zobrazení uživateli: u „not found“ a podobných chyb přidá návod. */
+export function formatJobiDocsErrorForUser(error: string | undefined): string {
+  if (!error || !error.trim()) return "Neznámá chyba JobiDocs.";
+  const lower = error.toLowerCase();
+  if (lower.includes("not found") || lower.includes("nenalezen") || lower.includes("not_found")) {
+    return `${error} — V aplikaci JobiDocs zkontrolujte, že je vybraný správný servis a že existuje šablona dokumentu. Případně restartujte JobiDocs a zkuste znovu.`;
+  }
+  return error;
 }
 
 export async function printViaJobiDocs(
@@ -127,19 +148,22 @@ export async function printDocumentViaJobiDocs(
   docType: DocTypeForPrint,
   serviceId: string,
   companyData: Record<string, unknown>,
-  sections: Partial<Record<string, string>>
+  sections: Partial<Record<string, string>>,
+  options?: { repair_date?: string }
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const f = await getJobiDocsFetch();
+    const body: Record<string, unknown> = {
+      doc_type: docType,
+      service_id: serviceId,
+      company_data: companyData,
+      sections,
+    };
+    if (options?.repair_date != null) body.repair_date = options.repair_date;
     const r = await f(`${JOBIDOCS_API}/v1/print-document`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        doc_type: docType,
-        service_id: serviceId,
-        company_data: companyData,
-        sections,
-      }),
+      body: JSON.stringify(body),
       connectTimeout: 30000,
     } as RequestInit & { connectTimeout?: number });
     const d = await r.json();

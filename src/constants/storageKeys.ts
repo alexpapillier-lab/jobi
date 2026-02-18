@@ -13,5 +13,7 @@ export const STORAGE_KEYS = {
   JOBIDOCS_LOGO_MINIMAL: "jobsheet_jobidocs_logo_minimal_v1",
   /** Po skončení průvodce (tutorial) se jednou zobrazí okno o stažení JobiDocs; po odkliknutí se nastaví. */
   JOBIDOCS_DOWNLOAD_PROMPT_SEEN: "jobsheet_jobidocs_download_prompt_seen_v1",
+  /** Po prvním připojení JobiDocs k Jobi se jednou zobrazí návod (tiskárna, logo, razítko); po odkliknutí se nastaví. */
+  JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN: "jobsheet_jobidocs_first_connect_guide_seen_v1",
 } as const;
 

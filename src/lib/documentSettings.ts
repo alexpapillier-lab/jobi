@@ -47,3 +47,31 @@ export async function saveDocumentsConfigAutoPrint(
     return false;
   }
 }
+
+export type WarrantyCertificateConfig = {
+  includeWarranty?: boolean;
+  warrantyType?: "unified" | "custom";
+  warrantyUnifiedDuration?: number;
+  warrantyUnifiedUnit?: "days" | "months" | "years";
+  warrantyCustomText?: string;
+};
+
+/** Uloží do DB config s aktualizovaným warrantyCertificate (sloučí s existujícím). */
+export async function saveDocumentsConfigWarrantyCertificate(
+  serviceId: string | null,
+  warrantyCertificate: Partial<WarrantyCertificateConfig>
+): Promise<boolean> {
+  if (!supabase || !serviceId) return false;
+  try {
+    const raw = await loadDocumentsConfigRawFromDB(serviceId);
+    const existing = raw?.config?.warrantyCertificate ?? {};
+    const nextWarranty = { ...existing, ...warrantyCertificate };
+    const nextConfig = raw ? { ...raw.config, warrantyCertificate: nextWarranty } : { warrantyCertificate: nextWarranty };
+    const { error } = await (supabase
+      .from("service_document_settings") as any)
+      .upsert({ service_id: serviceId, config: nextConfig }, { onConflict: "service_id" });
+    return !error;
+  } catch {
+    return false;
+  }
+}

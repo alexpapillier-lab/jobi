@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import packageJson from "../package.json";
 import { generateDocumentHtml } from "./documentToHtml";
 import { AppLogo } from "./components/AppLogo";
 import { getDesignStyles, type DocumentDesign, type LayoutSpec } from "./documentDesign";
@@ -135,12 +136,16 @@ const SAMPLE_DATA: Record<string, { label: string; content: React.ReactNode }> =
       </>
     ),
   },
+  warranty: {
+    label: "Záruka",
+    content: null, // vykreslí se dynamicky z docConfig v SectionCardContent
+  },
 };
 
 const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
   diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
-  warrantyCertificate: ["service", "customer", "device", "repairs", "dates"],
+  warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
 };
 
 type SectionWidth = "full" | "half";
@@ -149,6 +154,7 @@ const DEFAULT_SECTION_WIDTHS: Record<string, SectionWidth> = {
   customer: "full",
   device: "full",
   repairs: "full",
+  warranty: "full",
   diag: "full",
   photos: "half",
   dates: "half",
@@ -159,6 +165,7 @@ const INCLUDE_KEY_TO_SECTION_KEY: Record<string, string> = {
   includeCustomerInfo: "customer",
   includeDeviceInfo: "device",
   includeRepairs: "repairs",
+  includeWarranty: "warranty",
   includeDiagnostic: "diag",
   includeDiagnosticText: "diag",
   includePhotos: "photos",
@@ -237,6 +244,12 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       includeCustomerInfo: true,
       includeDeviceInfo: true,
       includeRepairs: true,
+      includeWarranty: true,
+      warrantyUnifiedDuration: 24,
+      warrantyUnifiedUnit: "months",
+      warrantyShowEndDate: true,
+      warrantyExtraText: "",
+      warrantyItems: [],
       includeDates: true,
       includeStamp: false,
       includeCustomerSignature: true,
@@ -311,21 +324,82 @@ function renderServiceContent(companyData: Record<string, unknown>) {
   return <>{parts}</>;
 }
 
+/** České skloňování pro náhled záruky: 1 měsíc, 2 měsíce, 5 měsíců, 21 měsíc … */
+function warrantyUnitTextPreview(n: number, unit: "days" | "months" | "years"): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const singular = mod10 === 1 && mod100 !== 11;
+  const few = mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14);
+  if (unit === "days") return singular ? "den" : few ? "dny" : "dnů";
+  if (unit === "months") return singular ? "měsíc" : few ? "měsíce" : "měsíců";
+  return singular ? "rok" : few ? "roky" : "let";
+}
+
 // Shared section card content (used by SortableSection and DragOverlay)
 function SectionCardContent({
   sectionKey,
   styles,
   spec,
   companyData,
+  docType,
+  docConfig,
 }: {
   sectionKey: string;
   styles: Record<string, unknown>;
   spec: LayoutSpec;
   companyData: Record<string, unknown>;
+  docType?: DocTypeKey;
+  docConfig?: Record<string, unknown>;
 }) {
   const sample = SAMPLE_DATA[sectionKey];
   if (!sample) return null;
-  const content = sectionKey === "service" ? renderServiceContent(companyData) : sample.content;
+  let content: React.ReactNode = sample.content;
+  if (sectionKey === "service") content = renderServiceContent(companyData);
+  else if (sectionKey === "warranty" && docType === "zarucni_list" && docConfig) {
+    const duration = (docConfig.warrantyUnifiedDuration as number) ?? 24;
+    const unit = ((docConfig.warrantyUnifiedUnit as string) || "months") as "days" | "months" | "years";
+    const showEndDate = (docConfig.warrantyShowEndDate as boolean) !== false;
+    const extraText = (docConfig.warrantyExtraText as string)?.trim() ?? "";
+    const items = (docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [];
+    const unitText = warrantyUnitTextPreview(duration, unit);
+    const sentence = `Záruční doba činí ${duration} ${unitText}.`;
+    let days = 0;
+    if (unit === "days") days = duration;
+    else if (unit === "months") days = duration * 30;
+    else days = duration * 365;
+    const repairDate = new Date();
+    const warrantyUntil = new Date(repairDate.getTime() + days * 24 * 60 * 60 * 1000);
+    content = (
+      <>
+        <div>{sentence}</div>
+        {showEndDate && (
+          <div style={{ marginTop: 8 }}>
+            <span style={{ fontWeight: 600 }}>Záruka do: </span>
+            <span>{warrantyUntil.toLocaleDateString("cs-CZ")}</span>
+          </div>
+        )}
+        {extraText && <div style={{ marginTop: 10 }}>{extraText}</div>}
+        {items.map((it, idx) => {
+          const d = typeof it.duration === "number" ? it.duration : 12;
+          const u = (it.unit === "days" || it.unit === "months" || it.unit === "years" ? it.unit : "months") as "days" | "months" | "years";
+          const ut = warrantyUnitTextPreview(d, u);
+          const label = (it.label && String(it.label).trim()) || "Záruka";
+          const itemShowEndDate = it.showEndDate !== false;
+          let addDays = 0;
+          if (u === "days") addDays = d;
+          else if (u === "months") addDays = d * 30;
+          else addDays = d * 365;
+          const until = new Date(repairDate.getTime() + addDays * 24 * 60 * 60 * 1000);
+          const line = itemShowEndDate ? `${label}: ${d} ${ut}. Záruka do: ${until.toLocaleDateString("cs-CZ")}` : `${label}: ${d} ${ut}.`;
+          return (
+            <div key={idx} style={{ marginTop: 6 }}>
+              {line}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
   const titleFontSize = spec.sectionHeaderStyle === "capsule" ? 14 : 13;
   const titleFontWeight = spec.sectionHeaderStyle === "underline" ? 500 : 700;
   return (
@@ -347,6 +421,8 @@ function SortableSection({
   spec,
   companyData,
   sectionWidth,
+  docType,
+  docConfig,
 }: {
   id: string;
   sectionKey: string;
@@ -354,6 +430,8 @@ function SortableSection({
   spec: LayoutSpec;
   companyData: Record<string, unknown>;
   sectionWidth: SectionWidth;
+  docType?: DocTypeKey;
+  docConfig?: Record<string, unknown>;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const sample = SAMPLE_DATA[sectionKey];
@@ -390,7 +468,7 @@ function SortableSection({
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} />
+      <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} docType={docType} docConfig={docConfig} />
     </div>
   );
 }
@@ -432,8 +510,14 @@ function DocumentPreview({
   const sectionOrder = useMemo(() => {
     const order = docConfig?.sectionOrder as string[] | undefined;
     const defaultOrder = DEFAULT_SECTION_ORDER[DOC_TYPE_TO_UI[docType]];
-    if (order && Array.isArray(order)) return order;
-    return defaultOrder;
+    let list = (order && Array.isArray(order)) ? [...order] : defaultOrder;
+    // Migrace: záruční list musí mít v pořadí sekci "warranty" (staré uložené configy ji nemají)
+    if (docType === "zarucni_list" && !list.includes("warranty")) {
+      const idx = list.indexOf("dates");
+      if (idx >= 0) list = [...list.slice(0, idx), "warranty", ...list.slice(idx)];
+      else list = [...list, "warranty"];
+    }
+    return list;
   }, [docConfig?.sectionOrder, docType]);
 
   const sectionKeyToInclude: Record<string, string> = {
@@ -441,6 +525,7 @@ function DocumentPreview({
     customer: "includeCustomerInfo",
     device: "includeDeviceInfo",
     repairs: "includeRepairs",
+    warranty: "includeWarranty",
     diag: docType === "diagnosticky_protokol" ? "includeDiagnosticText" : "includeDiagnostic",
     photos: "includePhotos",
     dates: "includeDates",
@@ -450,9 +535,11 @@ function DocumentPreview({
     return sectionOrder.filter((key) => {
       const includeKey = sectionKeyToInclude[key];
       if (!includeKey) return false;
-      return (docConfig?.[includeKey] as boolean) !== false;
+      const val = docConfig?.[includeKey];
+      if (key === "warranty" && docType === "zarucni_list" && val === undefined) return true;
+      return (val as boolean) !== false;
     });
-  }, [sectionOrder, docConfig, sectionKeyToInclude]);
+  }, [sectionOrder, docConfig, sectionKeyToInclude, docType]);
 
   const sectionWidths = useMemo(() => {
     const sw = docConfig?.sectionWidths as Record<string, SectionWidth> | undefined;
@@ -619,9 +706,16 @@ function DocumentPreview({
             </div>
           )}
           <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", textAlign: "center", display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ color: styles.headerText, fontWeight: 700, fontSize: 14 }}>
-              {DOC_TYPE_LABELS[docType]}
-            </div>
+            {docType === "zakazkovy_list" ? (
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ color: styles.headerText, fontWeight: 700, fontSize: 14 }}>{DOC_TYPE_LABELS[docType]}</span>
+                <span style={{ color: styles.headerText, fontWeight: 800, fontSize: 18, letterSpacing: "0.05em" }}>DEMO-001</span>
+              </div>
+            ) : (
+              <div style={{ color: styles.headerText, fontWeight: 700, fontSize: 14 }}>
+                {DOC_TYPE_LABELS[docType]}
+              </div>
+            )}
             <div style={{ color: styles.headerText, fontWeight: spec.headerLayout === "splitBox" ? 800 : 700, fontSize: spec.headerLayout === "splitBox" ? 16 : 14 }}>
               {String(companyData?.name ?? "Název servisu")}
             </div>
@@ -668,6 +762,8 @@ function DocumentPreview({
                   spec={spec}
                   companyData={companyData}
                   sectionWidth={sectionWidths[key] ?? "full"}
+                  docType={docType}
+                  docConfig={docConfig}
                 />
               ))}
             </div>
@@ -809,12 +905,14 @@ export default function App() {
   const [serviceId, setServiceId] = useState("");
   const [preferredPrinter, setPreferredPrinter] = useState("");
   const [savedPrinter, setSavedPrinter] = useState<string | null>(null);
+  const [settingsLoadedForService, setSettingsLoadedForService] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [docType, setDocType] = useState<DocTypeKey>("zakazkovy_list");
   const [config, setConfig] = useState<Record<string, unknown>>(() => defaultDocumentsConfig());
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
+  const [warrantyDurationInput, setWarrantyDurationInput] = useState<string | null>(null);
   const fileInputLogo = useRef<HTMLInputElement>(null);
   const fileInputStamp = useRef<HTMLInputElement>(null);
   const [customColorPickerOpen, setCustomColorPickerOpen] = useState(false);
@@ -883,8 +981,10 @@ export default function App() {
     try {
       const r = await fetch(`${API_BASE}/v1/settings?service_id=${encodeURIComponent(sid)}`);
       const d = await r.json();
-      setSavedPrinter(d.preferred_printer_name || null);
-      setPreferredPrinter(d.preferred_printer_name || "");
+      const name = d.preferred_printer_name ?? "";
+      setSavedPrinter(name || null);
+      setPreferredPrinter(name);
+      setSettingsLoadedForService(sid);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -897,7 +997,15 @@ export default function App() {
       const r = await fetch(`${API_BASE}/v1/documents-config?service_id=${encodeURIComponent(sid)}`);
       const d = await r.json();
       if (d.config) {
-        setConfig((prev) => ({ ...defaultDocumentsConfig(), ...prev, ...d.config }));
+        const raw = typeof d.config === "object" && d.config !== null ? (d.config as Record<string, unknown>) : {};
+        const wc = raw.warrantyCertificate as Record<string, unknown> | undefined;
+        if (wc && Array.isArray(wc.sectionOrder) && !(wc.sectionOrder as string[]).includes("warranty")) {
+          const order = wc.sectionOrder as string[];
+          const idx = order.indexOf("dates");
+          const newOrder = idx >= 0 ? [...order.slice(0, idx), "warranty", ...order.slice(idx)] : [...order, "warranty"];
+          raw.warrantyCertificate = { ...wc, sectionOrder: newOrder };
+        }
+        setConfig((prev) => ({ ...defaultDocumentsConfig(), ...prev, ...raw }));
       }
     } catch {
       // Use context config
@@ -931,8 +1039,24 @@ export default function App() {
     if (serviceId) {
       fetchSettings(serviceId);
       fetchDocumentsConfig(serviceId);
+    } else {
+      setSettingsLoadedForService(null);
     }
   }, [serviceId, fetchSettings, fetchDocumentsConfig]);
+
+  // Při otevření záložky Tiskárna znovu načíst nastavení a seznam tiskáren (aby se vždy zobrazila aktuální uložená tiskárna)
+  useEffect(() => {
+    if (tab === "tiskarna" && serviceId) {
+      fetchSettings(serviceId);
+      fetchPrinters();
+    }
+  }, [tab, serviceId, fetchSettings, fetchPrinters]);
+
+  useEffect(() => {
+    if (docType !== "zarucni_list" || (config.warrantyCertificate as Record<string, unknown>)?.includeWarranty !== true) {
+      setWarrantyDurationInput(null);
+    }
+  }, [docType, config.warrantyCertificate]);
 
   // Nepřepisujeme config z context.documentsConfig – jinak by se lokální změny (odkliknutí sekce, celá/polovina) vracely zpět při každé aktualizaci kontextu.
 
@@ -950,7 +1074,9 @@ export default function App() {
       });
       if (!r.ok) throw new Error(await r.text());
       const d = await r.json();
-      setSavedPrinter(d.preferred_printer_name || null);
+      const name = d.preferred_printer_name ?? "";
+      setSavedPrinter(name || null);
+      setPreferredPrinter(name);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1180,6 +1306,7 @@ export default function App() {
             { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
             { key: "includeDeviceInfo", label: "Údaje o zařízení" },
             { key: "includeRepairs", label: "Provedené opravy" },
+            { key: "includeWarranty", label: "Záruka" },
             { key: "includeDates", label: "Data" },
             { key: "includeStamp", label: "Razítko / podpis" },
             { key: "includeCustomerSignature", label: "Podpis zákazníka" },
@@ -1228,6 +1355,9 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
+              JobiDocs {packageJson.version}
+            </div>
           </section>
         )}
 
@@ -1265,8 +1395,8 @@ export default function App() {
             >
               {loading ? "Ukládám…" : "Uložit tiskárnu"}
             </button>
-            {savedPrinter !== null && serviceId && (
-              <div style={{ marginTop: 12, fontSize: 13, color: "#16a34a" }}>Uloženo: {savedPrinter || "(žádná)"}</div>
+            {serviceId && settingsLoadedForService === serviceId && (
+              <div style={{ marginTop: 12, fontSize: 13, color: "#16a34a" }}>Uloženo: {savedPrinter ?? "(žádná)"}</div>
             )}
           </section>
         )}
@@ -1571,6 +1701,234 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true && (
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: 16,
+                    borderRadius: 14,
+                    border: "1px solid var(--border)",
+                    background: "var(--panel-2)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 16,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Délka záruky</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={warrantyDurationInput ?? String((docConfig.warrantyUnifiedDuration as number) ?? 24)}
+                      onFocus={() => setWarrantyDurationInput(String((docConfig.warrantyUnifiedDuration as number) ?? 24))}
+                      onChange={(e) => setWarrantyDurationInput(e.target.value)}
+                      onBlur={() => {
+                        const raw = warrantyDurationInput ?? "";
+                        const n = parseInt(raw, 10);
+                        const val = Number.isNaN(n) || n < 1 || n > 999 ? 24 : n;
+                        updateDocConfig(["warrantyUnifiedDuration"], val);
+                        setWarrantyDurationInput(null);
+                      }}
+                      style={{
+                        width: 64,
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid var(--border)",
+                        background: "var(--panel)",
+                        color: "var(--text)",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        textAlign: "center",
+                      }}
+                    />
+                    <div style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--panel)" }}>
+                      {(["days", "months", "years"] as const).map((u) => {
+                        const label = u === "days" ? "dny" : u === "months" ? "měsíce" : "roky";
+                        const isActive = (docConfig.warrantyUnifiedUnit as string) === u;
+                        return (
+                          <button
+                            key={u}
+                            type="button"
+                            onClick={() => updateDocConfig(["warrantyUnifiedUnit"], u)}
+                            style={{
+                              padding: "10px 16px",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              border: "none",
+                              borderLeft: u !== "days" ? "1px solid var(--border)" : "none",
+                              background: isActive ? "var(--accent)" : "transparent",
+                              color: isActive ? "white" : "var(--text)",
+                              cursor: "pointer",
+                              transition: "background 0.15s ease, color 0.15s ease",
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>V dokumentu zobrazit</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        cursor: "pointer",
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: (docConfig.warrantyShowEndDate as boolean) !== false ? "2px solid var(--accent)" : "1px solid var(--border)",
+                        background: (docConfig.warrantyShowEndDate as boolean) !== false ? "var(--accent-soft)" : "var(--panel)",
+                        transition: "border-color 0.15s ease, background 0.15s ease",
+                      }}
+                    >
+                      <input type="radio" name="warrantyDisplay" checked={(docConfig.warrantyShowEndDate as boolean) !== false} onChange={() => updateDocConfig(["warrantyShowEndDate"], true)} style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 13, color: "var(--text)" }}>Záruka do (datum konce)</span>
+                    </label>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        cursor: "pointer",
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: (docConfig.warrantyShowEndDate as boolean) === false ? "2px solid var(--accent)" : "1px solid var(--border)",
+                        background: (docConfig.warrantyShowEndDate as boolean) === false ? "var(--accent-soft)" : "var(--panel)",
+                        transition: "border-color 0.15s ease, background 0.15s ease",
+                      }}
+                    >
+                      <input type="radio" name="warrantyDisplay" checked={(docConfig.warrantyShowEndDate as boolean) === false} onChange={() => updateDocConfig(["warrantyShowEndDate"], false)} style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 13, color: "var(--text)" }}>Pouze délka záruky (bez data)</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "var(--text)" }}>Dodatečné informace</label>
+                    <textarea
+                      value={(docConfig.warrantyExtraText as string) ?? ""}
+                      onChange={(e) => updateDocConfig(["warrantyExtraText"], e.target.value)}
+                      placeholder="Volitelný text pod zárukou (např. podmínky, vyloučení…)"
+                      rows={2}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, resize: "vertical" }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Další záruky</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const list = (docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string }>) ?? [];
+                          updateDocConfig(["warrantyItems"], [...list, { label: "Záruka na díly", duration: 12, unit: "months", showEndDate: true }]);
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 10,
+                          border: "1px solid var(--accent)",
+                          background: "var(--accent-soft)",
+                          color: "var(--accent)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        + Přidat záruku
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? []).map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: 10,
+                            borderRadius: 12,
+                            border: "1px solid var(--border)",
+                            background: "var(--panel)",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={item.label}
+                            onChange={(e) => {
+                              const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                              list[index] = { ...list[index], label: e.target.value };
+                              updateDocConfig(["warrantyItems"], list);
+                            }}
+                            placeholder="např. Záruka na díly"
+                            style={{ flex: "1 1 120px", minWidth: 100, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 13 }}
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            max={999}
+                            value={item.duration}
+                            onChange={(e) => {
+                              const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                              list[index] = { ...list[index], duration: e.target.valueAsNumber || 12 };
+                              updateDocConfig(["warrantyItems"], list);
+                            }}
+                            style={{ width: 52, padding: "8px 6px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 13, textAlign: "center" }}
+                          />
+                          <select
+                            value={item.unit}
+                            onChange={(e) => {
+                              const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                              list[index] = { ...list[index], unit: e.target.value };
+                              updateDocConfig(["warrantyItems"], list);
+                            }}
+                            style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 13 }}
+                          >
+                            <option value="days">dny</option>
+                            <option value="months">měsíce</option>
+                            <option value="years">roky</option>
+                          </select>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
+                            <input
+                              type="checkbox"
+                              checked={(item as { showEndDate?: boolean }).showEndDate !== false}
+                              onChange={(e) => {
+                                const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                                list[index] = { ...list[index], showEndDate: e.target.checked };
+                                updateDocConfig(["warrantyItems"], list);
+                              }}
+                              style={{ accentColor: "var(--accent)" }}
+                            />
+                            <span>Do data</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const list = ((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? []).filter((_, i) => i !== index);
+                              updateDocConfig(["warrantyItems"], list);
+                            }}
+                            title="Odebrat"
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: "1px solid var(--border)",
+                              background: "transparent",
+                              color: "var(--muted)",
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Odebrat
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Šířka sekcí</div>

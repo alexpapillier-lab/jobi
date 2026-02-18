@@ -392,3 +392,18 @@ verify_jwt = false
 
 [functions.invite-get-token]
 verify_jwt = false
+
+[functions.invite-create]
+verify_jwt = false
+# Logo v e-mailu pozvánky (light-purple.png)
+static_files = ["functions/invite-create/logo.png"]
+
+[functions.invite_create]
+verify_jwt = false
+static_files = ["functions/invite_create/logo.png"]
+
+[functions.password-reset-request]
+verify_jwt = false
+
+[functions.password-reset-confirm]
+verify_jwt = false

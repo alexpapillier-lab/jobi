@@ -24,7 +24,7 @@ const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
 const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
   diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
-  warrantyCertificate: ["service", "customer", "device", "repairs", "dates"],
+  warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
 };
 
 function serviceContentHtml(companyData: Record<string, unknown>): string {
@@ -58,11 +58,19 @@ const SECTION_CONTENT_HTML: Record<string, string> = {
   dates: `<div>Přijato: 8. 2. 2025</div><div>Předpokládané dokončení: 10. 2. 2025</div><div>Kód zakázky: DEMO-001</div>`,
 };
 
+/** Z řetězce sekce dates (HTML) vytáhne číslo zakázky (Kód zakázky: XXX nebo Číslo zakázky: XXX). */
+function extractTicketCodeFromDates(datesHtml: string | undefined): string | null {
+  if (!datesHtml || typeof datesHtml !== "string") return null;
+  const match = datesHtml.match(/(?:Kód zakázky|Číslo zakázky):\s*([^<]+)/);
+  return match ? match[1].trim() || null : null;
+}
+
 const SECTION_LABELS: Record<string, string> = {
   service: "Údaje o servisu",
   customer: "Údaje o zákazníkovi",
   device: "Údaje o zařízení",
   repairs: "Provedené opravy",
+  warranty: "Záruka",
   diag: "Diagnostika",
   photos: "Fotky",
   dates: "Data",
@@ -71,11 +79,84 @@ const SECTION_LABELS: Record<string, string> = {
 /** Optional override HTML for each section (customer, device, repairs, diag, photos, dates). Used when printing from Jobi with real ticket data. */
 export type SectionOverrides = Partial<Record<string, string>>;
 
+/** Při tisku záručního listu z Jobi: datum opravy (ISO), aby se dopočítalo „Záruka do:“ */
+export type GenerateDocumentHtmlOptions = { repairDate?: string };
+
+/** České skloňování: 1 měsíc, 2 měsíce, 5 měsíců, 21 měsíc, 22 měsíce, 12 měsíců. */
+function warrantyUnitText(n: number, unit: "days" | "months" | "years"): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const singular = mod10 === 1 && mod100 !== 11; // 1, 21, 31, 101 … ale ne 11, 111
+  const few = mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14); // 2–4, 22–24, 32–34 …
+  if (unit === "days") {
+    if (singular) return "den";
+    if (few) return "dny";
+    return "dnů";
+  }
+  if (unit === "months") {
+    if (singular) return "měsíc";
+    if (few) return "měsíce";
+    return "měsíců";
+  }
+  if (singular) return "rok";
+  if (few) return "roky";
+  return "let";
+}
+
+type WarrantyItem = { label: string; duration: number; unit: "days" | "months" | "years" };
+
+function warrantySectionHtml(docConfig: Record<string, unknown>, repairDate: Date): string {
+  const duration = (docConfig.warrantyUnifiedDuration as number) ?? 24;
+  const unit = (docConfig.warrantyUnifiedUnit as "days" | "months" | "years") ?? "months";
+  const showEndDate = (docConfig.warrantyShowEndDate as boolean) !== false;
+  const extraText = (docConfig.warrantyExtraText as string)?.trim() ?? "";
+  const items = (docConfig.warrantyItems as WarrantyItem[] | undefined) ?? [];
+
+  let html = "";
+
+  const unitText = warrantyUnitText(duration, unit);
+  const sentence = `Záruční doba činí ${duration} ${unitText}.`;
+  html += `<div>${escapeHtml(sentence)}</div>`;
+  if (showEndDate) {
+    let days = 0;
+    if (unit === "days") days = duration;
+    else if (unit === "months") days = duration * 30;
+    else days = duration * 365;
+    const warrantyUntil = new Date(repairDate.getTime() + days * 24 * 60 * 60 * 1000);
+    html += `<div style="margin-top:8px"><span style="font-weight:600">Záruka do: </span><span>${escapeHtml(warrantyUntil.toLocaleDateString("cs-CZ"))}</span></div>`;
+  }
+
+  if (extraText) {
+    html += `<div style="margin-top:10px">${escapeHtml(extraText)}</div>`;
+  }
+
+  items.forEach((it) => {
+    const d = typeof it.duration === "number" ? it.duration : 12;
+    const u = (it.unit === "days" || it.unit === "months" || it.unit === "years" ? it.unit : "months") as "days" | "months" | "years";
+    const ut = warrantyUnitText(d, u);
+    const label = (it.label && String(it.label).trim()) || "Záruka";
+    const itemShowEndDate = (it as { showEndDate?: boolean }).showEndDate !== false;
+    let line = `${label}: ${d} ${ut}.`;
+    if (itemShowEndDate) {
+      let addDays = 0;
+      if (u === "days") addDays = d;
+      else if (u === "months") addDays = d * 30;
+      else addDays = d * 365;
+      const until = new Date(repairDate.getTime() + addDays * 24 * 60 * 60 * 1000);
+      line += ` Záruka do: ${until.toLocaleDateString("cs-CZ")}`;
+    }
+    html += `<div style="margin-top:6px">${escapeHtml(line)}</div>`;
+  });
+
+  return html;
+}
+
 export function generateDocumentHtml(
   config: Record<string, unknown>,
   docType: DocTypeKey,
   companyData: Record<string, unknown>,
-  sectionOverrides?: SectionOverrides
+  sectionOverrides?: SectionOverrides,
+  options?: GenerateDocumentHtmlOptions
 ): string {
   const docConfig = (config[DOC_TYPE_TO_UI[docType]] || {}) as Record<string, unknown>;
   const design = (docConfig.design as DocumentDesign) || "classic";
@@ -120,10 +201,13 @@ export function generateDocumentHtml(
     customer: "includeCustomerInfo",
     device: "includeDeviceInfo",
     repairs: "includeRepairs",
+    warranty: "includeWarranty",
     diag: docType === "diagnosticky_protokol" ? "includeDiagnosticText" : "includeDiagnostic",
     photos: "includePhotos",
     dates: "includeDates",
   };
+
+  const repairDate = options?.repairDate ? new Date(options.repairDate) : new Date();
 
   const orderedSections = order.filter((key) => {
     const includeKey = sectionKeyToInclude[key];
@@ -133,7 +217,7 @@ export function generateDocumentHtml(
   const sectionWidths = (docConfig.sectionWidths as Record<string, string>) || {};
   const DEFAULT_WIDTHS: Record<string, string> = {
     service: "full", customer: "full", device: "full", repairs: "full",
-    diag: "full", photos: "half", dates: "half",
+    warranty: "full", diag: "full", photos: "half", dates: "half",
   };
 
   const sectionPadding = spec.density === "compact" ? 8 : 12;
@@ -149,9 +233,16 @@ export function generateDocumentHtml(
       const content =
         overridden !== undefined
           ? overridden
-          : key === "service"
-            ? serviceContentHtml(companyData)
-            : (SECTION_CONTENT_HTML[key] || "");
+          : key === "warranty"
+            ? (docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true
+                ? warrantySectionHtml(docConfig, repairDate)
+                : "")
+            : sectionOverrides && ["repairs", "diag", "photos"].includes(key)
+              ? ""
+              : key === "service"
+                ? serviceContentHtml(companyData)
+                : (SECTION_CONTENT_HTML[key] || "");
+      if (typeof content === "string" && content.trim() === "") return "";
       const width = sectionWidths[key] ?? DEFAULT_WIDTHS[key] ?? "full";
       const halfWidth = width === "half";
       const w = halfWidth ? "334px" : "680px";
@@ -174,11 +265,22 @@ export function generateDocumentHtml(
           <img src="https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width:${qrCodeSize}px;height:${qrCodeSize}px;display:block;flex-shrink:0" />
         </div>`
       : "";
+  const ticketCode =
+    docType === "zakazkovy_list"
+      ? extractTicketCodeFromDates(sectionOverrides?.dates) ?? extractTicketCodeFromDates(SECTION_CONTENT_HTML.dates)
+      : null;
+  const headerTitleLine =
+    docType === "zakazkovy_list" && ticketCode
+      ? `<div style="display:flex;align-items:baseline;justify-content:center;gap:10px;flex-wrap:wrap">
+          <span style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</span>
+          <span style="color:${styles.headerText};font-weight:800;font-size:18px;letter-spacing:0.05em">${escapeHtml(ticketCode)}</span>
+        </div>`
+      : `<div style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</div>`;
   const headerHtml = `
     <div style="position:relative;min-height:50px;margin-bottom:12px;padding-bottom:10px;border-bottom:${styles.headerBorder};background:${styles.headerBg !== "transparent" ? styles.headerBg : "transparent"};padding:${styles.headerBg !== "transparent" ? "8px 12px 10px 0" : 0};border-radius:${headerRadius}px;${headerLeftStripe}">
       ${hasLogo ? `<img src="${config.logoUrl as string}" alt="Logo" style="position:absolute;left:0;top:50%;transform:translateY(-50%);max-width:${120 * logoSize}px;max-height:${50 * logoSize}px;object-fit:contain" />` : `<div style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:${120 * logoSize}px;height:${50 * logoSize}px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:9px">Logo</div>`}
       <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;display:flex;flex-direction:column;gap:2px">
-        <div style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</div>
+        ${headerTitleLine}
         <div style="color:${styles.headerText};font-weight:${headerTitleWeight};font-size:${headerTitleSize}px">${escapeHtml(String(companyData?.name ?? "Název servisu"))}</div>
       </div>
       ${qrBlockHtml}

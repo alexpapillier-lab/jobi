@@ -352,6 +352,7 @@ export function Sidebar({
             <button
               key={item.key}
               type="button"
+              data-tour={`sidebar-nav-${item.key}`}
               onClick={() => onNavigate(item.key)}
               style={{
                 width: "100%",

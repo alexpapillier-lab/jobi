@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
-import { isJobiDocsRunning } from "../lib/jobidocs";
+import { useEffect, useRef, useState } from "react";
+import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
 const POLL_INTERVAL_MS = 1000;
 
-export function JobiDocsStatus() {
+export function JobiDocsStatus({ onFirstConnect }: { onFirstConnect?: () => void } = {}) {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const hasTriggeredFirstConnectGuide = useRef(false);
 
   const check = async () => {
     const ok = await isJobiDocsRunning();
@@ -18,21 +20,45 @@ export function JobiDocsStatus() {
   }, []);
 
   useEffect(() => {
+    if (connected !== true) return;
+    try {
+      if (localStorage.getItem(STORAGE_KEYS.JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN)) return;
+      if (hasTriggeredFirstConnectGuide.current) return;
+      hasTriggeredFirstConnectGuide.current = true;
+      onFirstConnect?.();
+    } catch {
+      // ignore
+    }
+  }, [connected, onFirstConnect]);
+
+  useEffect(() => {
     const onFocus = () => check();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  const handleClick = async () => {
+    if (connected === true) return;
+    const launched = await launchJobiDocsApp();
+    if (launched) {
+      check();
+    } else {
+      await openJobiDocsDownload();
+    }
+  };
+
   return (
-    <div
+    <button
+      type="button"
       data-tour="header-jobidocs"
       title={
         connected === true
           ? "JobiDocs připojen – tisk a export PDF přes JobiDocs"
           : connected === false
-            ? "JobiDocs není připojen – spusťte JobiDocs pro tisk/export PDF"
+            ? "Kliknutím spustíte JobiDocs nebo otevřete stránku ke stažení"
             : "Kontroluji připojení k JobiDocs..."
       }
+      onClick={handleClick}
       style={{
         display: "flex",
         alignItems: "center",
@@ -44,10 +70,11 @@ export function JobiDocsStatus() {
         background: connected === true ? "rgba(34,197,94,0.15)" : connected === false ? "rgba(156,163,175,0.2)" : "rgba(251,191,36,0.15)",
         color: connected === true ? "var(--success, #16a34a)" : connected === false ? "var(--muted, #6b7280)" : "var(--warning, #ca8a04)",
         border: `1px solid ${connected === true ? "rgba(34,197,94,0.3)" : connected === false ? "rgba(156,163,175,0.3)" : "rgba(251,191,36,0.3)"}`,
+        cursor: connected === true ? "default" : "pointer",
       }}
     >
       <img src="/logos/jdlogo.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
       JobiDocs {connected === true ? "✓" : connected === false ? "✗" : "..."}
-    </div>
+    </button>
   );
 }

@@ -27,15 +27,15 @@ export const ALL_SHORTCUT_IDS: ShortcutId[] = [
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
   help: "Shift+?",
-  nav_orders: "Q",
-  nav_inventory: "S",
-  nav_devices: "D",
-  nav_customers: "C",
+  nav_orders: "q",
+  nav_inventory: "s",
+  nav_devices: "d",
+  nav_customers: "c",
   nav_statistics: "Ctrl+ř",
   nav_settings: "Ctrl+,",
-  orders_new: "Ctrl+N",
+  orders_new: "Tab",
   orders_search: "Ctrl+F",
-  order_detail_edit: "E",
+  order_detail_edit: "e",
   order_detail_save: "Ctrl+S",
   order_detail_save_close: "Enter",
   order_print: "Ctrl+P",
@@ -118,12 +118,17 @@ export function keyEventToCombo(e: KeyboardEvent): string {
   return parts.join("+");
 }
 
-/** Na macOS zobrazí ⌘ místo Ctrl, jinak nechá text. */
+/** Na macOS zobrazí ⌘ místo Ctrl; Meta (Command) zobrazí jako ⌘, aby nevzniklo „⌘+Meta“. */
 export function formatShortcutForDisplay(combo: string): string {
   if (typeof navigator === "undefined") return combo;
   const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-  if (!isMac) return combo;
-  return combo.replace(/\bCtrl\+/g, "⌘+").replace(/\bCtrl\b/g, "⌘");
+  let out = combo;
+  if (isMac) {
+    out = out.replace(/\bCtrl\+/g, "⌘+").replace(/\bCtrl\b/g, "⌘");
+    out = out.replace(/\bMeta\b/g, "⌘");
+    out = out.replace(/⌘\+⌘/g, "⌘");
+  }
+  return out;
 }
 
 /** True, pokud událost odpovídá uložené kombinaci (case-insensitive pro písmena). */

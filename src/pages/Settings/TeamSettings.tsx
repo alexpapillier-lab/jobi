@@ -341,6 +341,26 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     };
   }, [inviteRolePickerOpen]);
 
+  // Escape zavře otevřený dialog (pozvat / odebrat / změna role / oprávnění)
+  useEffect(() => {
+    const anyOpen = inviteDialogOpen || removeDialogOpen || roleChangeDialogOpen || capabilitiesDialogOpen;
+    if (!anyOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (capabilitiesDialogOpen) setCapabilitiesDialogOpen(false);
+      else if (roleChangeDialogOpen) setRoleChangeDialogOpen(false);
+      else if (removeDialogOpen) {
+        setRemoveDialogOpen(false);
+        setRemoveUserId(null);
+        setRemoveServiceId(null);
+      }
+      else if (inviteDialogOpen) setInviteDialogOpen(false);
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [inviteDialogOpen, removeDialogOpen, roleChangeDialogOpen, capabilitiesDialogOpen]);
+
   const handleSendInvite = async () => {
     if (!activeServiceId || !session || !supabase) {
       showToast("Chyba: Nelze poslat pozvánku bez aktivního servisu", "error");

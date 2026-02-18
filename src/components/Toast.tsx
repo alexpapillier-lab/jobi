@@ -92,9 +92,19 @@ function ToastItem({ toast }: { toast: Toast }) {
     }
   };
 
+  const dismiss = () => {
+    if (isClosing) return;
+    removeToast(toast.id);
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
       onAnimationEnd={handleAnimationEnd}
+      onMouseEnter={dismiss}
+      onClick={dismiss}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dismiss(); } }}
       style={{
         background: bg,
         color: isSuccess || isError ? "white" : "var(--accent-fg)",
@@ -111,10 +121,11 @@ function ToastItem({ toast }: { toast: Toast }) {
         fontSize: 14,
         fontWeight: 500,
         animation: isClosing || toast.isClosing ? "toastSlideOut 0.3s ease-in forwards" : "toastSlideIn 0.3s ease-out",
-        cursor: "default",
+        cursor: "pointer",
         userSelect: "text",
         WebkitUserSelect: "text",
       }}
+      title="Kliknutím nebo najetím myší zavřete"
     >
       {isSuccess && (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useStatuses } from "../../state/StatusesStore";
 import { CustomerRecord } from "./CustomerList";
@@ -136,6 +136,18 @@ export function CustomerDetail({
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setEditOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [editOpen]);
 
   const openEdit = () => {
     if (!customer) return;

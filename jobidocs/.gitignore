@@ -5,3 +5,7 @@ release
 .jobidocs-data
 *.log
 .DS_Store
+
+# Ikony se vždy kopírují z logos/ (copy-app-icon); jediný zdroj tray = logos/tray-icon.png
+electron/tray-icon.png
+electron/icon.png

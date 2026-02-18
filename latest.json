@@ -1,0 +1,15 @@
+{
+  "version": "0.1.1",
+  "notes": "See GitHub Releases for details.",
+  "pub_date": "2026-02-18T13:58:33Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZHBsdGxjeFBZdnNqZVFMcnNNUEs4TWZyZFFwTVdIZ0dlalhCbUtyY084Q3ppUEkzbUpvTXBGVE1pUnBoRFhiRGtkR2pFa05Mc2xZUDdhWUswS1hFajBHQzFVSUNHR0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzcxNDIzMTEzCWZpbGU6am9iaS5hcHAudGFyLmd6CkFXaGZJcjRONGdNdnpSUUxtcitqWVNTSjVJVzJlRGYzbFA0bjJwRnZqeGI2MW1YM2RkNFNhS0hRRm56UEpNNmF6UEQvWVpVSDdGSTduTUlVeUsvYUF3PT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZHBsdGxjeFBZdnNqZVFMcnNNUEs4TWZyZFFwTVdIZ0dlalhCbUtyY084Q3ppUEkzbUpvTXBGVE1pUnBoRFhiRGtkR2pFa05Mc2xZUDdhWUswS1hFajBHQzFVSUNHR0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzcxNDIzMTEzCWZpbGU6am9iaS5hcHAudGFyLmd6CkFXaGZJcjRONGdNdnpSUUxtcitqWVNTSjVJVzJlRGYzbFA0bjJwRnZqeGI2MW1YM2RkNFNhS0hRRm56UEpNNmF6UEQvWVpVSDdGSTduTUlVeUsvYUF3PT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz"
+    }
+  }
+}

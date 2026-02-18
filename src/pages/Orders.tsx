@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { showToast } from "../components/Toast";
-import { isJobiDocsRunning, printDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs } from "../lib/jobidocs";
+import { isJobiDocsRunning, printDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -1302,9 +1302,9 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         ` : ""}
         <div class="doc-page">
         <div class="doc-content">
-        <div class="doc-code-block" style="margin-bottom: 16px; padding: 12px 16px; background: ${styles.bgColor}; border: 2px solid ${styles.borderColor}; border-radius: 8px; text-align: center;">
-          <div style="font-size: 11px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Kód zakázky</div>
-          <div style="font-size: 22px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.05em;">${ticket.code || "—"}</div>
+        <div class="doc-code-block" style="margin-bottom: 20px; padding: 16px 20px; background: ${styles.bgColor}; border: 3px solid ${styles.borderColor}; border-radius: 10px; text-align: center;">
+          <div style="font-size: 12px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Číslo zakázky</div>
+          <div style="font-size: 32px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.08em; line-height: 1.2;">${ticket.code || "—"}</div>
         </div>
         <div class="header">
           <div class="header-left">
@@ -1494,11 +1494,16 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
       const htmlContent = generateTicketHTML(ticket, true, config);
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
       const res = await exportViaJobiDocs(htmlContent, filePath);
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -1520,11 +1525,16 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
   const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
   const companyData = safeLoadCompanyData();
   const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
   const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections);
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2131,11 +2141,16 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
       const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
       const companyData = safeLoadCompanyData();
       const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
       const res = await exportViaJobiDocs(htmlContent, filePath);
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -2157,11 +2172,16 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
   const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
   const companyData = safeLoadCompanyData();
   const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
   const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections);
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2705,7 +2725,9 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
         ${documentsConfig.warrantyCertificate?.includeWarranty ? `
         <div class="section">
           <div class="section-title">Záruční podmínky</div>
-          ${documentsConfig.warrantyCertificate.warrantyType === "unified" ? (() => {
+          ${documentsConfig.warrantyCertificate.warrantyType === "custom" && documentsConfig.warrantyCertificate.warrantyCustomText
+            ? `<div class="field"><span class="field-value">${escapeHtmlForDoc(String(documentsConfig.warrantyCertificate.warrantyCustomText).trim())}</span></div>`
+            : documentsConfig.warrantyCertificate.warrantyType === "unified" ? (() => {
             const duration = documentsConfig.warrantyCertificate.warrantyUnifiedDuration || 12;
             const unit = documentsConfig.warrantyCertificate.warrantyUnifiedUnit || "months";
             let days = 0;
@@ -2898,11 +2920,16 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
       const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
       const companyData = safeLoadCompanyData();
       const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
       const res = await exportViaJobiDocs(htmlContent, filePath);
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -2924,11 +2951,18 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
   const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
   const companyData = safeLoadCompanyData();
   const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
-  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections);
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
+  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections, {
+    repair_date: new Date().toISOString(), // záruka začíná datem tisku záručního listu
+  });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2940,17 +2974,6 @@ async function quickPrintFromList(
   if (docType === "ticket") await printTicket(ticket, serviceId);
   else if (docType === "diagnostic") await printDiagnosticProtocol(ticket, serviceId);
   else await printWarranty(ticket, serviceId);
-}
-
-function openPreviewWindow(html: string, title: string = "Náhled") {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700,scrollbars=yes");
-  if (!w) {
-    showToast("Povolte v prohlížeči vyskakovací okna pro náhled.", "error");
-    return;
-  }
-  w.document.write(html);
-  w.document.close();
-  w.document.title = title;
 }
 
 /** Otevře náhled a po načtení automaticky spustí tisk (dialog Tisk). */
@@ -2966,13 +2989,13 @@ function openPreviewWindowWithPrint(html: string, title: string = "Náhled") {
   w.document.title = title;
 }
 
-// Document Action Picker Component (for each document type) – pořadí: Tisk, Export, Náhled
+// Document Action Picker Component (for each document type) – pořadí: Tisk, Export
 function DocumentActionPicker({
   label,
   onSelect,
 }: {
   label: string;
-  onSelect: (action: "print" | "export" | "preview") => void;
+  onSelect: (action: "print" | "export") => void;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -3014,7 +3037,6 @@ function DocumentActionPicker({
   const actions = [
     { value: "print" as const, label: "🖨️ Tisk" },
     { value: "export" as const, label: "💾 Export" },
-    { value: "preview" as const, label: "👁 Náhled" },
   ];
 
   const menu = open ? (
@@ -5926,7 +5948,7 @@ export default function Orders({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
-    return tickets
+    const base = tickets
       .filter((t) => {
         const raw = (t.status as any) ?? statusById[t.id];
         const st = normalizeStatus(raw);
@@ -5960,19 +5982,28 @@ export default function Orders({
           (t.externalId ?? "").toLowerCase().includes(q)
         );
       });
+    // Explicitně řadit od nejnovějších, aby stránkování bylo konzistentní
+    return [...base].sort(
+      (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+    );
   }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
   const filteredClaims = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return cloudClaims;
-    return cloudClaims.filter(
-      (c) =>
-        (c.code?.toLowerCase().includes(q)) ||
-        (c.customer_name?.toLowerCase().includes(q)) ||
-        (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
-        (c.device_serial?.toLowerCase().includes(q)) ||
-        (c.device_label?.toLowerCase().includes(q)) ||
-        (c.notes?.toLowerCase().includes(q))
+    const base = !q
+      ? cloudClaims
+      : cloudClaims.filter(
+          (c) =>
+            (c.code?.toLowerCase().includes(q)) ||
+            (c.customer_name?.toLowerCase().includes(q)) ||
+            (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
+            (c.device_serial?.toLowerCase().includes(q)) ||
+            (c.device_label?.toLowerCase().includes(q)) ||
+            (c.notes?.toLowerCase().includes(q))
+        );
+    // Explicitně řadit od nejnovějších kvůli konzistentnímu stránkování
+    return [...base].sort(
+      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     );
   }, [cloudClaims, query]);
 
@@ -6461,10 +6492,10 @@ export default function Orders({
         const ticketUpdated = ticket ? { ...ticket, status: next as any } : tickets.find((t) => t.id === ticketId);
         if (config?.autoPrint && ticketUpdated) {
           if (config.autoPrint.ticketListOnStatusKey === next) {
-            openPreviewWindowWithPrint(generateTicketHTML(ticketUpdated as TicketEx, true, config), "Zakázkový list");
+            printTicket(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
           if (config.autoPrint.warrantyOnStatusKey === next) {
-            openPreviewWindowWithPrint(generateWarrantyHTML(ticketUpdated as TicketEx, safeLoadCompanyData(), true, config), "Záruční list");
+            printWarranty(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
         }
       } catch (err: any) {
@@ -6556,9 +6587,14 @@ export default function Orders({
     }
   }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags]);
 
+  // Escape: zavřít detail/modal; v capture phase + preventDefault, aby v fullscreen neukončil fullscreen
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      const hasSomethingToClose = ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
+      if (!hasSomethingToClose) return;
+      e.preventDefault();
+      e.stopPropagation();
       if (ticketHistoryModalOpen) {
         setTicketHistoryModalOpen(false);
         return;
@@ -6580,8 +6616,12 @@ export default function Orders({
         }
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
   }, [detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
@@ -6751,11 +6791,10 @@ export default function Orders({
         setDetailId(newTicket.id);
         const config = await loadDocumentsConfigFromDB(activeServiceId);
         if (config?.autoPrint?.ticketListOnCreate) {
-          openPreviewWindowWithPrint(generateTicketHTML(newTicket, true, config), "Zakázkový list");
+          printTicket(newTicket, activeServiceId).then(() => {});
         }
         if (config?.autoPrint?.warrantyOnCreate) {
-          const companyData = safeLoadCompanyData();
-          openPreviewWindowWithPrint(generateWarrantyHTML(newTicket, companyData, true, config), "Záruční list");
+          printWarranty(newTicket, activeServiceId).then(() => {});
         }
       },
     });
@@ -7233,34 +7272,131 @@ export default function Orders({
           : paginatedTickets.map((t) => renderTicketCard(t))
         }
 
-        {pageSize > 0 && listLength > pageSize && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16, padding: "12px 16px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>
-              Zobrazeno {ordersPage * effectivePageSize + 1}–{Math.min((ordersPage + 1) * effectivePageSize, listLength)} z {listLength} {activeGroup === "reklamace" ? "reklamací" : "zakázek"}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
-                disabled={ordersPage === 0}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage === 0 ? "not-allowed" : "pointer", opacity: ordersPage === 0 ? 0.5 : 1 }}
-              >
-                ◀ Předchozí
-              </button>
-              <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 80, textAlign: "center" }}>
-                Strana {ordersPage + 1} z {totalOrdersPages}
+        {pageSize > 0 && listLength > pageSize && (() => {
+          const from = ordersPage * effectivePageSize + 1;
+          const to = Math.min((ordersPage + 1) * effectivePageSize, listLength);
+          const label = activeGroup === "reklamace" ? "reklamací" : "zakázek";
+          const maxPageButtons = 7;
+          const showPageNumbers = totalOrdersPages <= maxPageButtons;
+          const getPageNumbers = (): number[] => {
+            if (totalOrdersPages <= maxPageButtons) {
+              return Array.from({ length: totalOrdersPages }, (_, i) => i);
+            }
+            const cur = ordersPage;
+            const last = totalOrdersPages - 1;
+            const pages: number[] = [0];
+            if (cur > 2) pages.push(-1);
+            for (let i = Math.max(1, cur - 1); i <= Math.min(last - 1, cur + 1); i++) {
+              if (!pages.includes(i)) pages.push(i);
+            }
+            if (cur < last - 2) pages.push(-2);
+            if (last > 0 && !pages.includes(last)) pages.push(last);
+            return pages;
+          };
+          const pageNumbers = getPageNumbers();
+          const btnBase = {
+            minWidth: 36,
+            height: 36,
+            padding: "0 10px",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--panel)",
+            color: "var(--text)",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer" as const,
+            transition: "background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
+          };
+          const btnDisabled = { opacity: 0.45, cursor: "not-allowed" as const };
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                marginTop: 20,
+                padding: "14px 20px",
+                background: "var(--panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+                Zobrazeno <strong style={{ color: "var(--text)", fontWeight: 700 }}>{from}–{to}</strong> z {listLength} {label}
               </span>
-              <button
-                type="button"
-                onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
-                disabled={ordersPage >= totalOrdersPages - 1}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage >= totalOrdersPages - 1 ? "not-allowed" : "pointer", opacity: ordersPage >= totalOrdersPages - 1 ? 0.5 : 1 }}
-              >
-                Další ▶
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  aria-label="Předchozí stránka"
+                  onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
+                  disabled={ordersPage === 0}
+                  style={{
+                    ...btnBase,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    ...(ordersPage === 0 ? btnDisabled : {}),
+                  }}
+                  onMouseEnter={(e) => { if (ordersPage > 0) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                >
+                  ‹
+                </button>
+                {showPageNumbers ? (
+                  pageNumbers.map((p) => {
+                    if (p === -1) return <span key="ell-left" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
+                    if (p === -2) return <span key="ell-right" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
+                    const isCurrent = p === ordersPage;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        aria-label={`Stránka ${p + 1}`}
+                        aria-current={isCurrent ? "page" : undefined}
+                        onClick={() => setOrdersPage(p)}
+                        style={{
+                          ...btnBase,
+                          background: isCurrent ? "var(--accent)" : "var(--panel)",
+                          color: isCurrent ? "white" : "var(--text)",
+                          borderColor: isCurrent ? "var(--accent)" : "var(--border)",
+                          ...(isCurrent ? { boxShadow: "0 2px 8px var(--accent-glow)" } : {}),
+                        }}
+                        onMouseEnter={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; } }}
+                        onMouseLeave={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; } }}
+                      >
+                        {p + 1}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 72, textAlign: "center", fontWeight: 600 }}>
+                    {ordersPage + 1} / {totalOrdersPages}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label="Další stránka"
+                  onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
+                  disabled={ordersPage >= totalOrdersPages - 1}
+                  style={{
+                    ...btnBase,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    ...(ordersPage >= totalOrdersPages - 1 ? btnDisabled : {}),
+                  }}
+                  onMouseEnter={(e) => { if (ordersPage < totalOrdersPages - 1) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                >
+                  ›
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {listLength === 0 && (
           <div
@@ -7657,7 +7793,7 @@ export default function Orders({
               </div>
 
               <div>
-                <div style={fieldLabel}>Heslo / kód (volitelné)</div>
+                <div style={fieldLabel}>Heslo / kód</div>
                 <input
                   value={newDraft.devicePasscode}
                   onChange={(e) => setNewDraft((p) => ({ ...p, devicePasscode: e.target.value }))}
@@ -7909,8 +8045,7 @@ export default function Orders({
                     onSelect={async (action) => {
                       const config = await loadDocumentsConfigFromDB(activeServiceId);
                       const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
-                      if (action === "preview") openPreviewWindow(html, "Náhled – Přijetí reklamace");
-                      else if (action === "print" || action === "export") openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                      if (action === "print" || action === "export") openPreviewWindowWithPrint(html, "Přijetí reklamace");
                     }}
                   />
                 )}
@@ -7987,7 +8122,6 @@ export default function Orders({
                   onSelect={(action) => {
                     if (action === "export") exportTicketToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printTicket(detailedTicket, activeServiceId);
-                    else if (action === "preview") openPreviewWindow(generateTicketHTML(detailedTicket, true), "Náhled – Zakázkový list");
                   }}
                 />
                 {(detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0)) && (
@@ -7996,7 +8130,6 @@ export default function Orders({
                     onSelect={(action) => {
                       if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId);
                       else if (action === "print") printDiagnosticProtocol(detailedTicket, activeServiceId);
-                      else if (action === "preview") openPreviewWindow(generateDiagnosticProtocolHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Diagnostický protokol");
                     }}
                   />
                 )}
@@ -8005,7 +8138,6 @@ export default function Orders({
                   onSelect={(action) => {
                     if (action === "export") exportWarrantyToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printWarranty(detailedTicket, activeServiceId);
-                    else if (action === "preview") openPreviewWindow(generateWarrantyHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Záruční list");
                   }}
                 />
               </div>

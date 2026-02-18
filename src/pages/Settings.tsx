@@ -34,6 +34,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { LOGO_PRESETS, getLogoColors, type LogoPresetId, type LogoColors } from "../lib/logoPresets";
 import { setAppIconFromPreset } from "../lib/setAppIcon";
 import { AppLogo } from "../components/AppLogo";
+import { getVersion } from "@tauri-apps/api/app";
 
 function LogoPresetButton({
   isActive,
@@ -87,7 +88,7 @@ function LogoPresetButton({
 type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about";
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_team" | "service_owner"
-  | "orders_statuses" | "orders_filters" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts"
   | "profile_me"
   | "about_app";
@@ -174,8 +175,6 @@ function saveUIConfig(cfg: UIConfig) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
-
-const APP_VERSION = "0.1.0";
 
 type CompanyData = {
   abbreviation: string;
@@ -656,8 +655,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   });
   const [autoPrintFormLoading, setAutoPrintFormLoading] = useState(false);
   const [autoPrintFormSaveSuccess, setAutoPrintFormSaveSuccess] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>("…");
   
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("?"));
+  }, []);
   
   // Load service_settings from DB when activeServiceId changes
   useEffect(() => {
@@ -918,6 +922,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "orders_statuses" as const, label: "Statusy zakázek" },
         { key: "orders_filters" as const, label: "Filtry zakázek" },
+        { key: "orders_required_fields" as const, label: "Povinná pole u zakázky" },
         { key: "orders_tisk_dokumentu" as const, label: "Tisk dokumentů" },
         { key: "orders_reklamace" as const, label: "Reklamace" },
         { key: "orders_device_options" as const, label: "Stavy zařízení a příslušenství" },
@@ -1977,37 +1982,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           </Card>
 
           <Card>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Povinná pole u zakázky</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-              U nové zakázky a při úpravě: která pole musí uživatel vyplnit.
-            </div>
-            <label
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: 12,
-                borderRadius: 10,
-                border,
-                background: "var(--panel)",
-                cursor: "pointer",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Telefon zákazníka povinný</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                  Pokud vypnete, lze zakázku uložit i bez telefonu (pole zůstane volitelné).
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={uiCfg.orders.customerPhoneRequired}
-                onChange={(e) => setUiCfg((p) => ({ ...p, orders: { ...p.orders, customerPhoneRequired: e.target.checked } }))}
-              />
-            </label>
-          </Card>
-
-          <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Zobrazení zakázek</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
               Vyberte způsob zobrazení zakázek na stránce Orders.
@@ -2352,6 +2326,39 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </Card>
       )}
 
+      {section.subsection === "orders_required_fields" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Povinná pole u zakázky</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+            U nové zakázky a při úpravě: která pole musí uživatel vyplnit.
+          </div>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              cursor: "pointer",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Telefon zákazníka povinný</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                Pokud vypnete, lze zakázku uložit i bez telefonu (pole zůstane volitelné).
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={uiCfg.orders.customerPhoneRequired}
+              onChange={(e) => setUiCfg((p) => ({ ...p, orders: { ...p.orders, customerPhoneRequired: e.target.checked } }))}
+            />
+          </label>
+        </Card>
+      )}
+
       {section.subsection === "orders_tisk_dokumentu" && (
         <>
           <Card>
@@ -2462,14 +2469,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </Card>
           )}
           <Card>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ color: "var(--muted)", minWidth: 80 }}>Verze</span>
-                <span style={{ color: "var(--text)" }}>{APP_VERSION}</span>
-              </div>
-            </div>
-          </Card>
-          <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pro podporu</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
               Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
@@ -2493,7 +2492,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               </div>
               <div
                 title="Kliknutím zkopírovat"
-                onClick={() => navigator.clipboard.writeText(APP_VERSION)}
+                onClick={() => navigator.clipboard.writeText(appVersion)}
                 style={{
                   padding: "8px 12px",
                   borderRadius: 8,
@@ -2505,7 +2504,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 }}
               >
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
-                {APP_VERSION}
+                {appVersion}
               </div>
             </div>
           </Card>

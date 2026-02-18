@@ -107,12 +107,20 @@ async function createWindow() {
   });
 }
 
+const TRAY_ICON_SIZE = 22; // macOS menu bar: 22x22 (16x16 také ok)
+
 function setupTray() {
   if (process.platform !== "darwin") return;
+  // Jediný zdroj: logos/tray-icon.png (copy-app-icon → electron/tray-icon.png → copy-tray-icon → sem)
   const iconPath = path.join(__dirname, "tray-icon.png");
   try {
-    const icon = nativeImage.createFromPath(iconPath);
+    let icon = nativeImage.createFromPath(iconPath);
     if (icon.isEmpty()) return;
+    // Vždy zmenšit na velikost pro menu bar (jinak plné logo zabírá 2/3 traye)
+    const size = icon.getSize();
+    if (size.width > TRAY_ICON_SIZE || size.height > TRAY_ICON_SIZE) {
+      icon = icon.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+    }
     tray = new Tray(icon);
     tray.setToolTip("JobiDocs – běží");
     tray.setContextMenu(

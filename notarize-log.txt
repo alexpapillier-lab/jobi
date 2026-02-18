@@ -1,0 +1,61 @@
+{
+  "logFormatVersion": 1,
+  "jobId": "ed85cf45-a966-484b-aab4-748d5e841abe",
+  "status": "Invalid",
+  "statusSummary": "Archive contains critical validation errors",
+  "statusCode": 4000,
+  "archiveFilename": "jobi-notarize.zip",
+  "uploadDate": "2026-02-17T17:14:11.527Z",
+  "sha256": "dd98ea6f81745dd342a0018a7c5fdcab942594854c57038bc13fef59b0734b56",
+  "ticketContents": null,
+  "issues": [
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The binary is not signed.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087721",
+      "architecture": "x86_64"
+    },
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The signature does not include a secure timestamp.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087733",
+      "architecture": "x86_64"
+    },
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The executable does not have the hardened runtime enabled.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087724",
+      "architecture": "x86_64"
+    },
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The signature of the binary is invalid.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087735",
+      "architecture": "arm64"
+    },
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The signature does not include a secure timestamp.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087733",
+      "architecture": "arm64"
+    },
+    {
+      "severity": "error",
+      "code": null,
+      "path": "jobi-notarize.zip/jobi.app/Contents/MacOS/jobi",
+      "message": "The executable does not have the hardened runtime enabled.",
+      "docUrl": "https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues#3087724",
+      "architecture": "arm64"
+    }
+  ]
+}

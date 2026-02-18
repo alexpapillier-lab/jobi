@@ -66,7 +66,7 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
   useLayoutEffect(() => {
     if (!open) return;
     recompute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, value, size]);
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open]);
 
   const menu = open ? (

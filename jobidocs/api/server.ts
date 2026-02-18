@@ -231,12 +231,13 @@ export async function startApiServer(
     service_id: string;
     company_data: Record<string, unknown>;
     sections?: Partial<Record<string, string>>;
+    repair_date?: string;
   };
   fastify.post<{ Body: PrintDocumentBody }>("/v1/print-document", async (req, reply) => {
     if (!htmlToPdf) {
       return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
     }
-    const { doc_type, service_id, company_data, sections } = req.body || {};
+    const { doc_type, service_id, company_data, sections, repair_date } = req.body || {};
     if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
       return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
     }
@@ -254,7 +255,8 @@ export async function startApiServer(
       const existing = (baseConfig[sectionKey] as Record<string, unknown>) || {};
       const config = { ...baseConfig, [sectionKey]: { ...existing, ...profileJson } };
       const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
-      const html = generateDocumentHtml(config, doc_type, companyData, sections ?? undefined);
+      const options = repair_date && typeof repair_date === "string" ? { repairDate: repair_date } : undefined;
+      const html = generateDocumentHtml(config, doc_type, companyData, sections ?? undefined, options);
       fastify.log.info("[print-document] html length=%d", html.length);
       const PDF_TIMEOUT_MS = 60000;
       let timeoutId: ReturnType<typeof setTimeout>;

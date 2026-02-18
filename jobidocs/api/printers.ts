@@ -3,6 +3,10 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
+// Na macOS používáme absolutní cestu (jako u /usr/bin/lp), aby to fungovalo i při minimálním PATH (Electron z Finderu).
+// CUPS (lpstat, lp) je součást macOS a chová se stejně na Intel i Apple Silicon.
+const LPSTAT_BIN = process.platform === "darwin" ? "/usr/bin/lpstat" : "lpstat";
+
 export type PrinterInfo = {
   name: string;
   status: string;
@@ -15,7 +19,7 @@ export type PrinterInfo = {
  */
 export async function listPrinters(): Promise<PrinterInfo[]> {
   try {
-    const { stdout } = await execAsync("lpstat -p 2>/dev/null || true", {
+    const { stdout } = await execAsync(`"${LPSTAT_BIN}" -p 2>/dev/null || true`, {
       maxBuffer: 64 * 1024,
     });
     const lines = stdout.trim().split("\n").filter(Boolean);
