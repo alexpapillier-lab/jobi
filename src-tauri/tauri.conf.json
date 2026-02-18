@@ -45,7 +45,7 @@
       "endpoints": [
         "https://github.com/alexpapillier-lab/jobi/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQxRDk0OEQxRTg1MjFFQzMKUldUREhsTG8wVWpaMGFtSXdUWk4zanNIVEJVd0NWSzdNNW0xblE0bzlBRGxXM2dSVE5TeDBraHgK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlCRDZDRjg4ODg1OTM1NEUKUldST05WbUlpTS9XbTgwQnlHeTdocEg3ZGdDSVpPcGxRUCtndjFKOTd5OGE4OUh4c3RKcFpoMk4K"
     }
   },
   "productName": "jobi",
