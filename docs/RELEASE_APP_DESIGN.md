@@ -49,6 +49,18 @@ Od uživatele je u obou aplikací vyžadováno jen **potvrzení** („Ano, nains
 
 ---
 
+## Požadavky pro krok „GitHub release + upload“
+
+Krok **GitHub release + upload** v release aplikaci volá **GitHub CLI (`gh`)**. Bez něj dostaneš `bash: gh: command not found`.
+
+- **Instalace:** `brew install gh`
+- **Přihlášení:** `gh auth login` (vyber GitHub.com, HTTPS, přihlášení prohlížečem nebo tokenem)
+- Po přihlášení můžeš v release app spustit krok znovu. Pokud spouštíš aplikaci z Docku/Finderu, `gh` musí být v PATH (Homebrew obvykle přidá `/opt/homebrew/bin` nebo `/usr/local/bin` do shellu; u aplikací spuštěných z GUI může být PATH omezený – v tom případě spusť release app z terminálu: `open /path/to/jobi-release-app.app`, aby zdědila PATH).
+
+**Ruční upload:** Pokud `gh` nechceš používat, nahraj soubory na GitHub Release ručně: vytvoř release s tagem `v0.1.2`, pak přetáhni DMG a OTA soubory do Assets (nejdřív oba DMG, pak latest.json, jobi.app.tar.gz, jobi.app.tar.gz.sig).
+
+---
+
 ## Umístění release aplikace
 
 Aplikace žije na stejném disku jako projekt Jobi, např. `/Volumes/backup/jobi-release-app` (samostatná složka). Cestu k projektu Jobi lze v aplikaci nastavit (výchozí `/Volumes/backup/jobi`).
