@@ -10,10 +10,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
-# Rustup je často v ~/.cargo/bin; při spuštění z GUI nebo bez .profile tam PATH nemusí být
-export PATH="$HOME/.cargo/bin:$PATH"
+# Při spuštění z GUI (Release App) se nenačte .zshrc/.bash_profile – doplnit cesty k nástrojům
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.cargo/bin:$PATH"
+# nvm: načíst defaultní Node, pokud existuje
+if [ -f "$HOME/.nvm/nvm.sh" ]; then
+  source "$HOME/.nvm/nvm.sh" 2>/dev/null || true
+fi
 if ! command -v rustup >/dev/null 2>&1; then
   echo "Error: rustup not found. Nainstaluj z https://rustup.rs nebo přidej \$HOME/.cargo/bin do PATH." >&2
+  exit 1
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "Error: npm not found. Nainstaluj Node (brew install node) nebo nvm a přidej do PATH." >&2
   exit 1
 fi
 
