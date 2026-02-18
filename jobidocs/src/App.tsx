@@ -1318,7 +1318,9 @@ export default function App() {
         <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <AppLogo size={48} colors={context.jobidocsLogo ?? undefined} modern />
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>JobiDocs</h1>
+            <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>
+              JobiDocs <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: "0.6em" }}>{packageJson.version}</span>
+            </h1>
             <p style={{ color: "var(--muted)", fontSize: 14 }}>Tisk a export dokumentů z Jobi.</p>
           </div>
         </header>

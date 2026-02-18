@@ -12,6 +12,16 @@ import { generateDocumentHtml } from "../src/documentToHtml.js";
 const PORT = 3847;
 const HOST = "127.0.0.1";
 
+async function getAppVersion(): Promise<string> {
+  try {
+    const pkgPath = path.join(process.cwd(), "package.json");
+    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf-8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
 const activityLog: ActivityEntry[] = [];
 const MAX_ACTIVITY = 20;
@@ -98,7 +108,8 @@ export async function startApiServer(
 
   // Health check
   fastify.get("/v1/health", async () => {
-    return { ok: true, app: "jobidocs", version: "0.1.0" };
+    const version = await getAppVersion();
+    return { ok: true, app: "jobidocs", version };
   });
 
   // List printers (macOS: lpstat -p)

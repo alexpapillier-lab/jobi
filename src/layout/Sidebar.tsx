@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { AppLogo } from "../components/AppLogo";
 import { useTheme } from "../theme/ThemeProvider";
-import { getLogoColors } from "../lib/logoPresets";
+import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
 export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
 
@@ -147,7 +148,31 @@ export function Sidebar({
   const serviceMenuDropdownRef = useRef<HTMLDivElement>(null);
 
   const { theme } = useTheme();
-  const logoColors = useMemo(() => getLogoColors(theme, "auto"), [theme]);
+  const [logoPresetVersion, setLogoPresetVersion] = useState(0);
+  const [pngLoadFailed, setPngLoadFailed] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setLogoPresetVersion((v) => v + 1);
+    window.addEventListener("jobsheet:logo-preset-changed", handler);
+    return () => window.removeEventListener("jobsheet:logo-preset-changed", handler);
+  }, []);
+
+  const logoPresetId = useMemo((): LogoPresetId => {
+    if (typeof localStorage === "undefined") return "auto";
+    return (localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null) ?? "auto";
+  }, [logoPresetVersion]);
+
+  const effectiveLogoId = useMemo(() => {
+    return logoPresetId === "auto" || !logoPresetId ? theme : logoPresetId;
+  }, [theme, logoPresetId]);
+
+  const logoPngUrl = useMemo(() => `/logos/${effectiveLogoId}.png`, [effectiveLogoId]);
+
+  useEffect(() => {
+    setPngLoadFailed(false);
+  }, [logoPngUrl]);
+
+  const logoColors = useMemo(() => getLogoColors(theme, logoPresetId), [theme, logoPresetId]);
   const logoBackground = logoColors.background;
   const isLogoBgLight = useMemo(() => {
     const hex = logoBackground.replace(/^#/, "");
@@ -294,7 +319,21 @@ export function Sidebar({
             minWidth: 0,
             flex: 1,
           }}>
-            <AppLogo size={expanded ? 28 : 24} colors={logoColors} style={{ flexShrink: 0 }} />
+            {pngLoadFailed ? (
+              <AppLogo size={expanded ? 28 : 24} colors={logoColors} style={{ flexShrink: 0 }} />
+            ) : (
+              <img
+                src={logoPngUrl}
+                alt=""
+                onError={() => setPngLoadFailed(true)}
+                style={{
+                  width: expanded ? 28 : 24,
+                  height: expanded ? 28 : 24,
+                  objectFit: "contain",
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {expanded && (
               <span style={{ 
                 fontWeight: 800, 
@@ -328,7 +367,16 @@ export function Sidebar({
           left: 0,
           right: 0
         }}>
-          <AppLogo size={24} colors={logoColors} />
+          {pngLoadFailed ? (
+            <AppLogo size={24} colors={logoColors} />
+          ) : (
+            <img
+              src={logoPngUrl}
+              alt=""
+              onError={() => setPngLoadFailed(true)}
+              style={{ width: 24, height: 24, objectFit: "contain" }}
+            />
+          )}
         </div>
       </div>
 
