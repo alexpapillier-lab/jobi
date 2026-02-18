@@ -35,6 +35,7 @@ import { LOGO_PRESETS, getLogoColors, type LogoPresetId, type LogoColors } from 
 import { setAppIconFromPreset } from "../lib/setAppIcon";
 import { AppLogo } from "../components/AppLogo";
 import { getVersion } from "@tauri-apps/api/app";
+import { useAppUpdate } from "../context/AppUpdateContext";
 
 function LogoPresetButton({
   isActive,
@@ -91,7 +92,7 @@ type SettingsSubsection =
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts"
   | "profile_me"
-  | "about_app";
+  | "about_app" | "about_updates";
 
 type SettingsSection = {
   category: SettingsCategory;
@@ -576,6 +577,8 @@ type SettingsProps = {
 export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection }: SettingsProps) {
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
+  const appUpdate = useAppUpdate();
+  const updateAvailable = !!(appUpdate?.update);
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
   const isRootOwner = useIsRootOwner();
   const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
@@ -973,6 +976,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         { key: "about_app" as const, label: "O aplikaci" },
+        { key: "about_updates" as const, label: "Aktualizace" },
       ],
     },
   ], [isRootOwner, isAdmin, canManageDocuments]);
@@ -1111,7 +1115,31 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   }
                 }}
               >
-                {sub.label}
+                <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                  {sub.label}
+                  {((sub.key === "about_app" || sub.key === "about_updates") && updateAvailable) && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: -6,
+                        right: -10,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        background: "#dc2626",
+                        color: "white",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "0 4px",
+                      }}
+                    >
+                      1
+                    </span>
+                  )}
+                </span>
             </button>
           );
         })}
@@ -2510,6 +2538,127 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           </Card>
         </div>
       )}
+
+      {/* AKTUALIZACE (samostatná subsekce) */}
+      {section.subsection === "about_updates" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Aktualizace</div>
+          {typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__ ? (
+            <AppUpdateCard />
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>Aktualizace jsou dostupné pouze v desktopové aplikaci.</div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AppUpdateCard() {
+  const update = useAppUpdate();
+  if (!update) return null;
+
+  const { update: updateInfo, downloadProgress, downloaded, checking, downloading, error, checkForUpdate, downloadAndInstall, relaunch } = update;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {!updateInfo && !checking && (
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          Aktuálně nemáte k dispozici žádnou novou verzi. Kontrola probíhá automaticky.
+        </div>
+      )}
+      {checking && <div style={{ fontSize: 13, color: "var(--muted)" }}>Kontroluji aktualizace…</div>}
+      {error && <div style={{ fontSize: 13, color: "#dc2626" }}>Chyba: {error}</div>}
+      {updateInfo && !downloaded && (
+        <>
+          <div style={{ fontSize: 13, color: "var(--text)" }}>
+            K dispozici je nová verze <strong>{updateInfo.version}</strong>
+            {updateInfo.body && <div style={{ marginTop: 8, color: "var(--muted)", whiteSpace: "pre-wrap" }}>{updateInfo.body}</div>}
+          </div>
+          {!downloading ? (
+            <button
+              type="button"
+              onClick={downloadAndInstall}
+              disabled={downloading}
+              style={{
+                padding: "10px 20px",
+                background: "var(--accent)",
+                color: "white",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 14,
+                alignSelf: "flex-start",
+              }}
+            >
+              Nainstalovat
+            </button>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 8,
+                    background: "var(--panel-2)",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${downloadProgress}%`,
+                      height: "100%",
+                      background: "var(--accent)",
+                      borderRadius: 4,
+                      transition: "width 0.2s ease",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 36 }}>{downloadProgress}%</span>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Stahuji…</div>
+            </>
+          )}
+        </>
+      )}
+      {downloaded && (
+        <button
+          type="button"
+          onClick={relaunch}
+          style={{
+            padding: "10px 20px",
+            background: "var(--accent)",
+            color: "white",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            fontWeight: 600,
+            fontSize: 14,
+            alignSelf: "flex-start",
+          }}
+        >
+          Restartovat a nainstalovat
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={checkForUpdate}
+        disabled={checking}
+        style={{
+          padding: "8px 14px",
+          background: "var(--panel-2)",
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-md)",
+          cursor: checking ? "not-allowed" : "pointer",
+          fontSize: 12,
+          alignSelf: "flex-start",
+        }}
+      >
+        {checking ? "Kontroluji…" : "Zkontrolovat aktualizace"}
+      </button>
     </div>
   );
 }

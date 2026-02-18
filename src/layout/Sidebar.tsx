@@ -5,6 +5,7 @@ import { AppLogo } from "../components/AppLogo";
 import { useTheme } from "../theme/ThemeProvider";
 import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { useAppUpdate } from "../context/AppUpdateContext";
 
 export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
 
@@ -185,6 +186,8 @@ export function Sidebar({
   }, [logoBackground]);
 
   const isRootOwner = useIsRootOwner();
+  const appUpdate = useAppUpdate();
+  const updateAvailable = !!(appUpdate?.update);
   const activeService = services.find(s => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Service desk";
   const hasMultipleServices = services.length > 1;
@@ -434,9 +437,33 @@ export function Sidebar({
                 }
               }}
             >
-              <IconBox size={expanded ? 40 : 28}>
-                <IconComponent size={iconSize} />
-              </IconBox>
+              <span style={{ position: "relative", display: "flex" }}>
+                <IconBox size={expanded ? 40 : 28}>
+                  <IconComponent size={iconSize} />
+                </IconBox>
+                {item.key === "settings" && updateAvailable && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -2,
+                      right: expanded ? -2 : 2,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: "#dc2626",
+                      color: "white",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                    }}
+                  >
+                    1
+                  </span>
+                )}
+              </span>
 
               <div 
                 style={{

@@ -153,45 +153,87 @@ function setupTray() {
   }
 }
 
+let updateState: { version: string; downloaded: boolean; progress: number } | null = null;
+const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+
+function sendUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("jobidocs:update-state", updateState);
+  }
+}
+
 function setupAutoUpdate() {
   if (isDev) return;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on("update-available", (info) => {
-    const opts = {
-      type: "info" as const,
-      title: "Aktualizace JobiDocs",
-      message: `Je k dispozici nová verze ${info.version}.`,
-      detail: "Stahování proběhne na pozadí. Po dokončení můžete aplikaci restartovat.",
-      buttons: ["OK"],
-    };
-    (mainWindow && !mainWindow.isDestroyed()
-      ? dialog.showMessageBox(mainWindow, opts)
-      : dialog.showMessageBox(opts)
-    ).catch(() => {});
+    updateState = { version: info.version, downloaded: false, progress: 0 };
+    sendUpdateState();
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    updateState = null;
+    sendUpdateState();
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    if (updateState) {
+      updateState = { ...updateState, progress: progress.percent };
+      sendUpdateState();
+    }
   });
 
   autoUpdater.on("update-downloaded", () => {
-    const opts = {
-      type: "info" as const,
-      title: "Aktualizace stažena",
-      message: "Nová verze je připravena. Restartovat nyní?",
-      buttons: ["Restartovat", "Později"],
-      defaultId: 0,
-    };
-    (mainWindow && !mainWindow.isDestroyed()
-      ? dialog.showMessageBox(mainWindow, opts)
-      : dialog.showMessageBox(opts)
-    ).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall(false, true);
-    }).catch(() => {});
+    if (updateState) {
+      updateState = { ...updateState, downloaded: true, progress: 100 };
+      sendUpdateState();
+    }
   });
 
-  autoUpdater.checkForUpdates().catch((err) => {
-    console.warn("[JobiDocs] Update check failed:", err);
+  autoUpdater.on("error", (err) => {
+    console.warn("[JobiDocs] Update error:", err);
+    updateState = null;
+    sendUpdateState();
   });
+
+  const doCheck = () => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.warn("[JobiDocs] Update check failed:", err);
+    });
+  };
+  doCheck();
+  setInterval(doCheck, CHECK_INTERVAL_MS);
 }
+
+ipcMain.handle("jobidocs:check-update", async () => {
+  if (isDev) return null;
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return result?.updateInfo?.version ?? null;
+  } catch (err) {
+    console.warn("[JobiDocs] Update check failed:", err);
+    return null;
+  }
+});
+
+ipcMain.handle("jobidocs:download-update", async () => {
+  if (isDev || !updateState) return false;
+  try {
+    await autoUpdater.downloadUpdate();
+    return true;
+  } catch (err) {
+    console.warn("[JobiDocs] Download failed:", err);
+    return false;
+  }
+});
+
+ipcMain.handle("jobidocs:quit-and-install", () => {
+  if (isDev) return;
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.handle("jobidocs:get-update-state", () => updateState);
 
 app.whenReady().then(async () => {
   const userDataPath = app.getPath("userData");

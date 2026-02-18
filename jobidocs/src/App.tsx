@@ -28,6 +28,13 @@ declare global {
     electron?: {
       openPrintDialog: (html: string) => Promise<void>;
       showSaveDialog: (defaultName: string) => Promise<string | null>;
+      update?: {
+        check: () => Promise<string | null>;
+        getState: () => Promise<{ version: string; downloaded: boolean; progress: number } | null>;
+        download: () => Promise<boolean>;
+        quitAndInstall: () => Promise<void>;
+        onState: (cb: (state: { version: string; downloaded: boolean; progress: number } | null) => void) => () => void;
+      };
     };
   }
 }
@@ -851,14 +858,130 @@ function DocumentPreview({
   );
 }
 
-// Tab navigation
-type TabKey = "aktivity" | "tiskarna" | "dokumenty";
+function JobiDocsUpdateCard({
+  updateState,
+  updateChecking,
+  updateDownloading,
+  onCheck,
+  onDownload,
+  onRestart,
+}: {
+  updateState: { version: string; downloaded: boolean; progress: number } | null;
+  updateChecking: boolean;
+  updateDownloading: boolean;
+  onCheck: () => Promise<void>;
+  onDownload: () => Promise<void>;
+  onRestart: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {!updateState && !updateChecking && (
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          Aktuálně nemáte k dispozici žádnou novou verzi. Kontrola probíhá automaticky.
+        </div>
+      )}
+      {updateChecking && <div style={{ fontSize: 13, color: "var(--muted)" }}>Kontroluji aktualizace…</div>}
+      {updateState && !updateState.downloaded && (
+        <>
+          <div style={{ fontSize: 13, color: "var(--text)" }}>
+            K dispozici je nová verze <strong>{updateState.version}</strong>
+          </div>
+          {!updateDownloading && updateState.progress === 0 ? (
+            <button
+              type="button"
+              onClick={onDownload}
+              style={{
+                padding: "10px 20px",
+                background: "var(--accent)",
+                color: "white",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 14,
+                alignSelf: "flex-start",
+              }}
+            >
+              Nainstalovat
+            </button>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 8,
+                    background: "var(--panel-2)",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${updateState.progress}%`,
+                      height: "100%",
+                      background: "var(--accent)",
+                      borderRadius: 4,
+                      transition: "width 0.2s ease",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 36 }}>{Math.round(updateState.progress)}%</span>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Stahuji…</div>
+            </>
+          )}
+        </>
+      )}
+      {updateState?.downloaded && (
+        <button
+          type="button"
+          onClick={onRestart}
+          style={{
+            padding: "10px 20px",
+            background: "var(--accent)",
+            color: "white",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            fontWeight: 600,
+            fontSize: 14,
+            alignSelf: "flex-start",
+          }}
+        >
+          Restartovat a nainstalovat
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onCheck}
+        disabled={updateChecking}
+        style={{
+          padding: "8px 14px",
+          background: "var(--panel-2)",
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-md)",
+          cursor: updateChecking ? "not-allowed" : "pointer",
+          fontSize: 12,
+          alignSelf: "flex-start",
+        }}
+      >
+        {updateChecking ? "Kontroluji…" : "Zkontrolovat aktualizace"}
+      </button>
+    </div>
+  );
+}
 
-function TabNav({ active, onChange }: { active: TabKey; onChange: (t: TabKey) => void }) {
+// Tab navigation
+type TabKey = "aktivity" | "tiskarna" | "dokumenty" | "o_aplikaci";
+
+function TabNav({ active, onChange, updateBadge }: { active: TabKey; onChange: (t: TabKey) => void; updateBadge?: boolean }) {
   const tabs: { key: TabKey; label: string }[] = [
     { key: "aktivity", label: "Aktivity" },
     { key: "tiskarna", label: "Tiskárna" },
     { key: "dokumenty", label: "Dokumenty" },
+    { key: "o_aplikaci", label: "O aplikaci" },
   ];
   return (
     <div style={{ display: "flex", gap: 8, borderBottom: "2px solid var(--border)", paddingBottom: 0, marginBottom: 24 }}>
@@ -880,9 +1003,32 @@ function TabNav({ active, onChange }: { active: TabKey; onChange: (t: TabKey) =>
               fontSize: 14,
               transition: "var(--transition-smooth)",
               borderRadius: "12px 12px 0 0",
+              position: "relative",
             }}
           >
             {t.label}
+            {t.key === "o_aplikaci" && updateBadge && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 8,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: "#dc2626",
+                  color: "white",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 4px",
+                }}
+              >
+                1
+              </span>
+            )}
           </button>
         );
       })}
@@ -892,6 +1038,9 @@ function TabNav({ active, onChange }: { active: TabKey; onChange: (t: TabKey) =>
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>("dokumenty");
+  const [updateState, setUpdateState] = useState<{ version: string; downloaded: boolean; progress: number } | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateDownloading, setUpdateDownloading] = useState(false);
   const [health, setHealth] = useState<{ ok?: boolean } | null>(null);
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
@@ -1057,6 +1206,14 @@ export default function App() {
       setWarrantyDurationInput(null);
     }
   }, [docType, config.warrantyCertificate]);
+
+  useEffect(() => {
+    const upd = window.electron?.update;
+    if (!upd) return;
+    upd.getState().then(setUpdateState);
+    const unsub = upd.onState(setUpdateState);
+    return unsub;
+  }, []);
 
   // Nepřepisujeme config z context.documentsConfig – jinak by se lokální změny (odkliknutí sekce, celá/polovina) vracely zpět při každé aktualizaci kontextu.
 
@@ -1339,7 +1496,7 @@ export default function App() {
           {!health && !error && <span style={{ color: "var(--muted)" }}>Načítám…</span>}
         </div>
 
-        <TabNav active={tab} onChange={setTab} />
+        <TabNav active={tab} onChange={setTab} updateBadge={!!updateState} />
 
         {tab === "aktivity" && (
           <section className="glass-panel">
@@ -2100,6 +2257,38 @@ export default function App() {
               )}
             </section>
           </div>
+        )}
+
+        {tab === "o_aplikaci" && (
+          <section className="glass-panel" style={{ maxWidth: 480 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Aktualizace</h2>
+            {window.electron?.update ? (
+              <JobiDocsUpdateCard
+                updateState={updateState}
+                updateChecking={updateChecking}
+                updateDownloading={updateDownloading}
+                onCheck={async () => {
+                  setUpdateChecking(true);
+                  try {
+                    await window.electron!.update!.check();
+                  } finally {
+                    setUpdateChecking(false);
+                  }
+                }}
+                onDownload={async () => {
+                  setUpdateDownloading(true);
+                  try {
+                    await window.electron!.update!.download();
+                  } finally {
+                    setUpdateDownloading(false);
+                  }
+                }}
+                onRestart={() => window.electron!.update!.quitAndInstall()}
+              />
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Aktualizace jsou dostupné pouze v zabalené aplikaci.</div>
+            )}
+          </section>
         )}
       </div>
 
