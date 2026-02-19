@@ -7,6 +7,7 @@
     "@supabase/supabase-js": "^2.45.0",
     "electron-updater": "^6.3.9",
     "fastify": "^5.1.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -38,5 +39,5 @@
     "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "preview": "vite preview"
   },
-  "version": "0.1.7"
+  "version": "0.1.8"
 }

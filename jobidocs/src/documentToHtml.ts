@@ -99,6 +99,32 @@ function deviceContentHtml(data: Record<string, unknown>, visibleFields?: Device
   return parts.join("");
 }
 
+/** Sloupce tabulky „Provedené opravy“ – Jobi pošle repair_items (JSON pole objektů s name, price, quantity). */
+const REPAIRS_COLUMN_LABELS: Record<string, string> = {
+  name: "Název",
+  price: "Cena",
+  quantity: "Množství",
+  unit: "Jednotka",
+  total: "Celkem",
+};
+
+function repairsTableHtml(
+  repairItems: Array<Record<string, unknown>>,
+  columns: string[],
+  styles: { sectionBorder: string; contentColor: string }
+): string {
+  if (repairItems.length === 0 || columns.length === 0) return "";
+  const thead = columns.map((col) => `<th style="text-align:left;padding:6px 10px;border-bottom:1px solid ${styles.sectionBorder};font-weight:600;font-size:10px">${escapeHtml(REPAIRS_COLUMN_LABELS[col] ?? col)}</th>`).join("");
+  const rows = repairItems.map((row) =>
+    columns.map((col) => {
+      const val = row[col];
+      const text = val != null ? String(val) : "";
+      return `<td style="padding:6px 10px;border-bottom:1px solid ${styles.sectionBorder};font-size:10px;color:${styles.contentColor}">${escapeHtml(text)}</td>`;
+    }).join("")
+  ).map((row) => `<tr>${row}</tr>`).join("");
+  return `<table style="width:100%;border-collapse:collapse"><thead><tr>${thead}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 const SECTION_CONTENT_HTML: Record<string, string> = {
   customer: "", // použije se customerContentHtml s visibleFields
   device: "", // použije se deviceContentHtml s visibleFields
@@ -377,15 +403,32 @@ export function generateDocumentHtml(
               ? (docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true
                   ? warrantySectionHtml(docConfig, repairDate)
                   : "")
-              : sectionOverrides && ["repairs", "diag", "photos"].includes(key)
-                ? ""
-                : key === "service"
-                  ? serviceContentHtml(companyData, sectionFields?.service)
-                  : key === "customer"
-                    ? customerContentHtml(variablesForContent, sectionFields?.customer)
-                    : key === "device"
-                      ? deviceContentHtml(variablesForContent, sectionFields?.device)
-                      : (SECTION_CONTENT_HTML[key] || "");
+              : key === "repairs"
+                  ? (() => {
+                      const raw = variablesForContent.repair_items;
+                      let items: Array<Record<string, unknown>> = [];
+                      if (typeof raw === "string" && raw.trim()) {
+                        try {
+                          const parsed = JSON.parse(raw) as unknown;
+                          if (Array.isArray(parsed)) items = parsed.filter((x): x is Record<string, unknown> => x != null && typeof x === "object");
+                        } catch { /* ignore */ }
+                      }
+                      const columns = (docConfig.repairsTableColumns as string[] | undefined) ?? ["name", "price"];
+                      const validCols = columns.filter((c) => typeof c === "string");
+                      if (items.length > 0 && validCols.length > 0)
+                        return repairsTableHtml(items, validCols, { sectionBorder: styles.sectionBorder, contentColor: styles.contentColor });
+                      if (sectionOverrides) return "";
+                      return SECTION_CONTENT_HTML.repairs;
+                    })()
+                  : sectionOverrides && ["repairs", "diag", "photos"].includes(key)
+                    ? ""
+                  : key === "service"
+                    ? serviceContentHtml(companyData, sectionFields?.service)
+                    : key === "customer"
+                      ? customerContentHtml(variablesForContent, sectionFields?.customer)
+                      : key === "device"
+                        ? deviceContentHtml(variablesForContent, sectionFields?.device)
+                        : (SECTION_CONTENT_HTML[key] || "");
       if (typeof content === "string" && content.trim() === "") return "";
       const width = sectionWidths[key] ?? DEFAULT_WIDTHS[key] ?? "full";
       const halfWidth = width === "half";

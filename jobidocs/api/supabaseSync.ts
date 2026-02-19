@@ -11,6 +11,10 @@ function isDataUrl(s: unknown): s is string {
   return typeof s === "string" && /^data:image\/\w+;base64,/.test(s);
 }
 
+function isPdfDataUrl(s: unknown): s is string {
+  return typeof s === "string" && /^data:application\/pdf;base64,/.test(s);
+}
+
 function dataUrlToBufferAndMime(dataUrl: string): { buffer: Buffer; mime: string; ext: string } | null {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!match) return null;
@@ -61,8 +65,36 @@ export async function uploadDocumentAssetToStorage(
 }
 
 /**
- * Provede migraci base64 → Storage: pokud config obsahuje logoUrl nebo stampUrl
- * jako data URL, nahraje je do Storage a vrátí config s nahrazenými URL.
+ * Nahraje PDF (hlavičkový papír) z data URL do Storage. Cesta: {service_id}/letterhead.pdf
+ */
+export async function uploadLetterheadToStorage(
+  serviceId: string,
+  dataUrl: string,
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  accessToken: string
+): Promise<string | null> {
+  const match = dataUrl.match(/^data:application\/pdf;base64,(.+)$/);
+  if (!match) return null;
+  const buffer = Buffer.from(match[1], "base64");
+  const path = `${serviceId}/letterhead.pdf`;
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+    const { error } = await supabase.storage
+      .from(DOCUMENT_ASSETS_BUCKET)
+      .upload(path, buffer, { contentType: "application/pdf", upsert: true });
+    if (error) return null;
+    const { data } = supabase.storage.from(DOCUMENT_ASSETS_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Provede migraci base64 → Storage: logo, razítko, letterhead PDF.
  */
 export async function migrateConfigAssetsToStorage(
   serviceId: string,
@@ -93,6 +125,16 @@ export async function migrateConfigAssetsToStorage(
       accessToken
     );
     if (url) out.stampUrl = url;
+  }
+  if (isPdfDataUrl(out.letterheadPdfUrl)) {
+    const url = await uploadLetterheadToStorage(
+      serviceId,
+      out.letterheadPdfUrl,
+      supabaseUrl,
+      supabaseAnonKey,
+      accessToken
+    );
+    if (url) out.letterheadPdfUrl = url;
   }
   return out;
 }

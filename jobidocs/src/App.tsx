@@ -557,6 +557,7 @@ function defaultDocumentsConfig(): Record<string, unknown> {
         customer: { ...DEFAULT_CUSTOMER_FIELDS },
         device: { ...DEFAULT_DEVICE_FIELDS },
       },
+      repairsTableColumns: ["name", "price"],
       customBlocks: {},
     },
     warrantyCertificate: {
@@ -584,6 +585,7 @@ function defaultDocumentsConfig(): Record<string, unknown> {
         device: { ...DEFAULT_DEVICE_FIELDS },
       },
       sectionVisibility: {} as Record<string, string>,
+      repairsTableColumns: ["name", "price"],
       customBlocks: {},
     },
     prijemkaReklamace: {
@@ -1849,6 +1851,7 @@ export default function App() {
   const [warrantyDurationInput, setWarrantyDurationInput] = useState<string | null>(null);
   const fileInputLogo = useRef<HTMLInputElement>(null);
   const fileInputStamp = useRef<HTMLInputElement>(null);
+  const fileInputLetterhead = useRef<HTMLInputElement>(null);
   const [customColorPickerOpen, setCustomColorPickerOpen] = useState(false);
   const [customColorPickerExtra, setCustomColorPickerExtra] = useState<string | null>(null);
   const [printLoading, setPrintLoading] = useState(false);
@@ -2176,7 +2179,10 @@ export default function App() {
       const r = await fetch(`${API_BASE}/v1/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html }),
+        body: JSON.stringify({
+          html,
+          letterhead_pdf_url: (config.letterheadPdfUrl as string) || undefined,
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -2240,7 +2246,11 @@ export default function App() {
       const r = await fetch(`${API_BASE}/v1/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html, target_path: path }),
+        body: JSON.stringify({
+          html,
+          target_path: path,
+          letterhead_pdf_url: (config.letterheadPdfUrl as string) || undefined,
+        }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -2289,6 +2299,14 @@ export default function App() {
     if (!f) return;
     const reader = new FileReader();
     reader.onload = () => setConfig((prev) => ({ ...prev, stampUrl: reader.result as string }));
+    reader.readAsDataURL(f);
+  };
+
+  const handleFileLetterhead = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => setConfig((prev) => ({ ...prev, letterheadPdfUrl: reader.result as string }));
     reader.readAsDataURL(f);
   };
 
@@ -2741,6 +2759,22 @@ export default function App() {
                     Vrátit razítko do řádku podpisů
                   </button>
                 )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Předtištěné PDF (hlavičkový papír)</div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Nahrajte PDF – při tisku se dokument vykreslí na toto pozadí (první stránka PDF).</p>
+                <input ref={fileInputLetterhead} type="file" accept=".pdf,application/pdf" onChange={handleFileLetterhead} style={{ display: "none" }} />
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <button type="button" onClick={() => fileInputLetterhead.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
+                    {(config.letterheadPdfUrl as string | undefined) ? "Změnit PDF" : "Nahrát PDF"}
+                  </button>
+                  {(config.letterheadPdfUrl as string | undefined) ? (
+                    <button type="button" onClick={() => setConfig((prev) => ({ ...prev, letterheadPdfUrl: undefined }))} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", fontSize: 12, cursor: "pointer" }}>
+                      Odebrat
+                    </button>
+                  ) : null}
+                </div>
               </div>
                   </div>
                 </Accordion>
@@ -3352,6 +3386,34 @@ export default function App() {
                   </div>
                 </div>
                 </Accordion>
+              )}
+
+              {(docType === "zakazkovy_list" || docType === "zarucni_list") && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Sloupce tabulky (Provedené opravy)</div>
+                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Při tisku z Jobi se položky oprav zobrazí v tabulce. Vyberte sloupce (Jobi pošle <code style={{ fontSize: 11 }}>repair_items</code> jako JSON).</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {(["name", "price", "quantity", "unit", "total"] as const).map((col) => {
+                      const cols = (docConfig.repairsTableColumns as string[] | undefined) ?? ["name", "price"];
+                      const checked = cols.includes(col);
+                      const labels: Record<string, string> = { name: "Název", price: "Cena", quantity: "Množství", unit: "Jednotka", total: "Celkem" };
+                      return (
+                        <label key={col} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              const next = checked ? cols.filter((c) => c !== col) : [...cols, col];
+                              updateDocConfig(["repairsTableColumns"], next.length ? next : ["name", "price"]);
+                            }}
+                            style={{ accentColor: "var(--accent)" }}
+                          />
+                          {labels[col] ?? col}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
 
               <div>

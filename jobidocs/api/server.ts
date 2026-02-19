@@ -282,19 +282,48 @@ export async function startApiServer(
     return result;
   });
 
-  // Render HTML to PDF (returns base64)
-  fastify.post<{ Body: { html: string } }>("/v1/render", async (req, reply) => {
+  async function mergeLetterheadIfNeeded(
+    contentBuffer: Buffer,
+    letterheadPdfUrl: string | undefined
+  ): Promise<Buffer> {
+    if (!letterheadPdfUrl || typeof letterheadPdfUrl !== "string" || !letterheadPdfUrl.trim())
+      return contentBuffer;
+    let letterheadBuffer: Buffer | null = null;
+    if (letterheadPdfUrl.startsWith("data:application/pdf;base64,")) {
+      const b64 = letterheadPdfUrl.replace(/^data:application\/pdf;base64,/, "");
+      letterheadBuffer = Buffer.from(b64, "base64");
+    } else if (letterheadPdfUrl.startsWith("http://") || letterheadPdfUrl.startsWith("https://")) {
+      const res = await fetch(letterheadPdfUrl);
+      if (!res.ok) return contentBuffer;
+      const ab = await res.arrayBuffer();
+      letterheadBuffer = Buffer.from(ab);
+    }
+    if (!letterheadBuffer) return contentBuffer;
+    const { PDFDocument } = await import("pdf-lib");
+    const letterheadPdf = await PDFDocument.load(letterheadBuffer);
+    const contentPdf = await PDFDocument.load(contentBuffer);
+    if (letterheadPdf.getPageCount() === 0 || contentPdf.getPageCount() === 0) return contentBuffer;
+    const mergedPdf = await PDFDocument.create();
+    const [letterheadPage] = await mergedPdf.copyPages(letterheadPdf, [0]);
+    mergedPdf.addPage(letterheadPage);
+    const [contentPageRef] = await mergedPdf.embedPdf(contentPdf);
+    if (contentPageRef) mergedPdf.getPage(0).drawPage(contentPageRef, { x: 0, y: 0 });
+    return Buffer.from(await mergedPdf.save());
+  }
+
+  // Render HTML to PDF (returns base64). Optional letterhead_pdf_url: merge content on top of first page.
+  fastify.post<{ Body: { html: string; letterhead_pdf_url?: string } }>("/v1/render", async (req, reply) => {
     if (!htmlToPdf) {
       return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
     }
-    const { html } = req.body || {};
+    const { html, letterhead_pdf_url } = req.body || {};
     if (!html || typeof html !== "string") {
       return reply.status(400).send({ error: "html required" });
     }
     const PDF_TIMEOUT_MS = 60000;
     try {
       let timeoutId: ReturnType<typeof setTimeout>;
-      const pdfBuffer = await Promise.race([
+      const contentBuffer = await Promise.race([
         htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
         new Promise<never>((_, reject) => {
           timeoutId = setTimeout(
@@ -303,6 +332,8 @@ export async function startApiServer(
           );
         }),
       ]);
+      let pdfBuffer = contentBuffer;
+      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, letterhead_pdf_url);
       return { pdf_base64: pdfBuffer.toString("base64") };
     } catch (err: unknown) {
       fastify.log.error(err);
@@ -350,12 +381,13 @@ export async function startApiServer(
       fastify.log.info("[print-document] html length=%d", html.length);
       const PDF_TIMEOUT_MS = 60000;
       let timeoutId: ReturnType<typeof setTimeout>;
-      const pdfBuffer = await Promise.race([
+      let pdfBuffer = await Promise.race([
         htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
         new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
         }),
       ]);
+      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
       let printer = (await getSettings(service_id)).preferred_printer_name;
       fastify.log.info("[print-document] calling lp, printer=%s", printer ?? "default");
       const jobId = await printPdf(pdfBuffer, printer);
@@ -412,14 +444,14 @@ export async function startApiServer(
     }
   });
 
-  // Export: render HTML to PDF, save to path
+  // Export: render HTML to PDF, save to path. Optional letterhead_pdf_url for merge.
   fastify.post<{
-    Body: { html: string; target_path: string };
+    Body: { html: string; target_path: string; letterhead_pdf_url?: string };
   }>("/v1/export", async (req, reply) => {
     if (!htmlToPdf) {
       return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
     }
-    const { html, target_path } = req.body || {};
+    const { html, target_path, letterhead_pdf_url } = req.body || {};
     if (!html || typeof html !== "string") {
       return reply.status(400).send({ error: "html required" });
     }
@@ -429,12 +461,13 @@ export async function startApiServer(
     const PDF_TIMEOUT_MS = 60000;
     try {
       let timeoutId: ReturnType<typeof setTimeout>;
-      const pdfBuffer = await Promise.race([
+      let pdfBuffer = await Promise.race([
         htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
         new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
         }),
       ]);
+      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, letterhead_pdf_url);
       await fs.writeFile(target_path, pdfBuffer);
       pushActivity("export", "ok", target_path);
       return { ok: true, path: target_path };

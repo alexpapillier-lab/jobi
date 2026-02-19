@@ -59,10 +59,10 @@
 ### 2.3 Další návrhy funkcí v customizaci
 
 - **Podmíněná viditelnost sekce – hotovo.** V nastavení záručního listu (accordion Záruka) je checkbox „Zobrazit sekci Záruka jen když je vyplněno datum opravy“. Config: `sectionVisibility: { warranty: "when_repair_date_set" }`. Při generování PDF/HTML z Jobi se sekce Záruka vynechá, pokud Jobi nepošle `variables.repair_date` (nebo je prázdné).
-- **Opakovatelné bloky z Jobi:** Ano. Sekce „Položky oprav“ jako tabulka s konfigurovatelnými sloupci (název, cena, množství, …).
+- **Opakovatelné bloky z Jobi – hotovo.** Sekce „Provedené opravy“ jako tabulka s konfigurovatelnými sloupci. Config: `repairsTableColumns` (např. `["name", "price", "quantity"]`). Jobi pošle `variables.repair_items` jako JSON pole objektů (name, price, quantity, unit, total). V nastavení (Zakázkový list / Záruční list) je blok „Sloupce tabulky (Provedené opravy)“ s checkboxy Název, Cena, Množství, Jednotka, Celkem.
 - **Pozice a velikost obrázků (logo, razítko, QR):** Ano. **Hotovo:** QR, logo i razítko lze v náhledu chytit a přetáhnout; pozice se ukládají do configu (`qrPosition`, `logoPosition`, `stampPosition`). Tlačítka „Vrátit logo do hlavičky“ / „Vrátit razítko do řádku podpisů“ obnoví výchozí umístění.
 - **Více stránek vzoru:** Zatím ne (není potřeba).
-- **Předtištěné PDF jako pozadí:** Možnost nahrát PDF (hlavičkový papír) a na něj rendit sekce. Vyžaduje sloučení PDF v backendu nebo v Electronu.
+- **Předtištěné PDF jako pozadí – hotovo.** V nastavení (Logo a razítko) je „Předtištěné PDF (hlavičkový papír)“: nahrání PDF, ukládá se do configu (base64 nebo po migraci do Supabase Storage jako `{service_id}/letterhead.pdf`). Při generování PDF (Tisk ukázky, /v1/render) se předá `letterhead_pdf_url`; API sloučí první stránku letterheadu s vykresleným obsahem (pdf-lib: letterhead jako podklad, obsah na něj). Endpoint /v1/render přijímá volitelný parametr `letterhead_pdf_url` (data URL nebo http(s) URL).
 
 ---
 
