@@ -31,9 +31,11 @@ declare global {
       update?: {
         check: () => Promise<string | null>;
         getState: () => Promise<{ version: string; downloaded: boolean; progress: number } | null>;
+        getError: () => Promise<string | null>;
         download: () => Promise<boolean>;
         quitAndInstall: () => Promise<void>;
         onState: (cb: (state: { version: string; downloaded: boolean; progress: number } | null) => void) => () => void;
+        onError: (cb: (err: string | null) => void) => () => void;
       };
     };
   }
@@ -860,6 +862,7 @@ function DocumentPreview({
 
 function JobiDocsUpdateCard({
   updateState,
+  updateError,
   updateChecking,
   updateDownloading,
   onCheck,
@@ -867,6 +870,7 @@ function JobiDocsUpdateCard({
   onRestart,
 }: {
   updateState: { version: string; downloaded: boolean; progress: number } | null;
+  updateError: string | null;
   updateChecking: boolean;
   updateDownloading: boolean;
   onCheck: () => Promise<void>;
@@ -875,7 +879,12 @@ function JobiDocsUpdateCard({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {!updateState && !updateChecking && (
+      {updateError && (
+        <div style={{ fontSize: 13, color: "var(--error, #c00)" }}>
+          Kontrola aktualizací selhala: {updateError}
+        </div>
+      )}
+      {!updateState && !updateChecking && !updateError && (
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Aktuálně nemáte k dispozici žádnou novou verzi. Kontrola probíhá automaticky.
         </div>
@@ -1039,6 +1048,7 @@ function TabNav({ active, onChange, updateBadge }: { active: TabKey; onChange: (
 export default function App() {
   const [tab, setTab] = useState<TabKey>("dokumenty");
   const [updateState, setUpdateState] = useState<{ version: string; downloaded: boolean; progress: number } | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateDownloading, setUpdateDownloading] = useState(false);
   const [health, setHealth] = useState<{ ok?: boolean } | null>(null);
@@ -1211,8 +1221,13 @@ export default function App() {
     const upd = window.electron?.update;
     if (!upd) return;
     upd.getState().then(setUpdateState);
-    const unsub = upd.onState(setUpdateState);
-    return unsub;
+    upd.getError?.().then((err) => setUpdateError(err ?? null));
+    const unsubState = upd.onState(setUpdateState);
+    const unsubError = upd.onError?.(setUpdateError);
+    return () => {
+      unsubState();
+      unsubError?.();
+    };
   }, []);
 
   // Nepřepisujeme config z context.documentsConfig – jinak by se lokální změny (odkliknutí sekce, celá/polovina) vracely zpět při každé aktualizaci kontextu.
@@ -2265,9 +2280,11 @@ export default function App() {
             {window.electron?.update ? (
               <JobiDocsUpdateCard
                 updateState={updateState}
+                updateError={updateError}
                 updateChecking={updateChecking}
                 updateDownloading={updateDownloading}
                 onCheck={async () => {
+                  setUpdateError(null);
                   setUpdateChecking(true);
                   try {
                     await window.electron!.update!.check();

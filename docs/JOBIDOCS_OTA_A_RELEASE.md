@@ -10,6 +10,8 @@ JobiDocs už má v kódu **electron-updater** a **publish na GitHub** (repo `ale
   **mac:** `identity` (Developer ID Application), `hardenedRuntime: true` pro notarizaci.
 - **electron/main.ts:** `autoUpdater` – kontrola při startu, autoDownload, dialog „Restartovat“ po stažení.
 
+**Důležité pro OTA:** Na GitHub Release musí být kromě `JobiDocs-<verze>.dmg` také **`latest-mac.yml`** a **`JobiDocs-<verze>-mac.zip`** (výstup electron-builderu v `jobidocs/release/`). Bez nich aplikace při „Zkontrolovat aktualizace“ novou verzi nenajde. Při chybě kontroly se nyní v UI zobrazí text chyby.
+
 ---
 
 ## Build a release (macOS)

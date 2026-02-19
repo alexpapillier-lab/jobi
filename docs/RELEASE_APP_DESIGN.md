@@ -12,6 +12,7 @@ Aplikace pro jedno-tlačítkové vydání Jobi + JobiDocs: build (universal), no
 
 1. **Nejprve DMG:** `jobi-<verze>.dmg`, `JobiDocs-<verze>.dmg` (nebo dle výstupu electron-builderu)
 2. **Potom OTA pro Jobi:** `latest.json`, `jobi.app.tar.gz`, `jobi.app.tar.gz.sig`
+3. **OTA pro JobiDocs (electron-updater):** z adresáře `jobidocs/release/` nahrát **`latest-mac.yml`** a **`JobiDocs-<verze>-mac.zip`**. Bez těchto souborů JobiDocs při „Zkontrolovat aktualizace“ nenajde novou verzi (kontroly selžou s chybou).
 
 Tím je zajištěno, že když updater nabídne novou verzi, na release už jsou všechny soubory.
 
@@ -45,7 +46,7 @@ Od uživatele je u obou aplikací vyžadováno jen **potvrzení** („Ano, nains
 6. Build JobiDocs (universal) – `npm run electron:build:universal` v jobidocs/
 7. Zkopírovat JobiDocs DMG do Releases/
 8. OTA artefakty – `pack-notarized-ota.sh` → latest.json, jobi.app.tar.gz, jobi.app.tar.gz.sig
-9. GitHub: vytvořit release (tag vX.Y.Z), nahrát **nejdřív oba DMG**, pak **OTA soubory**
+9. GitHub: vytvořit release (tag vX.Y.Z), nahrát **nejdřív oba DMG**, pak **OTA soubory** (Jobi: latest.json, jobi.app.tar.gz, .sig; JobiDocs: **latest-mac.yml**, **JobiDocs-X.Y.Z-mac.zip** z `jobidocs/release/`)
 
 ---
 

@@ -154,6 +154,7 @@ function setupTray() {
 }
 
 let updateState: { version: string; downloaded: boolean; progress: number } | null = null;
+let updateError: string | null = null;
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 
 function sendUpdateState() {
@@ -162,18 +163,36 @@ function sendUpdateState() {
   }
 }
 
+function sendUpdateError(err: string | null) {
+  updateError = err;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("jobidocs:update-error", err);
+  }
+}
+
 function setupAutoUpdate() {
   if (isDev) return;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  // Explicit feed: GitHub Releases (electron-updater expects latest-mac.yml + zip on the release)
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "alexpapillier-lab",
+    repo: "jobi",
+  });
+
   autoUpdater.on("update-available", (info) => {
+    updateError = null;
     updateState = { version: info.version, downloaded: false, progress: 0 };
+    sendUpdateError(null);
     sendUpdateState();
   });
 
   autoUpdater.on("update-not-available", () => {
+    updateError = null;
     updateState = null;
+    sendUpdateError(null);
     sendUpdateState();
   });
 
@@ -194,12 +213,16 @@ function setupAutoUpdate() {
   autoUpdater.on("error", (err) => {
     console.warn("[JobiDocs] Update error:", err);
     updateState = null;
+    const msg = err?.message ?? String(err);
+    sendUpdateError(msg);
     sendUpdateState();
   });
 
   const doCheck = () => {
+    sendUpdateError(null);
     autoUpdater.checkForUpdates().catch((err) => {
       console.warn("[JobiDocs] Update check failed:", err);
+      sendUpdateError(err?.message ?? String(err));
     });
   };
   doCheck();
@@ -208,11 +231,13 @@ function setupAutoUpdate() {
 
 ipcMain.handle("jobidocs:check-update", async () => {
   if (isDev) return null;
+  sendUpdateError(null);
   try {
     const result = await autoUpdater.checkForUpdates();
     return result?.updateInfo?.version ?? null;
   } catch (err) {
     console.warn("[JobiDocs] Update check failed:", err);
+    sendUpdateError(err?.message ?? String(err));
     return null;
   }
 });
@@ -234,6 +259,7 @@ ipcMain.handle("jobidocs:quit-and-install", () => {
 });
 
 ipcMain.handle("jobidocs:get-update-state", () => updateState);
+ipcMain.handle("jobidocs:get-update-error", () => updateError);
 
 app.whenReady().then(async () => {
   const userDataPath = app.getPath("userData");
