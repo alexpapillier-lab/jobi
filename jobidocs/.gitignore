@@ -6,6 +6,8 @@ release
 *.log
 .DS_Store
 
-# Ikony se vždy kopírují z logos/ (copy-app-icon); jediný zdroj tray = logos/tray-icon.png
+# Ikony se vždy kopírují z logos/ (copy-app-icon); zdroj tray = logos/trayicon-black.png, trayicon-white.png
 electron/tray-icon.png
+electron/tray-icon-black.png
+electron/tray-icon-white.png
 electron/icon.png

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, nativeTheme } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs/promises";
@@ -109,18 +109,29 @@ async function createWindow() {
 
 const TRAY_ICON_SIZE = 22; // macOS menu bar: 22x22 (16x16 také ok)
 
+/** Na světlém menu baru černá ikona, na tmavém bílá (kvůli viditelnosti). */
+function getTrayIconPath(): string {
+  const darkMenuBar = nativeTheme.shouldUseDarkColors;
+  const name = darkMenuBar ? "tray-icon-white.png" : "tray-icon-black.png";
+  return path.join(__dirname, name);
+}
+
+function loadTrayIcon(): ReturnType<typeof nativeImage.createFromPath> | null {
+  const iconPath = getTrayIconPath();
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) return null;
+  const size = icon.getSize();
+  if (size.width > TRAY_ICON_SIZE || size.height > TRAY_ICON_SIZE) {
+    icon = icon.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+  }
+  return icon;
+}
+
 function setupTray() {
   if (process.platform !== "darwin") return;
-  // Jediný zdroj: logos/tray-icon.png (copy-app-icon → electron/tray-icon.png → copy-tray-icon → sem)
-  const iconPath = path.join(__dirname, "tray-icon.png");
   try {
-    let icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) return;
-    // Vždy zmenšit na velikost pro menu bar (jinak plné logo zabírá 2/3 traye)
-    const size = icon.getSize();
-    if (size.width > TRAY_ICON_SIZE || size.height > TRAY_ICON_SIZE) {
-      icon = icon.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
-    }
+    let icon = loadTrayIcon();
+    if (!icon) return;
     tray = new Tray(icon);
     tray.setToolTip("JobiDocs – běží");
     tray.setContextMenu(
@@ -147,6 +158,10 @@ function setupTray() {
       } else {
         createWindow().then(() => mainWindow?.show());
       }
+    });
+    nativeTheme.on("updated", () => {
+      const next = loadTrayIcon();
+      if (tray && next && !next.isEmpty()) tray.setImage(next);
     });
   } catch {
     // ikona nenalezena – tray přeskočíme
