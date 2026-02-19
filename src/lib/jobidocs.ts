@@ -157,7 +157,7 @@ export async function pushContextToJobiDocs(
   }
 }
 
-export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
+export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
 
 /**
  * Tisk přes vzor v JobiDocs – data se vloží do šablony JobiDocs, takže vzhled odpovídá nastavení v JobiDocs.
@@ -167,7 +167,7 @@ export async function printDocumentViaJobiDocs(
   serviceId: string,
   companyData: Record<string, unknown>,
   sections: Partial<Record<string, string>>,
-  options?: { repair_date?: string }
+  options?: { repair_date?: string; variables?: Record<string, string> }
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const f = await getJobiDocsFetch();
@@ -178,11 +178,51 @@ export async function printDocumentViaJobiDocs(
       sections,
     };
     if (options?.repair_date != null) body.repair_date = options.repair_date;
+    if (options?.variables != null && typeof options.variables === "object") body.variables = options.variables;
     const r = await f(`${JOBIDOCS_API}/v1/print-document`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       connectTimeout: 30000,
+    } as RequestInit & { connectTimeout?: number });
+    const d = await r.json();
+    if (!r.ok) {
+      return { ok: false, error: (d as { error?: string }).error || r.statusText };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Export dokumentu do PDF souboru – stejná šablona a data jako u tisku (JobiDocs),
+ * ale PDF se uloží do zvolené cesty místo odeslání na tiskárnu.
+ */
+export async function exportDocumentViaJobiDocs(
+  docType: DocTypeForPrint,
+  serviceId: string,
+  companyData: Record<string, unknown>,
+  sections: Partial<Record<string, string>>,
+  targetPath: string,
+  options?: { repair_date?: string; variables?: Record<string, string> }
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const f = await getJobiDocsFetch();
+    const body: Record<string, unknown> = {
+      doc_type: docType,
+      service_id: serviceId,
+      company_data: companyData,
+      sections,
+      target_path: targetPath,
+    };
+    if (options?.repair_date != null) body.repair_date = options.repair_date;
+    if (options?.variables != null && typeof options.variables === "object") body.variables = options.variables;
+    const r = await f(`${JOBIDOCS_API}/v1/export-document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      connectTimeout: 60000,
     } as RequestInit & { connectTimeout?: number });
     const d = await r.json();
     if (!r.ok) {

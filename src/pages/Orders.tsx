@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { showToast } from "../components/Toast";
-import { isJobiDocsRunning, printDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
+import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -651,15 +651,90 @@ function buildTicketSectionsForJobiDocs(
   if (ticket.expectedDoneAt) dateLines.push(`<div>Předpokládané dokončení: ${e(new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ"))}</div>`);
   dateLines.push(`<div>Kód zakázky: ${e(ticket.code)}</div>`);
 
-  const sections: Partial<Record<string, string>> = {};
-  if (customerLines.length) sections.customer = customerLines.join("");
-  if (deviceLines.length) sections.device = deviceLines.join("");
-  if (repairsHtml) sections.repairs = repairsHtml;
-  if (diagHtml) sections.diag = diagHtml;
-  if (photosHtml) sections.photos = photosHtml;
-  sections.dates = dateLines.join("");
+  // Vždy posílat všechny sekce (i prázdné jako ""), aby JobiDocs nezobrazoval ukázková data (Jan Novák atd.)
+  const sections: Partial<Record<string, string>> = {
+    customer: customerLines.join(""),
+    device: deviceLines.join(""),
+    repairs: repairsHtml,
+    diag: diagHtml,
+    photos: photosHtml,
+    dates: dateLines.join(""),
+  };
 
   return sections;
+}
+
+/** Sestaví proměnné pro vlastní texty v šabloně JobiDocs ({{ticket_code}}, {{customer_name}} atd.) při tisku z Jobi. */
+function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<string, unknown>): Record<string, string> {
+  const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
+  const totalPrice = ticket.performedRepairs?.length
+    ? ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0)
+    : 0;
+  const repairDate = new Date().toISOString();
+  const repairDateFormatted = new Date(ticket.createdAt).toLocaleDateString("cs-CZ");
+  const completionFormatted = ticket.expectedDoneAt ? new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ") : "";
+  const serviceName = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name) : "";
+  const serviceAddr = [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ");
+  const repairItems = ticket.performedRepairs?.length
+    ? JSON.stringify(
+        ticket.performedRepairs.map((r) => ({
+          name: r.name ?? "",
+          price: r.price != null ? `${r.price} Kč` : "",
+          quantity: r.quantity ?? 1,
+          unit: r.unit ?? "ks",
+          total: r.price != null && r.quantity != null ? `${r.price * r.quantity} Kč` : (r.price != null ? `${r.price} Kč` : ""),
+        }))
+      )
+    : "[]";
+  return {
+    ticket_code: ticket.code ?? "",
+    order_code: ticket.code ?? "",
+    customer_name: ticket.customerName ?? "",
+    customer_phone: ticket.customerPhone ?? "",
+    customer_email: ticket.customerEmail ?? "",
+    customer_address: addr,
+    device_name: ticket.deviceLabel ?? "",
+    device_serial: ticket.serialOrImei ?? "",
+    device_imei: ticket.serialOrImei ?? "",
+    device_state: ticket.deviceCondition ?? "",
+    device_problem: (ticket.requestedRepair || ticket.issueShort) ?? "",
+    service_name: serviceName,
+    service_phone: (companyData?.phone != null && String(companyData.phone).trim() !== "") ? String(companyData.phone) : "",
+    service_email: (companyData?.email != null && String(companyData.email).trim() !== "") ? String(companyData.email) : "",
+    service_address: serviceAddr,
+    service_ico: (companyData?.ico != null && String(companyData.ico).trim() !== "") ? String(companyData.ico) : "",
+    service_dic: (companyData?.dic != null && String(companyData.dic).trim() !== "") ? String(companyData.dic) : "",
+    repair_date: repairDateFormatted,
+    repair_completion_date: completionFormatted,
+    total_price: totalPrice > 0 ? `${totalPrice} Kč` : "",
+    warranty_until: "", // JobiDocs dopočte z repair_date a konfigurace záruky
+    diagnostic_text: ticket.diagnosticText ?? "",
+    note: ticket.note ?? "",
+    repair_items: repairItems,
+    complaint_code: "",
+    reclamation_code: "",
+    original_ticket_code: ticket.code ?? "",
+  };
+}
+
+/** Sestaví proměnné pro dokument příjemky/výdejky reklamace (JobiDocs šablona). */
+function buildClaimVariablesForJobiDocs(claim: WarrantyClaimRow, originalTicketCode: string = ""): Record<string, string> {
+  const addr = [claim.customer_address_street, claim.customer_address_city, claim.customer_address_zip].filter(Boolean).join(", ");
+  return {
+    complaint_code: claim.code ?? "",
+    reclamation_code: claim.code ?? "",
+    original_ticket_code: originalTicketCode || "",
+    ticket_code: originalTicketCode || "",
+    customer_name: claim.customer_name ?? "",
+    customer_phone: claim.customer_phone ?? "",
+    customer_email: claim.customer_email ?? "",
+    customer_address: addr,
+    device_name: claim.device_label ?? "",
+    device_serial: claim.device_serial ?? "",
+    device_imei: claim.device_imei ?? "",
+    device_state: claim.device_condition ?? "",
+    device_problem: claim.notes ?? "",
+  };
 }
 
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
@@ -1485,6 +1560,11 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -1493,13 +1573,18 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     });
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
-      const htmlContent = generateTicketHTML(ticket, true, config);
+      const companyData = safeLoadCompanyData();
+      const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      let res = await exportDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections, filePath);
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateTicketHTML(ticket, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
@@ -1530,7 +1615,8 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
-  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections);
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections, { variables });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
@@ -2131,6 +2217,11 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -2140,13 +2231,17 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
       const companyData = safeLoadCompanyData();
-      const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
+      const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      let res = await exportDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections, filePath);
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
@@ -2177,7 +2272,8 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
-  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections);
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections, { variables });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
@@ -2910,6 +3006,11 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -2919,13 +3020,19 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
       const companyData = safeLoadCompanyData();
-      const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
+      const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      let res = await exportDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections, filePath, {
+        repair_date: new Date().toISOString(),
+      });
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
         showToast("PDF uložen", "success");
       } else {
@@ -2956,8 +3063,10 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
   const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections, {
     repair_date: new Date().toISOString(), // záruka začíná datem tisku záručního listu
+    variables,
   });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
@@ -8043,9 +8152,56 @@ export default function Orders({
                   <DocumentActionPicker
                     label="Přijetí reklamace"
                     onSelect={async (action) => {
-                      const config = await loadDocumentsConfigFromDB(activeServiceId);
-                      const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
-                      if (action === "print" || action === "export") openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                      const running = await isJobiDocsRunning();
+                      const sid = activeServiceId ?? undefined;
+                      const companyData = safeLoadCompanyData() as Record<string, unknown>;
+                      const originalCode = detailedClaim.source_ticket_id && paginatedTickets.some((t) => t.id === detailedClaim.source_ticket_id)
+                        ? (paginatedTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx)?.code ?? ""
+                        : "";
+                      const variables = buildClaimVariablesForJobiDocs(detailedClaim, originalCode);
+                      if (running && sid) {
+                        if (action === "print") {
+                          const res = await printDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, { variables });
+                          if (res.ok) showToast("Úloha odeslána do fronty", "success");
+                          else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                        } else {
+                          try {
+                            const { save } = await import("@tauri-apps/plugin-dialog");
+                            const filePath = await save({
+                              defaultPath: `prijemka-reklamace-${detailedClaim.code}.pdf`,
+                              filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+                            });
+                            if (filePath) {
+                              const res = await exportDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, filePath, { variables });
+                              if (res.ok) showToast("PDF uložen", "success");
+                              else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                            }
+                          } catch (e) {
+                            showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+                          }
+                        }
+                      } else {
+                        const config = await loadDocumentsConfigFromDB(activeServiceId);
+                        const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
+                        if (action === "print") {
+                          openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                        } else {
+                          try {
+                            const { save } = await import("@tauri-apps/plugin-dialog");
+                            const filePath = await save({
+                              defaultPath: `prijemka-reklamace-${detailedClaim.code}.pdf`,
+                              filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+                            });
+                            if (filePath) {
+                              const res = await exportViaJobiDocs(html, filePath);
+                              if (res.ok) showToast("PDF uložen", "success");
+                              else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                            }
+                          } catch (e) {
+                            showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+                          }
+                        }
+                      }
                     }}
                   />
                 )}
@@ -10013,7 +10169,7 @@ export default function Orders({
         >
           {[
             { type: "ticket" as const, label: "Zakázkový list" },
-            { type: "warranty" as const, label: "Zárůční list" },
+            { type: "warranty" as const, label: "Záruční list" },
             ...((openQuickPrintTicket.diagnosticText?.trim() || (openQuickPrintTicket.diagnosticPhotos && openQuickPrintTicket.diagnosticPhotos.length > 0)) ? [{ type: "diagnostic" as const, label: "Diagnostický protokol" }] : []),
           ].map(({ type, label }) => (
             <button

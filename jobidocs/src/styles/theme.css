@@ -225,6 +225,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   overflow: hidden;
   background: var(--panel);
 }
+
+/* V levém sloupci Dokumentů sjednotíme accordiony – jedna společná „krabice“, jen horní a dolní čára */
+.docs-split-left .accordion-group {
+  margin-bottom: 0;
+  border-radius: 0;
+  border-top: none;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: none;
+}
+.docs-split-left .accordion-group:first-of-type {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.docs-split-left .accordion-group:last-of-type {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  margin-bottom: 12px;
+}
+.docs-split-left .accordion-body {
+  border-top: none;
+}
+.docs-split-left .accordion-head {
+  padding: 8px 12px;
+}
+
 .accordion-head {
   width: 100%;
   padding: 12px 14px;

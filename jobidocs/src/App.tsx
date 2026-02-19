@@ -21,9 +21,10 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  rectSortingStrategy,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { sanitizeRichText } from "./richText";
 
 const API_BASE = "http://127.0.0.1:3847";
 const WIZARD_STORAGE_KEY = "jobidocs_wizard_dismissed";
@@ -65,6 +66,9 @@ function getSampleVariablesForPreview(companyData: Record<string, unknown>): Rec
   return {
     ticket_code: "DEMO-001",
     order_code: "DEMO-001",
+    complaint_code: "R-2025-001",
+    reclamation_code: "R-2025-001",
+    original_ticket_code: "DEMO-001",
     customer_name: "Jan Novák",
     customer_phone: "+420 123 456 789",
     customer_email: "jan.novak@email.cz",
@@ -86,6 +90,10 @@ function getSampleVariablesForPreview(companyData: Record<string, unknown>): Rec
     warranty_until: warrantyUntil,
     diagnostic_text: "Displej mechanicky poškozen. Doporučena výměna.",
     note: "Zákazník souhlasí s opravou.",
+    repair_items: JSON.stringify([
+      { name: "Výměna displeje", price: "2 500 Kč" },
+      { name: "Kalibrace dotykové vrstvy", price: "500 Kč" },
+    ]),
   };
 }
 
@@ -209,10 +217,10 @@ const SAMPLE_DATA: Record<string, { label: string; content: React.ReactNode }> =
 
 const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
-  diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
-  warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
+  diagnosticProtocol: ["device", "service", "diag", "photos", "dates", "custom-adca988a-f92e-497d-8910-3d904936ed61"],
+  warrantyCertificate: ["device", "service", "repairs", "warranty", "dates", "custom-5bbd72cc-33a7-405b-a0a3-e726af943779"],
   prijemkaReklamace: ["service", "customer", "device", "dates"],
-  vydejkaReklamace: ["service", "customer", "device", "dates"],
+  vydejkaReklamace: ["service", "customer", "dates", "device", "repairs"],
 };
 
 type SectionWidth = "full" | "half";
@@ -262,7 +270,7 @@ const SECTION_KEY_TO_INCLUDE_BY_DOC: Record<DocTypeKey, Record<string, string>> 
   diagnosticky_protokol: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", diag: "includeDiagnosticText", photos: "includePhotos", dates: "includeDates" },
   zarucni_list: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", warranty: "includeWarranty", dates: "includeDates" },
   prijemka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", dates: "includeDates" },
-  vydejka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", dates: "includeDates" },
+  vydejka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", dates: "includeDates" },
 };
 
 // Draggable palette item for section (drag from palette into preview)
@@ -270,6 +278,7 @@ const PALETTE_CUSTOM_TEXT_ID = "palette-custom-text";
 const PALETTE_CUSTOM_HEADING_ID = "palette-custom-heading";
 const PALETTE_CUSTOM_SEPARATOR_ID = "palette-custom-separator";
 const PALETTE_CUSTOM_SPACER_ID = "palette-custom-spacer";
+const PALETTE_SIGNATURE_LINE_ID = "palette-signature-line";
 /** Možnosti stylu sekce (přepisují výchozí styl z designu). */
 const SECTION_STYLE_OPTIONS: { value: "" | SectionStyle; label: string }[] = [
   { value: "", label: "Výchozí" },
@@ -280,11 +289,12 @@ const SECTION_STYLE_OPTIONS: { value: "" | SectionStyle; label: string }[] = [
   { value: "leftStripe", label: "S levým pruhem" },
 ];
 
-const PALETTE_CUSTOM_ID_TO_TYPE: Record<string, "text" | "heading" | "separator" | "spacer"> = {
+const PALETTE_CUSTOM_ID_TO_TYPE: Record<string, "text" | "heading" | "separator" | "spacer" | "signature"> = {
   [PALETTE_CUSTOM_TEXT_ID]: "text",
   [PALETTE_CUSTOM_HEADING_ID]: "heading",
   [PALETTE_CUSTOM_SEPARATOR_ID]: "separator",
   [PALETTE_CUSTOM_SPACER_ID]: "spacer",
+  [PALETTE_SIGNATURE_LINE_ID]: "signature",
 };
 
 /** Pole, která lze zobrazit/skrýt v sekci Údaje o servisu */
@@ -337,88 +347,65 @@ function getPaletteDragLabel(activeId: string): string {
   if (activeId === PALETTE_CUSTOM_HEADING_ID) return "Vlastní nadpis";
   if (activeId === PALETTE_CUSTOM_SEPARATOR_ID) return "Oddělovač";
   if (activeId === PALETTE_CUSTOM_SPACER_ID) return "Prázdný řádek";
+  if (activeId === PALETTE_SIGNATURE_LINE_ID) return "Řádek na podpis";
   const sectionKey = activeId.replace("palette-", "");
   return (SAMPLE_DATA[sectionKey] as { label?: string } | undefined)?.label ?? sectionKey;
+}
+
+/** Label sekce v dokumentu (paleta, přetahování, úprava). Pro custom bloky používá content bloku nebo výchozí název typu. */
+function getSectionDragLabel(sectionId: string, docConfig?: Record<string, unknown>): string {
+  if (sectionId.startsWith("custom-")) {
+    const blocks = (docConfig?.customBlocks as Record<string, { type?: string; content?: string }>) || {};
+    const block = blocks[sectionId.slice(7)];
+    const content = typeof block?.content === "string" ? block.content.trim() : "";
+    if (content.length > 0 && content.length <= 60) return content;
+    const t = block?.type;
+    if (t === "heading") return "Vlastní nadpis";
+    if (t === "separator") return "Oddělovač";
+    if (t === "spacer") return "Prázdný řádek";
+    if (t === "signature") return "Řádek na podpis";
+    return "Vlastní text";
+  }
+  return (SAMPLE_DATA[sectionId] as { label?: string } | undefined)?.label ?? sectionId;
 }
 
 function SectionPaletteItem({
   sectionKey,
   inDocument,
-  expanded,
-  onToggleExpand,
   docConfig,
-  updateDocConfig,
 }: {
   sectionKey: string;
   inDocument: boolean;
-  expanded?: boolean;
-  onToggleExpand?: () => void;
   docConfig?: Record<string, unknown>;
-  updateDocConfig?: (path: string[], value: unknown) => void;
 }) {
-  const label = SAMPLE_DATA[sectionKey]?.label ?? sectionKey;
+  const label = sectionKey.startsWith("custom-") && docConfig
+    ? getSectionDragLabel(sectionKey, docConfig)
+    : (SAMPLE_DATA[sectionKey]?.label ?? sectionKey);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `palette-${sectionKey}`, data: { sectionKey } });
-  const fieldConfig = SECTION_FIELDS_BY_KEY[sectionKey];
-  const hasFieldOptions = !!fieldConfig;
-  const sectionFieldsRaw = (docConfig?.sectionFields as Record<string, Record<string, boolean>> | undefined)?.[sectionKey];
-  const sectionFields = sectionFieldsRaw ?? fieldConfig?.defaultFields ?? {};
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
-        style={{
-          padding: "8px 12px",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          background: inDocument ? "var(--accent-soft)" : "var(--panel)",
-          color: "var(--text)",
-          fontSize: 12,
-          fontWeight: 500,
-          cursor: "grab",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          opacity: isDragging ? 0.6 : 1,
-        }}
-      >
-        <span style={{ opacity: 0.6 }}>⋮⋮</span>
-        <span style={{ flex: 1 }}>{label}</span>
-        {hasFieldOptions && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
-            title="Vybrat zobrazené údaje"
-            style={{ padding: 2, border: "none", background: "none", cursor: "pointer", color: "var(--muted)", display: "flex" }}
-            aria-expanded={expanded}
-          >
-            <span style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
-          </button>
-        )}
-        {inDocument && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>✓</span>}
-      </div>
-      {hasFieldOptions && expanded && updateDocConfig && fieldConfig && (
-        <div style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", marginLeft: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>Zobrazit v sekci:</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {fieldConfig.fields.map(({ key, label: flabel }) => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={(sectionFields[key] ?? true) as boolean}
-                  onChange={(e) => {
-                    const next = { ...sectionFields, [key]: e.target.checked };
-                    updateDocConfig(["sectionFields", sectionKey], next);
-                  }}
-                />
-                {flabel}
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 10,
+        border: "1px solid var(--border)",
+        background: inDocument ? "var(--accent-soft)" : "var(--panel)",
+        color: "var(--text)",
+        fontSize: 12,
+        fontWeight: 500,
+        cursor: "grab",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        opacity: isDragging ? 0.6 : 1,
+      }}
+    >
+      <span style={{ opacity: 0.6 }}>⋮⋮</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {inDocument && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>✓</span>}
     </div>
   );
 }
@@ -452,26 +439,115 @@ function PaletteCustomBlockItem({ id, label, hasAny }: { id: string; label: stri
   );
 }
 
-// Drop zone between sections (for palette drag)
-function SectionDropZone({ index }: { index: number }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `drop-${index}` });
+/** Editor vlastního textu s možností tučného (bold) a vložení proměnných. */
+function CustomTextEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const lastValueRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editorRef.current || lastValueRef.current === value) return;
+    lastValueRef.current = value;
+    editorRef.current.innerHTML = (value || "").replace(/\n/g, "<br/>");
+  }, [value]);
+  const saveFromEditor = useCallback(() => {
+    if (!editorRef.current) return;
+    const raw = editorRef.current.innerHTML;
+    const safe = sanitizeRichText(raw);
+    lastValueRef.current = safe;
+    onChange(safe);
+  }, [onChange]);
+  const applyBold = useCallback(() => {
+    editorRef.current?.focus();
+    document.execCommand("bold", false);
+    saveFromEditor();
+  }, [saveFromEditor]);
+  const insertVariable = useCallback(
+    (key: string) => {
+      editorRef.current?.focus();
+      const text = (editorRef.current?.innerHTML && !editorRef.current.innerText?.endsWith(" ") ? " " : "") + "{{" + key + "}}";
+      document.execCommand("insertText", false, text);
+      saveFromEditor();
+    },
+    [saveFromEditor]
+  );
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        flexBasis: "100%",
-        width: "100%",
-        minHeight: isOver ? 48 : 24,
-        borderRadius: 10,
-        background: isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.02)",
-        border: isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
-        transition: "background 0.2s ease, border 0.2s ease, min-height 0.2s ease",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {isOver && <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>Pustit zde</span>}
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>Text</label>
+        <button
+          type="button"
+          onClick={applyBold}
+          title="Tučné (vyberte text a klikněte)"
+          style={{ padding: "4px 8px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer" }}
+        >
+          B
+        </button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={saveFromEditor}
+        data-placeholder="Sem napište text…"
+        style={{ width: "100%", minHeight: 60, padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, boxSizing: "border-box", outline: "none" }}
+      />
+      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>Vložit proměnnou:</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+        {Object.entries(CUSTOM_TEXT_VARIABLES).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => insertVariable(key)}
+            style={{ padding: "3px 6px", fontSize: 10, borderRadius: 4, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer" }}
+            title={`{{${key}}}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// Drop zone mezi sekcemi – levá a pravá polovina (pro poloviční sekce).
+function SectionDropZone({ index }: { index: number }) {
+  const left = useDroppable({ id: `drop-${index}-left` });
+  const right = useDroppable({ id: `drop-${index}-right` });
+  const baseStyle: React.CSSProperties = {
+    minHeight: 28,
+    flexShrink: 0,
+    borderRadius: 6,
+    transition: "background 0.2s ease, border 0.2s ease, min-height 0.2s ease",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+  };
+  return (
+    <div style={{ width: "100%", display: "flex", gap: 4 }}>
+      <div
+        ref={left.setNodeRef}
+        style={{
+          ...baseStyle,
+          flex: 1,
+          minHeight: left.isOver ? 44 : 28,
+          background: left.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
+          border: left.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
+        }}
+      >
+        {left.isOver && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>Pustit vlevo</span>}
+      </div>
+      <div
+        ref={right.setNodeRef}
+        style={{
+          ...baseStyle,
+          flex: 1,
+          minHeight: right.isOver ? 44 : 28,
+          background: right.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
+          border: right.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
+        }}
+      >
+        {right.isOver && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>Pustit vpravo</span>}
+      </div>
     </div>
   );
 }
@@ -515,30 +591,66 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       includeDeviceInfo: true,
       includeRepairs: true,
       includeDiagnostic: false,
-      includePhotos: false,
+      includePhotos: true,
       includeDates: true,
       includeStamp: false,
       includeSignatureOnHandover: true,
       includeSignatureOnPickup: true,
       design: "classic",
       legalText: "Tento dokument slouží jako potvrzení o přijetí zařízení do servisu.",
-      sectionOrder: DEFAULT_SECTION_ORDER.ticketList,
-      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionOrder: [
+        "service",
+        "customer",
+        "device",
+        "diag",
+        "dates",
+        "custom-5e22a812-48c6-4bc1-9d71-1b01a5a606c4",
+        "custom-93a5c7f0-1d7a-490b-8155-506eb2fe7894",
+        "custom-a1310d2a-f97e-4957-88d2-98d7be612370",
+      ],
+      sectionWidths: {
+        service: "half",
+        customer: "half",
+        device: "full",
+        repairs: "full",
+        warranty: "full",
+        diag: "full",
+        photos: "half",
+        dates: "half",
+      },
       sectionStyles: {},
       sectionFields: {
-        service: { ...DEFAULT_SERVICE_FIELDS },
-        customer: { ...DEFAULT_CUSTOMER_FIELDS },
-        device: { ...DEFAULT_DEVICE_FIELDS },
+        service: { name: true, ico: true, dic: true, address: true, phone: true, email: true, website: true },
+        customer: { name: true, phone: true, email: true, address: true },
+        device: { name: true, serial: true, imei: true, state: true, problem: true },
       },
-      customBlocks: {},
+      customBlocks: {
+        "5e22a812-48c6-4bc1-9d71-1b01a5a606c4": { type: "signature", content: "Podpis zákazníka při převzetí servisem" },
+        "93a5c7f0-1d7a-490b-8155-506eb2fe7894": { type: "signature", content: "Podpis zákazníka při vyzvednutí " },
+        "a1310d2a-f97e-4957-88d2-98d7be612370": { type: "signature", content: "Podpis / razítko servisu" },
+      },
       signatureLabelHandover: "Podpis při předání zákazníkem",
       signatureLabelPickup: "Podpis při vyzvednutí zákazníkem",
       signatureLabelService: "Podpis / razítko servisu",
       signaturePositionHandover: "left",
       signaturePositionPickup: "center",
       signaturePositionService: "right",
+      sectionSide: { service: "right", photos: "right", dates: "left" },
+      signaturePositions: {
+        "5e22a812-48c6-4bc1-9d71-1b01a5a606c4": { x: 46.56, y: 930.6 },
+        "93a5c7f0-1d7a-490b-8155-506eb2fe7894": { x: 289.41, y: 929.26 },
+        "a1310d2a-f97e-4957-88d2-98d7be612370": { x: 530.55, y: 927.92 },
+      },
+      headerTitleFontSize: 18,
+      headerTicketCodeFontSize: 20,
     },
     diagnosticProtocol: {
+      design: "classic",
+      legalText: "Diagnostický protokol obsahuje výsledky diagnostiky.",
+      sectionSide: { device: "left" },
+      customBlocks: {
+        "adca988a-f92e-497d-8910-3d904936ed61": { type: "signature", content: "Razítko / podpis servisu" },
+      },
       includeServiceInfo: true,
       includeCustomerInfo: true,
       includeDeviceInfo: true,
@@ -547,26 +659,32 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       includeDates: true,
       includeStamp: false,
       includeCustomerSignature: false,
-      design: "classic",
-      legalText: "Diagnostický protokol obsahuje výsledky diagnostiky.",
       sectionOrder: DEFAULT_SECTION_ORDER.diagnosticProtocol,
-      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionWidths: { service: "half", customer: "full", device: "half", repairs: "full", diag: "full", photos: "half", dates: "half", warranty: "full" },
       sectionStyles: {},
       sectionFields: {
-        service: { ...DEFAULT_SERVICE_FIELDS },
-        customer: { ...DEFAULT_CUSTOMER_FIELDS },
-        device: { ...DEFAULT_DEVICE_FIELDS },
+        device: { name: true, serial: true, imei: true, state: true, problem: true },
+        service: { name: true, ico: true, dic: true, address: true, phone: true, email: true, website: true },
+        customer: { name: true, phone: true, email: true, address: true },
       },
       repairsTableColumns: ["name", "price"],
-      customBlocks: {},
+      signaturePositions: {
+        "adca988a-f92e-497d-8910-3d904936ed61": { x: 570.16, y: 954.71 },
+      },
     },
     warrantyCertificate: {
+      design: "classic",
+      legalText: "Záruční list potvrzuje provedené opravy.",
+      sectionSide: { device: "left", customer: "left" },
+      customBlocks: {
+        "5bbd72cc-33a7-405b-a0a3-e726af943779": { type: "signature", content: "Razítko / podpis servisu" },
+      },
       includeServiceInfo: true,
       includeCustomerInfo: true,
       includeDeviceInfo: true,
       includeRepairs: true,
       includeWarranty: true,
-      warrantyUnifiedDuration: 24,
+      warrantyUnifiedDuration: 12,
       warrantyUnifiedUnit: "months",
       warrantyShowEndDate: true,
       warrantyExtraText: "",
@@ -574,53 +692,75 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       includeDates: true,
       includeStamp: false,
       includeCustomerSignature: true,
-      design: "classic",
-      legalText: "Záruční list potvrzuje provedené opravy.",
       sectionOrder: DEFAULT_SECTION_ORDER.warrantyCertificate,
-      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionWidths: { service: "half", customer: "half", device: "half", repairs: "full", diag: "full", photos: "half", dates: "half", warranty: "half" },
       sectionStyles: {},
       sectionFields: {
-        service: { ...DEFAULT_SERVICE_FIELDS },
-        customer: { ...DEFAULT_CUSTOMER_FIELDS },
-        device: { ...DEFAULT_DEVICE_FIELDS },
+        device: { name: true, serial: true, imei: true, state: true, problem: true },
+        service: { name: true, ico: true, dic: true, address: true, phone: true, email: true, website: true },
+        customer: { name: true, phone: true, email: true, address: true },
       },
-      sectionVisibility: {} as Record<string, string>,
+      sectionVisibility: {},
       repairsTableColumns: ["name", "price"],
-      customBlocks: {},
+      signaturePositions: {
+        "5bbd72cc-33a7-405b-a0a3-e726af943779": { x: 574.9, y: 945.44 },
+      },
     },
     prijemkaReklamace: {
-      includeServiceInfo: true,
-      includeCustomerInfo: true,
-      includeDeviceInfo: true,
-      includeDates: true,
       design: "classic",
       legalText: "Příjemka reklamace potvrzuje převzetí reklamovaného zboží.",
-      sectionOrder: DEFAULT_SECTION_ORDER.prijemkaReklamace,
-      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
-      sectionStyles: {},
-      sectionFields: {
-        service: { ...DEFAULT_SERVICE_FIELDS },
-        customer: { ...DEFAULT_CUSTOMER_FIELDS },
-        device: { ...DEFAULT_DEVICE_FIELDS },
-      },
       customBlocks: {},
-    },
-    vydejkaReklamace: {
+      includeDates: true,
+      sectionSide: { service: "right" },
+      sectionOrder: DEFAULT_SECTION_ORDER.prijemkaReklamace,
+      sectionFields: {
+        device: { imei: true, name: true, state: true, serial: true, problem: true },
+        service: { dic: true, ico: true, name: true, email: true, phone: true, address: true, website: true },
+        customer: { name: true, email: true, phone: true, address: true },
+      },
+      sectionStyles: {},
+      sectionWidths: {
+        diag: "full",
+        dates: "half",
+        device: "full",
+        photos: "half",
+        repairs: "full",
+        service: "half",
+        customer: "half",
+        warranty: "full",
+      },
+      includeDeviceInfo: true,
       includeServiceInfo: true,
       includeCustomerInfo: true,
-      includeDeviceInfo: true,
-      includeDates: true,
+    },
+    vydejkaReklamace: {
       design: "classic",
       legalText: "Výdejka reklamace potvrzuje vyzvednutí po vyřízení reklamace.",
-      sectionOrder: DEFAULT_SECTION_ORDER.vydejkaReklamace,
-      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
-      sectionStyles: {},
-      sectionFields: {
-        service: { ...DEFAULT_SERVICE_FIELDS },
-        customer: { ...DEFAULT_CUSTOMER_FIELDS },
-        device: { ...DEFAULT_DEVICE_FIELDS },
-      },
       customBlocks: {},
+      includeDates: true,
+      sectionOrder: DEFAULT_SECTION_ORDER.vydejkaReklamace,
+      sectionFields: {
+        device: { imei: true, name: true, state: true, serial: true, problem: true },
+        service: { dic: true, ico: true, name: true, email: true, phone: true, address: true, website: true },
+        customer: { name: true, email: true, phone: true, address: true },
+      },
+      sectionStyles: {},
+      sectionWidths: {
+        diag: "full",
+        dates: "half",
+        device: "half",
+        photos: "half",
+        repairs: "full",
+        service: "full",
+        customer: "full",
+        warranty: "full",
+      },
+      includeDeviceInfo: true,
+      includeServiceInfo: true,
+      includeCustomerInfo: true,
+      includeRepairs: true,
+      sectionSide: { device: "left", dates: "right" },
+      repairsTableColumns: ["name", "price"],
     },
   };
 }
@@ -891,6 +1031,8 @@ function SortableSection({
   docType,
   docConfig,
   previewMode = "sample",
+  onEditClick,
+  selectedSectionId,
 }: {
   id: string;
   sectionKey: string;
@@ -902,6 +1044,8 @@ function SortableSection({
   docType?: DocTypeKey;
   docConfig?: Record<string, unknown>;
   previewMode?: "sample" | "template";
+  onEditClick?: (id: string) => void;
+  selectedSectionId?: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const sample = SAMPLE_DATA[sectionKey];
@@ -915,46 +1059,80 @@ function SortableSection({
   const CONTENT_WIDTH = 680;
   const GAP = 12;
   const halfWidth = (CONTENT_WIDTH - GAP) / 2;
-  const widthPx = isHalf ? halfWidth : CONTENT_WIDTH;
+  const isSelected = selectedSectionId === id;
   const style: React.CSSProperties = {
+    width: "100%",
+    flexShrink: 0,
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? "none" : "transform 0.2s ease",
+    opacity: isDragging ? 0.4 : 1,
+    cursor: "grab",
+    touchAction: "none",
+    ...(isDragging && { pointerEvents: "none", zIndex: 0 }),
+  };
+  const cardStyle: React.CSSProperties = {
     padding: sectionPadding,
     background: styles.sectionBg as string,
     borderRadius: sectionRadius,
     border: sectionBorder,
     ...(sectionBorderLeft && { borderLeft: sectionBorderLeft }),
-    transform: CSS.Transform.toString(transform),
-    transition: "transform 0.15s ease-out",
-    opacity: isDragging ? 0.85 : 1,
-    cursor: isDragging ? "grabbing" : "grab",
-    touchAction: "none",
-    flex: isHalf ? `0 0 ${halfWidth}px` : `1 1 ${CONTENT_WIDTH}px`,
-    width: `${widthPx}px`,
-    minWidth: `${widthPx}px`,
-    maxWidth: `${widthPx}px`,
+    width: isHalf ? halfWidth : CONTENT_WIDTH,
+    maxWidth: "100%",
     boxSizing: "border-box",
-    flexShrink: 0,
-    ...(isDragging && { willChange: "transform", position: "relative", zIndex: 1000 }),
+    position: "relative",
+    ...(isSelected && { outline: "2px solid var(--accent)", outlineOffset: 2 }),
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} docType={docType} docConfig={docConfig} previewMode={previewMode} />
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={(e) => { e.stopPropagation(); onEditClick?.(id); }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEditClick?.(id); } }}
+      aria-label={`Sekce ${(SAMPLE_DATA[sectionKey] as { label?: string })?.label ?? sectionKey}, kliknutím upravit`}
+    >
+      <div style={cardStyle}>
+        <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} docType={docType} docConfig={docConfig} previewMode={previewMode} />
+      </div>
     </div>
   );
 }
 
-type CustomBlockData = { type: "text" | "heading" | "separator" | "spacer"; content?: string };
+// Placeholder in section list so signature blocks keep their order in DnD; real signature is rendered in overlay
+function SortableSignaturePlaceholder({ id }: { id: string }) {
+  const { setNodeRef } = useSortable({ id });
+  return <div ref={setNodeRef} style={{ height: 0, minHeight: 0, overflow: "hidden", margin: 0, padding: 0, border: "none", flex: "0 0 0" }} aria-hidden />;
+}
+
+type CustomBlockData = {
+  type: "text" | "heading" | "separator" | "spacer" | "signature";
+  content?: string;
+  /** jen u type "text": zobrazit nadpis (výchozí true) */
+  showHeading?: boolean;
+  /** jen u type "text": text nadpisu (výchozí "Vlastní text") */
+  headingText?: string;
+  /** jen u type "text": čára pod nadpisem (výchozí true) */
+  showHeadingLine?: boolean;
+};
 
 function SortableCustomBlock({
   id,
   styles,
   spec,
   docConfig,
+  onEditClick,
+  selectedSectionId,
 }: {
   id: string;
   styles: Record<string, unknown>;
   spec: LayoutSpec;
   docConfig?: Record<string, unknown>;
+  onEditClick?: (id: string) => void;
+  selectedSectionId?: string | null;
 }) {
   const blockId = id.startsWith("custom-") ? id.slice(7) : id;
   const blocks = (docConfig?.customBlocks as Record<string, CustomBlockData>) || {};
@@ -962,61 +1140,106 @@ function SortableCustomBlock({
   const blockType = block?.type || "text";
   const content = (block?.content as string)?.trim() || "";
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
+  const CONTENT_WIDTH = 680;
   const sectionRadius = (spec.sectionStyle === "underlineTitles" ? 0 : ((styles.sectionRadius as number) ?? 6)) as number;
   const sectionPadding = spec.density === "compact" ? 8 : 12;
   const sectionBorder = spec.sectionStyle === "underlineTitles" ? "none" : (styles.sectionBorder as string);
   const titleFontSize = spec.sectionHeaderStyle === "capsule" ? 14 : 13;
   const titleFontWeight = spec.sectionHeaderStyle === "underline" ? 500 : 700;
-  const style: React.CSSProperties = {
-    padding: blockType === "separator" ? "4px 0" : blockType === "spacer" ? 0 : sectionPadding,
-    background: blockType === "separator" || blockType === "spacer" ? "transparent" : (styles.sectionBg as string),
-    borderRadius: sectionRadius,
-    border: blockType === "separator" || blockType === "spacer" ? "none" : sectionBorder,
-    transform: CSS.Transform.toString(transform),
-    transition: "transform 0.15s ease-out",
-    opacity: isDragging ? 0.85 : 1,
-    cursor: isDragging ? "grabbing" : "grab",
-    touchAction: "none",
-    flex: "1 1 680px",
-    width: "680px",
-    minWidth: "680px",
-    maxWidth: "680px",
-    boxSizing: "border-box",
+  const isSelected = selectedSectionId === id;
+  const outerStyle: React.CSSProperties = {
+    width: "100%",
     flexShrink: 0,
-    ...(blockType === "spacer" && { minHeight: Math.max(8, parseInt(content, 10) || 24) }),
-    ...(isDragging && { willChange: "transform", position: "relative", zIndex: 1000 }),
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? "none" : "transform 0.2s ease",
+    opacity: isDragging ? 0.4 : 1,
+    cursor: "grab",
+    touchAction: "none",
+    ...(isDragging && { pointerEvents: "none", zIndex: 0 }),
   };
+  const cardStyle: React.CSSProperties =
+    blockType === "separator"
+      ? { padding: "4px 0", width: CONTENT_WIDTH, maxWidth: "100%", boxSizing: "border-box" }
+      : blockType === "spacer"
+        ? { width: CONTENT_WIDTH, maxWidth: "100%", boxSizing: "border-box", minHeight: Math.max(8, parseInt(content, 10) || 24) }
+        : {
+            padding: sectionPadding,
+            background: styles.sectionBg as string,
+            borderRadius: sectionRadius,
+            border: sectionBorder,
+            width: CONTENT_WIDTH,
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            position: "relative",
+            ...(isSelected && { outline: "2px solid var(--accent)", outlineOffset: 2 }),
+          };
+  const sectionClick = (e: React.MouseEvent) => { e.stopPropagation(); onEditClick?.(id); };
+  const sectionKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEditClick?.(id); } };
   if (blockType === "separator") {
     return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        <hr style={{ margin: 0, border: "none", borderTop: `1px solid ${styles.sectionBorder as string}` }} />
+      <div ref={setNodeRef} style={outerStyle} {...attributes} {...listeners} onClick={sectionClick} role="button" tabIndex={0} onKeyDown={sectionKeyDown} aria-label="Oddělovač, kliknutím upravit">
+        <div style={cardStyle}>
+          <hr style={{ margin: 0, border: "none", borderTop: `1px solid ${styles.sectionBorder as string}` }} />
+        </div>
       </div>
     );
   }
   if (blockType === "spacer") {
-    return <div ref={setNodeRef} style={style} {...attributes} {...listeners} />;
+    return (
+      <div ref={setNodeRef} style={outerStyle} {...attributes} {...listeners} onClick={sectionClick} role="button" tabIndex={0} onKeyDown={sectionKeyDown} aria-label="Prázdný řádek, kliknutím upravit">
+        <div style={cardStyle} />
+      </div>
+    );
   }
   if (blockType === "heading") {
     return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        <div style={{ fontSize: titleFontSize, fontWeight: titleFontWeight, marginBottom: 4, color: styles.secondaryColor as string, display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ opacity: 0.6 }}>⋮⋮</span>
-          Vlastní nadpis
-        </div>
-        <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3, color: (styles.contentColor as string) ?? "#171717" }}>
-          {content || <span style={{ color: "var(--muted)", fontWeight: 400 }}>Nadpis</span>}
+      <div ref={setNodeRef} style={outerStyle} {...attributes} {...listeners} onClick={sectionClick} role="button" tabIndex={0} onKeyDown={sectionKeyDown} aria-label="Vlastní nadpis, kliknutím upravit">
+        <div style={cardStyle}>
+          <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3, color: (styles.contentColor as string) ?? "#171717" }}>
+            {content || <span style={{ color: "var(--muted)", fontWeight: 400 }}>Nadpis</span>}
+          </div>
         </div>
       </div>
     );
   }
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <div style={{ fontSize: titleFontSize, fontWeight: titleFontWeight, marginBottom: 0, paddingBottom: 6, borderBottom: `1px solid ${styles.secondaryColor as string}`, color: styles.secondaryColor as string, display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ opacity: 0.6 }}>⋮⋮</span>
-        Vlastní text
+  if (blockType === "signature") {
+    const label = content || "podpis";
+    return (
+      <div ref={setNodeRef} style={outerStyle} {...attributes} {...listeners} onClick={sectionClick} role="button" tabIndex={0} onKeyDown={sectionKeyDown} aria-label="Řádek na podpis, kliknutím upravit">
+        <div style={cardStyle}>
+          <div style={{ width: "100%", borderBottom: `1px solid ${styles.contentColor ?? "#171717"}`, marginBottom: 4 }} />
+          <div style={{ fontSize: 10, color: (styles.contentColor as string) ?? "#171717" }}>{label}</div>
+        </div>
       </div>
-      <div style={{ fontSize: 10, lineHeight: 1.5, color: (styles.contentColor as string) ?? "#171717", whiteSpace: "pre-wrap" }}>
-        {content || <span style={{ color: "var(--muted)" }}>{"Sem napište text… (můžete použít {{ticket_code}}, {{customer_name}}…)"}</span>}
+    );
+  }
+  const showHeading = (block?.showHeading as boolean) !== false;
+  const headingLabel = (block?.headingText as string)?.trim() || "Vlastní text";
+  const showLine = (block?.showHeadingLine as boolean) !== false;
+  return (
+    <div ref={setNodeRef} style={outerStyle} {...attributes} {...listeners} onClick={sectionClick} role="button" tabIndex={0} onKeyDown={sectionKeyDown} aria-label="Vlastní text, kliknutím upravit">
+      <div style={cardStyle}>
+        {showHeading && (
+          <div
+            style={{
+              fontSize: titleFontSize,
+              fontWeight: titleFontWeight,
+              marginBottom: 0,
+              paddingBottom: 6,
+              ...(showLine && { borderBottom: `1px solid ${styles.secondaryColor as string}` }),
+              color: styles.secondaryColor as string,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span style={{ opacity: 0.6 }}>⋮⋮</span>
+            {headingLabel}
+          </div>
+        )}
+        <div style={{ fontSize: 10, lineHeight: 1.5, color: (styles.contentColor as string) ?? "#171717", whiteSpace: "pre-wrap" }}>
+          {content ? <span dangerouslySetInnerHTML={{ __html: sanitizeRichText(content).replace(/\n/g, "<br/>") }} /> : <span style={{ color: "var(--muted)" }}>{"Sem napište text… (můžete použít {{ticket_code}}, {{customer_name}}…)"}</span>}
+        </div>
       </div>
     </div>
   );
@@ -1031,10 +1254,13 @@ function DocumentPreview({
   onQrPositionChange,
   onLogoPositionChange,
   onStampPositionChange,
+  onSignaturePositionChange,
   externalDnd,
   sectionOrder: sectionOrderProp,
   orderedSections: orderedSectionsProp,
   previewMode = "sample",
+  selectedSectionId,
+  onSectionSelect,
 }: {
   docType: DocTypeKey;
   config: Record<string, unknown>;
@@ -1043,11 +1269,14 @@ function DocumentPreview({
   onQrPositionChange?: (pos: { x: number; y: number }) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onStampPositionChange?: (pos: { x: number; y: number } | null) => void;
+  onSignaturePositionChange?: (blockId: string, pos: { x: number; y: number } | null) => void;
   /** When true, parent provides DndContext; we render drop zones and no internal DndContext */
   externalDnd?: boolean;
   sectionOrder?: string[];
   orderedSections?: string[];
   previewMode?: "sample" | "template";
+  selectedSectionId?: string | null;
+  onSectionSelect?: (id: string | null) => void;
 }) {
   const docConfig = config[DOC_TYPE_TO_UI[docType]] as Record<string, unknown> | undefined;
   const design = (docConfig?.design as DocumentDesign) || "classic";
@@ -1108,6 +1337,13 @@ function DocumentPreview({
     });
   }, [orderedSectionsProp, sectionOrder, docConfig, sectionKeyToInclude, docType]);
 
+  const customBlocks = (docConfig?.customBlocks as Record<string, { type?: string; content?: string }>) || {};
+  const signatureBlockIds = useMemo(
+    () => orderedSections.filter((key) => key.startsWith("custom-") && customBlocks[key.slice(7)]?.type === "signature").map((k) => k.slice(7)),
+    [orderedSections, customBlocks]
+  );
+  const signaturePositions = (docConfig?.signaturePositions as Record<string, { x: number; y: number }>) || {};
+
   const sectionWidths = useMemo(() => {
     const sw = docConfig?.sectionWidths as Record<string, SectionWidth> | undefined;
     const merged = { ...DEFAULT_SECTION_WIDTHS };
@@ -1119,8 +1355,40 @@ function DocumentPreview({
     return merged;
   }, [docConfig?.sectionWidths]);
 
+  const sectionSide = (docConfig?.sectionSide as Record<string, "left" | "right">) || {};
+
+  const sectionRows = useMemo(() => {
+    const rows: string[][] = [];
+    let i = 0;
+    while (i < orderedSections.length) {
+      const key = orderedSections[i];
+      const isHalf = key.startsWith("custom-") ? false : (sectionWidths[key] === "half");
+      if (!isHalf) {
+        rows.push([key]);
+        i += 1;
+      } else {
+        const side = sectionSide[key] ?? "left";
+        if (i + 1 < orderedSections.length) {
+          const nextKey = orderedSections[i + 1];
+          const nextHalf = nextKey.startsWith("custom-") ? false : (sectionWidths[nextKey] === "half");
+          if (nextHalf) {
+            rows.push(side === "left" ? [key, nextKey] : [nextKey, key]);
+            i += 2;
+          } else {
+            rows.push([key]);
+            i += 1;
+          }
+        } else {
+          rows.push([key]);
+          i += 1;
+        }
+      }
+    }
+    return rows;
+  }, [orderedSections, sectionWidths, sectionSide]);
+
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -1137,31 +1405,64 @@ function DocumentPreview({
     [orderedSections, onSectionOrderChange]
   );
 
+  const renderSectionItem = (key: string) =>
+    key.startsWith("custom-") && customBlocks[key.slice(7)]?.type === "signature" ? (
+      <SortableSignaturePlaceholder key={key} id={key} />
+    ) : key.startsWith("custom-") ? (
+      <SortableCustomBlock key={key} id={key} styles={styles} spec={spec} docConfig={docConfig} onEditClick={onSectionSelect} selectedSectionId={selectedSectionId} />
+    ) : (
+      <SortableSection
+        key={key}
+        id={key}
+        sectionKey={key}
+        styles={styles}
+        spec={spec}
+        companyData={companyData}
+        sectionWidth={sectionWidths[key] ?? "full"}
+        sectionStyleOverride={getEffectiveSectionStyle(key, spec, docConfig)}
+        docType={docType}
+        docConfig={docConfig}
+        previewMode={previewMode}
+        onEditClick={onSectionSelect}
+        selectedSectionId={selectedSectionId}
+      />
+    );
+
   const sectionsContent = (
-    <SortableContext items={orderedSections} strategy={rectSortingStrategy}>
-      <div style={{ flex: 1, minHeight: 0, marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 12, alignContent: "flex-start", color: (styles as { contentColor?: string }).contentColor ?? "#171717" }}>
+    <SortableContext items={orderedSections} strategy={verticalListSortingStrategy}>
+      <div style={{ flex: 1, minHeight: 0, marginBottom: 12, display: "flex", flexDirection: "column", gap: 10, width: "100%", color: (styles as { contentColor?: string }).contentColor ?? "#171717" }}>
         <SectionDropZone index={0} />
-        {orderedSections.map((key, i) => (
-          <React.Fragment key={key}>
-            {key.startsWith("custom-") ? (
-              <SortableCustomBlock id={key} styles={styles} spec={spec} docConfig={docConfig} />
-            ) : (
-              <SortableSection
-                id={key}
-                sectionKey={key}
-                styles={styles}
-                spec={spec}
-                companyData={companyData}
-                sectionWidth={sectionWidths[key] ?? "full"}
-                sectionStyleOverride={getEffectiveSectionStyle(key, spec, docConfig)}
-                docType={docType}
-                docConfig={docConfig}
-                previewMode={previewMode}
-              />
-            )}
-            <SectionDropZone index={i + 1} />
-          </React.Fragment>
-        ))}
+        {sectionRows.map((row, rowIdx) => {
+          const dropIndexAfter = sectionRows.slice(0, rowIdx + 1).reduce((s, r) => s + r.length, 0);
+          return (
+            <React.Fragment key={rowIdx}>
+              <div style={{ display: "flex", gap: 10, width: "100%", alignItems: "flex-start" }}>
+                {row.length === 1 ? (
+                  (() => {
+                    const key = row[0];
+                    const isHalf = !key.startsWith("custom-") && sectionWidths[key] === "half";
+                    const side = sectionSide[key] ?? "left";
+                    if (isHalf) {
+                      return (
+                        <div key={key} style={{ flex: 1, display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start" }}>
+                          {renderSectionItem(key)}
+                        </div>
+                      );
+                    }
+                    return <React.Fragment key={key}>{renderSectionItem(key)}</React.Fragment>;
+                  })()
+                ) : (
+                  row.map((key) => (
+                    <div key={key} style={{ flex: 1, minWidth: 0 }}>
+                      {renderSectionItem(key)}
+                    </div>
+                  ))
+                )}
+              </div>
+              <SectionDropZone index={dropIndexAfter} />
+            </React.Fragment>
+          );
+        })}
       </div>
     </SortableContext>
   );
@@ -1205,6 +1506,8 @@ function DocumentPreview({
   const LOGO_H = 50 * logoSize;
   const STAMP_W = 70;
   const STAMP_H = 35;
+  const SIGNATURE_LINE_W = 100;
+  const SIGNATURE_LINE_H = 28;
   const [isQrDragging, setIsQrDragging] = useState(false);
   const [qrDragPosition, setQrDragPosition] = useState<{ x: number; y: number } | null>(null);
   const qrDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
@@ -1217,6 +1520,10 @@ function DocumentPreview({
   const [stampDragPosition, setStampDragPosition] = useState<{ x: number; y: number } | null>(null);
   const stampDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
   const stampDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const [signatureDraggingBlockId, setSignatureDraggingBlockId] = useState<string | null>(null);
+  const [signatureDragState, setSignatureDragState] = useState<{ blockId: string; x: number; y: number } | null>(null);
+  const signatureDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number; blockId: string } | null>(null);
+  const signatureDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!isQrDragging) return;
@@ -1320,6 +1627,42 @@ function DocumentPreview({
     };
   }, [isStampDragging, onStampPositionChange, STAMP_W, STAMP_H]);
 
+  useEffect(() => {
+    if (!signatureDraggingBlockId) return;
+    const start = signatureDragStartRef.current;
+    if (!start || start.blockId !== signatureDraggingBlockId) return;
+    const onMove = (e: MouseEvent) => {
+      if (!documentRef.current) return;
+      const rect = documentRef.current.getBoundingClientRect();
+      const scaleX = 794 / rect.width;
+      const scaleY = 1123 / rect.height;
+      const dx = (e.clientX - start.clientX) * scaleX;
+      const dy = (e.clientY - start.clientY) * scaleY;
+      const newX = Math.max(0, Math.min(794 - SIGNATURE_LINE_W, start.x + dx));
+      const newY = Math.max(0, Math.min(1123 - SIGNATURE_LINE_H, start.y + dy));
+      const pos = { x: newX, y: newY };
+      signatureDragCurrentRef.current = pos;
+      setSignatureDragState((prev) => (prev ? { ...prev, x: newX, y: newY } : null));
+    };
+    const onUp = () => {
+      const lastPos = signatureDragCurrentRef.current;
+      const startPos = signatureDragStartRef.current;
+      const blockId = startPos?.blockId ?? signatureDraggingBlockId;
+      const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : signaturePositions[blockId] ?? { x: 50, y: 500 });
+      if (onSignaturePositionChange) onSignaturePositionChange(blockId, final);
+      signatureDragStartRef.current = null;
+      signatureDragCurrentRef.current = null;
+      setSignatureDraggingBlockId(null);
+      setSignatureDragState(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [signatureDraggingBlockId, onSignaturePositionChange, signaturePositions, SIGNATURE_LINE_W, SIGNATURE_LINE_H]);
+
   const TOL = 2;
   useEffect(() => {
     if (!qrDragPosition) return;
@@ -1353,7 +1696,7 @@ function DocumentPreview({
       style={{
         width: "100%",
         aspectRatio: "210 / 297",
-        maxHeight: "calc(100vh - 200px)",
+        maxHeight: "calc(100vh - 120px)",
         position: "relative",
         overflow: "hidden",
         background: "#f3f4f6",
@@ -1374,6 +1717,8 @@ function DocumentPreview({
           transformOrigin: "center center",
           transform: `translate(-50%, -50%) scale(${scale})`,
           boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+          outline: "2px solid rgba(0,0,0,0.12)",
+          outlineOffset: -2,
           fontSize: 10,
           lineHeight: 1.4,
           color: (styles as { contentColor?: string }).contentColor ?? "#171717",
@@ -1382,6 +1727,13 @@ function DocumentPreview({
         }}
       >
         {/* Header: Logo left, Doc title + Service name centered on full page */}
+        {(() => {
+          const headerRadius = (docConfig?.headerBorderRadius as number) ?? (spec.headerLayout === "splitBox" ? 8 : 0);
+          const titleFontSize = (docConfig?.headerTitleFontSize as number) ?? 14;
+          const ticketCodeFontSize = (docConfig?.headerTicketCodeFontSize as number) ?? 18;
+          const subtitleFontSize = (docConfig?.headerSubtitleFontSize as number) ?? (spec.headerLayout === "splitBox" ? 16 : 14);
+          const subtitleWeight = spec.headerLayout === "splitBox" ? 800 : 700;
+          return (
         <div
           style={{
             position: "relative",
@@ -1391,7 +1743,7 @@ function DocumentPreview({
             borderBottom: (styles as { headerBorder?: string }).headerBorder ?? `${styles.borderWidth}px solid ${styles.borderColor}`,
             background: styles.headerBg !== "transparent" ? styles.headerBg : undefined,
             padding: styles.headerBg !== "transparent" ? "8px 12px 10px 0" : undefined,
-            borderRadius: spec.headerLayout === "splitBox" ? 8 : 0,
+            borderRadius: headerRadius,
             ...(spec.headerLayout === "splitBox" && styles.accentColor && { borderLeft: `6px solid ${styles.accentColor as string}` }),
           }}
         >
@@ -1418,17 +1770,19 @@ function DocumentPreview({
             </div>
           )}
           <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", textAlign: "center", display: "flex", flexDirection: "column", gap: 2 }}>
-            {docType === "zakazkovy_list" ? (
+            {(docType === "zakazkovy_list" || docType === "prijemka_reklamace" || docType === "vydejka_reklamace") ? (
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ color: styles.headerText, fontWeight: 700, fontSize: 14 }}>{DOC_TYPE_LABELS[docType]}</span>
-                <span style={{ color: styles.headerText, fontWeight: 800, fontSize: 18, letterSpacing: "0.05em" }}>DEMO-001</span>
+                <span style={{ color: styles.headerText, fontWeight: 700, fontSize: titleFontSize }}>{DOC_TYPE_LABELS[docType]}</span>
+                <span style={{ color: styles.headerText, fontWeight: 800, fontSize: ticketCodeFontSize, letterSpacing: "0.05em" }}>
+                  {docType === "zakazkovy_list" ? "DEMO-001" : "R-2025-001"}
+                </span>
               </div>
             ) : (
-              <div style={{ color: styles.headerText, fontWeight: 700, fontSize: 14 }}>
+              <div style={{ color: styles.headerText, fontWeight: 700, fontSize: titleFontSize }}>
                 {DOC_TYPE_LABELS[docType]}
               </div>
             )}
-            <div style={{ color: styles.headerText, fontWeight: spec.headerLayout === "splitBox" ? 800 : 700, fontSize: spec.headerLayout === "splitBox" ? 16 : 14 }}>
+            <div style={{ color: styles.headerText, fontWeight: subtitleWeight, fontSize: subtitleFontSize }}>
               {String(companyData?.name ?? "Název servisu")}
             </div>
           </div>
@@ -1507,7 +1861,43 @@ function DocumentPreview({
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}`} alt="QR" style={{ width: qrCodeSize, height: qrCodeSize, display: "block", flexShrink: 0, pointerEvents: "none" }} draggable={false} />
             </div>
           )}
+          {signatureBlockIds.map((blockId, idx) => {
+            const pos = signatureDragState?.blockId === blockId ? signatureDragState : (signaturePositions[blockId] ?? { x: 50, y: 500 + idx * 40 });
+            const label = (customBlocks[blockId]?.content as string)?.trim() || "podpis";
+            const isDragging = signatureDraggingBlockId === blockId;
+            return (
+              <div
+                key={blockId}
+                role="button"
+                tabIndex={0}
+                title="Tažením přesunete řádek na podpis"
+                onMouseDown={(e) => {
+                  if (e.button !== 0 || !onSignaturePositionChange) return;
+                  e.preventDefault();
+                  const cur = signaturePositions[blockId] ?? { x: 50, y: 500 + idx * 40 };
+                  signatureDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: cur.x, y: cur.y, blockId };
+                  setSignatureDraggingBlockId(blockId);
+                  setSignatureDragState({ blockId, x: cur.x, y: cur.y });
+                }}
+                onClick={(e) => { e.stopPropagation(); onSectionSelect?.(`custom-${blockId}`); }}
+                style={{
+                  position: "absolute",
+                  left: pos.x,
+                  top: pos.y,
+                  width: SIGNATURE_LINE_W,
+                  cursor: isDragging ? "grabbing" : "grab",
+                  userSelect: "none",
+                  zIndex: 10,
+                }}
+              >
+                <div style={{ width: "100%", borderBottom: `1px solid ${(styles.contentColor as string) ?? "#171717"}`, marginBottom: 2 }} />
+                <div style={{ fontSize: 9, color: (styles.contentColor as string) ?? "#171717" }}>{label}</div>
+              </div>
+            );
+          })}
         </div>
+          );
+        })()}
 
         {/* Sortable sections + drop zones (for palette); DndContext from parent when externalDnd */}
         {externalDnd ? sectionsContent : (
@@ -1523,91 +1913,6 @@ function DocumentPreview({
           </div>
         )}
 
-        {/* Signatures */}
-        {(docType === "zakazkovy_list"
-          ? ((docConfig?.includeSignatureOnHandover as boolean) !== false ||
-              (docConfig?.includeSignatureOnPickup as boolean) !== false ||
-              (docConfig?.includeStamp as boolean) === true)
-          : ((docConfig?.includeCustomerSignature as boolean) !== false || (!!config.stampUrl && (docConfig?.includeStamp as boolean) === true))) && (
-          <div
-            style={{
-              marginTop: "auto",
-              paddingTop: 28,
-              display: "flex",
-              justifyContent: docType === "zakazkovy_list" ? "space-between" : "space-around",
-              alignItems: "flex-end",
-              borderTop: `1px solid ${styles.borderColor}`,
-              flexShrink: 0,
-              gap: 24,
-            }}
-          >
-            {docType === "zakazkovy_list" ? (() => {
-              const lblH = String(docConfig?.signatureLabelHandover ?? "Podpis při předání zákazníkem").trim() || "Podpis při předání zákazníkem";
-              const lblP = String(docConfig?.signatureLabelPickup ?? "Podpis při vyzvednutí zákazníkem").trim() || "Podpis při vyzvednutí zákazníkem";
-              const lblS = String(docConfig?.signatureLabelService ?? "Podpis / razítko servisu").trim() || "Podpis / razítko servisu";
-              const pos = (v: unknown) => (v === "center" || v === "right" ? v : "left");
-              const posH = pos(docConfig?.signaturePositionHandover);
-              const posP = pos(docConfig?.signaturePositionPickup);
-              const posS = pos(docConfig?.signaturePositionService);
-              const contentColor = (styles as { contentColor?: string }).contentColor ?? "#171717";
-              const byPos: { left: React.ReactNode[]; center: React.ReactNode[]; right: React.ReactNode[] } = { left: [], center: [], right: [] };
-              if ((docConfig?.includeSignatureOnHandover as boolean) !== false) {
-                byPos[posH].push(<><div style={{ width: "100%", maxWidth: 140, borderBottom: "1px solid #000", marginBottom: 4 }} /><div style={{ fontSize: 9, color: contentColor }}>{lblH}</div></>);
-              }
-              if ((docConfig?.includeSignatureOnPickup as boolean) !== false) {
-                byPos[posP].push(<><div style={{ width: "100%", maxWidth: 140, borderBottom: "1px solid #000", marginBottom: 4 }} /><div style={{ fontSize: 9, color: contentColor }}>{lblP}</div></>);
-              }
-              if ((docConfig?.includeStamp as boolean) === true) {
-                byPos[posS].push(
-                  <>
-                    {!stampPosition && !isStampDragging && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        title="Tažením přesunete razítko na požadované místo"
-                        onMouseDown={(e) => {
-                          if (e.button !== 0 || !onStampPositionChange) return;
-                          e.preventDefault();
-                          stampDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: 362, y: 1050 };
-                          setStampDragPosition({ x: 362, y: 1050 });
-                          setIsStampDragging(true);
-                        }}
-                        style={{ cursor: "grab", userSelect: "none", display: "inline-block" }}
-                      >
-                        {config.stampUrl ? <img src={config.stampUrl as string} alt="Razítko" style={{ maxWidth: 70, maxHeight: 35, objectFit: "contain", pointerEvents: "none" }} draggable={false} /> : <div style={{ width: 70, height: 35, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#9ca3af" }}>Razítko</div>}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 9, color: contentColor, marginTop: 4 }}>{lblS}</div>
-                  </>
-                );
-              }
-              const Slot = ({ align, children }: { align: "left" | "center" | "right"; children: React.ReactNode }) => (
-                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start", gap: 8 }}>{children}</div>
-              );
-              return (
-                <>
-                  <Slot align="left">{byPos.left}</Slot>
-                  <Slot align="center">{byPos.center}</Slot>
-                  <Slot align="right">{byPos.right}</Slot>
-                </>
-              );
-            })() : (
-              <>
-                {(docConfig?.includeCustomerSignature as boolean) !== false && (
-                  <div>
-                    <div style={{ width: 100, borderBottom: "1px solid #000", marginBottom: 4 }} />
-                    <div style={{ fontSize: 9, color: (styles as { contentColor?: string }).contentColor ?? "#171717" }}>Podpis zákazníka</div>
-                  </div>
-                )}
-                {!!config.stampUrl && (docConfig?.includeStamp as boolean) === true && (
-                  <div>
-                    <div style={{ width: 70, height: 35, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#9ca3af" }}>Razítko</div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1842,7 +2147,7 @@ export default function App() {
   const [configSaved, setConfigSaved] = useState(false);
   const [configUpdatedAt, setConfigUpdatedAt] = useState<string | null>(null);
   const [documentsDragActiveId, setDocumentsDragActiveId] = useState<string | null>(null);
-  const [expandedPaletteSection, setExpandedPaletteSection] = useState<string | null>(null);
+  const [selectedPreviewSectionId, setSelectedPreviewSectionId] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"sample" | "template">("sample");
   const [accordionOpen, setAccordionOpen] = useState<Record<string, boolean>>({
     logo: true, design: true, qr: true, sections: true, signatures: true, warranty: true, legal: true,
@@ -2013,6 +2318,32 @@ export default function App() {
       setConfigLoading(false);
     }
   }, []);
+
+  const handleExportConfigToLog = useCallback(() => {
+    const base = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+    base.logoUrl = undefined;
+    base.stampUrl = undefined;
+    const docKeys = ["ticketList", "diagnosticProtocol", "warrantyCertificate", "prijemkaReklamace", "vydejkaReklamace"] as const;
+    const docLabels: Record<string, string> = {
+      ticketList: "Zakázkový list",
+      diagnosticProtocol: "Diagnostický protokol",
+      warrantyCertificate: "Záruční list",
+      prijemkaReklamace: "Příjemka reklamace",
+      vydejkaReklamace: "Výdejka reklamace",
+    };
+    console.log("%c——— JobiDocs: export konfigurace jako výchozí (base) ———", "font-weight:bold; font-size:12px;");
+    console.log("Použijte níže vypsaný objekt jako výchozí konfiguraci (např. v defaultDocumentsConfig nebo base config souboru).");
+    for (const key of docKeys) {
+      const doc = base[key] as Record<string, unknown> | undefined;
+      if (doc) {
+        console.log(`\n%c▼ ${docLabels[key] ?? key}`, "font-weight:600; color:#0ea5e9;");
+        console.log(JSON.stringify(doc, null, 2));
+      }
+    }
+    console.log("\n%c▼ Celá konfigurace (včetně globálních polí)", "font-weight:600; color:#0ea5e9;");
+    console.log(JSON.stringify(base, null, 2));
+    console.log("%c——— Konec exportu ———", "font-weight:bold; font-size:12px;");
+  }, [config]);
 
   useEffect(() => {
     fetchHealth();
@@ -2335,13 +2666,21 @@ export default function App() {
             { key: "includeStamp", label: "Razítko / podpis" },
             { key: "includeCustomerSignature", label: "Podpis zákazníka" },
           ]
-        : docType === "prijemka_reklamace" || docType === "vydejka_reklamace"
+        : docType === "prijemka_reklamace"
           ? [
               { key: "includeServiceInfo", label: "Údaje o servisu" },
               { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
               { key: "includeDeviceInfo", label: "Údaje o zařízení" },
               { key: "includeDates", label: "Data" },
             ]
+          : docType === "vydejka_reklamace"
+            ? [
+                { key: "includeServiceInfo", label: "Údaje o servisu" },
+                { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
+                { key: "includeDeviceInfo", label: "Údaje o zařízení" },
+                { key: "includeRepairs", label: "Provedené opravy" },
+                { key: "includeDates", label: "Data" },
+              ]
           : [
               { key: "includeServiceInfo", label: "Údaje o servisu" },
               { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
@@ -2378,7 +2717,7 @@ export default function App() {
   }, [documentsSectionOrder, docConfig, sectionKeyToIncludeDoc, docType]);
 
   const documentsSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -2410,22 +2749,49 @@ export default function App() {
       if (!over || active.id === over.id) return;
       const aid = String(active.id);
       const oid = String(over.id);
-      if (aid.startsWith("palette-") && oid.startsWith("drop-")) {
-        const index = parseInt(oid.replace("drop-", ""), 10);
-        if (Number.isNaN(index)) return;
-        if (aid === PALETTE_CUSTOM_TEXT_ID || aid === PALETTE_CUSTOM_HEADING_ID || aid === PALETTE_CUSTOM_SEPARATOR_ID || aid === PALETTE_CUSTOM_SPACER_ID) {
-          const newId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cb-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-          const customKey = `custom-${newId}`;
-          const type = aid === PALETTE_CUSTOM_TEXT_ID ? "text" : aid === PALETTE_CUSTOM_HEADING_ID ? "heading" : aid === PALETTE_CUSTOM_SEPARATOR_ID ? "separator" : "spacer";
-          updateDocConfig(["customBlocks", newId], { type, content: type === "heading" ? "Nadpis" : type === "spacer" ? "24" : "" });
-          const fullOrder = [...documentsSectionOrder];
-          fullOrder.splice(index, 0, customKey);
-          updateDocConfig(["sectionOrder"], fullOrder);
+      if (oid.startsWith("drop-")) {
+        const match = oid.match(/^drop-(\d+)(?:-(left|right))?$/);
+        const dropIndex = match ? parseInt(match[1], 10) : parseInt(oid.replace("drop-", ""), 10);
+        const side = (match && (match[2] === "left" || match[2] === "right")) ? match[2] as "left" | "right" : undefined;
+        if (Number.isNaN(dropIndex) || dropIndex < 0) return;
+        const docConf = config[DOC_TYPE_TO_UI[docType]] as Record<string, unknown> | undefined;
+        const sectionWidthsDoc = (docConf?.sectionWidths || {}) as Record<string, string>;
+        if (aid.startsWith("palette-")) {
+          if (aid === PALETTE_CUSTOM_TEXT_ID || aid === PALETTE_CUSTOM_HEADING_ID || aid === PALETTE_CUSTOM_SEPARATOR_ID || aid === PALETTE_CUSTOM_SPACER_ID || aid === PALETTE_SIGNATURE_LINE_ID) {
+            const newId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cb-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+            const customKey = `custom-${newId}`;
+            const type = aid === PALETTE_CUSTOM_TEXT_ID ? "text" : aid === PALETTE_CUSTOM_HEADING_ID ? "heading" : aid === PALETTE_CUSTOM_SEPARATOR_ID ? "separator" : aid === PALETTE_CUSTOM_SPACER_ID ? "spacer" : "signature";
+            const content = type === "heading" ? "Nadpis" : type === "spacer" ? "24" : type === "signature" ? "podpis" : "";
+            updateDocConfig(["customBlocks", newId], { type, content });
+            const fullOrder = [...documentsSectionOrder];
+            fullOrder.splice(dropIndex, 0, customKey);
+            updateDocConfig(["sectionOrder"], fullOrder);
+          } else {
+            const sectionKey = aid.replace("palette-", "");
+            handleSectionAdd(sectionKey, dropIndex);
+            if (side && sectionWidthsDoc[sectionKey] === "half") {
+              const sides = { ...(docConf?.sectionSide as Record<string, string> || {}), [sectionKey]: side };
+              updateDocConfig(["sectionSide"], sides);
+            }
+          }
           return;
         }
-        const sectionKey = aid.replace("palette-", "");
-        handleSectionAdd(sectionKey, index);
-        return;
+        if (documentsOrderedSections.includes(aid)) {
+          const oldIdx = documentsSectionOrder.indexOf(aid);
+          if (oldIdx === -1) return;
+          const targetFullIdx =
+            dropIndex >= documentsOrderedSections.length
+              ? documentsSectionOrder.length - 1
+              : documentsSectionOrder.indexOf(documentsOrderedSections[dropIndex]);
+          if (targetFullIdx === -1) return;
+          const newFullOrder = arrayMove(documentsSectionOrder, oldIdx, targetFullIdx);
+          updateDocConfig(["sectionOrder"], newFullOrder);
+          if (side && !aid.startsWith("custom-") && sectionWidthsDoc[aid] === "half") {
+            const sides = { ...(docConf?.sectionSide as Record<string, string> || {}), [aid]: side };
+            updateDocConfig(["sectionSide"], sides);
+          }
+          return;
+        }
       }
       if (documentsOrderedSections.includes(aid) && documentsOrderedSections.includes(oid)) {
         const oldIdx = documentsSectionOrder.indexOf(aid);
@@ -2435,7 +2801,7 @@ export default function App() {
         updateDocConfig(["sectionOrder"], newFullOrder);
       }
     },
-    [documentsSectionOrder, documentsOrderedSections, handleSectionAdd, updateDocConfig]
+    [config, docType, documentsSectionOrder, documentsOrderedSections, handleSectionAdd, updateDocConfig]
   );
 
   const jobiConnected = context.activeServiceId && context.services.some((s) => s.service_id === context.activeServiceId);
@@ -2695,7 +3061,7 @@ export default function App() {
                   </button>
                 </div>
 
-                <div style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ padding: "14px 0" }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: "var(--text)" }}>Paleta sekcí</div>
                   <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Přetáhněte sekci do náhledu vpravo. ✓ = již v dokumentu.</p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -2704,10 +3070,7 @@ export default function App() {
                         key={sectionKey}
                         sectionKey={sectionKey}
                         inDocument={documentsOrderedSections.includes(sectionKey)}
-                        expanded={expandedPaletteSection === sectionKey}
-                        onToggleExpand={() => setExpandedPaletteSection((prev) => (prev === sectionKey ? null : sectionKey))}
                         docConfig={docConfig}
-                        updateDocConfig={updateDocConfig}
                       />
                     ))}
                     {[
@@ -2715,6 +3078,7 @@ export default function App() {
                     { id: PALETTE_CUSTOM_HEADING_ID, label: "Vlastní nadpis" },
                     { id: PALETTE_CUSTOM_SEPARATOR_ID, label: "Oddělovač" },
                     { id: PALETTE_CUSTOM_SPACER_ID, label: "Prázdný řádek" },
+                    { id: PALETTE_SIGNATURE_LINE_ID, label: "Řádek na podpis" },
                   ].map(({ id, label }) => {
                     const wantType = PALETTE_CUSTOM_ID_TO_TYPE[id];
                     const blocks = (docConfig.customBlocks as Record<string, { type?: string }>) || {};
@@ -2724,8 +3088,389 @@ export default function App() {
                   </div>
                 </div>
 
+                {selectedPreviewSectionId && (
+                  <div style={{ position: "relative", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--accent)", background: "var(--accent-soft)", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button type="button" onClick={() => setSelectedPreviewSectionId(null)} style={{ position: "absolute", top: 6, right: 6, padding: 2, border: "none", background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 14 }} aria-label="Zavřít">×</button>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                      Upravit sekci: {getSectionDragLabel(selectedPreviewSectionId, docConfig)}
+                    </div>
+                    {selectedPreviewSectionId.startsWith("custom-") && (() => {
+                      const blockId = selectedPreviewSectionId.slice(7);
+                      const blocks = (docConfig?.customBlocks as Record<string, CustomBlockData>) || {};
+                      const block: CustomBlockData = blocks[blockId] || { type: "text", content: "" };
+                      const customType = block.type || "text";
+                      if (customType === "signature") {
+                        const cur = (block.content as string) ?? "";
+                        return (
+                          <>
+                            <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text)", marginBottom: 4, display: "block" }}>Text pod řádkem</label>
+                            <input
+                              type="text"
+                              value={cur}
+                              onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                              placeholder="podpis"
+                              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, boxSizing: "border-box" }}
+                            />
+                          </>
+                        );
+                      }
+                      if (customType === "text" || customType === "heading") {
+                        const cur = (block.content as string) ?? "";
+                        return (
+                          <>
+                            {customType === "text" && (
+                              <>
+                                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={(block.showHeading as boolean) !== false}
+                                    onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, showHeading: e.target.checked })}
+                                    style={{ accentColor: "var(--accent)" }}
+                                  />
+                                  Zobrazit nadpis
+                                </label>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text)", marginBottom: 4, display: "block" }}>Nadpis</label>
+                                  <input
+                                    type="text"
+                                    value={(block.headingText as string) ?? ""}
+                                    onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, headingText: e.target.value })}
+                                    placeholder="Vlastní text"
+                                    style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, boxSizing: "border-box" }}
+                                  />
+                                </div>
+                                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={(block.showHeadingLine as boolean) !== false}
+                                    onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, showHeadingLine: e.target.checked })}
+                                    style={{ accentColor: "var(--accent)" }}
+                                  />
+                                  Čára pod nadpisem
+                                </label>
+                              </>
+                            )}
+                            <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text)", display: customType === "heading" ? "block" : "none" }}>{customType === "heading" ? "Nadpis" : ""}</label>
+                            {customType === "text" ? (
+                              <CustomTextEditor
+                                value={cur}
+                                onChange={(html) => updateDocConfig(["customBlocks", blockId], { ...block, content: html })}
+                              />
+                            ) : (
+                              <>
+                                <input
+                                  type="text"
+                                  value={cur}
+                                  onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                                  placeholder="Nadpis"
+                                  style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, boxSizing: "border-box" }}
+                                />
+                                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>Vložit proměnnou:</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {Object.entries(CUSTOM_TEXT_VARIABLES).map(([key, label]) => (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      onClick={() => {
+                                        const next = cur + (cur && !cur.endsWith(" ") ? " " : "") + "{{" + key + "}}";
+                                        updateDocConfig(["customBlocks", blockId], { ...block, content: next });
+                                      }}
+                                      style={{ padding: "3px 6px", fontSize: 10, borderRadius: 4, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer" }}
+                                      title={`{{${key}}}`}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {selectedPreviewSectionId === "warranty" && docType === "zarucni_list" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
+                          <input
+                            type="checkbox"
+                            checked={(docConfig.sectionVisibility as Record<string, string> | undefined)?.warranty === "when_repair_date_set"}
+                            onChange={(e) => {
+                              const prev = (docConfig.sectionVisibility as Record<string, string> | undefined) ?? {};
+                              const next = { ...prev };
+                              if (e.target.checked) next.warranty = "when_repair_date_set";
+                              else delete next.warranty;
+                              updateDocConfig(["sectionVisibility"], next);
+                            }}
+                            style={{ accentColor: "var(--accent)" }}
+                          />
+                          Zobrazit jen když je datum opravy
+                        </label>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Délka záruky</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              value={warrantyDurationInput ?? String((docConfig.warrantyUnifiedDuration as number) ?? 24)}
+                              onFocus={() => setWarrantyDurationInput(String((docConfig.warrantyUnifiedDuration as number) ?? 24))}
+                              onChange={(e) => setWarrantyDurationInput(e.target.value)}
+                              onBlur={() => {
+                                const raw = warrantyDurationInput ?? "";
+                                const n = parseInt(raw, 10);
+                                const val = Number.isNaN(n) || n < 1 || n > 999 ? 24 : n;
+                                updateDocConfig(["warrantyUnifiedDuration"], val);
+                                setWarrantyDurationInput(null);
+                              }}
+                              style={{ width: 52, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, textAlign: "center" }}
+                            />
+                            {(["days", "months", "years"] as const).map((u) => {
+                              const isActive = (docConfig.warrantyUnifiedUnit as string) === u;
+                              return (
+                                <button
+                                  key={u}
+                                  type="button"
+                                  onClick={() => updateDocConfig(["warrantyUnifiedUnit"], u)}
+                                  style={{ padding: "4px 10px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: isActive ? "var(--accent)" : "var(--panel)", color: isActive ? "white" : "var(--text)", cursor: "pointer" }}
+                                >
+                                  {u === "days" ? "dny" : u === "months" ? "měs." : "roky"}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>V dokumentu zobrazit</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
+                              <input type="radio" name="warrantyDisplayEdit" checked={(docConfig.warrantyShowEndDate as boolean) !== false} onChange={() => updateDocConfig(["warrantyShowEndDate"], true)} style={{ accentColor: "var(--accent)" }} />
+                              Do data
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
+                              <input type="radio" name="warrantyDisplayEdit" checked={(docConfig.warrantyShowEndDate as boolean) === false} onChange={() => updateDocConfig(["warrantyShowEndDate"], false)} style={{ accentColor: "var(--accent)" }} />
+                              Jen délka
+                            </label>
+                          </div>
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>Dodatečné informace</label>
+                          <textarea
+                            value={(docConfig.warrantyExtraText as string) ?? ""}
+                            onChange={(e) => updateDocConfig(["warrantyExtraText"], e.target.value)}
+                            placeholder="Volitelný text pod zárukou…"
+                            rows={2}
+                            style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, resize: "vertical", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>Další záruky</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const list = (docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string }>) ?? [];
+                                updateDocConfig(["warrantyItems"], [...list, { label: "Záruka na díly", duration: 12, unit: "months", showEndDate: true }]);
+                              }}
+                              style={{ padding: "4px 8px", fontSize: 10, borderRadius: 6, border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", fontWeight: 600, cursor: "pointer" }}
+                            >
+                              + Přidat
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? []).map((item, index) => (
+                              <div key={index} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: 6, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)" }}>
+                                <input
+                                  type="text"
+                                  value={item.label}
+                                  onChange={(e) => {
+                                    const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                                    list[index] = { ...list[index], label: e.target.value };
+                                    updateDocConfig(["warrantyItems"], list);
+                                  }}
+                                  placeholder="Název"
+                                  style={{ flex: "1 1 80px", minWidth: 60, padding: "4px 6px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", boxSizing: "border-box" }}
+                                />
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={999}
+                                  value={item.duration}
+                                  onChange={(e) => {
+                                    const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                                    list[index] = { ...list[index], duration: e.target.valueAsNumber || 12 };
+                                    updateDocConfig(["warrantyItems"], list);
+                                  }}
+                                  style={{ width: 40, padding: "4px 4px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", textAlign: "center" }}
+                                />
+                                <select
+                                  value={item.unit}
+                                  onChange={(e) => {
+                                    const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                                    list[index] = { ...list[index], unit: e.target.value };
+                                    updateDocConfig(["warrantyItems"], list);
+                                  }}
+                                  style={{ padding: "4px 6px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)" }}
+                                >
+                                  <option value="days">dny</option>
+                                  <option value="months">měs.</option>
+                                  <option value="years">roky</option>
+                                </select>
+                                <label style={{ display: "flex", alignItems: "center", gap: 2, cursor: "pointer", fontSize: 10, color: "var(--text)" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={(item as { showEndDate?: boolean }).showEndDate !== false}
+                                    onChange={(e) => {
+                                      const list = [...((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? [])];
+                                      list[index] = { ...list[index], showEndDate: e.target.checked };
+                                      updateDocConfig(["warrantyItems"], list);
+                                    }}
+                                    style={{ accentColor: "var(--accent)" }}
+                                  />
+                                  Do data
+                                </label>
+                                <button type="button" onClick={() => { const list = ((docConfig.warrantyItems as Array<{ label: string; duration: number; unit: string; showEndDate?: boolean }>) ?? []).filter((_, i) => i !== index); updateDocConfig(["warrantyItems"], list); }} style={{ padding: "2px 6px", fontSize: 10, borderRadius: 4, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", cursor: "pointer" }}>Odebrat</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {selectedPreviewSectionId === "repairs" && (() => {
+                      const repairsColumns = (docConfig?.repairsTableColumns as string[] | undefined) ?? ["name", "price"];
+                      const REPAIRS_COL_LABELS: Record<string, string> = { name: "Název", price: "Cena", quantity: "Množství", unit: "Jednotka", total: "Celkem" };
+                      return (
+                        <div style={{ padding: "8px 0" }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>Sloupce tabulky (Jobi pošle <code style={{ fontSize: 10 }}>repair_items</code>):</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {(["name", "price", "quantity", "unit", "total"] as const).map((col) => {
+                              const checked = repairsColumns.includes(col);
+                              return (
+                                <label key={col} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const next = checked ? repairsColumns.filter((c) => c !== col) : [...repairsColumns, col];
+                                      updateDocConfig(["repairsTableColumns"], next.length ? next : ["name", "price"]);
+                                    }}
+                                    style={{ accentColor: "var(--accent)" }}
+                                  />
+                                  {REPAIRS_COL_LABELS[col]}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {selectedPreviewSectionId && SECTION_FIELDS_BY_KEY[selectedPreviewSectionId] && (() => {
+                      const sectionKey = selectedPreviewSectionId;
+                      const fieldConfig = SECTION_FIELDS_BY_KEY[sectionKey];
+                      const sectionFieldsRaw = (docConfig?.sectionFields as Record<string, Record<string, boolean>> | undefined)?.[sectionKey];
+                      const sectionFields = sectionFieldsRaw ?? fieldConfig?.defaultFields ?? {};
+                      return (
+                        <div style={{ padding: "8px 0" }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>Zobrazit v sekci:</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {fieldConfig.fields.map(({ key, label: flabel }) => (
+                              <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={(sectionFields[key] ?? true) as boolean}
+                                  onChange={(e) => {
+                                    const next = { ...sectionFields, [key]: e.target.checked };
+                                    updateDocConfig(["sectionFields", sectionKey], next);
+                                  }}
+                                  style={{ accentColor: "var(--accent)" }}
+                                />
+                                {flabel}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {!selectedPreviewSectionId.startsWith("custom-") && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Šířka:</span>
+                        {(["full", "half"] as const).map((w) => {
+                          const sw = (docConfig?.sectionWidths as Record<string, SectionWidth>) || {};
+                          const cur = sw[selectedPreviewSectionId] ?? DEFAULT_SECTION_WIDTHS[selectedPreviewSectionId] ?? "full";
+                          return (
+                            <button
+                              key={w}
+                              type="button"
+                              onClick={() => updateDocConfig(["sectionWidths", selectedPreviewSectionId], w)}
+                              style={{ padding: "4px 10px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: cur === w ? "var(--accent)" : "var(--panel)", color: cur === w ? "white" : "var(--text)", cursor: "pointer", fontWeight: 500 }}
+                            >
+                              {w === "full" ? "Celá" : "Polovina"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocConfig(["sectionOrder"], documentsSectionOrder.filter((x) => x !== selectedPreviewSectionId));
+                        setSelectedPreviewSectionId(null);
+                      }}
+                      style={{ padding: "6px 10px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", cursor: "pointer", alignSelf: "flex-start" }}
+                    >
+                      Odebrat z dokumentu
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ padding: "12px 0" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Vzhled hlavičky</div>
+                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Velikosti textů v hlavičce (název dokumentu, kód zakázky, název servisu). Prázdné = výchozí z designu.</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – název dokumentu (px)</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={24}
+                        value={(docConfig?.headerTitleFontSize as number) ?? ""}
+                        onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                        placeholder="14"
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
+                      />
+                    </div>
+                    {docType === "zakazkovy_list" && (
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – kód zakázky (px)</label>
+                        <input
+                          type="number"
+                          min={12}
+                          max={24}
+                          value={(docConfig?.headerTicketCodeFontSize as number) ?? ""}
+                          onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTicketCodeFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                          placeholder="18"
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – název servisu (px)</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={24}
+                        value={(docConfig?.headerSubtitleFontSize as number) ?? ""}
+                        onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerSubtitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                        placeholder="14"
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
+                      />
+                      <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Název servisu se bere z Údaje o servisu (Jobi).</p>
+                    </div>
+                  </div>
+                </div>
+
                 <Accordion title="Logo a razítko" open={accordionOpen.logo} onToggle={() => toggleAccordion("logo")}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Logo a razítko lze v náhledu vpravo chytit a přetáhnout na libovolné místo.</p>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Logo v dokumentech</div>
@@ -2789,10 +3534,10 @@ export default function App() {
                         .filter((k) => k.startsWith("custom-"))
                         .map((customKey) => {
                           const blockId = customKey.slice(7);
-                          const blocks = (docConfig.customBlocks as Record<string, { type?: string; content?: string }>) || {};
+                          const blocks = (docConfig.customBlocks as Record<string, CustomBlockData>) || {};
                           const block = blocks[blockId] || { type: "text", content: "" };
                           const blockType = block.type || "text";
-                          const typeLabels: Record<string, string> = { text: "Vlastní text", heading: "Vlastní nadpis", separator: "Oddělovač", spacer: "Prázdný řádek" };
+                          const typeLabels: Record<string, string> = { text: "Vlastní text", heading: "Vlastní nadpis", separator: "Oddělovač", spacer: "Prázdný řádek", signature: "Řádek na podpis" };
                           const removeBtn = (
                             <button
                               type="button"
@@ -2809,29 +3554,68 @@ export default function App() {
                               Odebrat
                             </button>
                           );
+                          const blockLabel = getSectionDragLabel(customKey, docConfig);
                           return (
                             <div key={customKey} style={{ padding: 10, borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)" }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: blockType === "separator" || blockType === "spacer" ? 0 : 6 }}>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{typeLabels[blockType] ?? blockType}</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{blockLabel}</span>
                                 {removeBtn}
                               </div>
                               {blockType === "text" && (
-                                <textarea
-                                  value={(block.content as string) ?? ""}
-                                  onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
-                                  placeholder="Sem napište text… Můžete použít {{ticket_code}}, {{customer_name}}, {{device_name}}, {{service_name}}, {{repair_date}}."
-                                  rows={2}
-                                  style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, resize: "vertical", boxSizing: "border-box", marginTop: 6 }}
-                                />
+                                <>
+                                  <textarea
+                                    value={(block.content as string) ?? ""}
+                                    onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                                    placeholder="Sem napište text… Můžete vložit proměnné tlačítky níže."
+                                    rows={2}
+                                    style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, resize: "vertical", boxSizing: "border-box", marginTop: 6 }}
+                                  />
+                                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Vložit proměnnou:</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                    {Object.entries(CUSTOM_TEXT_VARIABLES).map(([key, label]) => (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => {
+                                          const cur = (block.content as string) ?? "";
+                                          updateDocConfig(["customBlocks", blockId], { ...block, content: cur + (cur && !cur.endsWith(" ") ? " " : "") + "{{" + key + "}}" });
+                                        }}
+                                        style={{ padding: "4px 8px", fontSize: 10, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", cursor: "pointer" }}
+                                        title={`{{${key}}}`}
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
                               )}
                               {blockType === "heading" && (
-                                <input
-                                  type="text"
-                                  value={(block.content as string) ?? ""}
-                                  onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
-                                  placeholder="Nadpis"
-                                  style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, boxSizing: "border-box", marginTop: 6 }}
-                                />
+                                <>
+                                  <input
+                                    type="text"
+                                    value={(block.content as string) ?? ""}
+                                    onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                                    placeholder="Nadpis"
+                                    style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, boxSizing: "border-box", marginTop: 6 }}
+                                  />
+                                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Vložit proměnnou:</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                    {Object.entries(CUSTOM_TEXT_VARIABLES).map(([key, label]) => (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => {
+                                          const cur = (block.content as string) ?? "";
+                                          updateDocConfig(["customBlocks", blockId], { ...block, content: cur + (cur && !cur.endsWith(" ") ? " " : "") + "{{" + key + "}}" });
+                                        }}
+                                        style={{ padding: "4px 8px", fontSize: 10, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", cursor: "pointer" }}
+                                        title={`{{${key}}}`}
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
                               )}
                               {blockType === "spacer" && (
                                 <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
@@ -3388,84 +4172,6 @@ export default function App() {
                 </Accordion>
               )}
 
-              {(docType === "zakazkovy_list" || docType === "zarucni_list") && (
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Sloupce tabulky (Provedené opravy)</div>
-                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Při tisku z Jobi se položky oprav zobrazí v tabulce. Vyberte sloupce (Jobi pošle <code style={{ fontSize: 11 }}>repair_items</code> jako JSON).</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {(["name", "price", "quantity", "unit", "total"] as const).map((col) => {
-                      const cols = (docConfig.repairsTableColumns as string[] | undefined) ?? ["name", "price"];
-                      const checked = cols.includes(col);
-                      const labels: Record<string, string> = { name: "Název", price: "Cena", quantity: "Množství", unit: "Jednotka", total: "Celkem" };
-                      return (
-                        <label key={col} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--text)" }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const next = checked ? cols.filter((c) => c !== col) : [...cols, col];
-                              updateDocConfig(["repairsTableColumns"], next.length ? next : ["name", "price"]);
-                            }}
-                            style={{ accentColor: "var(--accent)" }}
-                          />
-                          {labels[col] ?? col}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Šířka sekcí</div>
-                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Poloviční sekce zobrazí dvě vedle sebe jako kartičky.</p>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {sectionFields.filter((f) => INCLUDE_KEY_TO_SECTION_KEY[f.key]).map((f) => {
-                    const sectionKey = INCLUDE_KEY_TO_SECTION_KEY[f.key];
-                    const sw = (docConfig.sectionWidths as Record<string, SectionWidth>) || {};
-                    const width = sw[sectionKey] ?? DEFAULT_SECTION_WIDTHS[sectionKey] ?? "full";
-                    return (
-                      <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12, color: "var(--text)", flex: "1 1 0" }}>{f.label}</span>
-                        <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
-                          <button
-                            type="button"
-                            onClick={() => updateDocConfig(["sectionWidths", sectionKey], "full")}
-                            style={{
-                              padding: "6px 12px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              border: "none",
-                              background: width === "full" ? "var(--accent)" : "var(--panel)",
-                              color: width === "full" ? "white" : "var(--text)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Celá
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateDocConfig(["sectionWidths", sectionKey], "half")}
-                            style={{
-                              padding: "6px 12px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              border: "none",
-                              borderLeft: "1px solid var(--border)",
-                              background: width === "half" ? "var(--accent)" : "var(--panel)",
-                              color: width === "half" ? "white" : "var(--text)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Polovina
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Styl sekcí</div>
                 <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Vzhled jednotlivých sekcí (přepíše výchozí styl designu).</p>
@@ -3505,8 +4211,25 @@ export default function App() {
                   onChange={(e) => updateDocConfig(["legalText"], e.target.value)}
                   rows={4}
                   style={{ width: "100%", padding: 12, borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, resize: "vertical" }}
-                  placeholder="Vlastní text zobrazený na dokumentu…"
+                  placeholder="Vlastní text zobrazený na dokumentu… Můžete vložit proměnné tlačítky níže."
                 />
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Vložit proměnnou:</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {Object.entries(CUSTOM_TEXT_VARIABLES).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        const cur = (docConfig.legalText as string) ?? "";
+                        updateDocConfig(["legalText"], cur + (cur && !cur.endsWith(" ") ? " " : "") + "{{" + key + "}}");
+                      }}
+                      style={{ padding: "4px 8px", fontSize: 10, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", cursor: "pointer" }}
+                      title={`{{${key}}}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -3604,13 +4327,23 @@ export default function App() {
                   Naposledy upraveno: {new Date(configUpdatedAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </p>
               )}
-              <button
-                onClick={handleSaveConfig}
-                disabled={configLoading || !serviceId || context.canManageDocuments === false}
-                style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: configSaved ? "#16a34a" : "var(--accent)", color: "white", fontWeight: 700, fontSize: 14, cursor: configLoading || !serviceId || context.canManageDocuments === false ? "not-allowed" : "pointer", opacity: context.canManageDocuments === false ? 0.6 : 1 }}
-              >
-                {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení dokumentů"}
-              </button>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                <button
+                  onClick={handleSaveConfig}
+                  disabled={configLoading || !serviceId || context.canManageDocuments === false}
+                  style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: configSaved ? "#16a34a" : "var(--accent)", color: "white", fontWeight: 700, fontSize: 14, cursor: configLoading || !serviceId || context.canManageDocuments === false ? "not-allowed" : "pointer", opacity: context.canManageDocuments === false ? 0.6 : 1 }}
+                >
+                  {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení dokumentů"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportConfigToLog}
+                  title="Zapíše aktuální konfiguraci všech dokumentů do konzole (F12). Výstup lze použít jako výchozí konfiguraci pro nové instalace JobiDocs."
+                  style={{ padding: "12px 18px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                >
+                  Export konfigurace do logu
+                </button>
+              </div>
             </div>
 
             <section className="glass-panel document-preview-section" style={{ overflow: "hidden" }}>
@@ -3651,7 +4384,7 @@ export default function App() {
                 </div>
               </div>
               <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí. Šablona zobrazí placeholdery typu {"{{customer_name}}"}, {"{{ticket_code}}"}.</p>
-              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} />
+              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} onSignaturePositionChange={(blockId, pos) => { const docKey = DOC_TYPE_TO_UI[docType]; const doc = config[docKey] as Record<string, unknown> | undefined; const current = (doc?.signaturePositions || {}) as Record<string, { x: number; y: number }>; const merged = { ...current }; if (pos == null) delete merged[blockId]; else merged[blockId] = pos; updateDocConfig(["signaturePositions"], merged); }} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} selectedSectionId={selectedPreviewSectionId} onSectionSelect={setSelectedPreviewSectionId} />
               <button
                 type="button"
                 onClick={handlePrintPreview}
@@ -3668,26 +4401,50 @@ export default function App() {
             </section>
             </div>
             <DragOverlay dropAnimation={null}>
-              {documentsDragActiveId && documentsDragActiveId.startsWith("palette-") ? (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    border: "2px solid var(--accent)",
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "grabbing",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
-                  }}
-                >
-                  <span style={{ opacity: 0.6 }}>⋮⋮</span>
-                  {getPaletteDragLabel(documentsDragActiveId)}
-                </div>
+              {documentsDragActiveId ? (
+                documentsDragActiveId.startsWith("palette-") ? (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: "2px solid var(--accent)",
+                      background: "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "grabbing",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    <span style={{ opacity: 0.6 }}>⋮⋮</span>
+                    {documentsDragActiveId.startsWith("palette-")
+                      ? getSectionDragLabel(documentsDragActiveId.replace("palette-", ""), docConfig)
+                      : getPaletteDragLabel(documentsDragActiveId)}
+                  </div>
+                ) : documentsOrderedSections.includes(documentsDragActiveId) ? (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      border: "2px solid var(--accent)",
+                      background: "var(--panel)",
+                      color: "var(--text)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "grabbing",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    <span style={{ opacity: 0.6 }}>⋮⋮</span>
+                    {getSectionDragLabel(documentsDragActiveId, docConfig)}
+                  </div>
+                ) : null
               ) : null}
             </DragOverlay>
           </DndContext>

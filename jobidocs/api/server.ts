@@ -74,7 +74,7 @@ export async function startApiServer(
     const p = request.url?.split("?")[0];
     if (request.method === "POST" && p === "/v1/print") {
       pushActivity("print", "pending", "zpracovává se…");
-    } else if (request.method === "POST" && p === "/v1/export") {
+    } else if (request.method === "POST" && (p === "/v1/export" || p === "/v1/export-document")) {
       pushActivity("export", "pending", "zpracovává se…");
     }
   });
@@ -345,12 +345,19 @@ export async function startApiServer(
 
   // Print using JobiDocs template + data from Jobi (so layout matches JobiDocs design)
   type PrintDocumentBody = {
-    doc_type: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
+    doc_type: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
     service_id: string;
     company_data: Record<string, unknown>;
     sections?: Partial<Record<string, string>>;
     repair_date?: string;
     variables?: Record<string, string>;
+  };
+  const DOC_TYPE_TO_SECTION_KEY: Record<string, string> = {
+    zakazkovy_list: "ticketList",
+    zarucni_list: "warrantyCertificate",
+    diagnosticky_protokol: "diagnosticProtocol",
+    prijemka_reklamace: "prijemkaReklamace",
+    vydejka_reklamace: "vydejkaReklamace",
   };
   fastify.post<{ Body: PrintDocumentBody }>("/v1/print-document", async (req, reply) => {
     if (!htmlToPdf) {
@@ -360,17 +367,15 @@ export async function startApiServer(
     if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
       return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
     }
-    const validDocTypes = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol"];
-    if (!validDocTypes.includes(doc_type)) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list or diagnosticky_protokol" });
+    const sectionKey = DOC_TYPE_TO_SECTION_KEY[doc_type];
+    if (!sectionKey) {
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace or vydejka_reklamace" });
     }
     try {
       const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
       const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
       const profile = await getProfile(service_id, doc_type);
       const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
-      const sectionKey =
-        doc_type === "zakazkovy_list" ? "ticketList" : doc_type === "zarucni_list" ? "warrantyCertificate" : "diagnosticProtocol";
       const existing = (baseConfig[sectionKey] as Record<string, unknown>) || {};
       const config = { ...baseConfig, [sectionKey]: { ...existing, ...profileJson } };
       const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
@@ -398,6 +403,56 @@ export async function startApiServer(
       pushActivity("print", "error", msg);
       fastify.log.error(err);
       return reply.status(500).send({ error: msg || "Print failed" });
+    }
+  });
+
+  // Export document to PDF file (same data as print-document, but save to target_path instead of printing)
+  type ExportDocumentBody = PrintDocumentBody & { target_path: string };
+  fastify.post<{ Body: ExportDocumentBody }>("/v1/export-document", async (req, reply) => {
+    if (!htmlToPdf) {
+      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
+    }
+    const { doc_type, service_id, company_data, sections, repair_date, variables, target_path } = req.body || {};
+    if (!target_path || typeof target_path !== "string") {
+      return reply.status(400).send({ error: "target_path required" });
+    }
+    if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
+      return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
+    }
+    const sectionKeyExport = DOC_TYPE_TO_SECTION_KEY[doc_type];
+    if (!sectionKeyExport) {
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace or vydejka_reklamace" });
+    }
+    try {
+      const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
+      const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
+      const profile = await getProfile(service_id, doc_type);
+      const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
+      const existing = (baseConfig[sectionKeyExport] as Record<string, unknown>) || {};
+      const config = { ...baseConfig, [sectionKeyExport]: { ...existing, ...profileJson } };
+      const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
+      const options: { repairDate?: string; variables?: Record<string, string> } = {};
+      if (repair_date && typeof repair_date === "string") options.repairDate = repair_date;
+      if (variables && typeof variables === "object" && !Array.isArray(variables)) options.variables = variables;
+      const html = generateDocumentHtml(config, doc_type, companyData, sections ?? undefined, Object.keys(options).length ? options : undefined);
+      fastify.log.info("[export-document] html length=%d", html.length);
+      const PDF_TIMEOUT_MS = 60000;
+      let timeoutId: ReturnType<typeof setTimeout>;
+      let pdfBuffer = await Promise.race([
+        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
+        }),
+      ]);
+      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
+      await fs.writeFile(target_path, pdfBuffer);
+      pushActivity("export", "ok", target_path);
+      return { ok: true, path: target_path };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      pushActivity("export", "error", msg);
+      fastify.log.error(err);
+      return reply.status(500).send({ error: msg || "Export failed" });
     }
   });
 

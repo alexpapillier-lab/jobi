@@ -5,6 +5,7 @@
  */
 
 import { getDesignStyles, type DocumentDesign, type SectionStyle } from "./documentDesign";
+import { sanitizeRichText } from "./richText";
 
 type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
 type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate" | "prijemkaReklamace" | "vydejkaReklamace";
@@ -27,10 +28,10 @@ const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
 
 const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
-  diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
-  warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
+  diagnosticProtocol: ["device", "service", "diag", "photos", "dates", "custom-adca988a-f92e-497d-8910-3d904936ed61"],
+  warrantyCertificate: ["device", "service", "repairs", "warranty", "dates", "custom-5bbd72cc-33a7-405b-a0a3-e726af943779"],
   prijemkaReklamace: ["service", "customer", "device", "dates"],
-  vydejkaReklamace: ["service", "customer", "device", "dates"],
+  vydejkaReklamace: ["service", "customer", "dates", "device", "repairs"],
 };
 
 type ServiceSectionFields = { name?: boolean; ico?: boolean; dic?: boolean; address?: boolean; phone?: boolean; email?: boolean; website?: boolean };
@@ -164,7 +165,7 @@ const TEMPLATE_PLACEHOLDERS_BY_SECTION: Record<string, string[]> = {
   device: ["device_name", "device_serial", "device_imei", "device_state", "device_problem"],
   repairs: ["total_price"],
   diag: ["diagnostic_text"],
-  dates: ["ticket_code", "repair_date", "repair_completion_date"],
+  dates: ["ticket_code", "repair_date", "repair_completion_date", "complaint_code", "original_ticket_code"],
   warranty: ["warranty_until"],
 };
 const SECTION_FIELD_KEY_TO_VAR_INDEX: Record<string, Record<string, number>> = {
@@ -340,6 +341,7 @@ export function generateDocumentHtml(
   });
 
   const sectionWidths = (docConfig.sectionWidths as Record<string, string>) || {};
+  const sectionSide = (docConfig.sectionSide as Record<string, "left" | "right">) || {};
   const sectionStyles = (docConfig.sectionStyles as Record<string, string>) || {};
   const DEFAULT_WIDTHS: Record<string, string> = {
     service: "full", customer: "full", device: "full", repairs: "full",
@@ -358,8 +360,32 @@ export function generateDocumentHtml(
   const defaultSectionBorderLeft = spec.sectionStyle === "leftStripe" ? `3px solid ${styles.secondaryColor}` : "none";
   const titleFontSize = spec.sectionHeaderStyle === "capsule" ? 14 : 13;
   const titleFontWeight = spec.sectionHeaderStyle === "underline" ? 500 : 700;
-  const customBlocks = (docConfig.customBlocks as Record<string, { type?: string; content?: string }>) || {};
-  const sectionsHtml = orderedSections
+  const customBlocks = (docConfig.customBlocks as Record<string, { type?: string; content?: string; showHeading?: boolean; headingText?: string; showHeadingLine?: boolean }>) || {};
+  const orderedForDisplay = (() => {
+    const out: string[] = [];
+    for (let i = 0; i < orderedSections.length; i++) {
+      const key = orderedSections[i];
+      const w = key.startsWith("custom-") ? "full" : (sectionWidths[key] ?? DEFAULT_WIDTHS[key] ?? "full");
+      if (w === "half" && i + 1 < orderedSections.length) {
+        const next = orderedSections[i + 1];
+        const nextW = next.startsWith("custom-") ? "full" : (sectionWidths[next] ?? DEFAULT_WIDTHS[next] ?? "full");
+        if (nextW === "half") {
+          const side = sectionSide[key] ?? "left";
+          const nextSide = sectionSide[next] ?? "right";
+          if (side === "right" && nextSide === "left") {
+            out.push(next, key);
+          } else {
+            out.push(key, next);
+          }
+          i += 1;
+          continue;
+        }
+      }
+      out.push(key);
+    }
+    return out;
+  })();
+  const sectionsHtml = orderedForDisplay
     .map((key) => {
       if (key.startsWith("custom-")) {
         const blockId = key.slice(7);
@@ -376,14 +402,26 @@ export function generateDocumentHtml(
         let content = (block?.content as string)?.trim() ?? "";
         const vars = options?.variables ?? {};
         content = content.replace(/\{\{(\w+)\}\}/g, (_, name) => (vars[name] != null ? String(vars[name]) : `{{${name}}}`));
-        const titleStyle = spec.sectionHeaderStyle === "uppercase" ? `font-size:${titleFontSize}px;font-weight:${titleFontWeight};margin-bottom:0;padding-bottom:6px;border-bottom:1px solid ${styles.secondaryColor};color:${styles.secondaryColor};text-transform:uppercase;letter-spacing:0.05em` : `font-size:${titleFontSize}px;font-weight:${titleFontWeight};margin-bottom:0;padding-bottom:6px;border-bottom:1px solid ${styles.secondaryColor};color:${styles.secondaryColor}`;
+        const titleStyleBase = `font-size:${titleFontSize}px;font-weight:${titleFontWeight};margin-bottom:0;padding-bottom:6px;color:${styles.secondaryColor}`;
+        const titleStyleUppercase = spec.sectionHeaderStyle === "uppercase" ? `;text-transform:uppercase;letter-spacing:0.05em` : "";
+        const titleStyleBorder = `;border-bottom:1px solid ${styles.secondaryColor}`;
         if (blockType === "heading") {
           const escapedContent = escapeHtml(content || "Nadpis");
           return `<div style="padding:${sectionPadding}px;background:${styles.sectionBg};border-radius:${defaultSectionRadius}px;border:${defaultSectionBorderCss};border-left:${defaultSectionBorderLeft};flex:1 1 680px;width:680px;min-width:680px;max-width:680px;box-sizing:border-box;flex-shrink:0"><div style="font-size:16px;font-weight:700;line-height:1.3;color:${styles.contentColor}">${escapedContent}</div></div>`;
         }
+        if (blockType === "signature") {
+          return "";
+        }
         if (content === "") return "";
-        const escapedContent = escapeHtml(content).replace(/\n/g, "<br/>");
-        return `<div style="padding:${sectionPadding}px;background:${styles.sectionBg};border-radius:${defaultSectionRadius}px;border:${defaultSectionBorderCss};border-left:${defaultSectionBorderLeft};flex:1 1 680px;width:680px;min-width:680px;max-width:680px;box-sizing:border-box;flex-shrink:0"><div style="${titleStyle}">⋮⋮ Vlastní text</div><div style="font-size:10px;line-height:1.5;color:${styles.contentColor};white-space:pre-wrap">${escapedContent}</div></div>`;
+        const safeContent = sanitizeRichText(content).replace(/\n/g, "<br/>");
+        const showHeading = (block?.showHeading as boolean) !== false;
+        let headingText = (block?.headingText as string)?.trim() || "Vlastní text";
+        headingText = headingText.replace(/\{\{(\w+)\}\}/g, (_, name) => (vars[name] != null ? String(vars[name]) : `{{${name}}}`));
+        const showHeadingLine = (block?.showHeadingLine as boolean) !== false;
+        const headingHtml = showHeading
+          ? `<div style="${titleStyleBase}${showHeadingLine ? titleStyleBorder : ""}${titleStyleUppercase}">⋮⋮ ${escapeHtml(headingText)}</div>`
+          : "";
+        return `<div style="padding:${sectionPadding}px;background:${styles.sectionBg};border-radius:${defaultSectionRadius}px;border:${defaultSectionBorderCss};border-left:${defaultSectionBorderLeft};flex:1 1 680px;width:680px;min-width:680px;max-width:680px;box-sizing:border-box;flex-shrink:0">${headingHtml}<div style="font-size:10px;line-height:1.5;color:${styles.contentColor};white-space:pre-wrap">${safeContent}</div></div>`;
       }
       const label = SECTION_LABELS[key] || key;
       const effectiveStyle = getEffectiveSectionStyle(key);
@@ -415,13 +453,25 @@ export function generateDocumentHtml(
                       }
                       const columns = (docConfig.repairsTableColumns as string[] | undefined) ?? ["name", "price"];
                       const validCols = columns.filter((c) => typeof c === "string");
-                      if (items.length > 0 && validCols.length > 0)
-                        return repairsTableHtml(items, validCols, { sectionBorder: styles.sectionBorder, contentColor: styles.contentColor });
-                      if (sectionOverrides) return "";
-                      return SECTION_CONTENT_HTML.repairs;
+                      if (items.length === 0 || validCols.length === 0) return "";
+                      const tableHtml = repairsTableHtml(items, validCols, { sectionBorder: styles.sectionBorder, contentColor: styles.contentColor });
+                      const totalPrice = variablesForContent.total_price != null ? String(variablesForContent.total_price).trim() : "";
+                      const totalRow =
+                        totalPrice !== ""
+                          ? `<div style="margin-top:8px;padding-top:6px;border-top:1px solid ${styles.sectionBorder};display:flex;justify-content:space-between;gap:12px;width:100%;font-weight:600;font-size:12px;color:${styles.contentColor}"><span>Celková cena</span><span style="white-space:nowrap">${escapeHtml(totalPrice)}</span></div>`
+                          : "";
+                      return tableHtml + totalRow;
                     })()
                   : sectionOverrides && ["repairs", "diag", "photos"].includes(key)
                     ? ""
+                  : key === "dates" && (docType === "prijemka_reklamace" || docType === "vydejka_reklamace")
+                    ? (() => {
+                        const complaintCode = String(variablesForContent.complaint_code ?? variablesForContent.reclamation_code ?? "").trim();
+                        const originalTicket = String(variablesForContent.original_ticket_code ?? variablesForContent.ticket_code ?? "").trim();
+                        const c = complaintCode || "R-2025-001";
+                        const o = originalTicket || "DEMO-001";
+                        return `<div>Číslo reklamace: ${escapeHtml(c)}</div><div>Číslo původní zakázky: ${escapeHtml(o)}</div>`;
+                      })()
                   : key === "service"
                     ? serviceContentHtml(companyData, sectionFields?.service)
                     : key === "customer"
@@ -438,9 +488,11 @@ export function generateDocumentHtml(
     })
     .join("");
 
-  const headerRadius = spec.headerLayout === "splitBox" ? 8 : 0;
-  const headerTitleSize = spec.headerLayout === "splitBox" ? 16 : 14;
+  const headerRadius = (docConfig.headerBorderRadius as number) ?? (spec.headerLayout === "splitBox" ? 8 : 0);
+  const headerTitleSize = (docConfig.headerSubtitleFontSize as number) ?? (spec.headerLayout === "splitBox" ? 16 : 14);
   const headerTitleWeight = spec.headerLayout === "splitBox" ? 800 : 700;
+  const headerDocTypeSize = (docConfig.headerTitleFontSize as number) ?? 14;
+  const headerTicketCodeSize = (docConfig.headerTicketCodeFontSize as number) ?? 18;
   const headerLeftStripe = spec.headerLayout === "splitBox" && styles.accentColor ? `border-left:6px solid ${styles.accentColor};` : "";
   const logoPos = config.logoPosition as { x: number; y: number } | undefined;
   const hasCustomLogoPos = !!logoPos && typeof logoPos.x === "number" && typeof logoPos.y === "number";
@@ -461,13 +513,22 @@ export function generateDocumentHtml(
     docType === "zakazkovy_list"
       ? extractTicketCodeFromDates(sectionOverrides?.dates) ?? extractTicketCodeFromDates(SECTION_CONTENT_HTML.dates)
       : null;
+  const complaintCode =
+    docType === "prijemka_reklamace" || docType === "vydejka_reklamace"
+      ? (String(variables.complaint_code ?? variables.reclamation_code ?? "").trim() || "R-2025-001")
+      : null;
   const headerTitleLine =
     docType === "zakazkovy_list" && ticketCode
       ? `<div style="display:flex;align-items:baseline;justify-content:center;gap:10px;flex-wrap:wrap">
-          <span style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</span>
-          <span style="color:${styles.headerText};font-weight:800;font-size:18px;letter-spacing:0.05em">${escapeHtml(ticketCode)}</span>
+          <span style="color:${styles.headerText};font-weight:700;font-size:${headerDocTypeSize}px">${escapeHtml(DOC_TYPE_LABELS[docType])}</span>
+          <span style="color:${styles.headerText};font-weight:800;font-size:${headerTicketCodeSize}px;letter-spacing:0.05em">${escapeHtml(ticketCode)}</span>
         </div>`
-      : `<div style="color:${styles.headerText};font-weight:700;font-size:14px">${escapeHtml(DOC_TYPE_LABELS[docType])}</div>`;
+      : (docType === "prijemka_reklamace" || docType === "vydejka_reklamace") && complaintCode
+        ? `<div style="display:flex;align-items:baseline;justify-content:center;gap:10px;flex-wrap:wrap">
+            <span style="color:${styles.headerText};font-weight:700;font-size:${headerDocTypeSize}px">${escapeHtml(DOC_TYPE_LABELS[docType])}</span>
+            <span style="color:${styles.headerText};font-weight:800;font-size:${headerTicketCodeSize}px;letter-spacing:0.05em">${escapeHtml(complaintCode)}</span>
+          </div>`
+        : `<div style="color:${styles.headerText};font-weight:700;font-size:${headerDocTypeSize}px">${escapeHtml(DOC_TYPE_LABELS[docType])}</div>`;
   const logoInHeader = hasLogo && !hasCustomLogoPos;
   const headerHtml = `
     <div style="position:relative;min-height:50px;margin-bottom:12px;padding-bottom:10px;border-bottom:${styles.headerBorder};background:${styles.headerBg !== "transparent" ? styles.headerBg : "transparent"};padding:${styles.headerBg !== "transparent" ? "8px 12px 10px 0" : 0};border-radius:${headerRadius}px;${headerLeftStripe}">
@@ -485,9 +546,23 @@ export function generateDocumentHtml(
     ? `<div style="position:absolute;left:${stampPos!.x}px;top:${stampPos!.y}px">${config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:70px;max-height:35px;object-fit:contain" />` : `<div style="width:70px;height:35px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`}</div>`
     : "";
 
+  const sigPositions = (docConfig.signaturePositions as Record<string, { x: number; y: number }>) || {};
+  const signatureBlockEntries = orderedSections
+    .map((key) => (key.startsWith("custom-") ? { key, blockId: key.slice(7) } : null))
+    .filter((x): x is { key: string; blockId: string } => x != null)
+    .filter(({ blockId }) => (customBlocks[blockId] as { type?: string })?.type === "signature");
+  const signatureBlocksHtml = signatureBlockEntries
+    .map(({ blockId }, idx) => {
+      const pos = sigPositions[blockId] ?? { x: 50, y: 500 + idx * 40 };
+      const label = escapeHtml(((customBlocks[blockId] as { content?: string })?.content as string)?.trim() || "podpis");
+      return `<div style="position:absolute;left:${pos.x}px;top:${pos.y}px;width:100px"><div style="width:100%;border-bottom:1px solid ${styles.contentColor};margin-bottom:2px"></div><div style="font-size:9px;color:${styles.contentColor}">${label}</div></div>`;
+    })
+    .join("");
+
   const isTicketList = docType === "zakazkovy_list";
-  const hasTicketListSignatures = isTicketList && (includeSignatureOnHandover || includeSignatureOnPickup || includeStampRight);
-  const hasOtherSignatures = !isTicketList && (includeCustomerSignature || includeStamp);
+  // Řádky na podpis (včetně „Podpis zákazníka“ u záručního listu) se přidávají jen jako vlastní bloky (signatureBlocksHtml).
+  const hasTicketListSignatures = false;
+  const hasOtherSignatures = false;
 
   const labelHandover = String(docConfig.signatureLabelHandover ?? "Podpis při předání zákazníkem").trim() || "Podpis při předání zákazníkem";
   const labelPickup = String(docConfig.signatureLabelPickup ?? "Podpis při vyzvednutí zákazníkem").trim() || "Podpis při vyzvednutí zákazníkem";
@@ -545,6 +620,7 @@ export function generateDocumentHtml(
       ${headerHtml}
       ${logoBlockHtml}
       ${stampBlockHtml}
+      ${signatureBlocksHtml}
       <div style="flex:1;min-height:0;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:12px;align-content:flex-start">
         ${sectionsHtml}
       </div>
