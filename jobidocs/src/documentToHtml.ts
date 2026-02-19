@@ -68,35 +68,35 @@ function escapeHtml(s: string): string {
 type CustomerSectionFields = { name?: boolean; phone?: boolean; email?: boolean; address?: boolean };
 type DeviceSectionFields = { name?: boolean; serial?: boolean; imei?: boolean; state?: boolean; problem?: boolean };
 
-function customerContentHtml(data: Record<string, unknown>, visibleFields?: CustomerSectionFields | null): string {
+function customerContentHtml(data: Record<string, unknown>, visibleFields?: CustomerSectionFields | null, useSampleFallbacks: boolean = true): string {
   const show = (k: keyof CustomerSectionFields) => visibleFields?.[k] !== false;
   const n = (v: unknown) => (v != null && String(v).trim() ? String(v) : null);
-  const name = n(data.customer_name) || "Jan Novák";
-  const phone = n(data.customer_phone) || "+420 123 456 789";
-  const email = n(data.customer_email) || "jan.novak@email.cz";
-  const address = n(data.customer_address) || "Havlíčkova 45, 110 00 Praha 1";
+  const name = n(data.customer_name) || (useSampleFallbacks ? "Jan Novák" : null);
+  const phone = n(data.customer_phone) || (useSampleFallbacks ? "+420 123 456 789" : null);
+  const email = n(data.customer_email) || (useSampleFallbacks ? "jan.novak@email.cz" : null);
+  const address = n(data.customer_address) || (useSampleFallbacks ? "Havlíčkova 45, 110 00 Praha 1" : null);
   const parts: string[] = [];
-  if (show("name")) parts.push(`<div>${escapeHtml(name)}</div>`);
-  if (show("phone")) parts.push(`<div>${escapeHtml(phone)}</div>`);
-  if (show("email")) parts.push(`<div>${escapeHtml(email)}</div>`);
-  if (show("address")) parts.push(`<div>${escapeHtml(address)}</div>`);
+  if (show("name") && name) parts.push(`<div>${escapeHtml(name)}</div>`);
+  if (show("phone") && phone) parts.push(`<div>${escapeHtml(phone)}</div>`);
+  if (show("email") && email) parts.push(`<div>${escapeHtml(email)}</div>`);
+  if (show("address") && address) parts.push(`<div>${escapeHtml(address)}</div>`);
   return parts.join("");
 }
 
-function deviceContentHtml(data: Record<string, unknown>, visibleFields?: DeviceSectionFields | null): string {
+function deviceContentHtml(data: Record<string, unknown>, visibleFields?: DeviceSectionFields | null, useSampleFallbacks: boolean = true): string {
   const show = (k: keyof DeviceSectionFields) => visibleFields?.[k] !== false;
   const n = (v: unknown) => (v != null && String(v).trim() ? String(v) : null);
-  const name = n(data.device_name) || "iPhone 13 Pro, 128 GB";
-  const serial = n(data.device_serial) || "SN123456789012";
-  const imei = n(data.device_imei) || "35 123456 789012 3";
-  const state = n(data.device_state) || "Poškozený displej, prasklina v rohu";
-  const problem = n(data.device_problem) || "Nefunguje dotyková vrstva v levém dolním rohu";
+  const name = n(data.device_name) || (useSampleFallbacks ? "iPhone 13 Pro, 128 GB" : null);
+  const serial = n(data.device_serial) || (useSampleFallbacks ? "SN123456789012" : null);
+  const imei = n(data.device_imei) || (useSampleFallbacks ? "35 123456 789012 3" : null);
+  const state = n(data.device_state) || (useSampleFallbacks ? "Poškozený displej, prasklina v rohu" : null);
+  const problem = n(data.device_problem) || (useSampleFallbacks ? "Nefunguje dotyková vrstva v levém dolním rohu" : null);
   const parts: string[] = [];
-  if (show("name")) parts.push(`<div>${escapeHtml(name)}</div>`);
-  if (show("serial")) parts.push(`<div>SN: ${escapeHtml(serial)}</div>`);
-  if (show("imei")) parts.push(`<div>IMEI: ${escapeHtml(imei)}</div>`);
-  if (show("state")) parts.push(`<div>Stav: ${escapeHtml(state)}</div>`);
-  if (show("problem")) parts.push(`<div>Problém: ${escapeHtml(problem)}</div>`);
+  if (show("name") && name) parts.push(`<div>${escapeHtml(name)}</div>`);
+  if (show("serial") && serial) parts.push(`<div>SN: ${escapeHtml(serial)}</div>`);
+  if (show("imei") && imei) parts.push(`<div>IMEI: ${escapeHtml(imei)}</div>`);
+  if (show("state") && state) parts.push(`<div>Stav: ${escapeHtml(state)}</div>`);
+  if (show("problem") && problem) parts.push(`<div>Problém: ${escapeHtml(problem)}</div>`);
   return parts.join("");
 }
 
@@ -156,8 +156,8 @@ const SECTION_LABELS: Record<string, string> = {
 /** Optional override HTML for each section (customer, device, repairs, diag, photos, dates). Used when printing from Jobi with real ticket data. */
 export type SectionOverrides = Partial<Record<string, string>>;
 
-/** Při tisku záručního listu z Jobi: datum opravy (ISO). variables: substituce pro vlastní texty. templateMode: místo dat zobrazit placeholdery {{var}}. */
-export type GenerateDocumentHtmlOptions = { repairDate?: string; variables?: Record<string, string>; templateMode?: boolean };
+/** Při tisku záručního listu z Jobi: datum opravy (ISO). variables: substituce pro vlastní texty. templateMode: místo dat zobrazit placeholdery {{var}}. useSampleFallbacks: false = tisk z Jobi – žádné ukázkové texty, prázdné sekce se nevykreslí (výstup = stejný vzhled jako náhled). */
+export type GenerateDocumentHtmlOptions = { repairDate?: string; variables?: Record<string, string>; templateMode?: boolean; useSampleFallbacks?: boolean };
 
 const TEMPLATE_PLACEHOLDERS_BY_SECTION: Record<string, string[]> = {
   service: ["service_name", "service_ico", "service_dic", "service_address", "service_phone", "service_email"],
@@ -275,6 +275,7 @@ export function generateDocumentHtml(
   const colorMode = (config.colorMode as "color" | "bw") || "color";
   const accentOverride = (config.designAccentColor as string) || "";
   const logoSize = ((config.logoSize as number) ?? 100) / 100;
+  const stampSize = ((config.stampSize as number) ?? 100) / 100;
   const hasLogo = !!config.logoUrl;
   const reviewUrl =
     (config.reviewUrlType as string) === "google" && config.googlePlaceId
@@ -296,7 +297,6 @@ export function generateDocumentHtml(
               ? (config.qrOnVydejka as boolean) === true
               : false);
   const legalText = (docConfig.legalText as string) || "";
-  const includeCustomerSignature = (docConfig.includeCustomerSignature as boolean) !== false;
   const includeStamp = (docConfig.includeStamp as boolean) === true && !!config.stampUrl;
   const includeStampRight = (docConfig.includeStamp as boolean) === true;
   const includeSignatureOnHandover = (docConfig.includeSignatureOnHandover as boolean) !== false;
@@ -328,6 +328,7 @@ export function generateDocumentHtml(
   const repairDate = options?.repairDate ? new Date(options.repairDate) : new Date();
   const sectionVisibility = (docConfig.sectionVisibility as Record<string, string> | undefined) ?? {};
   const variables = options?.variables ?? {};
+  const useSampleFallbacks = options?.useSampleFallbacks !== false;
 
   const orderedSections = order.filter((key) => {
     if (key.startsWith("custom-")) return true;
@@ -468,16 +469,56 @@ export function generateDocumentHtml(
                     ? (() => {
                         const complaintCode = String(variablesForContent.complaint_code ?? variablesForContent.reclamation_code ?? "").trim();
                         const originalTicket = String(variablesForContent.original_ticket_code ?? variablesForContent.ticket_code ?? "").trim();
-                        const c = complaintCode || "R-2025-001";
-                        const o = originalTicket || "DEMO-001";
+                        const c = useSampleFallbacks ? (complaintCode || "R-2025-001") : complaintCode;
+                        const o = useSampleFallbacks ? (originalTicket || "DEMO-001") : originalTicket;
+                        if (!useSampleFallbacks && !c && !o) return "";
                         return `<div>Číslo reklamace: ${escapeHtml(c)}</div><div>Číslo původní zakázky: ${escapeHtml(o)}</div>`;
+                      })()
+                  : key === "dates" && (docType === "zakazkovy_list" || docType === "zarucni_list" || docType === "diagnosticky_protokol")
+                    ? (() => {
+                        const repairDateStr = String(variablesForContent.repair_date ?? "").trim();
+                        const completionStr = String(variablesForContent.repair_completion_date ?? "").trim();
+                        const codeStr = String(variablesForContent.ticket_code ?? "").trim();
+                        if (!useSampleFallbacks && !repairDateStr && !completionStr && !codeStr) return "";
+                        const repairDateOut = repairDateStr || (useSampleFallbacks ? "8. 2. 2025" : "");
+                        const completionOut = completionStr || (useSampleFallbacks ? "10. 2. 2025" : "");
+                        const codeOut = codeStr || (useSampleFallbacks ? "DEMO-001" : "");
+                        if (!repairDateOut && !completionOut && !codeOut) return "";
+                        let out = "";
+                        if (repairDateOut) out += `<div>Přijato: ${escapeHtml(repairDateOut)}</div>`;
+                        if (completionOut) out += `<div>Předpokládané dokončení: ${escapeHtml(completionOut)}</div>`;
+                        if (codeOut) out += `<div>Kód zakázky: ${escapeHtml(codeOut)}</div>`;
+                        return out || "";
+                      })()
+                  : key === "diag"
+                    ? (() => {
+                        const t = String(variablesForContent.diagnostic_text ?? "").trim();
+                        if (!useSampleFallbacks && !t) return "";
+                        const text = t || (useSampleFallbacks ? "Displej je mechanicky poškozený v levém dolním rohu. Dotyková vrstva nefunguje v oblasti cca 2×2 cm." : "");
+                        return text ? `<div>${escapeHtml(text)}</div>` : "";
+                      })()
+                  : key === "photos"
+                    ? (() => {
+                        const raw = variablesForContent.photo_urls;
+                        let urls: string[] = [];
+                        if (typeof raw === "string" && raw.trim()) {
+                          try {
+                            const parsed = JSON.parse(raw) as unknown;
+                            if (Array.isArray(parsed)) urls = parsed.filter((u): u is string => typeof u === "string" && u.trim().length > 0).map((u) => u.trim());
+                          } catch { /* ignore */ }
+                        }
+                        if (!useSampleFallbacks && urls.length === 0) return "";
+                        if (urls.length > 0) {
+                          return `<div style="display:flex;gap:8px;flex-wrap:wrap">${urls.map((url) => `<img src="${escapeHtml(url)}" alt="Foto" style="width:60px;height:60px;object-fit:cover;border-radius:6px" />`).join("")}</div>`;
+                        }
+                        return useSampleFallbacks ? (SECTION_CONTENT_HTML.photos || "") : "";
                       })()
                   : key === "service"
                     ? serviceContentHtml(companyData, sectionFields?.service)
                     : key === "customer"
-                      ? customerContentHtml(variablesForContent, sectionFields?.customer)
+                      ? customerContentHtml(variablesForContent, sectionFields?.customer, useSampleFallbacks)
                       : key === "device"
-                        ? deviceContentHtml(variablesForContent, sectionFields?.device)
+                        ? deviceContentHtml(variablesForContent, sectionFields?.device, useSampleFallbacks)
                         : (SECTION_CONTENT_HTML[key] || "");
       if (typeof content === "string" && content.trim() === "") return "";
       const width = sectionWidths[key] ?? DEFAULT_WIDTHS[key] ?? "full";
@@ -511,11 +552,13 @@ export function generateDocumentHtml(
       : "";
   const ticketCode =
     docType === "zakazkovy_list"
-      ? extractTicketCodeFromDates(sectionOverrides?.dates) ?? extractTicketCodeFromDates(SECTION_CONTENT_HTML.dates)
+      ? (variables.ticket_code != null && String(variables.ticket_code).trim() ? String(variables.ticket_code).trim() : null)
+        ?? extractTicketCodeFromDates(sectionOverrides?.dates)
+        ?? (useSampleFallbacks ? extractTicketCodeFromDates(SECTION_CONTENT_HTML.dates) : null)
       : null;
   const complaintCode =
     docType === "prijemka_reklamace" || docType === "vydejka_reklamace"
-      ? (String(variables.complaint_code ?? variables.reclamation_code ?? "").trim() || "R-2025-001")
+      ? (String(variables.complaint_code ?? variables.reclamation_code ?? "").trim() || (useSampleFallbacks ? "R-2025-001" : ""))
       : null;
   const headerTitleLine =
     docType === "zakazkovy_list" && ticketCode
@@ -542,8 +585,12 @@ export function generateDocumentHtml(
   const logoBlockHtml = hasLogo && hasCustomLogoPos
     ? `<div style="position:absolute;left:${logoPos!.x}px;top:${logoPos!.y}px;width:${120 * logoSize}px;height:${50 * logoSize}px"><img src="${(config.logoUrl as string).replace(/"/g, "&quot;")}" alt="Logo" style="max-width:100%;max-height:100%;object-fit:contain" /></div>`
     : "";
-  const stampBlockHtml = hasCustomStampPos && (config.stampUrl || includeStampRight || includeStamp)
-    ? `<div style="position:absolute;left:${stampPos!.x}px;top:${stampPos!.y}px">${config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:70px;max-height:35px;object-fit:contain" />` : `<div style="width:70px;height:35px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`}</div>`
+  const showStamp = !!(config.stampUrl || includeStampRight || includeStamp);
+  const stampW = Math.round(70 * stampSize);
+  const stampH = Math.round(35 * stampSize);
+  const stampPosEffective = hasCustomStampPos && stampPos ? stampPos : { x: 362, y: 1050 };
+  const stampBlockHtml = showStamp
+    ? `<div style="position:absolute;left:${stampPosEffective.x}px;top:${stampPosEffective.y}px">${config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:${stampW}px;max-height:${stampH}px;object-fit:contain" />` : `<div style="width:${stampW}px;height:${stampH}px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`}</div>`
     : "";
 
   const sigPositions = (docConfig.signaturePositions as Record<string, { x: number; y: number }>) || {};
@@ -559,11 +606,6 @@ export function generateDocumentHtml(
     })
     .join("");
 
-  const isTicketList = docType === "zakazkovy_list";
-  // Řádky na podpis (včetně „Podpis zákazníka“ u záručního listu) se přidávají jen jako vlastní bloky (signatureBlocksHtml).
-  const hasTicketListSignatures = false;
-  const hasOtherSignatures = false;
-
   const labelHandover = String(docConfig.signatureLabelHandover ?? "Podpis při předání zákazníkem").trim() || "Podpis při předání zákazníkem";
   const labelPickup = String(docConfig.signatureLabelPickup ?? "Podpis při vyzvednutí zákazníkem").trim() || "Podpis při vyzvednutí zákazníkem";
   const labelService = String(docConfig.signatureLabelService ?? "Podpis / razítko servisu").trim() || "Podpis / razítko servisu";
@@ -572,7 +614,7 @@ export function generateDocumentHtml(
   const posPickup = pos(docConfig.signaturePositionPickup);
   const posService = pos(docConfig.signaturePositionService);
 
-  const stampImgHtml = config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:70px;max-height:35px;object-fit:contain" />` : `<div style="width:70px;height:35px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`;
+  const stampImgHtml = config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:${stampW}px;max-height:${stampH}px;object-fit:contain" />` : `<div style="width:${stampW}px;height:${stampH}px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`;
 
   const blockHandover = includeSignatureOnHandover
     ? `<div style="width:100%;max-width:140px;border-bottom:1px solid #000;margin-bottom:4px"></div><div style="font-size:9px;color:${styles.contentColor}">${escapeHtml(labelHandover)}</div>`
@@ -581,8 +623,10 @@ export function generateDocumentHtml(
     ? `<div style="width:100%;max-width:140px;border-bottom:1px solid #000;margin-bottom:4px"></div><div style="font-size:9px;color:${styles.contentColor}">${escapeHtml(labelPickup)}</div>`
     : "";
   const blockService = includeStampRight
-    ? `${hasCustomStampPos ? "" : stampImgHtml}<div style="font-size:9px;color:${styles.contentColor};margin-top:4px">${escapeHtml(labelService)}</div>`
+    ? `${hasCustomStampPos || (showStamp && !hasCustomStampPos) ? "" : stampImgHtml}<div style="font-size:9px;color:${styles.contentColor};margin-top:4px">${escapeHtml(labelService)}</div>`
     : "";
+
+  const hasSignatureRow = !!(blockHandover || blockPickup || blockService);
 
   const slot = (align: "left" | "center" | "right", ...blocks: string[]) => {
     const filtered = blocks.filter(Boolean);
@@ -597,20 +641,14 @@ export function generateDocumentHtml(
   if (blockPickup) byPos[posPickup].push(blockPickup);
   if (blockService) byPos[posService].push(blockService);
 
-  const signaturesHtml = hasTicketListSignatures
+  const signaturesHtml = hasSignatureRow
     ? `
     <div style="margin-top:auto;padding-top:28px;display:flex;justify-content:space-between;align-items:flex-end;border-top:1px solid ${styles.sectionBorder};flex-shrink:0;gap:24px">
       ${slot("left", ...byPos.left)}
       ${slot("center", ...byPos.center)}
       ${slot("right", ...byPos.right)}
     </div>`
-    : hasOtherSignatures
-      ? `
-    <div style="margin-top:auto;padding-top:28px;display:flex;justify-content:space-around;border-top:1px solid ${styles.sectionBorder};flex-shrink:0">
-      ${includeCustomerSignature ? `<div><div style="width:100px;border-bottom:1px solid #000;margin-bottom:4px"></div><div style="font-size:9px;color:${styles.contentColor}">Podpis zákazníka</div></div>` : ""}
-      ${includeStamp && !hasCustomStampPos ? `<div>${config.stampUrl ? `<img src="${String(config.stampUrl).replace(/"/g, "&quot;")}" alt="Razítko" style="max-width:70px;max-height:35px;object-fit:contain" />` : `<div style="width:70px;height:35px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">Razítko</div>`}</div>` : ""}
-    </div>`
-      : "";
+    : "";
 
   const legalRadius = spec.sectionStyle === "underlineTitles" ? 0 : styles.sectionRadius;
   const legalHtml = legalText ? `<div style="margin-top:12px;padding:10px;background:${styles.sectionBg};border-radius:${legalRadius}px;font-size:9px;color:${styles.contentColor};border:1px solid ${styles.sectionBorder}">${escapeHtml(legalText)}</div>` : "";

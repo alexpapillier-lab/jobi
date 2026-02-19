@@ -599,78 +599,12 @@ function escapeHtmlForDoc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Sestaví obsah sekcí pro tisk přes JobiDocs (vzor) – vrací HTML fragmenty pro customer, device, repairs, diag, photos, dates. */
-function buildTicketSectionsForJobiDocs(
-  ticket: TicketEx,
-  _config: any,
-  _docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
-): Partial<Record<string, string>> {
-  const e = escapeHtmlForDoc;
-  const customerLines: string[] = [];
-  if (ticket.customerName) customerLines.push(`<div>${e(ticket.customerName)}</div>`);
-  if (ticket.customerPhone) customerLines.push(`<div>${e(ticket.customerPhone)}</div>`);
-  if (ticket.customerEmail) customerLines.push(`<div>${e(ticket.customerEmail)}</div>`);
-  const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
-  if (addr) customerLines.push(`<div>${e(addr)}</div>`);
-  if (ticket.customerCompany) customerLines.push(`<div>${e(ticket.customerCompany)}</div>`);
-  if (ticket.customerIco) customerLines.push(`<div>IČO: ${e(ticket.customerIco)}</div>`);
-
-  const deviceLines: string[] = [];
-  if (ticket.deviceLabel) deviceLines.push(`<div>${e(ticket.deviceLabel)}</div>`);
-  if (ticket.serialOrImei) deviceLines.push(`<div>SN/IMEI: ${e(ticket.serialOrImei)}</div>`);
-  if (ticket.deviceCondition) deviceLines.push(`<div>Stav: ${e(ticket.deviceCondition)}</div>`);
-  const problem = ticket.requestedRepair || ticket.issueShort;
-  if (problem) deviceLines.push(`<div>Problém: ${e(problem)}</div>`);
-
-  let repairsHtml = "";
-  if (ticket.performedRepairs && ticket.performedRepairs.length > 0) {
-    repairsHtml = ticket.performedRepairs
-      .map(
-        (r) =>
-          `<div style="display:flex;justify-content:space-between;gap:12px;width:100%"><span>${e(r.name)}</span>${r.price != null ? `<span style="white-space:nowrap">${r.price} Kč</span>` : ""}</div>`
-      )
-      .join("");
-    const total = ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0);
-    repairsHtml += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.12);display:flex;justify-content:space-between;gap:12px;width:100%;font-weight:600;font-size:12px"><span>Celková cena</span><span style="white-space:nowrap">${total} Kč</span></div>`;
-  }
-
-  const diagHtml = ticket.diagnosticText ? `<div>${e(ticket.diagnosticText)}</div>` : "";
-
-  let photosHtml = "";
-  if (ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0) {
-    photosHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap">${ticket.diagnosticPhotos
-      .map(
-        (url) =>
-          `<img src="${e(url)}" alt="Foto" style="width:60px;height:60px;object-fit:cover;border-radius:6px" />`
-      )
-      .join("")}</div>`;
-  }
-
-  const dateLines: string[] = [];
-  dateLines.push(`<div>Přijato: ${e(new Date(ticket.createdAt).toLocaleDateString("cs-CZ"))}</div>`);
-  if (ticket.expectedDoneAt) dateLines.push(`<div>Předpokládané dokončení: ${e(new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ"))}</div>`);
-  dateLines.push(`<div>Kód zakázky: ${e(ticket.code)}</div>`);
-
-  // Vždy posílat všechny sekce (i prázdné jako ""), aby JobiDocs nezobrazoval ukázková data (Jan Novák atd.)
-  const sections: Partial<Record<string, string>> = {
-    customer: customerLines.join(""),
-    device: deviceLines.join(""),
-    repairs: repairsHtml,
-    diag: diagHtml,
-    photos: photosHtml,
-    dates: dateLines.join(""),
-  };
-
-  return sections;
-}
-
 /** Sestaví proměnné pro vlastní texty v šabloně JobiDocs ({{ticket_code}}, {{customer_name}} atd.) při tisku z Jobi. */
 function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<string, unknown>): Record<string, string> {
   const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
   const totalPrice = ticket.performedRepairs?.length
     ? ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0)
     : 0;
-  const repairDate = new Date().toISOString();
   const repairDateFormatted = new Date(ticket.createdAt).toLocaleDateString("cs-CZ");
   const completionFormatted = ticket.expectedDoneAt ? new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ") : "";
   const serviceName = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name) : "";
@@ -680,9 +614,9 @@ function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<s
         ticket.performedRepairs.map((r) => ({
           name: r.name ?? "",
           price: r.price != null ? `${r.price} Kč` : "",
-          quantity: r.quantity ?? 1,
-          unit: r.unit ?? "ks",
-          total: r.price != null && r.quantity != null ? `${r.price * r.quantity} Kč` : (r.price != null ? `${r.price} Kč` : ""),
+          quantity: 1,
+          unit: "ks",
+          total: r.price != null ? `${r.price} Kč` : "",
         }))
       )
     : "[]";
@@ -709,8 +643,9 @@ function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<s
     total_price: totalPrice > 0 ? `${totalPrice} Kč` : "",
     warranty_until: "", // JobiDocs dopočte z repair_date a konfigurace záruky
     diagnostic_text: ticket.diagnosticText ?? "",
-    note: ticket.note ?? "",
+    note: (ticket as { notes?: string }).notes ?? "",
     repair_items: repairItems,
+    photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
     complaint_code: "",
     reclamation_code: "",
     original_ticket_code: ticket.code ?? "",
@@ -1574,13 +1509,13 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
       const companyData = safeLoadCompanyData();
-      const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      let res = await exportDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections, filePath);
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, filePath, { variables });
       if (!res.ok && res.error?.toLowerCase().includes("not found")) {
         const htmlContent = generateTicketHTML(ticket, true, config);
         res = await exportViaJobiDocs(htmlContent, filePath);
@@ -1607,16 +1542,14 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
   const stillRunning = await isJobiDocsRunning();
   if (!stillRunning) {
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
-  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections, { variables });
+  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
@@ -2231,13 +2164,13 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
       const companyData = safeLoadCompanyData();
-      const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      let res = await exportDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections, filePath);
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, {}, filePath, { variables });
       if (!res.ok && res.error?.toLowerCase().includes("not found")) {
         const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
         res = await exportViaJobiDocs(htmlContent, filePath);
@@ -2264,16 +2197,14 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
   const stillRunning = await isJobiDocsRunning();
   if (!stillRunning) {
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
-  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections, { variables });
+  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
     showToast("Úloha odeslána do fronty", "success");
   } else {
@@ -3020,14 +2951,15 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
       const companyData = safeLoadCompanyData();
-      const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
       const stillRunning = await isJobiDocsRunning();
       if (!stillRunning) {
         showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
         return;
       }
-      let res = await exportDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections, filePath, {
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, {}, filePath, {
         repair_date: new Date().toISOString(),
+        variables,
       });
       if (!res.ok && res.error?.toLowerCase().includes("not found")) {
         const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
@@ -3055,16 +2987,14 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
   const stillRunning = await isJobiDocsRunning();
   if (!stillRunning) {
     showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
     return;
   }
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
-  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections, {
+  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, {}, {
     repair_date: new Date().toISOString(), // záruka začíná datem tisku záručního listu
     variables,
   });

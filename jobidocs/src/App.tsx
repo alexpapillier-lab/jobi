@@ -1261,6 +1261,8 @@ function DocumentPreview({
   previewMode = "sample",
   selectedSectionId,
   onSectionSelect,
+  onLogoSelect,
+  onStampSelect,
 }: {
   docType: DocTypeKey;
   config: Record<string, unknown>;
@@ -1270,6 +1272,8 @@ function DocumentPreview({
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onStampPositionChange?: (pos: { x: number; y: number } | null) => void;
   onSignaturePositionChange?: (blockId: string, pos: { x: number; y: number } | null) => void;
+  onLogoSelect?: () => void;
+  onStampSelect?: () => void;
   /** When true, parent provides DndContext; we render drop zones and no internal DndContext */
   externalDnd?: boolean;
   sectionOrder?: string[];
@@ -1502,10 +1506,11 @@ function DocumentPreview({
     const p = config.stampPosition as { x: number; y: number } | undefined;
     return p && typeof p.x === "number" && typeof p.y === "number" ? p : null;
   }, [config.stampPosition]);
+  const stampSize = ((config.stampSize as number) ?? 100) / 100;
   const LOGO_W = 120 * logoSize;
   const LOGO_H = 50 * logoSize;
-  const STAMP_W = 70;
-  const STAMP_H = 35;
+  const STAMP_W = Math.round(70 * stampSize);
+  const STAMP_H = Math.round(35 * stampSize);
   const SIGNATURE_LINE_W = 100;
   const SIGNATURE_LINE_H = 28;
   const [isQrDragging, setIsQrDragging] = useState(false);
@@ -1524,6 +1529,9 @@ function DocumentPreview({
   const [signatureDragState, setSignatureDragState] = useState<{ blockId: string; x: number; y: number } | null>(null);
   const signatureDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number; blockId: string } | null>(null);
   const signatureDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const logoDidDragRef = useRef(false);
+  const stampDidDragRef = useRef(false);
+  const DRAG_THRESHOLD_PX = 4;
 
   useEffect(() => {
     if (!isQrDragging) return;
@@ -1578,6 +1586,9 @@ function DocumentPreview({
     const onUp = () => {
       const lastPos = logoDragCurrentRef.current;
       const startPos = logoDragStartRef.current;
+      if (startPos && lastPos && (Math.abs(lastPos.x - startPos.x) > DRAG_THRESHOLD_PX || Math.abs(lastPos.y - startPos.y) > DRAG_THRESHOLD_PX)) {
+        logoDidDragRef.current = true;
+      }
       const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : { x: 0, y: 28 });
       if (onLogoPositionChange) onLogoPositionChange(final);
       logoDragStartRef.current = null;
@@ -1612,6 +1623,9 @@ function DocumentPreview({
     const onUp = () => {
       const lastPos = stampDragCurrentRef.current;
       const startPos = stampDragStartRef.current;
+      if (startPos && lastPos && (Math.abs(lastPos.x - startPos.x) > DRAG_THRESHOLD_PX || Math.abs(lastPos.y - startPos.y) > DRAG_THRESHOLD_PX)) {
+        stampDidDragRef.current = true;
+      }
       const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : { x: 362, y: 1050 });
       if (onStampPositionChange) onStampPositionChange(final);
       stampDragStartRef.current = null;
@@ -1751,21 +1765,29 @@ function DocumentPreview({
             <div
               role="button"
               tabIndex={0}
-              title="Tažením přesunete logo na požadované místo"
+              title="Kliknutím upravíte, tažením přesunete logo"
               onMouseDown={(e) => {
                 if (e.button !== 0 || !onLogoPositionChange) return;
                 e.preventDefault();
+                logoDidDragRef.current = false;
                 logoDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: 0, y: 28 };
                 setLogoDragPosition({ x: 0, y: 28 });
                 setIsLogoDragging(true);
               }}
+              onClick={(e) => { e.stopPropagation(); if (!logoDidDragRef.current) onLogoSelect?.(); logoDidDragRef.current = false; }}
               style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", cursor: "grab", userSelect: "none" }}
             >
               <img src={config.logoUrl as string} alt="Logo" style={{ maxWidth: LOGO_W, maxHeight: LOGO_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} />
             </div>
           )}
           {!hasLogo && !logoPosition && (
-            <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: LOGO_W, height: LOGO_H, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 9 }}>
+            <div
+              role="button"
+              tabIndex={0}
+              title="Kliknutím nahrajete logo"
+              onClick={(e) => { e.stopPropagation(); onLogoSelect?.(); }}
+              style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: LOGO_W, height: LOGO_H, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 9, cursor: "pointer" }}
+            >
               Logo
             </div>
           )}
@@ -1790,14 +1812,16 @@ function DocumentPreview({
             <div
               role="button"
               tabIndex={0}
-              title="Tažením přesunete logo"
+              title="Kliknutím upravíte, tažením přesunete logo"
               onMouseDown={(e) => {
                 if (e.button !== 0 || !onLogoPositionChange) return;
                 e.preventDefault();
+                logoDidDragRef.current = false;
                 const pos = logoDragPosition ?? logoPosition ?? { x: 0, y: 28 };
                 logoDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
                 setIsLogoDragging(true);
               }}
+              onClick={(e) => { e.stopPropagation(); if (!logoDidDragRef.current) onLogoSelect?.(); logoDidDragRef.current = false; }}
               style={{
                 position: "absolute",
                 left: (logoDragPosition ?? logoPosition ?? { x: 0, y: 28 }).x,
@@ -1810,18 +1834,21 @@ function DocumentPreview({
               <img src={config.logoUrl as string} alt="Logo" style={{ maxWidth: LOGO_W, maxHeight: LOGO_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} />
             </div>
           )}
-          {(stampPosition || isStampDragging) && (config.stampUrl || (docConfig?.includeStamp as boolean) === true) && (
+          {(config.stampUrl || (docConfig?.includeStamp as boolean) === true) && (
             <div
               role="button"
               tabIndex={0}
-              title="Tažením přesunete razítko"
+              title="Kliknutím upravíte, tažením přesunete razítko"
               onMouseDown={(e) => {
                 if (e.button !== 0 || !onStampPositionChange) return;
                 e.preventDefault();
-                const pos = stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 };
+                stampDidDragRef.current = false;
+                const defaultPos = { x: 362, y: 1050 };
+                const pos = stampDragPosition ?? stampPosition ?? defaultPos;
                 stampDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
                 setIsStampDragging(true);
               }}
+              onClick={(e) => { e.stopPropagation(); if (!stampDidDragRef.current) onStampSelect?.(); stampDidDragRef.current = false; }}
               style={{
                 position: "absolute",
                 left: (stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 }).x,
@@ -2148,6 +2175,7 @@ export default function App() {
   const [configUpdatedAt, setConfigUpdatedAt] = useState<string | null>(null);
   const [documentsDragActiveId, setDocumentsDragActiveId] = useState<string | null>(null);
   const [selectedPreviewSectionId, setSelectedPreviewSectionId] = useState<string | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<"logo" | "stamp" | null>(null);
   const [previewMode, setPreviewMode] = useState<"sample" | "template">("sample");
   const [accordionOpen, setAccordionOpen] = useState<Record<string, boolean>>({
     logo: true, design: true, qr: true, sections: true, signatures: true, warranty: true, legal: true,
@@ -2318,32 +2346,6 @@ export default function App() {
       setConfigLoading(false);
     }
   }, []);
-
-  const handleExportConfigToLog = useCallback(() => {
-    const base = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
-    base.logoUrl = undefined;
-    base.stampUrl = undefined;
-    const docKeys = ["ticketList", "diagnosticProtocol", "warrantyCertificate", "prijemkaReklamace", "vydejkaReklamace"] as const;
-    const docLabels: Record<string, string> = {
-      ticketList: "Zakázkový list",
-      diagnosticProtocol: "Diagnostický protokol",
-      warrantyCertificate: "Záruční list",
-      prijemkaReklamace: "Příjemka reklamace",
-      vydejkaReklamace: "Výdejka reklamace",
-    };
-    console.log("%c——— JobiDocs: export konfigurace jako výchozí (base) ———", "font-weight:bold; font-size:12px;");
-    console.log("Použijte níže vypsaný objekt jako výchozí konfiguraci (např. v defaultDocumentsConfig nebo base config souboru).");
-    for (const key of docKeys) {
-      const doc = base[key] as Record<string, unknown> | undefined;
-      if (doc) {
-        console.log(`\n%c▼ ${docLabels[key] ?? key}`, "font-weight:600; color:#0ea5e9;");
-        console.log(JSON.stringify(doc, null, 2));
-      }
-    }
-    console.log("\n%c▼ Celá konfigurace (včetně globálních polí)", "font-weight:600; color:#0ea5e9;");
-    console.log(JSON.stringify(base, null, 2));
-    console.log("%c——— Konec exportu ———", "font-weight:bold; font-size:12px;");
-  }, [config]);
 
   useEffect(() => {
     fetchHealth();
@@ -3088,6 +3090,49 @@ export default function App() {
                   </div>
                 </div>
 
+                {selectedAsset && (
+                  <div style={{ position: "relative", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--accent)", background: "var(--accent-soft)", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button type="button" onClick={() => setSelectedAsset(null)} style={{ position: "absolute", top: 6, right: 6, padding: 2, border: "none", background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 14 }} aria-label="Zavřít">×</button>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                      {selectedAsset === "logo" ? "Upravit: Logo" : "Upravit: Razítko / podpis"}
+                    </div>
+                    {selectedAsset === "logo" && (
+                      <>
+                        <input ref={fileInputLogo} type="file" accept="image/*" onChange={handleFileLogo} style={{ display: "none" }} />
+                        <button type="button" onClick={() => fileInputLogo.current?.click()} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid var(--border)", background: config.logoUrl ? "var(--accent-soft)" : "var(--panel-2)", color: "var(--text)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+                          {config.logoUrl ? "Změnit logo" : "Nahrát logo"}
+                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.logoSize as number) ?? 100)}%</span>
+                          <input type="range" min={50} max={150} value={((config.logoSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, logoSize: Number(e.target.value) }))} style={{ flex: 1, minWidth: 80 }} />
+                        </div>
+                        {(config.logoPosition as { x: number; y: number } | undefined) && (
+                          <button type="button" onClick={() => setConfig((prev) => ({ ...prev, logoPosition: undefined }))} style={{ fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}>
+                            Vrátit logo do hlavičky
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {selectedAsset === "stamp" && (
+                      <>
+                        <input ref={fileInputStamp} type="file" accept="image/*" onChange={handleFileStamp} style={{ display: "none" }} />
+                        <button type="button" onClick={() => fileInputStamp.current?.click()} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid var(--border)", background: config.stampUrl ? "var(--accent-soft)" : "var(--panel-2)", color: "var(--text)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+                          {config.stampUrl ? "Změnit razítko / podpis" : "Nahrát razítko / podpis"}
+                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.stampSize as number) ?? 100)}%</span>
+                          <input type="range" min={50} max={250} value={((config.stampSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, stampSize: Number(e.target.value) }))} style={{ flex: 1, minWidth: 80 }} />
+                        </div>
+                        {(config.stampPosition as { x: number; y: number } | undefined) && (
+                          <button type="button" onClick={() => setConfig((prev) => ({ ...prev, stampPosition: undefined }))} style={{ fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}>
+                            Vrátit razítko do řádku podpisů
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {selectedPreviewSectionId && (
                   <div style={{ position: "relative", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--accent)", background: "var(--accent-soft)", display: "flex", flexDirection: "column", gap: 8 }}>
                     <button type="button" onClick={() => setSelectedPreviewSectionId(null)} style={{ position: "absolute", top: 6, right: 6, padding: 2, border: "none", background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 14 }} aria-label="Zavřít">×</button>
@@ -3497,7 +3542,7 @@ export default function App() {
                     {config.stampUrl ? "Změnit razítko / podpis" : "Nahrát razítko / podpis"}
                   </button>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.stampSize as number) ?? 100)}%</span>
-                  <input type="range" min={50} max={150} value={((config.stampSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, stampSize: Number(e.target.value) }))} style={{ flex: 1 }} />
+                  <input type="range" min={50} max={250} value={((config.stampSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, stampSize: Number(e.target.value) }))} style={{ flex: 1 }} />
                 </div>
                 {(config.stampPosition as { x: number; y: number } | undefined) && (
                   <button type="button" onClick={() => setConfig((prev) => ({ ...prev, stampPosition: undefined }))} style={{ marginTop: 6, fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -4335,14 +4380,6 @@ export default function App() {
                 >
                   {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení dokumentů"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleExportConfigToLog}
-                  title="Zapíše aktuální konfiguraci všech dokumentů do konzole (F12). Výstup lze použít jako výchozí konfiguraci pro nové instalace JobiDocs."
-                  style={{ padding: "12px 18px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-                >
-                  Export konfigurace do logu
-                </button>
               </div>
             </div>
 
@@ -4384,7 +4421,7 @@ export default function App() {
                 </div>
               </div>
               <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí. Šablona zobrazí placeholdery typu {"{{customer_name}}"}, {"{{ticket_code}}"}.</p>
-              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} onSignaturePositionChange={(blockId, pos) => { const docKey = DOC_TYPE_TO_UI[docType]; const doc = config[docKey] as Record<string, unknown> | undefined; const current = (doc?.signaturePositions || {}) as Record<string, { x: number; y: number }>; const merged = { ...current }; if (pos == null) delete merged[blockId]; else merged[blockId] = pos; updateDocConfig(["signaturePositions"], merged); }} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} selectedSectionId={selectedPreviewSectionId} onSectionSelect={setSelectedPreviewSectionId} />
+              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} onSignaturePositionChange={(blockId, pos) => { const docKey = DOC_TYPE_TO_UI[docType]; const doc = config[docKey] as Record<string, unknown> | undefined; const current = (doc?.signaturePositions || {}) as Record<string, { x: number; y: number }>; const merged = { ...current }; if (pos == null) delete merged[blockId]; else merged[blockId] = pos; updateDocConfig(["signaturePositions"], merged); }} onLogoSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("logo"); }} onStampSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("stamp"); }} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} selectedSectionId={selectedPreviewSectionId} onSectionSelect={(id) => { setSelectedPreviewSectionId(id); setSelectedAsset(null); }} />
               <button
                 type="button"
                 onClick={handlePrintPreview}
