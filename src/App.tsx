@@ -20,7 +20,7 @@ import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
-import { showToast, showPersistentToast, removeToast } from "./components/Toast";
+import { showToast, showPersistentToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
@@ -520,12 +520,13 @@ export default function App() {
 
   // Push services + activeServiceId + documentsConfig (z DB) + companyData + jobidocsLogo + Supabase auth + canManageDocuments do JobiDocs
   useEffect(() => {
-    if (services.length === 0) return;
+    if (services.length === 0 || !supabase) return;
+    const client = supabase;
 
     const push = async () => {
       const [dbConfig, sessionData] = await Promise.all([
         loadDocumentsConfigRawFromDB(activeServiceId),
-        supabase.auth.getSession(),
+        client.auth.getSession(),
       ]);
       const documentsConfig = dbConfig?.config ?? null;
       const session = sessionData.data?.session;

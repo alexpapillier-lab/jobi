@@ -583,6 +583,7 @@ function defaultDocumentsConfig(): Record<string, unknown> {
         customer: { ...DEFAULT_CUSTOMER_FIELDS },
         device: { ...DEFAULT_DEVICE_FIELDS },
       },
+      sectionVisibility: {} as Record<string, string>,
       customBlocks: {},
     },
     prijemkaReklamace: {
@@ -3122,6 +3123,21 @@ export default function App() {
                     gap: 16,
                   }}
                 >
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={(docConfig.sectionVisibility as Record<string, string> | undefined)?.warranty === "when_repair_date_set"}
+                      onChange={(e) => {
+                        const prev = (docConfig.sectionVisibility as Record<string, string> | undefined) ?? {};
+                        const next = { ...prev };
+                        if (e.target.checked) next.warranty = "when_repair_date_set";
+                        else delete next.warranty;
+                        updateDocConfig(["sectionVisibility"], next);
+                      }}
+                      style={{ accentColor: "var(--accent)", width: 18, height: 18 }}
+                    />
+                    <span style={{ fontSize: 13, color: "var(--text)" }}>Zobrazit sekci Záruka jen když je vyplněno datum opravy</span>
+                  </label>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Délka záruky</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <input
@@ -3667,13 +3683,6 @@ export default function App() {
               )}
             </div>
 
-            <div>
-              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Odkazy</h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <a href="https://jobi.cz" target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>jobi.cz – Nápověda a podpora</a>
-                <a href="mailto:podpora@jobi.cz" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Zpětná vazba (podpora@jobi.cz)</a>
-              </div>
-            </div>
           </section>
           </>
         )}

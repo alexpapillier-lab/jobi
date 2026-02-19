@@ -58,7 +58,7 @@
 
 ### 2.3 Další návrhy funkcí v customizaci
 
-- **Podmíněná viditelnost sekce:** Ano. Např. „Zobraz sekci Záruka jen pokud je vyplněno datum opravy.“ Config: `sectionVisibility: { warranty: "when_repair_date_set" }`.
+- **Podmíněná viditelnost sekce – hotovo.** V nastavení záručního listu (accordion Záruka) je checkbox „Zobrazit sekci Záruka jen když je vyplněno datum opravy“. Config: `sectionVisibility: { warranty: "when_repair_date_set" }`. Při generování PDF/HTML z Jobi se sekce Záruka vynechá, pokud Jobi nepošle `variables.repair_date` (nebo je prázdné).
 - **Opakovatelné bloky z Jobi:** Ano. Sekce „Položky oprav“ jako tabulka s konfigurovatelnými sloupci (název, cena, množství, …).
 - **Pozice a velikost obrázků (logo, razítko, QR):** Ano. **Hotovo:** QR, logo i razítko lze v náhledu chytit a přetáhnout; pozice se ukládají do configu (`qrPosition`, `logoPosition`, `stampPosition`). Tlačítka „Vrátit logo do hlavičky“ / „Vrátit razítko do řádku podpisů“ obnoví výchozí umístění.
 - **Více stránek vzoru:** Zatím ne (není potřeba).
@@ -96,7 +96,7 @@
 ### 3.5 Aktivity a O aplikaci
 
 - **Návrh 13 – Aktivity jako kompaktní log – hotovo.** Tabulka s sloupci Čas, Akce, Stav, Detail; filtry „Stav: Vše / Jen chyby“ a „Období: Všechny / Posledních 24 h“; tlačítko Obnovit.
-- **Návrh 14 – O aplikaci přehledně – hotovo.** Bloky: Verze (JobiDocs x.y.z), Stav API, Aktualizace (JobiDocsUpdateCard / text), Odkazy (nápověda jobi.cz, zpětná vazba podpora@jobi.cz). Licence/kredity ponecháno na později.
+- **Návrh 14 – O aplikaci přehledně – hotovo.** Bloky: Verze (JobiDocs x.y.z), Stav API, Aktualizace (JobiDocsUpdateCard / text). Odkazy odstraněny. Licence/kredity ponecháno na později.
 
 ### 3.6 Další vylepšení UI
 

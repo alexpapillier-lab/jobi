@@ -299,11 +299,18 @@ export function generateDocumentHtml(
   };
 
   const repairDate = options?.repairDate ? new Date(options.repairDate) : new Date();
+  const sectionVisibility = (docConfig.sectionVisibility as Record<string, string> | undefined) ?? {};
+  const variables = options?.variables ?? {};
 
   const orderedSections = order.filter((key) => {
     if (key.startsWith("custom-")) return true;
     const includeKey = sectionKeyToInclude[key];
-    return includeKey && (docConfig[includeKey] as boolean) !== false;
+    if (!includeKey || (docConfig[includeKey] as boolean) === false) return false;
+    if (key === "warranty" && sectionVisibility.warranty === "when_repair_date_set") {
+      const repairDateVar = variables.repair_date;
+      if (repairDateVar == null || String(repairDateVar).trim() === "") return false;
+    }
+    return true;
   });
 
   const sectionWidths = (docConfig.sectionWidths as Record<string, string>) || {};
@@ -359,7 +366,7 @@ export function generateDocumentHtml(
       const sectionBorderLeft = effectiveStyle === "leftStripe" ? `3px solid ${styles.secondaryColor}` : "none";
       const overridden = sectionOverrides && key in sectionOverrides ? sectionOverrides[key] : undefined;
       const sectionFields = docConfig.sectionFields as Record<string, CustomerSectionFields | DeviceSectionFields | ServiceSectionFields> | undefined;
-      const variables = options?.variables ?? {};
+      const variablesForContent = options?.variables ?? {};
       const templateContent = options?.templateMode === true ? templateSectionContentHtml(key, docConfig) : null;
       const content =
         overridden !== undefined
@@ -375,9 +382,9 @@ export function generateDocumentHtml(
                 : key === "service"
                   ? serviceContentHtml(companyData, sectionFields?.service)
                   : key === "customer"
-                    ? customerContentHtml(variables, sectionFields?.customer)
+                    ? customerContentHtml(variablesForContent, sectionFields?.customer)
                     : key === "device"
-                      ? deviceContentHtml(variables, sectionFields?.device)
+                      ? deviceContentHtml(variablesForContent, sectionFields?.device)
                       : (SECTION_CONTENT_HTML[key] || "");
       if (typeof content === "string" && content.trim() === "") return "";
       const width = sectionWidths[key] ?? DEFAULT_WIDTHS[key] ?? "full";
