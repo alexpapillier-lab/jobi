@@ -228,7 +228,7 @@ function setupAutoUpdate() {
   autoUpdater.on("error", (err) => {
     console.warn("[JobiDocs] Update error:", err);
     updateState = null;
-    const msg = err?.message ?? String(err);
+    const msg = err instanceof Error ? err.message : String(err);
     sendUpdateError(msg);
     sendUpdateState();
   });
@@ -237,7 +237,7 @@ function setupAutoUpdate() {
     sendUpdateError(null);
     autoUpdater.checkForUpdates().catch((err) => {
       console.warn("[JobiDocs] Update check failed:", err);
-      sendUpdateError(err?.message ?? String(err));
+      sendUpdateError(err instanceof Error ? err.message : String(err));
     });
   };
   doCheck();
@@ -252,7 +252,7 @@ ipcMain.handle("jobidocs:check-update", async () => {
     return result?.updateInfo?.version ?? null;
   } catch (err) {
     console.warn("[JobiDocs] Update check failed:", err);
-    sendUpdateError(err?.message ?? String(err));
+    sendUpdateError(err instanceof Error ? err.message : String(err));
     return null;
   }
 });
