@@ -6,25 +6,31 @@
 
 import { getDesignStyles, type DocumentDesign } from "./documentDesign";
 
-type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
-type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate";
+type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
+type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate" | "prijemkaReklamace" | "vydejkaReklamace";
 
 const DOC_TYPE_TO_UI: Record<DocTypeKey, DocTypeUI> = {
   zakazkovy_list: "ticketList",
   zarucni_list: "warrantyCertificate",
   diagnosticky_protokol: "diagnosticProtocol",
+  prijemka_reklamace: "prijemkaReklamace",
+  vydejka_reklamace: "vydejkaReklamace",
 };
 
 const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
   zakazkovy_list: "Zakázkový list",
   zarucni_list: "Záruční list",
   diagnosticky_protokol: "Diagnostický protokol",
+  prijemka_reklamace: "Příjemka reklamace",
+  vydejka_reklamace: "Výdejka reklamace",
 };
 
 const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
   diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
   warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
+  prijemkaReklamace: ["service", "customer", "device", "dates"],
+  vydejkaReklamace: ["service", "customer", "device", "dates"],
 };
 
 function serviceContentHtml(companyData: Record<string, unknown>): string {
@@ -176,7 +182,13 @@ export function generateDocumentHtml(
       ? (config.qrOnTicketList as boolean) === true
       : docType === "diagnosticky_protokol"
         ? (config.qrOnDiagnostic as boolean) === true
-        : (config.qrOnWarranty as boolean) !== false);
+        : docType === "zarucni_list"
+          ? (config.qrOnWarranty as boolean) !== false
+          : docType === "prijemka_reklamace"
+            ? (config.qrOnPrijemka as boolean) === true
+            : docType === "vydejka_reklamace"
+              ? (config.qrOnVydejka as boolean) === true
+              : false);
   const legalText = (docConfig.legalText as string) || "";
   const includeCustomerSignature = (docConfig.includeCustomerSignature as boolean) !== false;
   const includeStamp = (docConfig.includeStamp as boolean) === true && !!config.stampUrl;

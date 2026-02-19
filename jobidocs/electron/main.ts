@@ -105,32 +105,40 @@ async function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  // macOS: červené tlačítko zavřít → skrýt okno (ne quit), skrýt Dock; zůstane jen tray
+  if (process.platform === "darwin") {
+    const win = mainWindow;
+    win.on("close", (e) => {
+      if (!win.isDestroyed()) {
+        e.preventDefault();
+        win.hide();
+        app.dock?.hide();
+      }
+    });
+  }
 }
 
 const TRAY_ICON_SIZE = 22; // macOS menu bar: 22x22 (16x16 také ok)
-
-/** Na světlém menu baru černá ikona, na tmavém bílá (kvůli viditelnosti). */
-function getTrayIconPath(): string {
-  const darkMenuBar = nativeTheme.shouldUseDarkColors;
-  const name = darkMenuBar ? "tray-icon-white.png" : "tray-icon-black.png";
-  return path.join(__dirname, name);
-}
+const TRAY_ICON_TEMPLATE = "tray-icon-template.png"; // monochrome (black + alpha); macOS přebarví podle menu baru
 
 function loadTrayIcon(): ReturnType<typeof nativeImage.createFromPath> | null {
-  const iconPath = getTrayIconPath();
+  const iconPath = path.join(__dirname, TRAY_ICON_TEMPLATE);
   let icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) return null;
   const size = icon.getSize();
   if (size.width > TRAY_ICON_SIZE || size.height > TRAY_ICON_SIZE) {
     icon = icon.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
   }
+  // macOS: template image = maska; OS sám přebarví podle kontrastu k menu baru
+  if (process.platform === "darwin") icon.setTemplateImage(true);
   return icon;
 }
 
 function setupTray() {
   if (process.platform !== "darwin") return;
   try {
-    let icon = loadTrayIcon();
+    const icon = loadTrayIcon();
     if (!icon) return;
     tray = new Tray(icon);
     tray.setToolTip("JobiDocs – běží");
@@ -139,6 +147,7 @@ function setupTray() {
         {
           label: "Otevřít JobiDocs",
           click: () => {
+            if (process.platform === "darwin") app.dock?.show();
             if (mainWindow) {
               mainWindow.show();
               mainWindow.focus();
@@ -152,16 +161,7 @@ function setupTray() {
       ])
     );
     tray.on("click", () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      } else {
-        createWindow().then(() => mainWindow?.show());
-      }
-    });
-    nativeTheme.on("updated", () => {
-      const next = loadTrayIcon();
-      if (tray && next && !next.isEmpty()) tray.setImage(next);
+      tray?.popUpContextMenu();
     });
   } catch {
     // ikona nenalezena – tray přeskočíme
@@ -291,6 +291,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // macOS: okna jen skrýváme (close → hide), aplikace běží v trayi; nevolat quit
   if (process.platform !== "darwin") {
     app.quit();
   }

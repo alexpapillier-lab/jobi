@@ -45,19 +45,23 @@ type Printer = { name: string; status: string; available: boolean };
 type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
 type ServiceEntry = { service_id: string; service_name: string; role: string };
 
-type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
-type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate";
+type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
+type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate" | "prijemkaReklamace" | "vydejkaReklamace";
 
 const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
   zakazkovy_list: "Zakázkový list",
   zarucni_list: "Záruční list",
   diagnosticky_protokol: "Diagnostický protokol",
+  prijemka_reklamace: "Příjemka reklamace",
+  vydejka_reklamace: "Výdejka reklamace",
 };
 
 const DOC_TYPE_TO_UI: Record<DocTypeKey, DocTypeUI> = {
   zakazkovy_list: "ticketList",
   zarucni_list: "warrantyCertificate",
   diagnosticky_protokol: "diagnosticProtocol",
+  prijemka_reklamace: "prijemkaReklamace",
+  vydejka_reklamace: "vydejkaReklamace",
 };
 
 const DESIGN_OPTIONS: { value: DocumentDesign; label: string }[] = [
@@ -155,6 +159,8 @@ const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   ticketList: ["service", "customer", "device", "repairs", "diag", "photos", "dates"],
   diagnosticProtocol: ["service", "customer", "device", "diag", "photos", "dates"],
   warrantyCertificate: ["service", "customer", "device", "repairs", "warranty", "dates"],
+  prijemkaReklamace: ["service", "customer", "device", "dates"],
+  vydejkaReklamace: ["service", "customer", "device", "dates"],
 };
 
 type SectionWidth = "full" | "half";
@@ -206,6 +212,8 @@ function defaultDocumentsConfig(): Record<string, unknown> {
     qrOnTicketList: false,
     qrOnDiagnostic: false,
     qrOnWarranty: true,
+    qrOnPrijemka: false,
+    qrOnVydejka: false,
     colorMode: "color",
     designAccentColor: "",
     designPrimaryColor: "",
@@ -267,6 +275,26 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       sectionOrder: DEFAULT_SECTION_ORDER.warrantyCertificate,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
     },
+    prijemkaReklamace: {
+      includeServiceInfo: true,
+      includeCustomerInfo: true,
+      includeDeviceInfo: true,
+      includeDates: true,
+      design: "classic",
+      legalText: "Příjemka reklamace potvrzuje převzetí reklamovaného zboží.",
+      sectionOrder: DEFAULT_SECTION_ORDER.prijemkaReklamace,
+      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+    },
+    vydejkaReklamace: {
+      includeServiceInfo: true,
+      includeCustomerInfo: true,
+      includeDeviceInfo: true,
+      includeDates: true,
+      design: "classic",
+      legalText: "Výdejka reklamace potvrzuje vyzvednutí po vyřízení reklamace.",
+      sectionOrder: DEFAULT_SECTION_ORDER.vydejkaReklamace,
+      sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+    },
   };
 }
 
@@ -284,7 +312,7 @@ function ModernCheckbox({ checked, onChange, label }: { checked: boolean; onChan
 function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: (v: DocTypeKey) => void }) {
   return (
     <div style={{ display: "flex", gap: 8 }}>
-      {(["zakazkovy_list", "zarucni_list", "diagnosticky_protokol"] as DocTypeKey[]).map((dt) => (
+      {(["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace"] as DocTypeKey[]).map((dt) => (
         <button
           key={dt}
           type="button"
@@ -592,7 +620,13 @@ function DocumentPreview({
       ? (config.qrOnTicketList as boolean) === true
       : docType === "diagnosticky_protokol"
         ? (config.qrOnDiagnostic as boolean) === true
-        : (config.qrOnWarranty as boolean) !== false);
+        : docType === "zarucni_list"
+          ? (config.qrOnWarranty as boolean) !== false
+          : docType === "prijemka_reklamace"
+            ? (config.qrOnPrijemka as boolean) === true
+            : docType === "vydejka_reklamace"
+              ? (config.qrOnVydejka as boolean) === true
+              : false);
   const containerRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.5);
@@ -622,11 +656,13 @@ function DocumentPreview({
       setQrDragPosition(pos);
     };
     const onUp = () => {
-      const final = qrDragCurrentRef.current ?? qrDragStartRef.current ? { x: qrDragStartRef.current!.x, y: qrDragStartRef.current!.y } : qrPosition;
+      const lastPos = qrDragCurrentRef.current;
+      const startPos = qrDragStartRef.current;
+      const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : qrPosition);
       if (onQrPositionChange) onQrPositionChange(final);
       qrDragStartRef.current = null;
       qrDragCurrentRef.current = null;
-      setQrDragPosition(null);
+      setQrDragPosition(final);
       setIsQrDragging(false);
     };
     window.addEventListener("mousemove", onMove);
@@ -636,6 +672,15 @@ function DocumentPreview({
       window.removeEventListener("mouseup", onUp);
     };
   }, [isQrDragging, onQrPositionChange, qrCodeSize, qrPosition]);
+
+  const TOL = 2;
+  useEffect(() => {
+    if (!qrDragPosition) return;
+    const want = config.qrPosition as { x: number; y: number } | undefined;
+    if (want && typeof want.x === "number" && typeof want.y === "number" && Math.abs(want.x - qrDragPosition.x) <= TOL && Math.abs(want.y - qrDragPosition.y) <= TOL) {
+      setQrDragPosition(null);
+    }
+  }, [config.qrPosition, qrDragPosition]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -880,7 +925,7 @@ function JobiDocsUpdateCard({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {updateError && (
-        <div style={{ fontSize: 13, color: "var(--error, #c00)" }}>
+        <div style={{ fontSize: 13, color: "var(--error)" }}>
           Kontrola aktualizací selhala: {updateError}
         </div>
       )}
@@ -1473,20 +1518,27 @@ export default function App() {
             { key: "includeStamp", label: "Razítko / podpis" },
             { key: "includeCustomerSignature", label: "Podpis zákazníka" },
           ]
-        : [
-            { key: "includeServiceInfo", label: "Údaje o servisu" },
-            { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
-            { key: "includeDeviceInfo", label: "Údaje o zařízení" },
-            { key: "includeRepairs", label: "Provedené opravy" },
-            { key: "includeWarranty", label: "Záruka" },
-            { key: "includeDates", label: "Data" },
-            { key: "includeStamp", label: "Razítko / podpis" },
-            { key: "includeCustomerSignature", label: "Podpis zákazníka" },
-          ];
+        : docType === "prijemka_reklamace" || docType === "vydejka_reklamace"
+          ? [
+              { key: "includeServiceInfo", label: "Údaje o servisu" },
+              { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
+              { key: "includeDeviceInfo", label: "Údaje o zařízení" },
+              { key: "includeDates", label: "Data" },
+            ]
+          : [
+              { key: "includeServiceInfo", label: "Údaje o servisu" },
+              { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
+              { key: "includeDeviceInfo", label: "Údaje o zařízení" },
+              { key: "includeRepairs", label: "Provedené opravy" },
+              { key: "includeWarranty", label: "Záruka" },
+              { key: "includeDates", label: "Data" },
+              { key: "includeStamp", label: "Razítko / podpis" },
+              { key: "includeCustomerSignature", label: "Podpis zákazníka" },
+            ];
 
   return (
-    <div style={{ minHeight: "100vh", padding: 24 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", padding: "var(--spacing-page)" }}>
+      <div className="page-container">
         <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <AppLogo size={48} colors={context.jobidocsLogo ?? undefined} modern />
           <div>
@@ -1663,6 +1715,19 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {(docType === "prijemka_reklamace" || docType === "vydejka_reklamace") && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Právní / doplňkový text</div>
+                  <textarea
+                    value={String(docConfig.legalText ?? "")}
+                    onChange={(e) => updateDocConfig(["legalText"], e.target.value)}
+                    placeholder={docType === "prijemka_reklamace" ? "Příjemka reklamace potvrzuje převzetí reklamovaného zboží." : "Výdejka reklamace potvrzuje vyzvednutí po vyřízení reklamace."}
+                    rows={2}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+                  />
+                </div>
+              )}
 
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Barevný režim</div>
@@ -2234,6 +2299,8 @@ export default function App() {
                   <ModernCheckbox checked={(config.qrOnTicketList as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnTicketList: v }))} label="Zakázkový list" />
                   <ModernCheckbox checked={(config.qrOnDiagnostic as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnDiagnostic: v }))} label="Diagnostický protokol" />
                   <ModernCheckbox checked={(config.qrOnWarranty as boolean) !== false} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnWarranty: v }))} label="Záruční list" />
+                  <ModernCheckbox checked={(config.qrOnPrijemka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnPrijemka: v }))} label="Příjemka reklamace" />
+                  <ModernCheckbox checked={(config.qrOnVydejka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnVydejka: v }))} label="Výdejka reklamace" />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost QR: {((config.qrCodeSize as number) ?? 120)} px</span>

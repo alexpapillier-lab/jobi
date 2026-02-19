@@ -1,4 +1,9 @@
-/* JobiDocs – Jobi-style theme */
+/* JobiDocs – design system (barvy, mezery, typografie, stíny)
+ * Používejte tyto proměnné v celé aplikaci pro konzistentní vzhled.
+ * Barvy: --bg, --panel, --panel-2, --text, --muted, --border, --accent, --accent-soft, --error
+ * Rozměry: --radius-sm, --radius-md, --radius-lg, --content-max-width, --spacing-page
+ * Stíny a efekty: --shadow, --shadow-soft, --blur, --transition-smooth
+ */
 :root {
   --bg: linear-gradient(135deg, #f6f7f9 0%, #eef0f4 100%);
   --panel: rgba(255, 255, 255, 0.92);
@@ -7,11 +12,14 @@
   --muted: #6b7280;
   --border: rgba(17, 24, 39, 0.12);
   --icon: #6b7280;
+  --error: #dc2626;
   --shadow: 0 25px 80px rgba(0, 0, 0, 0.15);
   --shadow-soft: 0 15px 40px rgba(0, 0, 0, 0.10);
-  --radius-lg: 24px;
-  --radius-md: 18px;
   --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --content-max-width: 1200px;
+  --spacing-page: 24px;
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.15);
   --accent-hover: #1d4ed8;
@@ -41,8 +49,14 @@ body {
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: var(--spacing-page);
   box-shadow: var(--shadow-soft);
+}
+
+.page-container {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--spacing-page);
 }
 
 button, input, select, textarea {
