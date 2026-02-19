@@ -7,6 +7,10 @@ type Toast = {
   message: string;
   type?: "success" | "error" | "info";
   isClosing?: boolean;
+  /** Nezmizí po čase ani po najetí myší; zobrazí tlačítko akce */
+  persistent?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 let toastId = 0;
@@ -36,6 +40,26 @@ export function showToast(message: string, type: "success" | "error" | "info" = 
       notify();
     }
   }, 3000);
+}
+
+/** Toast, který nezmizí při najetí myší a má tlačítko (např. „Jít do nastavení“). Vrátí id pro pozdější removeToast. */
+export function showPersistentToast(
+  message: string,
+  type: "success" | "error" | "info",
+  options: { actionLabel: string; onAction: () => void }
+): string {
+  playToastSound(type);
+  const id = `toast-${++toastId}`;
+  toasts.push({
+    id,
+    message,
+    type,
+    persistent: true,
+    actionLabel: options.actionLabel,
+    onAction: options.onAction,
+  });
+  notify();
+  return id;
 }
 
 export function removeToast(id: string) {
@@ -84,6 +108,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   const isClosing = toast.isClosing ?? false;
   const isSuccess = toast.type === "success";
   const isError = toast.type === "error";
+  const isPersistent = toast.persistent === true;
   const bg = isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
 
   const handleAnimationEnd = (e: React.AnimationEvent) => {
@@ -97,14 +122,20 @@ function ToastItem({ toast }: { toast: Toast }) {
     removeToast(toast.id);
   };
 
+  const handleAction = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toast.onAction?.();
+    removeToast(toast.id);
+  };
+
   return (
     <div
-      role="button"
+      role={isPersistent ? "alert" : "button"}
       tabIndex={0}
       onAnimationEnd={handleAnimationEnd}
-      onMouseEnter={dismiss}
-      onClick={dismiss}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dismiss(); } }}
+      onMouseEnter={isPersistent ? undefined : dismiss}
+      onClick={isPersistent ? undefined : dismiss}
+      onKeyDown={isPersistent ? undefined : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dismiss(); } }}
       style={{
         background: bg,
         color: isSuccess || isError ? "white" : "var(--accent-fg)",
@@ -121,11 +152,11 @@ function ToastItem({ toast }: { toast: Toast }) {
         fontSize: 14,
         fontWeight: 500,
         animation: isClosing || toast.isClosing ? "toastSlideOut 0.3s ease-in forwards" : "toastSlideIn 0.3s ease-out",
-        cursor: "pointer",
+        cursor: isPersistent ? "default" : "pointer",
         userSelect: "text",
         WebkitUserSelect: "text",
       }}
-      title="Kliknutím nebo najetím myší zavřete"
+      title={isPersistent ? undefined : "Kliknutím nebo najetím myší zavřete"}
     >
       {isSuccess && (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -147,6 +178,25 @@ function ToastItem({ toast }: { toast: Toast }) {
         </svg>
       )}
       <span style={{ flex: 1, userSelect: "text" }}>{toast.message}</span>
+      {isPersistent && toast.actionLabel && (
+        <button
+          type="button"
+          onClick={handleAction}
+          style={{
+            flexShrink: 0,
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "none",
+            background: "rgba(255,255,255,0.25)",
+            color: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {toast.actionLabel}
+        </button>
+      )}
     </div>
   );
 }

@@ -20,17 +20,20 @@ import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
-import { showToast } from "./components/Toast";
+import { showToast, showPersistentToast, removeToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
 import { pushContextToJobiDocs, openJobiDocsDownload } from "./lib/jobidocs";
+import { loadDocumentsConfigRawFromDB } from "./lib/documentSettings";
+import { useActiveRole } from "./hooks/useActiveRole";
 import { getLogoColors, LOGO_PRESETS } from "./lib/logoPresets";
 import type { LogoPresetId } from "./lib/logoPresets";
 import type { ThemeMode } from "./theme/ThemeProvider";
 import { STORAGE_KEYS } from "./constants/storageKeys";
-import { safeLoadDocumentsConfig, safeLoadCompanyData } from "./pages/Orders";
+import { safeLoadCompanyData } from "./pages/Orders";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
+import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import {
   getShortcut,
@@ -111,6 +114,8 @@ export default function App() {
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
+  /** Když uživatel klikne „Jít do nastavení“ v toastu aktualizace, otevřeme Settings na této subsekci */
+  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "about"; subsection: "about_updates" } | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
@@ -119,6 +124,8 @@ export default function App() {
       return null;
     }
   });
+  const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
 
   // Track previous activeServiceId for service change detection
@@ -511,34 +518,42 @@ export default function App() {
     }
   }, [session, supabase, activeServiceId]);
 
-  // Push services + activeServiceId + documentsConfig + companyData + jobidocsLogo to JobiDocs (JobiDocs logo vždy podle tématu)
+  // Push services + activeServiceId + documentsConfig (z DB) + companyData + jobidocsLogo + Supabase auth + canManageDocuments do JobiDocs
   useEffect(() => {
     if (services.length === 0) return;
-    const theme = (localStorage.getItem("jobsheet_theme") || "light") as ThemeMode;
-    let jobidocsLogo = getLogoColors(theme, "auto");
-    jobidocsLogo = { ...jobidocsLogo, foreground: jobidocsLogo.background };
 
-    const documentsConfig = safeLoadDocumentsConfig();
-    const companyData = safeLoadCompanyData();
-    pushContextToJobiDocs(services, activeServiceId, {
-      documentsConfig: documentsConfig ?? null,
-      companyData: companyData ?? null,
-      jobidocsLogo,
-    });
-    const id = setInterval(() => {
-      const doc = safeLoadDocumentsConfig();
-      const comp = safeLoadCompanyData();
+    const push = async () => {
+      const [dbConfig, sessionData] = await Promise.all([
+        loadDocumentsConfigRawFromDB(activeServiceId),
+        supabase.auth.getSession(),
+      ]);
+      const documentsConfig = dbConfig?.config ?? null;
+      const session = sessionData.data?.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
       const t = (localStorage.getItem("jobsheet_theme") || "light") as ThemeMode;
       let logo = getLogoColors(t, "auto");
       logo = { ...logo, foreground: logo.background };
       pushContextToJobiDocs(services, activeServiceId, {
-        documentsConfig: doc ?? null,
-        companyData: comp ?? null,
+        documentsConfig,
+        companyData: safeLoadCompanyData() ?? null,
         jobidocsLogo: logo,
+        canManageDocuments,
+        supabaseAuth:
+          supabaseUrl && supabaseAnonKey
+            ? {
+                supabaseUrl,
+                supabaseAnonKey,
+                supabaseAccessToken: session?.access_token ?? null,
+              }
+            : null,
       });
-    }, 5000);
+    };
+
+    push();
+    const id = setInterval(push, 5000);
     return () => clearInterval(id);
-  }, [services, activeServiceId]);
+  }, [services, activeServiceId, canManageDocuments]);
 
   // Clear service-scoped cache when activeServiceId changes
   useEffect(() => {
@@ -789,6 +804,21 @@ export default function App() {
   // OTA: check once when app is ready (Tauri only). Must be called unconditionally (hooks order).
   useCheckForAppUpdate();
 
+  const appUpdate = useAppUpdate();
+  const lastShownUpdateVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const v = appUpdate?.update?.version;
+    if (!v || v === lastShownUpdateVersionRef.current) return;
+    lastShownUpdateVersionRef.current = v;
+    showPersistentToast("Je k dispozici aktualizace aplikace.", "info", {
+      actionLabel: "Jít do nastavení",
+      onAction: () => {
+        setActivePage("settings");
+        setOpenSettingsToSubsection({ category: "about", subsection: "about_updates" });
+      },
+    });
+  }, [appUpdate?.update?.version]);
+
   // Apply saved logo preset to app (Dock) icon on startup (Tauri/macOS only).
   useEffect(() => {
     const preset = localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null;
@@ -991,6 +1021,8 @@ export default function App() {
                   ? TOUR_STEPS[tourStep].settingsSection!
                   : null
               }
+              openToSubsection={openSettingsToSubsection}
+              onOpenToSubsectionConsumed={() => setOpenSettingsToSubsection(null)}
             />
           )}
 

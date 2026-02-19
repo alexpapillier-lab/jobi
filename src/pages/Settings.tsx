@@ -572,9 +572,12 @@ type SettingsProps = {
   onStartTour?: () => void;
   /** When set (e.g. by app tour), switch to this category/subsection so the highlighted tab is visible. */
   tourSection?: { category: string; subsection: string } | null;
+  /** Když uživatel přijde z toastu „Jít do nastavení“ (aktualizace), otevřít tuto subsekci a pak vyvolat callback. */
+  openToSubsection?: { category: SettingsCategory; subsection: SettingsSubsection } | null;
+  onOpenToSubsectionConsumed?: () => void;
 };
 
-export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection }: SettingsProps) {
+export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
   const appUpdate = useAppUpdate();
@@ -613,6 +616,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       });
     }
   }, [tourSection?.category, tourSection?.subsection]);
+
+  // Otevřít konkrétní subsekci (např. Aktualizace po kliku na „Jít do nastavení“ v toastu)
+  useEffect(() => {
+    if (!openToSubsection?.category || !openToSubsection?.subsection) return;
+    setSection({ category: openToSubsection.category, subsection: openToSubsection.subsection });
+    onOpenToSubsectionConsumed?.();
+  }, [openToSubsection?.category, openToSubsection?.subsection, onOpenToSubsectionConsumed]);
 
   // Na stránce Klávesové zkratky vypnout globální zkratky (aby Ctrl+Q nevyhodilo jinam)
   useEffect(() => {

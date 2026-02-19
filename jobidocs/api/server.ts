@@ -6,6 +6,7 @@ import { listPrinters } from "./printers.js";
 import { getSettings, putSettings, setSettingsPath } from "./settings.js";
 import { getProfile, putProfile, setProfilesPath } from "./profiles.js";
 import { getDocumentsConfig, putDocumentsConfig, setDocumentsConfigPath } from "./documentsConfig.js";
+import { saveDocumentsConfigToSupabase, loadDocumentsConfigFromSupabase, migrateConfigAssetsToStorage } from "./supabaseSync.js";
 import { printPdf } from "./print.js";
 import { generateDocumentHtml } from "../src/documentToHtml.js";
 
@@ -36,13 +37,23 @@ let jobiContext: {
   documentsConfig?: DocumentsConfig | null;
   companyData?: CompanyData | null;
   jobidocsLogo?: JobiDocsLogoColors | null;
+  /** Má uživatel oprávnění měnit nastavení dokumentů (z Jobi). Když false, JobiDocs zobrazí customizaci jako read-only. */
+  canManageDocuments?: boolean;
 } = {
   services: [],
   activeServiceId: null,
   documentsConfig: null,
   companyData: null,
   jobidocsLogo: null,
+  canManageDocuments: true,
 };
+
+/** Supabase auth z Jobi – pro zápis document config do DB. Neposíláme do GET /v1/context. */
+let supabaseAuth: {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseAccessToken: string | null;
+} | null = null;
 
 function pushActivity(action: "print" | "export", status: "ok" | "error" | "pending", detail?: string) {
   activityLog.unshift({ ts: new Date().toISOString(), action, status, detail });
@@ -95,6 +106,10 @@ export async function startApiServer(
       documentsConfig?: DocumentsConfig | null;
       companyData?: CompanyData | null;
       jobidocsLogo?: JobiDocsLogoColors | null;
+      canManageDocuments?: boolean;
+      supabaseUrl?: string;
+      supabaseAnonKey?: string;
+      supabaseAccessToken?: string | null;
     };
   }>("/v1/context", async (req) => {
     const body = req.body || {};
@@ -103,6 +118,21 @@ export async function startApiServer(
     if (body.documentsConfig !== undefined) jobiContext.documentsConfig = body.documentsConfig ?? null;
     if (body.companyData !== undefined) jobiContext.companyData = body.companyData ?? null;
     if (body.jobidocsLogo !== undefined) jobiContext.jobidocsLogo = body.jobidocsLogo ?? null;
+    if (body.canManageDocuments !== undefined) jobiContext.canManageDocuments = body.canManageDocuments;
+    if (
+      body.supabaseUrl &&
+      body.supabaseAnonKey &&
+      typeof body.supabaseUrl === "string" &&
+      typeof body.supabaseAnonKey === "string"
+    ) {
+      supabaseAuth = {
+        supabaseUrl: body.supabaseUrl,
+        supabaseAnonKey: body.supabaseAnonKey,
+        supabaseAccessToken: body.supabaseAccessToken ?? null,
+      };
+    } else {
+      supabaseAuth = null;
+    }
     return jobiContext;
   });
 
@@ -146,7 +176,7 @@ export async function startApiServer(
     return settings;
   });
 
-  // Documents config (full config per service) – lokálně
+  // Documents config (full config per service) – z DB když máme auth, jinak lokálně
   fastify.get<{
     Querystring: { service_id: string };
   }>("/v1/documents-config", async (req, reply) => {
@@ -154,21 +184,67 @@ export async function startApiServer(
     if (!serviceId) {
       return reply.status(400).send({ error: "service_id required" });
     }
+    if (supabaseAuth?.supabaseAccessToken) {
+      const fromDb = await loadDocumentsConfigFromSupabase(
+        serviceId,
+        supabaseAuth.supabaseUrl,
+        supabaseAuth.supabaseAnonKey,
+        supabaseAuth.supabaseAccessToken
+      );
+      if (fromDb) {
+        return { config: fromDb.config, version: fromDb.version, updated_at: fromDb.updated_at ?? null };
+      }
+    }
     const result = await getDocumentsConfig(serviceId);
-    return result ?? { config: null, version: 0 };
+    const out = result ?? { config: null, version: 0 };
+    return { config: out.config, version: out.version, updated_at: null };
   });
 
   fastify.put<{
     Querystring: { service_id: string };
     Body: { config?: unknown };
   }>("/v1/documents-config", async (req, reply) => {
+    if (jobiContext.canManageDocuments === false) {
+      return reply.status(403).send({ error: "Nemáte oprávnění měnit nastavení dokumentů." });
+    }
     const serviceId = req.query?.service_id;
     if (!serviceId) {
       return reply.status(400).send({ error: "service_id required" });
     }
-    const { config } = req.body || {};
-    const result = await putDocumentsConfig(serviceId, config);
-    return result;
+    let config = req.body?.config as unknown;
+    if (supabaseAuth?.supabaseAccessToken && config && typeof config === "object" && !Array.isArray(config)) {
+      try {
+        config = await migrateConfigAssetsToStorage(
+          serviceId,
+          config as Record<string, unknown>,
+          supabaseAuth.supabaseUrl,
+          supabaseAuth.supabaseAnonKey,
+          supabaseAuth.supabaseAccessToken
+        );
+      } catch (e) {
+        fastify.log.warn({ serviceId, err: e }, "Asset migration to storage failed, saving as-is");
+      }
+    }
+    const configToSave = config ?? {};
+    const result = await putDocumentsConfig(serviceId, configToSave);
+    let updated_at: string | null = null;
+    let version = result.version;
+    if (supabaseAuth?.supabaseAccessToken) {
+      const sync = await saveDocumentsConfigToSupabase(
+        serviceId,
+        configToSave,
+        supabaseAuth.supabaseUrl,
+        supabaseAuth.supabaseAnonKey,
+        supabaseAuth.supabaseAccessToken
+      );
+      if (!sync.ok && sync.error) {
+        fastify.log.warn({ serviceId, error: sync.error }, "Supabase sync failed");
+      } else if (sync.updated_at) {
+        updated_at = sync.updated_at;
+        if (typeof sync.version === "number") version = sync.version;
+      }
+    }
+    return { ...result, updated_at, version };
   });
 
   // Profiles (per-service per-doc-type) – lokálně, později Supabase
@@ -243,12 +319,13 @@ export async function startApiServer(
     company_data: Record<string, unknown>;
     sections?: Partial<Record<string, string>>;
     repair_date?: string;
+    variables?: Record<string, string>;
   };
   fastify.post<{ Body: PrintDocumentBody }>("/v1/print-document", async (req, reply) => {
     if (!htmlToPdf) {
       return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
     }
-    const { doc_type, service_id, company_data, sections, repair_date } = req.body || {};
+    const { doc_type, service_id, company_data, sections, repair_date, variables } = req.body || {};
     if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
       return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
     }
@@ -266,8 +343,10 @@ export async function startApiServer(
       const existing = (baseConfig[sectionKey] as Record<string, unknown>) || {};
       const config = { ...baseConfig, [sectionKey]: { ...existing, ...profileJson } };
       const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
-      const options = repair_date && typeof repair_date === "string" ? { repairDate: repair_date } : undefined;
-      const html = generateDocumentHtml(config, doc_type, companyData, sections ?? undefined, options);
+      const options: { repairDate?: string; variables?: Record<string, string> } = {};
+      if (repair_date && typeof repair_date === "string") options.repairDate = repair_date;
+      if (variables && typeof variables === "object" && !Array.isArray(variables)) options.variables = variables;
+      const html = generateDocumentHtml(config, doc_type, companyData, sections ?? undefined, Object.keys(options).length ? options : undefined);
       fastify.log.info("[print-document] html length=%d", html.length);
       const PDF_TIMEOUT_MS = 60000;
       let timeoutId: ReturnType<typeof setTimeout>;

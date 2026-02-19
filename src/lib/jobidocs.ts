@@ -111,6 +111,13 @@ export async function getProfileFromJobiDocs(
 
 export type JobiDocsLogoColors = { background: string; jInner: string; foreground: string };
 
+/** Supabase credentials pro JobiDocs – umožní mu ukládat document config do DB. */
+export type JobiDocsSupabaseAuth = {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseAccessToken: string | null;
+};
+
 export async function pushContextToJobiDocs(
   services: Array<{ service_id: string; service_name: string; role: string }>,
   activeServiceId: string | null,
@@ -118,20 +125,31 @@ export async function pushContextToJobiDocs(
     documentsConfig?: Record<string, unknown> | null;
     companyData?: Record<string, unknown> | null;
     jobidocsLogo?: JobiDocsLogoColors | null;
+    /** Má aktuální uživatel oprávnění měnit nastavení dokumentů? (owner/admin nebo can_manage_documents) */
+    canManageDocuments?: boolean;
+    /** Pokud uvedeno, JobiDocs může ukládat document config do DB pod tímto uživatelským tokenem. */
+    supabaseAuth?: JobiDocsSupabaseAuth | null;
   }
 ): Promise<void> {
   try {
     const f = await getJobiDocsFetch();
+    const body: Record<string, unknown> = {
+      services,
+      activeServiceId,
+      documentsConfig: options?.documentsConfig ?? null,
+      companyData: options?.companyData ?? null,
+      jobidocsLogo: options?.jobidocsLogo ?? null,
+      canManageDocuments: options?.canManageDocuments ?? true,
+    };
+    if (options?.supabaseAuth) {
+      body.supabaseUrl = options.supabaseAuth.supabaseUrl;
+      body.supabaseAnonKey = options.supabaseAuth.supabaseAnonKey;
+      body.supabaseAccessToken = options.supabaseAuth.supabaseAccessToken ?? null;
+    }
     await f(`${JOBIDOCS_API}/v1/context`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        services,
-        activeServiceId,
-        documentsConfig: options?.documentsConfig ?? null,
-        companyData: options?.companyData ?? null,
-        jobidocsLogo: options?.jobidocsLogo ?? null,
-      }),
+      body: JSON.stringify(body),
       connectTimeout: 2000,
     } as RequestInit & { connectTimeout?: number });
   } catch {

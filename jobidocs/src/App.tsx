@@ -2,15 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import packageJson from "../package.json";
 import { generateDocumentHtml } from "./documentToHtml";
 import { AppLogo } from "./components/AppLogo";
-import { getDesignStyles, type DocumentDesign, type LayoutSpec } from "./documentDesign";
+import { getDesignStyles, type DocumentDesign, type LayoutSpec, type SectionStyle } from "./documentDesign";
 import {
   DndContext,
+  DragOverlay,
   pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  useDraggable,
+  useDroppable,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -22,6 +26,68 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 const API_BASE = "http://127.0.0.1:3847";
+const WIZARD_STORAGE_KEY = "jobidocs_wizard_dismissed";
+
+/** Všechny podporované proměnné pro vlastní text – při tisku z Jobi se nahradí. */
+export const CUSTOM_TEXT_VARIABLES: Record<string, string> = {
+  ticket_code: "Kód zakázky",
+  order_code: "Číslo zakázky (alias)",
+  customer_name: "Jméno zákazníka",
+  customer_phone: "Telefon zákazníka",
+  customer_email: "E-mail zákazníka",
+  customer_address: "Adresa zákazníka",
+  device_name: "Název zařízení",
+  device_serial: "Sériové číslo",
+  device_imei: "IMEI",
+  device_state: "Stav zařízení",
+  device_problem: "Popis problému",
+  service_name: "Název servisu",
+  service_phone: "Telefon servisu",
+  service_email: "E-mail servisu",
+  service_address: "Adresa servisu",
+  service_ico: "IČO",
+  service_dic: "DIČ",
+  repair_date: "Datum přijetí / opravy",
+  repair_completion_date: "Předpokládané dokončení",
+  total_price: "Celková cena",
+  warranty_until: "Záruka do data",
+  diagnostic_text: "Text diagnostiky",
+  note: "Poznámka",
+};
+
+/** Ukázkové hodnoty pro proměnné {{…}} (náhled / tisk z JobiDocs). Při tisku z Jobi pošle Jobi své hodnoty. */
+function getSampleVariablesForPreview(companyData: Record<string, unknown>): Record<string, string> {
+  const name: string = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name).trim() : "Název servisu";
+  const d = new Date();
+  const repairDate = d.toLocaleDateString("cs-CZ");
+  const completionDate = new Date(d.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString("cs-CZ");
+  const warrantyUntil = new Date(d.getTime() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString("cs-CZ");
+  return {
+    ticket_code: "DEMO-001",
+    order_code: "DEMO-001",
+    customer_name: "Jan Novák",
+    customer_phone: "+420 123 456 789",
+    customer_email: "jan.novak@email.cz",
+    customer_address: "Havlíčkova 45, 110 00 Praha 1",
+    device_name: "iPhone 13 Pro, 128 GB",
+    device_serial: "SN123456789012",
+    device_imei: "35 123456 789012 3",
+    device_state: "Poškozený displej",
+    device_problem: "Nefunguje dotyková vrstva v rohu",
+    service_name: name,
+    service_phone: (companyData?.phone != null && String(companyData.phone).trim() !== "") ? String(companyData.phone) : "+420 234 567 890",
+    service_email: (companyData?.email != null && String(companyData.email).trim() !== "") ? String(companyData.email) : "servis@example.cz",
+    service_address: [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ") || "Ulice 1, 110 00 Praha",
+    service_ico: (companyData?.ico != null && String(companyData.ico).trim() !== "") ? String(companyData.ico) : "12345678",
+    service_dic: (companyData?.dic != null && String(companyData.dic).trim() !== "") ? String(companyData.dic) : "CZ12345678",
+    repair_date: repairDate,
+    repair_completion_date: completionDate,
+    total_price: "3 000 Kč",
+    warranty_until: warrantyUntil,
+    diagnostic_text: "Displej mechanicky poškozen. Doporučena výměna.",
+    note: "Zákazník souhlasí s opravou.",
+  };
+}
 
 declare global {
   interface Window {
@@ -79,25 +145,11 @@ const SAMPLE_DATA: Record<string, { label: string; content: React.ReactNode }> =
   },
   customer: {
     label: "Údaje o zákazníkovi",
-    content: (
-      <>
-        <div>Jan Novák</div>
-        <div>+420 123 456 789</div>
-        <div>jan.novak@email.cz</div>
-        <div>Havlíčkova 45, 110 00 Praha 1</div>
-      </>
-    ),
+    content: null, // vykreslí se dynamicky z companyData + sectionFields v SectionCardContent
   },
   device: {
     label: "Údaje o zařízení",
-    content: (
-      <>
-        <div>iPhone 13 Pro, 128 GB</div>
-        <div>SN: SN123456789012</div>
-        <div>Stav: Poškozený displej, prasklina v rohu</div>
-        <div>Problém: Nefunguje dotyková vrstva v levém dolním rohu</div>
-      </>
-    ),
+    content: null, // vykreslí se dynamicky z companyData + sectionFields v SectionCardContent
   },
   repairs: {
     label: "Provedené opravy",
@@ -175,6 +227,24 @@ const DEFAULT_SECTION_WIDTHS: Record<string, SectionWidth> = {
   dates: "half",
 };
 
+/** Proměnné zobrazené v režimu Šablona po sekcích (service/customer/device filtrujeme podle sectionFields). */
+const TEMPLATE_PLACEHOLDERS_BY_SECTION: Record<string, string[]> = {
+  service: ["service_name", "service_ico", "service_dic", "service_address", "service_phone", "service_email"],
+  customer: ["customer_name", "customer_phone", "customer_email", "customer_address"],
+  device: ["device_name", "device_serial", "device_imei", "device_state", "device_problem"],
+  repairs: ["total_price"],
+  diag: ["diagnostic_text"],
+  photos: [],
+  dates: ["ticket_code", "repair_date", "repair_completion_date"],
+  warranty: ["warranty_until"],
+};
+/** Pro sekce s výběrem polí: klíč pole v sectionFields -> pořadí v TEMPLATE_PLACEHOLDERS (index). */
+const SECTION_FIELD_KEY_TO_VAR_INDEX: Record<string, Record<string, number>> = {
+  service: { name: 0, ico: 1, dic: 2, address: 3, phone: 4, email: 5 },
+  customer: { name: 0, phone: 1, email: 2, address: 3 },
+  device: { name: 0, serial: 1, imei: 2, state: 3, problem: 4 },
+};
+
 const INCLUDE_KEY_TO_SECTION_KEY: Record<string, string> = {
   includeServiceInfo: "service",
   includeCustomerInfo: "customer",
@@ -186,6 +256,225 @@ const INCLUDE_KEY_TO_SECTION_KEY: Record<string, string> = {
   includePhotos: "photos",
   includeDates: "dates",
 };
+
+const SECTION_KEY_TO_INCLUDE_BY_DOC: Record<DocTypeKey, Record<string, string>> = {
+  zakazkovy_list: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", diag: "includeDiagnostic", photos: "includePhotos", dates: "includeDates" },
+  diagnosticky_protokol: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", diag: "includeDiagnosticText", photos: "includePhotos", dates: "includeDates" },
+  zarucni_list: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", warranty: "includeWarranty", dates: "includeDates" },
+  prijemka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", dates: "includeDates" },
+  vydejka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", dates: "includeDates" },
+};
+
+// Draggable palette item for section (drag from palette into preview)
+const PALETTE_CUSTOM_TEXT_ID = "palette-custom-text";
+const PALETTE_CUSTOM_HEADING_ID = "palette-custom-heading";
+const PALETTE_CUSTOM_SEPARATOR_ID = "palette-custom-separator";
+const PALETTE_CUSTOM_SPACER_ID = "palette-custom-spacer";
+/** Možnosti stylu sekce (přepisují výchozí styl z designu). */
+const SECTION_STYLE_OPTIONS: { value: "" | SectionStyle; label: string }[] = [
+  { value: "", label: "Výchozí" },
+  { value: "boxed", label: "S rámečkem" },
+  { value: "ruled", label: "S linkami" },
+  { value: "cards", label: "Karty" },
+  { value: "underlineTitles", label: "Jen podtržené nadpisy" },
+  { value: "leftStripe", label: "S levým pruhem" },
+];
+
+const PALETTE_CUSTOM_ID_TO_TYPE: Record<string, "text" | "heading" | "separator" | "spacer"> = {
+  [PALETTE_CUSTOM_TEXT_ID]: "text",
+  [PALETTE_CUSTOM_HEADING_ID]: "heading",
+  [PALETTE_CUSTOM_SEPARATOR_ID]: "separator",
+  [PALETTE_CUSTOM_SPACER_ID]: "spacer",
+};
+
+/** Pole, která lze zobrazit/skrýt v sekci Údaje o servisu */
+const SERVICE_FIELDS: { key: keyof ServiceSectionFields; label: string }[] = [
+  { key: "name", label: "Název" },
+  { key: "ico", label: "IČO" },
+  { key: "dic", label: "DIČ" },
+  { key: "address", label: "Adresa" },
+  { key: "phone", label: "Telefon" },
+  { key: "email", label: "E-mail" },
+  { key: "website", label: "Web" },
+];
+
+export type ServiceSectionFields = { name?: boolean; ico?: boolean; dic?: boolean; address?: boolean; phone?: boolean; email?: boolean; website?: boolean };
+const DEFAULT_SERVICE_FIELDS: ServiceSectionFields = Object.fromEntries(SERVICE_FIELDS.map((f) => [f.key, true])) as ServiceSectionFields;
+
+/** Pole v sekci Údaje o zákazníkovi */
+const CUSTOMER_FIELDS: { key: keyof CustomerSectionFields; label: string }[] = [
+  { key: "name", label: "Jméno" },
+  { key: "phone", label: "Telefon" },
+  { key: "email", label: "E-mail" },
+  { key: "address", label: "Adresa" },
+];
+export type CustomerSectionFields = { name?: boolean; phone?: boolean; email?: boolean; address?: boolean };
+const DEFAULT_CUSTOMER_FIELDS: CustomerSectionFields = Object.fromEntries(CUSTOMER_FIELDS.map((f) => [f.key, true])) as CustomerSectionFields;
+
+/** Pole v sekci Údaje o zařízení */
+const DEVICE_FIELDS: { key: keyof DeviceSectionFields; label: string }[] = [
+  { key: "name", label: "Název / model" },
+  { key: "serial", label: "Sériové číslo" },
+  { key: "imei", label: "IMEI" },
+  { key: "state", label: "Stav" },
+  { key: "problem", label: "Problém" },
+];
+export type DeviceSectionFields = { name?: boolean; serial?: boolean; imei?: boolean; state?: boolean; problem?: boolean };
+const DEFAULT_DEVICE_FIELDS: DeviceSectionFields = Object.fromEntries(DEVICE_FIELDS.map((f) => [f.key, true])) as DeviceSectionFields;
+
+/** Sekce s výběrem polí v paletě */
+const SECTION_FIELDS_BY_KEY: Record<
+  string,
+  { fields: readonly { key: string; label: string }[]; defaultFields: Record<string, boolean> }
+> = {
+  service: { fields: SERVICE_FIELDS, defaultFields: DEFAULT_SERVICE_FIELDS as Record<string, boolean> },
+  customer: { fields: CUSTOMER_FIELDS, defaultFields: DEFAULT_CUSTOMER_FIELDS as Record<string, boolean> },
+  device: { fields: DEVICE_FIELDS, defaultFields: DEFAULT_DEVICE_FIELDS as Record<string, boolean> },
+};
+
+function getPaletteDragLabel(activeId: string): string {
+  if (activeId === PALETTE_CUSTOM_TEXT_ID) return "Vlastní text";
+  if (activeId === PALETTE_CUSTOM_HEADING_ID) return "Vlastní nadpis";
+  if (activeId === PALETTE_CUSTOM_SEPARATOR_ID) return "Oddělovač";
+  if (activeId === PALETTE_CUSTOM_SPACER_ID) return "Prázdný řádek";
+  const sectionKey = activeId.replace("palette-", "");
+  return (SAMPLE_DATA[sectionKey] as { label?: string } | undefined)?.label ?? sectionKey;
+}
+
+function SectionPaletteItem({
+  sectionKey,
+  inDocument,
+  expanded,
+  onToggleExpand,
+  docConfig,
+  updateDocConfig,
+}: {
+  sectionKey: string;
+  inDocument: boolean;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  docConfig?: Record<string, unknown>;
+  updateDocConfig?: (path: string[], value: unknown) => void;
+}) {
+  const label = SAMPLE_DATA[sectionKey]?.label ?? sectionKey;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `palette-${sectionKey}`, data: { sectionKey } });
+  const fieldConfig = SECTION_FIELDS_BY_KEY[sectionKey];
+  const hasFieldOptions = !!fieldConfig;
+  const sectionFieldsRaw = (docConfig?.sectionFields as Record<string, Record<string, boolean>> | undefined)?.[sectionKey];
+  const sectionFields = sectionFieldsRaw ?? fieldConfig?.defaultFields ?? {};
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        style={{
+          padding: "8px 12px",
+          borderRadius: 10,
+          border: "1px solid var(--border)",
+          background: inDocument ? "var(--accent-soft)" : "var(--panel)",
+          color: "var(--text)",
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: "grab",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          opacity: isDragging ? 0.6 : 1,
+        }}
+      >
+        <span style={{ opacity: 0.6 }}>⋮⋮</span>
+        <span style={{ flex: 1 }}>{label}</span>
+        {hasFieldOptions && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
+            title="Vybrat zobrazené údaje"
+            style={{ padding: 2, border: "none", background: "none", cursor: "pointer", color: "var(--muted)", display: "flex" }}
+            aria-expanded={expanded}
+          >
+            <span style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+          </button>
+        )}
+        {inDocument && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>✓</span>}
+      </div>
+      {hasFieldOptions && expanded && updateDocConfig && fieldConfig && (
+        <div style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", marginLeft: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>Zobrazit v sekci:</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {fieldConfig.fields.map(({ key, label: flabel }) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={(sectionFields[key] ?? true) as boolean}
+                  onChange={(e) => {
+                    const next = { ...sectionFields, [key]: e.target.checked };
+                    updateDocConfig(["sectionFields", sectionKey], next);
+                  }}
+                />
+                {flabel}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaletteCustomBlockItem({ id, label, hasAny }: { id: string; label: string; hasAny: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { type: id } });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 10,
+        border: "1px solid var(--border)",
+        background: hasAny ? "var(--accent-soft)" : "var(--panel)",
+        color: "var(--text)",
+        fontSize: 12,
+        fontWeight: 500,
+        cursor: "grab",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        opacity: isDragging ? 0.6 : 1,
+      }}
+    >
+      <span style={{ opacity: 0.6 }}>⋮⋮</span>
+      {label}
+      {hasAny && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>✓</span>}
+    </div>
+  );
+}
+
+// Drop zone between sections (for palette drag)
+function SectionDropZone({ index }: { index: number }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drop-${index}` });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        flexBasis: "100%",
+        width: "100%",
+        minHeight: isOver ? 48 : 24,
+        borderRadius: 10,
+        background: isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.02)",
+        border: isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
+        transition: "background 0.2s ease, border 0.2s ease, min-height 0.2s ease",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {isOver && <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>Pustit zde</span>}
+    </div>
+  );
+}
 
 // Default DocumentsConfig shape (matches Jobi)
 const DESIGN_ACCENT_PRESETS: { value: string; label: string }[] = [
@@ -235,6 +524,13 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       legalText: "Tento dokument slouží jako potvrzení o přijetí zařízení do servisu.",
       sectionOrder: DEFAULT_SECTION_ORDER.ticketList,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionStyles: {},
+      sectionFields: {
+        service: { ...DEFAULT_SERVICE_FIELDS },
+        customer: { ...DEFAULT_CUSTOMER_FIELDS },
+        device: { ...DEFAULT_DEVICE_FIELDS },
+      },
+      customBlocks: {},
       signatureLabelHandover: "Podpis při předání zákazníkem",
       signatureLabelPickup: "Podpis při vyzvednutí zákazníkem",
       signatureLabelService: "Podpis / razítko servisu",
@@ -255,6 +551,13 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       legalText: "Diagnostický protokol obsahuje výsledky diagnostiky.",
       sectionOrder: DEFAULT_SECTION_ORDER.diagnosticProtocol,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionStyles: {},
+      sectionFields: {
+        service: { ...DEFAULT_SERVICE_FIELDS },
+        customer: { ...DEFAULT_CUSTOMER_FIELDS },
+        device: { ...DEFAULT_DEVICE_FIELDS },
+      },
+      customBlocks: {},
     },
     warrantyCertificate: {
       includeServiceInfo: true,
@@ -274,6 +577,13 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       legalText: "Záruční list potvrzuje provedené opravy.",
       sectionOrder: DEFAULT_SECTION_ORDER.warrantyCertificate,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionStyles: {},
+      sectionFields: {
+        service: { ...DEFAULT_SERVICE_FIELDS },
+        customer: { ...DEFAULT_CUSTOMER_FIELDS },
+        device: { ...DEFAULT_DEVICE_FIELDS },
+      },
+      customBlocks: {},
     },
     prijemkaReklamace: {
       includeServiceInfo: true,
@@ -284,6 +594,13 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       legalText: "Příjemka reklamace potvrzuje převzetí reklamovaného zboží.",
       sectionOrder: DEFAULT_SECTION_ORDER.prijemkaReklamace,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionStyles: {},
+      sectionFields: {
+        service: { ...DEFAULT_SERVICE_FIELDS },
+        customer: { ...DEFAULT_CUSTOMER_FIELDS },
+        device: { ...DEFAULT_DEVICE_FIELDS },
+      },
+      customBlocks: {},
     },
     vydejkaReklamace: {
       includeServiceInfo: true,
@@ -294,8 +611,26 @@ function defaultDocumentsConfig(): Record<string, unknown> {
       legalText: "Výdejka reklamace potvrzuje vyzvednutí po vyřízení reklamace.",
       sectionOrder: DEFAULT_SECTION_ORDER.vydejkaReklamace,
       sectionWidths: { ...DEFAULT_SECTION_WIDTHS },
+      sectionStyles: {},
+      sectionFields: {
+        service: { ...DEFAULT_SERVICE_FIELDS },
+        customer: { ...DEFAULT_CUSTOMER_FIELDS },
+        device: { ...DEFAULT_DEVICE_FIELDS },
+      },
+      customBlocks: {},
     },
   };
+}
+
+function getEffectiveSectionStyle(
+  sectionKey: string,
+  spec: LayoutSpec,
+  docConfig?: Record<string, unknown>
+): SectionStyle {
+  const overrides = docConfig?.sectionStyles as Record<string, string> | undefined;
+  const v = overrides?.[sectionKey];
+  if (v && (v === "boxed" || v === "ruled" || v === "cards" || v === "underlineTitles" || v === "leftStripe")) return v as SectionStyle;
+  return spec.sectionStyle;
 }
 
 // Modern Checkbox
@@ -308,27 +643,32 @@ function ModernCheckbox({ checked, onChange, label }: { checked: boolean; onChan
   );
 }
 
-// Document type picker
+// Breadcrumbs (Návrh 6) – orientace v aplikaci
+function Breadcrumbs({ items }: { items: { label: string; current?: boolean }[] }) {
+  return (
+    <nav aria-label="Breadcrumb" style={{ marginBottom: 12, fontSize: 13, color: "var(--muted)" }}>
+      {items.map((item, i) => (
+        <span key={i}>
+          {i > 0 && <span style={{ margin: "0 6px", opacity: 0.6 }}>›</span>}
+          <span style={{ color: item.current ? "var(--text)" : "var(--muted)", fontWeight: item.current ? 600 : 400 }}>
+            {item.label}
+          </span>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+// Document type picker – horní tab bar (Návrh 5)
 function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: (v: DocTypeKey) => void }) {
   return (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div className="doc-type-tabs">
       {(["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace"] as DocTypeKey[]).map((dt) => (
         <button
           key={dt}
           type="button"
           onClick={() => onChange(dt)}
-          style={{
-            flex: 1,
-            padding: "12px 16px",
-            borderRadius: 12,
-            border: value === dt ? "2px solid var(--accent)" : "1px solid var(--border)",
-            background: value === dt ? "var(--accent-soft)" : "var(--panel)",
-            color: "var(--text)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "var(--transition-smooth)",
-          }}
+          className={value === dt ? "active" : ""}
         >
           {DOC_TYPE_LABELS[dt]}
         </button>
@@ -337,8 +677,22 @@ function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: 
   );
 }
 
-// Render service section content from companyData (from Jobi settings)
-function renderServiceContent(companyData: Record<string, unknown>) {
+// Accordion pro skupiny nastavení (Návrh 8)
+function Accordion({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div className="accordion-group">
+      <button type="button" className="accordion-head" onClick={onToggle} aria-expanded={open}>
+        {title}
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{open ? "−" : "+"}</span>
+      </button>
+      {open && <div className="accordion-body">{children}</div>}
+    </div>
+  );
+}
+
+// Render service section content from companyData (from Jobi settings). visibleFields: which fields to show (default all true).
+function renderServiceContent(companyData: Record<string, unknown>, visibleFields?: ServiceSectionFields | null) {
+  const show = (key: keyof ServiceSectionFields) => visibleFields?.[key] !== false;
   const n = (v: unknown) => (v && String(v).trim() ? String(v) : null);
   const name = n(companyData.name) || n(companyData.abbreviation);
   const ico = n(companyData.ico);
@@ -349,15 +703,51 @@ function renderServiceContent(companyData: Record<string, unknown>) {
   const website = n(companyData.website);
 
   const parts: React.ReactNode[] = [];
-  if (name) parts.push(<div key="name">{name}</div>);
-  if (ico || dic) parts.push(<div key="ico">{[ico && `IČO: ${ico}`, dic && `DIČ: ${dic}`].filter(Boolean).join(" • ")}</div>);
-  if (address) parts.push(<div key="addr">{address}</div>);
-  if (phone || email || website) {
-    parts.push(<div key="contact">{[phone, email, website].filter(Boolean).join(" • ")}</div>);
+  if (show("name") && name) parts.push(<div key="name">{name}</div>);
+  if (show("ico") || show("dic")) {
+    const icoDic = [show("ico") && ico && `IČO: ${ico}`, show("dic") && dic && `DIČ: ${dic}`].filter(Boolean).join(" • ");
+    if (icoDic) parts.push(<div key="ico">{icoDic}</div>);
+  }
+  if (show("address") && address) parts.push(<div key="addr">{address}</div>);
+  if (show("phone") || show("email") || show("website")) {
+    const contact = [show("phone") && phone, show("email") && email, show("website") && website].filter(Boolean).join(" • ");
+    if (contact) parts.push(<div key="contact">{contact}</div>);
   }
   if (parts.length === 0) {
     return <div style={{ color: "#9ca3af", fontSize: 9 }}>Vyplňte údaje v Jobi → Nastavení → Servis</div>;
   }
+  return <>{parts}</>;
+}
+
+function renderCustomerContent(companyData: Record<string, unknown>, visibleFields?: CustomerSectionFields | null) {
+  const show = (key: keyof CustomerSectionFields) => visibleFields?.[key] !== false;
+  const n = (v: unknown) => (v && String(v).trim() ? String(v) : null);
+  const name = n(companyData.customer_name) || "Jan Novák";
+  const phone = n(companyData.customer_phone) || "+420 123 456 789";
+  const email = n(companyData.customer_email) || "jan.novak@email.cz";
+  const address = n(companyData.customer_address) || "Havlíčkova 45, 110 00 Praha 1";
+  const parts: React.ReactNode[] = [];
+  if (show("name")) parts.push(<div key="name">{name}</div>);
+  if (show("phone")) parts.push(<div key="phone">{phone}</div>);
+  if (show("email")) parts.push(<div key="email">{email}</div>);
+  if (show("address")) parts.push(<div key="address">{address}</div>);
+  return <>{parts}</>;
+}
+
+function renderDeviceContent(companyData: Record<string, unknown>, visibleFields?: DeviceSectionFields | null) {
+  const show = (key: keyof DeviceSectionFields) => visibleFields?.[key] !== false;
+  const n = (v: unknown) => (v && String(v).trim() ? String(v) : null);
+  const name = n(companyData.device_name) || "iPhone 13 Pro, 128 GB";
+  const serial = n(companyData.device_serial) || "SN123456789012";
+  const imei = n(companyData.device_imei) || "35 123456 789012 3";
+  const state = n(companyData.device_state) || "Poškozený displej, prasklina v rohu";
+  const problem = n(companyData.device_problem) || "Nefunguje dotyková vrstva v levém dolním rohu";
+  const parts: React.ReactNode[] = [];
+  if (show("name")) parts.push(<div key="name">{name}</div>);
+  if (show("serial")) parts.push(<div key="serial">SN: {serial}</div>);
+  if (show("imei")) parts.push(<div key="imei">IMEI: {imei}</div>);
+  if (show("state")) parts.push(<div key="state">Stav: {state}</div>);
+  if (show("problem")) parts.push(<div key="problem">Problém: {problem}</div>);
   return <>{parts}</>;
 }
 
@@ -380,6 +770,7 @@ function SectionCardContent({
   companyData,
   docType,
   docConfig,
+  previewMode = "sample",
 }: {
   sectionKey: string;
   styles: Record<string, unknown>;
@@ -387,12 +778,47 @@ function SectionCardContent({
   companyData: Record<string, unknown>;
   docType?: DocTypeKey;
   docConfig?: Record<string, unknown>;
+  previewMode?: "sample" | "template";
 }) {
   const sample = SAMPLE_DATA[sectionKey];
   if (!sample) return null;
   let content: React.ReactNode = sample.content;
-  if (sectionKey === "service") content = renderServiceContent(companyData);
-  else if (sectionKey === "warranty" && docType === "zarucni_list" && docConfig) {
+  const sectionFieldsMap = docConfig?.sectionFields as Record<string, Record<string, boolean>> | undefined;
+
+  if (previewMode === "template") {
+    const varsList = TEMPLATE_PLACEHOLDERS_BY_SECTION[sectionKey];
+    const fieldToIndex = SECTION_FIELD_KEY_TO_VAR_INDEX[sectionKey];
+    let placeholders: string[] = [];
+    if (varsList && fieldToIndex && sectionFieldsMap?.[sectionKey]) {
+      const visible = sectionFieldsMap[sectionKey];
+      placeholders = varsList.filter((_, i) => {
+        const fieldKey = Object.keys(fieldToIndex).find((k) => fieldToIndex[k] === i);
+        return fieldKey == null || visible[fieldKey] !== false;
+      });
+    } else if (varsList) {
+      placeholders = varsList;
+    }
+    if (sectionKey === "photos") placeholders = []; // zobrazíme text
+    content = (
+      <>
+        {placeholders.length > 0
+          ? placeholders.map((v) => (
+              <div key={v} style={{ fontFamily: "monospace", fontSize: 10, color: "var(--muted)" }}>
+                {"{{" + v + "}}"}
+              </div>
+            ))
+          : sectionKey === "photos"
+            ? <div style={{ fontSize: 10, color: "var(--muted)" }}>Fotky z Jobi</div>
+            : null}
+      </>
+    );
+  } else if (sectionKey === "service") {
+    content = renderServiceContent(companyData, sectionFieldsMap?.service as ServiceSectionFields | undefined);
+  } else if (sectionKey === "customer") {
+    content = renderCustomerContent(companyData, sectionFieldsMap?.customer as CustomerSectionFields | undefined);
+  } else if (sectionKey === "device") {
+    content = renderDeviceContent(companyData, sectionFieldsMap?.device as DeviceSectionFields | undefined);
+  } else if (sectionKey === "warranty" && docType === "zarucni_list" && docConfig) {
     const duration = (docConfig.warrantyUnifiedDuration as number) ?? 24;
     const unit = ((docConfig.warrantyUnifiedUnit as string) || "months") as "days" | "months" | "years";
     const showEndDate = (docConfig.warrantyShowEndDate as boolean) !== false;
@@ -458,8 +884,10 @@ function SortableSection({
   spec,
   companyData,
   sectionWidth,
+  sectionStyleOverride,
   docType,
   docConfig,
+  previewMode = "sample",
 }: {
   id: string;
   sectionKey: string;
@@ -467,17 +895,19 @@ function SortableSection({
   spec: LayoutSpec;
   companyData: Record<string, unknown>;
   sectionWidth: SectionWidth;
+  sectionStyleOverride: SectionStyle;
   docType?: DocTypeKey;
   docConfig?: Record<string, unknown>;
+  previewMode?: "sample" | "template";
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const sample = SAMPLE_DATA[sectionKey];
   if (!sample) return null;
 
-  const sectionRadius = (spec.sectionStyle === "underlineTitles" ? 0 : ((styles.sectionRadius as number) ?? 6)) as number;
+  const sectionRadius = (sectionStyleOverride === "underlineTitles" ? 0 : ((styles.sectionRadius as number) ?? 6)) as number;
   const sectionPadding = spec.density === "compact" ? 8 : 12;
-  const sectionBorder = spec.sectionStyle === "underlineTitles" ? "none" : (styles.sectionBorder as string);
-  const sectionBorderLeft = spec.sectionStyle === "leftStripe" ? `3px solid ${styles.secondaryColor}` : undefined;
+  const sectionBorder = sectionStyleOverride === "underlineTitles" ? "none" : (styles.sectionBorder as string);
+  const sectionBorderLeft = sectionStyleOverride === "leftStripe" ? `3px solid ${styles.secondaryColor}` : undefined;
   const isHalf = sectionWidth === "half";
   const CONTENT_WIDTH = 680;
   const GAP = 12;
@@ -505,24 +935,116 @@ function SortableSection({
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} docType={docType} docConfig={docConfig} />
+      <SectionCardContent sectionKey={sectionKey} styles={styles} spec={spec} companyData={companyData} docType={docType} docConfig={docConfig} previewMode={previewMode} />
     </div>
   );
 }
 
-// Document preview - A4, no scroll, scale to fit, draggable sections, draggable QR
+type CustomBlockData = { type: "text" | "heading" | "separator" | "spacer"; content?: string };
+
+function SortableCustomBlock({
+  id,
+  styles,
+  spec,
+  docConfig,
+}: {
+  id: string;
+  styles: Record<string, unknown>;
+  spec: LayoutSpec;
+  docConfig?: Record<string, unknown>;
+}) {
+  const blockId = id.startsWith("custom-") ? id.slice(7) : id;
+  const blocks = (docConfig?.customBlocks as Record<string, CustomBlockData>) || {};
+  const block = blocks[blockId];
+  const blockType = block?.type || "text";
+  const content = (block?.content as string)?.trim() || "";
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
+  const sectionRadius = (spec.sectionStyle === "underlineTitles" ? 0 : ((styles.sectionRadius as number) ?? 6)) as number;
+  const sectionPadding = spec.density === "compact" ? 8 : 12;
+  const sectionBorder = spec.sectionStyle === "underlineTitles" ? "none" : (styles.sectionBorder as string);
+  const titleFontSize = spec.sectionHeaderStyle === "capsule" ? 14 : 13;
+  const titleFontWeight = spec.sectionHeaderStyle === "underline" ? 500 : 700;
+  const style: React.CSSProperties = {
+    padding: blockType === "separator" ? "4px 0" : blockType === "spacer" ? 0 : sectionPadding,
+    background: blockType === "separator" || blockType === "spacer" ? "transparent" : (styles.sectionBg as string),
+    borderRadius: sectionRadius,
+    border: blockType === "separator" || blockType === "spacer" ? "none" : sectionBorder,
+    transform: CSS.Transform.toString(transform),
+    transition: "transform 0.15s ease-out",
+    opacity: isDragging ? 0.85 : 1,
+    cursor: isDragging ? "grabbing" : "grab",
+    touchAction: "none",
+    flex: "1 1 680px",
+    width: "680px",
+    minWidth: "680px",
+    maxWidth: "680px",
+    boxSizing: "border-box",
+    flexShrink: 0,
+    ...(blockType === "spacer" && { minHeight: Math.max(8, parseInt(content, 10) || 24) }),
+    ...(isDragging && { willChange: "transform", position: "relative", zIndex: 1000 }),
+  };
+  if (blockType === "separator") {
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+        <hr style={{ margin: 0, border: "none", borderTop: `1px solid ${styles.sectionBorder as string}` }} />
+      </div>
+    );
+  }
+  if (blockType === "spacer") {
+    return <div ref={setNodeRef} style={style} {...attributes} {...listeners} />;
+  }
+  if (blockType === "heading") {
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+        <div style={{ fontSize: titleFontSize, fontWeight: titleFontWeight, marginBottom: 4, color: styles.secondaryColor as string, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ opacity: 0.6 }}>⋮⋮</span>
+          Vlastní nadpis
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3, color: (styles.contentColor as string) ?? "#171717" }}>
+          {content || <span style={{ color: "var(--muted)", fontWeight: 400 }}>Nadpis</span>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <div style={{ fontSize: titleFontSize, fontWeight: titleFontWeight, marginBottom: 0, paddingBottom: 6, borderBottom: `1px solid ${styles.secondaryColor as string}`, color: styles.secondaryColor as string, display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ opacity: 0.6 }}>⋮⋮</span>
+        Vlastní text
+      </div>
+      <div style={{ fontSize: 10, lineHeight: 1.5, color: (styles.contentColor as string) ?? "#171717", whiteSpace: "pre-wrap" }}>
+        {content || <span style={{ color: "var(--muted)" }}>{"Sem napište text… (můžete použít {{ticket_code}}, {{customer_name}}…)"}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Document preview - A4, no scroll, scale to fit, draggable sections, draggable QR, logo, stamp
 function DocumentPreview({
   docType,
   config,
   companyData,
   onSectionOrderChange,
   onQrPositionChange,
+  onLogoPositionChange,
+  onStampPositionChange,
+  externalDnd,
+  sectionOrder: sectionOrderProp,
+  orderedSections: orderedSectionsProp,
+  previewMode = "sample",
 }: {
   docType: DocTypeKey;
   config: Record<string, unknown>;
   companyData: Record<string, unknown>;
   onSectionOrderChange?: (order: string[]) => void;
   onQrPositionChange?: (pos: { x: number; y: number }) => void;
+  onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
+  onStampPositionChange?: (pos: { x: number; y: number } | null) => void;
+  /** When true, parent provides DndContext; we render drop zones and no internal DndContext */
+  externalDnd?: boolean;
+  sectionOrder?: string[];
+  orderedSections?: string[];
+  previewMode?: "sample" | "template";
 }) {
   const docConfig = config[DOC_TYPE_TO_UI[docType]] as Record<string, unknown> | undefined;
   const design = (docConfig?.design as DocumentDesign) || "classic";
@@ -545,38 +1067,43 @@ function DocumentPreview({
   }, [design, colorMode, designAccentColor, config.designPrimaryColor, config.designSecondaryColor, config.designHeaderBg, config.designSectionBorder]);
 
   const sectionOrder = useMemo(() => {
+    if (sectionOrderProp !== undefined && Array.isArray(sectionOrderProp)) return sectionOrderProp;
     const order = docConfig?.sectionOrder as string[] | undefined;
     const defaultOrder = DEFAULT_SECTION_ORDER[DOC_TYPE_TO_UI[docType]];
     let list = (order && Array.isArray(order)) ? [...order] : defaultOrder;
-    // Migrace: záruční list musí mít v pořadí sekci "warranty" (staré uložené configy ji nemají)
     if (docType === "zarucni_list" && !list.includes("warranty")) {
       const idx = list.indexOf("dates");
       if (idx >= 0) list = [...list.slice(0, idx), "warranty", ...list.slice(idx)];
       else list = [...list, "warranty"];
     }
     return list;
-  }, [docConfig?.sectionOrder, docType]);
+  }, [sectionOrderProp, docConfig?.sectionOrder, docType]);
 
-  const sectionKeyToInclude: Record<string, string> = {
-    service: "includeServiceInfo",
-    customer: "includeCustomerInfo",
-    device: "includeDeviceInfo",
-    repairs: "includeRepairs",
-    warranty: "includeWarranty",
-    diag: docType === "diagnosticky_protokol" ? "includeDiagnosticText" : "includeDiagnostic",
-    photos: "includePhotos",
-    dates: "includeDates",
-  };
+  const sectionKeyToInclude: Record<string, string> = useMemo(
+    () => ({
+      service: "includeServiceInfo",
+      customer: "includeCustomerInfo",
+      device: "includeDeviceInfo",
+      repairs: "includeRepairs",
+      warranty: "includeWarranty",
+      diag: docType === "diagnosticky_protokol" ? "includeDiagnosticText" : "includeDiagnostic",
+      photos: "includePhotos",
+      dates: "includeDates",
+    }),
+    [docType]
+  );
 
   const orderedSections = useMemo(() => {
+    if (orderedSectionsProp !== undefined) return orderedSectionsProp;
     return sectionOrder.filter((key) => {
+      if (key.startsWith("custom-")) return true;
       const includeKey = sectionKeyToInclude[key];
       if (!includeKey) return false;
       const val = docConfig?.[includeKey];
       if (key === "warranty" && docType === "zarucni_list" && val === undefined) return true;
       return (val as boolean) !== false;
     });
-  }, [sectionOrder, docConfig, sectionKeyToInclude, docType]);
+  }, [orderedSectionsProp, sectionOrder, docConfig, sectionKeyToInclude, docType]);
 
   const sectionWidths = useMemo(() => {
     const sw = docConfig?.sectionWidths as Record<string, SectionWidth> | undefined;
@@ -607,6 +1134,35 @@ function DocumentPreview({
     [orderedSections, onSectionOrderChange]
   );
 
+  const sectionsContent = (
+    <SortableContext items={orderedSections} strategy={rectSortingStrategy}>
+      <div style={{ flex: 1, minHeight: 0, marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 12, alignContent: "flex-start", color: (styles as { contentColor?: string }).contentColor ?? "#171717" }}>
+        <SectionDropZone index={0} />
+        {orderedSections.map((key, i) => (
+          <React.Fragment key={key}>
+            {key.startsWith("custom-") ? (
+              <SortableCustomBlock id={key} styles={styles} spec={spec} docConfig={docConfig} />
+            ) : (
+              <SortableSection
+                id={key}
+                sectionKey={key}
+                styles={styles}
+                spec={spec}
+                companyData={companyData}
+                sectionWidth={sectionWidths[key] ?? "full"}
+                sectionStyleOverride={getEffectiveSectionStyle(key, spec, docConfig)}
+                docType={docType}
+                docConfig={docConfig}
+                previewMode={previewMode}
+              />
+            )}
+            <SectionDropZone index={i + 1} />
+          </React.Fragment>
+        ))}
+      </div>
+    </SortableContext>
+  );
+
   const legalText = (docConfig?.legalText as string) || "";
   const reviewUrl =
     (config.reviewUrlType as string) === "google" && config.googlePlaceId
@@ -634,10 +1190,30 @@ function DocumentPreview({
     const p = config.qrPosition as { x: number; y: number } | undefined;
     return p && typeof p.x === "number" && typeof p.y === "number" ? p : { x: 620, y: 15 };
   }, [config.qrPosition]);
+  const logoPosition = useMemo(() => {
+    const p = config.logoPosition as { x: number; y: number } | undefined;
+    return p && typeof p.x === "number" && typeof p.y === "number" ? p : null;
+  }, [config.logoPosition]);
+  const stampPosition = useMemo(() => {
+    const p = config.stampPosition as { x: number; y: number } | undefined;
+    return p && typeof p.x === "number" && typeof p.y === "number" ? p : null;
+  }, [config.stampPosition]);
+  const LOGO_W = 120 * logoSize;
+  const LOGO_H = 50 * logoSize;
+  const STAMP_W = 70;
+  const STAMP_H = 35;
   const [isQrDragging, setIsQrDragging] = useState(false);
   const [qrDragPosition, setQrDragPosition] = useState<{ x: number; y: number } | null>(null);
   const qrDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
   const qrDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const [isLogoDragging, setIsLogoDragging] = useState(false);
+  const [logoDragPosition, setLogoDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const logoDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const logoDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
+  const [isStampDragging, setIsStampDragging] = useState(false);
+  const [stampDragPosition, setStampDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const stampDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const stampDragCurrentRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!isQrDragging) return;
@@ -672,6 +1248,74 @@ function DocumentPreview({
       window.removeEventListener("mouseup", onUp);
     };
   }, [isQrDragging, onQrPositionChange, qrCodeSize, qrPosition]);
+
+  useEffect(() => {
+    if (!isLogoDragging) return;
+    const onMove = (e: MouseEvent) => {
+      const start = logoDragStartRef.current;
+      if (!start || !documentRef.current) return;
+      const rect = documentRef.current.getBoundingClientRect();
+      const scaleX = 794 / rect.width;
+      const scaleY = 1123 / rect.height;
+      const dx = (e.clientX - start.clientX) * scaleX;
+      const dy = (e.clientY - start.clientY) * scaleY;
+      const newX = Math.max(0, Math.min(794 - LOGO_W, start.x + dx));
+      const newY = Math.max(0, Math.min(1123 - LOGO_H, start.y + dy));
+      const pos = { x: newX, y: newY };
+      logoDragCurrentRef.current = pos;
+      setLogoDragPosition(pos);
+    };
+    const onUp = () => {
+      const lastPos = logoDragCurrentRef.current;
+      const startPos = logoDragStartRef.current;
+      const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : { x: 0, y: 28 });
+      if (onLogoPositionChange) onLogoPositionChange(final);
+      logoDragStartRef.current = null;
+      logoDragCurrentRef.current = null;
+      setLogoDragPosition(final);
+      setIsLogoDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isLogoDragging, onLogoPositionChange, LOGO_W, LOGO_H]);
+
+  useEffect(() => {
+    if (!isStampDragging) return;
+    const onMove = (e: MouseEvent) => {
+      const start = stampDragStartRef.current;
+      if (!start || !documentRef.current) return;
+      const rect = documentRef.current.getBoundingClientRect();
+      const scaleX = 794 / rect.width;
+      const scaleY = 1123 / rect.height;
+      const dx = (e.clientX - start.clientX) * scaleX;
+      const dy = (e.clientY - start.clientY) * scaleY;
+      const newX = Math.max(0, Math.min(794 - STAMP_W, start.x + dx));
+      const newY = Math.max(0, Math.min(1123 - STAMP_H, start.y + dy));
+      const pos = { x: newX, y: newY };
+      stampDragCurrentRef.current = pos;
+      setStampDragPosition(pos);
+    };
+    const onUp = () => {
+      const lastPos = stampDragCurrentRef.current;
+      const startPos = stampDragStartRef.current;
+      const final = lastPos ?? (startPos ? { x: startPos.x, y: startPos.y } : { x: 362, y: 1050 });
+      if (onStampPositionChange) onStampPositionChange(final);
+      stampDragStartRef.current = null;
+      stampDragCurrentRef.current = null;
+      setStampDragPosition(final);
+      setIsStampDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isStampDragging, onStampPositionChange, STAMP_W, STAMP_H]);
 
   const TOL = 2;
   useEffect(() => {
@@ -748,14 +1392,25 @@ function DocumentPreview({
             ...(spec.headerLayout === "splitBox" && styles.accentColor && { borderLeft: `6px solid ${styles.accentColor as string}` }),
           }}
         >
-          {hasLogo ? (
-            <img
-              src={config.logoUrl as string}
-              alt="Logo"
-              style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", maxWidth: 120 * logoSize, maxHeight: 50 * logoSize, objectFit: "contain" }}
-            />
-          ) : (
-            <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 120 * logoSize, height: 50 * logoSize, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 9 }}>
+          {hasLogo && !logoPosition && !isLogoDragging && (
+            <div
+              role="button"
+              tabIndex={0}
+              title="Tažením přesunete logo na požadované místo"
+              onMouseDown={(e) => {
+                if (e.button !== 0 || !onLogoPositionChange) return;
+                e.preventDefault();
+                logoDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: 0, y: 28 };
+                setLogoDragPosition({ x: 0, y: 28 });
+                setIsLogoDragging(true);
+              }}
+              style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", cursor: "grab", userSelect: "none" }}
+            >
+              <img src={config.logoUrl as string} alt="Logo" style={{ maxWidth: LOGO_W, maxHeight: LOGO_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} />
+            </div>
+          )}
+          {!hasLogo && !logoPosition && (
+            <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: LOGO_W, height: LOGO_H, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 9 }}>
               Logo
             </div>
           )}
@@ -774,6 +1429,54 @@ function DocumentPreview({
               {String(companyData?.name ?? "Název servisu")}
             </div>
           </div>
+          {(hasLogo && (logoPosition || isLogoDragging)) && (
+            <div
+              role="button"
+              tabIndex={0}
+              title="Tažením přesunete logo"
+              onMouseDown={(e) => {
+                if (e.button !== 0 || !onLogoPositionChange) return;
+                e.preventDefault();
+                const pos = logoDragPosition ?? logoPosition ?? { x: 0, y: 28 };
+                logoDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
+                setIsLogoDragging(true);
+              }}
+              style={{
+                position: "absolute",
+                left: (logoDragPosition ?? logoPosition ?? { x: 0, y: 28 }).x,
+                top: (logoDragPosition ?? logoPosition ?? { x: 0, y: 28 }).y,
+                cursor: isLogoDragging ? "grabbing" : "grab",
+                userSelect: "none",
+                zIndex: 10,
+              }}
+            >
+              <img src={config.logoUrl as string} alt="Logo" style={{ maxWidth: LOGO_W, maxHeight: LOGO_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} />
+            </div>
+          )}
+          {(stampPosition || isStampDragging) && (config.stampUrl || (docConfig?.includeStamp as boolean) === true) && (
+            <div
+              role="button"
+              tabIndex={0}
+              title="Tažením přesunete razítko"
+              onMouseDown={(e) => {
+                if (e.button !== 0 || !onStampPositionChange) return;
+                e.preventDefault();
+                const pos = stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 };
+                stampDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
+                setIsStampDragging(true);
+              }}
+              style={{
+                position: "absolute",
+                left: (stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 }).x,
+                top: (stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 }).y,
+                cursor: isStampDragging ? "grabbing" : "grab",
+                userSelect: "none",
+                zIndex: 10,
+              }}
+            >
+              {config.stampUrl ? <img src={config.stampUrl as string} alt="Razítko" style={{ maxWidth: STAMP_W, maxHeight: STAMP_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} /> : <div style={{ width: STAMP_W, height: STAMP_H, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#9ca3af" }}>Razítko</div>}
+            </div>
+          )}
           {showQr && reviewUrl && (
             <div
               role="button"
@@ -803,26 +1506,12 @@ function DocumentPreview({
           )}
         </div>
 
-        {/* Sortable sections */}
-        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
-          <SortableContext items={orderedSections} strategy={rectSortingStrategy}>
-            <div style={{ flex: 1, minHeight: 0, marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 12, alignContent: "flex-start", color: (styles as { contentColor?: string }).contentColor ?? "#171717" }}>
-              {orderedSections.map((key) => (
-                <SortableSection
-                  key={key}
-                  id={key}
-                  sectionKey={key}
-                  styles={styles}
-                  spec={spec}
-                  companyData={companyData}
-                  sectionWidth={sectionWidths[key] ?? "full"}
-                  docType={docType}
-                  docConfig={docConfig}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        {/* Sortable sections + drop zones (for palette); DndContext from parent when externalDnd */}
+        {externalDnd ? sectionsContent : (
+          <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
+            {sectionsContent}
+          </DndContext>
+        )}
 
         {/* Legal text */}
         {legalText && (
@@ -868,7 +1557,23 @@ function DocumentPreview({
               if ((docConfig?.includeStamp as boolean) === true) {
                 byPos[posS].push(
                   <>
-                    {config.stampUrl ? <img src={config.stampUrl as string} alt="Razítko" style={{ maxWidth: 70, maxHeight: 35, objectFit: "contain" }} /> : <div style={{ width: 70, height: 35, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#9ca3af" }}>Razítko</div>}
+                    {!stampPosition && !isStampDragging && (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        title="Tažením přesunete razítko na požadované místo"
+                        onMouseDown={(e) => {
+                          if (e.button !== 0 || !onStampPositionChange) return;
+                          e.preventDefault();
+                          stampDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: 362, y: 1050 };
+                          setStampDragPosition({ x: 362, y: 1050 });
+                          setIsStampDragging(true);
+                        }}
+                        style={{ cursor: "grab", userSelect: "none", display: "inline-block" }}
+                      >
+                        {config.stampUrl ? <img src={config.stampUrl as string} alt="Razítko" style={{ maxWidth: 70, maxHeight: 35, objectFit: "contain", pointerEvents: "none" }} draggable={false} /> : <div style={{ width: 70, height: 35, background: "#f3f4f6", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, color: "#9ca3af" }}>Razítko</div>}
+                      </div>
+                    )}
                     <div style={{ fontSize: 9, color: contentColor, marginTop: 4 }}>{lblS}</div>
                   </>
                 );
@@ -1027,66 +1732,78 @@ function JobiDocsUpdateCard({
   );
 }
 
-// Tab navigation
+// Tab key and sidebar navigation (kap. 3 – levý sidebar s ikonami)
 type TabKey = "aktivity" | "tiskarna" | "dokumenty" | "o_aplikaci";
 
-function TabNav({ active, onChange, updateBadge }: { active: TabKey; onChange: (t: TabKey) => void; updateBadge?: boolean }) {
-  const tabs: { key: TabKey; label: string }[] = [
-    { key: "aktivity", label: "Aktivity" },
-    { key: "tiskarna", label: "Tiskárna" },
-    { key: "dokumenty", label: "Dokumenty" },
-    { key: "o_aplikaci", label: "O aplikaci" },
-  ];
+const SIDEBAR_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: "dokumenty", label: "Dokumenty", icon: <DocIcon /> },
+  { key: "tiskarna", label: "Nastavení", icon: <PrinterIcon /> },
+  { key: "aktivity", label: "Aktivity", icon: <ActivityIcon /> },
+  { key: "o_aplikaci", label: "O aplikaci", icon: <InfoIcon /> },
+];
+
+function DocIcon() {
   return (
-    <div style={{ display: "flex", gap: 8, borderBottom: "2px solid var(--border)", paddingBottom: 0, marginBottom: 24 }}>
-      {tabs.map((t) => {
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+function PrinterIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 6 2 18 2 18 9" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" />
+    </svg>
+  );
+}
+function ActivityIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+}
+function InfoIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
+function SidebarNav({ active, onChange, updateBadge, compact }: { active: TabKey; onChange: (t: TabKey) => void; updateBadge?: boolean; compact?: boolean }) {
+  return (
+    <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+      {SIDEBAR_TABS.map((t) => {
         const isActive = active === t.key;
         return (
           <button
             key={t.key}
+            type="button"
             onClick={() => onChange(t.key)}
-            style={{
-              padding: "12px 24px",
-              border: "none",
-              borderBottom: isActive ? "3px solid var(--accent)" : "3px solid transparent",
-              marginBottom: -2,
-              background: isActive ? "var(--accent-soft)" : "transparent",
-              color: isActive ? "var(--accent)" : "var(--text)",
-              fontWeight: isActive ? 900 : 600,
-              cursor: "pointer",
-              fontSize: 14,
-              transition: "var(--transition-smooth)",
-              borderRadius: "12px 12px 0 0",
-              position: "relative",
-            }}
+            className={`app-sidebar-nav-item ${isActive ? "active" : ""} ${compact ? "compact" : ""}`}
+            title={t.label}
           >
-            {t.label}
-            {t.key === "o_aplikaci" && updateBadge && (
-              <span
-                style={{
-                  position: "absolute",
-                  top: 4,
-                  right: 8,
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
-                  background: "#dc2626",
-                  color: "white",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "0 4px",
-                }}
-              >
-                1
-              </span>
+            <span className="icon">{t.icon}</span>
+            {!compact && <span style={{ flex: 1 }}>{t.label}</span>}
+            {!compact && t.key === "o_aplikaci" && updateBadge && (
+              <span style={{ width: 8, height: 8, borderRadius: 4, background: "#dc2626", flexShrink: 0 }} title="Dostupná aktualizace" />
+            )}
+            {compact && t.key === "o_aplikaci" && updateBadge && (
+              <span style={{ position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: 3, background: "#dc2626" }} title="Dostupná aktualizace" />
             )}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -1099,13 +1816,17 @@ export default function App() {
   const [health, setHealth] = useState<{ ok?: boolean } | null>(null);
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [activityFilterStatus, setActivityFilterStatus] = useState<"all" | "errors">("all");
+  const [activityFilterTime, setActivityFilterTime] = useState<"all" | "24h">("all");
   const [context, setContext] = useState<{
     services: ServiceEntry[];
     activeServiceId: string | null;
     documentsConfig?: Record<string, unknown> | null;
     companyData?: Record<string, unknown> | null;
     jobidocsLogo?: { background: string; jInner: string; foreground: string } | null;
-  }>({ services: [], activeServiceId: null });
+    /** Má uživatel oprávnění měnit nastavení dokumentů (z Jobi). Když false, customizace jen pro čtení. */
+    canManageDocuments?: boolean;
+  }>({ services: [], activeServiceId: null, canManageDocuments: true });
   const [serviceId, setServiceId] = useState("");
   const [preferredPrinter, setPreferredPrinter] = useState("");
   const [savedPrinter, setSavedPrinter] = useState<string | null>(null);
@@ -1116,6 +1837,14 @@ export default function App() {
   const [config, setConfig] = useState<Record<string, unknown>>(() => defaultDocumentsConfig());
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
+  const [configUpdatedAt, setConfigUpdatedAt] = useState<string | null>(null);
+  const [documentsDragActiveId, setDocumentsDragActiveId] = useState<string | null>(null);
+  const [expandedPaletteSection, setExpandedPaletteSection] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<"sample" | "template">("sample");
+  const [accordionOpen, setAccordionOpen] = useState<Record<string, boolean>>({
+    logo: true, design: true, qr: true, sections: true, signatures: true, warranty: true, legal: true,
+  });
+  const toggleAccordion = (key: string) => setAccordionOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   const [warrantyDurationInput, setWarrantyDurationInput] = useState<string | null>(null);
   const fileInputLogo = useRef<HTMLInputElement>(null);
   const fileInputStamp = useRef<HTMLInputElement>(null);
@@ -1131,6 +1860,54 @@ export default function App() {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const pdfUrlRef = useRef<string | null>(null);
   const previousPdfUrlToRevokeRef = useRef<string | null>(null);
+  const lastSavedConfigRef = useRef<Record<string, unknown> | null>(null);
+  const [pendingNav, setPendingNav] = useState<{ type: "tab"; key: TabKey } | { type: "docType"; key: DocTypeKey } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showWizardBanner, setShowWizardBanner] = useState(() => typeof window !== "undefined" && !localStorage.getItem(WIZARD_STORAGE_KEY));
+  const [showWizardModal, setShowWizardModal] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const hasUnsavedConfigChanges =
+    tab === "dokumenty" &&
+    serviceId &&
+    lastSavedConfigRef.current != null &&
+    JSON.stringify(config) !== JSON.stringify(lastSavedConfigRef.current);
+
+  const applyPendingNav = useCallback(() => {
+    if (!pendingNav) return;
+    if (pendingNav.type === "tab") {
+      setTab(pendingNav.key);
+      if (isNarrow) setSidebarOpen(false);
+    } else setDocType(pendingNav.key);
+    setPendingNav(null);
+  }, [pendingNav, isNarrow]);
+
+  const requestTabChange = useCallback(
+    (t: TabKey) => {
+      if (hasUnsavedConfigChanges) setPendingNav({ type: "tab", key: t });
+      else {
+        setTab(t);
+        if (isNarrow) setSidebarOpen(false);
+      }
+    },
+    [hasUnsavedConfigChanges, isNarrow]
+  );
+
+  const requestDocTypeChange = useCallback(
+    (dt: DocTypeKey) => {
+      if (hasUnsavedConfigChanges) setPendingNav({ type: "docType", key: dt });
+      else setDocType(dt);
+    },
+    [hasUnsavedConfigChanges]
+  );
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -1162,11 +1939,12 @@ export default function App() {
         documentsConfig: d.documentsConfig ?? null,
         companyData: d.companyData ?? null,
         jobidocsLogo: d.jobidocsLogo ?? null,
+        canManageDocuments: d.canManageDocuments !== false,
       });
       // Nepřepisujeme config z kontextu – uživatelské změny (viditelné sekce, šířky) by se jinak každé 2 s ztratily.
       // Config se načítá jen z fetchDocumentsConfig při výběru servisu.
     } catch {
-      setContext({ services: [], activeServiceId: null, jobidocsLogo: null });
+      setContext({ services: [], activeServiceId: null, jobidocsLogo: null, canManageDocuments: true });
     }
   }, []);
 
@@ -1179,6 +1957,16 @@ export default function App() {
       setActivities([]);
     }
   }, []);
+
+  const filteredActivities = useMemo(() => {
+    let list = activities;
+    if (activityFilterStatus === "errors") list = list.filter((a) => a.status === "error");
+    if (activityFilterTime === "24h") {
+      const since = Date.now() - 24 * 60 * 60 * 1000;
+      list = list.filter((a) => new Date(a.ts).getTime() >= since);
+    }
+    return list;
+  }, [activities, activityFilterStatus, activityFilterTime]);
 
   const fetchSettings = useCallback(async (sid: string) => {
     if (!sid) return;
@@ -1197,6 +1985,7 @@ export default function App() {
   const fetchDocumentsConfig = useCallback(async (sid: string) => {
     if (!sid) return;
     setConfigLoading(true);
+    setConfigUpdatedAt(null);
     try {
       const r = await fetch(`${API_BASE}/v1/documents-config?service_id=${encodeURIComponent(sid)}`);
       const d = await r.json();
@@ -1209,7 +1998,10 @@ export default function App() {
           const newOrder = idx >= 0 ? [...order.slice(0, idx), "warranty", ...order.slice(idx)] : [...order, "warranty"];
           raw.warrantyCertificate = { ...wc, sectionOrder: newOrder };
         }
-        setConfig((prev) => ({ ...defaultDocumentsConfig(), ...prev, ...raw }));
+        const merged = { ...defaultDocumentsConfig(), ...raw };
+        lastSavedConfigRef.current = JSON.parse(JSON.stringify(merged));
+        setConfig(merged);
+        setConfigUpdatedAt(typeof d.updated_at === "string" ? d.updated_at : null);
       }
     } catch {
       // Use context config
@@ -1316,6 +2108,9 @@ export default function App() {
         body: JSON.stringify({ config }),
       });
       if (!r.ok) throw new Error(await r.text());
+      const res = await r.json();
+      lastSavedConfigRef.current = JSON.parse(JSON.stringify(config));
+      if (typeof res.updated_at === "string") setConfigUpdatedAt(res.updated_at);
       setConfigSaved(true);
       setTimeout(() => setConfigSaved(false), 2000);
     } catch (e) {
@@ -1371,7 +2166,10 @@ export default function App() {
     setPrintLoading(true);
     setPrintError(null);
     try {
-      const html = generateDocumentHtml(config, docType, context.companyData || {});
+      const html = generateDocumentHtml(config, docType, context.companyData || {}, undefined, {
+        variables: getSampleVariablesForPreview(context.companyData || {}),
+        templateMode: previewMode === "template",
+      });
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
       const r = await fetch(`${API_BASE}/v1/render`, {
@@ -1405,13 +2203,13 @@ export default function App() {
     } finally {
       setPrintLoading(false);
     }
-  }, [config, docType, context.companyData]);
+  }, [config, docType, context.companyData, previewMode]);
 
   const handlePrintToQueue = useCallback(async () => {
     setPrintToQueueError(null);
     setPrintToQueueLoading(true);
     try {
-      const html = generateDocumentHtml(config, docType, context.companyData || {});
+      const html = generateDocumentHtml(config, docType, context.companyData || {}, undefined, { variables: getSampleVariablesForPreview(context.companyData || {}) });
       const r = await fetch(`${API_BASE}/v1/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1437,7 +2235,7 @@ export default function App() {
     try {
       const path = await window.electron.showSaveDialog("dokument.pdf");
       if (!path) return;
-      const html = generateDocumentHtml(config, docType, context.companyData || {});
+      const html = generateDocumentHtml(config, docType, context.companyData || {}, undefined, { variables: getSampleVariablesForPreview(context.companyData || {}) });
       const r = await fetch(`${API_BASE}/v1/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1536,59 +2334,285 @@ export default function App() {
               { key: "includeCustomerSignature", label: "Podpis zákazníka" },
             ];
 
+  const documentsSectionOrder = useMemo(() => {
+    const order = docConfig?.sectionOrder as string[] | undefined;
+    const defaultOrder = DEFAULT_SECTION_ORDER[DOC_TYPE_TO_UI[docType]];
+    let list = (order && Array.isArray(order)) ? [...order] : defaultOrder;
+    if (docType === "zarucni_list" && !list.includes("warranty")) {
+      const idx = list.indexOf("dates");
+      if (idx >= 0) list = [...list.slice(0, idx), "warranty", ...list.slice(idx)];
+      else list = [...list, "warranty"];
+    }
+    return list;
+  }, [docConfig?.sectionOrder, docType]);
+
+  const sectionKeyToIncludeDoc = SECTION_KEY_TO_INCLUDE_BY_DOC[docType];
+  const documentsOrderedSections = useMemo(() => {
+    return documentsSectionOrder.filter((key) => {
+      if (key.startsWith("custom-")) return true;
+      const includeKey = sectionKeyToIncludeDoc[key];
+      if (!includeKey) return false;
+      const val = docConfig?.[includeKey];
+      if (key === "warranty" && docType === "zarucni_list" && val === undefined) return true;
+      return (val as boolean) !== false;
+    });
+  }, [documentsSectionOrder, docConfig, sectionKeyToIncludeDoc, docType]);
+
+  const documentsSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleSectionAdd = useCallback(
+    (sectionKey: string, index: number) => {
+      const includeKey = sectionKeyToIncludeDoc[sectionKey];
+      if (!includeKey) return;
+      updateDocConfig([includeKey], true);
+      let fullOrder = [...documentsSectionOrder];
+      if (!fullOrder.includes(sectionKey)) {
+        fullOrder.splice(index, 0, sectionKey);
+      } else {
+        fullOrder = fullOrder.filter((k) => k !== sectionKey);
+        fullOrder.splice(index, 0, sectionKey);
+      }
+      updateDocConfig(["sectionOrder"], fullOrder);
+    },
+    [docType, documentsSectionOrder, sectionKeyToIncludeDoc, updateDocConfig]
+  );
+
+  const handleDocumentsDragStart = useCallback((event: DragStartEvent) => {
+    setDocumentsDragActiveId(String(event.active.id));
+  }, []);
+
+  const handleDocumentsDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDocumentsDragActiveId(null);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const aid = String(active.id);
+      const oid = String(over.id);
+      if (aid.startsWith("palette-") && oid.startsWith("drop-")) {
+        const index = parseInt(oid.replace("drop-", ""), 10);
+        if (Number.isNaN(index)) return;
+        if (aid === PALETTE_CUSTOM_TEXT_ID || aid === PALETTE_CUSTOM_HEADING_ID || aid === PALETTE_CUSTOM_SEPARATOR_ID || aid === PALETTE_CUSTOM_SPACER_ID) {
+          const newId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cb-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          const customKey = `custom-${newId}`;
+          const type = aid === PALETTE_CUSTOM_TEXT_ID ? "text" : aid === PALETTE_CUSTOM_HEADING_ID ? "heading" : aid === PALETTE_CUSTOM_SEPARATOR_ID ? "separator" : "spacer";
+          updateDocConfig(["customBlocks", newId], { type, content: type === "heading" ? "Nadpis" : type === "spacer" ? "24" : "" });
+          const fullOrder = [...documentsSectionOrder];
+          fullOrder.splice(index, 0, customKey);
+          updateDocConfig(["sectionOrder"], fullOrder);
+          return;
+        }
+        const sectionKey = aid.replace("palette-", "");
+        handleSectionAdd(sectionKey, index);
+        return;
+      }
+      if (documentsOrderedSections.includes(aid) && documentsOrderedSections.includes(oid)) {
+        const oldIdx = documentsSectionOrder.indexOf(aid);
+        const newIdx = documentsSectionOrder.indexOf(oid);
+        if (oldIdx === -1 || newIdx === -1) return;
+        const newFullOrder = arrayMove(documentsSectionOrder, oldIdx, newIdx);
+        updateDocConfig(["sectionOrder"], newFullOrder);
+      }
+    },
+    [documentsSectionOrder, documentsOrderedSections, handleSectionAdd, updateDocConfig]
+  );
+
+  const jobiConnected = context.activeServiceId && context.services.some((s) => s.service_id === context.activeServiceId);
+  const jobiServiceName = jobiConnected ? context.services.find((s) => s.service_id === context.activeServiceId)?.service_name : null;
+
+  const sidebarNarrow = !isNarrow && sidebarCollapsed;
+
   return (
-    <div style={{ minHeight: "100vh", padding: "var(--spacing-page)" }}>
-      <div className="page-container">
-        <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <AppLogo size={48} colors={context.jobidocsLogo ?? undefined} modern />
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>
-              JobiDocs <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: "0.6em" }}>{packageJson.version}</span>
-            </h1>
-            <p style={{ color: "var(--muted)", fontSize: 14 }}>Tisk a export dokumentů z Jobi.</p>
-          </div>
-        </header>
-
+    <div className="app-layout">
+      {isNarrow && (
         <div
-          className="glass-panel"
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            background: health?.ok ? "rgba(34,197,94,0.1)" : error ? "rgba(239,68,68,0.1)" : "var(--panel)",
-            borderColor: health?.ok ? "rgba(34,197,94,0.3)" : error ? "rgba(239,68,68,0.3)" : undefined,
-          }}
-        >
-          {health?.ok && <span style={{ color: "#16a34a", fontWeight: 600 }}>✓ API běží na portu 3847</span>}
-          {error && <span style={{ color: "#dc2626" }}>Chyba: {error}</span>}
-          {!health && !error && <span style={{ color: "var(--muted)" }}>Načítám…</span>}
+          className={`app-sidebar-overlay ${sidebarOpen ? "visible" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`app-sidebar ${isNarrow && sidebarOpen ? "open" : ""} ${sidebarNarrow ? "narrow" : ""}`}
+        onMouseEnter={!isNarrow && sidebarNarrow ? () => setSidebarCollapsed(false) : undefined}
+        onMouseLeave={!isNarrow && !sidebarNarrow ? () => setSidebarCollapsed(true) : undefined}
+      >
+        <div style={{ marginBottom: sidebarNarrow ? 12 : 16, display: "flex", alignItems: "center", justifyContent: sidebarNarrow ? "center" : "space-between", gap: 8 }}>
+          <AppLogo size={sidebarNarrow ? 32 : 40} colors={context.jobidocsLogo ?? undefined} modern />
         </div>
+        <SidebarNav active={tab} onChange={requestTabChange} updateBadge={!!updateState} compact={sidebarNarrow} />
+      </aside>
+      <main className="app-main">
+        <div className="page-container">
+          <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            {isNarrow && (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                title="Otevřít menu"
+                style={{
+                  padding: 8,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                aria-label="Otevřít menu"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            )}
+            <div>
+              <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4, color: "var(--text)" }}>
+                JobiDocs <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: "0.65em" }}>{packageJson.version}</span>
+              </h1>
+              <p style={{ color: "var(--muted)", fontSize: 14 }}>Tisk a export dokumentů z Jobi.</p>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+              <span
+                title={jobiConnected ? `Připojeno k servisu ${jobiServiceName ?? context.activeServiceId}` : "Nepřipojeno k Jobi – spusťte Jobi a vyberte servis"}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 12px",
+                  borderRadius: 20,
+                  background: jobiConnected ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.2)",
+                  color: jobiConnected ? "#15803d" : "var(--muted)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: jobiConnected ? "#22c55e" : "#94a3b8" }} />
+                {jobiConnected ? `Připojeno: ${jobiServiceName ?? "Servis"}` : "Nepřipojeno"}
+              </span>
+            </div>
+          </header>
 
-        <TabNav active={tab} onChange={setTab} updateBadge={!!updateState} />
+          {showWizardBanner && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: "14px 18px",
+                borderRadius: 12,
+                background: "var(--accent-soft)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 14, color: "var(--text)" }}>První spuštění? Projděte si nastavení v třech krocích.</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWizardModal(true);
+                    setWizardStep(1);
+                  }}
+                  style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                >
+                  Průvodce nastavením
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") localStorage.setItem(WIZARD_STORAGE_KEY, "1");
+                    setShowWizardBanner(false);
+                  }}
+                  style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}
+                >
+                  Přeskočit
+                </button>
+              </div>
+            </div>
+          )}
 
         {tab === "aktivity" && (
-          <section className="glass-panel">
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Aktivity (požadavky z Jobi)</h2>
-            <div style={{ padding: 16, borderRadius: 12, background: "var(--panel-2)", maxHeight: 400, overflowY: "auto" }}>
-              {activities.length === 0 && <div style={{ color: "var(--muted)" }}>Žádné požadavky zatím</div>}
-              {activities.map((a, i) => (
-                <div key={`${a.ts}-${i}`} style={{ display: "flex", gap: 12, marginBottom: 8, alignItems: "flex-start" }}>
-                  <span style={{ color: "var(--muted)", flexShrink: 0 }}>{new Date(a.ts).toLocaleTimeString("cs-CZ")}</span>
-                  <span style={{ fontWeight: 600, color: a.action === "print" ? "#2563eb" : "#059669" }}>{a.action === "print" ? "Tisk" : "Export"}</span>
-                  <span style={{ color: a.status === "ok" ? "#16a34a" : a.status === "error" ? "#dc2626" : "#ca8a04", fontWeight: a.status === "error" ? 600 : 400 }}>
-                    {a.status === "ok" ? "✓" : a.status === "error" ? "✗" : "…"}
-                  </span>
-                  {a.detail && <span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis" }}>{a.detail}</span>}
-                </div>
-              ))}
+          <>
+            <Breadcrumbs items={[{ label: "Aktivity", current: true }]} />
+            <section className="glass-panel">
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Aktivity</h2>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Tisk a export z Jobi – čas, akce, stav a detail.</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 12, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Stav:</span>
+                <select
+                  value={activityFilterStatus}
+                  onChange={(e) => setActivityFilterStatus(e.target.value as "all" | "errors")}
+                  style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)" }}
+                >
+                  <option value="all">Vše</option>
+                  <option value="errors">Jen chyby</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Období:</span>
+                <select
+                  value={activityFilterTime}
+                  onChange={(e) => setActivityFilterTime(e.target.value as "all" | "24h")}
+                  style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)" }}
+                >
+                  <option value="all">Všechny</option>
+                  <option value="24h">Posledních 24 h</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchActivity()}
+                style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", cursor: "pointer" }}
+              >
+                Obnovit
+              </button>
             </div>
-            <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
-              JobiDocs {packageJson.version}
+            <div style={{ borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", background: "var(--panel-2)", maxHeight: 400, overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }}>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)" }}>Čas</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)" }}>Akce</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)" }}>Stav</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600, color: "var(--muted)" }}>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredActivities.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 16, color: "var(--muted)" }}>{activities.length === 0 ? "Žádné požadavky zatím" : "Žádné záznamy podle filtru"}</td>
+                    </tr>
+                  )}
+                  {filteredActivities.map((a, i) => (
+                    <tr key={`${a.ts}-${i}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "10px 12px", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(a.ts).toLocaleString("cs-CZ")}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600, color: a.action === "print" ? "#2563eb" : "#059669" }}>{a.action === "print" ? "Tisk" : "Export"}</td>
+                      <td style={{ padding: "10px 12px", color: a.status === "ok" ? "#16a34a" : a.status === "error" ? "#dc2626" : "#ca8a04", fontWeight: a.status === "error" ? 600 : 400 }}>
+                        {a.status === "ok" ? "✓ OK" : a.status === "error" ? "✗ Chyba" : "… Zpracovává se"}
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "var(--text)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}>{a.detail ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
+          </>
         )}
 
         {tab === "tiskarna" && (
-          <section className="glass-panel" style={{ maxWidth: 480 }}>
+          <>
+            <Breadcrumbs items={[{ label: "Nastavení" }, { label: "Tiskárna", current: true }]} />
+            <section className="glass-panel" style={{ maxWidth: 480 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Preferovaná tiskárna</h2>
             <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: "var(--muted)" }}>Servis</label>
             <select
@@ -1625,14 +2649,65 @@ export default function App() {
               <div style={{ marginTop: 12, fontSize: 13, color: "#16a34a" }}>Uloženo: {savedPrinter ?? "(žádná)"}</div>
             )}
           </section>
+          </>
         )}
 
         {tab === "dokumenty" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
-            <div className="glass-panel" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>Customizace dokumentu</h2>
-              <DocumentTypePicker value={docType} onChange={setDocType} />
+          <DndContext
+              sensors={documentsSensors}
+              collisionDetection={pointerWithin}
+              onDragStart={handleDocumentsDragStart}
+              onDragEnd={handleDocumentsDragEnd}
+              onDragCancel={() => setDocumentsDragActiveId(null)}
+            >
+            <Breadcrumbs items={[{ label: "Dokumenty" }, { label: DOC_TYPE_LABELS[docType], current: true }]} />
+            <DocumentTypePicker value={docType} onChange={requestDocTypeChange} />
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(320px, 1fr) 1fr", gap: 24, alignItems: "start" }}>
+              <div className={`glass-panel docs-split-left`} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 0 }}>Nastavení</h2>
 
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)", marginRight: 4 }}>Logo a razítko:</span>
+                  <button type="button" onClick={() => fileInputLogo.current?.click()} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid var(--border)", background: config.logoUrl ? "var(--accent-soft)" : "var(--panel-2)", color: "var(--text)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+                    {config.logoUrl ? "✓ Změnit logo" : "Nahrát logo"}
+                  </button>
+                  <button type="button" onClick={() => fileInputStamp.current?.click()} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid var(--border)", background: config.stampUrl ? "var(--accent-soft)" : "var(--panel-2)", color: "var(--text)", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+                    {config.stampUrl ? "✓ Změnit razítko / podpis" : "Nahrát razítko / podpis"}
+                  </button>
+                </div>
+
+                <div style={{ padding: "14px 0", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: "var(--text)" }}>Paleta sekcí</div>
+                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Přetáhněte sekci do náhledu vpravo. ✓ = již v dokumentu.</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {(DEFAULT_SECTION_ORDER[DOC_TYPE_TO_UI[docType]] ?? []).map((sectionKey) => (
+                      <SectionPaletteItem
+                        key={sectionKey}
+                        sectionKey={sectionKey}
+                        inDocument={documentsOrderedSections.includes(sectionKey)}
+                        expanded={expandedPaletteSection === sectionKey}
+                        onToggleExpand={() => setExpandedPaletteSection((prev) => (prev === sectionKey ? null : sectionKey))}
+                        docConfig={docConfig}
+                        updateDocConfig={updateDocConfig}
+                      />
+                    ))}
+                    {[
+                    { id: PALETTE_CUSTOM_TEXT_ID, label: "Vlastní text" },
+                    { id: PALETTE_CUSTOM_HEADING_ID, label: "Vlastní nadpis" },
+                    { id: PALETTE_CUSTOM_SEPARATOR_ID, label: "Oddělovač" },
+                    { id: PALETTE_CUSTOM_SPACER_ID, label: "Prázdný řádek" },
+                  ].map(({ id, label }) => {
+                    const wantType = PALETTE_CUSTOM_ID_TO_TYPE[id];
+                    const blocks = (docConfig.customBlocks as Record<string, { type?: string }>) || {};
+                    const hasAny = wantType ? documentsSectionOrder.some((k) => k.startsWith("custom-") && blocks[k.slice(7)]?.type === wantType) : false;
+                    return <PaletteCustomBlockItem key={id} id={id} label={label} hasAny={hasAny} />;
+                  })}
+                  </div>
+                </div>
+
+                <Accordion title="Logo a razítko" open={accordionOpen.logo} onToggle={() => toggleAccordion("logo")}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Logo a razítko lze v náhledu vpravo chytit a přetáhnout na libovolné místo.</p>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Logo v dokumentech</div>
                 <input ref={fileInputLogo} type="file" accept="image/*" onChange={handleFileLogo} style={{ display: "none" }} />
@@ -1643,6 +2718,11 @@ export default function App() {
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.logoSize as number) ?? 100)}%</span>
                   <input type="range" min={50} max={150} value={((config.logoSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, logoSize: Number(e.target.value) }))} style={{ flex: 1 }} />
                 </div>
+                {(config.logoPosition as { x: number; y: number } | undefined) && (
+                  <button type="button" onClick={() => setConfig((prev) => ({ ...prev, logoPosition: undefined }))} style={{ marginTop: 6, fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    Vrátit logo do hlavičky
+                  </button>
+                )}
               </div>
 
               <div>
@@ -1650,14 +2730,107 @@ export default function App() {
                 <input ref={fileInputStamp} type="file" accept="image/*" onChange={handleFileStamp} style={{ display: "none" }} />
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <button type="button" onClick={() => fileInputStamp.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
-                    {config.stampUrl ? "Změnit razítko" : "Nahrát razítko"}
+                    {config.stampUrl ? "Změnit razítko / podpis" : "Nahrát razítko / podpis"}
                   </button>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.stampSize as number) ?? 100)}%</span>
                   <input type="range" min={50} max={150} value={((config.stampSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, stampSize: Number(e.target.value) }))} style={{ flex: 1 }} />
                 </div>
+                {(config.stampPosition as { x: number; y: number } | undefined) && (
+                  <button type="button" onClick={() => setConfig((prev) => ({ ...prev, stampPosition: undefined }))} style={{ marginTop: 6, fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    Vrátit razítko do řádku podpisů
+                  </button>
+                )}
               </div>
+                  </div>
+                </Accordion>
+
+              <Accordion title="Viditelné sekce a pořadí" open={accordionOpen.sections} onToggle={() => toggleAccordion("sections")}>
+              <div>
+                {documentsSectionOrder.filter((k) => k.startsWith("custom-")).length > 0 && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 14, marginBottom: 8, color: "var(--text)" }}>Vlastní bloky</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {documentsSectionOrder
+                        .filter((k) => k.startsWith("custom-"))
+                        .map((customKey) => {
+                          const blockId = customKey.slice(7);
+                          const blocks = (docConfig.customBlocks as Record<string, { type?: string; content?: string }>) || {};
+                          const block = blocks[blockId] || { type: "text", content: "" };
+                          const blockType = block.type || "text";
+                          const typeLabels: Record<string, string> = { text: "Vlastní text", heading: "Vlastní nadpis", separator: "Oddělovač", spacer: "Prázdný řádek" };
+                          const removeBtn = (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const order = documentsSectionOrder.filter((k) => k !== customKey);
+                                updateDocConfig(["sectionOrder"], order);
+                                const next = { ...blocks };
+                                delete next[blockId];
+                                updateDocConfig(["customBlocks"], next);
+                              }}
+                              title="Odebrat blok"
+                              style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", fontSize: 11, cursor: "pointer" }}
+                            >
+                              Odebrat
+                            </button>
+                          );
+                          return (
+                            <div key={customKey} style={{ padding: 10, borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: blockType === "separator" || blockType === "spacer" ? 0 : 6 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{typeLabels[blockType] ?? blockType}</span>
+                                {removeBtn}
+                              </div>
+                              {blockType === "text" && (
+                                <textarea
+                                  value={(block.content as string) ?? ""}
+                                  onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                                  placeholder="Sem napište text… Můžete použít {{ticket_code}}, {{customer_name}}, {{device_name}}, {{service_name}}, {{repair_date}}."
+                                  rows={2}
+                                  style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, resize: "vertical", boxSizing: "border-box", marginTop: 6 }}
+                                />
+                              )}
+                              {blockType === "heading" && (
+                                <input
+                                  type="text"
+                                  value={(block.content as string) ?? ""}
+                                  onChange={(e) => updateDocConfig(["customBlocks", blockId], { ...block, content: e.target.value })}
+                                  placeholder="Nadpis"
+                                  style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, boxSizing: "border-box", marginTop: 6 }}
+                                />
+                              )}
+                              {blockType === "spacer" && (
+                                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                                  <label style={{ fontSize: 12, color: "var(--muted)" }}>Výška (px):</label>
+                                  <input
+                                    type="number"
+                                    min={8}
+                                    max={200}
+                                    value={Math.max(8, parseInt(String(block.content || "24"), 10) || 24)}
+                                    onChange={(e) => {
+                                      const v = parseInt(e.target.value, 10);
+                                      updateDocConfig(["customBlocks", blockId], { ...block, content: Number.isNaN(v) || v < 8 ? "24" : String(v) });
+                                    }}
+                                    style={{ width: 72, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontSize: 12, boxSizing: "border-box" }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 14, marginBottom: 10, color: "var(--text)" }}>Viditelné sekce</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {sectionFields.map((f) => (
+                    <ModernCheckbox key={f.key} checked={(docConfig[f.key] as boolean) !== false} onChange={(checked) => updateDocConfig([f.key], checked)} label={f.label} />
+                  ))}
+                </div>
+              </div>
+              </Accordion>
 
               {docType === "zakazkovy_list" && (
+                <Accordion title="Podpisy" open={accordionOpen.signatures} onToggle={() => toggleAccordion("signatures")}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Bloky podpisů (dole na dokumentu)</div>
                   <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Texty a pozice jednotlivých bloků podpisů.</p>
@@ -1689,9 +2862,11 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+                </Accordion>
               )}
 
-              <div>
+              <Accordion title="Design a barvy" open={accordionOpen.design} onToggle={() => toggleAccordion("design")}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Design</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {DESIGN_OPTIONS.map((opt) => (
@@ -1714,7 +2889,6 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-              </div>
 
               {(docType === "prijemka_reklamace" || docType === "vydejka_reklamace") && (
                 <div>
@@ -1931,17 +3105,11 @@ export default function App() {
                   })}
                 </div>
               )}
-
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Viditelné sekce</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {sectionFields.map((f) => (
-                    <ModernCheckbox key={f.key} checked={(docConfig[f.key] as boolean) !== false} onChange={(checked) => updateDocConfig([f.key], checked)} label={f.label} />
-                  ))}
-                </div>
               </div>
+              </Accordion>
 
               {docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true && (
+                <Accordion title="Záruka" open={accordionOpen.warranty} onToggle={() => toggleAccordion("warranty")}>
                 <div
                   className="glass-panel"
                   style={{
@@ -2167,6 +3335,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                </Accordion>
               )}
 
               <div>
@@ -2213,6 +3382,38 @@ export default function App() {
                             Polovina
                           </button>
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Styl sekcí</div>
+                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Vzhled jednotlivých sekcí (přepíše výchozí styl designu).</p>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {sectionFields.filter((f) => INCLUDE_KEY_TO_SECTION_KEY[f.key]).map((f) => {
+                    const sectionKey = INCLUDE_KEY_TO_SECTION_KEY[f.key];
+                    const sectionStyles = (docConfig.sectionStyles as Record<string, string>) || {};
+                    const value = (sectionStyles[sectionKey] as "" | SectionStyle) ?? "";
+                    return (
+                      <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "var(--text)", flex: "1 1 0" }}>{f.label}</span>
+                        <select
+                          value={value}
+                          onChange={(e) => {
+                            const next = { ...sectionStyles };
+                            const v = e.target.value as "" | SectionStyle;
+                            if (v === "") delete next[sectionKey];
+                            else next[sectionKey] = v;
+                            updateDocConfig(["sectionStyles"], next);
+                          }}
+                          style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", minWidth: 160 }}
+                        >
+                          {SECTION_STYLE_OPTIONS.map((opt) => (
+                            <option key={opt.value || "default"} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
                       </div>
                     );
                   })}
@@ -2294,6 +3495,9 @@ export default function App() {
                   placeholder="Zde nám můžete napsat recenzi"
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, marginBottom: 10 }}
                 />
+              </div>
+              <Accordion title="QR kód" open={accordionOpen.qr} onToggle={() => toggleAccordion("qr")}>
+              <div>
                 <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: "var(--text)" }}>Zobrazit QR na dokumentech</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <ModernCheckbox checked={(config.qrOnTicketList as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnTicketList: v }))} label="Zakázkový list" />
@@ -2308,22 +3512,68 @@ export default function App() {
                 </div>
                 <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Pozici QR kódu změníte tažením v náhledu dokumentu vpravo.</p>
               </div>
+              </Accordion>
 
               <p style={{ fontSize: 12, color: "var(--muted)" }}>Pořadí sekcí upravíte tažením přímo v dokumentu vpravo. Poloviční sekce se zobrazí dvě vedle sebe.</p>
 
+              {context.canManageDocuments === false && (
+                <p style={{ fontSize: 13, color: "var(--muted)", padding: "10px 14px", background: "var(--panel)", borderRadius: 12, border: "1px solid var(--border)", marginBottom: 12 }}>
+                  Nemáte oprávnění měnit nastavení dokumentů. Nastavení můžete pouze prohlížet. Změny v náhledu se neukládají.
+                </p>
+              )}
+              {configUpdatedAt && (
+                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                  Naposledy upraveno: {new Date(configUpdatedAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
               <button
                 onClick={handleSaveConfig}
-                disabled={configLoading || !serviceId}
-                style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: configSaved ? "#16a34a" : "var(--accent)", color: "white", fontWeight: 700, fontSize: 14, cursor: configLoading || !serviceId ? "not-allowed" : "pointer" }}
+                disabled={configLoading || !serviceId || context.canManageDocuments === false}
+                style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: configSaved ? "#16a34a" : "var(--accent)", color: "white", fontWeight: 700, fontSize: 14, cursor: configLoading || !serviceId || context.canManageDocuments === false ? "not-allowed" : "pointer", opacity: context.canManageDocuments === false ? 0.6 : 1 }}
               >
                 {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení dokumentů"}
               </button>
             </div>
 
             <section className="glass-panel document-preview-section" style={{ overflow: "hidden" }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>Náhled dokumentu</h2>
-              <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí.</p>
-              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text)" }}>Náhled dokumentu</h2>
+                <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode("sample")}
+                    style={{
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      border: "none",
+                      background: previewMode === "sample" ? "var(--accent)" : "var(--panel)",
+                      color: previewMode === "sample" ? "white" : "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Náhled
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode("template")}
+                    style={{
+                      padding: "8px 14px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      border: "none",
+                      borderLeft: "1px solid var(--border)",
+                      background: previewMode === "template" ? "var(--accent)" : "var(--panel)",
+                      color: previewMode === "template" ? "white" : "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Šablona
+                  </button>
+                </div>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí. Šablona zobrazí placeholdery typu {"{{customer_name}}"}, {"{{ticket_code}}"}.</p>
+              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} />
               <button
                 type="button"
                 onClick={handlePrintPreview}
@@ -2338,43 +3588,282 @@ export default function App() {
                 </p>
               )}
             </section>
-          </div>
+            </div>
+            <DragOverlay dropAnimation={null}>
+              {documentsDragActiveId && documentsDragActiveId.startsWith("palette-") ? (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: "2px solid var(--accent)",
+                    background: "var(--panel)",
+                    color: "var(--text)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "grabbing",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <span style={{ opacity: 0.6 }}>⋮⋮</span>
+                  {getPaletteDragLabel(documentsDragActiveId)}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
 
         {tab === "o_aplikaci" && (
-          <section className="glass-panel" style={{ maxWidth: 480 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Aktualizace</h2>
-            {window.electron?.update ? (
-              <JobiDocsUpdateCard
-                updateState={updateState}
-                updateError={updateError}
-                updateChecking={updateChecking}
-                updateDownloading={updateDownloading}
-                onCheck={async () => {
-                  setUpdateError(null);
-                  setUpdateChecking(true);
-                  try {
-                    await window.electron!.update!.check();
-                  } finally {
-                    setUpdateChecking(false);
-                  }
-                }}
-                onDownload={async () => {
-                  setUpdateDownloading(true);
-                  try {
-                    await window.electron!.update!.download();
-                  } finally {
-                    setUpdateDownloading(false);
-                  }
-                }}
-                onRestart={() => window.electron!.update!.quitAndInstall()}
-              />
-            ) : (
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>Aktualizace jsou dostupné pouze v zabalené aplikaci.</div>
-            )}
+          <>
+            <Breadcrumbs items={[{ label: "O aplikaci", current: true }]} />
+            <section className="glass-panel" style={{ maxWidth: 520 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>O aplikaci</h2>
+
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Verze</h3>
+              <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 }}>JobiDocs {packageJson.version}</p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Stav API</h3>
+              <p style={{ fontSize: 13, color: "var(--text)", margin: 0 }}>
+                {health?.ok && "✓ API běží na portu 3847"}
+                {error && <span style={{ color: "#dc2626" }}>Chyba API: {error}</span>}
+                {!health && !error && "Načítám stav API…"}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Aktualizace</h3>
+              {window.electron?.update ? (
+                <JobiDocsUpdateCard
+                  updateState={updateState}
+                  updateError={updateError}
+                  updateChecking={updateChecking}
+                  updateDownloading={updateDownloading}
+                  onCheck={async () => {
+                    setUpdateError(null);
+                    setUpdateChecking(true);
+                    try {
+                      await window.electron!.update!.check();
+                    } finally {
+                      setUpdateChecking(false);
+                    }
+                  }}
+                  onDownload={async () => {
+                    setUpdateDownloading(true);
+                    try {
+                      await window.electron!.update!.download();
+                    } finally {
+                      setUpdateDownloading(false);
+                    }
+                  }}
+                  onRestart={() => window.electron!.update!.quitAndInstall()}
+                />
+              ) : (
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Aktualizace jsou dostupné pouze v zabalené aplikaci.</p>
+              )}
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Odkazy</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <a href="https://jobi.cz" target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>jobi.cz – Nápověda a podpora</a>
+                <a href="mailto:podpora@jobi.cz" style={{ fontSize: 13, color: "var(--accent)", textDecoration: "none" }}>Zpětná vazba (podpora@jobi.cz)</a>
+              </div>
+            </div>
           </section>
+          </>
         )}
-      </div>
+        </div>
+      </main>
+
+      {showWizardModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wizard-dialog-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9997,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            boxSizing: "border-box",
+          }}
+          onClick={() => {
+            if (typeof window !== "undefined") localStorage.setItem(WIZARD_STORAGE_KEY, "1");
+            setShowWizardBanner(false);
+            setShowWizardModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              borderRadius: "var(--radius-lg)",
+              padding: 28,
+              maxWidth: 420,
+              width: "100%",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") localStorage.setItem(WIZARD_STORAGE_KEY, "1");
+                setShowWizardBanner(false);
+                setShowWizardModal(false);
+              }}
+              aria-label="Zavřít"
+              style={{ position: "absolute", top: 12, right: 12, padding: 4, border: "none", background: "none", color: "var(--muted)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+            >
+              ×
+            </button>
+            <h2 id="wizard-dialog-title" style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "var(--text)", paddingRight: 28 }}>
+              Průvodce nastavením
+            </h2>
+            {wizardStep === 1 && (
+              <>
+                <p style={{ fontSize: 14, color: "var(--text)", marginBottom: 8, lineHeight: 1.5 }}>
+                  <strong>Krok 1: Servis</strong>
+                </p>
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.5 }}>
+                  Spusťte Jobi a vyberte servis. JobiDocs pak zobrazí data servisu a uloží nastavení dokumentů do vašeho účtu.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setWizardStep(2)}
+                  style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "var(--accent)", color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+                >
+                  Další
+                </button>
+              </>
+            )}
+            {wizardStep === 2 && (
+              <>
+                <p style={{ fontSize: 14, color: "var(--text)", marginBottom: 8, lineHeight: 1.5 }}>
+                  <strong>Krok 2: Tiskárna</strong>
+                </p>
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.5 }}>
+                  Vyberte preferovanou tiskárnu pro tisk dokumentů. Nastavení se ukládá podle servisu.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWizardStep(3);
+                    setTab("tiskarna");
+                    if (isNarrow) setSidebarOpen(false);
+                  }}
+                  style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "var(--accent)", color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+                >
+                  Další
+                </button>
+              </>
+            )}
+            {wizardStep === 3 && (
+              <>
+                <p style={{ fontSize: 14, color: "var(--text)", marginBottom: 8, lineHeight: 1.5 }}>
+                  <strong>Krok 3: Vzor dokumentu</strong>
+                </p>
+                <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, lineHeight: 1.5 }}>
+                  Upravte vzhled a sekce dokumentů (zakázkový list, záruční list, diagnostický protokol atd.). Přetahujte sekce a nastavte logo, razítko a design.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") localStorage.setItem(WIZARD_STORAGE_KEY, "1");
+                    setShowWizardBanner(false);
+                    setShowWizardModal(false);
+                    setTab("dokumenty");
+                    if (isNarrow) setSidebarOpen(false);
+                  }}
+                  style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "var(--accent)", color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+                >
+                  Dokončit
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pendingNav && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unsaved-dialog-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9998,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              borderRadius: "var(--radius-lg)",
+              padding: 24,
+              maxWidth: 400,
+              width: "100%",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="unsaved-dialog-title" style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>
+              Neuložené změny
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 20 }}>
+              Chcete uložit změny v nastavení dokumentů před přepnutím?
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setPendingNav(null)}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontWeight: 600, cursor: "pointer", fontSize: 14 }}
+              >
+                Zrušit
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  applyPendingNav();
+                  setPendingNav(null);
+                }}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", fontWeight: 600, cursor: "pointer", fontSize: 14 }}
+              >
+                Neukládat
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleSaveConfig();
+                  applyPendingNav();
+                  setPendingNav(null);
+                }}
+                disabled={configLoading}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--accent)", color: "white", fontWeight: 600, cursor: configLoading ? "not-allowed" : "pointer", fontSize: 14 }}
+              >
+                {configLoading ? "Ukládám…" : "Uložit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pdfPreviewUrl && (
         <div
@@ -2436,7 +3925,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      const html = generateDocumentHtml(config, docType, context.companyData || {});
+                      const html = generateDocumentHtml(config, docType, context.companyData || {}, undefined, { variables: getSampleVariablesForPreview(context.companyData || {}) });
                       window.electron?.openPrintDialog(html);
                     }}
                     style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "white", color: "var(--text)", fontWeight: 500, cursor: "pointer", fontSize: 13 }}
