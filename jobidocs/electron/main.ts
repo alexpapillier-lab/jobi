@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, nativeTheme } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs/promises";
