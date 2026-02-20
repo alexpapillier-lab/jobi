@@ -998,7 +998,7 @@ export default function App() {
 
           {activePage === "inventory" && <Inventory activeServiceId={activeServiceId} />}
 
-          {activePage === "devices" && <Devices />}
+          {activePage === "devices" && <Devices activeServiceId={activeServiceId} />}
 
           {activePage === "statistics" && (
             <Statistics

@@ -3,10 +3,9 @@ import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
-import { STORAGE_KEYS } from "../constants/storageKeys";
-
-const STORAGE_KEY = STORAGE_KEYS.INVENTORY;
-const DEVICES_STORAGE_KEY = STORAGE_KEYS.DEVICES;
+import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
+import { loadDevicesFromDb } from "../lib/devicesDb";
+import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
 const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
 
 type Brand = {
@@ -72,47 +71,31 @@ type DevicesData = {
   repairs: Repair[];
 };
 
-function safeLoadDevicesData(): DevicesData {
-  try {
-    const raw = localStorage.getItem(DEVICES_STORAGE_KEY);
-    if (!raw) return { brands: [], categories: [], models: [], repairs: [] };
-    return JSON.parse(raw) as DevicesData;
-  } catch {
-    return { brands: [], categories: [], models: [], repairs: [] };
-  }
-}
-
 function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
-function safeLoadData(): InventoryData {
+function parseInventoryRaw(parsed: InventoryData & Record<string, unknown>): InventoryData {
+  if ("brands" in parsed || "categories" in parsed || "models" in parsed) {
+    return { productCategories: (parsed.productCategories || []).map((c: any) => ({ ...c, modelIds: c.modelIds || [] })), products: parsed.products || [] };
+  }
+  if (!parsed.productCategories) {
+    return { productCategories: [], products: parsed.products || [] };
+  }
+  return {
+    ...parsed,
+    productCategories: parsed.productCategories.map((c: any) => ({ ...c, modelIds: c.modelIds || [] })),
+  };
+}
+
+function loadInventoryFromKey(key: string): InventoryData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return { productCategories: [], products: [] };
-    const parsed = JSON.parse(raw) as InventoryData;
-    // Migrate old data structure
-    if ('brands' in parsed || 'categories' in parsed || 'models' in parsed) {
-      return { productCategories: (parsed.productCategories || []).map((c: any) => ({ ...c, modelIds: c.modelIds || [] })), products: parsed.products || [] };
-    }
-    // Ensure productCategories exists and have modelIds
-    if (!parsed.productCategories) {
-      return { productCategories: [], products: parsed.products || [] };
-    }
-    // Migrate old categories without modelIds
-    return {
-      ...parsed,
-      productCategories: parsed.productCategories.map((c: any) => ({ ...c, modelIds: c.modelIds || [] })),
-    };
+    return parseInventoryRaw(JSON.parse(raw) as InventoryData & Record<string, unknown>);
   } catch {
     return { productCategories: [], products: [] };
   }
-}
-
-function safeSaveData(data: InventoryData) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {}
 }
 
 // Product Filter Picker Component
@@ -404,11 +387,13 @@ function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" 
 
 type InventoryProps = { activeServiceId: string | null };
 
+const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [] };
+
 export default function Inventory({ activeServiceId }: InventoryProps) {
   const { hasCapability } = useActiveRole(activeServiceId);
   const canAdjustInventoryQuantity = hasCapability("can_adjust_inventory_quantity");
 
-  const [data, setData] = useState<InventoryData>(() => safeLoadData());
+  const [data, setData] = useState<InventoryData>(EMPTY_INVENTORY);
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -437,7 +422,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [stockChanges, setStockChanges] = useState<Record<string, string>>({});
   const [editingStock, setEditingStock] = useState<string | null>(null);
 
-  const [devicesData, setDevicesData] = useState<DevicesData>(() => safeLoadDevicesData());
+  const [devicesData, setDevicesData] = useState<DevicesData>({ brands: [], categories: [], models: [], repairs: [] });
 
   // Import section
   const [showImport, setShowImport] = useState(false);
@@ -448,9 +433,52 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   } | null>(null);
 
 
+  // Load inventory and devices from DB when active service changes (with localStorage migration)
   useEffect(() => {
-    safeSaveData(data);
-  }, [data]);
+    if (!activeServiceId) {
+      setData(EMPTY_INVENTORY);
+      setDevicesData({ brands: [], categories: [], models: [], repairs: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Load devices (for filtering products)
+      const devices = await loadDevicesFromDb(activeServiceId);
+      if (cancelled) return;
+      setDevicesData(devices);
+
+      // Load inventory from DB
+      let invData = await loadInventoryFromDb(activeServiceId);
+      if (cancelled) return;
+      const hasDb = invData.productCategories.length > 0 || invData.products.length > 0;
+      if (!hasDb) {
+        const fromStorage = loadInventoryFromKey(getInventoryKey(activeServiceId));
+        const legacy = loadInventoryFromKey(STORAGE_KEYS.INVENTORY);
+        const merged =
+          fromStorage.productCategories.length > 0 || fromStorage.products.length > 0
+            ? fromStorage
+            : legacy;
+        const hasStorage = merged.productCategories.length > 0 || merged.products.length > 0;
+        if (hasStorage) {
+          await saveInventoryToDb(activeServiceId, merged);
+          invData = merged;
+        }
+      }
+      if (cancelled) return;
+      setData(invData);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServiceId]);
+
+  // Save inventory to DB when data changes
+  useEffect(() => {
+    if (!activeServiceId) return;
+    saveInventoryToDb(activeServiceId, data).then((r) => {
+      if (r.error) showToast("Chyba uložení skladu: " + r.error, "error");
+    });
+  }, [activeServiceId, data]);
 
   useEffect(() => {
     if (!canAdjustInventoryQuantity && editingStock) setEditingStock(null);
@@ -460,43 +488,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     localStorage.setItem(PRODUCT_DISPLAY_MODE_KEY, productDisplayMode);
   }, [productDisplayMode]);
 
-  // Refresh data when returning from import
+  // Refresh inventory from DB when returning from import
   useEffect(() => {
-    if (!showImport) {
-      setData(safeLoadData());
+    if (!showImport && activeServiceId) {
+      loadInventoryFromDb(activeServiceId).then((invData) => setData(invData));
     }
-  }, [showImport]);
-
-  useEffect(() => {
-    // Load devices data to get brands, categories, models and repairs
-    const loaded = safeLoadDevicesData();
-    setDevicesData(loaded);
-  }, []);
-
-  // Listen for changes in devices data
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === DEVICES_STORAGE_KEY) {
-        const loaded = safeLoadDevicesData();
-        setDevicesData(loaded);
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    // Also check periodically for changes (for same-tab updates)
-    const interval = setInterval(() => {
-      const loaded = safeLoadDevicesData();
-      setDevicesData((prev) => {
-        if (JSON.stringify(loaded) !== JSON.stringify(prev)) {
-          return loaded;
-        }
-        return prev;
-      });
-    }, 1000);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
-  }, []);
+  }, [showImport, activeServiceId]);
 
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {

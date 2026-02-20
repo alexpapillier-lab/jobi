@@ -16,14 +16,28 @@ const ADDITIONAL_KEYS = {
  * Clear all business data and drafts from localStorage on sign out.
  * Keeps UI preferences (theme, UI settings, display modes).
  */
+/** Remove all localStorage keys whose key starts with the given prefix. */
+function clearKeysByPrefix(prefix: string): void {
+  const toRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key != null && key.startsWith(prefix)) toRemove.push(key);
+  }
+  toRemove.forEach((k) => localStorage.removeItem(k));
+}
+
 export function clearOnSignOut(): void {
   try {
     // Business data and service-scoped data
     localStorage.removeItem(STORAGE_KEYS.COMPANY);
     localStorage.removeItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
+    // Per-service devices and inventory (keys like jobsheet_devices_v1_<id>, jobsheet_inventory_v1_<id>)
+    clearKeysByPrefix(`${STORAGE_KEYS.DEVICES}_`);
+    clearKeysByPrefix(`${STORAGE_KEYS.INVENTORY}_`);
+    // Legacy single-key (no longer used after per-service migration)
     localStorage.removeItem(STORAGE_KEYS.INVENTORY);
     localStorage.removeItem(STORAGE_KEYS.DEVICES);
-    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
     
     // Additional business data
     localStorage.removeItem(ADDITIONAL_KEYS.CUSTOMERS);
@@ -59,9 +73,8 @@ export function clearOnServiceChange(prevServiceId: string | null, nextServiceId
     // Service-scoped data (business data tied to a specific service)
     localStorage.removeItem(STORAGE_KEYS.COMPANY);
     localStorage.removeItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
-    localStorage.removeItem(STORAGE_KEYS.INVENTORY);
-    localStorage.removeItem(STORAGE_KEYS.DEVICES);
-    
+    // DEVICES and INVENTORY are now per-service; do not clear on service change
+
     // Additional service-scoped data
     localStorage.removeItem(ADDITIONAL_KEYS.CUSTOMERS);
     localStorage.removeItem(ADDITIONAL_KEYS.TICKETS);

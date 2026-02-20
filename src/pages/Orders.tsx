@@ -5049,8 +5049,15 @@ export default function Orders({
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
+  const [visibilityKey, setVisibilityKey] = useState(0);
   
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
+
+  useEffect(() => {
+    const onVisible = () => setVisibilityKey((k) => k + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   
   // Refs for race condition protection
   const ticketsReqIdRef = useRef(0);
@@ -5183,6 +5190,9 @@ export default function Orders({
 
     const loadTickets = async () => {
       try {
+        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
+        await supabase!.auth.refreshSession();
+
         const { data, error } = await (supabase!
           .from("tickets") as any)
           .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
@@ -5223,7 +5233,7 @@ export default function Orders({
     return () => {
       ticketsReqIdRef.current++;
     };
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId, supabase, visibilityKey]);
 
   // Load warranty claims when activeServiceId changes
   useEffect(() => {
@@ -5240,6 +5250,9 @@ export default function Orders({
     const loadClaims = async () => {
       if (!client) return;
       try {
+        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
+        await client.auth.refreshSession();
+
         const { data, error } = await (client
           .from("warranty_claims") as any)
           .select("*")
@@ -5258,7 +5271,7 @@ export default function Orders({
     };
     loadClaims();
     return () => { claimsReqIdRef.current++; };
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId, supabase, visibilityKey]);
 
   const refetchClaims = useCallback(() => {
     if (!activeServiceId || !supabase) return;

@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { showToast } from "../components/Toast";
-import { STORAGE_KEYS } from "../constants/storageKeys";
-
-const STORAGE_KEY = STORAGE_KEYS.DEVICES;
-const INVENTORY_STORAGE_KEY = "jobsheet_inventory_v1";
+import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
+import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
+import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
 
 type Brand = {
   id: string;
@@ -48,12 +47,11 @@ function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
-function safeLoadData(): DevicesData {
+function loadDevicesFromKey(key: string): DevicesData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return { brands: [], categories: [], models: [], repairs: [] };
     const parsed = JSON.parse(raw) as DevicesData;
-    // Migrate old repairs with modelId to modelIds
     if (parsed.repairs) {
       parsed.repairs = parsed.repairs.map((r: any) => {
         if (r.modelId && !r.modelIds) {
@@ -71,14 +69,10 @@ function safeLoadData(): DevicesData {
   }
 }
 
-function safeSaveData(data: DevicesData) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {}
-}
+const EMPTY_DEVICES: DevicesData = { brands: [], categories: [], models: [], repairs: [] };
 
-export default function Devices() {
-  const [data, setData] = useState<DevicesData>(() => safeLoadData());
+export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
+  const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -131,9 +125,10 @@ export default function Devices() {
     products: InventoryProduct[];
   };
 
-  function safeLoadInventoryData(): InventoryData {
+  function loadInventoryFromKey(key: string | null): InventoryData {
+    if (!key) return { brands: [], categories: [], models: [], products: [] };
     try {
-      const raw = localStorage.getItem(INVENTORY_STORAGE_KEY);
+      const raw = localStorage.getItem(key);
       if (!raw) return { brands: [], categories: [], models: [], products: [] };
       return JSON.parse(raw) as InventoryData;
     } catch {
@@ -141,36 +136,98 @@ export default function Devices() {
     }
   }
 
-  const [inventoryData, setInventoryData] = useState<InventoryData>(() => safeLoadInventoryData());
+  const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
 
   const [draggedModelId, setDraggedModelId] = useState<string | null>(null);
   const [dragOverModelId, setDragOverModelId] = useState<string | null>(null);
 
+  // Load devices and inventory from DB when active service changes (with localStorage migration)
   useEffect(() => {
-    safeSaveData(data);
-  }, [data]);
-
-  // Sync from other tabs (e.g. Sklad or second Devices tab)
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue) as DevicesData;
-          if (parsed.brands && parsed.categories && parsed.models && parsed.repairs) {
-            setData(parsed);
-          }
-        } catch {}
+    if (!activeServiceId) {
+      setData(EMPTY_DEVICES);
+      setInventoryData({ brands: [], categories: [], models: [], products: [] });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Load devices from DB
+      let devicesData = await loadDevicesFromDb(activeServiceId);
+      if (cancelled) return;
+      const hasDbDevices =
+        devicesData.brands.length > 0 ||
+        devicesData.categories.length > 0 ||
+        devicesData.models.length > 0 ||
+        devicesData.repairs.length > 0;
+      if (!hasDbDevices) {
+        const fromStorage = loadDevicesFromKey(getDevicesKey(activeServiceId));
+        const legacy = loadDevicesFromKey(STORAGE_KEYS.DEVICES);
+        const merged =
+          fromStorage.brands.length > 0 ||
+          fromStorage.categories.length > 0 ||
+          fromStorage.models.length > 0 ||
+          fromStorage.repairs.length > 0
+            ? fromStorage
+            : legacy;
+        const hasStorage =
+          merged.brands.length > 0 ||
+          merged.categories.length > 0 ||
+          merged.models.length > 0 ||
+          merged.repairs.length > 0;
+        if (hasStorage) {
+          await saveDevicesToDb(activeServiceId, merged);
+          devicesData = merged;
+        }
       }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [STORAGE_KEY]);
+      if (cancelled) return;
+      setData(devicesData);
 
+      // Load inventory (products) from DB
+      const invDb = await loadInventoryFromDb(activeServiceId);
+      if (cancelled) return;
+      let invProducts = invDb.products;
+      const hasDbInventory = invDb.productCategories.length > 0 || invDb.products.length > 0;
+      if (!hasDbInventory) {
+        const fromStorage = loadInventoryFromKey(getInventoryKey(activeServiceId)) as {
+          productCategories?: { id: string; name: string; modelIds?: string[]; createdAt: string }[];
+          products?: { id: string; name: string; modelIds: string[]; stock: number; price: number; sku?: string; description?: string; imageUrl?: string; repairIds?: string[]; categoryId?: string; createdAt: string }[];
+        };
+        const legacy = loadInventoryFromKey(STORAGE_KEYS.INVENTORY) as typeof fromStorage;
+        const merged =
+          (fromStorage.products?.length ?? 0) > 0 || (fromStorage.productCategories?.length ?? 0) > 0
+            ? fromStorage
+            : legacy;
+        const hasStorage =
+          (merged.products?.length ?? 0) > 0 || (merged.productCategories?.length ?? 0) > 0;
+        if (hasStorage) {
+          const productCategories = (merged.productCategories ?? []).map((c) => ({
+            ...c,
+            modelIds: c.modelIds ?? [],
+          }));
+          const products = merged.products ?? [];
+          await saveInventoryToDb(activeServiceId, { productCategories, products });
+          invProducts = products;
+        }
+      }
+      if (cancelled) return;
+      setInventoryData({
+        brands: devicesData.brands,
+        categories: devicesData.categories,
+        models: devicesData.models,
+        products: invProducts,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServiceId]);
+
+  // Save devices to DB when data changes
   useEffect(() => {
-    // Load inventory data to get products
-    const loaded = safeLoadInventoryData();
-    setInventoryData(loaded);
-  }, []);
+    if (!activeServiceId) return;
+    saveDevicesToDb(activeServiceId, data).then((r) => {
+      if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
+    });
+  }, [activeServiceId, data]);
 
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {
@@ -250,7 +307,6 @@ export default function Devices() {
     const brand: Brand = { id: uuid(), name: newBrandName.trim(), createdAt: new Date().toISOString() };
     const next: DevicesData = { ...data, brands: [...data.brands, brand] };
     setData(next);
-    safeSaveData(next);
     setNewBrandName("");
     showToast("Značka přidána", "success");
   };
@@ -265,7 +321,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, categories: [...data.categories, cat] };
     setData(next);
-    safeSaveData(next);
     setNewCategoryName("");
     showToast("Kategorie přidána", "success");
   };
@@ -280,7 +335,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, models: [...data.models, model] };
     setData(next);
-    safeSaveData(next);
     setNewModelName("");
     showToast("Model přidán", "success");
   };
@@ -300,7 +354,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, repairs: [...data.repairs, repair] };
     setData(next);
-    safeSaveData(next);
     setNewRepair({ name: "", price: "", time: "", details: "", costs: "", productIds: [], modelIds: [], productSearch: "", modelSearch: "" });
     showToast("Oprava přidána", "success");
   };
@@ -315,7 +368,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedBrandId === id) setSelectedBrandId(null);
     showToast("Značka smazána", "success");
   };
@@ -329,7 +381,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedCategoryId === id) setSelectedCategoryId(null);
     showToast("Kategorie smazána", "success");
   };
@@ -341,7 +392,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.includes(id)),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedModelId === id) setSelectedModelId(null);
     showToast("Model smazán", "success");
   };
@@ -349,14 +399,12 @@ export default function Devices() {
   const deleteRepair = (id: string) => {
     const next: DevicesData = { ...data, repairs: data.repairs.filter((r) => r.id !== id) };
     setData(next);
-    safeSaveData(next);
     showToast("Oprava smazána", "success");
   };
 
   const updateBrand = (id: string, name: string) => {
     const next: DevicesData = { ...data, brands: data.brands.map((b) => (b.id === id ? { ...b, name } : b)) };
     setData(next);
-    safeSaveData(next);
     setEditingBrand(null);
     showToast("Značka upravena", "success");
   };
@@ -364,7 +412,6 @@ export default function Devices() {
   const updateCategory = (id: string, name: string) => {
     const next: DevicesData = { ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, name } : c)) };
     setData(next);
-    safeSaveData(next);
     setEditingCategory(null);
     showToast("Kategorie upravena", "success");
   };
@@ -372,7 +419,6 @@ export default function Devices() {
   const updateModel = (id: string, name: string) => {
     const next: DevicesData = { ...data, models: data.models.map((m) => (m.id === id ? { ...m, name } : m)) };
     setData(next);
-    safeSaveData(next);
     setEditingModel(null);
     showToast("Model upraven", "success");
   };
@@ -396,7 +442,6 @@ export default function Devices() {
       ),
     };
     setData(next);
-    safeSaveData(next);
     setEditingRepair(null);
     showToast("Oprava upravena", "success");
   };

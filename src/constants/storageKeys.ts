@@ -17,3 +17,13 @@ export const STORAGE_KEYS = {
   JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN: "jobsheet_jobidocs_first_connect_guide_seen_v1",
 } as const;
 
+/** Klíč pro zařízení konkrétního servisu (per-service). */
+export function getDevicesKey(serviceId: string): string {
+  return `${STORAGE_KEYS.DEVICES}_${serviceId}`;
+}
+
+/** Klíč pro sklad konkrétního servisu (per-service). */
+export function getInventoryKey(serviceId: string): string {
+  return `${STORAGE_KEYS.INVENTORY}_${serviceId}`;
+}
+

@@ -35,6 +35,13 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
   const [statuses, setStatuses] = useState<StatusMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibilityKey, setVisibilityKey] = useState(0);
+
+  useEffect(() => {
+    const onVisible = () => setVisibilityKey((k) => k + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   useEffect(() => {
     // If activeServiceId is null, don't load statuses
@@ -57,9 +64,12 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       try {
         setLoading(true);
         setError(null);
-        
-        const { data: sessionData } = await supabase.auth.getSession();
-        const accessToken = sessionData?.session?.access_token;
+
+        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        const accessToken =
+          refreshData?.session?.access_token ??
+          (await supabase.auth.getSession()).data?.session?.access_token;
         if (!accessToken) {
           setStatuses([]);
           setLoading(false);
@@ -154,7 +164,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         setError(normalizeError(err) || "Neznámá chyba při načítání statusů");
       }
     })();
-  }, [activeServiceId]);
+  }, [activeServiceId, visibilityKey]);
 
   const getByKey = (key: StatusKey) => statuses.find((s) => s.key === key);
 
