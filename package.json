@@ -18,7 +18,9 @@
     "tauri:build:universal:signed": "bash scripts/build-universal-signed.sh",
     "generate-latest-json": "bash scripts/generate-jobi-latest-json.sh",
     "gen-dmg-background": "node scripts/gen-dmg-background.js",
-    "build:all": "bash scripts/build-jobi-and-jobidocs.sh"
+    "build:all": "bash scripts/build-jobi-and-jobidocs.sh",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
@@ -33,7 +35,6 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "sharp": "^0.33.5",
     "@eslint/js": "^9.39.2",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
@@ -45,9 +46,11 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.26",
     "postcss": "^8.5.6",
+    "sharp": "^0.33.5",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.51.0",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.0.18"
   }
 }

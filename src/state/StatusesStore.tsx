@@ -166,6 +166,41 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
     })();
   }, [activeServiceId, visibilityKey]);
 
+  // Realtime: při změně statusů v Nastavení (jiná záložka/zařízení) přenačíst
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const client = supabase;
+    const topic = `service_statuses:${activeServiceId}`;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "service_statuses", filter: `service_id=eq.${activeServiceId}` },
+        async () => {
+          const { data, error } = await client
+            .from("service_statuses")
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .order("order_index");
+          if (!error && data?.length) {
+            setStatuses(
+              data.map((s: any) => ({
+                key: String(s.key),
+                label: String(s.label),
+                bg: typeof s.bg === "string" ? s.bg : undefined,
+                fg: typeof s.fg === "string" ? s.fg : undefined,
+                isFinal: !!s.is_final,
+              }))
+            );
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [activeServiceId]);
+
   const getByKey = (key: StatusKey) => statuses.find((s) => s.key === key);
 
   const isFinal = (key: StatusKey) => getByKey(key)?.isFinal ?? false;

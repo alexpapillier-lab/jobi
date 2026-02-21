@@ -81,11 +81,13 @@ function mapRepairRow(r: {
   };
 }
 
-/** Načte data zařízení z databáze pro daný servis. */
-export async function loadDevicesFromDb(serviceId: string | null): Promise<DevicesData> {
+export type LoadDevicesResult = { data: DevicesData; error?: string };
+
+/** Načte data zařízení z databáze pro daný servis. Při chybě vrací error, data mohou být prázdné. */
+export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadDevicesResult> {
   const supabase = getSupabaseClient();
   if (!supabase || !serviceId) {
-    return { brands: [], categories: [], models: [], repairs: [] };
+    return { data: { brands: [], categories: [], models: [], repairs: [] } };
   }
 
   const [brandsRes, categoriesRes, modelsRes, repairsRes] = await Promise.all([
@@ -95,16 +97,20 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<Devic
     (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
   ]);
 
-  if (brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error) {
-    console.error("[devicesDb] Load error:", brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error);
-    return { brands: [], categories: [], models: [], repairs: [] };
+  const err = brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error;
+  if (err) {
+    const msg = (err as { message?: string }).message ?? String(err);
+    console.error("[devicesDb] Load error:", err);
+    return { data: { brands: [], categories: [], models: [], repairs: [] }, error: msg };
   }
 
   return {
-    brands: (brandsRes.data ?? []).map(mapBrandRow),
-    categories: (categoriesRes.data ?? []).map(mapCategoryRow),
-    models: (modelsRes.data ?? []).map(mapModelRow),
-    repairs: (repairsRes.data ?? []).map(mapRepairRow),
+    data: {
+      brands: (brandsRes.data ?? []).map(mapBrandRow),
+      categories: (categoriesRes.data ?? []).map(mapCategoryRow),
+      models: (modelsRes.data ?? []).map(mapModelRow),
+      repairs: (repairsRes.data ?? []).map(mapRepairRow),
+    },
   };
 }
 
@@ -163,7 +169,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_brands") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert brands error:", error);
-      return { error: error.message };
+      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání značek" };
     }
   }
 
@@ -180,7 +186,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_categories") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert categories error:", error);
-      return { error: error.message };
+      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání kategorií" };
     }
   }
 
@@ -197,7 +203,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_models") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert models error:", error);
-      return { error: error.message };
+      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání modelů" };
     }
   }
 
@@ -219,7 +225,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("repairs") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert repairs error:", error);
-      return { error: error.message };
+      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání oprav" };
     }
   }
 

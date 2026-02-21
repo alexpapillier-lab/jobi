@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 import { showToast } from "./Toast";
 
 type OnlineGateProps = {
@@ -24,13 +24,17 @@ function getConnectionErrorMessage(err: unknown): string {
     return "Cloud je dočasně nedostupný (pravděpodobně probíhá obnova projektu). Zkuste to za několik minut.";
   }
 
-  // Síťové chyby (offline, timeout, connection refused)
+  // Timeout kontrolního dotazu (zejména v Tauri při zavěšení)
+  if (lower.includes("timeout")) {
+    return "Kontrola připojení trvá příliš dlouho. Zkuste to znovu (tlačítko níže).";
+  }
+
+  // Síťové chyby (offline, connection refused)
   if (
     lower.includes("fetch") ||
     lower.includes("network") ||
     lower.includes("failed to fetch") ||
     lower.includes("load failed") ||
-    lower.includes("timeout") ||
     lower.includes("connection") ||
     lower.includes("err_connection") ||
     lower.includes("pgrst301")
@@ -51,6 +55,8 @@ export function OnlineGate({ children }: OnlineGateProps) {
   const [isChecking, setIsChecking] = useState(false);
   const wasOnlineRef = useRef<boolean | null>(null);
 
+  const CONNECTION_TIMEOUT_MS = 12_000;
+
   const checkConnection = useCallback(async () => {
     if (!supabase) {
       setError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
@@ -59,10 +65,11 @@ export function OnlineGate({ children }: OnlineGateProps) {
     }
 
     try {
-      const { error: pingError } = await supabase
-        .from("services")
-        .select("id")
-        .limit(1);
+      const pingPromise = supabase.from("services").select("id").limit(1);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), CONNECTION_TIMEOUT_MS)
+      );
+      const { error: pingError } = await Promise.race([pingPromise, timeoutPromise]);
 
       if (pingError) {
         if (
@@ -224,6 +231,7 @@ export function OnlineGate({ children }: OnlineGateProps) {
           <button
             onClick={() => {
               if (isChecking) return;
+              resetTauriFetchState(); // reset Tauri HTTP stav před opětovným pokusem
               setIsChecking(true);
               checkConnection();
             }}

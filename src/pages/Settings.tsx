@@ -36,6 +36,7 @@ import { setAppIconFromPreset } from "../lib/setAppIcon";
 import { AppLogo } from "../components/AppLogo";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppUpdate } from "../context/AppUpdateContext";
+import { useAuth } from "../auth/AuthProvider";
 
 function LogoPresetButton({
   isActive,
@@ -578,6 +579,7 @@ type SettingsProps = {
 };
 
 export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
+  const { session } = useAuth();
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
   const appUpdate = useAppUpdate();
@@ -2512,6 +2514,22 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
+              <div
+                title="Kliknutím zkopírovat"
+                onClick={() => session?.user?.id && navigator.clipboard.writeText(session.user.id)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "var(--panel-2)",
+                  border: "1px solid var(--border)",
+                  cursor: session?.user?.id ? "pointer" : "default",
+                  userSelect: "text",
+                  color: "var(--text)",
+                }}
+              >
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>userId:</span>
+                {session?.user?.id ?? "—"}
+              </div>
               <div
                 title="Kliknutím zkopírovat"
                 onClick={() => activeServiceId && navigator.clipboard.writeText(activeServiceId)}

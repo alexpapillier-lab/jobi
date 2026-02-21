@@ -114,6 +114,14 @@ export default function App() {
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
+  // Stránky jednou navštívené zůstávají namountované (jen skryté) – instant přepnutí bez reload
+  const [visitedPages, setVisitedPages] = useState<Set<NavKey>>(() => new Set(["orders"]));
+  useEffect(() => {
+    setVisitedPages((prev) => {
+      if (prev.has(activePage)) return prev;
+      return new Set([...prev, activePage]);
+    });
+  }, [activePage]);
   /** Když uživatel klikne „Jít do nastavení“ v toastu aktualizace, otevřeme Settings na této subsekci */
   const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "about"; subsection: "about_updates" } | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
@@ -954,28 +962,30 @@ export default function App() {
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
         >
-            {activePage === "orders" && (
-              <Orders
-              activeServiceId={activeServiceId}
-                newOrderPrefill={newOrderPrefill}
-                onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
-                openTicketIntent={openTicketIntent}
-                onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
-                onOpenCustomer={(customerId) => {
-                  setOpenCustomerIntent({ customerId });
-                  setActivePage("customers");
-                }}
-                onReturnToPage={(page, customerId) => {
-                  setActivePage(page);
-                  // If returning to customers and customerId is provided, open that customer
-                  if (page === "customers" && customerId) {
+            {visitedPages.has("orders") && (
+              <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
+                <Orders
+                  activeServiceId={activeServiceId}
+                  newOrderPrefill={newOrderPrefill}
+                  onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
+                  openTicketIntent={openTicketIntent}
+                  onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
+                  onOpenCustomer={(customerId) => {
                     setOpenCustomerIntent({ customerId });
-                  }
-                }}
-              />
+                    setActivePage("customers");
+                  }}
+                  onReturnToPage={(page, customerId) => {
+                    setActivePage(page);
+                    if (page === "customers" && customerId) {
+                      setOpenCustomerIntent({ customerId });
+                    }
+                  }}
+                />
+              </div>
             )}
 
-          {activePage === "customers" && (
+          {visitedPages.has("customers") && (
+              <div style={{ display: activePage === "customers" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "customers"}>
             <Customers
               activeServiceId={activeServiceId}
               openCustomerIntent={openCustomerIntent}
@@ -994,23 +1004,35 @@ export default function App() {
                 setActivePage("orders");
               }}
             />
+              </div>
           )}
 
-          {activePage === "inventory" && <Inventory activeServiceId={activeServiceId} />}
-
-          {activePage === "devices" && <Devices activeServiceId={activeServiceId} />}
-
-          {activePage === "statistics" && (
-            <Statistics
-              activeServiceId={activeServiceId}
-              onOpenTicket={(ticketId) => {
-                setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
-                setActivePage("orders");
-              }}
-            />
+          {visitedPages.has("inventory") && (
+            <div style={{ display: activePage === "inventory" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "inventory"}>
+              <Inventory activeServiceId={activeServiceId} />
+            </div>
           )}
 
-          {activePage === "settings" && (
+          {visitedPages.has("devices") && (
+            <div style={{ display: activePage === "devices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "devices"}>
+              <Devices activeServiceId={activeServiceId} />
+            </div>
+          )}
+
+          {visitedPages.has("statistics") && (
+            <div style={{ display: activePage === "statistics" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "statistics"}>
+              <Statistics
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
+          {visitedPages.has("settings") && (
+            <div style={{ display: activePage === "settings" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "settings"}>
             <Settings
               activeServiceId={activeServiceId}
               setActiveServiceId={setActiveServiceId}
@@ -1025,6 +1047,7 @@ export default function App() {
               openToSubsection={openSettingsToSubsection}
               onOpenToSubsectionConsumed={() => setOpenSettingsToSubsection(null)}
             />
+            </div>
           )}
 
           {!["orders", "settings", "customers", "devices", "inventory", "statistics"].includes(activePage) && (

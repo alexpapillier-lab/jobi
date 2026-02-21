@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 
 type Brand = {
   id: string;
@@ -140,19 +141,44 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
 
   const [draggedModelId, setDraggedModelId] = useState<string | null>(null);
   const [dragOverModelId, setDragOverModelId] = useState<string | null>(null);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesLoadError, setDevicesLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+
+  /** Po dokončení prvního načtení z DB povolí ukládání. */
+  const initialLoadDoneRef = useRef(false);
+  /** Load vrátil prázdná data – pak neukládat prázdná zpět (přepsalo by to DB). */
+  const loadedEmptyRef = useRef(false);
 
   // Load devices and inventory from DB when active service changes (with localStorage migration)
   useEffect(() => {
     if (!activeServiceId) {
+      initialLoadDoneRef.current = false;
+      setDevicesLoading(false);
+      setDevicesLoadError(null);
       setData(EMPTY_DEVICES);
       setInventoryData({ brands: [], categories: [], models: [], products: [] });
       return;
     }
+    initialLoadDoneRef.current = false;
+    loadedEmptyRef.current = false;
+    setDevicesLoadError(null);
+    setDevicesLoading(true);
     let cancelled = false;
     (async () => {
-      // Load devices from DB
-      let devicesData = await loadDevicesFromDb(activeServiceId);
+      try {
+      // Načítáme zařízení i sklad paralelně – zkrátí to celkovou dobu
+      const [loadRes, invDb] = await Promise.all([
+        loadDevicesFromDb(activeServiceId),
+        loadInventoryFromDb(activeServiceId),
+      ]);
       if (cancelled) return;
+      if (loadRes.error) {
+        setDevicesLoadError(loadRes.error);
+        setDevicesLoading(false);
+        return;
+      }
+      let devicesData = loadRes.data;
       const hasDbDevices =
         devicesData.brands.length > 0 ||
         devicesData.categories.length > 0 ||
@@ -179,11 +205,15 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         }
       }
       if (cancelled) return;
+      const hadData =
+        devicesData.brands.length > 0 ||
+        devicesData.categories.length > 0 ||
+        devicesData.models.length > 0 ||
+        devicesData.repairs.length > 0;
+      loadedEmptyRef.current = !hadData;
       setData(devicesData);
+      initialLoadDoneRef.current = true;
 
-      // Load inventory (products) from DB
-      const invDb = await loadInventoryFromDb(activeServiceId);
-      if (cancelled) return;
       let invProducts = invDb.products;
       const hasDbInventory = invDb.productCategories.length > 0 || invDb.products.length > 0;
       if (!hasDbInventory) {
@@ -215,19 +245,73 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         models: devicesData.models,
         products: invProducts,
       });
+      } finally {
+        if (!cancelled) setDevicesLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeServiceId]);
+  }, [activeServiceId, retryKey]);
 
-  // Save devices to DB when data changes
+  // Save devices to DB when data changes (debounced). Nepouštět před load. Nepouštět prázdná data, pokud load vrátil prázdná – přepsalo by to DB.
+  const hasAnyData =
+    data.brands.length > 0 ||
+    data.categories.length > 0 ||
+    data.models.length > 0 ||
+    data.repairs.length > 0;
   useEffect(() => {
-    if (!activeServiceId) return;
-    saveDevicesToDb(activeServiceId, data).then((r) => {
-      if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
-    });
-  }, [activeServiceId, data]);
+    if (!activeServiceId || !initialLoadDoneRef.current) return;
+    if (!hasAnyData && loadedEmptyRef.current) return; // load vrátil prázdná – neukládat zpět
+    const t = setTimeout(() => {
+      saveDevicesToDb(activeServiceId, data).then((r) => {
+        if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [activeServiceId, data, hasAnyData]);
+
+  // Realtime: při změně zařízení v jiné záložce/zařízení přenačíst
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const topic = `devices:${activeServiceId}`;
+    const channel = supabase
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_brands", filter: `service_id=eq.${activeServiceId}` },
+        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_categories", filter: `service_id=eq.${activeServiceId}` },
+        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` },
+        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` },
+        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory_products", filter: `service_id=eq.${activeServiceId}` },
+        () => loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })))
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory_product_categories", filter: `service_id=eq.${activeServiceId}` },
+        () => loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })))
+      )
+      .subscribe();
+    return () => {
+      if (supabase) supabase.removeChannel(channel);
+    };
+  }, [activeServiceId]);
 
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {
@@ -785,77 +869,56 @@ DETALY: Výměna opotřebované baterie
   };
 
   const executeImport = () => {
-    if (!importPreview) return;
+    if (!importPreview || !activeServiceId) return;
 
-    setData((d) => {
-      const newData = { ...d };
+    const newData = (() => {
+      const d = { ...data };
       const brandMap = new Map<string, string>();
       const categoryMap = new Map<string, string>();
       const modelMap = new Map<string, string>();
 
-      // Import brands
       for (const brandName of importPreview.brands) {
-        const existing = newData.brands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
+        const existing = d.brands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
         if (!existing) {
-          const newBrand = {
-            id: uuid(),
-            name: brandName,
-            createdAt: new Date().toISOString()
-          };
-          newData.brands.push(newBrand);
+          const newBrand = { id: uuid(), name: brandName, createdAt: new Date().toISOString() };
+          d.brands.push(newBrand);
           brandMap.set(brandName.toLowerCase(), newBrand.id);
         } else {
           brandMap.set(brandName.toLowerCase(), existing.id);
         }
       }
-
-      // Import categories
       for (const cat of importPreview.categories) {
         const brandId = brandMap.get(cat.brand.toLowerCase());
         if (brandId) {
-          const existing = newData.categories.find(c => c.brandId === brandId && c.name.toLowerCase() === cat.name.toLowerCase());
+          const existing = d.categories.find(c => c.brandId === brandId && c.name.toLowerCase() === cat.name.toLowerCase());
           if (!existing) {
-            const newCategory = {
-              id: uuid(),
-              brandId,
-              name: cat.name,
-              createdAt: new Date().toISOString()
-            };
-            newData.categories.push(newCategory);
+            const newCategory = { id: uuid(), brandId, name: cat.name, createdAt: new Date().toISOString() };
+            d.categories.push(newCategory);
             categoryMap.set(`${cat.brand.toLowerCase()}:${cat.name.toLowerCase()}`, newCategory.id);
           } else {
             categoryMap.set(`${cat.brand.toLowerCase()}:${cat.name.toLowerCase()}`, existing.id);
           }
         }
       }
-
-      // Import models
       for (const model of importPreview.models) {
         const categoryId = categoryMap.get(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}`);
         if (categoryId) {
-          const existing = newData.models.find(m => m.categoryId === categoryId && m.name.toLowerCase() === model.name.toLowerCase());
+          const existing = d.models.find(m => m.categoryId === categoryId && m.name.toLowerCase() === model.name.toLowerCase());
           if (!existing) {
-            const newModel = {
-              id: uuid(),
-              categoryId,
-              name: model.name,
-              createdAt: new Date().toISOString()
-            };
-            newData.models.push(newModel);
+            const newModel = { id: uuid(), categoryId, name: model.name, createdAt: new Date().toISOString() };
+            d.models.push(newModel);
             modelMap.set(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}:${model.name.toLowerCase()}`, newModel.id);
           } else {
             modelMap.set(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}:${model.name.toLowerCase()}`, existing.id);
           }
         }
       }
-
-      // Import repairs
       for (const repair of importPreview.repairs) {
         const modelId = modelMap.get(`${repair.brand.toLowerCase()}:${repair.category.toLowerCase()}:${repair.model.toLowerCase()}`);
         if (modelId) {
-          const existing = newData.repairs.find(r => r.modelIds.includes(modelId) && r.name.toLowerCase() === repair.name.toLowerCase());
+          const existing = d.repairs.find(r => r.modelIds.includes(modelId) && r.name.toLowerCase() === repair.name.toLowerCase());
           if (!existing) {
-            const newRepair: Repair = {
+            d.repairs.push({
               id: uuid(),
               modelIds: [modelId],
               name: repair.name,
@@ -864,14 +927,19 @@ DETALY: Výměna opotřebované baterie
               costs: repair.costs,
               productIds: repair.products || [],
               details: repair.details || "",
-              createdAt: new Date().toISOString()
-            };
-            newData.repairs.push(newRepair);
+              createdAt: new Date().toISOString(),
+            });
           }
         }
       }
+      return d;
+    })();
 
-      return newData;
+    setData(newData);
+    loadedEmptyRef.current = false;
+    // Okamžitě uložit do DB – nečekat na debounce (uživatel může rychle reloadnout)
+    saveDevicesToDb(activeServiceId, newData).then((r) => {
+      if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
     });
 
     showToast("Import dokončen", "success");
@@ -1044,6 +1112,68 @@ DETALY: Výměna opotřebované baterie
 
   return (
     <div data-tour="devices-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {devicesLoadError && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: 16,
+            background: "rgba(239,68,68,0.08)",
+            borderRadius: 12,
+            border: "1px solid rgba(239,68,68,0.3)",
+            color: "var(--text)",
+          }}
+        >
+          <span style={{ fontSize: 14 }}>Chyba načítání: {devicesLoadError}</span>
+          <button
+            onClick={() => {
+              resetTauriFetchState();
+              setRetryKey((k) => k + 1);
+            }}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 10,
+              border: "none",
+              background: "var(--accent)",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Načíst znovu
+          </button>
+        </div>
+      )}
+      {devicesLoading && activeServiceId && !devicesLoadError && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: 24,
+            background: "var(--panel)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              border: "2px solid var(--accent)",
+              borderTopColor: "transparent",
+              borderRadius: "50%",
+              animation: "devicesSpin 0.7s linear infinite",
+            }}
+          />
+          <span style={{ color: "var(--muted)", fontSize: 14 }}>Načítání zařízení…</span>
+        </div>
+      )}
+      <style>{`@keyframes devicesSpin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zařízení a opravy</div>

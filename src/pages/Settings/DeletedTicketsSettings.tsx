@@ -67,7 +67,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
           .eq("action", "deleted");
 
         const userIds = [...new Set((historyRows || []).map((r: any) => r.changed_by).filter(Boolean))];
-        let nicknames: Record<string, string> = {};
+        const nicknames: Record<string, string> = {};
         if (userIds.length > 0) {
           const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
           if (profiles) {

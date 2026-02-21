@@ -7,7 +7,8 @@ import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs,
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
+import { devLog } from "../lib/devLog";
 import {
   uploadDiagnosticPhoto,
   deleteDiagnosticPhotoFromStorage,
@@ -3022,7 +3023,7 @@ function openPreviewWindowWithPrint(html: string, title: string = "Náhled") {
     showToast("Povolte v prohlížeči vyskakovací okna pro automatický tisk.", "error");
     return;
   }
-  const printScript = "<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>";
+  const printScript = "<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>";
   w.document.write(html + printScript);
   w.document.close();
   w.document.title = title;
@@ -5105,7 +5106,7 @@ export default function Orders({
     if (!activeServiceId || !supabase) return;
 
     const topic = `service_document_settings:${activeServiceId}`;
-    console.log("[RT] subscribe", topic, new Date().toISOString());
+    devLog("[RT] subscribe", topic, new Date().toISOString());
 
     const channel = supabase
       .channel(topic)
@@ -5118,7 +5119,7 @@ export default function Orders({
           filter: `service_id=eq.${activeServiceId}`,
         },
         async (payload) => {
-          console.log("[Orders] service_document_settings changed", payload);
+          devLog("[Orders] service_document_settings changed", payload);
           // Use ref to get current activeServiceId (not closure value)
           const sid = activeServiceIdRef.current;
           if (!sid) return;
@@ -5135,7 +5136,7 @@ export default function Orders({
       .subscribe();
 
     return () => {
-      console.log("[RT] unsubscribe", topic, new Date().toISOString());
+      devLog("[RT] unsubscribe", topic, new Date().toISOString());
       if (supabase) {
         supabase.removeChannel(channel);
       }
@@ -5286,18 +5287,46 @@ export default function Orders({
 
   const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
 
+  // Realtime subscription for warranty_claims
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const topic = `warranty_claims:${activeServiceId}`;
+    const client = supabase;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
+        () => refetchClaims()
+      )
+      .subscribe();
+    return () => {
+      if (client) client.removeChannel(channel);
+    };
+  }, [activeServiceId, supabase, refetchClaims]);
+
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
+  const [captureQRUrl, setCaptureQRUrl] = useState<string | null>(null);
+  const [captureQRLoading, setCaptureQRLoading] = useState(false);
+  const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
+
+  useEffect(() => {
+    if (!photoLightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPhotoLightbox(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [photoLightbox]);
 
   // Realtime subscription for tickets
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
 
     const topic = `tickets:${activeServiceId}`;
-    console.log("[RT] subscribe", topic, new Date().toISOString());
+    devLog("[RT] subscribe", topic, new Date().toISOString());
 
     const channel = supabase
       .channel(topic)
@@ -5310,10 +5339,10 @@ export default function Orders({
           filter: `service_id=eq.${activeServiceId}`,
         },
         async (payload) => {
-          console.log("[Orders] tickets changed", payload);
+          devLog("[Orders] tickets changed", payload);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            console.log("[RT tickets] event", payload.eventType, {
+            devLog("[RT tickets] event", payload.eventType, {
               id: (payload.new as any)?.id,
               service_id: (payload.new as any)?.service_id,
               status: (payload.new as any)?.status,
@@ -5329,7 +5358,7 @@ export default function Orders({
               // Ticket was restored - add it back
             setCloudTickets((prev) => {
                 const existing = prev.find((t) => t.id === newTicket.id);
-                console.log("[RT tickets] setCloudTickets (restore)", {
+                devLog("[RT tickets] setCloudTickets (restore)", {
                   id: newTicket.id,
                   hadExisting: !!existing,
                   prevLen: prev.length,
@@ -5352,7 +5381,7 @@ export default function Orders({
               // Ticket is not deleted - upsert
               setCloudTickets((prev) => {
                 const existing = prev.find((t) => t.id === newTicket.id);
-                console.log("[RT tickets] setCloudTickets (upsert)", {
+                devLog("[RT tickets] setCloudTickets (upsert)", {
                   id: newTicket.id,
                   hadExisting: !!existing,
                   prevLen: prev.length,
@@ -5366,7 +5395,7 @@ export default function Orders({
                   const newVersion = newTicket.version ?? 0;
                   if (newVersion > existingVersion) {
                     // Remote update detected during editing - show banner/toast
-                    console.log("[RT tickets] Remote update detected for edited ticket", {
+                    devLog("[RT tickets] Remote update detected for edited ticket", {
                       ticketId: newTicket.id,
                       existingVersion,
                       newVersion,
@@ -5404,7 +5433,7 @@ export default function Orders({
       .subscribe();
 
     return () => {
-      console.log("[RT] unsubscribe", topic, new Date().toISOString());
+      devLog("[RT] unsubscribe", topic, new Date().toISOString());
       if (supabase) {
         supabase.removeChannel(channel);
       }
@@ -6603,7 +6632,7 @@ export default function Orders({
   }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
 
   const handleCloseDetail = useCallback(async () => {
-    console.log("[Close] clicked - about to save?");
+    devLog("[Close] clicked - about to save?");
     
     // Check if there are any unsaved changes
     const hasUnsavedChanges = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
@@ -8478,10 +8507,16 @@ export default function Orders({
                           <img
                             src={photoUrl}
                             alt={`Diagnostika ${idx + 1}`}
-                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
+                            onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
+                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
                           />
                           <button
-                            onClick={async () => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              (async () => {
                               const url = (sourceTicket.diagnosticPhotos || [])[idx];
                               if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
                                 try {
@@ -8493,6 +8528,7 @@ export default function Orders({
                                   t.id === sourceTicket.id ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) } : t
                                 )
                               );
+                            })();
                             }}
                             style={{
                               position: "absolute",
@@ -8517,59 +8553,124 @@ export default function Orders({
                         </div>
                       ))}
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={diagnosticPhotosUploading}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files || []);
-                        e.target.value = "";
-                        if (!files.length) return;
-                        const hasId = !!(activeServiceId && sourceTicket.id);
-                        if (hasId && supabase) {
-                          setDiagnosticPhotosUploading(true);
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !sourceTicket?.id) return;
+                          const client = supabase!;
+                          setCaptureQRLoading(true);
                           try {
-                            const urls: string[] = [];
-                            for (const file of files) {
-                              const url = await uploadDiagnosticPhoto(supabase, activeServiceId!, sourceTicket.id!, file);
-                              urls.push(url);
+                          let lastErr: unknown = null;
+                          for (let attempt = 0; attempt < 2; attempt++) {
+                            try {
+                              const doRequest = async (retry = false): Promise<Response> => {
+                                const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
+                                if (refreshErr && !retry) {
+                                  throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
+                                }
+                                const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
+                                if (!token) {
+                                  throw new Error("Nejste přihlášeni.");
+                                }
+                                return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                  body: JSON.stringify({ ticketId: sourceTicket.id }),
+                                });
+                              };
+                              let res = await doRequest();
+                              if (res.status === 401) {
+                                res = await doRequest(true);
+                              }
+                              const raw = await res.text();
+                              let data: { url?: string; error?: string; detail?: string } = {};
+                              try { if (raw) data = JSON.parse(raw); } catch {}
+                              if (!res.ok) {
+                                if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
+                                throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
+                              }
+                              if (data?.error) throw new Error(data.error);
+                              if (!data?.url) throw new Error("Chybí URL v odpovědi");
+                              setCaptureQRUrl(data.url);
+                              return;
+                            } catch (err) {
+                              lastErr = err;
+                              const msg = err instanceof Error ? err.message : String(err);
+                              if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                resetTauriFetchState();
+                                continue;
+                              }
+                              break;
                             }
-                            setCloudTickets((prev) =>
-                              prev.map((t) =>
-                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
-                              )
-                            );
-                          } catch (err) {
-                            showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                          }
+                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
                           } finally {
-                            setDiagnosticPhotosUploading(false);
+                            setCaptureQRLoading(false);
                           }
-                        } else {
-                          const reader = (file: File) =>
-                            new Promise<string>((resolve, reject) => {
-                              const r = new FileReader();
-                              r.onload = () => resolve(r.result as string);
-                              r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                              r.readAsDataURL(file);
-                            });
-                          try {
-                            const results = await Promise.all(files.map(reader));
-                            setCloudTickets((prev) =>
-                              prev.map((t) =>
-                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
-                              )
-                            );
-                          } catch (_) {
-                            showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                          }
-                        }
-                      }}
-                      style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
-                    />
-                    {diagnosticPhotosUploading && (
-                      <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>Nahrávám…</span>
-                    )}
+                        }}
+                        disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                        style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                      >
+                        {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                      </button>
+                      <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={diagnosticPhotosUploading}
+                          style={{ display: "none" }}
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            e.target.value = "";
+                            if (!files.length) return;
+                            const hasId = !!(activeServiceId && sourceTicket.id);
+                            if (hasId && supabase) {
+                              setDiagnosticPhotosUploading(true);
+                              try {
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhoto(supabase, activeServiceId!, sourceTicket.id!, file);
+                                  urls.push(url);
+                                }
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
+                                  )
+                                );
+                              } catch (err) {
+                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                              } finally {
+                                setDiagnosticPhotosUploading(false);
+                              }
+                            } else {
+                              const reader = (file: File) =>
+                                new Promise<string>((resolve, reject) => {
+                                  const r = new FileReader();
+                                  r.onload = () => resolve(r.result as string);
+                                  r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                                  r.readAsDataURL(file);
+                                });
+                              try {
+                                const results = await Promise.all(files.map(reader));
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
+                                  )
+                                );
+                              } catch (_) {
+                                showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                              }
+                            }
+                          }}
+                        />
+                        Nahrát soubory
+                      </label>
+                      {diagnosticPhotosUploading && (
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -8893,7 +8994,7 @@ export default function Orders({
                                   
                                   if (data) {
                                     // Audit: Log customer data loaded from DB
-                                    console.log("[EditTicket] Customer data loaded from DB:", {
+                                    devLog("[EditTicket] Customer data loaded from DB:", {
                                       id: data.id,
                                       name: data.name,
                                       phone: data.phone,
@@ -8921,7 +9022,7 @@ export default function Orders({
                                     };
                                     
                                     // Audit: Log what we're setting to editedTicket
-                                    console.log("[EditTicket] Setting to editedTicket:", updatedFields);
+                                    devLog("[EditTicket] Setting to editedTicket:", updatedFields);
                                     
                                     setEditedTicket((prev) => ({
                                       ...prev,
@@ -9479,16 +9580,23 @@ export default function Orders({
                             <img 
                               src={photoUrl} 
                               alt={`Diagnostika ${idx + 1}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
+                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
                               style={{
                                 width: 120, 
                                 height: 120, 
                                 objectFit: "cover", 
                                 borderRadius: 8,
-                                border: "1px solid var(--border)" 
+                                border: "1px solid var(--border)",
+                                cursor: "pointer",
                               }}
                             />
                             <button
-                              onClick={async () => {
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (async () => {
                                 const photoUrl = (detailedTicket.diagnosticPhotos || [])[idx];
                                 if (photoUrl && isDiagnosticPhotoStorageUrl(photoUrl)) {
                                   try {
@@ -9505,6 +9613,7 @@ export default function Orders({
                                       : t
                                   )
                                 );
+                              })();
                               }}
                               style={{
                                 position: "absolute",
@@ -9529,75 +9638,138 @@ export default function Orders({
                           </div>
                         ))}
                       </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        disabled={diagnosticPhotosUploading}
-                        onChange={async (e) => {
-                          const files = Array.from(e.target.files || []);
-                          e.target.value = "";
-                          if (!files.length) return;
-                          const hasId = !!(activeServiceId && detailedTicket.id);
-                          if (hasId && supabase) {
-                            setDiagnosticPhotosUploading(true);
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
+                            const client = supabase!;
+                            setCaptureQRLoading(true);
                             try {
-                              const urls: string[] = [];
-                              for (const file of files) {
-                                const url = await uploadDiagnosticPhoto(
-                                  supabase,
-                                  activeServiceId!,
-                                  detailedTicket.id!,
-                                  file
-                                );
-                                urls.push(url);
+                            let lastErr: unknown = null;
+                            for (let attempt = 0; attempt < 2; attempt++) {
+                              try {
+                                const doRequest = async (retry = false): Promise<Response> => {
+                                  const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
+                                  if (refreshErr && !retry) {
+                                    throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
+                                  }
+                                  const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
+                                  if (!token) {
+                                    throw new Error("Nejste přihlášeni.");
+                                  }
+                                  return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                    body: JSON.stringify({ ticketId: detailedTicket.id }),
+                                  });
+                                };
+                                let res = await doRequest();
+                                if (res.status === 401) {
+                                  res = await doRequest(true);
+                                }
+                                const raw = await res.text();
+                                let data: { url?: string; error?: string; detail?: string } = {};
+                                try { if (raw) data = JSON.parse(raw); } catch {}
+                                if (!res.ok) {
+                                  if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
+                                  throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
+                                }
+                                if (data?.error) throw new Error(data.error);
+                                if (!data?.url) throw new Error("Chybí URL v odpovědi");
+                                setCaptureQRUrl(data.url);
+                                return;
+                              } catch (err) {
+                                lastErr = err;
+                                const msg = err instanceof Error ? err.message : String(err);
+                                if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                  resetTauriFetchState();
+                                  continue;
+                                }
+                                break;
                               }
-                              setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                              setCloudTickets((prev) =>
-                                prev.map((t) =>
-                                  t.id === detailedTicket.id
-                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
-                                    : t
-                                )
-                              );
-                            } catch (err) {
-                              showToast(
-                                `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
-                                "error"
-                              );
-                            } finally {
-                              setDiagnosticPhotosUploading(false);
                             }
-                          } else {
-                            const reader = (file: File) =>
-                              new Promise<string>((resolve, reject) => {
-                                const r = new FileReader();
-                                r.onload = () => resolve(r.result as string);
-                                r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                                r.readAsDataURL(file);
-                              });
-                            try {
-                              const results = await Promise.all(files.map(reader));
-                              setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                              setCloudTickets((prev) =>
-                                prev.map((t) =>
-                                  t.id === detailedTicket.id
-                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
-                                    : t
-                                )
-                              );
-                            } catch (_) {
-                              showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                            }
+                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
+                          } finally {
+                            setCaptureQRLoading(false);
                           }
                         }}
-                        style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
-                      />
-                      {diagnosticPhotosUploading && (
-                        <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>
-                          Nahrávám…
-                        </span>
-                      )}
+                        disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        >
+                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                        </button>
+                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={diagnosticPhotosUploading}
+                            style={{ display: "none" }}
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              e.target.value = "";
+                              if (!files.length) return;
+                              const hasId = !!(activeServiceId && detailedTicket.id);
+                              if (hasId && supabase) {
+                                setDiagnosticPhotosUploading(true);
+                                try {
+                                  const urls: string[] = [];
+                                  for (const file of files) {
+                                    const url = await uploadDiagnosticPhoto(
+                                      supabase,
+                                      activeServiceId!,
+                                      detailedTicket.id!,
+                                      file
+                                    );
+                                    urls.push(url);
+                                  }
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
+                                        : t
+                                    )
+                                  );
+                                } catch (err) {
+                                  showToast(
+                                    `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
+                                    "error"
+                                  );
+                                } finally {
+                                  setDiagnosticPhotosUploading(false);
+                                }
+                              } else {
+                                const reader = (file: File) =>
+                                  new Promise<string>((resolve, reject) => {
+                                    const r = new FileReader();
+                                    r.onload = () => resolve(r.result as string);
+                                    r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                                    r.readAsDataURL(file);
+                                  });
+                                try {
+                                  const results = await Promise.all(files.map(reader));
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
+                                        : t
+                                    )
+                                  );
+                                } catch (_) {
+                                  showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                                }
+                              }
+                            }}
+                          />
+                          Nahrát soubory
+                        </label>
+                        {diagnosticPhotosUploading && (
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -10056,6 +10228,156 @@ export default function Orders({
               )}
             </div>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Capture QR modal – fotka z telefonu */}
+      {captureQRUrl && createPortal(
+        <div
+          role="dialog"
+          aria-label="Vyfotit z telefonu"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.5)",
+            padding: 24,
+          }}
+          onClick={() => setCaptureQRUrl(null)}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-soft)",
+              maxWidth: 360,
+              width: "100%",
+              padding: 24,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              color: "var(--text)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 950, fontSize: 18 }}>📱 Vyfotit z telefonu</div>
+            <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
+              Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce.
+            </p>
+            <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=L&data=${encodeURIComponent(captureQRUrl)}`}
+                alt="QR kód pro capture"
+                style={{ display: "block", width: 220, height: 220 }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(captureQRUrl).then(() => showToast("Odkaz zkopírován", "success"));
+                }}
+                style={{ ...softBtn, flex: 1, padding: "10px 14px", fontSize: 13 }}
+              >
+                Kopírovat odkaz
+              </button>
+              <button type="button" onClick={() => setCaptureQRUrl(null)} style={{ ...softBtn, padding: "10px 14px" }}>
+                Zavřít
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Photo lightbox – rozkliknutí diagnostických fotek */}
+      {photoLightbox && createPortal(
+        <div
+          role="dialog"
+          aria-label="Zvětšit fotku"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10002,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.85)",
+            padding: 24,
+          }}
+          onClick={() => setPhotoLightbox(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPhotoLightbox(null)}
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 16,
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+            aria-label="Zavřít"
+          >
+            ×
+          </button>
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const url = photoLightbox.urls[photoLightbox.index];
+              const code = photoLightbox.ticketCode || "zakazka";
+              const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
+              const name = `${safe(code)}_pic${photoLightbox.index + 1}.jpg`;
+              try {
+                const res = await fetch(url, { mode: "cors" });
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                showToast("Fotka stažena", "success");
+              } catch {
+                window.open(url, "_blank");
+              }
+            }}
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 64,
+              padding: "8px 16px",
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.4)",
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Stáhnout
+          </button>
+          <img
+            src={photoLightbox.urls[photoLightbox.index]}
+            alt={`Diagnostika ${photoLightbox.index + 1}`}
+            style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain" }}
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>,
         document.body
       )}

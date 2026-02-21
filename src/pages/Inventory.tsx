@@ -6,6 +6,7 @@ import { useActiveRole } from "../hooks/useActiveRole";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import { supabase } from "../lib/supabaseClient";
 const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
 
 type Brand = {
@@ -443,9 +444,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     let cancelled = false;
     (async () => {
       // Load devices (for filtering products)
-      const devices = await loadDevicesFromDb(activeServiceId);
+      const devicesRes = await loadDevicesFromDb(activeServiceId);
       if (cancelled) return;
-      setDevicesData(devices);
+      if (!devicesRes.error) setDevicesData(devicesRes.data);
 
       // Load inventory from DB
       let invData = await loadInventoryFromDb(activeServiceId);
@@ -494,6 +495,50 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       loadInventoryFromDb(activeServiceId).then((invData) => setData(invData));
     }
   }, [showImport, activeServiceId]);
+
+  // Realtime: při změně skladu nebo zařízení v jiné záložce/zařízení přenačíst
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const topic = `inventory:${activeServiceId}`;
+    const reloadInventory = () => loadInventoryFromDb(activeServiceId).then(setData);
+    const reloadDevices = () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) setDevicesData(r.data); });
+    const channel = supabase
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory_products", filter: `service_id=eq.${activeServiceId}` },
+        reloadInventory
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory_product_categories", filter: `service_id=eq.${activeServiceId}` },
+        reloadInventory
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_brands", filter: `service_id=eq.${activeServiceId}` },
+        reloadDevices
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_categories", filter: `service_id=eq.${activeServiceId}` },
+        reloadDevices
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` },
+        reloadDevices
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` },
+        reloadDevices
+      )
+      .subscribe();
+    return () => {
+      if (supabase) supabase.removeChannel(channel);
+    };
+  }, [activeServiceId]);
 
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {

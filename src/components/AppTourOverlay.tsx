@@ -86,15 +86,15 @@ export function AppTourOverlay({
   onPrev,
   onClose,
 }: AppTourOverlayProps) {
-  if (!active || steps.length === 0) return null;
+  const step = steps[stepIndex] ?? null;
+  const onStepPage = step ? activePage === step.page : false;
+  const targetRect = useTourTarget(active && !!step && onStepPage, step?.page ?? "home", step?.selector);
 
-  const step = steps[stepIndex];
+  if (!active || steps.length === 0) return null;
   if (!step) return null;
 
   const isFirst = stepIndex === 0;
   const isLast = stepIndex === steps.length - 1;
-  const onStepPage = activePage === step.page;
-  const targetRect = useTourTarget(active && onStepPage, step.page, step.selector);
 
   const showSpotlight = !!step.selector && !!targetRect && targetRect.width > 0 && targetRect.height > 0;
   const iconEmoji = step.icon ? STEP_ICONS[step.icon] ?? "◦" : "◦";

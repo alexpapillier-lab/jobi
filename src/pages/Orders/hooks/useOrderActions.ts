@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import { devLog, devWarn } from "../../../lib/devLog";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
@@ -364,8 +365,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
     const { detailedTicket, editedTicket, onSuccess } = params;
 
-    console.log("[Save] started", { ticketId: detailedTicket?.id });
-    console.log("[SaveTicket] START", { 
+    devLog("[Save] started", { ticketId: detailedTicket?.id });
+    devLog("[SaveTicket] START", { 
       activeServiceId, 
       hasSupabase: !!supabase, 
       ticketId: detailedTicket?.id,
@@ -373,21 +374,21 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     });
     
     if (!detailedTicket) {
-      console.log("[SaveTicket] END (no detailedTicket)");
+      devLog("[SaveTicket] END (no detailedTicket)");
       return false;
     }
 
     if (!activeServiceId || !supabase || !detailedTicket.id) {
       // Missing requirements
       showToast("Úpravy nejsou k dispozici - chybí požadavky na cloud", "info");
-      console.log("[SaveTicket] END");
+      devLog("[SaveTicket] END");
       return false;
     }
 
     // Get expected version for optimistic locking
     const expectedVersion = detailedTicket.version;
     if (expectedVersion === undefined) {
-      console.warn("[SaveTicket] Ticket version is missing, cannot use optimistic locking");
+      devWarn("[SaveTicket] Ticket version is missing, cannot use optimistic locking");
       // Continue without version check (fallback for old tickets without version)
     }
 
@@ -489,7 +490,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       };
       
       // Audit: Log customer snapshot fields in payload
-      console.log("[SaveTicket] PAYLOAD - Customer snapshot fields:", {
+      devLog("[SaveTicket] PAYLOAD - Customer snapshot fields:", {
         customer_id: payload.customer_id,
         customer_name: payload.customer_name,
         customer_phone: payload.customer_phone,
@@ -501,8 +502,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         customer_ico: payload.customer_ico,
         customer_info: payload.customer_info,
       });
-      console.log("[SaveTicket] PAYLOAD (full)", payload);
-      console.log("[SaveTicket] Optimistic lock - expected version:", expectedVersion);
+      devLog("[SaveTicket] PAYLOAD (full)", payload);
+      devLog("[SaveTicket] Optimistic lock - expected version:", expectedVersion);
       
       // Build update query with optimistic locking
       let updateQuery = (supabase
@@ -520,18 +521,18 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
         .single();
 
-      console.log("[SaveTicket] RESULT", { data, error, expectedVersion });
+      devLog("[SaveTicket] RESULT", { data, error, expectedVersion });
 
       if (error) {
         console.error("[SaveTicket] update error", error);
         showToast(`Chyba při ukládání zakázky: ${error.message}`, "error");
-        console.log("[SaveTicket] END (error)");
+        devLog("[SaveTicket] END (error)");
         return false;
       }
 
       // Detect conflict: no error but no data returned (0 rows updated due to version mismatch)
       if (!data && expectedVersion !== undefined) {
-        console.warn("[SaveTicket] CONFLICT DETECTED - no data returned, version mismatch likely");
+        devWarn("[SaveTicket] CONFLICT DETECTED - no data returned, version mismatch likely");
         showToast("Zakázku mezitím upravil někdo jiný. Načetl jsem novou verzi – prosím zkontrolujte změny a uložte znovu.", "error");
         
         // Re-fetch the ticket from DB
@@ -540,21 +541,21 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           if (refreshedTicket) {
             setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? refreshedTicket : t)));
             onSuccess(refreshedTicket);
-            console.log("[SaveTicket] END (conflict - refreshed)");
+            devLog("[SaveTicket] END (conflict - refreshed)");
             return false; // Return false to indicate conflict, not success
           }
         } catch (refetchError) {
           console.error("[SaveTicket] Error re-fetching ticket after conflict:", refetchError);
         }
         
-        console.log("[SaveTicket] END (conflict)");
+        devLog("[SaveTicket] END (conflict)");
         return false;
       }
 
       if (!data) {
         console.error("[SaveTicket] update returned no data (and no version check was used)");
         showToast("Chyba: server nevrátil data", "error");
-        console.log("[SaveTicket] END (no data)");
+        devLog("[SaveTicket] END (no data)");
         return false;
       }
 
@@ -562,7 +563,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       const oldCustomerId = detailedTicket.customerId || null;
       const newCustomerId = data.customer_id || null;
       if (oldCustomerId !== newCustomerId) {
-        console.log("[SaveTicket] Customer ID changed:", { oldCustomerId, newCustomerId });
+        devLog("[SaveTicket] Customer ID changed:", { oldCustomerId, newCustomerId });
         window.dispatchEvent(
           new CustomEvent("jobsheet:customer-tickets-refresh", {
             detail: { customerId: newCustomerId, oldCustomerId },
@@ -571,7 +572,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
 
       const updatedTicket = mapSupabaseTicketToTicketEx(data);
-      console.log("[SaveTicket] cloudTickets updated:", {
+      devLog("[SaveTicket] cloudTickets updated:", {
         ticketId: updatedTicket.id,
         performedRepairs: updatedTicket.performedRepairs,
         diagnosticText: updatedTicket.diagnosticText,
@@ -580,13 +581,13 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       });
       setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? updatedTicket : t)));
       onSuccess(updatedTicket);
-      console.log("[SaveTicket] END");
+      devLog("[SaveTicket] END");
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
       console.error("[SaveTicket] update exception", err);
       showToast(`Chyba při ukládání zakázky: ${errorMessage}`, "error");
-      console.log("[SaveTicket] END");
+      devLog("[SaveTicket] END");
       return false;
     }
   }, [activeServiceId, setCloudTickets, refetchTicketById]);

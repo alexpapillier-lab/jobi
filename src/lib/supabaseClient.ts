@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { devLog, devWarn } from "./devLog";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -11,6 +12,22 @@ let cachedTauriFetch: typeof fetch | null = null;
 let tauriFetchLoadFailed = false;
 
 const LOG = "[supabaseFetch]";
+const VERBOSE = import.meta.env.VITE_SUPABASE_FETCH_VERBOSE === "1";
+
+/** Resetuje stav při selhání síťového modulu. Volá se při visibility change nebo při explicitním „Zkusit znovu“. */
+export function resetTauriFetchState(): void {
+  if (tauriFetchLoadFailed || cachedTauriFetch) {
+    tauriFetchLoadFailed = false;
+    cachedTauriFetch = null;
+    if (VERBOSE) devLog(`${LOG} reset tauriFetch state`);
+  }
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resetTauriFetchState();
+  });
+}
 
 /** V Tauri webviewu výchozí fetch blokuje cross-origin (Supabase). Používáme Tauri HTTP plugin. */
 export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -23,27 +40,21 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
       delete (initClean as Record<string, unknown>).signal;
     }
 
-    console.log(`${LOG} request url=${url} inTauri=${inTauri} cachedTauriFetch=${!!cachedTauriFetch} tauriFetchLoadFailed=${tauriFetchLoadFailed}`);
+    if (VERBOSE) devLog(`${LOG} request url=${url}`);
 
     if (inTauri) {
       if (tauriFetchLoadFailed) {
-        console.warn(`${LOG} skipping fetch – previous load failed`);
+        devWarn(`${LOG} skipping – previous load failed. Zkuste „Zkusit znovu“ nebo přepnout záložku a vrátit se.`);
         return Promise.reject(
-          new Error(
-            "Nelze načíst síťový modul. Restartujte aplikaci (Úpravy → ukončit a znovu spustit Jobi)."
-          )
+          new Error("Nelze načíst síťový modul. Restartujte aplikaci (Úpravy → ukončit a znovu spustit Jobi), nebo zkuste „Zkusit znovu“ na obrazovce chyby.")
         );
       }
       try {
         if (!cachedTauriFetch) {
-          console.log(`${LOG} loading @tauri-apps/plugin-http...`);
           const mod = await import("@tauri-apps/plugin-http");
           cachedTauriFetch = mod.fetch;
-          console.log(`${LOG} plugin-http loaded ok`);
         }
-        console.log(`${LOG} calling tauriFetch(${url})`);
         const response = await cachedTauriFetch(input, initClean);
-        console.log(`${LOG} tauriFetch response status=${response?.status} ok=${response?.ok} url=${response?.url}`);
         return response;
       } catch (e) {
         tauriFetchLoadFailed = true;
@@ -61,7 +72,6 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
       }
     }
 
-    console.log(`${LOG} using global fetch (browser)`);
     return fetch(input, initClean ?? init);
   })();
 }

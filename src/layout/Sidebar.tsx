@@ -6,6 +6,7 @@ import { useTheme } from "../theme/ThemeProvider";
 import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAppUpdate } from "../context/AppUpdateContext";
+import { devLog } from "../lib/devLog";
 
 export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
 
@@ -622,7 +623,7 @@ export function Sidebar({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log("[Sidebar] Sign out button clicked");
+                  devLog("[Sidebar] Sign out button clicked");
                   
                   // Close menu immediately
                   setUserMenuOpen(false);
@@ -630,7 +631,7 @@ export function Sidebar({
                   // Call signOut asynchronously
                   onSignOut()
                     .then(() => {
-                      console.log("[Sidebar] Sign out completed successfully");
+                      devLog("[Sidebar] Sign out completed successfully");
                     })
                     .catch((error) => {
                       console.error("[Sidebar] Error signing out:", error);

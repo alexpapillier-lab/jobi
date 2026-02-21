@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Jobi – Vyfotit diagnostiku</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-soft: #12121a;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.4);
+      --success: #22c55e;
+      --error: #ef4444;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --radius: 20px;
+      --radius-sm: 12px;
+      --safe-top: env(safe-area-inset-top, 0);
+      --safe-bottom: env(safe-area-inset-bottom, 0);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bottom);
+    }
+    #app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+    }
+    /* ===== Loading ===== */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+      animation: fadeIn 0.6s ease;
+    }
+    .loader {
+      position: relative;
+      width: 80px;
+      height: 80px;
+    }
+    .loader::before,
+    .loader::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-top-color: var(--accent);
+      animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+    .loader::after {
+      inset: 8px;
+      border-top-color: var(--accent-glow);
+      animation-duration: 0.9s;
+      animation-direction: reverse;
+    }
+    .loader-ring {
+      position: absolute;
+      inset: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.06);
+      animation: spin 2.5s linear infinite reverse;
+    }
+    .loader-blob {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 30% 30%, var(--accent), transparent 60%);
+      border-radius: 50%;
+      filter: blur(20px);
+      opacity: 0.6;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .loading-text {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    /* ===== Main UI ===== */
+    .screen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 400px; }
+    .screen.active { display: flex; animation: fadeIn 0.5s ease; }
+    /* Camera screen – celá obrazovka, ovládání přes overlay */
+    .screen-camera {
+      position: fixed;
+      inset: 0;
+      max-width: none;
+      padding: 0;
+      justify-content: stretch;
+    }
+    .screen-camera .camera-section {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .screen-camera .logo {
+      position: absolute;
+      top: calc(var(--safe-top) + 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: rgba(255,255,255,0.9);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      z-index: 3;
+    }
+    .screen-camera .subtitle { display: none; }
+    /* Kamera přes celou obrazovku */
+    .camera-wrap {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    .camera-wrap video,
+    .camera-wrap canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .camera-wrap canvas { display: none; }
+    .camera-wrap.preview canvas { display: block; }
+    .camera-wrap.preview video { display: none; }
+    .camera-wrap.preview .zoom-bar,
+    .camera-wrap.preview .gallery-overlay,
+    .camera-wrap.preview .shutter-btn { display: none; }
+    .camera-wrap.preview .preview-overlay { display: flex; }
+    .zoom-bar {
+      position: absolute;
+      bottom: calc(100px + var(--safe-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      padding: 10px 16px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 28px;
+      z-index: 3;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .zoom-btn {
+      padding: 10px 20px;
+      border-radius: 24px;
+      border: 2px solid rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.2);
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      font-family: inherit;
+    }
+    .zoom-btn.active {
+      background: var(--accent);
+      border-color: white;
+      box-shadow: 0 0 0 2px var(--accent);
+    }
+    .gallery-overlay {
+      position: absolute;
+      top: calc(var(--safe-top) + 44px);
+      right: 16px;
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 3;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .preview-overlay {
+      position: absolute;
+      bottom: calc(24px + var(--safe-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 16px;
+      z-index: 3;
+    }
+    .preview-overlay .btn { min-width: 100px; }
+    .shutter-btn {
+      position: absolute;
+      bottom: calc(24px + var(--safe-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 4px solid white;
+      background: rgba(255,255,255,0.2);
+      cursor: pointer;
+      z-index: 3;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .shutter-btn:active { transform: translateX(-50%) scale(0.92); }
+    .shutter-btn:hover { box-shadow: 0 0 0 12px var(--accent-glow); }
+    .shutter-btn.hidden { display: none; }
+    .shutter-btn::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: white;
+    }
+    .actions {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+      width: 100%;
+      justify-content: center;
+    }
+    .btn {
+      padding: 14px 28px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.15s, opacity 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 4px 24px var(--accent-glow);
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    /* Success */
+    .success-icon {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--success), #16a34a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .success-icon svg {
+      width: 44px;
+      height: 44px;
+      color: white;
+    }
+    .success-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .success-text {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      text-align: center;
+    }
+    /* Error */
+    .error-box {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      color: #fca5a5;
+      font-size: 14px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .error-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--error);
+      margin-bottom: 16px;
+    }
+    /* Hidden */
+    .hidden { display: none !important; }
+    /* Landscape – success/error */
+    @media (orientation: landscape) {
+      .screen-success.active, .screen-error.active { flex-direction: column; }
+      .screen-success .success-icon, .screen-error .error-title { flex-shrink: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="loading" class="loading">
+      <div class="loader">
+        <div class="loader-ring"></div>
+        <div class="loader-blob"></div>
+      </div>
+      <span class="loading-text">Připravuji kameru…</span>
+    </div>
+    <div id="screen-camera" class="screen">
+      <div class="camera-section">
+        <div class="logo">Jobi</div>
+        <div class="camera-wrap" id="cameraWrap">
+          <video id="video" playsinline autoplay muted></video>
+          <canvas id="canvas"></canvas>
+          <div class="zoom-bar hidden" id="zoomBar"></div>
+          <input type="file" id="fileInput" accept="image/*" class="hidden" />
+          <button type="button" class="btn-overlay gallery-overlay" id="galleryBtn">Nahrát z galerie</button>
+          <button type="button" class="shutter-btn" id="shutterBtn" aria-label="Vyfotit"></button>
+          <div class="preview-overlay hidden" id="previewOverlay">
+            <button type="button" class="btn btn-ghost" id="retakeBtn">Znovu</button>
+            <button type="button" class="btn btn-primary" id="uploadBtn">Odeslat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="screen-success" class="screen">
+      <div class="success-icon">
+        <svg fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+      </div>
+      <h1 class="success-title">Odesláno</h1>
+      <p class="success-text">Fotka byla přidána k zakázce.<br />Můžete zavřít tuto stránku.</p>
+      <button type="button" class="btn btn-ghost" id="anotherBtn">Vyfotit další</button>
+    </div>
+    <div id="screen-error" class="screen">
+      <h1 class="error-title">Něco se pokazilo</h1>
+      <div class="error-box" id="errorMessage"></div>
+      <button type="button" class="btn btn-primary" id="retryBtn">Zkusit znovu</button>
+    </div>
+  </div>
+  <script>
+    window.CAPTURE_CONFIG = { supabaseUrl: 'https://ijtvcgolsdsrquqbvjrz.supabase.co' };
+  </script>
+  <script src="capture.js"></script>
+</body>
+</html>
