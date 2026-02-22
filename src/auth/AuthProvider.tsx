@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       // Při null bez explicitního odhlášení zkusit refresh
+      if (!supabase) return;
       const { data, error } = await supabase.auth.refreshSession();
       if (import.meta.env.DEV) {
         console.log("[Auth] refreshSession po event=" + event, { ok: !!data?.session, error: error?.message });
