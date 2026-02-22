@@ -50,16 +50,9 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
           .from("service_settings") as any)
           .select("config")
           .eq("service_id", activeServiceId)
-          .single();
+          .maybeSingle();
 
-        if (error) {
-          // If not found, it's okay - will use default/localStorage
-          if (error.code === "PGRST116") {
-            setServiceSettingsLoading(false);
-            return;
-          }
-          throw error;
-        }
+        if (error) throw error;
 
         if (data?.config?.abbreviation) {
           // Update companyData abbreviation from DB

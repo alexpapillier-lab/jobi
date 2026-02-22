@@ -206,7 +206,7 @@ export default function Customers({
         supabase.removeChannel(channel);
       }
     };
-  }, [activeServiceId, cloudCustomers]);
+  }, [activeServiceId, supabase]);
 
   const customers = cloudCustomers;
 

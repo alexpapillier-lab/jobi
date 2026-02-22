@@ -196,7 +196,6 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       let lastStep = "init";
 
       try {
-        // V Tauri může Supabase klient mít session z localStorage neaktualizovanou – zajistíme, že používá aktuální session
         const { data: { session: clientSession } } = await client.auth.getSession();
         devLog("[TeamSettings] loadTeamData: session from useAuth:", !!session, "clientSession:", !!clientSession, "access_token:", !!session?.access_token, "activeServiceId:", activeServiceId);
         if (!clientSession?.access_token && session?.access_token) {

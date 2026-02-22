@@ -77,7 +77,6 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
     setIsSaving(true);
 
     try {
-      // Get current user ID for history
       const { data: sessionData } = await supabase.auth.getSession();
       const changedBy = sessionData?.session?.user?.id || null;
 

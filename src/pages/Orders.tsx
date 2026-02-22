@@ -5153,7 +5153,7 @@ export default function Orders({
       .from("service_settings") as any)
       .select("config")
       .eq("service_id", activeServiceId)
-      .single()
+      .maybeSingle()
       .then(({ data }: any) => {
         setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
       })
@@ -5165,7 +5165,7 @@ export default function Orders({
       (supabase.from("service_settings") as any)
         .select("config")
         .eq("service_id", activeServiceId)
-        .single()
+        .maybeSingle()
         .then(({ data }: any) => {
           setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
         })
@@ -5191,9 +5191,6 @@ export default function Orders({
 
     const loadTickets = async () => {
       try {
-        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
-        await supabase!.auth.refreshSession();
-
         const { data, error } = await (supabase!
           .from("tickets") as any)
           .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
@@ -5251,9 +5248,6 @@ export default function Orders({
     const loadClaims = async () => {
       if (!client) return;
       try {
-        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
-        await client.auth.refreshSession();
-
         const { data, error } = await (client
           .from("warranty_claims") as any)
           .select("*")
@@ -5274,15 +5268,13 @@ export default function Orders({
     return () => { claimsReqIdRef.current++; };
   }, [activeServiceId, supabase, visibilityKey]);
 
-  const refetchClaims = useCallback(() => {
+  const refetchClaims = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
-    (supabase.from("warranty_claims") as any)
+    const { data, error } = await (supabase.from("warranty_claims") as any)
       .select("*")
       .eq("service_id", activeServiceId)
-      .order("created_at", { ascending: false })
-      .then(({ data, error }: any) => {
-        if (!error && data) setCloudClaims(data);
-      });
+      .order("created_at", { ascending: false });
+    if (!error && data) setCloudClaims(data);
   }, [activeServiceId, supabase]);
 
   const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);

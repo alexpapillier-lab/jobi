@@ -149,6 +149,8 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
   const initialLoadDoneRef = useRef(false);
   /** Load vrátil prázdná data – pak neukládat prázdná zpět (přepsalo by to DB). */
   const loadedEmptyRef = useRef(false);
+  /** Právě jsme načetli z DB – přeskočit následující save (data jsou již v DB, snižuje tlak na pool). */
+  const justLoadedRef = useRef(false);
 
   // Load devices and inventory from DB when active service changes (with localStorage migration)
   useEffect(() => {
@@ -211,6 +213,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         devicesData.models.length > 0 ||
         devicesData.repairs.length > 0;
       loadedEmptyRef.current = !hadData;
+      justLoadedRef.current = true;
       setData(devicesData);
       initialLoadDoneRef.current = true;
 
@@ -264,6 +267,10 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     if (!activeServiceId || !initialLoadDoneRef.current) return;
     if (!hasAnyData && loadedEmptyRef.current) return; // load vrátil prázdná – neukládat zpět
     const t = setTimeout(() => {
+      if (justLoadedRef.current) {
+        justLoadedRef.current = false;
+        return; // data právě z loadu – neukládat (snižuje tlak na connection pool)
+      }
       saveDevicesToDb(activeServiceId, data).then((r) => {
         if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
       });
@@ -271,44 +278,44 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     return () => clearTimeout(t);
   }, [activeServiceId, data, hasAnyData]);
 
-  // Realtime: při změně zařízení v jiné záložce/zařízení přenačíst
+  // Realtime: při změně zařízení v jiné záložce/zařízení přenačíst (debounce 2s – sníží záplavu při nestabilním připojení)
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let inventoryReloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleDevicesReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        loadDevicesFromDb(activeServiceId).then((r) => {
+          if (!r.error) {
+            justLoadedRef.current = true;
+            setData(r.data);
+            setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models }));
+          }
+        });
+      }, 2000);
+    };
+    const scheduleInventoryReload = () => {
+      if (inventoryReloadTimer) clearTimeout(inventoryReloadTimer);
+      inventoryReloadTimer = setTimeout(() => {
+        inventoryReloadTimer = null;
+        loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })));
+      }, 2000);
+    };
     const topic = `devices:${activeServiceId}`;
     const channel = supabase
       .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "device_brands", filter: `service_id=eq.${activeServiceId}` },
-        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "device_categories", filter: `service_id=eq.${activeServiceId}` },
-        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` },
-        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` },
-        () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) { setData(r.data); setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models })); } })
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inventory_products", filter: `service_id=eq.${activeServiceId}` },
-        () => loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })))
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "inventory_product_categories", filter: `service_id=eq.${activeServiceId}` },
-        () => loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })))
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_brands", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_categories", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_products", filter: `service_id=eq.${activeServiceId}` }, scheduleInventoryReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_product_categories", filter: `service_id=eq.${activeServiceId}` }, scheduleInventoryReload)
       .subscribe();
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      if (inventoryReloadTimer) clearTimeout(inventoryReloadTimer);
       if (supabase) supabase.removeChannel(channel);
     };
   }, [activeServiceId]);

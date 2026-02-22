@@ -90,17 +90,16 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadD
     return { data: { brands: [], categories: [], models: [], repairs: [] } };
   }
 
-  const [brandsRes, categoriesRes, modelsRes, repairsRes] = await Promise.all([
-    (supabase.from("device_brands") as any).select("id, name, created_at").eq("service_id", serviceId).order("created_at"),
-    (supabase.from("device_categories") as any).select("id, brand_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
-    (supabase.from("device_models") as any).select("id, category_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
-    (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
-  ]);
+  // Sekvenčně místo paralelně – méně tlak na connection pool (PGRST683)
+  const brandsRes = await (supabase.from("device_brands") as any).select("id, name, created_at").eq("service_id", serviceId).order("created_at");
+  const categoriesRes = await (supabase.from("device_categories") as any).select("id, brand_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const modelsRes = await (supabase.from("device_models") as any).select("id, category_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
 
   const err = brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error;
   if (err) {
     const msg = (err as { message?: string }).message ?? String(err);
-    console.error("[devicesDb] Load error:", err);
+    console.warn("[devicesDb] Load error:", msg);
     return { data: { brands: [], categories: [], models: [], repairs: [] }, error: msg };
   }
 
@@ -168,7 +167,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     }));
     const { error } = await (supabase.from("device_brands") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[devicesDb] Upsert brands error:", error);
+      console.warn("[devicesDb] Upsert brands error:", (error as { message?: string }).message ?? error);
       return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání značek" };
     }
   }
@@ -185,7 +184,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     }));
     const { error } = await (supabase.from("device_categories") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[devicesDb] Upsert categories error:", error);
+      console.warn("[devicesDb] Upsert categories error:", (error as { message?: string }).message ?? error);
       return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání kategorií" };
     }
   }
@@ -202,7 +201,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     }));
     const { error } = await (supabase.from("device_models") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[devicesDb] Upsert models error:", error);
+      console.warn("[devicesDb] Upsert models error:", (error as { message?: string }).message ?? error);
       return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání modelů" };
     }
   }
@@ -224,7 +223,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     }));
     const { error } = await (supabase.from("repairs") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[devicesDb] Upsert repairs error:", error);
+      console.warn("[devicesDb] Upsert repairs error:", (error as { message?: string }).message ?? error);
       return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání oprav" };
     }
   }

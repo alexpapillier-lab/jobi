@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
+import { supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
 import { showToast } from "./Toast";
 
 type OnlineGateProps = {
@@ -55,61 +55,53 @@ export function OnlineGate({ children }: OnlineGateProps) {
   const [isChecking, setIsChecking] = useState(false);
   const wasOnlineRef = useRef<boolean | null>(null);
 
-  const CONNECTION_TIMEOUT_MS = 12_000;
+  const CONNECTION_TIMEOUT_MS = 45_000;
+  const MAX_RETRIES = 2;
 
   const checkConnection = useCallback(async () => {
-    if (!supabase) {
+    if (!supabaseUrl || !supabaseAnonKey) {
       setError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
       setIsOnline(false);
       return;
     }
 
     try {
-      const pingPromise = supabase.from("services").select("id").limit(1);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), CONNECTION_TIMEOUT_MS)
-      );
-      const { error: pingError } = await Promise.race([pingPromise, timeoutPromise]);
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          // auth/health je lehký endpoint (ne-probouzí DB), vhodnější než services pro connectivity check
+          const res = await Promise.race([
+            supabaseFetch(`${supabaseUrl}/auth/v1/health`, {
+              headers: { apikey: supabaseAnonKey },
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("timeout")), CONNECTION_TIMEOUT_MS)
+            ),
+          ]);
 
-      if (pingError) {
-        if (
-          pingError.message.includes("fetch") ||
-          pingError.message.includes("network") ||
-          pingError.message.includes("Failed to fetch") ||
-          pingError.message.includes("Load failed") ||
-          pingError.code === "PGRST301"
-        ) {
-          const msg = getConnectionErrorMessage(pingError);
-          setError(msg);
+          if (res.ok) {
+            wasOnlineRef.current = true;
+            setIsOnline(true);
+            setError(null);
+            return;
+          }
+          const err = new Error(`HTTP ${res.status}`);
+          setError(getConnectionErrorMessage(err));
           if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
           setIsOnline(false);
           return;
-        }
-        const msg = (pingError.message || "").toLowerCase();
-        if (
-          msg.includes("503") ||
-          msg.includes("502") ||
-          msg.includes("unavailable") ||
-          msg.includes("maintenance") ||
-          msg.includes("restoring")
-        ) {
-          const errMsg = getConnectionErrorMessage(pingError);
-          setError(errMsg);
-          if (wasOnlineRef.current === true) showToast("Cloud je dočasně nedostupný", "error");
-          setIsOnline(false);
-          return;
+        } catch (err) {
+          console.warn(`[OnlineGate] Connection check attempt ${attempt}/${MAX_RETRIES} failed:`, err);
+          if (attempt === MAX_RETRIES) {
+            setError(getConnectionErrorMessage(err));
+            if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
+            setIsOnline(false);
+          }
+          if (attempt < MAX_RETRIES) {
+            resetTauriFetchState();
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         }
       }
-
-      wasOnlineRef.current = true;
-      setIsOnline(true);
-      setError(null);
-    } catch (err) {
-      console.error("[OnlineGate] Connection check error:", err);
-      const errMsg = getConnectionErrorMessage(err);
-      setError(errMsg);
-      if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
-      setIsOnline(false);
     } finally {
       setIsChecking(false);
     }

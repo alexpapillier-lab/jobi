@@ -65,11 +65,8 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         setLoading(true);
         setError(null);
 
-        // V Tauri/desktopu getSession() často vrací prošlý token → 401 Invalid JWT
-        const { data: refreshData } = await supabase.auth.refreshSession();
-        const accessToken =
-          refreshData?.session?.access_token ??
-          (await supabase.auth.getSession()).data?.session?.access_token;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
         if (!accessToken) {
           setStatuses([]);
           setLoading(false);

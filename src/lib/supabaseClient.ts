@@ -49,25 +49,38 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
           new Error("Nelze načíst síťový modul. Restartujte aplikaci (Úpravy → ukončit a znovu spustit Jobi), nebo zkuste „Zkusit znovu“ na obrazovce chyby.")
         );
       }
+      // 1) Načíst plugin – selhání je trvalé (tauriFetchLoadFailed), vyžaduje restart
       try {
         if (!cachedTauriFetch) {
           const mod = await import("@tauri-apps/plugin-http");
           cachedTauriFetch = mod.fetch;
         }
-        const response = await cachedTauriFetch(input, initClean);
+      } catch (loadErr) {
+        tauriFetchLoadFailed = true;
+        const err = loadErr instanceof Error ? loadErr : new Error(String(loadErr));
+        console.error(`${LOG} Tauri plugin-http LOAD failed:`, { message: err.message, cause: err.cause });
+        return Promise.reject(err);
+      }
+      // 2) Fetch – prodloužený connectTimeout (60s) kvůli Supabase cold start a pomalým sítím
+      const initWithTimeout = {
+        ...initClean,
+        connectTimeout: 60_000,
+      };
+      try {
+        const response = await cachedTauriFetch!(input, initWithTimeout);
         return response;
       } catch (e) {
-        tauriFetchLoadFailed = true;
         const err = e instanceof Error ? e : new Error(String(e));
         const cause = err.cause instanceof Error ? { message: err.cause.message, name: err.cause.name } : err.cause;
-        console.error(`${LOG} Tauri plugin-http load or fetch FAILED:`, {
-          message: err.message,
-          name: err.name,
-          cause,
-          stack: err.stack,
-          // Supabase FunctionsFetchError má .context (Response)
-          context: (e as { context?: unknown }).context,
-        });
+        const msg = (err.message + " " + (cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "")).toLowerCase();
+        const isAuthLike = /401|jwt|invalid.*token|unauthorized|token.*expired|session.*expired|auth/i.test(msg);
+        if (isAuthLike) {
+          console.error(`${LOG} Auth/JWT related error:`, { message: err.message, cause });
+          return Promise.reject(
+            new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.")
+          );
+        }
+        console.warn(`${LOG} Fetch failed (ne-blokuje další requesty):`, { message: err.message, cause });
         return Promise.reject(e);
       }
     }

@@ -77,10 +77,9 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Inv
     return { productCategories: [], products: [] };
   }
 
-  const [categoriesRes, productsRes] = await Promise.all([
-    (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
-    (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
-  ]);
+  // Sekvenčně místo paralelně – méně tlak na connection pool (PGRST683)
+  const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
 
   if (categoriesRes.error || productsRes.error) {
     console.error("[inventoryDb] Load error:", categoriesRes.error || productsRes.error);

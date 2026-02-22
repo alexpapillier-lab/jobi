@@ -39,5 +39,5 @@
     "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "preview": "vite preview"
   },
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

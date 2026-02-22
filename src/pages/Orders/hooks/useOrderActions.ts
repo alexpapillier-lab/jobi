@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase, resetTauriFetchState } from "../../../lib/supabaseClient";
 import { devLog, devWarn } from "../../../lib/devLog";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
@@ -27,7 +27,7 @@ async function loadServiceSettingsForCode(
       .from("service_settings")
       .select("config")
       .eq("service_id", activeServiceId)
-      .single();
+      .maybeSingle();
     
     if (error || !data) {
       return "SRV";
@@ -257,6 +257,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       return false;
     }
 
+    resetTauriFetchState();
+
     // Ensure statuses are loaded before creating ticket
     if (!statusesReady || statuses.length === 0) {
       showToast("Statusy se ještě načítají. Zkuste to prosím za chvíli.", "error");
@@ -384,6 +386,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       devLog("[SaveTicket] END");
       return false;
     }
+
+    resetTauriFetchState();
 
     // Get expected version for optimistic locking
     const expectedVersion = detailedTicket.version;

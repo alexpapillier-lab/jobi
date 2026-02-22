@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { playSaved, playDeleted, areSoundsEnabled } from "../lib/sounds";
+import { resetTauriFetchState } from "../lib/supabaseClient";
 
 type Toast = {
   id: string;
@@ -27,8 +28,19 @@ function playToastSound(type: "success" | "error" | "info") {
   if (type === "error") playDeleted();
 }
 
+const NETWORK_MODULE_ERR = "Nelze načíst síťový modul";
+
 export function showToast(message: string, type: "success" | "error" | "info" = "success") {
   playToastSound(type);
+
+  if (type === "error" && message.includes(NETWORK_MODULE_ERR)) {
+    showPersistentToast(message, "error", {
+      actionLabel: "Zkusit znovu",
+      onAction: () => resetTauriFetchState(),
+    });
+    return;
+  }
+
   const id = `toast-${++toastId}`;
   toasts.push({ id, message, type });
   notify();
