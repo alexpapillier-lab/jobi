@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
-import { showToast } from "../../components/Toast";
+import { showToast, showDemoAchievementToast } from "../../components/Toast";
 import { Card } from "../../lib/settingsUi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TeamSettings } from "./TeamSettings";
@@ -225,6 +225,29 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
 
   return (
     <>
+      <div style={{ marginBottom: 16, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 12, background: "var(--panel)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", marginBottom: 2 }}>Ukázkový achievement</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Zobrazí demo toast s achievementem (pro testování vzhledu)</div>
+        </div>
+        <button
+          type="button"
+          onClick={showDemoAchievementToast}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 10,
+            border: "1px solid var(--accent)",
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Poslat ukázkový achievement
+        </button>
+      </div>
+
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
           <div>

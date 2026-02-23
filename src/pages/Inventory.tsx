@@ -1388,7 +1388,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           Spravujte produkty na skladě. Produkty mohou být pro více modelů.
         </div>
         </div>
-        <button data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px" }}>
+        <button data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px", marginRight: 120 }}>
           Import
         </button>
       </div>

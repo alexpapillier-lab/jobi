@@ -17,6 +17,7 @@ export function AppLayout({
   services,
   activeServiceId,
   setActiveServiceId,
+  achievementsEnabled = true,
 }: {
   children: React.ReactNode;
   pageTitle: string;
@@ -28,6 +29,7 @@ export function AppLayout({
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
+  achievementsEnabled?: boolean;
 }) {
   const handleSignOut = async () => {
     // Clear business data from localStorage before sign out
@@ -102,6 +104,7 @@ export function AppLayout({
             services,
             activeServiceId,
             setActiveServiceId,
+            achievementsEnabled,
           } satisfies SidebarProps)}
         />
       </aside>

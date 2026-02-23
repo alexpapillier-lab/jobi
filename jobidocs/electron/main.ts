@@ -11,6 +11,8 @@ const isDev = !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** Na macOS: při true necháme okno zavřít (quit), jinak close → hide (zůstane v trayi). */
+let isQuitting = false;
 
 /**
  * Render HTML to PDF using Electron's bundled Chromium (no Puppeteer/Chrome needed).
@@ -106,11 +108,11 @@ async function createWindow() {
     mainWindow = null;
   });
 
-  // macOS: červené tlačítko zavřít → skrýt okno (ne quit), skrýt Dock; zůstane jen tray
+  // macOS: červené tlačítko zavřít → skrýt okno (ne quit), skrýt Dock; zůstane jen tray. Při Ukončit → skutečně quit.
   if (process.platform === "darwin") {
     const win = mainWindow;
     win.on("close", (e) => {
-      if (!win.isDestroyed()) {
+      if (!win.isDestroyed() && !isQuitting) {
         e.preventDefault();
         win.hide();
         app.dock?.hide();
@@ -157,7 +159,13 @@ function setupTray() {
           },
         },
         { type: "separator" },
-        { label: "Ukončit JobiDocs", role: "quit" },
+        {
+          label: "Ukončit JobiDocs",
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
+        },
       ])
     );
     tray.on("click", () => {

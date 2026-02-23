@@ -3,6 +3,9 @@ import { supabase, resetTauriFetchState } from "../../../lib/supabaseClient";
 import { devLog, devWarn } from "../../../lib/devLog";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
+import { checkAchievementsOnTicketsChanged, checkAchievementsOnCustomersChanged } from "../../../lib/achievements";
+import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
+import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
 
 // Helper: normalize prefix for code generation
@@ -214,6 +217,7 @@ async function ensureCustomerIdForTicketSnapshot(
 
 type UseOrderActionsDeps = {
   activeServiceId: string | null;
+  userId: string | null;
   cloudTickets: TicketEx[];
   setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
   setStatusById: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -227,7 +231,7 @@ type UseOrderActionsDeps = {
 type CreateTicketParams = {
   newDraft: any;
   customerMatchDecision: "undecided" | "accepted" | "rejected";
-  onSuccess: (ticket: TicketEx) => void;
+  onSuccess: (tickets: TicketEx[]) => void;
 };
 
 type SaveTicketChangesParams = {
@@ -239,6 +243,7 @@ type SaveTicketChangesParams = {
 export function useOrderActions(deps: UseOrderActionsDeps) {
   const {
     activeServiceId,
+    userId,
     cloudTickets,
     setCloudTickets,
     setStatusById,
@@ -279,18 +284,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
 
       const customerName = newDraft.customerName.trim() || "Anonymní zákazník";
-      const issueShort = newDraft.requestedRepair.trim() || "—";
-
-      // Generate code asynchronously using cloud data
-      const code = await makeCode(cloudTickets, supabase, activeServiceId);
-      // Ensure customer exists and get customer_id
-      // If user explicitly rejected customer match, don't lookup/create customer
       let customerId: string | null = null;
       if (customerMatchDecision === "rejected" && !newDraft.customerId) {
-        // User rejected match and no customer_id is set - don't assign customer
         customerId = null;
       } else {
-        // Normal flow: lookup or create customer
         customerId = await ensureCustomerIdForTicketSnapshot(
           {
             customer_phone: newDraft.customerPhone.trim() || null,
@@ -306,55 +303,110 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         );
       }
 
-      const payload = {
-        service_id: activeServiceId,
-        code,
-        title: newDraft.deviceLabel.trim() || "Nová zakázka",
-        status: statusKey,
-        notes: issueShort || "",
-        customer_id: customerId ?? newDraft.customerId ?? null,
-        customer_name: customerName,
-        customer_phone: newDraft.customerPhone.trim() || null,
-        customer_email: newDraft.customerEmail.trim() || null,
-        customer_address_street: newDraft.addressStreet.trim() || null,
-        customer_address_city: newDraft.addressCity.trim() || null,
-        customer_address_zip: newDraft.addressZip.trim() || null,
-        customer_company: newDraft.company.trim() || null,
-        customer_ico: newDraft.ico.trim() || null,
-        customer_info: newDraft.customerInfo.trim() || null,
-        device_serial: newDraft.serialOrImei.trim() || null,
-        device_passcode: newDraft.devicePasscode.trim() || null,
-        device_condition: newDraft.deviceCondition.trim() || null,
-        device_accessories: newDraft.deviceAccessories?.trim() || null,
-        device_note: newDraft.deviceNote.trim() || null,
-        external_id: newDraft.externalId.trim() || null,
-        handoff_method: newDraft.handoffMethod || null,
-        handback_method: newDraft.handbackMethod?.trim() || null,
-        estimated_price: newDraft.estimatedPrice || null,
-        performed_repairs: (newDraft as any).performedRepairs ?? [],
-        diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
-        diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
-        discount_type: (newDraft as any).discountType ?? null,
-        discount_value: (newDraft as any).discountValue ?? null,
-      };
-      
-      const { data, error } = await (supabase
-        .from("tickets") as any)
-        .insert(payload)
-        .select()
-        .single();
+      const devices = Array.isArray(newDraft.devices) ? newDraft.devices : [{ deviceLabel: newDraft.deviceLabel, serialOrImei: newDraft.serialOrImei, devicePasscode: newDraft.devicePasscode, deviceCondition: newDraft.deviceCondition, deviceAccessories: newDraft.deviceAccessories, requestedRepair: newDraft.requestedRepair, handoffMethod: newDraft.handoffMethod, handbackMethod: newDraft.handbackMethod, deviceNote: newDraft.deviceNote, externalId: newDraft.externalId, estimatedPrice: newDraft.estimatedPrice }];
+      const photosBefore = (newDraft as any).diagnosticPhotosBefore as string[] | undefined;
 
-      if (error) {
-        console.error("[SaveTicket] create error", error);
-        showToast(`Chyba při vytváření zakázky: ${error.message}`, "error");
-        return false;
+      let accumulatedTickets = [...cloudTickets];
+      const createdTickets: TicketEx[] = [];
+
+      for (let i = 0; i < devices.length; i++) {
+        const dev = devices[i] as any;
+        const issueShort = (dev.requestedRepair || "").trim() || "—";
+        const code = await makeCode(accumulatedTickets, supabase, activeServiceId);
+
+        const payload = {
+          service_id: activeServiceId,
+          code,
+          title: (dev.deviceLabel || "").trim() || "Nová zakázka",
+          status: statusKey,
+          notes: issueShort,
+          customer_id: customerId ?? newDraft.customerId ?? null,
+          customer_name: customerName,
+          customer_phone: newDraft.customerPhone.trim() || null,
+          customer_email: newDraft.customerEmail.trim() || null,
+          customer_address_street: newDraft.addressStreet.trim() || null,
+          customer_address_city: newDraft.addressCity.trim() || null,
+          customer_address_zip: newDraft.addressZip.trim() || null,
+          customer_company: newDraft.company.trim() || null,
+          customer_ico: newDraft.ico.trim() || null,
+          customer_info: newDraft.customerInfo.trim() || null,
+          device_serial: (dev.serialOrImei || "").trim() || null,
+          device_passcode: (dev.devicePasscode || "").trim() || null,
+          device_condition: (dev.deviceCondition || "").trim() || null,
+          device_accessories: (dev.deviceAccessories || "").trim() || null,
+          device_note: (dev.deviceNote || "").trim() || null,
+          external_id: (dev.externalId || "").trim() || null,
+          handoff_method: dev.handoffMethod || null,
+          handback_method: (dev.handbackMethod || "").trim() || null,
+          estimated_price: dev.estimatedPrice ?? null,
+          performed_repairs: (newDraft as any).performedRepairs ?? [],
+          diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
+          diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
+          diagnostic_photos_before: [] as string[],
+          expected_completion_at: (dev.expectedCompletionAt ?? newDraft.devices[0]?.expectedCompletionAt) || null,
+          discount_type: (newDraft as any).discountType ?? null,
+          discount_value: (newDraft as any).discountValue ?? null,
+        };
+
+        const { data, error } = await (supabase
+          .from("tickets") as any)
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("[SaveTicket] create error", error);
+          showToast(`Chyba při vytváření zakázky: ${error.message}`, "error");
+          return false;
+        }
+
+        let ticket = mapSupabaseTicketToTicketEx(data);
+        if (i === 0 && photosBefore?.length && supabase && activeServiceId) {
+          try {
+            const urls: string[] = [];
+            for (const dataUrl of photosBefore) {
+              if (!dataUrl || typeof dataUrl !== "string") continue;
+              const blob = await addWatermarkToImageBlob(dataUrl);
+              const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+              const url = await uploadDiagnosticPhoto(supabase, activeServiceId, ticket.id!, file);
+              urls.push(url);
+            }
+            if (urls.length > 0) {
+              const { data: updated, error: updErr } = await (supabase.from("tickets") as any)
+                .update({ diagnostic_photos_before: urls })
+                .eq("id", ticket.id)
+                .select()
+                .single();
+              if (!updErr && updated) ticket = mapSupabaseTicketToTicketEx(updated);
+            }
+          } catch (err) {
+            console.error("[SaveTicket] upload photos before failed", err);
+            showToast("Fotky při příjmu se nepodařilo nahrát.", "error");
+          }
+        }
+
+        accumulatedTickets = [ticket, ...accumulatedTickets];
+        createdTickets.push(ticket);
+        setCloudTickets((prev) => [ticket, ...prev]);
+        setStatusById((prev) => ({ ...prev, [ticket.id]: statusKey }));
       }
 
-      const newTicket = mapSupabaseTicketToTicketEx(data);
-      setCloudTickets((prev) => [newTicket, ...prev]);
-      setStatusById((prev) => ({ ...prev, [newTicket.id]: statusKey }));
-      onSuccess(newTicket);
-      showToast("Zakázka vytvořena", "success");
+      onSuccess(createdTickets);
+      if (userId) {
+        const newTotal = cloudTickets.length + createdTickets.length;
+        checkAchievementsOnTicketsChanged(userId, activeServiceId, newTotal);
+        (async () => {
+          try {
+            const { count } = await (supabase.from("customers") as any)
+              .select("*", { count: "exact", head: true })
+              .eq("service_id", activeServiceId);
+            if (typeof count === "number") checkAchievementsOnCustomersChanged(userId, activeServiceId, count);
+          } catch {
+            // ignore
+          }
+        })();
+      }
+      showToast(createdTickets.length === 1 ? "Zakázka vytvořena" : `Vytvořeno ${createdTickets.length} zakázek`, "success");
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
@@ -362,7 +414,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       showToast(`Chyba při vytváření zakázky: ${errorMessage}`, "error");
       return false;
     }
-  }, [activeServiceId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
+  }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
     const { detailedTicket, editedTicket, onSuccess } = params;
@@ -427,6 +479,9 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         diagnosticPhotos: editedTicket.diagnosticPhotos !== undefined 
           ? editedTicket.diagnosticPhotos 
           : detailedTicket.diagnosticPhotos,
+        diagnosticPhotosBefore: editedTicket.diagnosticPhotosBefore !== undefined
+          ? editedTicket.diagnosticPhotosBefore
+          : detailedTicket.diagnosticPhotosBefore,
         performedRepairs: editedTicket.performedRepairs !== undefined
           ? editedTicket.performedRepairs
           : (detailedTicket.performedRepairs ?? []),
@@ -489,8 +544,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         performed_repairs: updated.performedRepairs ?? [],
         diagnostic_text: updated.diagnosticText ?? "",
         diagnostic_photos: updated.diagnosticPhotos ?? [],
+        diagnostic_photos_before: updated.diagnosticPhotosBefore ?? [],
         discount_type: updated.discountType ?? null,
         discount_value: updated.discountValue ?? null,
+        expected_completion_at: (editedTicket as any).expectedCompletionAt !== undefined ? (editedTicket as any).expectedCompletionAt : (detailedTicket as any).expected_completion_at ?? null,
       };
       
       // Audit: Log customer snapshot fields in payload
@@ -522,7 +579,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
       
       const { data, error } = await updateQuery
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
         .single();
 
       devLog("[SaveTicket] RESULT", { data, error, expectedVersion });

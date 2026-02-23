@@ -8,7 +8,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAppUpdate } from "../context/AppUpdateContext";
 import { devLog } from "../lib/devLog";
 
-export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
+export type NavKey = "orders" | "calendar" | "inventory" | "devices" | "customers" | "statistics" | "achievements" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -92,6 +92,17 @@ function StatisticsIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+function CalendarIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  );
+}
+
 // NAV items are created inside the component to access expanded state
 
 export type SidebarProps = {
@@ -104,7 +115,16 @@ export type SidebarProps = {
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
+  achievementsEnabled?: boolean;
 };
+
+function AchievementsIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 9V4a2 2 0 012-2h0a2 2 0 012 2v5M10 14l2 2 4-4" />
+    </svg>
+  );
+}
 
 export function Sidebar({
   expanded,
@@ -116,6 +136,7 @@ export function Sidebar({
   services,
   activeServiceId,
   setActiveServiceId,
+  achievementsEnabled = true,
 }: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
@@ -390,10 +411,12 @@ export function Sidebar({
       <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
           { key: "orders" as const, label: "Zakázky", icon: OrdersIcon },
+          { key: "calendar" as const, label: "Kalendář", icon: CalendarIcon },
           { key: "inventory" as const, label: "Sklad", icon: BoxIcon },
           { key: "devices" as const, label: "Zařízení", icon: DevicesIcon },
           { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
           { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
+          ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
           { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
         ].map((item) => {
           const isActive = item.key === active;

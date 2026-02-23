@@ -28,7 +28,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { ticketId, token, image } = body;
+    const { ticketId, token, image, scope } = body;
 
     if (!ticketId || !token || !image || typeof image !== "string") {
       return new Response(
@@ -93,10 +93,11 @@ serve(async (req) => {
     const { data: urlData } = svc.storage.from(BUCKET).getPublicUrl(path);
     const photoUrl = urlData.publicUrl;
 
-    // Přidat URL k zakázce
+    const isBefore = scope === "before";
+
     const { data: ticket, error: fetchErr } = await svc
       .from("tickets")
-      .select("diagnostic_photos")
+      .select(isBefore ? "diagnostic_photos_before" : "diagnostic_photos")
       .eq("id", ticketId)
       .single();
 
@@ -107,12 +108,16 @@ serve(async (req) => {
       );
     }
 
-    const current = Array.isArray(ticket.diagnostic_photos) ? ticket.diagnostic_photos : [];
+    const current = isBefore
+      ? (Array.isArray(ticket.diagnostic_photos_before) ? ticket.diagnostic_photos_before : [])
+      : (Array.isArray(ticket.diagnostic_photos) ? ticket.diagnostic_photos : []);
     const updated = [...current, photoUrl];
+
+    const updatePayload = isBefore ? { diagnostic_photos_before: updated } : { diagnostic_photos: updated };
 
     const { error: updateErr } = await svc
       .from("tickets")
-      .update({ diagnostic_photos: updated })
+      .update(updatePayload)
       .eq("id", ticketId);
 
     if (updateErr) {

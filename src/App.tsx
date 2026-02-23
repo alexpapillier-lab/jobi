@@ -6,6 +6,8 @@ import Customers from "./pages/Customers";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
+import Calendar from "./pages/Calendar";
+import Achievements from "./pages/Achievements";
 import Preview from "./pages/Preview";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -33,6 +35,7 @@ import type { ThemeMode } from "./theme/ThemeProvider";
 import { STORAGE_KEYS } from "./constants/storageKeys";
 import { safeLoadCompanyData } from "./pages/Orders";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
+import { checkAchievementOnMultiservice, checkAchievementOnShortcutUsed } from "./lib/achievements";
 import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import {
@@ -56,11 +59,17 @@ type OpenCustomerIntent = {
   customerId: string;
 };
 
+type OpenClaimIntent = {
+  claimId: string;
+  returnToPage?: NavKey;
+};
+
 const ORDERS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: "list" | "grid" | "compact"; pageSize: number };
+  achievementsEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
@@ -68,6 +77,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
+    achievementsEnabled: true,
   };
 }
 
@@ -87,6 +97,7 @@ function safeLoadUIConfig(): UIConfig {
       ? pageSize
       : d.orders.pageSize;
 
+    const achievementsEnabled = parsed?.achievementsEnabled;
     return {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
@@ -103,6 +114,7 @@ function safeLoadUIConfig(): UIConfig {
         displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
       },
+      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
     };
   } catch {
     return defaultUIConfig();
@@ -141,6 +153,8 @@ export default function App() {
 
   // one-shot intent: navigate to Orders and open a specific ticket
   const [openTicketIntent, setOpenTicketIntent] = useState<OpenTicketIntent | null>(null);
+
+  const [openClaimIntent, setOpenClaimIntent] = useState<OpenClaimIntent | null>(null);
 
   // one-shot intent: navigate to Customers and open a specific customer
   const [openCustomerIntent, setOpenCustomerIntent] = useState<OpenCustomerIntent | null>(null);
@@ -564,6 +578,14 @@ export default function App() {
     return () => clearInterval(id);
   }, [services, activeServiceId, canManageDocuments]);
 
+  // Achievement: multiservice (2+ pobočky)
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid && activeServiceId && services.length >= 2) {
+      checkAchievementOnMultiservice(uid, activeServiceId, services.length);
+    }
+  }, [session?.user?.id, activeServiceId, services.length]);
+
   // Clear service-scoped cache when activeServiceId changes
   useEffect(() => {
     const prevServiceId = prevActiveServiceIdRef.current;
@@ -621,6 +643,7 @@ export default function App() {
       if (isInputFocused()) return;
       const navMap: Record<string, NavKey> = {
         nav_orders: "orders",
+        nav_calendar: "calendar",
         nav_inventory: "inventory",
         nav_devices: "devices",
         nav_customers: "customers",
@@ -631,12 +654,16 @@ export default function App() {
         if (comboMatchesEvent(e, getShortcut(id as ShortcutId))) {
           e.preventDefault();
           e.stopPropagation();
+          const uid = session?.user?.id;
+          if (uid) checkAchievementOnShortcutUsed(uid);
           setActivePage(page);
           return;
         }
       }
       if (comboMatchesEvent(e, getShortcut("help"))) {
         e.preventDefault();
+        const uid = session?.user?.id;
+        if (uid) checkAchievementOnShortcutUsed(uid);
         setShortcutsHelpOpen(true);
         return;
       }
@@ -654,7 +681,7 @@ export default function App() {
     const onNav = (e: Event) => {
       const ev = e as CustomEvent<{ page: NavKey }>;
       const page = ev.detail?.page;
-      if (page && ["orders", "inventory", "devices", "customers", "statistics", "settings"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "statistics", "settings", "achievements"].includes(page)) {
         setActivePage(page);
       }
     };
@@ -794,15 +821,19 @@ export default function App() {
   const pageTitle = useMemo(() => {
     switch (activePage) {
       case "orders":
-        return "Orders";
+        return "Zakázky";
+      case "calendar":
+        return "Kalendář";
       case "inventory":
-        return "Inventory";
+        return "Sklad";
       case "devices":
         return "Zařízení";
       case "customers":
         return "Customers";
       case "statistics":
         return "Statistiky";
+      case "achievements":
+        return "Achievementy";
       case "settings":
         return "Settings";
       default:
@@ -961,6 +992,7 @@ export default function App() {
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
+          achievementsEnabled={uiCfg.achievementsEnabled !== false}
         >
             {visitedPages.has("orders") && (
               <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
@@ -970,6 +1002,8 @@ export default function App() {
                   onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
                   openTicketIntent={openTicketIntent}
                   onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
+                  openClaimIntent={openClaimIntent}
+                  onOpenClaimIntentConsumed={() => setOpenClaimIntent(null)}
                   onOpenCustomer={(customerId) => {
                     setOpenCustomerIntent({ customerId });
                     setActivePage("customers");
@@ -983,6 +1017,22 @@ export default function App() {
                 />
               </div>
             )}
+
+          {visitedPages.has("calendar") && (
+            <div style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
+              <Calendar
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "calendar" });
+                  setActivePage("orders");
+                }}
+                onOpenClaim={(claimId) => {
+                  setOpenClaimIntent({ claimId, returnToPage: "calendar" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
 
           {visitedPages.has("customers") && (
               <div style={{ display: activePage === "customers" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "customers"}>
@@ -1019,6 +1069,12 @@ export default function App() {
             </div>
           )}
 
+          {visitedPages.has("achievements") && (
+            <div style={{ display: activePage === "achievements" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "achievements"}>
+              <Achievements activeServiceId={activeServiceId} servicesCount={services.length} />
+            </div>
+          )}
+
           {visitedPages.has("statistics") && (
             <div style={{ display: activePage === "statistics" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "statistics"}>
               <Statistics
@@ -1050,7 +1106,7 @@ export default function App() {
             </div>
           )}
 
-          {!["orders", "settings", "customers", "devices", "inventory", "statistics"].includes(activePage) && (
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "achievements"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

@@ -8,6 +8,7 @@ import { showToast } from "../../components/Toast";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
+import { checkAchievementOnTeamSize } from "../../lib/achievements";
 
 const CAPABILITY_KEYS = [
   "can_manage_tickets_basic",
@@ -234,6 +235,8 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         if (!isRootOwner) members = members.filter((m: any) => m.role !== "owner");
         setTeamMembers(members);
         setPendingInvites(membersData?.invites ?? []);
+        const uid = session?.user?.id;
+        if (uid && activeServiceId && members.length >= 3) checkAchievementOnTeamSize(uid, activeServiceId, members.length);
       } catch (err: any) {
         const step = err?.__step ?? lastStep;
         // Podrobné logování pro diagnostiku (Tauri / Edge Function)

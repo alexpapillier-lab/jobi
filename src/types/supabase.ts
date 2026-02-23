@@ -134,6 +134,8 @@ export type Database = {
           customer_id: string | null
           code: string | null
           deleted_at: string | null
+          expected_completion_at: string | null
+          completed_at: string | null
         }
         Insert: {
           id?: string
@@ -174,6 +176,8 @@ export type Database = {
           customer_id?: string | null
           code?: string | null
           deleted_at?: string | null
+          expected_completion_at?: string | null
+          completed_at?: string | null
         }
         Update: {
           id?: string
@@ -214,6 +218,8 @@ export type Database = {
           customer_id?: string | null
           code?: string | null
           deleted_at?: string | null
+          expected_completion_at?: string | null
+          completed_at?: string | null
         }
         Relationships: []
       }
@@ -250,6 +256,8 @@ export type Database = {
           device_serial: string | null
           device_imei: string | null
           device_passcode: string | null
+          expected_completion_at: string | null
+          completed_at: string | null
         }
         Insert: {
           id?: string
@@ -283,6 +291,8 @@ export type Database = {
           device_serial?: string | null
           device_imei?: string | null
           device_passcode?: string | null
+          expected_completion_at?: string | null
+          completed_at?: string | null
         }
         Update: {
           id?: string

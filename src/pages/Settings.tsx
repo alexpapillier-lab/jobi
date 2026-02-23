@@ -91,7 +91,7 @@ type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_team" | "service_owner"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
-  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts"
+  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_achievements"
   | "profile_me"
   | "about_app" | "about_updates";
 
@@ -123,6 +123,7 @@ type UIConfig = {
     pageSize: number;
     customerPhoneRequired: boolean;
   };
+  achievementsEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
@@ -130,6 +131,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
+    achievementsEnabled: true,
   };
 }
 
@@ -146,6 +148,7 @@ function safeLoadUIConfig(): UIConfig {
     const displayMode = parsed?.orders?.displayMode;
     const pageSize = parsed?.orders?.pageSize;
     const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
+    const achievementsEnabled = parsed?.achievementsEnabled;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
       ? pageSize
       : d.orders.pageSize;
@@ -167,13 +170,14 @@ function safeLoadUIConfig(): UIConfig {
         pageSize: validPageSize,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
       },
+      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
     };
   } catch {
     return defaultUIConfig();
   }
 }
 
-function saveUIConfig(cfg: UIConfig) {
+function saveUIConfig(cfg: UIConfig & { achievementsEnabled?: boolean }) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
@@ -954,6 +958,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_ui" as const, label: "Rozhraní" },
         { key: "appearance_theme" as const, label: "Barevné téma" },
         { key: "appearance_shortcuts" as const, label: "Klávesové zkratky" },
+        { key: "appearance_achievements" as const, label: "Achievementy" },
       ],
     },
     {
@@ -2251,6 +2256,40 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* VZHLED - KLAVESOVÉ ZKRATKY */}
       {section.subsection === "appearance_shortcuts" && (
         <ShortcutsSettingsSection />
+      )}
+
+      {/* VZHLED - ACHIEVEMENTY */}
+      {section.subsection === "appearance_achievements" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Achievementy</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+            Při odemčení achievementu se zobrazí toast s trofejí. Když vypnete, toasty nepřijdou a achievementy se nezobrazí v sidebaru.
+          </div>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Zobrazovat achievementy</span>
+            <input
+              type="checkbox"
+              checked={uiCfg.achievementsEnabled !== false}
+              onChange={(e) => {
+                const v = e.target.checked;
+                const newCfg = { ...uiCfg, achievementsEnabled: v };
+                setUiCfg(newCfg);
+                saveUIConfig(newCfg);
+              }}
+            />
+          </label>
+        </Card>
       )}
 
       {section.subsection === "orders_device_options" && (

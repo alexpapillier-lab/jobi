@@ -1188,7 +1188,7 @@ DETALY: Výměna opotřebované baterie
             Spravujte značky, kategorie, modely a jejich opravy. Použijte ↑↓ pro změnu pořadí.
           </div>
         </div>
-        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px" }}>
+        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px", marginRight: 120 }}>
           Import
         </button>
       </div>

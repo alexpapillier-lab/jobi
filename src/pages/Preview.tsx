@@ -10,6 +10,7 @@ import {
   type TicketEx,
 } from "./Orders";
 import { supabase } from "../lib/supabaseClient";
+import { checkAchievementOnFirstPrint } from "../lib/achievements";
 
 export default function Preview() {
   // Get params from URL
@@ -168,6 +169,8 @@ export default function Preview() {
       
       window.focus();
       window.print();
+      const u = (await supabase?.auth.getUser())?.data?.user?.id;
+      if (u) checkAchievementOnFirstPrint(u);
       console.log("[Preview] Print triggered via main window");
     } catch (err) {
       console.error("[Preview] Error printing:", err);

@@ -11,6 +11,7 @@
   const params = new URLSearchParams(window.location.search);
   const ticketId = params.get('ticket') || '';
   const token = params.get('token') || '';
+  const scope = params.get('scope') || 'after'; // 'before' = fotky při příjmu
 
   const $ = (id) => document.getElementById(id);
   const loading = $('loading');
@@ -93,6 +94,29 @@
     });
   }
 
+  function drawWatermark(ctx, w, h) {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const label = dateStr + ' ' + timeStr + ' · jobi';
+    const fontSize = Math.max(12, Math.round(Math.min(w, h) * 0.03));
+    ctx.font = fontSize + 'px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    const pad = Math.round(fontSize * 0.8);
+    const x = w - pad;
+    const y = h - pad;
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillText(label, x, y);
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
+
   function setZoom(value) {
     if (!videoTrack || !zoomCap || value < zoomCap.min || value > zoomCap.max) return;
     videoTrack.applyConstraints({ advanced: [{ zoom: value }] }).then(() => {
@@ -153,6 +177,7 @@
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
+    drawWatermark(ctx, w, h);
     capturedBlob = null;
     canvas.toBlob(
       (blob) => {
@@ -191,6 +216,7 @@
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
+        drawWatermark(ctx, img.width, img.height);
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -239,7 +265,7 @@
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ticketId, token, image: base64 }),
+          body: JSON.stringify({ ticketId, token, image: base64, scope: scope }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {

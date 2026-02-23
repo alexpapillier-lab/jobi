@@ -65,6 +65,7 @@ serve(async (req) => {
 
     const body = await req.json();
     const ticketId = body?.ticketId;
+    const isBefore = body?.isBefore === true;
     if (!ticketId) {
       return new Response(
         JSON.stringify({ error: "Missing ticketId" }),
@@ -122,7 +123,8 @@ serve(async (req) => {
     }
 
     const captureBase = Deno.env.get("CAPTURE_BASE_URL") || CAPTURE_BASE_URL;
-    const url = `${captureBase.replace(/\/$/, "")}/?ticket=${encodeURIComponent(ticketId)}&token=${encodeURIComponent(token)}`;
+    const base = `${captureBase.replace(/\/$/, "")}/?ticket=${encodeURIComponent(ticketId)}&token=${encodeURIComponent(token)}`;
+    const url = isBefore ? `${base}&scope=before` : base;
 
     return new Response(
       JSON.stringify({ token, url }),

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
+import { checkAchievementOnJobiDocsConnected } from "../lib/achievements";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
 const POLL_INTERVAL_MS = 1000;
@@ -22,6 +23,13 @@ export function JobiDocsStatus({ onFirstConnect }: { onFirstConnect?: () => void
   useEffect(() => {
     if (connected !== true) return;
     try {
+      (async () => {
+        const { supabase } = await import("../lib/supabaseClient");
+        if (!supabase) return;
+        const { data } = await supabase.auth.getUser();
+        const u = data?.user?.id;
+        if (u) checkAchievementOnJobiDocsConnected(u);
+      })();
       if (localStorage.getItem(STORAGE_KEYS.JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN)) return;
       if (hasTriggeredFirstConnectGuide.current) return;
       hasTriggeredFirstConnectGuide.current = true;

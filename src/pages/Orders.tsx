@@ -7,10 +7,11 @@ import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs,
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
 import { devLog } from "../lib/devLog";
 import {
-  uploadDiagnosticPhoto,
+  uploadDiagnosticPhotoWithWatermark,
   deleteDiagnosticPhotoFromStorage,
   isDiagnosticPhotoStorageUrl,
 } from "../lib/diagnosticPhotosStorage";
@@ -20,6 +21,7 @@ import { useOrderActions } from "./Orders/hooks/useOrderActions";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { useAuth } from "../auth/AuthProvider";
+import { checkAchievementOnFirstPrint, checkAchievementOnPaperless, checkAchievementOnFirstCapturePhoto, checkAchievementOnShortcutUsed } from "../lib/achievements";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
@@ -181,6 +183,7 @@ function safeSaveInventoryData(data: InventoryData) {
 }
 
 type GroupKey = "all" | "active" | "final" | "reklamace";
+type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
 type UIConfig = {
@@ -203,6 +206,9 @@ type OrdersProps = {
 
   openTicketIntent: OpenTicketIntent | null;
   onOpenTicketIntentConsumed: () => void;
+
+  openClaimIntent?: { claimId: string } | null;
+  onOpenClaimIntentConsumed?: () => void;
 
   onOpenCustomer?: (customerId: string) => void;
   onReturnToPage?: (page: NavKey, customerId?: string) => void;
@@ -275,10 +281,27 @@ export type TicketEx = Ticket & {
   performedRepairs?: PerformedRepair[];
   
   diagnosticText?: string; // text diagnostiky
-  diagnosticPhotos?: string[]; // URL diagnostických fotek
+  diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
+  diagnosticPhotosBefore?: string[]; // URL fotek při příjmu / před vytvořením
   
   expectedDoneAt?: string; // předpokládané dokončení (ISO)
   version?: number; // optimistic locking version
+};
+
+type DeviceRow = {
+  deviceLabel: string;
+  serialOrImei: string;
+  devicePasscode: string;
+  deviceCondition: string;
+  deviceAccessories: string;
+  requestedRepair: string;
+  handoffMethod: string;
+  handbackMethod: string;
+  deviceNote: string;
+  externalId: string;
+  estimatedPrice?: number;
+  /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
+  expectedCompletionAt?: string | null;
 };
 
 type NewOrderDraft = {
@@ -293,17 +316,9 @@ type NewOrderDraft = {
   ico: string;
   customerInfo: string;
 
-  deviceLabel: string;
-  serialOrImei: string;
-  devicePasscode: string;
-  deviceCondition: string;
-  deviceAccessories: string;
-  requestedRepair: string;
-  handoffMethod: string;
-  handbackMethod: string;
-  deviceNote: string;
-  externalId: string;
-  estimatedPrice?: number;
+  devices: DeviceRow[];
+
+  diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
 };
 
 type TicketComment = {
@@ -376,7 +391,50 @@ function safeLoadDraft(): NewOrderDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
-    return parsed as NewOrderDraft;
+    if (Array.isArray(parsed.devices)) {
+      const draft = parsed as NewOrderDraft;
+      const firstExpected = draft.devices[0]?.expectedCompletionAt ?? (draft as any).expectedCompletionAt;
+      const migrated = {
+        ...draft,
+        devices: draft.devices.map((d: DeviceRow) => ({
+          ...d,
+          expectedCompletionAt: d.expectedCompletionAt ?? firstExpected ?? undefined,
+        })),
+      };
+      delete (migrated as any).expectedCompletionAt;
+      return migrated;
+    }
+    const d = defaultDraft();
+    const def = defaultDeviceRow();
+    const migrated: NewOrderDraft = {
+      ...d,
+      customerId: parsed.customerId,
+      customerName: parsed.customerName ?? "",
+      customerPhone: parsed.customerPhone ?? "",
+      customerEmail: parsed.customerEmail ?? "",
+      addressStreet: parsed.addressStreet ?? "",
+      addressCity: parsed.addressCity ?? "",
+      addressZip: parsed.addressZip ?? "",
+      company: parsed.company ?? "",
+      ico: parsed.ico ?? "",
+      customerInfo: parsed.customerInfo ?? "",
+      devices: [{
+        deviceLabel: parsed.deviceLabel ?? def.deviceLabel,
+        serialOrImei: parsed.serialOrImei ?? def.serialOrImei,
+        devicePasscode: parsed.devicePasscode ?? def.devicePasscode,
+        deviceCondition: parsed.deviceCondition ?? def.deviceCondition,
+        deviceAccessories: parsed.deviceAccessories ?? def.deviceAccessories,
+        requestedRepair: parsed.requestedRepair ?? def.requestedRepair,
+        handoffMethod: parsed.handoffMethod ?? def.handoffMethod,
+        handbackMethod: parsed.handbackMethod ?? def.handbackMethod,
+        deviceNote: parsed.deviceNote ?? def.deviceNote,
+        externalId: parsed.externalId ?? def.externalId,
+        estimatedPrice: parsed.estimatedPrice ?? def.estimatedPrice,
+        expectedCompletionAt: (parsed as any).expectedCompletionAt ?? undefined,
+      }],
+      diagnosticPhotosBefore: parsed.diagnosticPhotosBefore,
+    };
+    return migrated;
   } catch {
     return null;
   }
@@ -428,10 +486,27 @@ function formatCZ(dtIso: string) {
 }
 
 
-function defaultDraft(): NewOrderDraft {
+function defaultDeviceRow(): DeviceRow {
   const handoffOpts = getHandoffOptions();
   const defaultReceive = handoffOpts.receiveMethods.includes("Osobně") ? "Osobně" : "";
   const defaultReturn = handoffOpts.returnMethods.includes("Osobně") ? "Osobně" : "";
+  return {
+    deviceLabel: "",
+    serialOrImei: "",
+    devicePasscode: "",
+    deviceCondition: "",
+    deviceAccessories: "",
+    requestedRepair: "",
+    handoffMethod: defaultReceive,
+    handbackMethod: defaultReturn,
+    deviceNote: "",
+    externalId: "",
+    estimatedPrice: undefined,
+    expectedCompletionAt: undefined,
+  };
+}
+
+function defaultDraft(): NewOrderDraft {
   return {
     customerId: undefined,
     customerName: "",
@@ -444,26 +519,26 @@ function defaultDraft(): NewOrderDraft {
     ico: "",
     customerInfo: "",
 
-    deviceLabel: "",
-    serialOrImei: "",
-    devicePasscode: "",
-    deviceCondition: "",
-    deviceAccessories: "",
-    requestedRepair: "",
-    handoffMethod: defaultReceive,
-    handbackMethod: defaultReturn,
-    deviceNote: "",
-    externalId: "",
-    estimatedPrice: undefined,
+    devices: [defaultDeviceRow()],
+
+    diagnosticPhotosBefore: undefined,
   };
 }
 
 function isDraftDirty(d: NewOrderDraft) {
   const def = defaultDraft();
   const norm = (v: any) => (typeof v === "string" ? v.trim() : v);
-
-  for (const k of Object.keys(def) as (keyof NewOrderDraft)[]) {
-    if (norm(d[k]) !== norm(def[k])) return true;
+  for (const k of ["customerId", "customerName", "customerPhone", "customerEmail", "addressStreet", "addressCity", "addressZip", "company", "ico", "customerInfo"]) {
+    if (norm((d as any)[k]) !== norm((def as any)[k])) return true;
+  }
+  if ((d.diagnosticPhotosBefore?.length ?? 0) !== (def.diagnosticPhotosBefore?.length ?? 0)) return true;
+  if (d.devices.length !== def.devices.length) return true;
+  for (let i = 0; i < d.devices.length; i++) {
+    const dev = d.devices[i];
+    const devDef = def.devices[i] ?? defaultDeviceRow();
+    for (const k of Object.keys(devDef) as (keyof DeviceRow)[]) {
+      if (norm((dev as any)[k]) !== norm((devDef as any)[k])) return true;
+    }
   }
   return false;
 }
@@ -578,12 +653,14 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     performedRepairs: supabaseTicket.performed_repairs || [],
     diagnosticText: supabaseTicket.diagnostic_text || undefined,
     diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
+    diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
     discountType: supabaseTicket.discount_type ?? null,
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
   };
-  // Store service_id for debugging (not part of TicketEx type)
   (ticket as any).service_id = supabaseTicket.service_id;
+  (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
+  (ticket as any).completed_at = supabaseTicket.completed_at ?? null;
   return ticket;
 }
 
@@ -1435,6 +1512,19 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         <div class="divider"></div>
         ` : ""}
         
+        ${documentsConfig.ticketList.includePhotos && ticket.diagnosticPhotosBefore && ticket.diagnosticPhotosBefore.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Fotky před</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin: 15px 0;">
+              ${ticket.diagnosticPhotosBefore.map((photoUrl) => `
+                <div style="border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                  <img src="${photoUrl}" alt="Fotka před" style="width: 100%; height: auto; display: block;" />
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="divider"></div>
+        ` : ""}
         ${documentsConfig.ticketList.includePhotos && ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? `
           <div class="section">
             <div class="section-title">Diagnostické fotografie</div>
@@ -1522,6 +1612,11 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
         res = await exportViaJobiDocs(htmlContent, filePath);
       }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -1552,6 +1647,11 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
   const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -2097,6 +2197,19 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
         <div class="divider"></div>
         ` : ""}
         
+        ${documentsConfig.diagnosticProtocol.includePhotos && ticket.diagnosticPhotosBefore && ticket.diagnosticPhotosBefore.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Fotky před</div>
+            <div class="photo-grid">
+              ${ticket.diagnosticPhotosBefore.map((photoUrl) => `
+                <div class="photo-item">
+                  <img src="${photoUrl}" alt="Fotka před" />
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="divider"></div>
+        ` : ""}
         ${documentsConfig.diagnosticProtocol.includePhotos && ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? `
           <div class="section">
             <div class="section-title">Diagnostické fotografie</div>
@@ -2177,6 +2290,11 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
         res = await exportViaJobiDocs(htmlContent, filePath);
       }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -2207,6 +2325,11 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
   const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -2967,6 +3090,11 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
         res = await exportViaJobiDocs(htmlContent, filePath);
       }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -3000,6 +3128,11 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
     variables,
   });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
@@ -5034,6 +5167,8 @@ export default function Orders({
   onNewOrderPrefillConsumed,
   openTicketIntent,
   onOpenTicketIntentConsumed,
+  openClaimIntent,
+  onOpenClaimIntentConsumed,
   onOpenCustomer,
   onReturnToPage,
 }: OrdersProps) {
@@ -5193,7 +5328,7 @@ export default function Orders({
       try {
         const { data, error } = await (supabase!
           .from("tickets") as any)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
           .eq("service_id", activeServiceId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
@@ -5302,7 +5437,7 @@ export default function Orders({
   const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
-  const [captureQRUrl, setCaptureQRUrl] = useState<string | null>(null);
+  const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
   const [captureQRLoading, setCaptureQRLoading] = useState(false);
   const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
 
@@ -5439,6 +5574,7 @@ export default function Orders({
 
   const [activeGroup, setActiveGroup] = useState<GroupKey>("active");
   const [activeStatusKey, setActiveStatusKey] = useState<string | null>(null);
+  const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
 
   const [query, setQuery] = useState("");
   const [statusById, setStatusById] = useState<Record<string, string>>({});
@@ -5689,6 +5825,17 @@ export default function Orders({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTicketIntent, tickets, ticketsLoading]);
 
+  useEffect(() => {
+    if (!openClaimIntent || !onOpenClaimIntentConsumed) return;
+    const { claimId } = openClaimIntent;
+    const exists = cloudClaims.some((c) => c.id === claimId);
+    if (exists) {
+      setDetailClaimId(claimId);
+      setDetailId(null);
+    }
+    onOpenClaimIntentConsumed();
+  }, [openClaimIntent, cloudClaims, onOpenClaimIntentConsumed]);
+
   const devicesData: DevicesData = useMemo(() => safeLoadDevicesData(), []);
   const inventoryData: InventoryData = useMemo(() => safeLoadInventoryData(), []);
 
@@ -5714,9 +5861,9 @@ export default function Orders({
   const draftDirty = useMemo(() => isDraftDirty(newDraft), [newDraft]);
 
   const validEnoughToCreate = useMemo(() => {
+    const hasDevices = newDraft.devices.length > 0 && newDraft.devices.every((d) => (d.deviceLabel || "").trim().length > 0);
     return (
-      newDraft.deviceLabel.trim().length > 0 &&
-      newDraft.requestedRepair.trim().length > 0 &&
+      hasDevices &&
       isEmailValid(newDraft.customerEmail) &&
       isPhoneValid(newDraft.customerPhone) &&
       isZipValid(newDraft.addressZip) &&
@@ -5969,7 +6116,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -5992,6 +6139,7 @@ export default function Orders({
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
+    userId: session?.user?.id ?? null,
     cloudTickets,
     setCloudTickets,
     setStatusById,
@@ -6080,19 +6228,37 @@ export default function Orders({
     );
   }, [cloudClaims, query]);
 
-  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active") && ordersShowClaimsInList;
+  const filteredClaimsForTab = useMemo(() => {
+    if (activeGroup !== "reklamace") return filteredClaims;
+    if (claimsSubGroup === "all") return filteredClaims;
+    return filteredClaims.filter((c) => {
+      const st = normalizeStatus((c.status as string) ?? "");
+      if (st === null) return claimsSubGroup === "active";
+      if (claimsSubGroup === "final") return isFinal(st);
+      return !isFinal(st);
+    });
+  }, [activeGroup, claimsSubGroup, filteredClaims, normalizeStatus, isFinal]);
+
+  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active" || activeGroup === "final") && ordersShowClaimsInList;
   const combinedList = useMemo(() => {
     if (!showClaimsInOrdersList) return [];
     const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
-    const claimItems = filteredClaims.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
+    const claimsForGroup = filteredClaims.filter((c) => {
+      const st = normalizeStatus((c.status as string) ?? "");
+      if (st === null) return activeGroup === "all";
+      if (activeGroup === "all") return true;
+      if (activeGroup === "final") return isFinal(st);
+      return !isFinal(st);
+    });
+    const claimItems = claimsForGroup.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
     return [...ticketItems, ...claimItems].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [showClaimsInOrdersList, filtered, filteredClaims]);
+  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, normalizeStatus, isFinal]);
 
   const pageSize = uiCfg.orders.pageSize ?? 50;
   const listLength = activeGroup === "reklamace"
-    ? filteredClaims.length
+    ? filteredClaimsForTab.length
     : showClaimsInOrdersList
       ? combinedList.length
       : filtered.length;
@@ -6103,8 +6269,8 @@ export default function Orders({
     [filtered, ordersPage, pageSize, effectivePageSize]
   );
   const paginatedClaims = useMemo(
-    () => (pageSize <= 0 ? filteredClaims : filteredClaims.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filteredClaims, ordersPage, pageSize, effectivePageSize]
+    () => (pageSize <= 0 ? filteredClaimsForTab : filteredClaimsForTab.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
+    [filteredClaimsForTab, ordersPage, pageSize, effectivePageSize]
   );
   const paginatedCombined = useMemo(
     () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
@@ -6113,7 +6279,7 @@ export default function Orders({
 
   useEffect(() => {
     setOrdersPage(0);
-  }, [query, activeStatusKey, activeGroup]);
+  }, [query, activeStatusKey, activeGroup, claimsSubGroup]);
 
   useEffect(() => {
     setOrdersPage(0);
@@ -6446,11 +6612,16 @@ export default function Orders({
       showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
       return;
     }
-    const prev = cloudClaims.find((c) => c.id === claimId)?.status;
-    setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: next } : c)));
-    const ok = await updateClaimStatus(claimId, next);
-    if (!ok) {
-      setCloudClaims((p) => p.map((c) => (c.id === claimId && prev ? { ...c, status: prev } : c)));
+    const prev = cloudClaims.find((c) => c.id === claimId);
+    const completedAt = isFinal(next) ? new Date().toISOString() : null;
+    setCloudClaims((p) =>
+      p.map((c) =>
+        c.id === claimId ? { ...c, status: next, ...(completedAt ? { completed_at: completedAt } : {}) } : c
+      )
+    );
+    const ok = await updateClaimStatus(claimId, next, completedAt ?? undefined);
+    if (!ok && prev) {
+      setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: prev.status } : c)));
     }
   };
 
@@ -6477,6 +6648,7 @@ export default function Orders({
       notes: detailedClaim.notes ?? "",
       resolution_summary: detailedClaim.resolution_summary ?? "",
       status: detailedClaim.status,
+      expected_completion_at: detailedClaim.expected_completion_at ?? null,
     });
     setIsEditingClaim(true);
   }, [detailedClaim]);
@@ -6525,6 +6697,7 @@ export default function Orders({
     if (c.device_passcode !== undefined) payload.device_passcode = c.device_passcode || null;
     if (c.notes !== undefined) payload.notes = c.notes || "";
     if (c.status !== undefined) payload.status = c.status;
+    if ("expected_completion_at" in c && (c as any).expected_completion_at !== undefined) payload.expected_completion_at = (c as any).expected_completion_at;
     const updated = await updateClaim(detailedClaim.id, payload as any);
     if (!updated) return false;
     setCloudClaims((prev) => prev.map((cl) => (cl.id === detailedClaim.id ? { ...cl, ...updated } : cl)));
@@ -6723,12 +6896,14 @@ export default function Orders({
     const onKey = (e: KeyboardEvent) => {
       if (comboMatchesEvent(e, getShortcut("order_print"))) {
         e.preventDefault();
+        const uid = session?.user?.id;
+        if (uid) checkAchievementOnShortcutUsed(uid);
         printTicket(detailedTicket, activeServiceId);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailedTicket, activeServiceId]);
+  }, [detailedTicket, activeServiceId, session?.user?.id]);
 
   // Enter v náhledu zakázky při úpravách = Uložit a zavřít (kromě textarea, kde Enter = nový řádek)
   useEffect(() => {
@@ -6775,7 +6950,8 @@ export default function Orders({
       handbackMethod: detailedTicket.handbackMethod || "",
       deviceNote: detailedTicket.deviceNote || "",
       externalId: detailedTicket.externalId || "",
-    });
+      expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
+    } as any);
     setIsEditing(true);
   }, [detailedTicket]);
 
@@ -6792,6 +6968,7 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_search"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         searchInputRef.current?.focus();
         return;
       }
@@ -6799,18 +6976,21 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_new"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         openNewOrderRef.current();
         return;
       }
       if (detailId && !isEditing && comboMatchesEvent(e, getShortcut("order_detail_edit"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         startEditingRef.current();
         return;
       }
       if (detailId && isEditing && comboMatchesEvent(e, getShortcut("order_detail_save"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         saveTicketChangesRef.current();
         return;
       }
@@ -6822,11 +7002,13 @@ export default function Orders({
       doc.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [detailId, isEditing]);
+  }, [detailId, isEditing, session?.user?.id]);
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
-    if (!newDraft.deviceLabel.trim()) e.deviceLabel = "Vyplň zařízení.";
+    newDraft.devices.forEach((dev, i) => {
+      if (!dev.deviceLabel.trim()) e[`deviceLabel_${i}`] = "Vyplň zařízení.";
+    });
     const phoneRequired = uiCfg.orders.customerPhoneRequired;
     if (phoneRequired && !newDraft.customerPhone.trim()) e.customerPhone = "Telefon je povinný.";
     else if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
@@ -6838,6 +7020,7 @@ export default function Orders({
 
   const canCreate = Object.keys(errors).length === 0;
   const showError = (field: string) => submitAttempted && !!errors[field];
+  const showDeviceError = (idx: number) => submitAttempted && !!errors[`deviceLabel_${idx}`];
 
   const createTicket = () => {
     setSubmitAttempted(true);
@@ -6848,7 +7031,7 @@ export default function Orders({
     createTicketAction({
       newDraft,
       customerMatchDecision,
-      onSuccess: async (newTicket) => {
+      onSuccess: async (tickets) => {
         setNewDraft(defaultDraft());
         setIsNewOpen(false);
         setSubmitAttempted(false);
@@ -6861,13 +7044,14 @@ export default function Orders({
         }
         safeSaveDraft(null);
         window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
-        setDetailId(newTicket.id);
+        const first = tickets[0];
+        if (first) setDetailId(first.id);
         const config = await loadDocumentsConfigFromDB(activeServiceId);
-        if (config?.autoPrint?.ticketListOnCreate) {
-          printTicket(newTicket, activeServiceId).then(() => {});
+        if (first && config?.autoPrint?.ticketListOnCreate) {
+          printTicket(first, activeServiceId).then(() => {});
         }
-        if (config?.autoPrint?.warrantyOnCreate) {
-          printWarranty(newTicket, activeServiceId).then(() => {});
+        if (first && config?.autoPrint?.warrantyOnCreate) {
+          printWarranty(first, activeServiceId).then(() => {});
         }
       },
     });
@@ -7175,6 +7359,46 @@ export default function Orders({
         })}
       </div>
 
+      {/* Reklamace sub-filter: Aktivní / Final */}
+      {activeGroup === "reklamace" && (
+        <div data-tour="orders-claims-subfilter" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {[
+            { key: "all" as const, label: "Vše" },
+            { key: "active" as const, label: "Aktivní" },
+            { key: "final" as const, label: "Final" },
+          ].map((g) => {
+            const active = g.key === claimsSubGroup;
+            return (
+              <button
+                key={g.key}
+                onClick={() => setClaimsSubGroup(g.key)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: active ? "var(--accent-soft)" : "var(--panel)",
+                  color: active ? "var(--accent)" : "var(--text)",
+                  fontWeight: active ? 700 : 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                  boxShadow: "var(--shadow-soft)",
+                  transition: "var(--transition-smooth)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) e.currentTarget.style.background = "var(--panel-2)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) e.currentTarget.style.background = "var(--panel)";
+                }}
+              >
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Secondary quick status filters */}
       {showSecondaryFiltersRow && (
         <div data-tour="orders-filters" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -7256,6 +7480,11 @@ export default function Orders({
         {activeGroup === "reklamace"
           ? paginatedClaims.map((c) => {
               const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+              const displayMode = uiCfg.orders.displayMode;
+              const rawStatus = (c.status as string | null) ?? "";
+              const currentStatus = normalizeStatus(rawStatus);
+              const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
+              const statusColor = claimMeta?.bg || "var(--border)";
               return (
                 <div
                   key={c.id}
@@ -7263,34 +7492,107 @@ export default function Orders({
                   style={{
                     textAlign: "left",
                     padding: 0,
-                    borderRadius: isCompactExtra ? 8 : 12,
-                    border: "1px solid rgba(13, 148, 136, 0.4)",
-                    background: "var(--panel)",
+                    borderRadius: isCompactExtra ? 8 : 16,
+                    border: `2px solid ${statusColor}`,
+                    background: "#fff",
                     cursor: "pointer",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                    boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
+                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
                     color: "var(--text)",
                     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                     position: "relative",
                     overflow: "hidden",
                     display: "flex",
-                    flexDirection: "column",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.18)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.6)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.4)"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
+                  }}
                 >
-                  <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
-                  <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
-                      <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                      <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                        <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                      </span>
-                    </div>
+                  <div style={{
+                    width: isCompactExtra ? 6 : 10,
+                    background: statusColor,
+                    flexShrink: 0,
+                  }} />
+                  <div style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
+                  }}>
+                    {isCompactExtra ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+                        <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                        <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                          <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
+                            <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                            <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                            <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                            <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                          </div>
+                        </div>
+                        {displayMode === "compact" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                              <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                                <DeviceIcon size={14} color="#0d9488" />
+                                <span>{c.device_label || "—"}</span>
+                              </div>
+                              <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                            </div>
+                            {c.notes && (
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                                <WrenchIcon size={12} color="var(--text)" />
+                                <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
+                                <DeviceIcon size={16} color="currentColor" />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                  <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
+                                  <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                </div>
+                                {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
+                              </div>
+                            </div>
+                            {c.notes && (
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
+                                  <WrenchIcon size={16} color="currentColor" />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -7301,6 +7603,11 @@ export default function Orders({
                   ? (() => {
                       const c = row.data;
                       const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+                      const displayMode = uiCfg.orders.displayMode;
+                      const rawStatus = (c.status as string | null) ?? "";
+                      const currentStatus = normalizeStatus(rawStatus);
+                      const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
+                      const statusColor = claimMeta?.bg || "var(--border)";
                       return (
                         <div
                           key={`claim-${c.id}`}
@@ -7308,34 +7615,107 @@ export default function Orders({
                           style={{
                             textAlign: "left",
                             padding: 0,
-                            borderRadius: isCompactExtra ? 8 : 12,
-                            border: "1px solid rgba(13, 148, 136, 0.45)",
-                            background: "var(--panel)",
+                            borderRadius: isCompactExtra ? 8 : 16,
+                            border: `2px solid ${statusColor}`,
+                            background: "#fff",
                             cursor: "pointer",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                            boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
+                            transition: "transform 0.15s ease, box-shadow 0.15s ease",
                             color: "var(--text)",
                             fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                             position: "relative",
                             overflow: "hidden",
                             display: "flex",
-                            flexDirection: "column",
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.2)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.65)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.45)"; }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
+                          }}
                         >
-                          <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
-                          <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
-                              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
-                            <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                              <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                                <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                              </span>
-                            </div>
+                          <div style={{
+                            width: isCompactExtra ? 6 : 10,
+                            background: statusColor,
+                            flexShrink: 0,
+                          }} />
+                          <div style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
+                          }}>
+                            {isCompactExtra ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+                                <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                  <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
+                                    <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                                    <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                    <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                                  </div>
+                                </div>
+                                {displayMode === "compact" ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                                      <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                                        <DeviceIcon size={14} color="#0d9488" />
+                                        <span>{c.device_label || "—"}</span>
+                                      </div>
+                                      <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                    </div>
+                                    {c.notes && (
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                                        <WrenchIcon size={12} color="var(--text)" />
+                                        <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
+                                        <DeviceIcon size={16} color="currentColor" />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                          <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
+                                          <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                        </div>
+                                        {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
+                                      </div>
+                                    </div>
+                                    {c.notes && (
+                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
+                                          <WrenchIcon size={16} color="currentColor" />
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -7843,126 +8223,294 @@ export default function Orders({
 
           {/* ZAŘÍZENÍ */}
           <div style={card}>
-            <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>Zařízení</div>
+            <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 12 }}>Zařízení</div>
+            {newDraft.devices.map((dev, idx) => (
+              <div key={idx} style={{ padding: idx > 0 ? "16px 0 0" : 0, borderTop: idx > 0 ? "1px solid var(--border)" : "none", marginTop: idx > 0 ? 16 : 0 }}>
+                {idx > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Zařízení {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))}
+                      style={{ ...softBtn, padding: "4px 10px", fontSize: 12 }}
+                    >
+                      Odebrat
+                    </button>
+                  </div>
+                )}
+                <div style={fieldLabel}>Zařízení *</div>
+                <DeviceAutocomplete
+                  value={dev.deviceLabel}
+                  onChange={(value) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceLabel: value } : d)),
+                    }))
+                  }
+                  models={modelsWithHierarchy}
+                  error={showDeviceError(idx)}
+                />
+                {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
 
-            <div style={fieldLabel}>Zařízení *</div>
-            <DeviceAutocomplete
-              value={newDraft.deviceLabel}
-              onChange={(value) => setNewDraft((p) => ({ ...p, deviceLabel: value }))}
-              models={modelsWithHierarchy}
-              error={showError("deviceLabel")}
-            />
-            {showError("deviceLabel") && <div style={fieldHint}>{errors.deviceLabel}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={fieldLabel}>IMEI / SN</div>
+                    <input
+                      value={dev.serialOrImei}
+                      onChange={(e) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
+                        }))
+                      }
+                      style={baseFieldInput}
+                      placeholder="Volitelné"
+                    />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Heslo / kód</div>
+                    <input
+                      value={dev.devicePasscode}
+                      onChange={(e) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, devicePasscode: e.target.value } : d)),
+                        }))
+                      }
+                      style={baseFieldInput}
+                      placeholder="např. 1234 / 0000"
+                    />
+                  </div>
+                </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={fieldLabel}>IMEI / SN</div>
+                <div style={fieldLabel}>Popis stavu</div>
                 <input
-                  value={newDraft.serialOrImei}
-                  onChange={(e) => setNewDraft((p) => ({ ...p, serialOrImei: e.target.value }))}
+                  list="new-order-device-condition-list"
+                  value={dev.deviceCondition}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceCondition: e.target.value } : d)),
+                    }))
+                  }
                   style={baseFieldInput}
-                  placeholder="Volitelné"
+                  placeholder="Vyberte nebo napište vlastní (např. rozbitý displej, oděrky…)"
                 />
-              </div>
 
-              <div>
-                <div style={fieldLabel}>Heslo / kód</div>
+                <div style={fieldLabel}>Příslušenství</div>
                 <input
-                  value={newDraft.devicePasscode}
-                  onChange={(e) => setNewDraft((p) => ({ ...p, devicePasscode: e.target.value }))}
+                  list="new-order-device-accessories-list"
+                  value={dev.deviceAccessories}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceAccessories: e.target.value } : d)),
+                    }))
+                  }
                   style={baseFieldInput}
-                  placeholder="např. 1234 / 0000"
+                  placeholder="Vyberte nebo napište vlastní (např. nabíječka, pouzdro…)"
+                />
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                  <DateTimePicker
+                    value={dev.expectedCompletionAt ?? null}
+                    onChange={(v) => {
+                      setNewDraft((p) => {
+                        if (idx === 0) {
+                          return { ...p, devices: p.devices.map((d) => ({ ...d, expectedCompletionAt: v })) };
+                        }
+                        return {
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, expectedCompletionAt: v } : d)),
+                        };
+                      });
+                    }}
+                    inputStyle={baseFieldInput}
+                  />
+                </div>
+
+                <div style={fieldLabel}>Požadovaná oprava</div>
+                <textarea
+                  value={dev.requestedRepair}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, requestedRepair: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldTextArea}
+                  placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={fieldLabel}>Způsob převzetí</div>
+                    <HandoffMethodSelect
+                      options={getHandoffOptions().receiveMethods}
+                      value={dev.handoffMethod}
+                      onChange={(v) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, handoffMethod: v } : d)),
+                        }))
+                      }
+                      triggerStyle={baseFieldInput}
+                    />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Způsob předání</div>
+                    <HandoffMethodSelect
+                      options={getHandoffOptions().returnMethods}
+                      value={dev.handbackMethod}
+                      onChange={(v) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, handbackMethod: v } : d)),
+                        }))
+                      }
+                      triggerStyle={baseFieldInput}
+                    />
+                  </div>
+                </div>
+
+                <div style={fieldLabel}>Externí identifikace</div>
+                <input
+                  value={dev.externalId}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, externalId: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldInput}
+                  placeholder="Např. číslo zakázky partnera"
+                />
+
+                <div style={fieldLabel}>Předschválená cena</div>
+                <input
+                  type="number"
+                  value={dev.estimatedPrice ?? ""}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, estimatedPrice: e.target.value ? Number(e.target.value) : undefined } : d)),
+                    }))
+                  }
+                  style={baseFieldInput}
+                  placeholder="Kč"
+                  min="0"
+                  step="1"
+                />
+
+                <div style={fieldLabel}>Poznámka k zařízení</div>
+                <textarea
+                  value={dev.deviceNote}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceNote: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldTextArea}
+                  placeholder="Poznámka pro technika…"
                 />
               </div>
-            </div>
-
-            <div style={fieldLabel}>Popis stavu</div>
-            <input
-              list="new-order-device-condition-list"
-              value={newDraft.deviceCondition}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceCondition: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Vyberte nebo napište vlastní (např. rozbitý displej, oděrky…)"
-            />
-            <datalist id="new-order-device-condition-list">
-              {getDeviceOptions().deviceConditions.map((c, i) => (
-                <option key={i} value={c} />
-              ))}
-            </datalist>
-
-            <div style={fieldLabel}>Příslušenství</div>
-            <input
-              list="new-order-device-accessories-list"
-              value={newDraft.deviceAccessories}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceAccessories: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Vyberte nebo napište vlastní (např. nabíječka, pouzdro…)"
-            />
-            <datalist id="new-order-device-accessories-list">
-              {getDeviceOptions().deviceAccessories.map((a, i) => (
-                <option key={i} value={a} />
-              ))}
-            </datalist>
-
-            <div style={fieldLabel}>Požadovaná oprava</div>
-            <textarea
-              value={newDraft.requestedRepair}
-              onChange={(e) => setNewDraft((p) => ({ ...p, requestedRepair: e.target.value }))}
-              style={baseFieldTextArea}
-              placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
-            />
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={fieldLabel}>Způsob převzetí</div>
-                <HandoffMethodSelect
-                  options={getHandoffOptions().receiveMethods}
-                  value={newDraft.handoffMethod}
-                  onChange={(v) => setNewDraft((p) => ({ ...p, handoffMethod: v }))}
-                  triggerStyle={baseFieldInput}
-                />
-              </div>
-              <div>
-                <div style={fieldLabel}>Způsob předání</div>
-                <HandoffMethodSelect
-                  options={getHandoffOptions().returnMethods}
-                  value={newDraft.handbackMethod}
-                  onChange={(v) => setNewDraft((p) => ({ ...p, handbackMethod: v }))}
-                  triggerStyle={baseFieldInput}
-                />
-              </div>
-            </div>
-
-            <div style={fieldLabel}>Externí identifikace</div>
-            <input
-              value={newDraft.externalId}
-              onChange={(e) => setNewDraft((p) => ({ ...p, externalId: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Např. číslo zakázky partnera"
-            />
-
-            <div style={fieldLabel}>Předschválená cena</div>
-            <input
-              type="number"
-              value={newDraft.estimatedPrice ?? ""}
-              onChange={(e) => setNewDraft((p) => ({ ...p, estimatedPrice: e.target.value ? Number(e.target.value) : undefined }))}
-              style={baseFieldInput}
-              placeholder="Kč"
-              min="0"
-              step="1"
-            />
-
-            <div style={fieldLabel}>Poznámka k zařízení</div>
-            <textarea
-              value={newDraft.deviceNote}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceNote: e.target.value }))}
-              style={baseFieldTextArea}
-              placeholder="Poznámka pro technika…"
-            />
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setNewDraft((p) => ({
+                  ...p,
+                  devices: [
+                    ...p.devices,
+                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
+                  ],
+                }))
+              }
+              style={{ ...softBtn, marginTop: 16, width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              + Přidat další zařízení
+            </button>
           </div>
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        {/* Fotky při příjmu */}
+        <div style={{ marginTop: 16, ...card, gridColumn: "1 / -1" }}>
+          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 10 }}>📷 Fotky při příjmu</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
+              <div key={idx} style={{ position: "relative" }}>
+                <img
+                  src={dataUrl}
+                  alt={`Fotka ${idx + 1}`}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      diagnosticPhotosBefore: (p.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
+                    }))
+                  }
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    background: "rgba(239, 68, 68, 0.9)",
+                    color: "white",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: "pointer", marginTop: 8, display: "inline-block" }}>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                e.target.value = "";
+                if (!files.length) return;
+                const reader = (f: File) =>
+                  new Promise<string>((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result as string);
+                    r.onerror = () => reject(new Error("Načtení selhalo"));
+                    r.readAsDataURL(f);
+                  });
+                Promise.all(files.map(reader)).then((urls) => {
+                  setNewDraft((p) => ({
+                    ...p,
+                    diagnosticPhotosBefore: [...(p.diagnosticPhotosBefore || []), ...urls],
+                  }));
+                });
+              }}
+            />
+            Nahrát fotky
+          </label>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button
             onClick={() => {
               setNewDraft(defaultDraft());
@@ -7980,6 +8528,65 @@ export default function Orders({
             style={softBtn}
           >
             Zrušit
+          </button>
+          <button
+            onClick={async () => {
+              setSubmitAttempted(true);
+              if (!canCreate) return;
+              createTicketAction({
+                newDraft,
+                customerMatchDecision,
+                onSuccess: async (tickets) => {
+                  setNewDraft(defaultDraft());
+                  setIsNewOpen(false);
+                  setSubmitAttempted(false);
+                  setCustomerMatchDecision("undecided");
+                  setMatchedCustomer(null);
+                  lastLookupPhoneNormRef.current = null;
+                  if (phoneLookupDebounceTimerRef.current) {
+                    clearTimeout(phoneLookupDebounceTimerRef.current);
+                    phoneLookupDebounceTimerRef.current = null;
+                  }
+                  safeSaveDraft(null);
+                  window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
+                  const first = tickets[0];
+                  if (first) setDetailId(first.id);
+                  if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !tickets.length) return;
+                  setCaptureQRLoading(true);
+                  try {
+                    const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+                    if (refreshErr) throw new Error("Session vypršela.");
+                    const token = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
+                    if (!token) throw new Error("Nejste přihlášeni.");
+                    const items: Array<{ deviceLabel: string; url: string }> = [];
+                    for (const t of tickets) {
+                      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                        body: JSON.stringify({ ticketId: t.id, isBefore: true }),
+                      });
+                      const raw = await res.text();
+                      const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
+                      if (!res.ok) throw new Error(data.error || res.statusText);
+                      if (data.url) items.push({ deviceLabel: t.deviceLabel || t.code || "Zakázka", url: data.url });
+                    }
+                    if (items.length) setCaptureQRItems(items);
+                  } catch (err) {
+                    showToast(normalizeError(err) || "Nepodařilo vytvořit QR pro focení.", "error");
+                  } finally {
+                    setCaptureQRLoading(false);
+                  }
+                },
+              });
+            }}
+            disabled={!canCreate || captureQRLoading}
+            style={{
+              ...softBtn,
+              opacity: canCreate && !captureQRLoading ? 1 : 0.55,
+              cursor: canCreate && !captureQRLoading ? "pointer" : "not-allowed",
+            }}
+          >
+            {captureQRLoading ? "⏳ Vytvářím…" : "📱 Udělat přijímací fotky"}
           </button>
           <button
             onClick={createTicket}
@@ -8126,8 +8733,14 @@ export default function Orders({
                       if (running && sid) {
                         if (action === "print") {
                           const res = await printDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, { variables });
-                          if (res.ok) showToast("Úloha odeslána do fronty", "success");
-                          else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                          if (res.ok) {
+                            const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                            if (u) {
+                              checkAchievementOnFirstPrint(u);
+                              checkAchievementOnPaperless(u);
+                            }
+                            showToast("Úloha odeslána do fronty", "success");
+                          } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                         } else {
                           try {
                             const { save } = await import("@tauri-apps/plugin-dialog");
@@ -8137,8 +8750,14 @@ export default function Orders({
                             });
                             if (filePath) {
                               const res = await exportDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, filePath, { variables });
-                              if (res.ok) showToast("PDF uložen", "success");
-                              else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                              if (res.ok) {
+                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                                if (u) {
+                                  checkAchievementOnFirstPrint(u);
+                                  checkAchievementOnPaperless(u);
+                                }
+                                showToast("PDF uložen", "success");
+                              } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
                           } catch (e) {
                             showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
@@ -8158,8 +8777,14 @@ export default function Orders({
                             });
                             if (filePath) {
                               const res = await exportViaJobiDocs(html, filePath);
-                              if (res.ok) showToast("PDF uložen", "success");
-                              else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                              if (res.ok) {
+                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                                if (u) {
+                                  checkAchievementOnFirstPrint(u);
+                                  checkAchievementOnPaperless(u);
+                                }
+                                showToast("PDF uložen", "success");
+                              } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
                           } catch (e) {
                             showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
@@ -8358,6 +8983,14 @@ export default function Orders({
                   <input value={c.device_accessories ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_accessories: e.target.value }))} placeholder="Příslušenství" style={baseFieldInput} />
                   <input value={c.device_note ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_note: e.target.value }))} placeholder="Poznámka k zařízení" style={baseFieldInput} />
                   <input value={c.device_passcode ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_passcode: e.target.value }))} placeholder="Heslo/kód" style={baseFieldInput} />
+                  <div>
+                    <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                    <DateTimePicker
+                      value={(c as any).expected_completion_at ?? null}
+                      onChange={(v) => setEditedClaim((p) => ({ ...p, expected_completion_at: v }))}
+                      inputStyle={baseFieldInput}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -8491,6 +9124,51 @@ export default function Orders({
                       rows={6}
                     />
                   </div>
+                  {(sourceTicket.diagnosticPhotosBefore?.length ?? 0) > 0 && (
+                    <div>
+                      <div style={fieldLabel}>Fotky před</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                        {(sourceTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
+                          <div key={idx} style={{ position: "relative" }}>
+                            <img
+                              src={photoUrl}
+                              alt={`Fotka před ${idx + 1}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
+                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
+                              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (async () => {
+                                  const url = (sourceTicket.diagnosticPhotosBefore || [])[idx];
+                                  if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
+                                    try { await deleteDiagnosticPhotoFromStorage(supabase, url); } catch (_) {}
+                                  }
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === sourceTicket.id
+                                        ? { ...t, diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx) }
+                                        : t
+                                    )
+                                  );
+                                })();
+                              }}
+                              style={{
+                                position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: "50%",
+                                background: "rgba(239, 68, 68, 0.9)", color: "white", border: "none", cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <div style={fieldLabel}>Diagnostické fotografie</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
@@ -8584,7 +9262,7 @@ export default function Orders({
                               }
                               if (data?.error) throw new Error(data.error);
                               if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                              setCaptureQRUrl(data.url);
+                              setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
                               return;
                             } catch (err) {
                               lastErr = err;
@@ -8623,9 +9301,11 @@ export default function Orders({
                               try {
                                 const urls: string[] = [];
                                 for (const file of files) {
-                                  const url = await uploadDiagnosticPhoto(supabase, activeServiceId!, sourceTicket.id!, file);
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file);
                                   urls.push(url);
                                 }
+                                const uid = session?.user?.id;
+                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
                                     t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
@@ -9242,6 +9922,21 @@ export default function Orders({
                           placeholder="Externí identifikátor"
                         />
                       </div>
+                      <div>
+                        <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                        <DateTimePicker
+                          value={
+                            (editedTicket as any).expectedCompletionAt ?? (detailedTicket as any).expected_completion_at ?? null
+                          }
+                          onChange={(v) =>
+                            setEditedTicket((p) => ({
+                              ...p,
+                              expectedCompletionAt: v,
+                            } as any))
+                          }
+                          inputStyle={baseFieldInput}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -9565,6 +10260,167 @@ export default function Orders({
                     </div>
                     
                     <div>
+                      <div style={fieldLabel}>Fotky před</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                        {(detailedTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
+                            <div key={idx} style={{ position: "relative" }}>
+                              <img
+                                src={photoUrl}
+                                alt={`Fotka před ${idx + 1}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() =>
+                                  setPhotoLightbox({
+                                    urls: detailedTicket.diagnosticPhotosBefore || [],
+                                    index: idx,
+                                    ticketCode: detailedTicket.code,
+                                  })
+                                }
+                                onKeyDown={(e) =>
+                                  e.key === "Enter" &&
+                                  setPhotoLightbox({
+                                    urls: detailedTicket.diagnosticPhotosBefore || [],
+                                    index: idx,
+                                    ticketCode: detailedTicket.code,
+                                  })
+                                }
+                                style={{
+                                  width: 120,
+                                  height: 120,
+                                  objectFit: "cover",
+                                  borderRadius: 8,
+                                  border: "1px solid var(--border)",
+                                  cursor: "pointer",
+                                }}
+                              />
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const url = (detailedTicket.diagnosticPhotosBefore || [])[idx];
+                                  if (url && isDiagnosticPhotoStorageUrl(url)) {
+                                    try {
+                                      await deleteDiagnosticPhotoFromStorage(supabase, url);
+                                    } catch (_) {}
+                                  }
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? {
+                                            ...t,
+                                            diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
+                                          }
+                                        : t
+                                    )
+                                  );
+                                }}
+                                style={{
+                                  position: "absolute",
+                                  top: 4,
+                                  right: 4,
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: "50%",
+                                  background: "rgba(239, 68, 68, 0.9)",
+                                  color: "white",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 14,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
+                            setCaptureQRLoading(true);
+                            try {
+                              let lastErr: unknown = null;
+                              for (let attempt = 0; attempt < 2; attempt++) {
+                                try {
+                                  const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+                                  if (refreshErr && attempt === 0) throw new Error("Session vypršela.");
+                                  const token = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
+                                  if (!token) throw new Error("Nejste přihlášeni.");
+                                  const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                    body: JSON.stringify({ ticketId: detailedTicket.id, isBefore: true }),
+                                  });
+                                  const raw = await res.text();
+                                  const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
+                                  if (!res.ok) throw new Error(data.error || res.statusText);
+                                  if (data.url) setCaptureQRItems([{ deviceLabel: detailedTicket.deviceLabel || "Zakázka", url: data.url }]);
+                                  return;
+                                } catch (err) {
+                                  lastErr = err;
+                                  const msg = err instanceof Error ? err.message : String(err);
+                                  if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                    resetTauriFetchState();
+                                    continue;
+                                  }
+                                  break;
+                                }
+                              }
+                              showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
+                            } finally {
+                              setCaptureQRLoading(false);
+                            }
+                          }}
+                          disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        >
+                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                        </button>
+                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={diagnosticPhotosUploading}
+                            style={{ display: "none" }}
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              e.target.value = "";
+                              if (!files.length || !supabase || !activeServiceId || !detailedTicket?.id) return;
+                              setDiagnosticPhotosUploading(true);
+                              try {
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file);
+                                  urls.push(url);
+                                }
+                                const uid = session?.user?.id;
+                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
+                                setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === detailedTicket.id
+                                      ? { ...t, diagnosticPhotosBefore: [...(t.diagnosticPhotosBefore || []), ...urls] }
+                                      : t
+                                  )
+                                );
+                              } catch (err) {
+                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                              } finally {
+                                setDiagnosticPhotosUploading(false);
+                              }
+                            }}
+                          />
+                          Nahrát soubory
+                        </label>
+                      </div>
+                    </div>
+                    <div>
                       <div style={fieldLabel}>Diagnostické fotografie</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                         {(detailedTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
@@ -9669,7 +10525,7 @@ export default function Orders({
                                 }
                                 if (data?.error) throw new Error(data.error);
                                 if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                                setCaptureQRUrl(data.url);
+                                setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
                                 return;
                               } catch (err) {
                                 lastErr = err;
@@ -9706,16 +10562,18 @@ export default function Orders({
                               if (hasId && supabase) {
                                 setDiagnosticPhotosUploading(true);
                                 try {
-                                  const urls: string[] = [];
-                                  for (const file of files) {
-                                    const url = await uploadDiagnosticPhoto(
-                                      supabase,
-                                      activeServiceId!,
-                                      detailedTicket.id!,
-                                      file
-                                    );
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhotoWithWatermark(
+                                    supabase,
+                                    activeServiceId!,
+                                    detailedTicket.id!,
+                                    file
+                                  );
                                     urls.push(url);
                                   }
+                                  const uid = session?.user?.id;
+                                  if (uid) checkAchievementOnFirstCapturePhoto(uid);
                                   setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                                   setCloudTickets((prev) =>
                                     prev.map((t) =>
@@ -10225,7 +11083,7 @@ export default function Orders({
       )}
 
       {/* Capture QR modal – fotka z telefonu */}
-      {captureQRUrl && createPortal(
+      {captureQRItems && captureQRItems.length > 0 && createPortal(
         <div
           role="dialog"
           aria-label="Vyfotit z telefonu"
@@ -10239,7 +11097,7 @@ export default function Orders({
             background: "rgba(0,0,0,0.5)",
             padding: 24,
           }}
-          onClick={() => setCaptureQRUrl(null)}
+          onClick={() => setCaptureQRItems(null)}
         >
           <div
             style={{
@@ -10247,8 +11105,10 @@ export default function Orders({
               border: "1px solid var(--border)",
               borderRadius: "var(--radius-lg)",
               boxShadow: "var(--shadow-soft)",
-              maxWidth: 360,
+              maxWidth: captureQRItems.length > 1 ? 480 : 360,
               width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
               padding: 24,
               display: "flex",
               flexDirection: "column",
@@ -10260,29 +11120,38 @@ export default function Orders({
           >
             <div style={{ fontWeight: 950, fontSize: 18 }}>📱 Vyfotit z telefonu</div>
             <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
-              Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce.
+              {captureQRItems.length > 1
+                ? "Naskenujte QR kód podle zařízení. Fotka se uloží k příslušné zakázce."
+                : "Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce."}
             </p>
-            <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=L&data=${encodeURIComponent(captureQRUrl)}`}
-                alt="QR kód pro capture"
-                style={{ display: "block", width: 220, height: 220 }}
-              />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, justifyContent: "center" }}>
+              {captureQRItems.map((item, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  {captureQRItems.length > 1 && (
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", textAlign: "center" }}>{item.deviceLabel || `Zakázka ${i + 1}`}</div>
+                  )}
+                  <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=L&data=${encodeURIComponent(item.url)}`}
+                      alt={`QR pro ${item.deviceLabel || "zakázku"}`}
+                      style={{ display: "block", width: 220, height: 220 }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(item.url).then(() => showToast("Odkaz zkopírován", "success"));
+                    }}
+                    style={{ ...softBtn, padding: "8px 12px", fontSize: 12 }}
+                  >
+                    Kopírovat odkaz
+                  </button>
+                </div>
+              ))}
             </div>
-            <div style={{ display: "flex", gap: 8, width: "100%" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard?.writeText(captureQRUrl).then(() => showToast("Odkaz zkopírován", "success"));
-                }}
-                style={{ ...softBtn, flex: 1, padding: "10px 14px", fontSize: 13 }}
-              >
-                Kopírovat odkaz
-              </button>
-              <button type="button" onClick={() => setCaptureQRUrl(null)} style={{ ...softBtn, padding: "10px 14px" }}>
-                Zavřít
-              </button>
-            </div>
+            <button type="button" onClick={() => setCaptureQRItems(null)} style={{ ...softBtn, padding: "10px 14px", marginTop: 8 }}>
+              Zavřít
+            </button>
           </div>
         </div>,
         document.body

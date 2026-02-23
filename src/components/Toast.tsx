@@ -1,17 +1,21 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { playSaved, playDeleted, areSoundsEnabled } from "../lib/sounds";
+import { playSaved, playDeleted, playAchievementUnlock, areSoundsEnabled } from "../lib/sounds";
 import { resetTauriFetchState } from "../lib/supabaseClient";
+import { TrophyIcon } from "./TrophyIcon";
+import type { TrophyTier } from "../lib/achievements";
 
 type Toast = {
   id: string;
   message: string;
-  type?: "success" | "error" | "info";
+  type?: "success" | "error" | "info" | "achievement";
   isClosing?: boolean;
   /** Nezmizí po čase ani po najetí myší; zobrazí tlačítko akce */
   persistent?: boolean;
   actionLabel?: string;
   onAction?: () => void;
+  /** Pro type=achievement */
+  achievement?: { title: string; description: string; trophy: TrophyTier };
 };
 
 let toastId = 0;
@@ -82,6 +86,61 @@ export function removeToast(id: string) {
   }
 }
 
+/** Ukázkový achievement toast – vždy zobrazí (pro testování v nastavení Owner) */
+export function showDemoAchievementToast() {
+  playAchievementUnlock();
+  const id = `toast-ach-demo-${++toastId}`;
+  toasts.push({
+    id,
+    message: "Ukázkový achievement",
+    type: "achievement",
+    achievement: {
+      title: "Ukázkový achievement",
+      description: "Tohle je jen demo. Skutečné achievementy získáte plněním úkolů.",
+      trophy: "gold",
+    },
+  });
+  notify();
+  setTimeout(() => {
+    const idx = toasts.findIndex((t) => t.id === id);
+    if (idx >= 0) {
+      toasts.splice(idx, 1);
+      notify();
+    }
+  }, 4500);
+}
+
+export function showAchievementToast(title: string, description: string, trophy: TrophyTier) {
+  if (!areAchievementsEnabled()) return;
+  playAchievementUnlock();
+  const id = `toast-ach-${++toastId}`;
+  toasts.push({
+    id,
+    message: title,
+    type: "achievement",
+    achievement: { title, description, trophy },
+  });
+  notify();
+  setTimeout(() => {
+    const idx = toasts.findIndex((t) => t.id === id);
+    if (idx >= 0) {
+      toasts.splice(idx, 1);
+      notify();
+    }
+  }, 4500);
+}
+
+function areAchievementsEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem("jobsheet_ui_settings_v1");
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    return parsed?.achievementsEnabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 export function ToastContainer() {
   const [, forceUpdate] = useState(0);
 
@@ -120,8 +179,9 @@ function ToastItem({ toast }: { toast: Toast }) {
   const isClosing = toast.isClosing ?? false;
   const isSuccess = toast.type === "success";
   const isError = toast.type === "error";
+  const isAchievement = toast.type === "achievement";
   const isPersistent = toast.persistent === true;
-  const bg = isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
+  const bg = isAchievement ? "var(--panel)" : isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
 
   const handleAnimationEnd = (e: React.AnimationEvent) => {
     if (e.animationName === "toastSlideOut" && isClosing) {
@@ -150,7 +210,8 @@ function ToastItem({ toast }: { toast: Toast }) {
       onKeyDown={isPersistent ? undefined : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dismiss(); } }}
       style={{
         background: bg,
-        color: isSuccess || isError ? "white" : "var(--accent-fg)",
+        color: isAchievement ? "var(--text)" : isSuccess || isError ? "white" : "var(--accent-fg)",
+        border: isAchievement ? "1px solid var(--border)" : undefined,
         padding: "14px 18px",
         borderRadius: 12,
         boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
@@ -170,7 +231,10 @@ function ToastItem({ toast }: { toast: Toast }) {
       }}
       title={isPersistent ? undefined : "Kliknutím nebo najetím myší zavřete"}
     >
-      {isSuccess && (
+      {isAchievement && toast.achievement && (
+        <TrophyIcon tier={toast.achievement.trophy} size={28} />
+      )}
+      {isSuccess && !isAchievement && (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />
         </svg>
@@ -182,14 +246,23 @@ function ToastItem({ toast }: { toast: Toast }) {
           <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       )}
-      {!isSuccess && !isError && (
+      {!isSuccess && !isError && !isAchievement && (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
           <line x1="12" y1="16" x2="12" y2="12" />
           <line x1="12" y1="8" x2="12.01" y2="8" />
         </svg>
       )}
-      <span style={{ flex: 1, userSelect: "text" }}>{toast.message}</span>
+      <span style={{ flex: 1, userSelect: "text" }}>
+        {isAchievement && toast.achievement ? (
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>{toast.achievement.title}</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>{toast.achievement.description}</div>
+          </div>
+        ) : (
+          toast.message
+        )}
+      </span>
       {isPersistent && toast.actionLabel && (
         <button
           type="button"
