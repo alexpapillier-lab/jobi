@@ -1,10 +1,12 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "../auth/AuthProvider";
+import { checkAchievementOnStatisticsOpen } from "../lib/achievements";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 
 const TICKETS_SELECT =
-  "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version";
+  "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
 
 type PeriodType = "all" | "today" | "week" | "month" | "quarter" | "year" | "custom";
 
@@ -212,6 +214,7 @@ type StatisticsProps = {
 };
 
 export default function Statistics({ activeServiceId, onOpenTicket }: StatisticsProps) {
+  const { session } = useAuth();
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
@@ -221,6 +224,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const [viewMode, setViewMode] = useState<"cards" | "table" | "charts">("cards");
   const [drillDown, setDrillDown] = useState<DrillDown>(null);
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid) checkAchievementOnStatisticsOpen(uid);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -404,6 +412,18 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       ? ticketPrices.reduce((sum, p) => sum + p, 0) / ticketPrices.length
       : 0;
 
+    const durations: number[] = [];
+    list.forEach((t) => {
+      const completedAt = (t as any).completed_at;
+      if (completedAt && t.createdAt) {
+        const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
+        if (ms > 0) durations.push(ms / (24 * 60 * 60 * 1000));
+      }
+    });
+    const averageTicketDurationDays = durations.length > 0
+      ? durations.reduce((a, b) => a + b, 0) / durations.length
+      : 0;
+
     const repairCounts: Record<string, number> = {};
     list.forEach((t) => {
       (t.performedRepairs || []).forEach((r) => {
@@ -457,6 +477,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       totalDiscounts,
       profit: totalRevenue - totalCosts,
       averageTicketPrice,
+      averageTicketDurationDays,
       topRepairs,
       topDevices,
       monthlyStats,
@@ -477,12 +498,24 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     const averageTicketPrice = ticketPrices.length > 0
       ? ticketPrices.reduce((a, b) => a + b, 0) / ticketPrices.length
       : 0;
+    const durations: number[] = [];
+    list.forEach((t) => {
+      const completedAt = (t as any).completed_at;
+      if (completedAt && t.createdAt) {
+        const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
+        if (ms > 0) durations.push(ms / (24 * 60 * 60 * 1000));
+      }
+    });
+    const averageTicketDurationDays = durations.length > 0
+      ? durations.reduce((a, b) => a + b, 0) / durations.length
+      : 0;
     return {
       totalTickets,
       totalRevenue,
       totalCosts,
       profit: totalRevenue - totalCosts,
       averageTicketPrice,
+      averageTicketDurationDays,
     };
   }, [previousPeriodTickets]);
 
@@ -749,6 +782,28 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           title="Celkové slevy"
           value={`${stats.totalDiscounts.toFixed(2)} Kč`}
           icon="🎁"
+        />
+        <StatCard
+          title="Průměrná doba zakázky"
+          value={
+            stats.averageTicketDurationDays > 0
+              ? (() => {
+                  const d = stats.averageTicketDurationDays;
+                  if (d < 1) return `${Math.round(d * 24)} h`;
+                  if (d < 7) return `${d.toFixed(1)} dní`;
+                  return `${(d / 7).toFixed(1)} týdnů`;
+                })()
+              : "—"
+          }
+          icon="⏱"
+          delta={
+            compareWithPrevious && stats.averageTicketDurationDays > 0 && prevStats.averageTicketDurationDays > 0
+              ? stats.averageTicketDurationDays - prevStats.averageTicketDurationDays
+              : undefined
+          }
+          deltaLabel="vs. předch. období"
+          deltaSuffix=" dní"
+          deltaInverted
         />
       </div>
 
@@ -1139,6 +1194,8 @@ function StatCard({
   deltaPercent,
   deltaLabel,
   deltaIsCurrency,
+  deltaSuffix,
+  deltaInverted,
 }: {
   title: string;
   value: string | number;
@@ -1148,6 +1205,10 @@ function StatCard({
   deltaPercent?: boolean;
   deltaLabel?: string;
   deltaIsCurrency?: boolean;
+  /** např. " dní" pro průměrnou dobu */
+  deltaSuffix?: string;
+  /** true = vyšší delta = červená (horší), nižší = zelená (lepší) */
+  deltaInverted?: boolean;
 }) {
   const deltaStr =
     delta !== undefined && delta !== null
@@ -1155,11 +1216,13 @@ function StatCard({
         ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} %`
         : deltaIsCurrency
           ? `${delta >= 0 ? "+" : ""}${delta.toFixed(2)} Kč`
-          : `${delta >= 0 ? "+" : ""}${delta}`
+          : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}${deltaSuffix ?? ""}`
       : null;
   const deltaUp = delta !== undefined && delta > 0;
   const deltaDown = delta !== undefined && delta < 0;
-  const deltaColor = deltaUp ? "var(--accent)" : deltaDown ? "rgba(239,68,68,0.9)" : "var(--muted)";
+  const deltaColor = deltaInverted
+    ? (deltaUp ? "rgba(239,68,68,0.9)" : deltaDown ? "var(--accent)" : "var(--muted)")
+    : (deltaUp ? "var(--accent)" : deltaDown ? "rgba(239,68,68,0.9)" : "var(--muted)");
 
   return (
     <div

@@ -1,4 +1,9 @@
-/* JobiDocs – Jobi-style theme */
+/* JobiDocs – design system (barvy, mezery, typografie, stíny)
+ * Používejte tyto proměnné v celé aplikaci pro konzistentní vzhled.
+ * Barvy: --bg, --panel, --panel-2, --text, --muted, --border, --accent, --accent-soft, --error
+ * Rozměry: --radius-sm, --radius-md, --radius-lg, --content-max-width, --spacing-page
+ * Stíny a efekty: --shadow, --shadow-soft, --blur, --transition-smooth
+ */
 :root {
   --bg: linear-gradient(135deg, #f6f7f9 0%, #eef0f4 100%);
   --panel: rgba(255, 255, 255, 0.92);
@@ -7,11 +12,14 @@
   --muted: #6b7280;
   --border: rgba(17, 24, 39, 0.12);
   --icon: #6b7280;
+  --error: #dc2626;
   --shadow: 0 25px 80px rgba(0, 0, 0, 0.15);
   --shadow-soft: 0 15px 40px rgba(0, 0, 0, 0.10);
-  --radius-lg: 24px;
-  --radius-md: 18px;
   --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --content-max-width: 1200px;
+  --spacing-page: 24px;
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.15);
   --accent-hover: #1d4ed8;
@@ -41,8 +49,14 @@ body {
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: var(--spacing-page);
   box-shadow: var(--shadow-soft);
+}
+
+.page-container {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--spacing-page);
 }
 
 button, input, select, textarea {
@@ -57,4 +71,205 @@ button {
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Layout: sidebar + main (kap. 3) */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+.app-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: var(--spacing-page);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: width 0.2s ease, min-width 0.2s ease, padding 0.2s ease;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+.app-sidebar.narrow {
+  width: 56px;
+  min-width: 56px;
+  padding: 12px 8px;
+  align-items: center;
+}
+.app-sidebar.narrow .app-sidebar-nav-item {
+  justify-content: center;
+  padding: 10px;
+}
+.app-sidebar.narrow .app-sidebar-nav-item .icon {
+  margin: 0;
+}
+.app-sidebar-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  width: 100%;
+  text-align: left;
+}
+.app-sidebar-nav-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.app-sidebar-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.app-sidebar-nav-item .icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+.app-sidebar-nav-item.compact .icon {
+  width: 24px;
+  height: 24px;
+}
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--spacing-page);
+}
+
+/* Responzivita: na malých oknech sidebar skrytý, otevře se hamburgerem (Návrh 18) */
+@media (max-width: 768px) {
+  .app-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: none;
+  }
+  .app-sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow);
+  }
+  .app-sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .app-sidebar-overlay.visible {
+    display: block;
+  }
+}
+
+/* Podtaby u Dokumentů (Návrh 5) */
+.doc-type-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.doc-type-tabs button {
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.doc-type-tabs button:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.doc-type-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Sticky levý panel v customizaci (Návrh 7) */
+.docs-split-left {
+  position: sticky;
+  top: var(--spacing-page);
+  max-height: calc(100vh - var(--spacing-page) * 2);
+  overflow-y: auto;
+}
+
+/* Accordion skupiny nastavení (Návrh 8) */
+.accordion-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+/* V levém sloupci Dokumentů sjednotíme accordiony – jedna společná „krabice“, jen horní a dolní čára */
+.docs-split-left .accordion-group {
+  margin-bottom: 0;
+  border-radius: 0;
+  border-top: none;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: none;
+}
+.docs-split-left .accordion-group:first-of-type {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.docs-split-left .accordion-group:last-of-type {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  margin-bottom: 12px;
+}
+.docs-split-left .accordion-body {
+  border-top: none;
+}
+.docs-split-left .accordion-head {
+  padding: 8px 12px;
+}
+
+.accordion-head {
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  transition: var(--transition-smooth);
+}
+.accordion-head:hover {
+  background: rgba(0,0,0,0.04);
+}
+.accordion-body {
+  padding: 14px;
+  border-top: 1px solid var(--border);
 }

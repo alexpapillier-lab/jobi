@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
-import { showToast } from "../../components/Toast";
+import { showToast, showDemoAchievementToast } from "../../components/Toast";
 import { Card } from "../../lib/settingsUi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TeamSettings } from "./TeamSettings";
@@ -75,6 +75,17 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
   const [manageSubmitting, setManageSubmitting] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
   const [renameSubmitting, setRenameSubmitting] = useState(false);
+  const [serviceSearch, setServiceSearch] = useState("");
+
+  const serviceSearchNorm = serviceSearch.trim().toLowerCase();
+  const filteredServices =
+    serviceSearchNorm === ""
+      ? services
+      : services.filter(
+          (s) =>
+            (s.service_name || "").toLowerCase().includes(serviceSearchNorm) ||
+            shortId(s.service_id).toLowerCase().includes(serviceSearchNorm)
+        );
 
   const selectedService = ownerSelectedServiceId
     ? services.find((s) => s.service_id === ownerSelectedServiceId)
@@ -214,6 +225,29 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
 
   return (
     <>
+      <div style={{ marginBottom: 16, padding: "12px 16px", border: "1px solid var(--border)", borderRadius: 12, background: "var(--panel)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", marginBottom: 2 }}>Ukázkový achievement</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Zobrazí demo toast s achievementem (pro testování vzhledu)</div>
+        </div>
+        <button
+          type="button"
+          onClick={showDemoAchievementToast}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 10,
+            border: "1px solid var(--accent)",
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Poslat ukázkový achievement
+        </button>
+      </div>
+
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
           <div>
@@ -251,10 +285,28 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
             {/* Seznam servisů – název, ID, stav */}
             <div style={{ minWidth: 280, maxWidth: 340, width: "100%", border, borderRadius: 12, overflow: "hidden", background: "var(--bg)" }}>
               <div style={{ padding: "10px 14px", borderBottom: border, fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Servisy ({services.length})
+                Servisy ({filteredServices.length}{serviceSearchNorm ? ` / ${services.length}` : ""})
+              </div>
+              <div style={{ padding: "8px 10px", borderBottom: border, background: "var(--panel)" }}>
+                <input
+                  type="text"
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
+                  placeholder="Hledat servis (název, ID)…"
+                  style={{
+                    width: "100%",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border,
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: 13,
+                    fontFamily: "inherit",
+                  }}
+                />
               </div>
               <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                {services.map((s) => {
+                {filteredServices.map((s) => {
                   const isSelected = s.service_id === ownerSelectedServiceId;
                   return (
                     <button

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { showToast } from "../../../components/Toast";
+import { checkAchievementOnFirstClaim } from "../../../lib/achievements";
 import type { TicketEx } from "../../Orders";
 import type { Database } from "../../../types/supabase";
 
@@ -102,15 +103,17 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         return null;
       }
       // Log to ticket_history so original ticket shows "založena reklamace R-xxx" (only if we still have source_ticket_id)
+      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
       if (ticket.id) {
         await (supabase.from("ticket_history") as any).insert({
         ticket_id: ticket.id,
         service_id: activeServiceId,
         action: "warranty_claim_created",
-        changed_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+        changed_by: uid,
         details: { warranty_claim_id: data.id, warranty_claim_code: data.code },
         });
       }
+      if (uid) checkAchievementOnFirstClaim(uid);
       showToast(`Reklamace ${data.code} vytvořena`, "success");
       return data as WarrantyClaimRow;
     },
@@ -145,6 +148,8 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         showToast(`Chyba při vytváření reklamace: ${error.message}`, "error");
         return null;
       }
+      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+      if (uid) checkAchievementOnFirstClaim(uid);
       showToast(`Reklamace ${data.code} vytvořena`, "success");
       return data as WarrantyClaimRow;
     },
@@ -152,13 +157,15 @@ export function useWarrantyClaims(activeServiceId: string | null) {
   );
 
   const updateClaimStatus = useCallback(
-    async (claimId: string, newStatusKey: string): Promise<boolean> => {
+    async (claimId: string, newStatusKey: string, completedAt?: string | null): Promise<boolean> => {
       if (!supabase) {
         showToast("Chybí připojení.", "error");
         return false;
       }
+      const payload: Record<string, any> = { status: newStatusKey };
+      if (completedAt) payload.completed_at = completedAt;
       const { error } = await (supabase.from("warranty_claims") as any)
-        .update({ status: newStatusKey })
+        .update(payload)
         .eq("id", claimId);
       if (error) {
         showToast(`Chyba při změně statusu reklamace: ${error.message}`, "error");

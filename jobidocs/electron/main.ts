@@ -11,6 +11,8 @@ const isDev = !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** Na macOS: při true necháme okno zavřít (quit), jinak close → hide (zůstane v trayi). */
+let isQuitting = false;
 
 /**
  * Render HTML to PDF using Electron's bundled Chromium (no Puppeteer/Chrome needed).
@@ -105,14 +107,41 @@ async function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  // macOS: červené tlačítko zavřít → skrýt okno (ne quit), skrýt Dock; zůstane jen tray. Při Ukončit → skutečně quit.
+  if (process.platform === "darwin") {
+    const win = mainWindow;
+    win.on("close", (e) => {
+      if (!win.isDestroyed() && !isQuitting) {
+        e.preventDefault();
+        win.hide();
+        app.dock?.hide();
+      }
+    });
+  }
+}
+
+const TRAY_ICON_SIZE = 22; // macOS menu bar: 22x22 (16x16 také ok)
+const TRAY_ICON_TEMPLATE = "tray-icon-template.png"; // monochrome (black + alpha); macOS přebarví podle menu baru
+
+function loadTrayIcon(): ReturnType<typeof nativeImage.createFromPath> | null {
+  const iconPath = path.join(__dirname, TRAY_ICON_TEMPLATE);
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) return null;
+  const size = icon.getSize();
+  if (size.width > TRAY_ICON_SIZE || size.height > TRAY_ICON_SIZE) {
+    icon = icon.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+  }
+  // macOS: template image = maska; OS sám přebarví podle kontrastu k menu baru
+  if (process.platform === "darwin") icon.setTemplateImage(true);
+  return icon;
 }
 
 function setupTray() {
   if (process.platform !== "darwin") return;
-  const iconPath = path.join(__dirname, "tray-icon.png");
   try {
-    const icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) return;
+    const icon = loadTrayIcon();
+    if (!icon) return;
     tray = new Tray(icon);
     tray.setToolTip("JobiDocs – běží");
     tray.setContextMenu(
@@ -120,6 +149,7 @@ function setupTray() {
         {
           label: "Otevřít JobiDocs",
           click: () => {
+            if (process.platform === "darwin") app.dock?.show();
             if (mainWindow) {
               mainWindow.show();
               mainWindow.focus();
@@ -129,61 +159,130 @@ function setupTray() {
           },
         },
         { type: "separator" },
-        { label: "Ukončit JobiDocs", role: "quit" },
+        {
+          label: "Ukončit JobiDocs",
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
+        },
       ])
     );
     tray.on("click", () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      } else {
-        createWindow().then(() => mainWindow?.show());
-      }
+      tray?.popUpContextMenu();
     });
   } catch {
     // ikona nenalezena – tray přeskočíme
   }
 }
 
+let updateState: { version: string; downloaded: boolean; progress: number } | null = null;
+let updateError: string | null = null;
+const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+
+function sendUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("jobidocs:update-state", updateState);
+  }
+}
+
+function sendUpdateError(err: string | null) {
+  updateError = err;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("jobidocs:update-error", err);
+  }
+}
+
 function setupAutoUpdate() {
   if (isDev) return;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  // Explicit feed: GitHub Releases (electron-updater expects latest-mac.yml + zip on the release)
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "alexpapillier-lab",
+    repo: "jobi",
+  });
 
   autoUpdater.on("update-available", (info) => {
-    const opts = {
-      type: "info" as const,
-      title: "Aktualizace JobiDocs",
-      message: `Je k dispozici nová verze ${info.version}.`,
-      detail: "Stahování proběhne na pozadí. Po dokončení můžete aplikaci restartovat.",
-      buttons: ["OK"],
-    };
-    (mainWindow && !mainWindow.isDestroyed()
-      ? dialog.showMessageBox(mainWindow, opts)
-      : dialog.showMessageBox(opts)
-    ).catch(() => {});
+    updateError = null;
+    updateState = { version: info.version, downloaded: false, progress: 0 };
+    sendUpdateError(null);
+    sendUpdateState();
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    updateError = null;
+    updateState = null;
+    sendUpdateError(null);
+    sendUpdateState();
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    if (updateState) {
+      updateState = { ...updateState, progress: progress.percent };
+      sendUpdateState();
+    }
   });
 
   autoUpdater.on("update-downloaded", () => {
-    const opts = {
-      type: "info" as const,
-      title: "Aktualizace stažena",
-      message: "Nová verze je připravena. Restartovat nyní?",
-      buttons: ["Restartovat", "Později"],
-      defaultId: 0,
-    };
-    (mainWindow && !mainWindow.isDestroyed()
-      ? dialog.showMessageBox(mainWindow, opts)
-      : dialog.showMessageBox(opts)
-    ).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall(false, true);
-    }).catch(() => {});
+    if (updateState) {
+      updateState = { ...updateState, downloaded: true, progress: 100 };
+      sendUpdateState();
+    }
   });
 
-  autoUpdater.checkForUpdates().catch((err) => {
-    console.warn("[JobiDocs] Update check failed:", err);
+  autoUpdater.on("error", (err) => {
+    console.warn("[JobiDocs] Update error:", err);
+    updateState = null;
+    const msg = err instanceof Error ? err.message : String(err);
+    sendUpdateError(msg);
+    sendUpdateState();
   });
+
+  const doCheck = () => {
+    sendUpdateError(null);
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.warn("[JobiDocs] Update check failed:", err);
+      sendUpdateError(err instanceof Error ? err.message : String(err));
+    });
+  };
+  doCheck();
+  setInterval(doCheck, CHECK_INTERVAL_MS);
 }
+
+ipcMain.handle("jobidocs:check-update", async () => {
+  if (isDev) return null;
+  sendUpdateError(null);
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return result?.updateInfo?.version ?? null;
+  } catch (err) {
+    console.warn("[JobiDocs] Update check failed:", err);
+    sendUpdateError(err instanceof Error ? err.message : String(err));
+    return null;
+  }
+});
+
+ipcMain.handle("jobidocs:download-update", async () => {
+  if (isDev || !updateState) return false;
+  try {
+    await autoUpdater.downloadUpdate();
+    return true;
+  } catch (err) {
+    console.warn("[JobiDocs] Download failed:", err);
+    return false;
+  }
+});
+
+ipcMain.handle("jobidocs:quit-and-install", () => {
+  if (isDev) return;
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.handle("jobidocs:get-update-state", () => updateState);
+ipcMain.handle("jobidocs:get-update-error", () => updateError);
 
 app.whenReady().then(async () => {
   const userDataPath = app.getPath("userData");
@@ -200,6 +299,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // macOS: okna jen skrýváme (close → hide), aplikace běží v trayi; nevolat quit
   if (process.platform !== "darwin") {
     app.quit();
   }

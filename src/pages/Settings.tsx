@@ -34,6 +34,9 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { LOGO_PRESETS, getLogoColors, type LogoPresetId, type LogoColors } from "../lib/logoPresets";
 import { setAppIconFromPreset } from "../lib/setAppIcon";
 import { AppLogo } from "../components/AppLogo";
+import { getVersion } from "@tauri-apps/api/app";
+import { useAppUpdate } from "../context/AppUpdateContext";
+import { useAuth } from "../auth/AuthProvider";
 
 function LogoPresetButton({
   isActive,
@@ -87,10 +90,10 @@ function LogoPresetButton({
 type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about";
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_team" | "service_owner"
-  | "orders_statuses" | "orders_filters" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
-  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
+  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_achievements"
   | "profile_me"
-  | "about_app";
+  | "about_app" | "about_updates";
 
 type SettingsSection = {
   category: SettingsCategory;
@@ -120,6 +123,7 @@ type UIConfig = {
     pageSize: number;
     customerPhoneRequired: boolean;
   };
+  achievementsEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
@@ -127,6 +131,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
+    achievementsEnabled: true,
   };
 }
 
@@ -143,6 +148,7 @@ function safeLoadUIConfig(): UIConfig {
     const displayMode = parsed?.orders?.displayMode;
     const pageSize = parsed?.orders?.pageSize;
     const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
+    const achievementsEnabled = parsed?.achievementsEnabled;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
       ? pageSize
       : d.orders.pageSize;
@@ -164,18 +170,17 @@ function safeLoadUIConfig(): UIConfig {
         pageSize: validPageSize,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
       },
+      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
     };
   } catch {
     return defaultUIConfig();
   }
 }
 
-function saveUIConfig(cfg: UIConfig) {
+function saveUIConfig(cfg: UIConfig & { achievementsEnabled?: boolean }) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
-
-const APP_VERSION = "0.1.0";
 
 type CompanyData = {
   abbreviation: string;
@@ -572,11 +577,17 @@ type SettingsProps = {
   onStartTour?: () => void;
   /** When set (e.g. by app tour), switch to this category/subsection so the highlighted tab is visible. */
   tourSection?: { category: string; subsection: string } | null;
+  /** Když uživatel přijde z toastu „Jít do nastavení“ (aktualizace), otevřít tuto subsekci a pak vyvolat callback. */
+  openToSubsection?: { category: SettingsCategory; subsection: SettingsSubsection } | null;
+  onOpenToSubsectionConsumed?: () => void;
 };
 
-export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection }: SettingsProps) {
+export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
+  const { session } = useAuth();
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
+  const appUpdate = useAppUpdate();
+  const updateAvailable = !!(appUpdate?.update);
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
   const isRootOwner = useIsRootOwner();
   const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
@@ -611,6 +622,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       });
     }
   }, [tourSection?.category, tourSection?.subsection]);
+
+  // Otevřít konkrétní subsekci (např. Aktualizace po kliku na „Jít do nastavení“ v toastu)
+  useEffect(() => {
+    if (!openToSubsection?.category || !openToSubsection?.subsection) return;
+    setSection({ category: openToSubsection.category, subsection: openToSubsection.subsection });
+    onOpenToSubsectionConsumed?.();
+  }, [openToSubsection?.category, openToSubsection?.subsection, onOpenToSubsectionConsumed]);
 
   // Na stránce Klávesové zkratky vypnout globální zkratky (aby Ctrl+Q nevyhodilo jinam)
   useEffect(() => {
@@ -656,8 +674,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   });
   const [autoPrintFormLoading, setAutoPrintFormLoading] = useState(false);
   const [autoPrintFormSaveSuccess, setAutoPrintFormSaveSuccess] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>("…");
   
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("?"));
+  }, []);
   
   // Load service_settings from DB when activeServiceId changes
   useEffect(() => {
@@ -681,16 +704,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           .from("service_settings") as any)
           .select("config")
           .eq("service_id", activeServiceId)
-          .single();
+          .maybeSingle();
 
-        if (error) {
-          // If not found, it's okay - will use default/localStorage
-          if (error.code === "PGRST116") {
-            setServiceSettingsLoading(false);
-            return;
-          }
-          throw error;
-        }
+        if (error) throw error;
 
         if (data?.config?.abbreviation) {
           setCompanyData((prev) => ({
@@ -918,6 +934,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "orders_statuses" as const, label: "Statusy zakázek" },
         { key: "orders_filters" as const, label: "Filtry zakázek" },
+        { key: "orders_required_fields" as const, label: "Povinná pole u zakázky" },
         { key: "orders_tisk_dokumentu" as const, label: "Tisk dokumentů" },
         { key: "orders_reklamace" as const, label: "Reklamace" },
         { key: "orders_device_options" as const, label: "Stavy zařízení a příslušenství" },
@@ -941,6 +958,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_ui" as const, label: "Rozhraní" },
         { key: "appearance_theme" as const, label: "Barevné téma" },
         { key: "appearance_shortcuts" as const, label: "Klávesové zkratky" },
+        { key: "appearance_achievements" as const, label: "Achievementy" },
       ],
     },
     {
@@ -968,6 +986,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         { key: "about_app" as const, label: "O aplikaci" },
+        { key: "about_updates" as const, label: "Aktualizace" },
       ],
     },
   ], [isRootOwner, isAdmin, canManageDocuments]);
@@ -1059,7 +1078,31 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 {cat.icon}
               </span>
-              <span>{cat.label}</span>
+              <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                {cat.label}
+                {cat.category === "about" && updateAvailable && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -10,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: "#dc2626",
+                      color: "white",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                    }}
+                  >
+                    1
+                  </span>
+                )}
+              </span>
             </button>
           );
         })}
@@ -1343,78 +1386,78 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <OwnerSettings services={services} refreshServices={refreshServices} setActiveServiceId={setActiveServiceId} />
       )}
 
-      {/* Přidat servis pomocí kódu pozvánky – pro přihlášené uživatele */}
-      {section.category === "service" && (
-        <div style={{ marginTop: 24 }}>
-          <Card>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Přidat servis pomocí pozvánky</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-              Máš kód z e-mailu pozvánky do dalšího servisu? Zadej ho a přidáš se bez odhlášení.
-            </div>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                <FieldLabel>Kód z e-mailu</FieldLabel>
-                <TextInput
-                  type="text"
-                  value={inviteCodeInput}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setInviteCodeInput(e.target.value)}
-                  placeholder="Vlož kód z pozvánky"
-                  disabled={inviteAcceptLoading}
-                  style={{ width: "100%" }}
-                />
+      {/* MŮJ PROFIL - FOTKA A PŘEZDÍVKA + PŘIDAT SERVIS POZVÁNKOU */}
+      {section.subsection === "profile_me" && (
+        <>
+          <ProfileSettingsSection />
+          <div style={{ marginTop: 24 }}>
+            <Card>
+              <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Přidat servis pomocí pozvánky</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+                Máš kód z e-mailu pozvánky do dalšího servisu? Zadej ho a přidáš se bez odhlášení.
               </div>
-              <button
-                type="button"
-                disabled={!inviteCodeInput.trim() || inviteAcceptLoading}
-                onClick={async () => {
-                  const token = inviteCodeInput.trim();
-                  if (!token || !refreshServices || !supabase) return;
-                  setInviteAcceptLoading(true);
-                  try {
-                    const { data, error } = await supabase.functions.invoke("invite-accept", { body: { token } });
-                  if (error) {
-                    const res = (error as any)?.context as Response | undefined;
-                    let detail = "";
-                    if (res) {
-                      try {
-                        detail = await res.clone().text();
-                      } catch {}
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <FieldLabel>Kód z e-mailu</FieldLabel>
+                  <TextInput
+                    type="text"
+                    value={inviteCodeInput}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setInviteCodeInput(e.target.value)}
+                    placeholder="Vlož kód z pozvánky"
+                    disabled={inviteAcceptLoading}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!inviteCodeInput.trim() || inviteAcceptLoading}
+                  onClick={async () => {
+                    const token = inviteCodeInput.trim();
+                    if (!token || !refreshServices || !supabase) return;
+                    setInviteAcceptLoading(true);
+                    try {
+                      const { data, error } = await supabase.functions.invoke("invite-accept", { body: { token } });
+                      if (error) {
+                        const res = (error as any)?.context as Response | undefined;
+                        let detail = "";
+                        if (res) {
+                          try {
+                            detail = await res.clone().text();
+                          } catch {}
+                        }
+                        showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
+                        return;
+                      }
+                      if (data?.serviceId) {
+                        showToast("Pozvánka byla přijata – servis je přidaný", "success");
+                        setInviteCodeInput("");
+                        await refreshServices();
+                      }
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
+                    } finally {
+                      setInviteAcceptLoading(false);
                     }
-                    showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
-                    return;
-                  }
-                  if (data?.serviceId) {
-                    showToast("Pozvánka byla přijata – servis je přidaný", "success");
-                    setInviteCodeInput("");
-                    await refreshServices();
-                  }
-                } catch (err) {
-                  showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
-                } finally {
-                  setInviteAcceptLoading(false);
-                }
-              }}
-              style={{
-                padding: "10px 20px",
-                borderRadius: 10,
-                border: "none",
-                background: "var(--accent)",
-                color: "var(--accent-text)",
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: inviteCodeInput.trim() && !inviteAcceptLoading ? "pointer" : "not-allowed",
-                opacity: inviteCodeInput.trim() && !inviteAcceptLoading ? 1 : 0.6,
-              }}
-            >
-              {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
-              </button>
-            </div>
-          </Card>
-        </div>
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "var(--accent-text)",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: inviteCodeInput.trim() && !inviteAcceptLoading ? "pointer" : "not-allowed",
+                    opacity: inviteCodeInput.trim() && !inviteAcceptLoading ? 1 : 0.6,
+                  }}
+                >
+                  {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
+                </button>
+              </div>
+            </Card>
+          </div>
+        </>
       )}
-
-      {/* MŮJ PROFIL - FOTKA A PŘEZDÍVKA */}
-      {section.subsection === "profile_me" && <ProfileSettingsSection />}
 
       {/* VZHLED A CHOVÁNÍ - BAREVNÉ TÉMA */}
       {section.subsection === "appearance_theme" && (
@@ -1977,37 +2020,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           </Card>
 
           <Card>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Povinná pole u zakázky</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-              U nové zakázky a při úpravě: která pole musí uživatel vyplnit.
-            </div>
-            <label
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: 12,
-                borderRadius: 10,
-                border,
-                background: "var(--panel)",
-                cursor: "pointer",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Telefon zákazníka povinný</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                  Pokud vypnete, lze zakázku uložit i bez telefonu (pole zůstane volitelné).
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={uiCfg.orders.customerPhoneRequired}
-                onChange={(e) => setUiCfg((p) => ({ ...p, orders: { ...p.orders, customerPhoneRequired: e.target.checked } }))}
-              />
-            </label>
-          </Card>
-
-          <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Zobrazení zakázek</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
               Vyberte způsob zobrazení zakázek na stránce Orders.
@@ -2246,6 +2258,40 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <ShortcutsSettingsSection />
       )}
 
+      {/* VZHLED - ACHIEVEMENTY */}
+      {section.subsection === "appearance_achievements" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Achievementy</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+            Při odemčení achievementu se zobrazí toast s trofejí. Když vypnete, toasty nepřijdou a achievementy se nezobrazí v sidebaru.
+          </div>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Zobrazovat achievementy</span>
+            <input
+              type="checkbox"
+              checked={uiCfg.achievementsEnabled !== false}
+              onChange={(e) => {
+                const v = e.target.checked;
+                const newCfg = { ...uiCfg, achievementsEnabled: v };
+                setUiCfg(newCfg);
+                saveUIConfig(newCfg);
+              }}
+            />
+          </label>
+        </Card>
+      )}
+
       {section.subsection === "orders_device_options" && (
         <DeviceOptionsSettingsSection />
       )}
@@ -2348,6 +2394,39 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               onChange={(e) => saveOrdersShowClaimsInList(e.target.checked)}
             />
             Zobrazit reklamace v záložkách Vše a Aktivní
+          </label>
+        </Card>
+      )}
+
+      {section.subsection === "orders_required_fields" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Povinná pole u zakázky</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+            U nové zakázky a při úpravě: která pole musí uživatel vyplnit.
+          </div>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              cursor: "pointer",
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Telefon zákazníka povinný</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                Pokud vypnete, lze zakázku uložit i bez telefonu (pole zůstane volitelné).
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={uiCfg.orders.customerPhoneRequired}
+              onChange={(e) => setUiCfg((p) => ({ ...p, orders: { ...p.orders, customerPhoneRequired: e.target.checked } }))}
+            />
           </label>
         </Card>
       )}
@@ -2462,19 +2541,27 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </Card>
           )}
           <Card>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ color: "var(--muted)", minWidth: 80 }}>Verze</span>
-                <span style={{ color: "var(--text)" }}>{APP_VERSION}</span>
-              </div>
-            </div>
-          </Card>
-          <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pro podporu</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
               Tyto údaje můžete poskytnout při řešení problému (kliknutím zkopírujete).
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
+              <div
+                title="Kliknutím zkopírovat"
+                onClick={() => session?.user?.id && navigator.clipboard.writeText(session.user.id)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "var(--panel-2)",
+                  border: "1px solid var(--border)",
+                  cursor: session?.user?.id ? "pointer" : "default",
+                  userSelect: "text",
+                  color: "var(--text)",
+                }}
+              >
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>userId:</span>
+                {session?.user?.id ?? "—"}
+              </div>
               <div
                 title="Kliknutím zkopírovat"
                 onClick={() => activeServiceId && navigator.clipboard.writeText(activeServiceId)}
@@ -2493,7 +2580,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               </div>
               <div
                 title="Kliknutím zkopírovat"
-                onClick={() => navigator.clipboard.writeText(APP_VERSION)}
+                onClick={() => navigator.clipboard.writeText(appVersion)}
                 style={{
                   padding: "8px 12px",
                   borderRadius: 8,
@@ -2505,12 +2592,133 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 }}
               >
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
-                {APP_VERSION}
+                {appVersion}
               </div>
             </div>
           </Card>
         </div>
       )}
+
+      {/* AKTUALIZACE (samostatná subsekce) */}
+      {section.subsection === "about_updates" && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Aktualizace</div>
+          {typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__ ? (
+            <AppUpdateCard />
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>Aktualizace jsou dostupné pouze v desktopové aplikaci.</div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AppUpdateCard() {
+  const update = useAppUpdate();
+  if (!update) return null;
+
+  const { update: updateInfo, downloadProgress, downloaded, checking, downloading, error, checkForUpdate, downloadAndInstall, relaunch } = update;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {!updateInfo && !checking && (
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          Aktuálně nemáte k dispozici žádnou novou verzi. Kontrola probíhá automaticky.
+        </div>
+      )}
+      {checking && <div style={{ fontSize: 13, color: "var(--muted)" }}>Kontroluji aktualizace…</div>}
+      {error && <div style={{ fontSize: 13, color: "#dc2626" }}>Chyba: {error}</div>}
+      {updateInfo && !downloaded && (
+        <>
+          <div style={{ fontSize: 13, color: "var(--text)" }}>
+            K dispozici je nová verze <strong>{updateInfo.version}</strong>
+            {updateInfo.body && <div style={{ marginTop: 8, color: "var(--muted)", whiteSpace: "pre-wrap" }}>{updateInfo.body}</div>}
+          </div>
+          {!downloading ? (
+            <button
+              type="button"
+              onClick={downloadAndInstall}
+              disabled={downloading}
+              style={{
+                padding: "10px 20px",
+                background: "var(--accent)",
+                color: "white",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 14,
+                alignSelf: "flex-start",
+              }}
+            >
+              Nainstalovat
+            </button>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 8,
+                    background: "var(--panel-2)",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${downloadProgress}%`,
+                      height: "100%",
+                      background: "var(--accent)",
+                      borderRadius: 4,
+                      transition: "width 0.2s ease",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 36 }}>{downloadProgress}%</span>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Stahuji…</div>
+            </>
+          )}
+        </>
+      )}
+      {downloaded && (
+        <button
+          type="button"
+          onClick={relaunch}
+          style={{
+            padding: "10px 20px",
+            background: "var(--accent)",
+            color: "white",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            fontWeight: 600,
+            fontSize: 14,
+            alignSelf: "flex-start",
+          }}
+        >
+          Restartovat a nainstalovat
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={checkForUpdate}
+        disabled={checking}
+        style={{
+          padding: "8px 14px",
+          background: "var(--panel-2)",
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-md)",
+          cursor: checking ? "not-allowed" : "pointer",
+          fontSize: 12,
+          alignSelf: "flex-start",
+        }}
+      >
+        {checking ? "Kontroluji…" : "Zkontrolovat aktualizace"}
+      </button>
     </div>
   );
 }

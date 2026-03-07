@@ -3,13 +3,15 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { showToast } from "../components/Toast";
-import { isJobiDocsRunning, printDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs } from "../lib/jobidocs";
+import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { supabase } from "../lib/supabaseClient";
+import { DateTimePicker } from "../components/DateTimePicker";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
+import { devLog } from "../lib/devLog";
 import {
-  uploadDiagnosticPhoto,
+  uploadDiagnosticPhotoWithWatermark,
   deleteDiagnosticPhotoFromStorage,
   isDiagnosticPhotoStorageUrl,
 } from "../lib/diagnosticPhotosStorage";
@@ -19,6 +21,7 @@ import { useOrderActions } from "./Orders/hooks/useOrderActions";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { useAuth } from "../auth/AuthProvider";
+import { checkAchievementOnFirstPrint, checkAchievementOnPaperless, checkAchievementOnFirstCapturePhoto, checkAchievementOnShortcutUsed } from "../lib/achievements";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
@@ -180,6 +183,7 @@ function safeSaveInventoryData(data: InventoryData) {
 }
 
 type GroupKey = "all" | "active" | "final" | "reklamace";
+type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
 type UIConfig = {
@@ -202,6 +206,9 @@ type OrdersProps = {
 
   openTicketIntent: OpenTicketIntent | null;
   onOpenTicketIntentConsumed: () => void;
+
+  openClaimIntent?: { claimId: string } | null;
+  onOpenClaimIntentConsumed?: () => void;
 
   onOpenCustomer?: (customerId: string) => void;
   onReturnToPage?: (page: NavKey, customerId?: string) => void;
@@ -274,10 +281,27 @@ export type TicketEx = Ticket & {
   performedRepairs?: PerformedRepair[];
   
   diagnosticText?: string; // text diagnostiky
-  diagnosticPhotos?: string[]; // URL diagnostických fotek
+  diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
+  diagnosticPhotosBefore?: string[]; // URL fotek při příjmu / před vytvořením
   
   expectedDoneAt?: string; // předpokládané dokončení (ISO)
   version?: number; // optimistic locking version
+};
+
+type DeviceRow = {
+  deviceLabel: string;
+  serialOrImei: string;
+  devicePasscode: string;
+  deviceCondition: string;
+  deviceAccessories: string;
+  requestedRepair: string;
+  handoffMethod: string;
+  handbackMethod: string;
+  deviceNote: string;
+  externalId: string;
+  estimatedPrice?: number;
+  /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
+  expectedCompletionAt?: string | null;
 };
 
 type NewOrderDraft = {
@@ -292,17 +316,9 @@ type NewOrderDraft = {
   ico: string;
   customerInfo: string;
 
-  deviceLabel: string;
-  serialOrImei: string;
-  devicePasscode: string;
-  deviceCondition: string;
-  deviceAccessories: string;
-  requestedRepair: string;
-  handoffMethod: string;
-  handbackMethod: string;
-  deviceNote: string;
-  externalId: string;
-  estimatedPrice?: number;
+  devices: DeviceRow[];
+
+  diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
 };
 
 type TicketComment = {
@@ -375,7 +391,50 @@ function safeLoadDraft(): NewOrderDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
-    return parsed as NewOrderDraft;
+    if (Array.isArray(parsed.devices)) {
+      const draft = parsed as NewOrderDraft;
+      const firstExpected = draft.devices[0]?.expectedCompletionAt ?? (draft as any).expectedCompletionAt;
+      const migrated = {
+        ...draft,
+        devices: draft.devices.map((d: DeviceRow) => ({
+          ...d,
+          expectedCompletionAt: d.expectedCompletionAt ?? firstExpected ?? undefined,
+        })),
+      };
+      delete (migrated as any).expectedCompletionAt;
+      return migrated;
+    }
+    const d = defaultDraft();
+    const def = defaultDeviceRow();
+    const migrated: NewOrderDraft = {
+      ...d,
+      customerId: parsed.customerId,
+      customerName: parsed.customerName ?? "",
+      customerPhone: parsed.customerPhone ?? "",
+      customerEmail: parsed.customerEmail ?? "",
+      addressStreet: parsed.addressStreet ?? "",
+      addressCity: parsed.addressCity ?? "",
+      addressZip: parsed.addressZip ?? "",
+      company: parsed.company ?? "",
+      ico: parsed.ico ?? "",
+      customerInfo: parsed.customerInfo ?? "",
+      devices: [{
+        deviceLabel: parsed.deviceLabel ?? def.deviceLabel,
+        serialOrImei: parsed.serialOrImei ?? def.serialOrImei,
+        devicePasscode: parsed.devicePasscode ?? def.devicePasscode,
+        deviceCondition: parsed.deviceCondition ?? def.deviceCondition,
+        deviceAccessories: parsed.deviceAccessories ?? def.deviceAccessories,
+        requestedRepair: parsed.requestedRepair ?? def.requestedRepair,
+        handoffMethod: parsed.handoffMethod ?? def.handoffMethod,
+        handbackMethod: parsed.handbackMethod ?? def.handbackMethod,
+        deviceNote: parsed.deviceNote ?? def.deviceNote,
+        externalId: parsed.externalId ?? def.externalId,
+        estimatedPrice: parsed.estimatedPrice ?? def.estimatedPrice,
+        expectedCompletionAt: (parsed as any).expectedCompletionAt ?? undefined,
+      }],
+      diagnosticPhotosBefore: parsed.diagnosticPhotosBefore,
+    };
+    return migrated;
   } catch {
     return null;
   }
@@ -427,10 +486,27 @@ function formatCZ(dtIso: string) {
 }
 
 
-function defaultDraft(): NewOrderDraft {
+function defaultDeviceRow(): DeviceRow {
   const handoffOpts = getHandoffOptions();
   const defaultReceive = handoffOpts.receiveMethods.includes("Osobně") ? "Osobně" : "";
   const defaultReturn = handoffOpts.returnMethods.includes("Osobně") ? "Osobně" : "";
+  return {
+    deviceLabel: "",
+    serialOrImei: "",
+    devicePasscode: "",
+    deviceCondition: "",
+    deviceAccessories: "",
+    requestedRepair: "",
+    handoffMethod: defaultReceive,
+    handbackMethod: defaultReturn,
+    deviceNote: "",
+    externalId: "",
+    estimatedPrice: undefined,
+    expectedCompletionAt: undefined,
+  };
+}
+
+function defaultDraft(): NewOrderDraft {
   return {
     customerId: undefined,
     customerName: "",
@@ -443,26 +519,26 @@ function defaultDraft(): NewOrderDraft {
     ico: "",
     customerInfo: "",
 
-    deviceLabel: "",
-    serialOrImei: "",
-    devicePasscode: "",
-    deviceCondition: "",
-    deviceAccessories: "",
-    requestedRepair: "",
-    handoffMethod: defaultReceive,
-    handbackMethod: defaultReturn,
-    deviceNote: "",
-    externalId: "",
-    estimatedPrice: undefined,
+    devices: [defaultDeviceRow()],
+
+    diagnosticPhotosBefore: undefined,
   };
 }
 
 function isDraftDirty(d: NewOrderDraft) {
   const def = defaultDraft();
   const norm = (v: any) => (typeof v === "string" ? v.trim() : v);
-
-  for (const k of Object.keys(def) as (keyof NewOrderDraft)[]) {
-    if (norm(d[k]) !== norm(def[k])) return true;
+  for (const k of ["customerId", "customerName", "customerPhone", "customerEmail", "addressStreet", "addressCity", "addressZip", "company", "ico", "customerInfo"]) {
+    if (norm((d as any)[k]) !== norm((def as any)[k])) return true;
+  }
+  if ((d.diagnosticPhotosBefore?.length ?? 0) !== (def.diagnosticPhotosBefore?.length ?? 0)) return true;
+  if (d.devices.length !== def.devices.length) return true;
+  for (let i = 0; i < d.devices.length; i++) {
+    const dev = d.devices[i];
+    const devDef = def.devices[i] ?? defaultDeviceRow();
+    for (const k of Object.keys(devDef) as (keyof DeviceRow)[]) {
+      if (norm((dev as any)[k]) !== norm((devDef as any)[k])) return true;
+    }
   }
   return false;
 }
@@ -577,12 +653,14 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     performedRepairs: supabaseTicket.performed_repairs || [],
     diagnosticText: supabaseTicket.diagnostic_text || undefined,
     diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
+    diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
     discountType: supabaseTicket.discount_type ?? null,
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
   };
-  // Store service_id for debugging (not part of TicketEx type)
   (ticket as any).service_id = supabaseTicket.service_id;
+  (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
+  (ticket as any).completed_at = supabaseTicket.completed_at ?? null;
   return ticket;
 }
 
@@ -599,67 +677,77 @@ function escapeHtmlForDoc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Sestaví obsah sekcí pro tisk přes JobiDocs (vzor) – vrací HTML fragmenty pro customer, device, repairs, diag, photos, dates. */
-function buildTicketSectionsForJobiDocs(
-  ticket: TicketEx,
-  _config: any,
-  _docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
-): Partial<Record<string, string>> {
-  const e = escapeHtmlForDoc;
-  const customerLines: string[] = [];
-  if (ticket.customerName) customerLines.push(`<div>${e(ticket.customerName)}</div>`);
-  if (ticket.customerPhone) customerLines.push(`<div>${e(ticket.customerPhone)}</div>`);
-  if (ticket.customerEmail) customerLines.push(`<div>${e(ticket.customerEmail)}</div>`);
+/** Sestaví proměnné pro vlastní texty v šabloně JobiDocs ({{ticket_code}}, {{customer_name}} atd.) při tisku z Jobi. */
+function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<string, unknown>): Record<string, string> {
   const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
-  if (addr) customerLines.push(`<div>${e(addr)}</div>`);
-  if (ticket.customerCompany) customerLines.push(`<div>${e(ticket.customerCompany)}</div>`);
-  if (ticket.customerIco) customerLines.push(`<div>IČO: ${e(ticket.customerIco)}</div>`);
-
-  const deviceLines: string[] = [];
-  if (ticket.deviceLabel) deviceLines.push(`<div>${e(ticket.deviceLabel)}</div>`);
-  if (ticket.serialOrImei) deviceLines.push(`<div>SN/IMEI: ${e(ticket.serialOrImei)}</div>`);
-  if (ticket.deviceCondition) deviceLines.push(`<div>Stav: ${e(ticket.deviceCondition)}</div>`);
-  const problem = ticket.requestedRepair || ticket.issueShort;
-  if (problem) deviceLines.push(`<div>Problém: ${e(problem)}</div>`);
-
-  let repairsHtml = "";
-  if (ticket.performedRepairs && ticket.performedRepairs.length > 0) {
-    repairsHtml = ticket.performedRepairs
-      .map(
-        (r) =>
-          `<div style="display:flex;justify-content:space-between;gap:12px;width:100%"><span>${e(r.name)}</span>${r.price != null ? `<span style="white-space:nowrap">${r.price} Kč</span>` : ""}</div>`
+  const totalPrice = ticket.performedRepairs?.length
+    ? ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0)
+    : 0;
+  const repairDateFormatted = new Date(ticket.createdAt).toLocaleDateString("cs-CZ");
+  const completionFormatted = ticket.expectedDoneAt ? new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ") : "";
+  const serviceName = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name) : "";
+  const serviceAddr = [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ");
+  const repairItems = ticket.performedRepairs?.length
+    ? JSON.stringify(
+        ticket.performedRepairs.map((r) => ({
+          name: r.name ?? "",
+          price: r.price != null ? `${r.price} Kč` : "",
+          quantity: 1,
+          unit: "ks",
+          total: r.price != null ? `${r.price} Kč` : "",
+        }))
       )
-      .join("");
-    const total = ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0);
-    repairsHtml += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.12);display:flex;justify-content:space-between;gap:12px;width:100%;font-weight:600;font-size:12px"><span>Celková cena</span><span style="white-space:nowrap">${total} Kč</span></div>`;
-  }
+    : "[]";
+  return {
+    ticket_code: ticket.code ?? "",
+    order_code: ticket.code ?? "",
+    customer_name: ticket.customerName ?? "",
+    customer_phone: ticket.customerPhone ?? "",
+    customer_email: ticket.customerEmail ?? "",
+    customer_address: addr,
+    device_name: ticket.deviceLabel ?? "",
+    device_serial: ticket.serialOrImei ?? "",
+    device_imei: ticket.serialOrImei ?? "",
+    device_state: ticket.deviceCondition ?? "",
+    device_problem: (ticket.requestedRepair || ticket.issueShort) ?? "",
+    service_name: serviceName,
+    service_phone: (companyData?.phone != null && String(companyData.phone).trim() !== "") ? String(companyData.phone) : "",
+    service_email: (companyData?.email != null && String(companyData.email).trim() !== "") ? String(companyData.email) : "",
+    service_address: serviceAddr,
+    service_ico: (companyData?.ico != null && String(companyData.ico).trim() !== "") ? String(companyData.ico) : "",
+    service_dic: (companyData?.dic != null && String(companyData.dic).trim() !== "") ? String(companyData.dic) : "",
+    repair_date: repairDateFormatted,
+    repair_completion_date: completionFormatted,
+    total_price: totalPrice > 0 ? `${totalPrice} Kč` : "",
+    warranty_until: "", // JobiDocs dopočte z repair_date a konfigurace záruky
+    diagnostic_text: ticket.diagnosticText ?? "",
+    note: (ticket as { notes?: string }).notes ?? "",
+    repair_items: repairItems,
+    photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
+    complaint_code: "",
+    reclamation_code: "",
+    original_ticket_code: ticket.code ?? "",
+  };
+}
 
-  const diagHtml = ticket.diagnosticText ? `<div>${e(ticket.diagnosticText)}</div>` : "";
-
-  let photosHtml = "";
-  if (ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0) {
-    photosHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap">${ticket.diagnosticPhotos
-      .map(
-        (url) =>
-          `<img src="${e(url)}" alt="Foto" style="width:60px;height:60px;object-fit:cover;border-radius:6px" />`
-      )
-      .join("")}</div>`;
-  }
-
-  const dateLines: string[] = [];
-  dateLines.push(`<div>Přijato: ${e(new Date(ticket.createdAt).toLocaleDateString("cs-CZ"))}</div>`);
-  if (ticket.expectedDoneAt) dateLines.push(`<div>Předpokládané dokončení: ${e(new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ"))}</div>`);
-  dateLines.push(`<div>Kód zakázky: ${e(ticket.code)}</div>`);
-
-  const sections: Partial<Record<string, string>> = {};
-  if (customerLines.length) sections.customer = customerLines.join("");
-  if (deviceLines.length) sections.device = deviceLines.join("");
-  if (repairsHtml) sections.repairs = repairsHtml;
-  if (diagHtml) sections.diag = diagHtml;
-  if (photosHtml) sections.photos = photosHtml;
-  sections.dates = dateLines.join("");
-
-  return sections;
+/** Sestaví proměnné pro dokument příjemky/výdejky reklamace (JobiDocs šablona). */
+function buildClaimVariablesForJobiDocs(claim: WarrantyClaimRow, originalTicketCode: string = ""): Record<string, string> {
+  const addr = [claim.customer_address_street, claim.customer_address_city, claim.customer_address_zip].filter(Boolean).join(", ");
+  return {
+    complaint_code: claim.code ?? "",
+    reclamation_code: claim.code ?? "",
+    original_ticket_code: originalTicketCode || "",
+    ticket_code: originalTicketCode || "",
+    customer_name: claim.customer_name ?? "",
+    customer_phone: claim.customer_phone ?? "",
+    customer_email: claim.customer_email ?? "",
+    customer_address: addr,
+    device_name: claim.device_label ?? "",
+    device_serial: claim.device_serial ?? "",
+    device_imei: claim.device_imei ?? "",
+    device_state: claim.device_condition ?? "",
+    device_problem: claim.notes ?? "",
+  };
 }
 
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
@@ -1302,9 +1390,9 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         ` : ""}
         <div class="doc-page">
         <div class="doc-content">
-        <div class="doc-code-block" style="margin-bottom: 16px; padding: 12px 16px; background: ${styles.bgColor}; border: 2px solid ${styles.borderColor}; border-radius: 8px; text-align: center;">
-          <div style="font-size: 11px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Kód zakázky</div>
-          <div style="font-size: 22px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.05em;">${ticket.code || "—"}</div>
+        <div class="doc-code-block" style="margin-bottom: 20px; padding: 16px 20px; background: ${styles.bgColor}; border: 3px solid ${styles.borderColor}; border-radius: 10px; text-align: center;">
+          <div style="font-size: 12px; font-weight: 700; color: ${styles.secondaryColor}; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Číslo zakázky</div>
+          <div style="font-size: 32px; font-weight: 900; color: ${styles.primaryColor}; letter-spacing: 0.08em; line-height: 1.2;">${ticket.code || "—"}</div>
         </div>
         <div class="header">
           <div class="header-left">
@@ -1424,6 +1512,19 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
         <div class="divider"></div>
         ` : ""}
         
+        ${documentsConfig.ticketList.includePhotos && ticket.diagnosticPhotosBefore && ticket.diagnosticPhotosBefore.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Fotky před</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin: 15px 0;">
+              ${ticket.diagnosticPhotosBefore.map((photoUrl) => `
+                <div style="border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                  <img src="${photoUrl}" alt="Fotka před" style="width: 100%; height: auto; display: block;" />
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="divider"></div>
+        ` : ""}
         ${documentsConfig.ticketList.includePhotos && ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? `
           <div class="section">
             <div class="section-title">Diagnostické fotografie</div>
@@ -1485,6 +1586,11 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -1493,12 +1599,27 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     });
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
-      const htmlContent = generateTicketHTML(ticket, true, config);
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      const companyData = safeLoadCompanyData();
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, filePath, { variables });
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateTicketHTML(ticket, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -1517,14 +1638,23 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "zakazkovy_list");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zakazkovy_list");
-  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, sections);
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2067,6 +2197,19 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
         <div class="divider"></div>
         ` : ""}
         
+        ${documentsConfig.diagnosticProtocol.includePhotos && ticket.diagnosticPhotosBefore && ticket.diagnosticPhotosBefore.length > 0 ? `
+          <div class="section">
+            <div class="section-title">Fotky před</div>
+            <div class="photo-grid">
+              ${ticket.diagnosticPhotosBefore.map((photoUrl) => `
+                <div class="photo-item">
+                  <img src="${photoUrl}" alt="Fotka před" />
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="divider"></div>
+        ` : ""}
         ${documentsConfig.diagnosticProtocol.includePhotos && ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? `
           <div class="section">
             <div class="section-title">Diagnostické fotografie</div>
@@ -2121,6 +2264,11 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -2130,12 +2278,26 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
       const companyData = safeLoadCompanyData();
-      const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, {}, filePath, { variables });
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateDiagnosticProtocolHTML(ticket, companyData, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -2154,14 +2316,23 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "diagnosticky_protokol");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "diagnosticky_protokol");
-  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, sections);
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const res = await printDocumentViaJobiDocs("diagnosticky_protokol", sid, companyData as Record<string, unknown>, {}, { variables });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2705,7 +2876,9 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
         ${documentsConfig.warrantyCertificate?.includeWarranty ? `
         <div class="section">
           <div class="section-title">Záruční podmínky</div>
-          ${documentsConfig.warrantyCertificate.warrantyType === "unified" ? (() => {
+          ${documentsConfig.warrantyCertificate.warrantyType === "custom" && documentsConfig.warrantyCertificate.warrantyCustomText
+            ? `<div class="field"><span class="field-value">${escapeHtmlForDoc(String(documentsConfig.warrantyCertificate.warrantyCustomText).trim())}</span></div>`
+            : documentsConfig.warrantyCertificate.warrantyType === "unified" ? (() => {
             const duration = documentsConfig.warrantyCertificate.warrantyUnifiedDuration || 12;
             const unit = documentsConfig.warrantyCertificate.warrantyUnifiedUnit || "months";
             let days = 0;
@@ -2888,6 +3061,11 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
     showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
+  const sid = serviceId ?? undefined;
+  if (!sid) {
+    showToast("Vyberte servis pro export.", "error");
+    return;
+  }
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -2897,12 +3075,29 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
     if (filePath) {
       const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
       const companyData = safeLoadCompanyData();
-      const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
-      const res = await exportViaJobiDocs(htmlContent, filePath);
+      const stillRunning = await isJobiDocsRunning();
+      if (!stillRunning) {
+        showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+        return;
+      }
+      const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      let res = await exportDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, {}, filePath, {
+        repair_date: new Date().toISOString(),
+        variables,
+      });
+      if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        const htmlContent = generateWarrantyHTML(ticket, companyData, true, config);
+        res = await exportViaJobiDocs(htmlContent, filePath);
+      }
       if (res.ok) {
+        const u = (await supabase?.auth.getUser())?.data?.user?.id;
+        if (u) {
+          checkAchievementOnFirstPrint(u);
+          checkAchievementOnPaperless(u);
+        }
         showToast("PDF uložen", "success");
       } else {
-        showToast(`JobiDocs: ${res.error}`, "error");
+        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
@@ -2921,14 +3116,26 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
-  const config = await getConfigWithProfile(serviceId ?? null, "zarucni_list");
   const companyData = safeLoadCompanyData();
-  const sections = buildTicketSectionsForJobiDocs(ticket, config, "zarucni_list");
-  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, sections);
+  const stillRunning = await isJobiDocsRunning();
+  if (!stillRunning) {
+    showToast("JobiDocs není dostupný. Zkontrolujte, že je spuštěný, a zkuste to znovu.", "error");
+    return;
+  }
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const res = await printDocumentViaJobiDocs("zarucni_list", sid, companyData as Record<string, unknown>, {}, {
+    repair_date: new Date().toISOString(), // záruka začíná datem tisku záručního listu
+    variables,
+  });
   if (res.ok) {
+    const u = (await supabase?.auth.getUser())?.data?.user?.id;
+    if (u) {
+      checkAchievementOnFirstPrint(u);
+      checkAchievementOnPaperless(u);
+    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
-    showToast(`JobiDocs: ${res.error}`, "error");
+    showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
 
@@ -2942,17 +3149,6 @@ async function quickPrintFromList(
   else await printWarranty(ticket, serviceId);
 }
 
-function openPreviewWindow(html: string, title: string = "Náhled") {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700,scrollbars=yes");
-  if (!w) {
-    showToast("Povolte v prohlížeči vyskakovací okna pro náhled.", "error");
-    return;
-  }
-  w.document.write(html);
-  w.document.close();
-  w.document.title = title;
-}
-
 /** Otevře náhled a po načtení automaticky spustí tisk (dialog Tisk). */
 function openPreviewWindowWithPrint(html: string, title: string = "Náhled") {
   const w = window.open("", "_blank", "noopener,noreferrer,width=900,height=700,scrollbars=yes");
@@ -2960,19 +3156,19 @@ function openPreviewWindowWithPrint(html: string, title: string = "Náhled") {
     showToast("Povolte v prohlížeči vyskakovací okna pro automatický tisk.", "error");
     return;
   }
-  const printScript = "<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>";
+  const printScript = "<script>window.onload=function(){setTimeout(function(){window.print();},400);};</script>";
   w.document.write(html + printScript);
   w.document.close();
   w.document.title = title;
 }
 
-// Document Action Picker Component (for each document type) – pořadí: Tisk, Export, Náhled
+// Document Action Picker Component (for each document type) – pořadí: Tisk, Export
 function DocumentActionPicker({
   label,
   onSelect,
 }: {
   label: string;
-  onSelect: (action: "print" | "export" | "preview") => void;
+  onSelect: (action: "print" | "export") => void;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -3014,7 +3210,6 @@ function DocumentActionPicker({
   const actions = [
     { value: "print" as const, label: "🖨️ Tisk" },
     { value: "export" as const, label: "💾 Export" },
-    { value: "preview" as const, label: "👁 Náhled" },
   ];
 
   const menu = open ? (
@@ -4972,6 +5167,8 @@ export default function Orders({
   onNewOrderPrefillConsumed,
   openTicketIntent,
   onOpenTicketIntentConsumed,
+  openClaimIntent,
+  onOpenClaimIntentConsumed,
   onOpenCustomer,
   onReturnToPage,
 }: OrdersProps) {
@@ -4988,8 +5185,15 @@ export default function Orders({
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
+  const [visibilityKey, setVisibilityKey] = useState(0);
   
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
+
+  useEffect(() => {
+    const onVisible = () => setVisibilityKey((k) => k + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   
   // Refs for race condition protection
   const ticketsReqIdRef = useRef(0);
@@ -5037,7 +5241,7 @@ export default function Orders({
     if (!activeServiceId || !supabase) return;
 
     const topic = `service_document_settings:${activeServiceId}`;
-    console.log("[RT] subscribe", topic, new Date().toISOString());
+    devLog("[RT] subscribe", topic, new Date().toISOString());
 
     const channel = supabase
       .channel(topic)
@@ -5050,7 +5254,7 @@ export default function Orders({
           filter: `service_id=eq.${activeServiceId}`,
         },
         async (payload) => {
-          console.log("[Orders] service_document_settings changed", payload);
+          devLog("[Orders] service_document_settings changed", payload);
           // Use ref to get current activeServiceId (not closure value)
           const sid = activeServiceIdRef.current;
           if (!sid) return;
@@ -5067,7 +5271,7 @@ export default function Orders({
       .subscribe();
 
     return () => {
-      console.log("[RT] unsubscribe", topic, new Date().toISOString());
+      devLog("[RT] unsubscribe", topic, new Date().toISOString());
       if (supabase) {
         supabase.removeChannel(channel);
       }
@@ -5084,7 +5288,7 @@ export default function Orders({
       .from("service_settings") as any)
       .select("config")
       .eq("service_id", activeServiceId)
-      .single()
+      .maybeSingle()
       .then(({ data }: any) => {
         setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
       })
@@ -5096,7 +5300,7 @@ export default function Orders({
       (supabase.from("service_settings") as any)
         .select("config")
         .eq("service_id", activeServiceId)
-        .single()
+        .maybeSingle()
         .then(({ data }: any) => {
           setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
         })
@@ -5124,7 +5328,7 @@ export default function Orders({
       try {
         const { data, error } = await (supabase!
           .from("tickets") as any)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
           .eq("service_id", activeServiceId)
           .is("deleted_at", null)
           .order("created_at", { ascending: false });
@@ -5162,7 +5366,7 @@ export default function Orders({
     return () => {
       ticketsReqIdRef.current++;
     };
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId, supabase, visibilityKey]);
 
   // Load warranty claims when activeServiceId changes
   useEffect(() => {
@@ -5197,33 +5401,59 @@ export default function Orders({
     };
     loadClaims();
     return () => { claimsReqIdRef.current++; };
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId, supabase, visibilityKey]);
 
-  const refetchClaims = useCallback(() => {
+  const refetchClaims = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
-    (supabase.from("warranty_claims") as any)
+    const { data, error } = await (supabase.from("warranty_claims") as any)
       .select("*")
       .eq("service_id", activeServiceId)
-      .order("created_at", { ascending: false })
-      .then(({ data, error }: any) => {
-        if (!error && data) setCloudClaims(data);
-      });
+      .order("created_at", { ascending: false });
+    if (!error && data) setCloudClaims(data);
   }, [activeServiceId, supabase]);
 
   const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
+
+  // Realtime subscription for warranty_claims
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const topic = `warranty_claims:${activeServiceId}`;
+    const client = supabase;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
+        () => refetchClaims()
+      )
+      .subscribe();
+    return () => {
+      if (client) client.removeChannel(channel);
+    };
+  }, [activeServiceId, supabase, refetchClaims]);
 
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
+  const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
+  const [captureQRLoading, setCaptureQRLoading] = useState(false);
+  const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
+
+  useEffect(() => {
+    if (!photoLightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPhotoLightbox(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [photoLightbox]);
 
   // Realtime subscription for tickets
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
 
     const topic = `tickets:${activeServiceId}`;
-    console.log("[RT] subscribe", topic, new Date().toISOString());
+    devLog("[RT] subscribe", topic, new Date().toISOString());
 
     const channel = supabase
       .channel(topic)
@@ -5236,10 +5466,10 @@ export default function Orders({
           filter: `service_id=eq.${activeServiceId}`,
         },
         async (payload) => {
-          console.log("[Orders] tickets changed", payload);
+          devLog("[Orders] tickets changed", payload);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            console.log("[RT tickets] event", payload.eventType, {
+            devLog("[RT tickets] event", payload.eventType, {
               id: (payload.new as any)?.id,
               service_id: (payload.new as any)?.service_id,
               status: (payload.new as any)?.status,
@@ -5255,7 +5485,7 @@ export default function Orders({
               // Ticket was restored - add it back
             setCloudTickets((prev) => {
                 const existing = prev.find((t) => t.id === newTicket.id);
-                console.log("[RT tickets] setCloudTickets (restore)", {
+                devLog("[RT tickets] setCloudTickets (restore)", {
                   id: newTicket.id,
                   hadExisting: !!existing,
                   prevLen: prev.length,
@@ -5278,7 +5508,7 @@ export default function Orders({
               // Ticket is not deleted - upsert
               setCloudTickets((prev) => {
                 const existing = prev.find((t) => t.id === newTicket.id);
-                console.log("[RT tickets] setCloudTickets (upsert)", {
+                devLog("[RT tickets] setCloudTickets (upsert)", {
                   id: newTicket.id,
                   hadExisting: !!existing,
                   prevLen: prev.length,
@@ -5292,7 +5522,7 @@ export default function Orders({
                   const newVersion = newTicket.version ?? 0;
                   if (newVersion > existingVersion) {
                     // Remote update detected during editing - show banner/toast
-                    console.log("[RT tickets] Remote update detected for edited ticket", {
+                    devLog("[RT tickets] Remote update detected for edited ticket", {
                       ticketId: newTicket.id,
                       existingVersion,
                       newVersion,
@@ -5330,7 +5560,7 @@ export default function Orders({
       .subscribe();
 
     return () => {
-      console.log("[RT] unsubscribe", topic, new Date().toISOString());
+      devLog("[RT] unsubscribe", topic, new Date().toISOString());
       if (supabase) {
         supabase.removeChannel(channel);
       }
@@ -5344,6 +5574,7 @@ export default function Orders({
 
   const [activeGroup, setActiveGroup] = useState<GroupKey>("active");
   const [activeStatusKey, setActiveStatusKey] = useState<string | null>(null);
+  const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
 
   const [query, setQuery] = useState("");
   const [statusById, setStatusById] = useState<Record<string, string>>({});
@@ -5594,6 +5825,17 @@ export default function Orders({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTicketIntent, tickets, ticketsLoading]);
 
+  useEffect(() => {
+    if (!openClaimIntent || !onOpenClaimIntentConsumed) return;
+    const { claimId } = openClaimIntent;
+    const exists = cloudClaims.some((c) => c.id === claimId);
+    if (exists) {
+      setDetailClaimId(claimId);
+      setDetailId(null);
+    }
+    onOpenClaimIntentConsumed();
+  }, [openClaimIntent, cloudClaims, onOpenClaimIntentConsumed]);
+
   const devicesData: DevicesData = useMemo(() => safeLoadDevicesData(), []);
   const inventoryData: InventoryData = useMemo(() => safeLoadInventoryData(), []);
 
@@ -5619,9 +5861,9 @@ export default function Orders({
   const draftDirty = useMemo(() => isDraftDirty(newDraft), [newDraft]);
 
   const validEnoughToCreate = useMemo(() => {
+    const hasDevices = newDraft.devices.length > 0 && newDraft.devices.every((d) => (d.deviceLabel || "").trim().length > 0);
     return (
-      newDraft.deviceLabel.trim().length > 0 &&
-      newDraft.requestedRepair.trim().length > 0 &&
+      hasDevices &&
       isEmailValid(newDraft.customerEmail) &&
       isPhoneValid(newDraft.customerPhone) &&
       isZipValid(newDraft.addressZip) &&
@@ -5874,7 +6116,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -5897,6 +6139,7 @@ export default function Orders({
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
+    userId: session?.user?.id ?? null,
     cloudTickets,
     setCloudTickets,
     setStatusById,
@@ -5926,7 +6169,7 @@ export default function Orders({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
-    return tickets
+    const base = tickets
       .filter((t) => {
         const raw = (t.status as any) ?? statusById[t.id];
         const st = normalizeStatus(raw);
@@ -5960,35 +6203,62 @@ export default function Orders({
           (t.externalId ?? "").toLowerCase().includes(q)
         );
       });
+    // Explicitně řadit od nejnovějších, aby stránkování bylo konzistentní
+    return [...base].sort(
+      (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+    );
   }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
   const filteredClaims = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return cloudClaims;
-    return cloudClaims.filter(
-      (c) =>
-        (c.code?.toLowerCase().includes(q)) ||
-        (c.customer_name?.toLowerCase().includes(q)) ||
-        (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
-        (c.device_serial?.toLowerCase().includes(q)) ||
-        (c.device_label?.toLowerCase().includes(q)) ||
-        (c.notes?.toLowerCase().includes(q))
+    const base = !q
+      ? cloudClaims
+      : cloudClaims.filter(
+          (c) =>
+            (c.code?.toLowerCase().includes(q)) ||
+            (c.customer_name?.toLowerCase().includes(q)) ||
+            (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
+            (c.device_serial?.toLowerCase().includes(q)) ||
+            (c.device_label?.toLowerCase().includes(q)) ||
+            (c.notes?.toLowerCase().includes(q))
+        );
+    // Explicitně řadit od nejnovějších kvůli konzistentnímu stránkování
+    return [...base].sort(
+      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     );
   }, [cloudClaims, query]);
 
-  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active") && ordersShowClaimsInList;
+  const filteredClaimsForTab = useMemo(() => {
+    if (activeGroup !== "reklamace") return filteredClaims;
+    if (claimsSubGroup === "all") return filteredClaims;
+    return filteredClaims.filter((c) => {
+      const st = normalizeStatus((c.status as string) ?? "");
+      if (st === null) return claimsSubGroup === "active";
+      if (claimsSubGroup === "final") return isFinal(st);
+      return !isFinal(st);
+    });
+  }, [activeGroup, claimsSubGroup, filteredClaims, normalizeStatus, isFinal]);
+
+  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active" || activeGroup === "final") && ordersShowClaimsInList;
   const combinedList = useMemo(() => {
     if (!showClaimsInOrdersList) return [];
     const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
-    const claimItems = filteredClaims.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
+    const claimsForGroup = filteredClaims.filter((c) => {
+      const st = normalizeStatus((c.status as string) ?? "");
+      if (st === null) return activeGroup === "all";
+      if (activeGroup === "all") return true;
+      if (activeGroup === "final") return isFinal(st);
+      return !isFinal(st);
+    });
+    const claimItems = claimsForGroup.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
     return [...ticketItems, ...claimItems].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [showClaimsInOrdersList, filtered, filteredClaims]);
+  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, normalizeStatus, isFinal]);
 
   const pageSize = uiCfg.orders.pageSize ?? 50;
   const listLength = activeGroup === "reklamace"
-    ? filteredClaims.length
+    ? filteredClaimsForTab.length
     : showClaimsInOrdersList
       ? combinedList.length
       : filtered.length;
@@ -5999,8 +6269,8 @@ export default function Orders({
     [filtered, ordersPage, pageSize, effectivePageSize]
   );
   const paginatedClaims = useMemo(
-    () => (pageSize <= 0 ? filteredClaims : filteredClaims.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filteredClaims, ordersPage, pageSize, effectivePageSize]
+    () => (pageSize <= 0 ? filteredClaimsForTab : filteredClaimsForTab.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
+    [filteredClaimsForTab, ordersPage, pageSize, effectivePageSize]
   );
   const paginatedCombined = useMemo(
     () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
@@ -6009,7 +6279,7 @@ export default function Orders({
 
   useEffect(() => {
     setOrdersPage(0);
-  }, [query, activeStatusKey, activeGroup]);
+  }, [query, activeStatusKey, activeGroup, claimsSubGroup]);
 
   useEffect(() => {
     setOrdersPage(0);
@@ -6342,11 +6612,16 @@ export default function Orders({
       showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
       return;
     }
-    const prev = cloudClaims.find((c) => c.id === claimId)?.status;
-    setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: next } : c)));
-    const ok = await updateClaimStatus(claimId, next);
-    if (!ok) {
-      setCloudClaims((p) => p.map((c) => (c.id === claimId && prev ? { ...c, status: prev } : c)));
+    const prev = cloudClaims.find((c) => c.id === claimId);
+    const completedAt = isFinal(next) ? new Date().toISOString() : null;
+    setCloudClaims((p) =>
+      p.map((c) =>
+        c.id === claimId ? { ...c, status: next, ...(completedAt ? { completed_at: completedAt } : {}) } : c
+      )
+    );
+    const ok = await updateClaimStatus(claimId, next, completedAt ?? undefined);
+    if (!ok && prev) {
+      setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: prev.status } : c)));
     }
   };
 
@@ -6373,6 +6648,7 @@ export default function Orders({
       notes: detailedClaim.notes ?? "",
       resolution_summary: detailedClaim.resolution_summary ?? "",
       status: detailedClaim.status,
+      expected_completion_at: detailedClaim.expected_completion_at ?? null,
     });
     setIsEditingClaim(true);
   }, [detailedClaim]);
@@ -6421,6 +6697,7 @@ export default function Orders({
     if (c.device_passcode !== undefined) payload.device_passcode = c.device_passcode || null;
     if (c.notes !== undefined) payload.notes = c.notes || "";
     if (c.status !== undefined) payload.status = c.status;
+    if ("expected_completion_at" in c && (c as any).expected_completion_at !== undefined) payload.expected_completion_at = (c as any).expected_completion_at;
     const updated = await updateClaim(detailedClaim.id, payload as any);
     if (!updated) return false;
     setCloudClaims((prev) => prev.map((cl) => (cl.id === detailedClaim.id ? { ...cl, ...updated } : cl)));
@@ -6461,10 +6738,10 @@ export default function Orders({
         const ticketUpdated = ticket ? { ...ticket, status: next as any } : tickets.find((t) => t.id === ticketId);
         if (config?.autoPrint && ticketUpdated) {
           if (config.autoPrint.ticketListOnStatusKey === next) {
-            openPreviewWindowWithPrint(generateTicketHTML(ticketUpdated as TicketEx, true, config), "Zakázkový list");
+            printTicket(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
           if (config.autoPrint.warrantyOnStatusKey === next) {
-            openPreviewWindowWithPrint(generateWarrantyHTML(ticketUpdated as TicketEx, safeLoadCompanyData(), true, config), "Záruční list");
+            printWarranty(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
         }
       } catch (err: any) {
@@ -6520,7 +6797,7 @@ export default function Orders({
   }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
 
   const handleCloseDetail = useCallback(async () => {
-    console.log("[Close] clicked - about to save?");
+    devLog("[Close] clicked - about to save?");
     
     // Check if there are any unsaved changes
     const hasUnsavedChanges = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
@@ -6556,9 +6833,14 @@ export default function Orders({
     }
   }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags]);
 
+  // Escape: zavřít detail/modal; v capture phase + preventDefault, aby v fullscreen neukončil fullscreen
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      const hasSomethingToClose = ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
+      if (!hasSomethingToClose) return;
+      e.preventDefault();
+      e.stopPropagation();
       if (ticketHistoryModalOpen) {
         setTicketHistoryModalOpen(false);
         return;
@@ -6580,8 +6862,12 @@ export default function Orders({
         }
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
   }, [detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
@@ -6610,12 +6896,14 @@ export default function Orders({
     const onKey = (e: KeyboardEvent) => {
       if (comboMatchesEvent(e, getShortcut("order_print"))) {
         e.preventDefault();
+        const uid = session?.user?.id;
+        if (uid) checkAchievementOnShortcutUsed(uid);
         printTicket(detailedTicket, activeServiceId);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailedTicket, activeServiceId]);
+  }, [detailedTicket, activeServiceId, session?.user?.id]);
 
   // Enter v náhledu zakázky při úpravách = Uložit a zavřít (kromě textarea, kde Enter = nový řádek)
   useEffect(() => {
@@ -6662,7 +6950,8 @@ export default function Orders({
       handbackMethod: detailedTicket.handbackMethod || "",
       deviceNote: detailedTicket.deviceNote || "",
       externalId: detailedTicket.externalId || "",
-    });
+      expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
+    } as any);
     setIsEditing(true);
   }, [detailedTicket]);
 
@@ -6679,6 +6968,7 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_search"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         searchInputRef.current?.focus();
         return;
       }
@@ -6686,18 +6976,21 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_new"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         openNewOrderRef.current();
         return;
       }
       if (detailId && !isEditing && comboMatchesEvent(e, getShortcut("order_detail_edit"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         startEditingRef.current();
         return;
       }
       if (detailId && isEditing && comboMatchesEvent(e, getShortcut("order_detail_save"))) {
         e.preventDefault();
         e.stopPropagation();
+        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         saveTicketChangesRef.current();
         return;
       }
@@ -6709,11 +7002,13 @@ export default function Orders({
       doc.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [detailId, isEditing]);
+  }, [detailId, isEditing, session?.user?.id]);
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
-    if (!newDraft.deviceLabel.trim()) e.deviceLabel = "Vyplň zařízení.";
+    newDraft.devices.forEach((dev, i) => {
+      if (!dev.deviceLabel.trim()) e[`deviceLabel_${i}`] = "Vyplň zařízení.";
+    });
     const phoneRequired = uiCfg.orders.customerPhoneRequired;
     if (phoneRequired && !newDraft.customerPhone.trim()) e.customerPhone = "Telefon je povinný.";
     else if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
@@ -6725,6 +7020,7 @@ export default function Orders({
 
   const canCreate = Object.keys(errors).length === 0;
   const showError = (field: string) => submitAttempted && !!errors[field];
+  const showDeviceError = (idx: number) => submitAttempted && !!errors[`deviceLabel_${idx}`];
 
   const createTicket = () => {
     setSubmitAttempted(true);
@@ -6735,7 +7031,7 @@ export default function Orders({
     createTicketAction({
       newDraft,
       customerMatchDecision,
-      onSuccess: async (newTicket) => {
+      onSuccess: async (tickets) => {
         setNewDraft(defaultDraft());
         setIsNewOpen(false);
         setSubmitAttempted(false);
@@ -6748,14 +7044,14 @@ export default function Orders({
         }
         safeSaveDraft(null);
         window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
-        setDetailId(newTicket.id);
+        const first = tickets[0];
+        if (first) setDetailId(first.id);
         const config = await loadDocumentsConfigFromDB(activeServiceId);
-        if (config?.autoPrint?.ticketListOnCreate) {
-          openPreviewWindowWithPrint(generateTicketHTML(newTicket, true, config), "Zakázkový list");
+        if (first && config?.autoPrint?.ticketListOnCreate) {
+          printTicket(first, activeServiceId).then(() => {});
         }
-        if (config?.autoPrint?.warrantyOnCreate) {
-          const companyData = safeLoadCompanyData();
-          openPreviewWindowWithPrint(generateWarrantyHTML(newTicket, companyData, true, config), "Záruční list");
+        if (first && config?.autoPrint?.warrantyOnCreate) {
+          printWarranty(first, activeServiceId).then(() => {});
         }
       },
     });
@@ -7063,6 +7359,46 @@ export default function Orders({
         })}
       </div>
 
+      {/* Reklamace sub-filter: Aktivní / Final */}
+      {activeGroup === "reklamace" && (
+        <div data-tour="orders-claims-subfilter" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {[
+            { key: "all" as const, label: "Vše" },
+            { key: "active" as const, label: "Aktivní" },
+            { key: "final" as const, label: "Final" },
+          ].map((g) => {
+            const active = g.key === claimsSubGroup;
+            return (
+              <button
+                key={g.key}
+                onClick={() => setClaimsSubGroup(g.key)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: active ? "var(--accent-soft)" : "var(--panel)",
+                  color: active ? "var(--accent)" : "var(--text)",
+                  fontWeight: active ? 700 : 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+                  boxShadow: "var(--shadow-soft)",
+                  transition: "var(--transition-smooth)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) e.currentTarget.style.background = "var(--panel-2)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) e.currentTarget.style.background = "var(--panel)";
+                }}
+              >
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Secondary quick status filters */}
       {showSecondaryFiltersRow && (
         <div data-tour="orders-filters" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -7144,6 +7480,11 @@ export default function Orders({
         {activeGroup === "reklamace"
           ? paginatedClaims.map((c) => {
               const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+              const displayMode = uiCfg.orders.displayMode;
+              const rawStatus = (c.status as string | null) ?? "";
+              const currentStatus = normalizeStatus(rawStatus);
+              const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
+              const statusColor = claimMeta?.bg || "var(--border)";
               return (
                 <div
                   key={c.id}
@@ -7151,34 +7492,107 @@ export default function Orders({
                   style={{
                     textAlign: "left",
                     padding: 0,
-                    borderRadius: isCompactExtra ? 8 : 12,
-                    border: "1px solid rgba(13, 148, 136, 0.4)",
-                    background: "var(--panel)",
+                    borderRadius: isCompactExtra ? 8 : 16,
+                    border: `2px solid ${statusColor}`,
+                    background: "#fff",
                     cursor: "pointer",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                    boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
+                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
                     color: "var(--text)",
                     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                     position: "relative",
                     overflow: "hidden",
                     display: "flex",
-                    flexDirection: "column",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.18)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.6)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.4)"; }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
+                  }}
                 >
-                  <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
-                  <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
-                      <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                      <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                        <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                      </span>
-                    </div>
+                  <div style={{
+                    width: isCompactExtra ? 6 : 10,
+                    background: statusColor,
+                    flexShrink: 0,
+                  }} />
+                  <div style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
+                  }}>
+                    {isCompactExtra ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+                        <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                        <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                          <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
+                            <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                            <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                            <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                            <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                          </div>
+                        </div>
+                        {displayMode === "compact" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                              <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                                <DeviceIcon size={14} color="#0d9488" />
+                                <span>{c.device_label || "—"}</span>
+                              </div>
+                              <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                            </div>
+                            {c.notes && (
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                                <WrenchIcon size={12} color="var(--text)" />
+                                <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
+                                <DeviceIcon size={16} color="currentColor" />
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                  <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
+                                  <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                </div>
+                                {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
+                              </div>
+                            </div>
+                            {c.notes && (
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
+                                  <WrenchIcon size={16} color="currentColor" />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -7189,6 +7603,11 @@ export default function Orders({
                   ? (() => {
                       const c = row.data;
                       const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
+                      const displayMode = uiCfg.orders.displayMode;
+                      const rawStatus = (c.status as string | null) ?? "";
+                      const currentStatus = normalizeStatus(rawStatus);
+                      const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
+                      const statusColor = claimMeta?.bg || "var(--border)";
                       return (
                         <div
                           key={`claim-${c.id}`}
@@ -7196,34 +7615,107 @@ export default function Orders({
                           style={{
                             textAlign: "left",
                             padding: 0,
-                            borderRadius: isCompactExtra ? 8 : 12,
-                            border: "1px solid rgba(13, 148, 136, 0.45)",
-                            background: "var(--panel)",
+                            borderRadius: isCompactExtra ? 8 : 16,
+                            border: `2px solid ${statusColor}`,
+                            background: "#fff",
                             cursor: "pointer",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                            boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
+                            transition: "transform 0.15s ease, box-shadow 0.15s ease",
                             color: "var(--text)",
                             fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                             position: "relative",
                             overflow: "hidden",
                             display: "flex",
-                            flexDirection: "column",
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(13,148,136,0.2)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.65)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.borderColor = "rgba(13,148,136,0.45)"; }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
+                          }}
                         >
-                          <div style={{ height: 5, background: "linear-gradient(90deg, #0d9488 0%, #0f766e 100%)", flexShrink: 0 }} />
-                          <div style={{ padding: isCompactExtra ? "8px 10px" : "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", letterSpacing: "-0.02em" }}>{c.code}</span>
-                              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0f766e", fontWeight: 700 }}>Reklamace</span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
-                            <div style={{ fontSize: 11, color: "var(--muted)", opacity: 0.9 }}>{(c.device_label || c.device_serial || "—").toString().slice(0, 50)}</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                              <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                                <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                              </span>
-                            </div>
+                          <div style={{
+                            width: isCompactExtra ? 6 : 10,
+                            background: statusColor,
+                            flexShrink: 0,
+                          }} />
+                          <div style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
+                          }}>
+                            {isCompactExtra ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
+                                <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                  <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
+                                    <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
+                                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
+                                    <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                                    <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
+                                  </div>
+                                </div>
+                                {displayMode === "compact" ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                                      <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                                        <DeviceIcon size={14} color="#0d9488" />
+                                        <span>{c.device_label || "—"}</span>
+                                      </div>
+                                      <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                    </div>
+                                    {c.notes && (
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                                        <WrenchIcon size={12} color="var(--text)" />
+                                        <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
+                                        <DeviceIcon size={16} color="currentColor" />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                          <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
+                                          <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
+                                        </div>
+                                        {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
+                                      </div>
+                                    </div>
+                                    {c.notes && (
+                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
+                                          <WrenchIcon size={16} color="currentColor" />
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -7233,34 +7725,131 @@ export default function Orders({
           : paginatedTickets.map((t) => renderTicketCard(t))
         }
 
-        {pageSize > 0 && listLength > pageSize && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 16, padding: "12px 16px", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>
-              Zobrazeno {ordersPage * effectivePageSize + 1}–{Math.min((ordersPage + 1) * effectivePageSize, listLength)} z {listLength} {activeGroup === "reklamace" ? "reklamací" : "zakázek"}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
-                disabled={ordersPage === 0}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage === 0 ? "not-allowed" : "pointer", opacity: ordersPage === 0 ? 0.5 : 1 }}
-              >
-                ◀ Předchozí
-              </button>
-              <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 80, textAlign: "center" }}>
-                Strana {ordersPage + 1} z {totalOrdersPages}
+        {pageSize > 0 && listLength > pageSize && (() => {
+          const from = ordersPage * effectivePageSize + 1;
+          const to = Math.min((ordersPage + 1) * effectivePageSize, listLength);
+          const label = activeGroup === "reklamace" ? "reklamací" : "zakázek";
+          const maxPageButtons = 7;
+          const showPageNumbers = totalOrdersPages <= maxPageButtons;
+          const getPageNumbers = (): number[] => {
+            if (totalOrdersPages <= maxPageButtons) {
+              return Array.from({ length: totalOrdersPages }, (_, i) => i);
+            }
+            const cur = ordersPage;
+            const last = totalOrdersPages - 1;
+            const pages: number[] = [0];
+            if (cur > 2) pages.push(-1);
+            for (let i = Math.max(1, cur - 1); i <= Math.min(last - 1, cur + 1); i++) {
+              if (!pages.includes(i)) pages.push(i);
+            }
+            if (cur < last - 2) pages.push(-2);
+            if (last > 0 && !pages.includes(last)) pages.push(last);
+            return pages;
+          };
+          const pageNumbers = getPageNumbers();
+          const btnBase = {
+            minWidth: 36,
+            height: 36,
+            padding: "0 10px",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--panel)",
+            color: "var(--text)",
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer" as const,
+            transition: "background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
+          };
+          const btnDisabled = { opacity: 0.45, cursor: "not-allowed" as const };
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                marginTop: 20,
+                padding: "14px 20px",
+                background: "var(--panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
+                Zobrazeno <strong style={{ color: "var(--text)", fontWeight: 700 }}>{from}–{to}</strong> z {listLength} {label}
               </span>
-              <button
-                type="button"
-                onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
-                disabled={ordersPage >= totalOrdersPages - 1}
-                style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, fontSize: 13, cursor: ordersPage >= totalOrdersPages - 1 ? "not-allowed" : "pointer", opacity: ordersPage >= totalOrdersPages - 1 ? 0.5 : 1 }}
-              >
-                Další ▶
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  aria-label="Předchozí stránka"
+                  onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
+                  disabled={ordersPage === 0}
+                  style={{
+                    ...btnBase,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    ...(ordersPage === 0 ? btnDisabled : {}),
+                  }}
+                  onMouseEnter={(e) => { if (ordersPage > 0) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                >
+                  ‹
+                </button>
+                {showPageNumbers ? (
+                  pageNumbers.map((p) => {
+                    if (p === -1) return <span key="ell-left" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
+                    if (p === -2) return <span key="ell-right" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
+                    const isCurrent = p === ordersPage;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        aria-label={`Stránka ${p + 1}`}
+                        aria-current={isCurrent ? "page" : undefined}
+                        onClick={() => setOrdersPage(p)}
+                        style={{
+                          ...btnBase,
+                          background: isCurrent ? "var(--accent)" : "var(--panel)",
+                          color: isCurrent ? "white" : "var(--text)",
+                          borderColor: isCurrent ? "var(--accent)" : "var(--border)",
+                          ...(isCurrent ? { boxShadow: "0 2px 8px var(--accent-glow)" } : {}),
+                        }}
+                        onMouseEnter={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; } }}
+                        onMouseLeave={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; } }}
+                      >
+                        {p + 1}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 72, textAlign: "center", fontWeight: 600 }}>
+                    {ordersPage + 1} / {totalOrdersPages}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label="Další stránka"
+                  onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
+                  disabled={ordersPage >= totalOrdersPages - 1}
+                  style={{
+                    ...btnBase,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    ...(ordersPage >= totalOrdersPages - 1 ? btnDisabled : {}),
+                  }}
+                  onMouseEnter={(e) => { if (ordersPage < totalOrdersPages - 1) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                >
+                  ›
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {listLength === 0 && (
           <div
@@ -7634,126 +8223,294 @@ export default function Orders({
 
           {/* ZAŘÍZENÍ */}
           <div style={card}>
-            <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>Zařízení</div>
+            <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 12 }}>Zařízení</div>
+            {newDraft.devices.map((dev, idx) => (
+              <div key={idx} style={{ padding: idx > 0 ? "16px 0 0" : 0, borderTop: idx > 0 ? "1px solid var(--border)" : "none", marginTop: idx > 0 ? 16 : 0 }}>
+                {idx > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Zařízení {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))}
+                      style={{ ...softBtn, padding: "4px 10px", fontSize: 12 }}
+                    >
+                      Odebrat
+                    </button>
+                  </div>
+                )}
+                <div style={fieldLabel}>Zařízení *</div>
+                <DeviceAutocomplete
+                  value={dev.deviceLabel}
+                  onChange={(value) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceLabel: value } : d)),
+                    }))
+                  }
+                  models={modelsWithHierarchy}
+                  error={showDeviceError(idx)}
+                />
+                {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
 
-            <div style={fieldLabel}>Zařízení *</div>
-            <DeviceAutocomplete
-              value={newDraft.deviceLabel}
-              onChange={(value) => setNewDraft((p) => ({ ...p, deviceLabel: value }))}
-              models={modelsWithHierarchy}
-              error={showError("deviceLabel")}
-            />
-            {showError("deviceLabel") && <div style={fieldHint}>{errors.deviceLabel}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={fieldLabel}>IMEI / SN</div>
+                    <input
+                      value={dev.serialOrImei}
+                      onChange={(e) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
+                        }))
+                      }
+                      style={baseFieldInput}
+                      placeholder="Volitelné"
+                    />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Heslo / kód</div>
+                    <input
+                      value={dev.devicePasscode}
+                      onChange={(e) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, devicePasscode: e.target.value } : d)),
+                        }))
+                      }
+                      style={baseFieldInput}
+                      placeholder="např. 1234 / 0000"
+                    />
+                  </div>
+                </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={fieldLabel}>IMEI / SN</div>
+                <div style={fieldLabel}>Popis stavu</div>
                 <input
-                  value={newDraft.serialOrImei}
-                  onChange={(e) => setNewDraft((p) => ({ ...p, serialOrImei: e.target.value }))}
+                  list="new-order-device-condition-list"
+                  value={dev.deviceCondition}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceCondition: e.target.value } : d)),
+                    }))
+                  }
                   style={baseFieldInput}
-                  placeholder="Volitelné"
+                  placeholder="Vyberte nebo napište vlastní (např. rozbitý displej, oděrky…)"
                 />
-              </div>
 
-              <div>
-                <div style={fieldLabel}>Heslo / kód (volitelné)</div>
+                <div style={fieldLabel}>Příslušenství</div>
                 <input
-                  value={newDraft.devicePasscode}
-                  onChange={(e) => setNewDraft((p) => ({ ...p, devicePasscode: e.target.value }))}
+                  list="new-order-device-accessories-list"
+                  value={dev.deviceAccessories}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceAccessories: e.target.value } : d)),
+                    }))
+                  }
                   style={baseFieldInput}
-                  placeholder="např. 1234 / 0000"
+                  placeholder="Vyberte nebo napište vlastní (např. nabíječka, pouzdro…)"
+                />
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                  <DateTimePicker
+                    value={dev.expectedCompletionAt ?? null}
+                    onChange={(v) => {
+                      setNewDraft((p) => {
+                        if (idx === 0) {
+                          return { ...p, devices: p.devices.map((d) => ({ ...d, expectedCompletionAt: v })) };
+                        }
+                        return {
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, expectedCompletionAt: v } : d)),
+                        };
+                      });
+                    }}
+                    inputStyle={baseFieldInput}
+                  />
+                </div>
+
+                <div style={fieldLabel}>Požadovaná oprava</div>
+                <textarea
+                  value={dev.requestedRepair}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, requestedRepair: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldTextArea}
+                  placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={fieldLabel}>Způsob převzetí</div>
+                    <HandoffMethodSelect
+                      options={getHandoffOptions().receiveMethods}
+                      value={dev.handoffMethod}
+                      onChange={(v) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, handoffMethod: v } : d)),
+                        }))
+                      }
+                      triggerStyle={baseFieldInput}
+                    />
+                  </div>
+                  <div>
+                    <div style={fieldLabel}>Způsob předání</div>
+                    <HandoffMethodSelect
+                      options={getHandoffOptions().returnMethods}
+                      value={dev.handbackMethod}
+                      onChange={(v) =>
+                        setNewDraft((p) => ({
+                          ...p,
+                          devices: p.devices.map((d, i) => (i === idx ? { ...d, handbackMethod: v } : d)),
+                        }))
+                      }
+                      triggerStyle={baseFieldInput}
+                    />
+                  </div>
+                </div>
+
+                <div style={fieldLabel}>Externí identifikace</div>
+                <input
+                  value={dev.externalId}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, externalId: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldInput}
+                  placeholder="Např. číslo zakázky partnera"
+                />
+
+                <div style={fieldLabel}>Předschválená cena</div>
+                <input
+                  type="number"
+                  value={dev.estimatedPrice ?? ""}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, estimatedPrice: e.target.value ? Number(e.target.value) : undefined } : d)),
+                    }))
+                  }
+                  style={baseFieldInput}
+                  placeholder="Kč"
+                  min="0"
+                  step="1"
+                />
+
+                <div style={fieldLabel}>Poznámka k zařízení</div>
+                <textarea
+                  value={dev.deviceNote}
+                  onChange={(e) =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceNote: e.target.value } : d)),
+                    }))
+                  }
+                  style={baseFieldTextArea}
+                  placeholder="Poznámka pro technika…"
                 />
               </div>
-            </div>
-
-            <div style={fieldLabel}>Popis stavu</div>
-            <input
-              list="new-order-device-condition-list"
-              value={newDraft.deviceCondition}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceCondition: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Vyberte nebo napište vlastní (např. rozbitý displej, oděrky…)"
-            />
-            <datalist id="new-order-device-condition-list">
-              {getDeviceOptions().deviceConditions.map((c, i) => (
-                <option key={i} value={c} />
-              ))}
-            </datalist>
-
-            <div style={fieldLabel}>Příslušenství</div>
-            <input
-              list="new-order-device-accessories-list"
-              value={newDraft.deviceAccessories}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceAccessories: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Vyberte nebo napište vlastní (např. nabíječka, pouzdro…)"
-            />
-            <datalist id="new-order-device-accessories-list">
-              {getDeviceOptions().deviceAccessories.map((a, i) => (
-                <option key={i} value={a} />
-              ))}
-            </datalist>
-
-            <div style={fieldLabel}>Požadovaná oprava</div>
-            <textarea
-              value={newDraft.requestedRepair}
-              onChange={(e) => setNewDraft((p) => ({ ...p, requestedRepair: e.target.value }))}
-              style={baseFieldTextArea}
-              placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
-            />
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <div style={fieldLabel}>Způsob převzetí</div>
-                <HandoffMethodSelect
-                  options={getHandoffOptions().receiveMethods}
-                  value={newDraft.handoffMethod}
-                  onChange={(v) => setNewDraft((p) => ({ ...p, handoffMethod: v }))}
-                  triggerStyle={baseFieldInput}
-                />
-              </div>
-              <div>
-                <div style={fieldLabel}>Způsob předání</div>
-                <HandoffMethodSelect
-                  options={getHandoffOptions().returnMethods}
-                  value={newDraft.handbackMethod}
-                  onChange={(v) => setNewDraft((p) => ({ ...p, handbackMethod: v }))}
-                  triggerStyle={baseFieldInput}
-                />
-              </div>
-            </div>
-
-            <div style={fieldLabel}>Externí identifikace</div>
-            <input
-              value={newDraft.externalId}
-              onChange={(e) => setNewDraft((p) => ({ ...p, externalId: e.target.value }))}
-              style={baseFieldInput}
-              placeholder="Např. číslo zakázky partnera"
-            />
-
-            <div style={fieldLabel}>Předschválená cena</div>
-            <input
-              type="number"
-              value={newDraft.estimatedPrice ?? ""}
-              onChange={(e) => setNewDraft((p) => ({ ...p, estimatedPrice: e.target.value ? Number(e.target.value) : undefined }))}
-              style={baseFieldInput}
-              placeholder="Kč"
-              min="0"
-              step="1"
-            />
-
-            <div style={fieldLabel}>Poznámka k zařízení</div>
-            <textarea
-              value={newDraft.deviceNote}
-              onChange={(e) => setNewDraft((p) => ({ ...p, deviceNote: e.target.value }))}
-              style={baseFieldTextArea}
-              placeholder="Poznámka pro technika…"
-            />
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setNewDraft((p) => ({
+                  ...p,
+                  devices: [
+                    ...p.devices,
+                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
+                  ],
+                }))
+              }
+              style={{ ...softBtn, marginTop: 16, width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              + Přidat další zařízení
+            </button>
           </div>
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        {/* Fotky při příjmu */}
+        <div style={{ marginTop: 16, ...card, gridColumn: "1 / -1" }}>
+          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 10 }}>📷 Fotky při příjmu</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
+              <div key={idx} style={{ position: "relative" }}>
+                <img
+                  src={dataUrl}
+                  alt={`Fotka ${idx + 1}`}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewDraft((p) => ({
+                      ...p,
+                      diagnosticPhotosBefore: (p.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
+                    }))
+                  }
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    background: "rgba(239, 68, 68, 0.9)",
+                    color: "white",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: "pointer", marginTop: 8, display: "inline-block" }}>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                e.target.value = "";
+                if (!files.length) return;
+                const reader = (f: File) =>
+                  new Promise<string>((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result as string);
+                    r.onerror = () => reject(new Error("Načtení selhalo"));
+                    r.readAsDataURL(f);
+                  });
+                Promise.all(files.map(reader)).then((urls) => {
+                  setNewDraft((p) => ({
+                    ...p,
+                    diagnosticPhotosBefore: [...(p.diagnosticPhotosBefore || []), ...urls],
+                  }));
+                });
+              }}
+            />
+            Nahrát fotky
+          </label>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button
             onClick={() => {
               setNewDraft(defaultDraft());
@@ -7771,6 +8528,65 @@ export default function Orders({
             style={softBtn}
           >
             Zrušit
+          </button>
+          <button
+            onClick={async () => {
+              setSubmitAttempted(true);
+              if (!canCreate) return;
+              createTicketAction({
+                newDraft,
+                customerMatchDecision,
+                onSuccess: async (tickets) => {
+                  setNewDraft(defaultDraft());
+                  setIsNewOpen(false);
+                  setSubmitAttempted(false);
+                  setCustomerMatchDecision("undecided");
+                  setMatchedCustomer(null);
+                  lastLookupPhoneNormRef.current = null;
+                  if (phoneLookupDebounceTimerRef.current) {
+                    clearTimeout(phoneLookupDebounceTimerRef.current);
+                    phoneLookupDebounceTimerRef.current = null;
+                  }
+                  safeSaveDraft(null);
+                  window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
+                  const first = tickets[0];
+                  if (first) setDetailId(first.id);
+                  if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !tickets.length) return;
+                  setCaptureQRLoading(true);
+                  try {
+                    const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+                    if (refreshErr) throw new Error("Session vypršela.");
+                    const token = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
+                    if (!token) throw new Error("Nejste přihlášeni.");
+                    const items: Array<{ deviceLabel: string; url: string }> = [];
+                    for (const t of tickets) {
+                      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                        body: JSON.stringify({ ticketId: t.id, isBefore: true }),
+                      });
+                      const raw = await res.text();
+                      const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
+                      if (!res.ok) throw new Error(data.error || res.statusText);
+                      if (data.url) items.push({ deviceLabel: t.deviceLabel || t.code || "Zakázka", url: data.url });
+                    }
+                    if (items.length) setCaptureQRItems(items);
+                  } catch (err) {
+                    showToast(normalizeError(err) || "Nepodařilo vytvořit QR pro focení.", "error");
+                  } finally {
+                    setCaptureQRLoading(false);
+                  }
+                },
+              });
+            }}
+            disabled={!canCreate || captureQRLoading}
+            style={{
+              ...softBtn,
+              opacity: canCreate && !captureQRLoading ? 1 : 0.55,
+              cursor: canCreate && !captureQRLoading ? "pointer" : "not-allowed",
+            }}
+          >
+            {captureQRLoading ? "⏳ Vytvářím…" : "📱 Udělat přijímací fotky"}
           </button>
           <button
             onClick={createTicket}
@@ -7907,10 +8723,74 @@ export default function Orders({
                   <DocumentActionPicker
                     label="Přijetí reklamace"
                     onSelect={async (action) => {
-                      const config = await loadDocumentsConfigFromDB(activeServiceId);
-                      const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
-                      if (action === "preview") openPreviewWindow(html, "Náhled – Přijetí reklamace");
-                      else if (action === "print" || action === "export") openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                      const running = await isJobiDocsRunning();
+                      const sid = activeServiceId ?? undefined;
+                      const companyData = safeLoadCompanyData() as Record<string, unknown>;
+                      const originalCode = detailedClaim.source_ticket_id && paginatedTickets.some((t) => t.id === detailedClaim.source_ticket_id)
+                        ? (paginatedTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx)?.code ?? ""
+                        : "";
+                      const variables = buildClaimVariablesForJobiDocs(detailedClaim, originalCode);
+                      if (running && sid) {
+                        if (action === "print") {
+                          const res = await printDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, { variables });
+                          if (res.ok) {
+                            const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                            if (u) {
+                              checkAchievementOnFirstPrint(u);
+                              checkAchievementOnPaperless(u);
+                            }
+                            showToast("Úloha odeslána do fronty", "success");
+                          } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                        } else {
+                          try {
+                            const { save } = await import("@tauri-apps/plugin-dialog");
+                            const filePath = await save({
+                              defaultPath: `prijemka-reklamace-${detailedClaim.code}.pdf`,
+                              filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+                            });
+                            if (filePath) {
+                              const res = await exportDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, filePath, { variables });
+                              if (res.ok) {
+                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                                if (u) {
+                                  checkAchievementOnFirstPrint(u);
+                                  checkAchievementOnPaperless(u);
+                                }
+                                showToast("PDF uložen", "success");
+                              } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                            }
+                          } catch (e) {
+                            showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+                          }
+                        }
+                      } else {
+                        const config = await loadDocumentsConfigFromDB(activeServiceId);
+                        const html = generatePrijetiReklamaceHTML(detailedClaim, safeLoadCompanyData(), config ?? undefined);
+                        if (action === "print") {
+                          openPreviewWindowWithPrint(html, "Přijetí reklamace");
+                        } else {
+                          try {
+                            const { save } = await import("@tauri-apps/plugin-dialog");
+                            const filePath = await save({
+                              defaultPath: `prijemka-reklamace-${detailedClaim.code}.pdf`,
+                              filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+                            });
+                            if (filePath) {
+                              const res = await exportViaJobiDocs(html, filePath);
+                              if (res.ok) {
+                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
+                                if (u) {
+                                  checkAchievementOnFirstPrint(u);
+                                  checkAchievementOnPaperless(u);
+                                }
+                                showToast("PDF uložen", "success");
+                              } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
+                            }
+                          } catch (e) {
+                            showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
+                          }
+                        }
+                      }
                     }}
                   />
                 )}
@@ -7987,7 +8867,6 @@ export default function Orders({
                   onSelect={(action) => {
                     if (action === "export") exportTicketToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printTicket(detailedTicket, activeServiceId);
-                    else if (action === "preview") openPreviewWindow(generateTicketHTML(detailedTicket, true), "Náhled – Zakázkový list");
                   }}
                 />
                 {(detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0)) && (
@@ -7996,7 +8875,6 @@ export default function Orders({
                     onSelect={(action) => {
                       if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId);
                       else if (action === "print") printDiagnosticProtocol(detailedTicket, activeServiceId);
-                      else if (action === "preview") openPreviewWindow(generateDiagnosticProtocolHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Diagnostický protokol");
                     }}
                   />
                 )}
@@ -8005,7 +8883,6 @@ export default function Orders({
                   onSelect={(action) => {
                     if (action === "export") exportWarrantyToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printWarranty(detailedTicket, activeServiceId);
-                    else if (action === "preview") openPreviewWindow(generateWarrantyHTML(detailedTicket, safeLoadCompanyData(), true), "Náhled – Záruční list");
                   }}
                 />
               </div>
@@ -8106,6 +8983,14 @@ export default function Orders({
                   <input value={c.device_accessories ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_accessories: e.target.value }))} placeholder="Příslušenství" style={baseFieldInput} />
                   <input value={c.device_note ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_note: e.target.value }))} placeholder="Poznámka k zařízení" style={baseFieldInput} />
                   <input value={c.device_passcode ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_passcode: e.target.value }))} placeholder="Heslo/kód" style={baseFieldInput} />
+                  <div>
+                    <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                    <DateTimePicker
+                      value={(c as any).expected_completion_at ?? null}
+                      onChange={(v) => setEditedClaim((p) => ({ ...p, expected_completion_at: v }))}
+                      inputStyle={baseFieldInput}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -8239,6 +9124,51 @@ export default function Orders({
                       rows={6}
                     />
                   </div>
+                  {(sourceTicket.diagnosticPhotosBefore?.length ?? 0) > 0 && (
+                    <div>
+                      <div style={fieldLabel}>Fotky před</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                        {(sourceTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
+                          <div key={idx} style={{ position: "relative" }}>
+                            <img
+                              src={photoUrl}
+                              alt={`Fotka před ${idx + 1}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
+                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
+                              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (async () => {
+                                  const url = (sourceTicket.diagnosticPhotosBefore || [])[idx];
+                                  if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
+                                    try { await deleteDiagnosticPhotoFromStorage(supabase, url); } catch (_) {}
+                                  }
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === sourceTicket.id
+                                        ? { ...t, diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx) }
+                                        : t
+                                    )
+                                  );
+                                })();
+                              }}
+                              style={{
+                                position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: "50%",
+                                background: "rgba(239, 68, 68, 0.9)", color: "white", border: "none", cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <div style={fieldLabel}>Diagnostické fotografie</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
@@ -8247,10 +9177,16 @@ export default function Orders({
                           <img
                             src={photoUrl}
                             alt={`Diagnostika ${idx + 1}`}
-                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
+                            onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
+                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
                           />
                           <button
-                            onClick={async () => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              (async () => {
                               const url = (sourceTicket.diagnosticPhotos || [])[idx];
                               if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
                                 try {
@@ -8262,6 +9198,7 @@ export default function Orders({
                                   t.id === sourceTicket.id ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) } : t
                                 )
                               );
+                            })();
                             }}
                             style={{
                               position: "absolute",
@@ -8286,59 +9223,126 @@ export default function Orders({
                         </div>
                       ))}
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={diagnosticPhotosUploading}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files || []);
-                        e.target.value = "";
-                        if (!files.length) return;
-                        const hasId = !!(activeServiceId && sourceTicket.id);
-                        if (hasId && supabase) {
-                          setDiagnosticPhotosUploading(true);
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !sourceTicket?.id) return;
+                          const client = supabase!;
+                          setCaptureQRLoading(true);
                           try {
-                            const urls: string[] = [];
-                            for (const file of files) {
-                              const url = await uploadDiagnosticPhoto(supabase, activeServiceId!, sourceTicket.id!, file);
-                              urls.push(url);
+                          let lastErr: unknown = null;
+                          for (let attempt = 0; attempt < 2; attempt++) {
+                            try {
+                              const doRequest = async (retry = false): Promise<Response> => {
+                                const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
+                                if (refreshErr && !retry) {
+                                  throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
+                                }
+                                const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
+                                if (!token) {
+                                  throw new Error("Nejste přihlášeni.");
+                                }
+                                return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                  body: JSON.stringify({ ticketId: sourceTicket.id }),
+                                });
+                              };
+                              let res = await doRequest();
+                              if (res.status === 401) {
+                                res = await doRequest(true);
+                              }
+                              const raw = await res.text();
+                              let data: { url?: string; error?: string; detail?: string } = {};
+                              try { if (raw) data = JSON.parse(raw); } catch {}
+                              if (!res.ok) {
+                                if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
+                                throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
+                              }
+                              if (data?.error) throw new Error(data.error);
+                              if (!data?.url) throw new Error("Chybí URL v odpovědi");
+                              setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
+                              return;
+                            } catch (err) {
+                              lastErr = err;
+                              const msg = err instanceof Error ? err.message : String(err);
+                              if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                resetTauriFetchState();
+                                continue;
+                              }
+                              break;
                             }
-                            setCloudTickets((prev) =>
-                              prev.map((t) =>
-                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
-                              )
-                            );
-                          } catch (err) {
-                            showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                          }
+                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
                           } finally {
-                            setDiagnosticPhotosUploading(false);
+                            setCaptureQRLoading(false);
                           }
-                        } else {
-                          const reader = (file: File) =>
-                            new Promise<string>((resolve, reject) => {
-                              const r = new FileReader();
-                              r.onload = () => resolve(r.result as string);
-                              r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                              r.readAsDataURL(file);
-                            });
-                          try {
-                            const results = await Promise.all(files.map(reader));
-                            setCloudTickets((prev) =>
-                              prev.map((t) =>
-                                t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
-                              )
-                            );
-                          } catch (_) {
-                            showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                          }
-                        }
-                      }}
-                      style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
-                    />
-                    {diagnosticPhotosUploading && (
-                      <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>Nahrávám…</span>
-                    )}
+                        }}
+                        disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                        style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                      >
+                        {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                      </button>
+                      <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={diagnosticPhotosUploading}
+                          style={{ display: "none" }}
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            e.target.value = "";
+                            if (!files.length) return;
+                            const hasId = !!(activeServiceId && sourceTicket.id);
+                            if (hasId && supabase) {
+                              setDiagnosticPhotosUploading(true);
+                              try {
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file);
+                                  urls.push(url);
+                                }
+                                const uid = session?.user?.id;
+                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
+                                  )
+                                );
+                              } catch (err) {
+                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                              } finally {
+                                setDiagnosticPhotosUploading(false);
+                              }
+                            } else {
+                              const reader = (file: File) =>
+                                new Promise<string>((resolve, reject) => {
+                                  const r = new FileReader();
+                                  r.onload = () => resolve(r.result as string);
+                                  r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                                  r.readAsDataURL(file);
+                                });
+                              try {
+                                const results = await Promise.all(files.map(reader));
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
+                                  )
+                                );
+                              } catch (_) {
+                                showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                              }
+                            }
+                          }}
+                        />
+                        Nahrát soubory
+                      </label>
+                      {diagnosticPhotosUploading && (
+                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -8662,7 +9666,7 @@ export default function Orders({
                                   
                                   if (data) {
                                     // Audit: Log customer data loaded from DB
-                                    console.log("[EditTicket] Customer data loaded from DB:", {
+                                    devLog("[EditTicket] Customer data loaded from DB:", {
                                       id: data.id,
                                       name: data.name,
                                       phone: data.phone,
@@ -8690,7 +9694,7 @@ export default function Orders({
                                     };
                                     
                                     // Audit: Log what we're setting to editedTicket
-                                    console.log("[EditTicket] Setting to editedTicket:", updatedFields);
+                                    devLog("[EditTicket] Setting to editedTicket:", updatedFields);
                                     
                                     setEditedTicket((prev) => ({
                                       ...prev,
@@ -8916,6 +9920,21 @@ export default function Orders({
                           onChange={(e) => setEditedTicket((p) => ({ ...p, externalId: e.target.value }))}
                           style={baseFieldInput}
                           placeholder="Externí identifikátor"
+                        />
+                      </div>
+                      <div>
+                        <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
+                        <DateTimePicker
+                          value={
+                            (editedTicket as any).expectedCompletionAt ?? (detailedTicket as any).expected_completion_at ?? null
+                          }
+                          onChange={(v) =>
+                            setEditedTicket((p) => ({
+                              ...p,
+                              expectedCompletionAt: v,
+                            } as any))
+                          }
+                          inputStyle={baseFieldInput}
                         />
                       </div>
                     </div>
@@ -9241,6 +10260,167 @@ export default function Orders({
                     </div>
                     
                     <div>
+                      <div style={fieldLabel}>Fotky před</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+                        {(detailedTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
+                            <div key={idx} style={{ position: "relative" }}>
+                              <img
+                                src={photoUrl}
+                                alt={`Fotka před ${idx + 1}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() =>
+                                  setPhotoLightbox({
+                                    urls: detailedTicket.diagnosticPhotosBefore || [],
+                                    index: idx,
+                                    ticketCode: detailedTicket.code,
+                                  })
+                                }
+                                onKeyDown={(e) =>
+                                  e.key === "Enter" &&
+                                  setPhotoLightbox({
+                                    urls: detailedTicket.diagnosticPhotosBefore || [],
+                                    index: idx,
+                                    ticketCode: detailedTicket.code,
+                                  })
+                                }
+                                style={{
+                                  width: 120,
+                                  height: 120,
+                                  objectFit: "cover",
+                                  borderRadius: 8,
+                                  border: "1px solid var(--border)",
+                                  cursor: "pointer",
+                                }}
+                              />
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const url = (detailedTicket.diagnosticPhotosBefore || [])[idx];
+                                  if (url && isDiagnosticPhotoStorageUrl(url)) {
+                                    try {
+                                      await deleteDiagnosticPhotoFromStorage(supabase, url);
+                                    } catch (_) {}
+                                  }
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? {
+                                            ...t,
+                                            diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
+                                          }
+                                        : t
+                                    )
+                                  );
+                                }}
+                                style={{
+                                  position: "absolute",
+                                  top: 4,
+                                  right: 4,
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: "50%",
+                                  background: "rgba(239, 68, 68, 0.9)",
+                                  color: "white",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 14,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
+                            setCaptureQRLoading(true);
+                            try {
+                              let lastErr: unknown = null;
+                              for (let attempt = 0; attempt < 2; attempt++) {
+                                try {
+                                  const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+                                  if (refreshErr && attempt === 0) throw new Error("Session vypršela.");
+                                  const token = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
+                                  if (!token) throw new Error("Nejste přihlášeni.");
+                                  const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                    body: JSON.stringify({ ticketId: detailedTicket.id, isBefore: true }),
+                                  });
+                                  const raw = await res.text();
+                                  const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
+                                  if (!res.ok) throw new Error(data.error || res.statusText);
+                                  if (data.url) setCaptureQRItems([{ deviceLabel: detailedTicket.deviceLabel || "Zakázka", url: data.url }]);
+                                  return;
+                                } catch (err) {
+                                  lastErr = err;
+                                  const msg = err instanceof Error ? err.message : String(err);
+                                  if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                    resetTauriFetchState();
+                                    continue;
+                                  }
+                                  break;
+                                }
+                              }
+                              showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
+                            } finally {
+                              setCaptureQRLoading(false);
+                            }
+                          }}
+                          disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        >
+                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                        </button>
+                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={diagnosticPhotosUploading}
+                            style={{ display: "none" }}
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              e.target.value = "";
+                              if (!files.length || !supabase || !activeServiceId || !detailedTicket?.id) return;
+                              setDiagnosticPhotosUploading(true);
+                              try {
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file);
+                                  urls.push(url);
+                                }
+                                const uid = session?.user?.id;
+                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
+                                setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                setCloudTickets((prev) =>
+                                  prev.map((t) =>
+                                    t.id === detailedTicket.id
+                                      ? { ...t, diagnosticPhotosBefore: [...(t.diagnosticPhotosBefore || []), ...urls] }
+                                      : t
+                                  )
+                                );
+                              } catch (err) {
+                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
+                              } finally {
+                                setDiagnosticPhotosUploading(false);
+                              }
+                            }}
+                          />
+                          Nahrát soubory
+                        </label>
+                      </div>
+                    </div>
+                    <div>
                       <div style={fieldLabel}>Diagnostické fotografie</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                         {(detailedTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
@@ -9248,16 +10428,23 @@ export default function Orders({
                             <img 
                               src={photoUrl} 
                               alt={`Diagnostika ${idx + 1}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
+                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
                               style={{
                                 width: 120, 
                                 height: 120, 
                                 objectFit: "cover", 
                                 borderRadius: 8,
-                                border: "1px solid var(--border)" 
+                                border: "1px solid var(--border)",
+                                cursor: "pointer",
                               }}
                             />
                             <button
-                              onClick={async () => {
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (async () => {
                                 const photoUrl = (detailedTicket.diagnosticPhotos || [])[idx];
                                 if (photoUrl && isDiagnosticPhotoStorageUrl(photoUrl)) {
                                   try {
@@ -9274,6 +10461,7 @@ export default function Orders({
                                       : t
                                   )
                                 );
+                              })();
                               }}
                               style={{
                                 position: "absolute",
@@ -9298,75 +10486,140 @@ export default function Orders({
                           </div>
                         ))}
                       </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        disabled={diagnosticPhotosUploading}
-                        onChange={async (e) => {
-                          const files = Array.from(e.target.files || []);
-                          e.target.value = "";
-                          if (!files.length) return;
-                          const hasId = !!(activeServiceId && detailedTicket.id);
-                          if (hasId && supabase) {
-                            setDiagnosticPhotosUploading(true);
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
+                            const client = supabase!;
+                            setCaptureQRLoading(true);
                             try {
-                              const urls: string[] = [];
-                              for (const file of files) {
-                                const url = await uploadDiagnosticPhoto(
-                                  supabase,
-                                  activeServiceId!,
-                                  detailedTicket.id!,
-                                  file
-                                );
-                                urls.push(url);
+                            let lastErr: unknown = null;
+                            for (let attempt = 0; attempt < 2; attempt++) {
+                              try {
+                                const doRequest = async (retry = false): Promise<Response> => {
+                                  const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
+                                  if (refreshErr && !retry) {
+                                    throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
+                                  }
+                                  const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
+                                  if (!token) {
+                                    throw new Error("Nejste přihlášeni.");
+                                  }
+                                  return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
+                                    body: JSON.stringify({ ticketId: detailedTicket.id }),
+                                  });
+                                };
+                                let res = await doRequest();
+                                if (res.status === 401) {
+                                  res = await doRequest(true);
+                                }
+                                const raw = await res.text();
+                                let data: { url?: string; error?: string; detail?: string } = {};
+                                try { if (raw) data = JSON.parse(raw); } catch {}
+                                if (!res.ok) {
+                                  if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
+                                  throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
+                                }
+                                if (data?.error) throw new Error(data.error);
+                                if (!data?.url) throw new Error("Chybí URL v odpovědi");
+                                setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
+                                return;
+                              } catch (err) {
+                                lastErr = err;
+                                const msg = err instanceof Error ? err.message : String(err);
+                                if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
+                                  resetTauriFetchState();
+                                  continue;
+                                }
+                                break;
                               }
-                              setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                              setCloudTickets((prev) =>
-                                prev.map((t) =>
-                                  t.id === detailedTicket.id
-                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
-                                    : t
-                                )
-                              );
-                            } catch (err) {
-                              showToast(
-                                `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
-                                "error"
-                              );
-                            } finally {
-                              setDiagnosticPhotosUploading(false);
                             }
-                          } else {
-                            const reader = (file: File) =>
-                              new Promise<string>((resolve, reject) => {
-                                const r = new FileReader();
-                                r.onload = () => resolve(r.result as string);
-                                r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                                r.readAsDataURL(file);
-                              });
-                            try {
-                              const results = await Promise.all(files.map(reader));
-                              setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                              setCloudTickets((prev) =>
-                                prev.map((t) =>
-                                  t.id === detailedTicket.id
-                                    ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
-                                    : t
-                                )
-                              );
-                            } catch (_) {
-                              showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                            }
+                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
+                          } finally {
+                            setCaptureQRLoading(false);
                           }
                         }}
-                        style={{ ...baseFieldInput, marginTop: 8, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer" }}
-                      />
-                      {diagnosticPhotosUploading && (
-                        <span style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "block" }}>
-                          Nahrávám…
-                        </span>
-                      )}
+                        disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
+                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        >
+                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                        </button>
+                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={diagnosticPhotosUploading}
+                            style={{ display: "none" }}
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              e.target.value = "";
+                              if (!files.length) return;
+                              const hasId = !!(activeServiceId && detailedTicket.id);
+                              if (hasId && supabase) {
+                                setDiagnosticPhotosUploading(true);
+                                try {
+                                const urls: string[] = [];
+                                for (const file of files) {
+                                  const url = await uploadDiagnosticPhotoWithWatermark(
+                                    supabase,
+                                    activeServiceId!,
+                                    detailedTicket.id!,
+                                    file
+                                  );
+                                    urls.push(url);
+                                  }
+                                  const uid = session?.user?.id;
+                                  if (uid) checkAchievementOnFirstCapturePhoto(uid);
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
+                                        : t
+                                    )
+                                  );
+                                } catch (err) {
+                                  showToast(
+                                    `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
+                                    "error"
+                                  );
+                                } finally {
+                                  setDiagnosticPhotosUploading(false);
+                                }
+                              } else {
+                                const reader = (file: File) =>
+                                  new Promise<string>((resolve, reject) => {
+                                    const r = new FileReader();
+                                    r.onload = () => resolve(r.result as string);
+                                    r.onerror = () => reject(new Error("Načtení souboru selhalo"));
+                                    r.readAsDataURL(file);
+                                  });
+                                try {
+                                  const results = await Promise.all(files.map(reader));
+                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
+                                        : t
+                                    )
+                                  );
+                                } catch (_) {
+                                  showToast("Nepodařilo se načíst vybrané soubory.", "error");
+                                }
+                              }
+                            }}
+                          />
+                          Nahrát soubory
+                        </label>
+                        {diagnosticPhotosUploading && (
+                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -9829,6 +11082,167 @@ export default function Orders({
         document.body
       )}
 
+      {/* Capture QR modal – fotka z telefonu */}
+      {captureQRItems && captureQRItems.length > 0 && createPortal(
+        <div
+          role="dialog"
+          aria-label="Vyfotit z telefonu"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.5)",
+            padding: 24,
+          }}
+          onClick={() => setCaptureQRItems(null)}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-soft)",
+              maxWidth: captureQRItems.length > 1 ? 480 : 360,
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              padding: 24,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              color: "var(--text)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 950, fontSize: 18 }}>📱 Vyfotit z telefonu</div>
+            <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
+              {captureQRItems.length > 1
+                ? "Naskenujte QR kód podle zařízení. Fotka se uloží k příslušné zakázce."
+                : "Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce."}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, justifyContent: "center" }}>
+              {captureQRItems.map((item, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  {captureQRItems.length > 1 && (
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", textAlign: "center" }}>{item.deviceLabel || `Zakázka ${i + 1}`}</div>
+                  )}
+                  <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=L&data=${encodeURIComponent(item.url)}`}
+                      alt={`QR pro ${item.deviceLabel || "zakázku"}`}
+                      style={{ display: "block", width: 220, height: 220 }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(item.url).then(() => showToast("Odkaz zkopírován", "success"));
+                    }}
+                    style={{ ...softBtn, padding: "8px 12px", fontSize: 12 }}
+                  >
+                    Kopírovat odkaz
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setCaptureQRItems(null)} style={{ ...softBtn, padding: "10px 14px", marginTop: 8 }}>
+              Zavřít
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Photo lightbox – rozkliknutí diagnostických fotek */}
+      {photoLightbox && createPortal(
+        <div
+          role="dialog"
+          aria-label="Zvětšit fotku"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10002,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.85)",
+            padding: 24,
+          }}
+          onClick={() => setPhotoLightbox(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPhotoLightbox(null)}
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 16,
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+            aria-label="Zavřít"
+          >
+            ×
+          </button>
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const url = photoLightbox.urls[photoLightbox.index];
+              const code = photoLightbox.ticketCode || "zakazka";
+              const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
+              const name = `${safe(code)}_pic${photoLightbox.index + 1}.jpg`;
+              try {
+                const res = await fetch(url, { mode: "cors" });
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                showToast("Fotka stažena", "success");
+              } catch {
+                window.open(url, "_blank");
+              }
+            }}
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 64,
+              padding: "8px 16px",
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.2)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.4)",
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Stáhnout
+          </button>
+          <img
+            src={photoLightbox.urls[photoLightbox.index]}
+            alt={`Diagnostika ${photoLightbox.index + 1}`}
+            style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain" }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
+      )}
+
       {/* ConfirmDialog for low stock warning */}
       <ConfirmDialog
         open={lowStockDialogOpen}
@@ -9881,7 +11295,7 @@ export default function Orders({
         >
           {[
             { type: "ticket" as const, label: "Zakázkový list" },
-            { type: "warranty" as const, label: "Zárůční list" },
+            { type: "warranty" as const, label: "Záruční list" },
             ...((openQuickPrintTicket.diagnosticText?.trim() || (openQuickPrintTicket.diagnosticPhotos && openQuickPrintTicket.diagnosticPhotos.length > 0)) ? [{ type: "diagnostic" as const, label: "Diagnostický protokol" }] : []),
           ].map(({ type, label }) => (
             <button

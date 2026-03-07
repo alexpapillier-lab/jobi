@@ -3,9 +3,12 @@ import { createPortal } from "react-dom";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { AppLogo } from "../components/AppLogo";
 import { useTheme } from "../theme/ThemeProvider";
-import { getLogoColors } from "../lib/logoPresets";
+import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
+import { STORAGE_KEYS } from "../constants/storageKeys";
+import { useAppUpdate } from "../context/AppUpdateContext";
+import { devLog } from "../lib/devLog";
 
-export type NavKey = "orders" | "inventory" | "devices" | "customers" | "statistics" | "settings";
+export type NavKey = "orders" | "calendar" | "inventory" | "devices" | "customers" | "statistics" | "achievements" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -89,6 +92,17 @@ function StatisticsIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+function CalendarIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  );
+}
+
 // NAV items are created inside the component to access expanded state
 
 export type SidebarProps = {
@@ -101,7 +115,16 @@ export type SidebarProps = {
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
+  achievementsEnabled?: boolean;
 };
+
+function AchievementsIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 9V4a2 2 0 012-2h0a2 2 0 012 2v5M10 14l2 2 4-4" />
+    </svg>
+  );
+}
 
 export function Sidebar({
   expanded,
@@ -113,10 +136,34 @@ export function Sidebar({
   services,
   activeServiceId,
   setActiveServiceId,
+  achievementsEnabled = true,
 }: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
-  const [serviceMenuPosition, setServiceMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [serviceMenuPosition, setServiceMenuPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+
+  const PREFERRED_DROPDOWN_MAX = 280;
+  const MIN_HEIGHT_BELOW_TO_OPEN_DOWN = 120; // otevřít nahoru jen když dole není aspoň tolik místa
+  const computeServiceDropdownPosition = (rect: DOMRect) => {
+    const gap = 8;
+    const availableBelow = window.innerHeight - rect.bottom - gap;
+    const availableAbove = rect.top - gap;
+    // Preferovat otevření dolů – těsně pod tlačítkem (max výška podle místa)
+    if (availableBelow >= MIN_HEIGHT_BELOW_TO_OPEN_DOWN) {
+      return {
+        top: rect.bottom + 4,
+        left: rect.left,
+        maxHeight: Math.min(PREFERRED_DROPDOWN_MAX, Math.max(120, availableBelow)),
+      };
+    }
+    // Dole skoro žádné místo – otevřít nahoru, těsně nad tlačítkem
+    const h = Math.min(PREFERRED_DROPDOWN_MAX, availableAbove);
+    return {
+      top: rect.top - 4 - h,
+      left: rect.left,
+      maxHeight: Math.max(120, h),
+    };
+  };
   const userMenuRef = useRef<HTMLDivElement>(null);
   const userMenuDropdownRef = useRef<HTMLDivElement>(null);
   const serviceMenuRef = useRef<HTMLDivElement>(null);
@@ -124,7 +171,31 @@ export function Sidebar({
   const serviceMenuDropdownRef = useRef<HTMLDivElement>(null);
 
   const { theme } = useTheme();
-  const logoColors = useMemo(() => getLogoColors(theme, "auto"), [theme]);
+  const [logoPresetVersion, setLogoPresetVersion] = useState(0);
+  const [pngLoadFailed, setPngLoadFailed] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setLogoPresetVersion((v) => v + 1);
+    window.addEventListener("jobsheet:logo-preset-changed", handler);
+    return () => window.removeEventListener("jobsheet:logo-preset-changed", handler);
+  }, []);
+
+  const logoPresetId = useMemo((): LogoPresetId => {
+    if (typeof localStorage === "undefined") return "auto";
+    return (localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null) ?? "auto";
+  }, [logoPresetVersion]);
+
+  const effectiveLogoId = useMemo(() => {
+    return logoPresetId === "auto" || !logoPresetId ? theme : logoPresetId;
+  }, [theme, logoPresetId]);
+
+  const logoPngUrl = useMemo(() => `/logos/${effectiveLogoId}.png`, [effectiveLogoId]);
+
+  useEffect(() => {
+    setPngLoadFailed(false);
+  }, [logoPngUrl]);
+
+  const logoColors = useMemo(() => getLogoColors(theme, logoPresetId), [theme, logoPresetId]);
   const logoBackground = logoColors.background;
   const isLogoBgLight = useMemo(() => {
     const hex = logoBackground.replace(/^#/, "");
@@ -137,6 +208,8 @@ export function Sidebar({
   }, [logoBackground]);
 
   const isRootOwner = useIsRootOwner();
+  const appUpdate = useAppUpdate();
+  const updateAvailable = !!(appUpdate?.update);
   const activeService = services.find(s => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Service desk";
   const hasMultipleServices = services.length > 1;
@@ -182,10 +255,7 @@ export function Sidebar({
     const updatePosition = () => {
       if (serviceMenuButtonRef.current) {
         const rect = serviceMenuButtonRef.current.getBoundingClientRect();
-        setServiceMenuPosition({
-          top: rect.bottom + 4,
-          left: rect.left
-        });
+        setServiceMenuPosition(computeServiceDropdownPosition(rect));
       }
     };
 
@@ -274,7 +344,21 @@ export function Sidebar({
             minWidth: 0,
             flex: 1,
           }}>
-            <AppLogo size={expanded ? 28 : 24} colors={logoColors} style={{ flexShrink: 0 }} />
+            {pngLoadFailed ? (
+              <AppLogo size={expanded ? 28 : 24} colors={logoColors} style={{ flexShrink: 0 }} />
+            ) : (
+              <img
+                src={logoPngUrl}
+                alt=""
+                onError={() => setPngLoadFailed(true)}
+                style={{
+                  width: expanded ? 28 : 24,
+                  height: expanded ? 28 : 24,
+                  objectFit: "contain",
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {expanded && (
               <span style={{ 
                 fontWeight: 800, 
@@ -292,156 +376,6 @@ export function Sidebar({
               </span>
             )}
           </div>
-          {showServiceDropdown ? (
-            <div 
-              ref={serviceMenuRef}
-              style={{ 
-                position: "relative",
-                transition: "opacity 200ms cubic-bezier(0.4, 0, 0.2, 1)",
-                opacity: expanded ? 1 : 0,
-                pointerEvents: expanded ? "auto" : "none",
-                zIndex: expanded ? 1 : 0,
-                overflow: "visible"
-              }}
-            >
-              <button
-                ref={serviceMenuButtonRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (serviceMenuButtonRef.current) {
-                    const rect = serviceMenuButtonRef.current.getBoundingClientRect();
-                    setServiceMenuPosition({
-                      top: rect.bottom + 4,
-                      left: rect.left
-                    });
-                  }
-                  setServiceMenuOpen((prev) => !prev);
-                }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: isLogoBgLight ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.9)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  cursor: "pointer",
-                  padding: "2px 4px",
-                  borderRadius: "4px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  width: "100%",
-                  textAlign: "left",
-                  transition: "background 0.2s",
-                  zIndex: 1,
-                  position: "relative"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = isLogoBgLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.15)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{serviceName}</span>
-                <span style={{ fontSize: 10 }}>▼</span>
-              </button>
-              {serviceMenuOpen && serviceMenuPosition && createPortal(
-                <div
-                  ref={serviceMenuDropdownRef}
-                  style={{
-                    position: "fixed",
-                    top: serviceMenuPosition.top,
-                    left: serviceMenuPosition.left,
-                    background: "var(--panel)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-md)",
-                    boxShadow: "var(--shadow-lg)",
-                    zIndex: 10000,
-                    minWidth: 200,
-                    maxWidth: 300,
-                    overflow: "hidden",
-                    pointerEvents: "auto",
-                    opacity: 1,
-                    visibility: "visible",
-                    display: "block"
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                  }}
-                >
-                  {services.length === 0 ? (
-                    <div style={{ padding: "12px 12px", color: "var(--muted)", fontSize: 12 }}>
-                      Zatím žádné servisy
-                    </div>
-                  ) : (
-                  services.map((service) => (
-                    <button
-                      key={service.service_id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setActiveServiceId(service.service_id);
-                        setServiceMenuOpen(false);
-                        setServiceMenuPosition(null);
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        background: service.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
-                        border: "none",
-                        color: service.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
-                        fontSize: 13,
-                        fontWeight: service.service_id === activeServiceId ? 600 : 400,
-                        textAlign: "left",
-                        cursor: "pointer",
-                        transition: "all 0.2s",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8
-                      }}
-                      onMouseEnter={(e) => {
-                        if (service.service_id !== activeServiceId) {
-                          e.currentTarget.style.background = "var(--bg)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (service.service_id !== activeServiceId) {
-                          e.currentTarget.style.background = "transparent";
-                        }
-                      }}
-                    >
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {service.service_name}
-                      </span>
-                      {service.service_id === activeServiceId && (
-                        <span style={{ fontSize: 12 }}>✓</span>
-                      )}
-                    </button>
-                  ))
-                  )}
-                </div>,
-                document.body
-              )}
-            </div>
-          ) : (
-            <div style={{ 
-              color: "rgba(255, 255, 255, 0.8)", 
-              fontSize: 11, 
-              whiteSpace: "nowrap", 
-              overflow: "hidden", 
-              textOverflow: "ellipsis", 
-              fontWeight: 500,
-              transition: "opacity 200ms cubic-bezier(0.4, 0, 0.2, 1)",
-              opacity: expanded ? 1 : 0
-            }}>
-              {serviceName}
-            </div>
-          )}
         </div>
         
         {/* Collapsed content */}
@@ -458,7 +392,16 @@ export function Sidebar({
           left: 0,
           right: 0
         }}>
-          <AppLogo size={24} colors={logoColors} />
+          {pngLoadFailed ? (
+            <AppLogo size={24} colors={logoColors} />
+          ) : (
+            <img
+              src={logoPngUrl}
+              alt=""
+              onError={() => setPngLoadFailed(true)}
+              style={{ width: 24, height: 24, objectFit: "contain" }}
+            />
+          )}
         </div>
       </div>
 
@@ -468,10 +411,12 @@ export function Sidebar({
       <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
           { key: "orders" as const, label: "Zakázky", icon: OrdersIcon },
+          { key: "calendar" as const, label: "Kalendář", icon: CalendarIcon },
           { key: "inventory" as const, label: "Sklad", icon: BoxIcon },
           { key: "devices" as const, label: "Zařízení", icon: DevicesIcon },
           { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
           { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
+          ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
           { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
         ].map((item) => {
           const isActive = item.key === active;
@@ -482,6 +427,7 @@ export function Sidebar({
             <button
               key={item.key}
               type="button"
+              data-tour={`sidebar-nav-${item.key}`}
               onClick={() => onNavigate(item.key)}
               style={{
                 width: "100%",
@@ -515,9 +461,33 @@ export function Sidebar({
                 }
               }}
             >
-              <IconBox size={expanded ? 40 : 28}>
-                <IconComponent size={iconSize} />
-              </IconBox>
+              <span style={{ position: "relative", display: "flex" }}>
+                <IconBox size={expanded ? 40 : 28}>
+                  <IconComponent size={iconSize} />
+                </IconBox>
+                {item.key === "settings" && updateAvailable && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -2,
+                      right: expanded ? -2 : 2,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: "#dc2626",
+                      color: "white",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                    }}
+                  >
+                    1
+                  </span>
+                )}
+              </span>
 
               <div 
                 style={{
@@ -676,7 +646,7 @@ export function Sidebar({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log("[Sidebar] Sign out button clicked");
+                  devLog("[Sidebar] Sign out button clicked");
                   
                   // Close menu immediately
                   setUserMenuOpen(false);
@@ -684,7 +654,7 @@ export function Sidebar({
                   // Call signOut asynchronously
                   onSignOut()
                     .then(() => {
-                      console.log("[Sidebar] Sign out completed successfully");
+                      devLog("[Sidebar] Sign out completed successfully");
                     })
                     .catch((error) => {
                       console.error("[Sidebar] Error signing out:", error);
@@ -712,6 +682,145 @@ export function Sidebar({
                 Odhlásit se
               </button>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Výběr servisu – pod účtem */}
+      {expanded && showServiceDropdown && (
+        <div
+          ref={serviceMenuRef}
+          style={{
+            position: "relative",
+            padding: "10px 12px",
+            borderRadius: 16,
+            background: "var(--panel-2)",
+            backdropFilter: "var(--blur)",
+            WebkitBackdropFilter: "var(--blur)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow-soft)",
+            overflow: "visible",
+          }}
+        >
+          <button
+            ref={serviceMenuButtonRef}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              if (serviceMenuButtonRef.current) {
+                const rect = serviceMenuButtonRef.current.getBoundingClientRect();
+                setServiceMenuPosition(computeServiceDropdownPosition(rect));
+              }
+              setServiceMenuOpen((prev) => !prev);
+            }}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text)",
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              cursor: "pointer",
+              padding: "4px 4px",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              width: "100%",
+              textAlign: "left",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{serviceName}</span>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>▼</span>
+          </button>
+          {serviceMenuOpen && serviceMenuPosition && createPortal(
+            <div
+              ref={serviceMenuDropdownRef}
+              style={{
+                position: "fixed",
+                top: serviceMenuPosition.top,
+                left: serviceMenuPosition.left,
+                background: "var(--panel)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-lg)",
+                zIndex: 10000,
+                minWidth: 200,
+                maxWidth: 300,
+                maxHeight: serviceMenuPosition.maxHeight,
+                overflowX: "hidden",
+                overflowY: "auto",
+                pointerEvents: "auto",
+                opacity: 1,
+                visibility: "visible",
+                display: "block"
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              {services.length === 0 ? (
+                <div style={{ padding: "12px 12px", color: "var(--muted)", fontSize: 12 }}>
+                  Zatím žádné servisy
+                </div>
+              ) : (
+              services.map((service) => (
+                <button
+                  key={service.service_id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setActiveServiceId(service.service_id);
+                    setServiceMenuOpen(false);
+                    setServiceMenuPosition(null);
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    background: service.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
+                    border: "none",
+                    color: service.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
+                    fontSize: 13,
+                    fontWeight: service.service_id === activeServiceId ? 600 : 400,
+                    textAlign: "left",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8
+                  }}
+                  onMouseEnter={(e) => {
+                    if (service.service_id !== activeServiceId) {
+                      e.currentTarget.style.background = "var(--bg)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (service.service_id !== activeServiceId) {
+                      e.currentTarget.style.background = "transparent";
+                    }
+                  }}
+                >
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {service.service_name}
+                  </span>
+                  {service.service_id === activeServiceId && (
+                    <span style={{ fontSize: 12 }}>✓</span>
+                  )}
+                </button>
+              ))
+              )}
+            </div>,
+            document.body
           )}
         </div>
       )}

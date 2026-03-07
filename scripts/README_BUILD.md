@@ -1,4 +1,20 @@
-# Build testovací verze (Jobi + JobiDocs)
+# Build a release (Jobi + JobiDocs)
+
+## Release: DMG s notarizací (doporučeno pro distribuci)
+
+Pro **nový release** – vyrobit notarizované DMG pro Jobi i JobiDocs:
+
+```bash
+export NOTARY_APPLE_ID="tvuj@email.com"
+export NOTARY_APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export NOTARY_TEAM_ID="8ZC264M873"
+./scripts/release-dmg-notarized.sh
+```
+
+Výstupy: `jobi-<verze>.dmg` v kořeni, `jobidocs/release/JobiDocs-<verze>.dmg`.  
+Detailní postup: **docs/RELEASE_DMG_NOTARIZED.md**.
+
+---
 
 ## Prerekvizity
 

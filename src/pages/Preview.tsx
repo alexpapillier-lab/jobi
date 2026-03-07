@@ -10,6 +10,7 @@ import {
   type TicketEx,
 } from "./Orders";
 import { supabase } from "../lib/supabaseClient";
+import { checkAchievementOnFirstPrint } from "../lib/achievements";
 
 export default function Preview() {
   // Get params from URL
@@ -38,6 +39,7 @@ export default function Preview() {
       return;
     }
 
+    let cancelled = false;
     const loadTicket = async () => {
       if (!supabase) {
         setError("Supabase není inicializován");
@@ -46,6 +48,7 @@ export default function Preview() {
       }
 
       try {
+        if (cancelled) return;
         const { data, error: fetchError } = await (supabase
           .from("tickets") as any)
           .select("*")
@@ -53,17 +56,14 @@ export default function Preview() {
           .is("deleted_at", null)
           .single();
 
-        if (fetchError) {
-          throw fetchError;
-        }
-
-        if (!data) {
-          throw new Error("Zakázka nenalezena");
-        }
+        if (cancelled) return;
+        if (fetchError) throw fetchError;
+        if (!data) throw new Error("Zakázka nenalezena");
 
         const mappedTicket = mapSupabaseTicketToTicketEx(data);
         setTicket(mappedTicket);
       } catch (err) {
+        if (cancelled) return;
         console.error("[Preview] Error loading ticket:", err);
         setError(err instanceof Error ? err.message : "Neznámá chyba při načítání zakázky");
         setLoading(false);
@@ -71,6 +71,7 @@ export default function Preview() {
     };
 
     loadTicket();
+    return () => { cancelled = true; };
   }, [ticketId]);
 
   // Generate HTML when ticket and docType are available
@@ -168,6 +169,8 @@ export default function Preview() {
       
       window.focus();
       window.print();
+      const u = (await supabase?.auth.getUser())?.data?.user?.id;
+      if (u) checkAchievementOnFirstPrint(u);
       console.log("[Preview] Print triggered via main window");
     } catch (err) {
       console.error("[Preview] Error printing:", err);

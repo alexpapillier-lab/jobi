@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { showToast } from "../components/Toast";
-import { STORAGE_KEYS } from "../constants/storageKeys";
-
-const STORAGE_KEY = STORAGE_KEYS.DEVICES;
-const INVENTORY_STORAGE_KEY = "jobsheet_inventory_v1";
+import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
+import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
+import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 
 type Brand = {
   id: string;
@@ -48,12 +48,11 @@ function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
-function safeLoadData(): DevicesData {
+function loadDevicesFromKey(key: string): DevicesData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return { brands: [], categories: [], models: [], repairs: [] };
     const parsed = JSON.parse(raw) as DevicesData;
-    // Migrate old repairs with modelId to modelIds
     if (parsed.repairs) {
       parsed.repairs = parsed.repairs.map((r: any) => {
         if (r.modelId && !r.modelIds) {
@@ -71,14 +70,10 @@ function safeLoadData(): DevicesData {
   }
 }
 
-function safeSaveData(data: DevicesData) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {}
-}
+const EMPTY_DEVICES: DevicesData = { brands: [], categories: [], models: [], repairs: [] };
 
-export default function Devices() {
-  const [data, setData] = useState<DevicesData>(() => safeLoadData());
+export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
+  const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -131,9 +126,10 @@ export default function Devices() {
     products: InventoryProduct[];
   };
 
-  function safeLoadInventoryData(): InventoryData {
+  function loadInventoryFromKey(key: string | null): InventoryData {
+    if (!key) return { brands: [], categories: [], models: [], products: [] };
     try {
-      const raw = localStorage.getItem(INVENTORY_STORAGE_KEY);
+      const raw = localStorage.getItem(key);
       if (!raw) return { brands: [], categories: [], models: [], products: [] };
       return JSON.parse(raw) as InventoryData;
     } catch {
@@ -141,36 +137,188 @@ export default function Devices() {
     }
   }
 
-  const [inventoryData, setInventoryData] = useState<InventoryData>(() => safeLoadInventoryData());
+  const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
 
   const [draggedModelId, setDraggedModelId] = useState<string | null>(null);
   const [dragOverModelId, setDragOverModelId] = useState<string | null>(null);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesLoadError, setDevicesLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
-  useEffect(() => {
-    safeSaveData(data);
-  }, [data]);
+  /** Po dokončení prvního načtení z DB povolí ukládání. */
+  const initialLoadDoneRef = useRef(false);
+  /** Load vrátil prázdná data – pak neukládat prázdná zpět (přepsalo by to DB). */
+  const loadedEmptyRef = useRef(false);
+  /** Právě jsme načetli z DB – přeskočit následující save (data jsou již v DB, snižuje tlak na pool). */
+  const justLoadedRef = useRef(false);
 
-  // Sync from other tabs (e.g. Sklad or second Devices tab)
+  // Load devices and inventory from DB when active service changes (with localStorage migration)
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue) as DevicesData;
-          if (parsed.brands && parsed.categories && parsed.models && parsed.repairs) {
-            setData(parsed);
-          }
-        } catch {}
+    if (!activeServiceId) {
+      initialLoadDoneRef.current = false;
+      setDevicesLoading(false);
+      setDevicesLoadError(null);
+      setData(EMPTY_DEVICES);
+      setInventoryData({ brands: [], categories: [], models: [], products: [] });
+      return;
+    }
+    initialLoadDoneRef.current = false;
+    loadedEmptyRef.current = false;
+    setDevicesLoadError(null);
+    setDevicesLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+      // Načítáme zařízení i sklad paralelně – zkrátí to celkovou dobu
+      const [loadRes, invDb] = await Promise.all([
+        loadDevicesFromDb(activeServiceId),
+        loadInventoryFromDb(activeServiceId),
+      ]);
+      if (cancelled) return;
+      if (loadRes.error) {
+        setDevicesLoadError(loadRes.error);
+        setDevicesLoading(false);
+        return;
       }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [STORAGE_KEY]);
+      let devicesData = loadRes.data;
+      const hasDbDevices =
+        devicesData.brands.length > 0 ||
+        devicesData.categories.length > 0 ||
+        devicesData.models.length > 0 ||
+        devicesData.repairs.length > 0;
+      if (!hasDbDevices) {
+        const fromStorage = loadDevicesFromKey(getDevicesKey(activeServiceId));
+        const legacy = loadDevicesFromKey(STORAGE_KEYS.DEVICES);
+        const merged =
+          fromStorage.brands.length > 0 ||
+          fromStorage.categories.length > 0 ||
+          fromStorage.models.length > 0 ||
+          fromStorage.repairs.length > 0
+            ? fromStorage
+            : legacy;
+        const hasStorage =
+          merged.brands.length > 0 ||
+          merged.categories.length > 0 ||
+          merged.models.length > 0 ||
+          merged.repairs.length > 0;
+        if (hasStorage) {
+          await saveDevicesToDb(activeServiceId, merged);
+          devicesData = merged;
+        }
+      }
+      if (cancelled) return;
+      const hadData =
+        devicesData.brands.length > 0 ||
+        devicesData.categories.length > 0 ||
+        devicesData.models.length > 0 ||
+        devicesData.repairs.length > 0;
+      loadedEmptyRef.current = !hadData;
+      justLoadedRef.current = true;
+      setData(devicesData);
+      initialLoadDoneRef.current = true;
 
+      let invProducts = invDb.products;
+      const hasDbInventory = invDb.productCategories.length > 0 || invDb.products.length > 0;
+      if (!hasDbInventory) {
+        const fromStorage = loadInventoryFromKey(getInventoryKey(activeServiceId)) as {
+          productCategories?: { id: string; name: string; modelIds?: string[]; createdAt: string }[];
+          products?: { id: string; name: string; modelIds: string[]; stock: number; price: number; sku?: string; description?: string; imageUrl?: string; repairIds?: string[]; categoryId?: string; createdAt: string }[];
+        };
+        const legacy = loadInventoryFromKey(STORAGE_KEYS.INVENTORY) as typeof fromStorage;
+        const merged =
+          (fromStorage.products?.length ?? 0) > 0 || (fromStorage.productCategories?.length ?? 0) > 0
+            ? fromStorage
+            : legacy;
+        const hasStorage =
+          (merged.products?.length ?? 0) > 0 || (merged.productCategories?.length ?? 0) > 0;
+        if (hasStorage) {
+          const productCategories = (merged.productCategories ?? []).map((c) => ({
+            ...c,
+            modelIds: c.modelIds ?? [],
+          }));
+          const products = merged.products ?? [];
+          await saveInventoryToDb(activeServiceId, { productCategories, products });
+          invProducts = products;
+        }
+      }
+      if (cancelled) return;
+      setInventoryData({
+        brands: devicesData.brands,
+        categories: devicesData.categories,
+        models: devicesData.models,
+        products: invProducts,
+      });
+      } finally {
+        if (!cancelled) setDevicesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServiceId, retryKey]);
+
+  // Save devices to DB when data changes (debounced). Nepouštět před load. Nepouštět prázdná data, pokud load vrátil prázdná – přepsalo by to DB.
+  const hasAnyData =
+    data.brands.length > 0 ||
+    data.categories.length > 0 ||
+    data.models.length > 0 ||
+    data.repairs.length > 0;
   useEffect(() => {
-    // Load inventory data to get products
-    const loaded = safeLoadInventoryData();
-    setInventoryData(loaded);
-  }, []);
+    if (!activeServiceId || !initialLoadDoneRef.current) return;
+    if (!hasAnyData && loadedEmptyRef.current) return; // load vrátil prázdná – neukládat zpět
+    const t = setTimeout(() => {
+      if (justLoadedRef.current) {
+        justLoadedRef.current = false;
+        return; // data právě z loadu – neukládat (snižuje tlak na connection pool)
+      }
+      saveDevicesToDb(activeServiceId, data).then((r) => {
+        if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [activeServiceId, data, hasAnyData]);
+
+  // Realtime: při změně zařízení v jiné záložce/zařízení přenačíst (debounce 2s – sníží záplavu při nestabilním připojení)
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let inventoryReloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleDevicesReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        loadDevicesFromDb(activeServiceId).then((r) => {
+          if (!r.error) {
+            justLoadedRef.current = true;
+            setData(r.data);
+            setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models }));
+          }
+        });
+      }, 2000);
+    };
+    const scheduleInventoryReload = () => {
+      if (inventoryReloadTimer) clearTimeout(inventoryReloadTimer);
+      inventoryReloadTimer = setTimeout(() => {
+        inventoryReloadTimer = null;
+        loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })));
+      }, 2000);
+    };
+    const topic = `devices:${activeServiceId}`;
+    const channel = supabase
+      .channel(topic)
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_brands", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_categories", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleDevicesReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_products", filter: `service_id=eq.${activeServiceId}` }, scheduleInventoryReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_product_categories", filter: `service_id=eq.${activeServiceId}` }, scheduleInventoryReload)
+      .subscribe();
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      if (inventoryReloadTimer) clearTimeout(inventoryReloadTimer);
+      if (supabase) supabase.removeChannel(channel);
+    };
+  }, [activeServiceId]);
 
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {
@@ -250,7 +398,6 @@ export default function Devices() {
     const brand: Brand = { id: uuid(), name: newBrandName.trim(), createdAt: new Date().toISOString() };
     const next: DevicesData = { ...data, brands: [...data.brands, brand] };
     setData(next);
-    safeSaveData(next);
     setNewBrandName("");
     showToast("Značka přidána", "success");
   };
@@ -265,7 +412,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, categories: [...data.categories, cat] };
     setData(next);
-    safeSaveData(next);
     setNewCategoryName("");
     showToast("Kategorie přidána", "success");
   };
@@ -280,7 +426,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, models: [...data.models, model] };
     setData(next);
-    safeSaveData(next);
     setNewModelName("");
     showToast("Model přidán", "success");
   };
@@ -300,7 +445,6 @@ export default function Devices() {
     };
     const next: DevicesData = { ...data, repairs: [...data.repairs, repair] };
     setData(next);
-    safeSaveData(next);
     setNewRepair({ name: "", price: "", time: "", details: "", costs: "", productIds: [], modelIds: [], productSearch: "", modelSearch: "" });
     showToast("Oprava přidána", "success");
   };
@@ -315,7 +459,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedBrandId === id) setSelectedBrandId(null);
     showToast("Značka smazána", "success");
   };
@@ -329,7 +472,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedCategoryId === id) setSelectedCategoryId(null);
     showToast("Kategorie smazána", "success");
   };
@@ -341,7 +483,6 @@ export default function Devices() {
       repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.includes(id)),
     };
     setData(next);
-    safeSaveData(next);
     if (selectedModelId === id) setSelectedModelId(null);
     showToast("Model smazán", "success");
   };
@@ -349,14 +490,12 @@ export default function Devices() {
   const deleteRepair = (id: string) => {
     const next: DevicesData = { ...data, repairs: data.repairs.filter((r) => r.id !== id) };
     setData(next);
-    safeSaveData(next);
     showToast("Oprava smazána", "success");
   };
 
   const updateBrand = (id: string, name: string) => {
     const next: DevicesData = { ...data, brands: data.brands.map((b) => (b.id === id ? { ...b, name } : b)) };
     setData(next);
-    safeSaveData(next);
     setEditingBrand(null);
     showToast("Značka upravena", "success");
   };
@@ -364,7 +503,6 @@ export default function Devices() {
   const updateCategory = (id: string, name: string) => {
     const next: DevicesData = { ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, name } : c)) };
     setData(next);
-    safeSaveData(next);
     setEditingCategory(null);
     showToast("Kategorie upravena", "success");
   };
@@ -372,7 +510,6 @@ export default function Devices() {
   const updateModel = (id: string, name: string) => {
     const next: DevicesData = { ...data, models: data.models.map((m) => (m.id === id ? { ...m, name } : m)) };
     setData(next);
-    safeSaveData(next);
     setEditingModel(null);
     showToast("Model upraven", "success");
   };
@@ -396,7 +533,6 @@ export default function Devices() {
       ),
     };
     setData(next);
-    safeSaveData(next);
     setEditingRepair(null);
     showToast("Oprava upravena", "success");
   };
@@ -740,77 +876,56 @@ DETALY: Výměna opotřebované baterie
   };
 
   const executeImport = () => {
-    if (!importPreview) return;
+    if (!importPreview || !activeServiceId) return;
 
-    setData((d) => {
-      const newData = { ...d };
+    const newData = (() => {
+      const d = { ...data };
       const brandMap = new Map<string, string>();
       const categoryMap = new Map<string, string>();
       const modelMap = new Map<string, string>();
 
-      // Import brands
       for (const brandName of importPreview.brands) {
-        const existing = newData.brands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
+        const existing = d.brands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
         if (!existing) {
-          const newBrand = {
-            id: uuid(),
-            name: brandName,
-            createdAt: new Date().toISOString()
-          };
-          newData.brands.push(newBrand);
+          const newBrand = { id: uuid(), name: brandName, createdAt: new Date().toISOString() };
+          d.brands.push(newBrand);
           brandMap.set(brandName.toLowerCase(), newBrand.id);
         } else {
           brandMap.set(brandName.toLowerCase(), existing.id);
         }
       }
-
-      // Import categories
       for (const cat of importPreview.categories) {
         const brandId = brandMap.get(cat.brand.toLowerCase());
         if (brandId) {
-          const existing = newData.categories.find(c => c.brandId === brandId && c.name.toLowerCase() === cat.name.toLowerCase());
+          const existing = d.categories.find(c => c.brandId === brandId && c.name.toLowerCase() === cat.name.toLowerCase());
           if (!existing) {
-            const newCategory = {
-              id: uuid(),
-              brandId,
-              name: cat.name,
-              createdAt: new Date().toISOString()
-            };
-            newData.categories.push(newCategory);
+            const newCategory = { id: uuid(), brandId, name: cat.name, createdAt: new Date().toISOString() };
+            d.categories.push(newCategory);
             categoryMap.set(`${cat.brand.toLowerCase()}:${cat.name.toLowerCase()}`, newCategory.id);
           } else {
             categoryMap.set(`${cat.brand.toLowerCase()}:${cat.name.toLowerCase()}`, existing.id);
           }
         }
       }
-
-      // Import models
       for (const model of importPreview.models) {
         const categoryId = categoryMap.get(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}`);
         if (categoryId) {
-          const existing = newData.models.find(m => m.categoryId === categoryId && m.name.toLowerCase() === model.name.toLowerCase());
+          const existing = d.models.find(m => m.categoryId === categoryId && m.name.toLowerCase() === model.name.toLowerCase());
           if (!existing) {
-            const newModel = {
-              id: uuid(),
-              categoryId,
-              name: model.name,
-              createdAt: new Date().toISOString()
-            };
-            newData.models.push(newModel);
+            const newModel = { id: uuid(), categoryId, name: model.name, createdAt: new Date().toISOString() };
+            d.models.push(newModel);
             modelMap.set(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}:${model.name.toLowerCase()}`, newModel.id);
           } else {
             modelMap.set(`${model.brand.toLowerCase()}:${model.category.toLowerCase()}:${model.name.toLowerCase()}`, existing.id);
           }
         }
       }
-
-      // Import repairs
       for (const repair of importPreview.repairs) {
         const modelId = modelMap.get(`${repair.brand.toLowerCase()}:${repair.category.toLowerCase()}:${repair.model.toLowerCase()}`);
         if (modelId) {
-          const existing = newData.repairs.find(r => r.modelIds.includes(modelId) && r.name.toLowerCase() === repair.name.toLowerCase());
+          const existing = d.repairs.find(r => r.modelIds.includes(modelId) && r.name.toLowerCase() === repair.name.toLowerCase());
           if (!existing) {
-            const newRepair: Repair = {
+            d.repairs.push({
               id: uuid(),
               modelIds: [modelId],
               name: repair.name,
@@ -819,14 +934,19 @@ DETALY: Výměna opotřebované baterie
               costs: repair.costs,
               productIds: repair.products || [],
               details: repair.details || "",
-              createdAt: new Date().toISOString()
-            };
-            newData.repairs.push(newRepair);
+              createdAt: new Date().toISOString(),
+            });
           }
         }
       }
+      return d;
+    })();
 
-      return newData;
+    setData(newData);
+    loadedEmptyRef.current = false;
+    // Okamžitě uložit do DB – nečekat na debounce (uživatel může rychle reloadnout)
+    saveDevicesToDb(activeServiceId, newData).then((r) => {
+      if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
     });
 
     showToast("Import dokončen", "success");
@@ -999,6 +1119,68 @@ DETALY: Výměna opotřebované baterie
 
   return (
     <div data-tour="devices-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {devicesLoadError && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: 16,
+            background: "rgba(239,68,68,0.08)",
+            borderRadius: 12,
+            border: "1px solid rgba(239,68,68,0.3)",
+            color: "var(--text)",
+          }}
+        >
+          <span style={{ fontSize: 14 }}>Chyba načítání: {devicesLoadError}</span>
+          <button
+            onClick={() => {
+              resetTauriFetchState();
+              setRetryKey((k) => k + 1);
+            }}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 10,
+              border: "none",
+              background: "var(--accent)",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Načíst znovu
+          </button>
+        </div>
+      )}
+      {devicesLoading && activeServiceId && !devicesLoadError && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: 24,
+            background: "var(--panel)",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              border: "2px solid var(--accent)",
+              borderTopColor: "transparent",
+              borderRadius: "50%",
+              animation: "devicesSpin 0.7s linear infinite",
+            }}
+          />
+          <span style={{ color: "var(--muted)", fontSize: 14 }}>Načítání zařízení…</span>
+        </div>
+      )}
+      <style>{`@keyframes devicesSpin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zařízení a opravy</div>
@@ -1006,7 +1188,7 @@ DETALY: Výměna opotřebované baterie
             Spravujte značky, kategorie, modely a jejich opravy. Použijte ↑↓ pro změnu pořadí.
           </div>
         </div>
-        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px" }}>
+        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px", marginRight: 120 }}>
           Import
         </button>
       </div>

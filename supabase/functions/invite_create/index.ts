@@ -233,23 +233,60 @@ serve(async (req) => {
     }
     if (resendKey && emailTrim) {
       try {
+        let isExistingMember = false;
+        try {
+          const { data: hasMembership } = await svc.rpc("invited_email_has_any_membership", { p_email: emailTrim });
+          isExistingMember = hasMembership === true;
+        } catch (e) {
+          console.warn("[invite_create] invited_email_has_any_membership RPC failed, using default text", e);
+        }
+        const instructionTextShort = isExistingMember
+          ? "Kód můžete zadat v Nastavení – Můj profil."
+          : "Při registraci v Jobi zadej níže uvedený kód.";
+        const instructionText = isExistingMember
+          ? instructionTextShort
+          : "V aplikaci Jobi při registraci zadej tento kód:";
+
         const escapeHtml = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         const safeName = escapeHtml(serviceNameForEmail || "Servis");
         const safeToken = escapeHtml(inviteToken);
-        const textBody = `Pozvánka do servisu: ${serviceNameForEmail}\n\nV aplikaci Jobi při registraci zadej tento kód:\n\n${inviteToken}\n\nKód platí 14 dní.`;
+        const safeInstruction = escapeHtml(instructionTextShort);
+        const textBody = isExistingMember
+          ? `Pozvánka do servisu: ${serviceNameForEmail}\n\n${instructionTextShort}\n\n${inviteToken}\n\nKód platí 14 dní.`
+          : `Pozvánka do servisu: ${serviceNameForEmail}\n\n${instructionText}\n\n${inviteToken}\n\nKód platí 14 dní. Po registraci budeš přidán/a do servisu.`;
+        let logoImgSrc = "";
+        const envLogoUrl = Deno.env.get("RESEND_LOGO_URL")?.trim();
+        if (envLogoUrl) {
+          logoImgSrc = envLogoUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+        } else {
+          try {
+            const logoBytes = await Deno.readFile(new URL("logo.png", import.meta.url));
+            const binaryStr = Array.from(logoBytes).reduce((s, b) => s + String.fromCharCode(b), "");
+            logoImgSrc = "data:image/png;base64," + btoa(binaryStr);
+          } catch (e) {
+            console.warn("[invite_create] logo.png not found, using text fallback", e);
+          }
+        }
+        const logoHtml = logoImgSrc
+          ? "<div style=\"text-align:center;margin-bottom:24px\"><img src=\"" + logoImgSrc + "\" alt=\"Jobi\" width=\"120\" height=\"40\" style=\"display:inline-block;max-width:120px;height:auto;border:0\" /></div>"
+          : "<div style=\"text-align:center;margin-bottom:24px;font-size:24px;font-weight:800;color:#7c3aed\">Jobi</div>";
         const htmlBody = [
-          "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>",
-          "<body style=\"margin:0;padding:24px;font-family:system-ui,sans-serif;background:#eef0f4\">",
-          "<div style=\"max-width:480px;margin:0 auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,0.1)\">",
-          "<h1 style=\"margin:0 0 8px;font-size:20px;color:#1e1b4b\">Pozvánka do servisu</h1>",
-          "<p style=\"margin:0 0 16px;color:#6b7280;font-size:14px\">" + safeName + "</p>",
-          "<p style=\"margin:0 0 16px;color:#111;font-size:15px\">Při registraci v Jobi zadej níže uvedený kód.</p>",
-          "<div style=\"background:rgba(37,99,235,0.08);border:2px solid rgba(37,99,235,0.25);border-radius:12px;padding:16px;text-align:center;margin:16px 0\">",
-          "<p style=\"margin:0 0 4px;font-size:11px;color:#6b7280;text-transform:uppercase\">Kód z pozvánky</p>",
-          "<p style=\"margin:0;font-family:monospace;font-size:18px;font-weight:700;letter-spacing:0.08em;color:#111\">" + safeToken + "</p>",
-          "</div>",
-          "<p style=\"margin:0;font-size:13px;color:#6b7280\">Kód platí 14 dní.</p>",
-          "</div><p style=\"text-align:center;margin-top:16px;font-size:12px;color:#6b7280\">Jobi</p></body></html>",
+          "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Pozvánka do servisu</title></head>",
+          "<body style=\"margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;background:#faf5ff;-webkit-text-size-adjust:100%\">",
+          "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#faf5ff;padding:24px 16px\"><tr><td align=\"center\">",
+          "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(124,58,237,0.12);overflow:hidden\"><tr><td style=\"padding:32px 24px\">",
+          logoHtml,
+          "<h1 style=\"margin:0 0 4px;font-size:22px;font-weight:700;color:#1e1b4b;line-height:1.3\">Pozvánka do servisu</h1>",
+          "<p style=\"margin:0 0 20px;font-size:14px;color:#6b7280\">" + safeName + "</p>",
+          "<p style=\"margin:0 0 20px;font-size:15px;color:#374151;line-height:1.5\">" + safeInstruction + "</p>",
+          "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f5f3ff;border:2px solid #c4b5fd;border-radius:12px;margin:20px 0\"><tr><td style=\"padding:20px;text-align:center\">",
+          "<p style=\"margin:0 0 6px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em\">Kód z pozvánky</p>",
+          "<p style=\"margin:0;font-family:ui-monospace,monospace;font-size:20px;font-weight:700;letter-spacing:0.1em;color:#1e1b4b\">" + safeToken + "</p>",
+          "</td></tr></table>",
+          "<p style=\"margin:0;font-size:13px;color:#6b7280;line-height:1.5\">" + (isExistingMember ? "Kód platí 14 dní." : "Kód platí 14 dní. Po registraci budeš přidán/a do servisu.") + "</p>",
+          "</td></tr></table>",
+          "<p style=\"text-align:center;margin-top:20px;font-size:12px;color:#9ca3af\">Jobi – správa zakázek</p>",
+          "</td></tr></table></body></html>",
         ].join("");
         const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
         const res = await fetch("https://api.resend.com/emails", {

@@ -149,7 +149,8 @@ site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
-jwt_expiry = 3600
+# Prodlouženo na 7 dní, aby se předešlo odhlašování na stránce Devices (RLS 42501 při expirovaném JWT).
+jwt_expiry = 604800
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
@@ -391,4 +392,20 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.invite-get-token]
+verify_jwt = false
+
+[functions.invite_create]
+verify_jwt = false
+static_files = ["functions/invite_create/logo.png"]
+
+[functions.password-reset-request]
+verify_jwt = false
+
+[functions.password-reset-confirm]
+verify_jwt = false
+
+[functions.capture-upload]
+verify_jwt = false
+
+[functions.capture-create-token]
 verify_jwt = false

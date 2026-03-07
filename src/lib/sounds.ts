@@ -77,3 +77,10 @@ export function playSaved(): void {
 export function playDeleted(): void {
   playTone(392, 80, 0.1);
 }
+
+/** Fanfára při odemknutí achievementu – příjemná trojice tónů */
+export function playAchievementUnlock(): void {
+  playTone(523.25, 90, 0.14);
+  setTimeout(() => playTone(659.25, 90, 0.12), 100);
+  setTimeout(() => playTone(783.99, 120, 0.1), 220);
+}

@@ -27,8 +27,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (import.meta.env.DEV) {
+        console.log("[Auth] onAuthStateChange", { event, hasSession: !!session });
+      }
+      if (session) {
+        setSession(session);
+        return;
+      }
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+        return;
+      }
+      // Při null bez explicitního odhlášení zkusit refresh
+      if (!supabase) return;
+      const { data, error } = await supabase.auth.refreshSession();
+      if (import.meta.env.DEV) {
+        console.log("[Auth] refreshSession po event=" + event, { ok: !!data?.session, error: error?.message });
+      }
+      if (data?.session) {
+        setSession(data.session);
+      }
     });
 
     return () => subscription.unsubscribe();

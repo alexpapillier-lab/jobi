@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { addWatermarkToImageBlob } from "./diagnosticPhotoWatermark";
 
 const BUCKET = "diagnostic-photos";
 
@@ -38,6 +39,25 @@ export async function uploadDiagnosticPhoto(
   if (error) throw error;
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+/**
+ * Nahraje soubor do Storage s watermarkem (datum, čas, jobi) a vrátí veřejnou URL.
+ */
+export async function uploadDiagnosticPhotoWithWatermark(
+  supabase: SupabaseClient | null,
+  serviceId: string,
+  ticketId: string,
+  file: File
+): Promise<string> {
+  if (!supabase) throw new Error("Supabase není k dispozici");
+  const watermarked = await addWatermarkToImageBlob(file);
+  const f = new File(
+    [watermarked],
+    (file.name || "photo.jpg").replace(/\.[^.]+$/i, ".jpg") || "photo.jpg",
+    { type: "image/jpeg" }
+  );
+  return uploadDiagnosticPhoto(supabase, serviceId, ticketId, f);
 }
 
 /**

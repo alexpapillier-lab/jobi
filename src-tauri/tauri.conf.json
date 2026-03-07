@@ -1,32 +1,28 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "jobi",
-  "version": "0.1.0",
-  "identifier": "com.jobsheet.online",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build:prod",
-    "frontendDist": "../dist"
-  },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "jobi",
-        "width": 1400,
-        "height": 900,
-        "minWidth": 1000,
-        "minHeight": 700
-      }
-    ],
     "security": {
       "csp": null
-    }
+    },
+    "windows": [
+      {
+        "height": 900,
+        "label": "main",
+        "minHeight": 700,
+        "minWidth": 1000,
+        "title": "jobi",
+        "width": 1400
+      }
+    ]
+  },
+  "build": {
+    "beforeBuildCommand": "npm run build:prod",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
   },
   "bundle": {
     "active": true,
-    "targets": "app",
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -36,16 +32,22 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "Developer ID Application: Alex Papillier (8ZC264M873)",
+      "entitlements": null,
       "hardenedRuntime": true,
-      "entitlements": null
-    }
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "Developer ID Application: Alex Papillier (8ZC264M873)"
+    },
+    "targets": "app"
   },
+  "identifier": "com.jobsheet.online",
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFRDgxMzczNjU1QkE2NUQKUldSZHBsdGxjeFBZdnFRc2dWQ29OL0JObXRsMlZ1S0s3VEtxU085RmtFRVdJU3dRQlo1MTRVUXoK",
-      "endpoints": ["https://github.com/alexpapillier-lab/jobi/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://github.com/alexpapillier-lab/jobi/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlCRDZDRjg4ODg1OTM1NEUKUldST05WbUlpTS9XbTgwQnlHeTdocEg3ZGdDSVpPcGxRUCtndjFKOTd5OGE4OUh4c3RKcFpoMk4K"
     }
-  }
+  },
+  "productName": "jobi",
+  "version": "0.2.2"
 }

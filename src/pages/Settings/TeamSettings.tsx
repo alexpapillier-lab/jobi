@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../lib/supabaseClient";
+import { devLog, devWarn } from "../../lib/devLog";
 import { useAuth } from "../../auth/AuthProvider";
 import { useIsRootOwner, getRootOwnerId } from "../../hooks/useIsRootOwner";
 import { showToast } from "../../components/Toast";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
+import { checkAchievementOnTeamSize } from "../../lib/achievements";
 
 const CAPABILITY_KEYS = [
   "can_manage_tickets_basic",
@@ -146,6 +148,33 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   const [fetchedInviteTokens, setFetchedInviteTokens] = useState<Record<string, string>>({});
   const [loadingTokenForInviteId, setLoadingTokenForInviteId] = useState<string | null>(null);
 
+  // Profily členů (nickname, avatar) pro zobrazení v Tým
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
+
+  // Load profiles (nickname, avatar) for team members
+  useEffect(() => {
+    if (!supabase || teamMembers.length === 0) {
+      setMemberProfiles({});
+      return;
+    }
+    const userIds = [...new Set(teamMembers.map((m: any) => m.user_id).filter(Boolean))];
+    if (userIds.length === 0) {
+      setMemberProfiles({});
+      return;
+    }
+    (async () => {
+      const { data } = await (supabase as any).from("profiles").select("id, nickname, avatar_url").in("id", userIds);
+      const map: Record<string, { nickname: string | null; avatarUrl: string | null }> = {};
+      for (const p of data ?? []) {
+        map[p.id] = {
+          nickname: typeof p.nickname === "string" ? p.nickname : null,
+          avatarUrl: typeof p.avatar_url === "string" ? p.avatar_url : null,
+        };
+      }
+      setMemberProfiles(map);
+    })();
+  }, [teamMembers]);
+
   // Load team members and invites when activeServiceId or token changes (ne na celý session – ten mění referenci a spouští smyčku)
   useEffect(() => {
     const client = supabase;
@@ -168,15 +197,14 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       let lastStep = "init";
 
       try {
-        // V Tauri může Supabase klient mít session z localStorage neaktualizovanou – zajistíme, že používá aktuální session
         const { data: { session: clientSession } } = await client.auth.getSession();
-        console.log("[TeamSettings] loadTeamData: session from useAuth:", !!session, "clientSession:", !!clientSession, "access_token:", !!session?.access_token, "activeServiceId:", activeServiceId);
+        devLog("[TeamSettings] loadTeamData: session from useAuth:", !!session, "clientSession:", !!clientSession, "access_token:", !!session?.access_token, "activeServiceId:", activeServiceId);
         if (!clientSession?.access_token && session?.access_token) {
           await client.auth.setSession({
             access_token: session.access_token,
             refresh_token: session.refresh_token ?? "",
           });
-          console.log("[TeamSettings] loadTeamData: setSession called (client neměl token)");
+          devLog("[TeamSettings] loadTeamData: setSession called (client neměl token)");
         }
 
         lastStep = "team-list";
@@ -207,6 +235,8 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         if (!isRootOwner) members = members.filter((m: any) => m.role !== "owner");
         setTeamMembers(members);
         setPendingInvites(membersData?.invites ?? []);
+        const uid = session?.user?.id;
+        if (uid && activeServiceId && members.length >= 3) checkAchievementOnTeamSize(uid, activeServiceId, members.length);
       } catch (err: any) {
         const step = err?.__step ?? lastStep;
         // Podrobné logování pro diagnostiku (Tauri / Edge Function)
@@ -341,6 +371,26 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     };
   }, [inviteRolePickerOpen]);
 
+  // Escape zavře otevřený dialog (pozvat / odebrat / změna role / oprávnění)
+  useEffect(() => {
+    const anyOpen = inviteDialogOpen || removeDialogOpen || roleChangeDialogOpen || capabilitiesDialogOpen;
+    if (!anyOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (capabilitiesDialogOpen) setCapabilitiesDialogOpen(false);
+      else if (roleChangeDialogOpen) setRoleChangeDialogOpen(false);
+      else if (removeDialogOpen) {
+        setRemoveDialogOpen(false);
+        setRemoveUserId(null);
+        setRemoveServiceId(null);
+      }
+      else if (inviteDialogOpen) setInviteDialogOpen(false);
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [inviteDialogOpen, removeDialogOpen, roleChangeDialogOpen, capabilitiesDialogOpen]);
+
   const handleSendInvite = async () => {
     if (!activeServiceId || !session || !supabase) {
       showToast("Chyba: Nelze poslat pozvánku bez aktivního servisu", "error");
@@ -382,7 +432,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               }
             }
           } catch (e) {
-            console.warn("[TeamSettings] Could not read invite-create error body", e);
+            devWarn("[TeamSettings] Could not read invite-create error body", e);
           }
         }
         console.error("[TeamSettings] invite-create error:", msg, "context:", ctx ? "has Response" : "no context", "error keys:", error && typeof error === "object" ? Object.keys(error) : []);
@@ -674,10 +724,46 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   background: "var(--panel)",
                 }}
               >
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{member.email || member.user_id}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                    {member.role === "owner" ? "Owner" : member.role === "admin" ? "Administrátor" : "Člen"}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    {memberProfiles[member.user_id]?.avatarUrl ? (
+                      <img
+                        src={memberProfiles[member.user_id].avatarUrl!}
+                        alt=""
+                        style={{ width: 36, height: 36, borderRadius: 10, objectFit: "cover" }}
+                        onError={(e) => {
+                          const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
+                          if (fallback) fallback.style.display = "grid";
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+                        color: "white",
+                        display: memberProfiles[member.user_id]?.avatarUrl ? "none" : "grid",
+                        placeItems: "center",
+                        fontWeight: 700,
+                        fontSize: 14,
+                      }}
+                    >
+                      {(memberProfiles[member.user_id]?.nickname?.trim() || member.email || "?").charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {memberProfiles[member.user_id]?.nickname?.trim() || member.email || member.user_id}
+                    </div>
+                    {memberProfiles[member.user_id]?.nickname?.trim() && member.email && (
+                      <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{member.email}</div>
+                    )}
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {member.role === "owner" ? "Owner" : member.role === "admin" ? "Administrátor" : "Člen"}
+                    </div>
                   </div>
                 </div>
 
@@ -849,7 +935,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                             });
                             if (error) throw error;
                             if (data?.error) {
-                              console.warn("[TeamSettings] invite-get-token data.error:", data.error, "detail:", (data as { detail?: string }).detail);
+                              devWarn("[TeamSettings] invite-get-token data.error:", data.error, "detail:", (data as { detail?: string }).detail);
                               showToast(data.error, "error");
                               return;
                             }
@@ -860,7 +946,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                             const res = err?.context as Response | undefined;
                             if (res?.status === 401) {
                               res.clone().text().then(
-                                (body) => console.warn("[TeamSettings] invite-get-token 401 body:", body),
+                                (body) => devWarn("[TeamSettings] invite-get-token 401 body:", body),
                                 () => {}
                               );
                             }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { showToast } from "../components/Toast";
 import { supabase } from "../lib/supabaseClient";
+import { devLog } from "../lib/devLog";
 import { typedSupabase } from "../lib/typedSupabase";
 import { CustomerList, type CustomerRecord } from "./Customers/CustomerList";
 import { CustomerDetail } from "./Customers/CustomerDetail";
@@ -153,7 +154,7 @@ export default function Customers({
     if (!activeServiceId || !supabase) return;
 
     const topic = `customers:${activeServiceId}`;
-    console.log("[RT] subscribe", topic, new Date().toISOString());
+    devLog("[RT] subscribe", topic, new Date().toISOString());
 
     const channel = supabase
       .channel(topic)
@@ -166,7 +167,7 @@ export default function Customers({
           filter: `service_id=eq.${activeServiceId}`,
         },
         async (payload) => {
-          console.log("[Customers] customers changed", payload);
+          devLog("[Customers] customers changed", payload);
           
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
             const newCustomer = mapSupabaseCustomerToCustomerRecord(payload.new);
@@ -200,12 +201,12 @@ export default function Customers({
       .subscribe();
 
     return () => {
-      console.log("[RT] unsubscribe", topic, new Date().toISOString());
+      devLog("[RT] unsubscribe", topic, new Date().toISOString());
       if (supabase) {
         supabase.removeChannel(channel);
       }
     };
-  }, [activeServiceId, cloudCustomers]);
+  }, [activeServiceId, supabase]);
 
   const customers = cloudCustomers;
 
@@ -333,7 +334,7 @@ export default function Customers({
       const { customerId, oldCustomerId } = e.detail || {};
       // Refresh if currently opened customer matches new or old customer ID
       if (openId && (openId === customerId || openId === oldCustomerId)) {
-        console.log("[Customers] Refreshing customer tickets due to customer_id change:", { customerId, oldCustomerId, openId });
+        devLog("[Customers] Refreshing customer tickets due to customer_id change:", { customerId, oldCustomerId, openId });
         // Trigger reload by temporarily clearing and setting openId
         // Or directly call loadCustomerTickets if we have access to it
         // For now, we'll use a simple approach: reload when openId matches

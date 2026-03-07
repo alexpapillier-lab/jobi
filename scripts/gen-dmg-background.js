@@ -50,8 +50,8 @@ async function writePng(svg, outPath) {
   console.log("Written:", outPath);
 }
 
-const svgJobi = buildSvg("Přetáhni Jobi do Aplikace");
-const svgJobiDocs = buildSvg("Přetáhni JobiDocs do Aplikace");
+const svgJobi = buildSvg("Přetáhněte do Aplikací");
+const svgJobiDocs = buildSvg("Přetáhněte do Aplikací");
 
 const assetsDir = path.join(__dirname, "dmg-assets");
 const outJobi = path.join(assetsDir, "dmg-background.png");

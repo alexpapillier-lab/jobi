@@ -50,16 +50,9 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
           .from("service_settings") as any)
           .select("config")
           .eq("service_id", activeServiceId)
-          .single();
+          .maybeSingle();
 
-        if (error) {
-          // If not found, it's okay - will use default/localStorage
-          if (error.code === "PGRST116") {
-            setServiceSettingsLoading(false);
-            return;
-          }
-          throw error;
-        }
+        if (error) throw error;
 
         if (data?.config?.abbreviation) {
           // Update companyData abbreviation from DB
@@ -90,7 +83,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
 
         <div style={{ display: "grid", gap: 16 }}>
           <div>
-            <FieldLabel>Zkratka *</FieldLabel>
+            <FieldLabel>Zkratka</FieldLabel>
             <TextInput
               type="text"
               value={companyData.abbreviation}
@@ -100,7 +93,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
           </div>
 
           <div>
-            <FieldLabel>Název *</FieldLabel>
+            <FieldLabel>Název</FieldLabel>
             <TextInput
               type="text"
               value={companyData.name}
@@ -111,7 +104,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
-              <FieldLabel>IČO *</FieldLabel>
+              <FieldLabel>IČO</FieldLabel>
               <TextInput
                 type="text"
                 value={companyData.ico}
@@ -133,7 +126,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div style={{ position: "relative" }}>
-              <FieldLabel>Jazyk *</FieldLabel>
+              <FieldLabel>Jazyk</FieldLabel>
               <LanguagePicker
                 value={companyData.language}
                 onChange={(value) => setCompanyData((p) => ({ ...p, language: value }))}
@@ -141,7 +134,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
             </div>
 
             <div>
-              <FieldLabel>Výchozí tel. předvolba *</FieldLabel>
+              <FieldLabel>Výchozí tel. předvolba</FieldLabel>
               <TextInput
                 type="text"
                 value={companyData.defaultPhonePrefix}
@@ -155,7 +148,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
             <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", marginTop: 8, marginBottom: 8 }}>Adresa</div>
             
             <div style={{ marginBottom: 16 }}>
-              <FieldLabel>Ulice *</FieldLabel>
+              <FieldLabel>Ulice</FieldLabel>
               <TextInput
                 type="text"
                 value={companyData.addressStreet}
@@ -166,7 +159,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
 
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
               <div>
-                <FieldLabel>Město *</FieldLabel>
+                <FieldLabel>Město</FieldLabel>
                 <TextInput
                   type="text"
                   value={companyData.addressCity}
@@ -176,7 +169,7 @@ export function ServiceSettings({ activeServiceId, onSave }: ServiceSettingsProp
               </div>
 
               <div>
-                <FieldLabel>PSČ *</FieldLabel>
+                <FieldLabel>PSČ</FieldLabel>
                 <TextInput
                   type="text"
                   value={companyData.addressZip}

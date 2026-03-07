@@ -10,6 +10,21 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
+# Při spuštění z GUI (Release App) se nenačte .zshrc/.bash_profile – doplnit cesty k nástrojům
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.cargo/bin:$PATH"
+# nvm: načíst defaultní Node, pokud existuje
+if [ -f "$HOME/.nvm/nvm.sh" ]; then
+  source "$HOME/.nvm/nvm.sh" 2>/dev/null || true
+fi
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "Error: rustup not found. Nainstaluj z https://rustup.rs nebo přidej \$HOME/.cargo/bin do PATH." >&2
+  exit 1
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "Error: npm not found. Nainstaluj Node (brew install node) nebo nvm a přidej do PATH." >&2
+  exit 1
+fi
+
 echo "🔨 Building Universal Binary for macOS..."
 
 # Colors for output
@@ -33,7 +48,8 @@ echo -e "${GREEN}Building for aarch64 (Apple Silicon)...${NC}"
 npm run build:prod
 npx tauri build --target aarch64-apple-darwin
 
-echo -e "${GREEN}Building for x86_64 (Intel)...${NC}"
+echo -e "${GREEN}Building for x86_64 (Intel)...${NC}" >&2
+echo "Může trvat 5–10 minut na Apple Silicon; výstup se může na chvíli zdát zastavený." >&2
 npx tauri build --target x86_64-apple-darwin
 
 echo -e "${GREEN}Creating universal binary with lipo...${NC}"
@@ -68,7 +84,7 @@ cd - > /dev/null
 
 echo -e "${GREEN}Creating .tar.gz for OTA updater...${NC}"
 cd "$BUNDLE_DIR"
-tar czf "jobi.app.tar.gz" jobi.app
+COPYFILE_DISABLE=1 tar czf "jobi.app.tar.gz" jobi.app
 cd - > /dev/null
 
 # Sign and generate latest.json when signing key is available (one universal build → both archs in OTA)
@@ -76,10 +92,12 @@ if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -f "$HOME/.tauri/jobi.key" ]; then
   echo -e "${GREEN}Signing OTA bundle...${NC}"
   if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
     export TAURI_PRIVATE_KEY="$TAURI_SIGNING_PRIVATE_KEY"
+    # Předat i prázdné heslo, aby signer nepromptoval (klíč bez hesla)
+    export TAURI_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
   else
     export TAURI_PRIVATE_KEY_PATH="$HOME/.tauri/jobi.key"
+    export TAURI_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
   fi
-  [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && export TAURI_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
   npx tauri signer sign "$BUNDLE_DIR/jobi.app.tar.gz"
   echo -e "${GREEN}Generating latest.json (universal – both darwin-aarch64 and darwin-x86_64)...${NC}"
   bash "$SCRIPT_DIR/generate-jobi-latest-json.sh" universal "$ROOT/latest.json"

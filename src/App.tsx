@@ -6,6 +6,8 @@ import Customers from "./pages/Customers";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
+import Calendar from "./pages/Calendar";
+import Achievements from "./pages/Achievements";
 import Preview from "./pages/Preview";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
@@ -20,17 +22,21 @@ import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
-import { showToast } from "./components/Toast";
+import { showToast, showPersistentToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
 import { pushContextToJobiDocs, openJobiDocsDownload } from "./lib/jobidocs";
+import { loadDocumentsConfigRawFromDB } from "./lib/documentSettings";
+import { useActiveRole } from "./hooks/useActiveRole";
 import { getLogoColors, LOGO_PRESETS } from "./lib/logoPresets";
 import type { LogoPresetId } from "./lib/logoPresets";
 import type { ThemeMode } from "./theme/ThemeProvider";
 import { STORAGE_KEYS } from "./constants/storageKeys";
-import { safeLoadDocumentsConfig, safeLoadCompanyData } from "./pages/Orders";
+import { safeLoadCompanyData } from "./pages/Orders";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
+import { checkAchievementOnMultiservice, checkAchievementOnShortcutUsed } from "./lib/achievements";
+import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import {
   getShortcut,
@@ -53,11 +59,17 @@ type OpenCustomerIntent = {
   customerId: string;
 };
 
+type OpenClaimIntent = {
+  claimId: string;
+  returnToPage?: NavKey;
+};
+
 const ORDERS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: "list" | "grid" | "compact"; pageSize: number };
+  achievementsEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
@@ -65,6 +77,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
+    achievementsEnabled: true,
   };
 }
 
@@ -84,6 +97,7 @@ function safeLoadUIConfig(): UIConfig {
       ? pageSize
       : d.orders.pageSize;
 
+    const achievementsEnabled = parsed?.achievementsEnabled;
     return {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
@@ -100,6 +114,7 @@ function safeLoadUIConfig(): UIConfig {
         displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
       },
+      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
     };
   } catch {
     return defaultUIConfig();
@@ -109,8 +124,18 @@ function safeLoadUIConfig(): UIConfig {
 export default function App() {
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
-  const [authenticated, setAuthenticatedState] = useState(() => isAuthenticated());
+  const [, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
+  // Stránky jednou navštívené zůstávají namountované (jen skryté) – instant přepnutí bez reload
+  const [visitedPages, setVisitedPages] = useState<Set<NavKey>>(() => new Set(["orders"]));
+  useEffect(() => {
+    setVisitedPages((prev) => {
+      if (prev.has(activePage)) return prev;
+      return new Set([...prev, activePage]);
+    });
+  }, [activePage]);
+  /** Když uživatel klikne „Jít do nastavení“ v toastu aktualizace, otevřeme Settings na této subsekci */
+  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "about"; subsection: "about_updates" } | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
@@ -119,6 +144,8 @@ export default function App() {
       return null;
     }
   });
+  const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
 
   // Track previous activeServiceId for service change detection
@@ -126,6 +153,8 @@ export default function App() {
 
   // one-shot intent: navigate to Orders and open a specific ticket
   const [openTicketIntent, setOpenTicketIntent] = useState<OpenTicketIntent | null>(null);
+
+  const [openClaimIntent, setOpenClaimIntent] = useState<OpenClaimIntent | null>(null);
 
   // one-shot intent: navigate to Customers and open a specific customer
   const [openCustomerIntent, setOpenCustomerIntent] = useState<OpenCustomerIntent | null>(null);
@@ -139,6 +168,10 @@ export default function App() {
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
 
+  // Po přihlášení s pozvánkou: neukazovat hlavní app, dokud nevyřídíme invite a neukážeme „Pozvánka přijata“
+  const [resolvingInvite, setResolvingInvite] = useState(false);
+  const [inviteAcceptStatus, setInviteAcceptStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
   // Průvodce aplikací (krok za krokem po stránkách)
   const [isTourActive, setIsTourActive] = useState(false);
   const [tourStep, setTourStep] = useState(0);
@@ -151,10 +184,26 @@ export default function App() {
     () => [
       {
         page: "orders",
+        title: "Vítejte v Jobi",
+        description:
+          "Tento průvodce vás provede hlavními funkcemi aplikace. Můžete ho kdykoli přeskočit nebo znovu spustit v Nastavení → O aplikaci. Na každé stránce stiskněte ? pro nápovědu klávesových zkratek.",
+        icon: "welcome",
+      },
+      {
+        page: "orders",
+        title: "Navigace v postranním panelu",
+        description:
+          "Vlevo přepínejte mezi Zakázky, Sklad, Zařízení, Zákazníci, Statistiky a Nastavení. Aktuální stránka je zvýrazněná.",
+        selector: "[data-tour=\"sidebar-nav-orders\"]",
+        icon: "orders",
+      },
+      {
+        page: "orders",
         title: "Zakládání nové zakázky",
         description:
-          "Tlačítko „+ Nová zakázka“ otevře formulář pro vytvoření zakázky. Vyplňte zákazníka (telefon, jméno), zařízení a popis. Pokud zákazník s daným telefonem už existuje, aplikace ho nabídne k přiřazení. Novou zakázku můžete založit i plovoucím tlačítkem + vpravo dole na jakékoli stránce.",
+          "Tlačítko „+ Nová zakázka“ otevře formulář pro vytvoření zakázky. Vyplňte zákazníka (telefon, jméno), zařízení a popis. Pokud zákazník s daným telefonem už existuje, aplikace ho nabídne k přiřazení.",
         selector: "[data-tour=\"orders-new-btn\"]",
+        icon: "orders",
       },
       {
         page: "orders",
@@ -162,6 +211,7 @@ export default function App() {
         description:
           "Do pole vyhledávání zadejte jméno, telefon, zařízení nebo text z poznámky. Seznam zakázek se filtruje v reálném čase.",
         selector: "[data-tour=\"orders-search\"]",
+        icon: "orders",
       },
       {
         page: "orders",
@@ -169,6 +219,7 @@ export default function App() {
         description:
           "Přepínejte mezi všemi zakázkami, jen aktivními (rozpracovanými) nebo finalizovanými. Usnadní to orientaci při velkém počtu zakázek.",
         selector: "[data-tour=\"orders-groups\"]",
+        icon: "orders",
       },
       {
         page: "orders",
@@ -176,6 +227,15 @@ export default function App() {
         description:
           "Rychlé filtry podle stavu zakázky (Přijato, V opravě, Hotovo atd.). Stavů můžete mít více a měnit je v Nastavení.",
         selector: "[data-tour=\"orders-filters\"]",
+        icon: "orders",
+      },
+      {
+        page: "orders",
+        title: "Nová reklamace",
+        description:
+          "Tlačítko „+ Nová reklamace“ slouží k založení reklamační zakázky navázané na původní zakázku. Reklamace se evidují odděleně a lze je filtrovat.",
+        selector: "[data-tour=\"orders-new-claim-btn\"]",
+        icon: "reklamace",
       },
       {
         page: "orders",
@@ -183,20 +243,23 @@ export default function App() {
         description:
           "Kliknutím na řádek otevřete detail zakázky. V detailu měníte stav, údaje o zákazníkovi, zařízení, ceny a provedené opravy.",
         selector: "[data-tour=\"orders-list\"]",
+        icon: "orders",
       },
       {
         page: "orders",
-        title: "Stav vpravo nahoře – JobiDocs",
+        title: "JobiDocs – tisk a PDF",
         description:
-          "Indikátor „JobiDocs ✓/✗“ vpravo nahoře ukazuje, zda je aplikace JobiDocs spuštěná a připojená. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, diagnostické protokoly, záruční listy). Pokud je „✗“, spusťte JobiDocs – bez něj nelze tisknout ani exportovat do PDF.",
+          "Indikátor „JobiDocs ✓/✗“ vpravo nahoře ukazuje, zda je aplikace JobiDocs spuštěná. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, protokoly, záruční listy).",
         selector: "[data-tour=\"header-jobidocs\"]",
+        icon: "jobidocs",
       },
       {
         page: "orders",
         title: "Plovoucí tlačítko +",
         description:
-          "Tlačítko + vpravo dole je dostupné na všech stránkách – rychle otevře formulář nové zakázky bez přepnutí na Zakázky. Lze vypnout v Nastavení → Vzhled.",
+          "Tlačítko + vpravo dole je dostupné na všech stránkách – rychle otevře formulář nové zakázky. Lze vypnout v Nastavení → Vzhled a chování → Rozhraní.",
         selector: "[data-tour=\"orders-fab\"]",
+        icon: "orders",
       },
       {
         page: "customers",
@@ -204,6 +267,7 @@ export default function App() {
         description:
           "Vyhledávejte zákazníky podle jména, telefonu, e-mailu nebo firmy. Seznam vlevo se okamžitě filtruje.",
         selector: "[data-tour=\"customers-search\"]",
+        icon: "customers",
       },
       {
         page: "customers",
@@ -211,20 +275,23 @@ export default function App() {
         description:
           "Vlevo seznam zákazníků, vpravo detail vybraného. V detailu upravíte údaje, založíte zakázku nebo zobrazíte historii zakázek.",
         selector: "[data-tour=\"customers-content\"]",
+        icon: "customers",
       },
       {
         page: "inventory",
         title: "Sklad – přehled",
         description:
-          "Skladové položky (produkty) a jejich propojení s modely zařízení. Ceny, zásoby a přiřazení k opravám. Návod k importu a formátu souboru najdete na této stránce po kliknutí na tlačítko „Import“.",
+          "Skladové položky (produkty) a jejich propojení s modely zařízení. Ceny, zásoby a přiřazení k opravám. Návod k importu najdete po kliknutí na „Import“.",
         selector: "[data-tour=\"inventory-main\"]",
+        icon: "inventory",
       },
       {
         page: "inventory",
         title: "Sklad – Import a návod",
         description:
-          "Tlačítko „Import“ otevře nahrání TXT souboru s produkty a návod k použití (struktura PRODUKT:, MODELY:, oddělovač ---). Vzorový soubor si můžete stáhnout přímo v té sekci.",
+          "Tlačítko „Import“ otevře nahrání TXT souboru s produkty a návod (struktura PRODUKT:, MODELY:, oddělovač ---). Vzorový soubor si můžete stáhnout v sekci.",
         selector: "[data-tour=\"inventory-import\"]",
+        icon: "inventory",
       },
       {
         page: "devices",
@@ -232,59 +299,130 @@ export default function App() {
         description:
           "Značky, kategorie a modely zařízení. U každého modelu můžete definovat opravy a ceny. Při zakázce pak vyberete model a přiřadíte opravy.",
         selector: "[data-tour=\"devices-main\"]",
+        icon: "devices",
       },
       {
         page: "statistics",
         title: "Statistiky – období a režimy",
         description:
-          "Výběr časového období (Vše, Dnes, Týden, Měsíc, Rok, Vlastní) a režim zobrazení: Karty, Tabulka nebo Grafy. Data se načítají z vašich zakázek v cloudu.",
+          "Výběr časového období (Vše, Dnes, Týden, Měsíc, Rok, Vlastní) a režim zobrazení: Karty, Tabulka nebo Grafy. Data se načítají z vašich zakázek.",
         selector: "[data-tour=\"statistics-period\"]",
+        icon: "statistics",
       },
       {
         page: "statistics",
         title: "Statistiky – grafy",
         description:
-          "V režimu „Grafy“ uvidíte sloupcové grafy: zakázky podle statusu a příjem podle měsíců. Přepnutí na Karty zobrazí přehledové karty a tabulku zakázek.",
+          "V režimu „Grafy“ uvidíte sloupcové grafy: zakázky podle statusu a příjem podle měsíců. Přepnutí na Karty zobrazí přehledové karty a tabulku.",
         selector: "[data-tour=\"statistics-view-charts\"]",
+        icon: "statistics",
       },
       {
         page: "settings",
         title: "Nastavení – záložky",
         description:
-          "V horní řadě přepínejte mezi sekcemi: Servis (údaje, tým, Owner), Zakázky (statusy, filtry), Vzhled a chování, Můj profil, O aplikaci.",
+          "V horní řadě přepínejte mezi sekcemi: Servis, Zakázky, Vzhled a chování, Můj profil, O aplikaci.",
         selector: "[data-tour=\"settings-categories\"]",
+        icon: "settings",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Základní údaje servisu",
+        description:
+          "Název servisu, IČO, adresa, kontaktní údaje a logo. Tyto údaje se zobrazují v hlavičce tiskových dokumentů a v nastavení.",
+        selector: "[data-tour=\"settings-sub-service_basic\"]",
+        settingsSection: { category: "service", subsection: "service_basic" },
+        icon: "settings",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Tým",
+        description:
+          "Pozvánky členů týmu, role a správa přístupů. Admin může přidávat a odebírat členy svého servisu.",
+        selector: "[data-tour=\"settings-sub-service_team\"]",
+        settingsSection: { category: "service", subsection: "service_team" },
+        icon: "team",
       },
       {
         page: "settings",
         title: "Nastavení – Statusy zakázek",
         description:
-          "V záložce Zakázky vyberte „Statusy zakázek“. Zde přidáváte a upravujete stavy (Přijato, V opravě, Hotovo…), barvy z palety a označení finálního stavu.",
+          "Přidávejte a upravujte stavy (Přijato, V opravě, Hotovo…), barvy z palety a označení finálního stavu.",
         selector: "[data-tour=\"settings-sub-orders_statuses\"]",
         settingsSection: { category: "orders", subsection: "orders_statuses" },
+        icon: "settings",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Povinná pole u zakázky",
+        description:
+          "Která pole musí být u nové zakázky a při úpravě vyplněna. Zatím lze nastavit povinnost telefonu zákazníka – pokud vypnete, zakázku lze uložit i bez telefonu.",
+        selector: "[data-tour=\"settings-sub-orders_required_fields\"]",
+        settingsSection: { category: "orders", subsection: "orders_required_fields" },
+        icon: "settings",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Dokumenty a tisk",
+        description:
+          "Automatický tisk po změně stavu a výchozí tiskárna. Šablony dokumentů (zakázkový list, protokol, záruční list) se upravují v aplikaci JobiDocs.",
+        selector: "[data-tour=\"settings-sub-orders_tisk_dokumentu\"]",
+        settingsSection: { category: "orders", subsection: "orders_tisk_dokumentu" },
+        icon: "doc",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Reklamace",
+        description:
+          "Pravidla a štítky pro reklamační zakázky, výchozí stavy a chování při vytvoření reklamace z původní zakázky.",
+        selector: "[data-tour=\"settings-sub-orders_reklamace\"]",
+        settingsSection: { category: "orders", subsection: "orders_reklamace" },
+        icon: "reklamace",
       },
       {
         page: "settings",
         title: "Nastavení – Vzhled a rozhraní",
         description:
-          "V záložce „Vzhled a chování“ → „Rozhraní“ nastavíte plovoucí tlačítko +, povinný telefon u zakázky, způsob zobrazení zakázek (seznam/mřížka) a zvuky.",
+          "Plovoucí tlačítko +, způsob zobrazení zakázek (seznam/mřížka/kompaktní), počet zakázek na stránku, zvuky a měřítko rozhraní. Povinný telefon u zakázky nastavíte v Zakázky → Povinná pole u zakázky.",
         selector: "[data-tour=\"settings-sub-appearance_ui\"]",
         settingsSection: { category: "appearance", subsection: "appearance_ui" },
+        icon: "settings",
       },
       {
         page: "settings",
         title: "Nastavení – Barevné téma",
         description:
-          "V „Vzhled a chování“ → „Barevné téma“ přepínáte mezi světlým a tmavým režimem aplikace.",
+          "Přepínání mezi světlým a tmavým režimem aplikace. Téma se ukládá a použije při příštím spuštění.",
         selector: "[data-tour=\"settings-sub-appearance_theme\"]",
         settingsSection: { category: "appearance", subsection: "appearance_theme" },
+        icon: "settings",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Klávesové zkratky",
+        description:
+          "Prohlédněte si a upravte klávesové zkratky pro rychlé akce (nová zakázka, vyhledávání, přepínání stránek). Stiskněte ? kdekoli pro nápovědu.",
+        selector: "[data-tour=\"settings-sub-appearance_shortcuts\"]",
+        settingsSection: { category: "appearance", subsection: "appearance_shortcuts" },
+        icon: "keyboard",
+      },
+      {
+        page: "settings",
+        title: "Nastavení – Můj profil",
+        description:
+          "Vaše jméno, e-mail a avatar. Údaje slouží k zobrazení v aplikaci a při spolupráci v týmu.",
+        selector: "[data-tour=\"settings-sub-profile_me\"]",
+        settingsSection: { category: "profile", subsection: "profile_me" },
+        icon: "profile",
       },
       {
         page: "settings",
         title: "Nastavení – O aplikaci a průvodce",
         description:
-          "Záložka „O aplikaci“: verze, údaje pro podporu a tlačítko „Spustit průvodce“, kterým jste tento průvodce spustili.",
+          "Verze aplikace, údaje pro podporu a tlačítko „Spustit průvodce“ pro znovu spuštění tohoto průvodce.",
         selector: "[data-tour=\"settings-sub-about_app\"]",
         settingsSection: { category: "about", subsection: "about_app" },
+        icon: "settings",
       },
     ],
     []
@@ -402,34 +540,51 @@ export default function App() {
     }
   }, [session, supabase, activeServiceId]);
 
-  // Push services + activeServiceId + documentsConfig + companyData + jobidocsLogo to JobiDocs (JobiDocs logo vždy podle tématu)
+  // Push services + activeServiceId + documentsConfig (z DB) + companyData + jobidocsLogo + Supabase auth + canManageDocuments do JobiDocs
   useEffect(() => {
-    if (services.length === 0) return;
-    const theme = (localStorage.getItem("jobsheet_theme") || "light") as ThemeMode;
-    let jobidocsLogo = getLogoColors(theme, "auto");
-    jobidocsLogo = { ...jobidocsLogo, foreground: jobidocsLogo.background };
+    if (services.length === 0 || !supabase) return;
+    const client = supabase;
 
-    const documentsConfig = safeLoadDocumentsConfig();
-    const companyData = safeLoadCompanyData();
-    pushContextToJobiDocs(services, activeServiceId, {
-      documentsConfig: documentsConfig ?? null,
-      companyData: companyData ?? null,
-      jobidocsLogo,
-    });
-    const id = setInterval(() => {
-      const doc = safeLoadDocumentsConfig();
-      const comp = safeLoadCompanyData();
+    const push = async () => {
+      const [dbConfig, sessionData] = await Promise.all([
+        loadDocumentsConfigRawFromDB(activeServiceId),
+        client.auth.getSession(),
+      ]);
+      const documentsConfig = dbConfig?.config ?? null;
+      const session = sessionData.data?.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
       const t = (localStorage.getItem("jobsheet_theme") || "light") as ThemeMode;
       let logo = getLogoColors(t, "auto");
       logo = { ...logo, foreground: logo.background };
       pushContextToJobiDocs(services, activeServiceId, {
-        documentsConfig: doc ?? null,
-        companyData: comp ?? null,
+        documentsConfig,
+        companyData: safeLoadCompanyData() ?? null,
         jobidocsLogo: logo,
+        canManageDocuments,
+        supabaseAuth:
+          supabaseUrl && supabaseAnonKey
+            ? {
+                supabaseUrl,
+                supabaseAnonKey,
+                supabaseAccessToken: session?.access_token ?? null,
+              }
+            : null,
       });
-    }, 5000);
+    };
+
+    push();
+    const id = setInterval(push, 5000);
     return () => clearInterval(id);
-  }, [services, activeServiceId]);
+  }, [services, activeServiceId, canManageDocuments]);
+
+  // Achievement: multiservice (2+ pobočky)
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid && activeServiceId && services.length >= 2) {
+      checkAchievementOnMultiservice(uid, activeServiceId, services.length);
+    }
+  }, [session?.user?.id, activeServiceId, services.length]);
 
   // Clear service-scoped cache when activeServiceId changes
   useEffect(() => {
@@ -451,10 +606,10 @@ export default function App() {
     }
   }, [activeServiceId]);
 
-  // Apply global UI scale (for all pages)
+  // Apply global UI scale – zoom na <html> škáluje celý obsah (seznamy, tlačítka, dropdowny)
   useEffect(() => {
     const s = uiCfg.app.uiScale ?? 1;
-    document.documentElement.style.fontSize = `${16 * s}px`;
+    document.documentElement.style.setProperty("zoom", String(s));
   }, [uiCfg.app.uiScale]);
 
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
@@ -488,6 +643,7 @@ export default function App() {
       if (isInputFocused()) return;
       const navMap: Record<string, NavKey> = {
         nav_orders: "orders",
+        nav_calendar: "calendar",
         nav_inventory: "inventory",
         nav_devices: "devices",
         nav_customers: "customers",
@@ -498,12 +654,16 @@ export default function App() {
         if (comboMatchesEvent(e, getShortcut(id as ShortcutId))) {
           e.preventDefault();
           e.stopPropagation();
+          const uid = session?.user?.id;
+          if (uid) checkAchievementOnShortcutUsed(uid);
           setActivePage(page);
           return;
         }
       }
       if (comboMatchesEvent(e, getShortcut("help"))) {
         e.preventDefault();
+        const uid = session?.user?.id;
+        if (uid) checkAchievementOnShortcutUsed(uid);
         setShortcutsHelpOpen(true);
         return;
       }
@@ -521,7 +681,7 @@ export default function App() {
     const onNav = (e: Event) => {
       const ev = e as CustomEvent<{ page: NavKey }>;
       const page = ev.detail?.page;
-      if (page && ["orders", "inventory", "devices", "customers", "statistics", "settings"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "statistics", "settings", "achievements"].includes(page)) {
         setActivePage(page);
       }
     };
@@ -557,36 +717,33 @@ export default function App() {
     return () => window.removeEventListener("jobsheet:request-new-order" as any, onReq);
   }, [activePage]);
 
-  // Handle invite acceptance after login
+  // Po přihlášení: pokud je uložený invite token, nejdřív vyřídit pozvánku; při chybě automatický retry + refresh
   useEffect(() => {
-    if (!authenticated || !supabase) return;
+    if (!session || !supabase) return;
+    const client = supabase;
 
-      const handleInvite = async () => {
     const token = getPendingInviteToken();
-      if (!token || !supabase) return;
+    if (!token) return;
 
+    setResolvingInvite(true);
+    setInviteAcceptStatus("loading");
+
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 2000;
+
+    const handleInvite = async (attempt = 0): Promise<void> => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
+        const { data: sessionData } = await client.auth.getSession();
         const accessToken = sessionData?.session?.access_token;
         if (!accessToken) {
           console.error("[App] No access token for invite-accept");
+          setInviteAcceptStatus("error");
+          setResolvingInvite(false);
           return;
         }
 
-        console.log("[App] Calling invite-accept Edge Function", { 
-          tokenPreview: token.substring(0, 8) + "...",
-          hasAccessToken: !!accessToken,
-        });
-        // Standardní volání - Supabase JS automaticky přidá session JWT
-        const { data, error } = await supabase.functions.invoke("invite-accept", {
+        const { data, error } = await client.functions.invoke("invite-accept", {
           body: { token },
-          // žádné headers - Supabase JS automaticky přidá session JWT
-        });
-
-        console.log("[App] invite-accept response", { 
-          data, 
-          error,
-          hasServiceId: !!data?.serviceId,
         });
 
         if (error) {
@@ -597,39 +754,86 @@ export default function App() {
               detail = await res.clone().text();
             } catch {}
           }
-          console.error("[App] invite-accept error", { error, detail });
+          console.error("[App] invite-accept error (attempt " + (attempt + 1) + ")", { error, detail });
+          if (attempt < MAX_RETRIES - 1) {
+            setInviteAcceptStatus("loading"); // zůstane "Připravuji váš servis" s podtitulem
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+            return handleInvite(attempt + 1);
+          }
           showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
+          setInviteAcceptStatus("error");
+          setResolvingInvite(false);
           return;
         }
 
         if (data?.serviceId) {
           clearPendingInviteToken();
+          setInviteAcceptStatus("success");
           showToast("Pozvánka přijata", "success");
           await refreshServices();
           setActiveServiceId(data.serviceId);
+          setTimeout(() => setResolvingInvite(false), 1400);
+          return;
         }
+
+        // Odpověď bez serviceId – zkusit refresh služeb (možná backend už pozvánku zpracoval)
+        await refreshServices();
+        const { data: sessionData2 } = await client.auth.getSession();
+        const accessToken2 = sessionData2?.session?.access_token;
+        if (accessToken2) {
+          const { data: listData } = await client.functions.invoke("services-list", {
+            headers: { Authorization: `Bearer ${accessToken2}` },
+          });
+          const list = (listData?.services as Array<{ service_id: string }>) || [];
+          if (list.length > 0) {
+            clearPendingInviteToken();
+            setInviteAcceptStatus("success");
+            showToast("Pozvánka přijata", "success");
+            setServices(list as Array<{ service_id: string; service_name: string; role: string }>);
+            setActiveServiceId(list[0].service_id);
+            setTimeout(() => setResolvingInvite(false), 1400);
+            return;
+          }
+        }
+
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          return handleInvite(attempt + 1);
+        }
+        setInviteAcceptStatus("error");
+        setResolvingInvite(false);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
-        console.error("[App] invite-accept exception", err);
+        console.error("[App] invite-accept exception (attempt " + (attempt + 1) + ")", err);
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          return handleInvite(attempt + 1);
+        }
         showToast(`Chyba při přijetí pozvánky: ${errorMessage}`, "error");
+        setInviteAcceptStatus("error");
+        setResolvingInvite(false);
       }
     };
 
     handleInvite();
-  }, [authenticated, refreshServices, setActiveServiceId]);
+  }, [session, refreshServices, setActiveServiceId]);
 
   const pageTitle = useMemo(() => {
     switch (activePage) {
       case "orders":
-        return "Orders";
+        return "Zakázky";
+      case "calendar":
+        return "Kalendář";
       case "inventory":
-        return "Inventory";
+        return "Sklad";
       case "devices":
         return "Zařízení";
       case "customers":
         return "Customers";
       case "statistics":
         return "Statistiky";
+      case "achievements":
+        return "Achievementy";
       case "settings":
         return "Settings";
       default:
@@ -639,6 +843,21 @@ export default function App() {
 
   // OTA: check once when app is ready (Tauri only). Must be called unconditionally (hooks order).
   useCheckForAppUpdate();
+
+  const appUpdate = useAppUpdate();
+  const lastShownUpdateVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const v = appUpdate?.update?.version;
+    if (!v || v === lastShownUpdateVersionRef.current) return;
+    lastShownUpdateVersionRef.current = v;
+    showPersistentToast("Je k dispozici aktualizace aplikace.", "info", {
+      actionLabel: "Jít do nastavení",
+      onAction: () => {
+        setActivePage("settings");
+        setOpenSettingsToSubsection({ category: "about", subsection: "about_updates" });
+      },
+    });
+  }, [appUpdate?.update?.version]);
 
   // Apply saved logo preset to app (Dock) icon on startup (Tauri/macOS only).
   useEffect(() => {
@@ -655,7 +874,6 @@ export default function App() {
   const isPreviewRoute = typeof window !== "undefined" && window.location.pathname === "/preview";
 
   if (isPreviewRoute) {
-    // Render Preview without layout
     return (
       <ThemeProvider>
         <Preview />
@@ -679,7 +897,51 @@ export default function App() {
     );
   }
 
-  // App shell - only rendered when session exists
+  // Screen „Připravuji váš servis“: vyřídí pozvánku a ověří přístup, až pak hlavní app
+  if (resolvingInvite) {
+    return (
+      <ThemeProvider>
+        <OnlineGate>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--bg, #f8fafc)",
+              color: "var(--text, #1e293b)",
+            }}
+          >
+            {inviteAcceptStatus === "loading" && (
+              <>
+                <div style={{ width: 40, height: 40, border: "3px solid var(--accent, #8b5cf6)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                <p style={{ marginTop: 16, fontSize: 18, fontWeight: 600 }}>Připravuji váš servis</p>
+                <p style={{ marginTop: 6, fontSize: 14, color: "var(--text-muted, #64748b)" }}>Kontroluji pozvánku a přístup…</p>
+              </>
+            )}
+            {inviteAcceptStatus === "success" && (
+              <>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--accent, #8b5cf6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>✓</div>
+                <p style={{ marginTop: 16, fontSize: 18, fontWeight: 600 }}>Pozvánka přijata</p>
+                <p style={{ marginTop: 4, fontSize: 14, color: "var(--text-muted, #64748b)" }}>Přesměrovávám do servisu…</p>
+              </>
+            )}
+            {inviteAcceptStatus === "error" && (
+              <>
+                <p style={{ fontSize: 16, fontWeight: 500 }}>Něco se nepovedlo</p>
+                <p style={{ marginTop: 8, fontSize: 14, color: "var(--text-muted, #64748b)", maxWidth: 320, textAlign: "center" }}>Zkus to znovu nebo kontaktuj vlastníka servisu.</p>
+              </>
+            )}
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </OnlineGate>
+      </ThemeProvider>
+    );
+  }
+
+  // App shell - only rendered when session exists and invite (if any) was resolved
   return (
     <ThemeProvider>
       <ThemeAnimations />
@@ -730,29 +992,50 @@ export default function App() {
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
+          achievementsEnabled={uiCfg.achievementsEnabled !== false}
         >
-            {activePage === "orders" && (
-              <Orders
-              activeServiceId={activeServiceId}
-                newOrderPrefill={newOrderPrefill}
-                onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
-                openTicketIntent={openTicketIntent}
-                onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
-                onOpenCustomer={(customerId) => {
-                  setOpenCustomerIntent({ customerId });
-                  setActivePage("customers");
-                }}
-                onReturnToPage={(page, customerId) => {
-                  setActivePage(page);
-                  // If returning to customers and customerId is provided, open that customer
-                  if (page === "customers" && customerId) {
+            {visitedPages.has("orders") && (
+              <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
+                <Orders
+                  activeServiceId={activeServiceId}
+                  newOrderPrefill={newOrderPrefill}
+                  onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
+                  openTicketIntent={openTicketIntent}
+                  onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
+                  openClaimIntent={openClaimIntent}
+                  onOpenClaimIntentConsumed={() => setOpenClaimIntent(null)}
+                  onOpenCustomer={(customerId) => {
                     setOpenCustomerIntent({ customerId });
-                  }
-                }}
-              />
+                    setActivePage("customers");
+                  }}
+                  onReturnToPage={(page, customerId) => {
+                    setActivePage(page);
+                    if (page === "customers" && customerId) {
+                      setOpenCustomerIntent({ customerId });
+                    }
+                  }}
+                />
+              </div>
             )}
 
-          {activePage === "customers" && (
+          {visitedPages.has("calendar") && (
+            <div style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
+              <Calendar
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "calendar" });
+                  setActivePage("orders");
+                }}
+                onOpenClaim={(claimId) => {
+                  setOpenClaimIntent({ claimId, returnToPage: "calendar" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
+          {visitedPages.has("customers") && (
+              <div style={{ display: activePage === "customers" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "customers"}>
             <Customers
               activeServiceId={activeServiceId}
               openCustomerIntent={openCustomerIntent}
@@ -771,23 +1054,41 @@ export default function App() {
                 setActivePage("orders");
               }}
             />
+              </div>
           )}
 
-          {activePage === "inventory" && <Inventory activeServiceId={activeServiceId} />}
-
-          {activePage === "devices" && <Devices />}
-
-          {activePage === "statistics" && (
-            <Statistics
-              activeServiceId={activeServiceId}
-              onOpenTicket={(ticketId) => {
-                setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
-                setActivePage("orders");
-              }}
-            />
+          {visitedPages.has("inventory") && (
+            <div style={{ display: activePage === "inventory" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "inventory"}>
+              <Inventory activeServiceId={activeServiceId} />
+            </div>
           )}
 
-          {activePage === "settings" && (
+          {visitedPages.has("devices") && (
+            <div style={{ display: activePage === "devices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "devices"}>
+              <Devices activeServiceId={activeServiceId} />
+            </div>
+          )}
+
+          {visitedPages.has("achievements") && (
+            <div style={{ display: activePage === "achievements" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "achievements"}>
+              <Achievements activeServiceId={activeServiceId} servicesCount={services.length} />
+            </div>
+          )}
+
+          {visitedPages.has("statistics") && (
+            <div style={{ display: activePage === "statistics" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "statistics"}>
+              <Statistics
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
+          {visitedPages.has("settings") && (
+            <div style={{ display: activePage === "settings" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "settings"}>
             <Settings
               activeServiceId={activeServiceId}
               setActiveServiceId={setActiveServiceId}
@@ -799,10 +1100,13 @@ export default function App() {
                   ? TOUR_STEPS[tourStep].settingsSection!
                   : null
               }
+              openToSubsection={openSettingsToSubsection}
+              onOpenToSubsectionConsumed={() => setOpenSettingsToSubsection(null)}
             />
+            </div>
           )}
 
-          {!["orders", "settings", "customers", "devices", "inventory", "statistics"].includes(activePage) && (
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "achievements"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

@@ -10,6 +10,25 @@ async fn close_window(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
+/// Spustí aplikaci JobiDocs (macOS: open -a JobiDocs). Na ostatních OS nic nedělá.
+#[tauri::command]
+fn launch_jobidocs() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .args(["-a", "JobiDocs"])
+            .status()
+            .map_err(|e| e.to_string())?;
+        return Ok(status.success());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = ();
+        Ok(false)
+    }
+}
+
 /// Set the application (Dock) icon from base64-encoded PNG data. macOS only.
 /// Must run AppKit (setApplicationIconImage) on the main thread to avoid crash.
 #[tauri::command]
@@ -73,7 +92,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, close_window, set_app_icon])
+        .invoke_handler(tauri::generate_handler![greet, close_window, set_app_icon, launch_jobidocs])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

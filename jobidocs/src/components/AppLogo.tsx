@@ -1,7 +1,8 @@
 import React from "react";
 
-/** JobiDocs logo – aktuální jdlogo.png z logos/ (ikona aplikace, tray i uvnitř aplikace). */
-const LOGO_PNG_URL = "/logos/jdlogo.png";
+/** JobiDocs logo – relativní cesta kvůli Electron (file://) a Vite base: "./". */
+const LOGO_PNG_URL = "logos/jdlogo.png";
+const LOGO_SVG_FALLBACK = "logos/logopicjobidocs.svg";
 
 export type AppLogoProps = {
   size?: number;
@@ -12,6 +13,7 @@ export type AppLogoProps = {
 };
 
 export function AppLogo({ size = 40, style, modern = true }: AppLogoProps) {
+  const [src, setSrc] = React.useState(LOGO_PNG_URL);
   return (
     <div
       style={{
@@ -29,11 +31,12 @@ export function AppLogo({ size = 40, style, modern = true }: AppLogoProps) {
       aria-hidden
     >
       <img
-        src={LOGO_PNG_URL}
+        src={src}
         alt=""
         width={size}
         height={size}
         style={{ display: "block", width: size, height: size, objectFit: "contain" }}
+        onError={() => setSrc(LOGO_SVG_FALLBACK)}
       />
     </div>
   );

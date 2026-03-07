@@ -35,6 +35,13 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
   const [statuses, setStatuses] = useState<StatusMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibilityKey, setVisibilityKey] = useState(0);
+
+  useEffect(() => {
+    const onVisible = () => setVisibilityKey((k) => k + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   useEffect(() => {
     // If activeServiceId is null, don't load statuses
@@ -57,7 +64,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       try {
         setLoading(true);
         setError(null);
-        
+
         const { data: sessionData } = await supabase.auth.getSession();
         const accessToken = sessionData?.session?.access_token;
         if (!accessToken) {
@@ -154,6 +161,41 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         setError(normalizeError(err) || "Neznámá chyba při načítání statusů");
       }
     })();
+  }, [activeServiceId, visibilityKey]);
+
+  // Realtime: při změně statusů v Nastavení (jiná záložka/zařízení) přenačíst
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const client = supabase;
+    const topic = `service_statuses:${activeServiceId}`;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "service_statuses", filter: `service_id=eq.${activeServiceId}` },
+        async () => {
+          const { data, error } = await client
+            .from("service_statuses")
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .order("order_index");
+          if (!error && data?.length) {
+            setStatuses(
+              data.map((s: any) => ({
+                key: String(s.key),
+                label: String(s.label),
+                bg: typeof s.bg === "string" ? s.bg : undefined,
+                fg: typeof s.fg === "string" ? s.fg : undefined,
+                isFinal: !!s.is_final,
+              }))
+            );
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
   }, [activeServiceId]);
 
   const getByKey = (key: StatusKey) => statuses.find((s) => s.key === key);

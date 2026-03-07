@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar, type NavKey, type SidebarProps } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
 import { JobiDocsStatus } from "../components/JobiDocsStatus";
+import { JobiDocsGuideModal } from "../components/JobiDocsGuideModal";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
 export function AppLayout({
   children,
@@ -15,6 +17,7 @@ export function AppLayout({
   services,
   activeServiceId,
   setActiveServiceId,
+  achievementsEnabled = true,
 }: {
   children: React.ReactNode;
   pageTitle: string;
@@ -26,6 +29,7 @@ export function AppLayout({
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
+  achievementsEnabled?: boolean;
 }) {
   const handleSignOut = async () => {
     // Clear business data from localStorage before sign out
@@ -37,7 +41,17 @@ export function AppLayout({
     await onSignOut();
   };
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [showJobiDocsGuide, setShowJobiDocsGuide] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
+
+  const handleCloseJobiDocsGuide = useCallback(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.JOBIDOCS_FIRST_CONNECT_GUIDE_SEEN, "1");
+    } catch {
+      // ignore
+    }
+    setShowJobiDocsGuide(false);
+  }, []);
 
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0);
@@ -90,6 +104,7 @@ export function AppLayout({
             services,
             activeServiceId,
             setActiveServiceId,
+            achievementsEnabled,
           } satisfies SidebarProps)}
         />
       </aside>
@@ -108,8 +123,9 @@ export function AppLayout({
         }}
       >
         <div style={{ position: "absolute", top: 12, right: 12, zIndex: 100 }}>
-          <JobiDocsStatus />
+          <JobiDocsStatus onFirstConnect={() => setShowJobiDocsGuide(true)} />
         </div>
+        <JobiDocsGuideModal open={showJobiDocsGuide} onClose={handleCloseJobiDocsGuide} />
         <main
           ref={mainRef}
           style={{
