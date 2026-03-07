@@ -3,88 +3,228 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
-  <title>Jobi – Servisní evidence pro opravny</title>
+  <meta name="description" content="Jobi – servisní evidence pro servisy. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
+  <meta property="og:title" content="Jobi – Servisní evidence pro servisy" />
+  <meta property="og:description" content="Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik." />
+  <meta property="og:type" content="website" />
+  <title>Jobi – Servisní evidence pro servisy</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="logo.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Loading screen -->
+  <div id="page-loader" aria-hidden="true">
+    <div class="loader-inner">
+      <img src="logo.svg" class="loader-logo" alt="" width="64" height="64" />
+      <div class="loader-name">Jobi</div>
+      <div class="loader-msg" id="loader-msg">Načítám zakázky…</div>
+      <div class="loader-bar"><div class="loader-bar-fill" id="loader-bar-fill"></div></div>
+    </div>
+  </div>
+
   <header class="site-header">
     <div class="site-header-inner">
       <a href="/" class="site-logo" aria-label="Jobi – domů">
-        <img src="logo.svg" alt="" width="40" height="40" />
+        <img src="logo.svg" alt="" width="36" height="36" />
         <span>Jobi</span>
       </a>
       <nav class="nav-links" aria-label="Hlavní navigace">
         <a href="#vyhody">Co umí</a>
-        <a href="#stazeni">Stáhnout</a>
+        <a href="#stazeni" class="nav-cta">Stáhnout</a>
       </nav>
     </div>
   </header>
 
   <main>
+    <!-- HERO -->
     <section class="hero">
       <div class="hero-bg" aria-hidden="true">
-        <div class="hero-gradient"></div>
         <div class="hero-orb hero-orb-1"></div>
         <div class="hero-orb hero-orb-2"></div>
         <div class="hero-orb hero-orb-3"></div>
       </div>
-      <div class="hero-content">
-        <h1 class="hero-title">
-          <span class="hero-title-line">Servisní evidence,</span>
-          <span class="hero-title-line">která dává smysl</span>
-        </h1>
-        <p class="hero-lead">
-          Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
-        </p>
-        <a href="#stazeni" class="btn btn-primary btn-download-hero">
-          Stáhnout pro macOS
-        </a>
+      <div class="hero-inner">
+        <div class="hero-content">
+          <div class="hero-badge">Pro macOS · Servisní střediska</div>
+          <h1 class="hero-title">
+            <span class="hero-title-line">Servisní evidence,</span>
+            <span class="hero-title-line">která dává smysl</span>
+          </h1>
+          <p class="hero-lead">
+            Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
+          </p>
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary btn-download-hero">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Stáhnout pro macOS
+            </button>
+            <a href="#vyhody" class="btn btn-ghost">Co umí Jobi</a>
+          </div>
+          <p class="hero-sub">Jobi + JobiDocs · DMG · zdarma</p>
+        </div>
+
+        <!-- App mockup -->
+        <div class="hero-mockup" aria-hidden="true">
+          <div class="mockup-window">
+            <div class="mockup-titlebar">
+              <div class="mockup-traffic">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="mockup-win-title">Jobi – Zakázky</span>
+            </div>
+            <div class="mockup-body">
+              <div class="mockup-sidebar">
+                <div class="ms-item ms-active">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                </div>
+                <div class="ms-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <div class="ms-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                </div>
+                <div class="ms-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <div class="ms-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </div>
+                <div class="ms-sep"></div>
+                <div class="ms-item">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+                </div>
+              </div>
+              <div class="mockup-main">
+                <div class="mockup-topbar">
+                  <div class="mockup-topbar-left">
+                    <div class="mockup-page-title">Zakázky</div>
+                    <div class="mockup-page-sub">Spravujte zakázky a sledujte stavy</div>
+                  </div>
+                  <div class="mockup-topbar-btn">+ Nová zakázka</div>
+                </div>
+                <div class="mockup-filters">
+                  <div class="mf-pill">Vše</div>
+                  <div class="mf-pill mf-active">Aktivní</div>
+                  <div class="mf-pill">Final</div>
+                </div>
+                <div class="mockup-orders">
+                  <div class="mo mo-repair">
+                    <div class="mo-head">
+                      <span class="mo-code">J-28A99Z</span>
+                      <span class="mo-date">7. 3. 2026</span>
+                      <div class="mo-status mo-repair-status"><span class="mo-dot"></span>V opravě</div>
+                    </div>
+                    <div class="mo-body">
+                      <div class="mo-device">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+                        iPhone 14 Pro <span class="mo-cust">· Jan Novák</span>
+                      </div>
+                      <div class="mo-repair-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        Výměna displeje
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mo mo-received">
+                    <div class="mo-head">
+                      <span class="mo-code">J-28A98Y</span>
+                      <span class="mo-date">6. 3. 2026</span>
+                      <div class="mo-status mo-received-status"><span class="mo-dot"></span>Přijato</div>
+                    </div>
+                    <div class="mo-body">
+                      <div class="mo-device">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+                        Samsung Galaxy S24 <span class="mo-cust">· Marie Svobodová</span>
+                      </div>
+                      <div class="mo-repair-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        Výměna baterie
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mo mo-done">
+                    <div class="mo-head">
+                      <span class="mo-code">J-28A97X</span>
+                      <span class="mo-date">5. 3. 2026</span>
+                      <div class="mo-status mo-done-status"><span class="mo-dot"></span>Hotovo</div>
+                    </div>
+                    <div class="mo-body">
+                      <div class="mo-device">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+                        MacBook Pro 14&quot; <span class="mo-cust">· Petr Novotný</span>
+                      </div>
+                      <div class="mo-repair-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        Čištění + pasta
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
+    <!-- FEATURES -->
     <section id="vyhody" class="section" aria-labelledby="vyhody-heading">
-      <h2 id="vyhody-heading" class="section-title reveal">Co vám Jobi přinese</h2>
-      <p class="section-desc reveal">
-        Jedna aplikace pro celou opravnu. Bez zbytečností, s přehledem o každé zakázce.
-      </p>
+      <div class="section-eyebrow reveal">Co umí Jobi</div>
+      <h2 id="vyhody-heading" class="section-title reveal">Jedna aplikace pro celý servis</h2>
+      <p class="section-desc reveal">Bez zbytečností, s přehledem o každé zakázce.</p>
       <div class="features-grid">
         <article class="feature-card reveal">
-          <span class="feature-icon" aria-hidden="true">📋</span>
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
           <h3>Zakázky a stavy</h3>
           <p>Evidence zakázek s vlastními stavy, kódy a termíny. List nebo mřížka – jak vám to vyhovuje.</p>
         </article>
         <article class="feature-card reveal">
-          <span class="feature-icon" aria-hidden="true">👥</span>
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
           <h3>Zákazníci</h3>
           <p>Kontakty a historie na jednom místě. Rychlé vyhledávání a přehled o tom, co už u vás bylo.</p>
         </article>
         <article class="feature-card reveal">
-          <span class="feature-icon" aria-hidden="true">📦</span>
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </div>
           <h3>Sklad a zařízení</h3>
           <p>Co máte doma, co patří ke zakázce. Evidence dílů a zařízení bez zmatků.</p>
         </article>
         <article class="feature-card reveal">
-          <span class="feature-icon" aria-hidden="true">📄</span>
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </div>
           <h3>Dokumenty a tisk</h3>
           <p>Zakázkové listy a předávací protokoly. Tisk jedním klikem, když to potřebujete.</p>
         </article>
       </div>
     </section>
 
+    <!-- DOWNLOAD -->
     <section id="stazeni" class="section section-download" aria-labelledby="stazeni-heading">
-      <h2 id="stazeni-heading" class="section-title reveal">Stáhnout aplikaci</h2>
-      <p class="section-desc reveal">
-        Jedním klikem stáhnete Jobi i JobiDocs (DMG pro macOS) z nejnovějšího vydání.
-      </p>
-      <div class="download-block reveal">
-        <button type="button" class="btn btn-primary btn-download" id="download-macos-btn">
-          Stáhnout Jobi + JobiDocs (macOS)
-        </button>
-        <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
-        <p class="download-note">Připravujeme podporu pro další platformy.</p>
+      <div class="download-card reveal">
+        <div class="download-orbs" aria-hidden="true">
+          <div class="dl-orb dl-orb-1"></div>
+          <div class="dl-orb dl-orb-2"></div>
+        </div>
+        <div class="download-content">
+          <img src="logo.svg" class="download-logo" alt="" width="64" height="64" />
+          <h2 id="stazeni-heading" class="download-title">Stáhnout Jobi</h2>
+          <p class="download-desc">
+            Jedním klikem stáhnete Jobi i JobiDocs z nejnovějšího vydání na GitHubu.
+          </p>
+          <button type="button" class="btn-download-main" id="download-macos-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Stáhnout pro macOS
+          </button>
+          <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
+          <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs · DMG<br>Verze pro Windows se připravuje.</p>
+        </div>
       </div>
     </section>
   </main>
@@ -92,9 +232,10 @@
   <footer class="site-footer">
     <div class="footer-inner">
       <a href="/" class="footer-logo" aria-label="Jobi – domů">
-        <img src="logo.svg" alt="" width="24" height="24" />
+        <img src="logo.svg" alt="" width="22" height="22" />
         Jobi
       </a>
+      <p class="footer-copy">© 2026 Jobi</p>
       <div class="footer-links">
         <a href="mailto:info@appjobi.com">Kontakt</a>
       </div>

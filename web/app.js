@@ -1,7 +1,74 @@
 (function () {
   "use strict";
 
+  // ---- Loading screen ----
+  var loaderMessages = [
+    "Načítám zakázky…",
+    "Připravuji evidenci…",
+    "Synchronizuji zákazníky…",
+    "Kontroluji sklad…",
+    "Skoro připraveno…",
+  ];
+  var loaderEl = document.getElementById("page-loader");
+  var loaderMsgEl = document.getElementById("loader-msg");
+  var loaderBarEl = document.getElementById("loader-bar-fill");
+  var loaderStart = Date.now();
+  var loaderMinMs = 1600;
+  var loaderMsgIdx = 0;
+  var loaderMsgInterval = setInterval(function () {
+    loaderMsgIdx = (loaderMsgIdx + 1) % loaderMessages.length;
+    if (loaderMsgEl) {
+      loaderMsgEl.style.opacity = "0";
+      setTimeout(function () {
+        loaderMsgEl.textContent = loaderMessages[loaderMsgIdx];
+        loaderMsgEl.style.opacity = "1";
+      }, 130);
+    }
+    if (loaderBarEl) {
+      var pct = Math.min(95, Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 90) + 10);
+      loaderBarEl.style.width = pct + "%";
+    }
+  }, 380);
+
+  function hideLoader() {
+    clearInterval(loaderMsgInterval);
+    if (loaderBarEl) loaderBarEl.style.width = "100%";
+    setTimeout(function () {
+      if (loaderEl) {
+        loaderEl.classList.add("loader-out");
+        setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 460);
+      }
+    }, 200);
+  }
+
+  window.addEventListener("load", function () {
+    var elapsed = Date.now() - loaderStart;
+    var wait = Math.max(0, loaderMinMs - elapsed);
+    setTimeout(hideLoader, wait);
+  });
+
   var GITHUB_RELEASE = "https://api.github.com/repos/alexpapillier-lab/jobi/releases/latest";
+
+  // ---- Mockup scroll parallax + rotation ----
+  var mockupWin = document.querySelector(".mockup-window");
+  var heroEl = document.querySelector(".hero");
+  if (mockupWin && heroEl && window.innerWidth > 920) {
+    mockupWin.style.willChange = "transform";
+    function updateMockup() {
+      var heroH = heroEl.offsetHeight;
+      var scrollY = window.scrollY;
+      var p = Math.min(1, scrollY / (heroH * 0.75));
+      var ease = 1 - Math.pow(1 - p, 2); // ease-out
+      var ry = -5 + ease * 5;       // -5° → 0°
+      var rx = 1.5 - ease * 1.5;    // 1.5° → 0°
+      var sc = 0.97 + ease * 0.03;  // 0.97 → 1.0
+      var ty = -scrollY * 0.06;     // parallax up
+      mockupWin.style.transform =
+        "perspective(1200px) translateY(" + ty + "px) rotateY(" + ry + "deg) rotateX(" + rx + "deg) scale(" + sc + ")";
+    }
+    window.addEventListener("scroll", updateMockup, { passive: true });
+    updateMockup();
+  }
 
   // ---- Scroll reveal ----
   var reveals = document.querySelectorAll(".reveal, .feature-card");
