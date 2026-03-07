@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad, dokumenty a focení z mobilu přes QR." />
+  <title>Jobi – Servisní evidence pro opravny</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="#" class="site-logo">
+        <img src="logo.svg" alt="" width="44" height="44" />
+        <span>Jobi</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#vyhody">Výhody</a>
+        <a href="#foceni">Focení z mobilu</a>
+        <a href="#stazeni">Stáhnout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Servisní evidence, která dává smysl</h1>
+      <p class="lead">
+        Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Offline režim, tisk na jeden klik a focení diagnostiky přímo z telefonu přes QR kód.
+      </p>
+      <div class="hero-cta">
+        <a href="#stazeni" class="btn btn-primary">Stáhnout pro macOS</a>
+        <a href="#vyhody" class="btn btn-secondary">Jak to funguje</a>
+      </div>
+    </section>
+
+    <section id="vyhody" class="section">
+      <h2 class="section-title reveal">Proč Jobi</h2>
+      <p class="section-desc reveal">Vše, co potřebuje servisní technik nebo malá opravna, bez zbytečností.</p>
+      <div class="features-grid">
+        <article class="feature-card reveal">
+          <div class="feature-icon" aria-hidden="true">📋</div>
+          <h3>Zakázky a stavy</h3>
+          <p>Evidence zakázek s vlastními stavy, kódy a termíny. Přehledně v listu nebo mřížce.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" aria-hidden="true">👥</div>
+          <h3>Zákazníci</h3>
+          <p>Kontakty, historie zakázek a rychlé vyhledávání. Vše na jednom místě.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" aria-hidden="true">📦</div>
+          <h3>Sklad a zařízení</h3>
+          <p>Evidence díly a zařízení. Přehled toho, co máte doma a co patří ke zakázce.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" aria-hidden="true">📄</div>
+          <h3>Dokumenty a tisk</h3>
+          <p>Zakázkové listy, předávací protokoly a další dokumenty. Tisk jedním klikem.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" aria-hidden="true">📴</div>
+          <h3>Offline režim</h3>
+          <p>Práce i bez internetu. Data se synchronizují, když se připojíte.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="foceni" class="section">
+      <h2 class="section-title reveal">Focení z mobilu</h2>
+      <p class="section-desc reveal">Naskenujte QR kód u zakázky a vyfoťte diagnostiku přímo z telefonu. Fotky se hned objeví u zakázky.</p>
+      <div class="capture-cta reveal">
+        <div class="capture-cta-text">
+          <h3>Capture – fotky přes QR</h3>
+          <p>Otevřete na telefonu odkaz z Jobi (QR nebo zkopírovaný odkaz), vyfoťte a nahrajte. Žádná instalace.</p>
+        </div>
+        <a href="https://capture.appjobi.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Otevřít Capture</a>
+      </div>
+    </section>
+
+    <section id="stazeni" class="section download-section">
+      <h2 class="section-title reveal">Stáhnout aplikaci</h2>
+      <p class="section-desc reveal">Jobi je desktopová aplikace pro macOS. Stažení a instalace zabere chvíli.</p>
+      <div class="download-badges reveal">
+        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest" class="btn btn-primary" id="download-macos">Stáhnout pro macOS</a>
+      </div>
+      <p class="download-note">Připravujeme podporu pro další platformy. Pro focení z mobilu použijte Capture (odkaz výše).</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <a href="#" class="footer-logo">
+        <img src="logo.svg" alt="" width="28" height="28" />
+        Jobi
+      </a>
+      <div class="footer-links">
+        <a href="https://capture.appjobi.com">Capture (focení)</a>
+        <a href="mailto:info@appjobi.com">Kontakt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var reveals = document.querySelectorAll('.reveal, .feature-card');
+      function reveal() {
+        reveals.forEach(function (el) {
+          var top = el.getBoundingClientRect().top;
+          var windowHeight = window.innerHeight;
+          if (top < windowHeight - 80) {
+            el.classList.add('visible');
+          }
+        });
+      }
+      window.addEventListener('scroll', reveal);
+      window.addEventListener('load', reveal);
+      reveal();
+    })();
+  </script>
+</body>
+</html>
