@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad, dokumenty a focení z mobilu přes QR." />
+  <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
   <title>Jobi – Servisní evidence pro opravny</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="style.css" />
@@ -17,7 +17,6 @@
       </a>
       <nav class="nav-links">
         <a href="#vyhody">Výhody</a>
-        <a href="#foceni">Focení z mobilu</a>
         <a href="#stazeni">Stáhnout</a>
       </nav>
     </div>
@@ -27,10 +26,10 @@
     <section class="hero">
       <h1>Servisní evidence, která dává smysl</h1>
       <p class="lead">
-        Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Offline režim, tisk na jeden klik a focení diagnostiky přímo z telefonu přes QR kód.
+        Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
       </p>
       <div class="hero-cta">
-        <a href="#stazeni" class="btn btn-primary">Stáhnout pro macOS</a>
+        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz" class="btn btn-primary" download>Stáhnout pro macOS</a>
         <a href="#vyhody" class="btn btn-secondary">Jak to funguje</a>
       </div>
     </section>
@@ -59,33 +58,17 @@
           <h3>Dokumenty a tisk</h3>
           <p>Zakázkové listy, předávací protokoly a další dokumenty. Tisk jedním klikem.</p>
         </article>
-        <article class="feature-card reveal">
-          <div class="feature-icon" aria-hidden="true">📴</div>
-          <h3>Offline režim</h3>
-          <p>Práce i bez internetu. Data se synchronizují, když se připojíte.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="foceni" class="section">
-      <h2 class="section-title reveal">Focení z mobilu</h2>
-      <p class="section-desc reveal">Naskenujte QR kód u zakázky a vyfoťte diagnostiku přímo z telefonu. Fotky se hned objeví u zakázky.</p>
-      <div class="capture-cta reveal">
-        <div class="capture-cta-text">
-          <h3>Capture – fotky přes QR</h3>
-          <p>Otevřete na telefonu odkaz z Jobi (QR nebo zkopírovaný odkaz), vyfoťte a nahrajte. Žádná instalace.</p>
-        </div>
-        <a href="https://capture.appjobi.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Otevřít Capture</a>
       </div>
     </section>
 
     <section id="stazeni" class="section download-section">
       <h2 class="section-title reveal">Stáhnout aplikaci</h2>
-      <p class="section-desc reveal">Jobi je desktopová aplikace pro macOS. Stažení a instalace zabere chvíli.</p>
+      <p class="section-desc reveal">Jobi je desktopová aplikace pro macOS. Kliknutím stáhnete nejnovější verzi; JobiDocs (pro tisk) je na stejné stránce release.</p>
       <div class="download-badges reveal">
-        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest" class="btn btn-primary" id="download-macos">Stáhnout pro macOS</a>
+        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz" class="btn btn-primary" id="download-macos" download>Stáhnout Jobi (macOS)</a>
+        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Otevřít release (Jobi + JobiDocs)</a>
       </div>
-      <p class="download-note">Připravujeme podporu pro další platformy. Pro focení z mobilu použijte Capture (odkaz výše).</p>
+      <p class="download-note">Připravujeme podporu pro další platformy.</p>
     </section>
   </main>
 
@@ -96,7 +79,6 @@
         Jobi
       </a>
       <div class="footer-links">
-        <a href="https://capture.appjobi.com">Capture (focení)</a>
         <a href="mailto:info@appjobi.com">Kontakt</a>
       </div>
     </div>
