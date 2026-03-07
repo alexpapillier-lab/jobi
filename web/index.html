@@ -5,26 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
   <title>Jobi – Servisní evidence pro opravny</title>
-  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="logo.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="site-header">
     <div class="site-header-inner">
-      <a href="#" class="site-logo">
-        <img src="logo.svg" alt="" width="44" height="44" />
+      <a href="/" class="site-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="40" height="40" />
         <span>Jobi</span>
       </a>
-      <nav class="nav-links">
-        <a href="#vyhody">Výhody</a>
-        <a href="#ukazka">Ukázka</a>
+      <nav class="nav-links" aria-label="Hlavní navigace">
+        <a href="#vyhody">Co umí</a>
         <a href="#stazeni">Stáhnout</a>
       </nav>
     </div>
   </header>
 
   <main>
-    <!-- Hero s animovaným pozadím -->
     <section class="hero">
       <div class="hero-bg" aria-hidden="true">
         <div class="hero-gradient"></div>
@@ -40,97 +39,60 @@
         <p class="hero-lead">
           Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
         </p>
-        <div class="hero-cta">
-          <a href="#stazeni" class="btn btn-primary btn-download-hero">Stáhnout pro macOS</a>
-          <a href="#ukazka" class="btn btn-secondary">Ukázka v akci</a>
-        </div>
+        <a href="#stazeni" class="btn btn-primary btn-download-hero">
+          Stáhnout pro macOS
+        </a>
       </div>
     </section>
 
-    <section id="vyhody" class="section">
-      <h2 class="section-title reveal">Proč Jobi</h2>
-      <p class="section-desc reveal">Vše, co potřebuje servisní technik nebo malá opravna.</p>
+    <section id="vyhody" class="section" aria-labelledby="vyhody-heading">
+      <h2 id="vyhody-heading" class="section-title reveal">Co vám Jobi přinese</h2>
+      <p class="section-desc reveal">
+        Jedna aplikace pro celou opravnu. Bez zbytečností, s přehledem o každé zakázce.
+      </p>
       <div class="features-grid">
         <article class="feature-card reveal">
-          <div class="feature-icon" aria-hidden="true">📋</div>
+          <span class="feature-icon" aria-hidden="true">📋</span>
           <h3>Zakázky a stavy</h3>
-          <p>Evidence zakázek s vlastními stavy, kódy a termíny. Přehledně v listu nebo mřížce.</p>
+          <p>Evidence zakázek s vlastními stavy, kódy a termíny. List nebo mřížka – jak vám to vyhovuje.</p>
         </article>
         <article class="feature-card reveal">
-          <div class="feature-icon" aria-hidden="true">👥</div>
+          <span class="feature-icon" aria-hidden="true">👥</span>
           <h3>Zákazníci</h3>
-          <p>Kontakty, historie zakázek a rychlé vyhledávání. Vše na jednom místě.</p>
+          <p>Kontakty a historie na jednom místě. Rychlé vyhledávání a přehled o tom, co už u vás bylo.</p>
         </article>
         <article class="feature-card reveal">
-          <div class="feature-icon" aria-hidden="true">📦</div>
+          <span class="feature-icon" aria-hidden="true">📦</span>
           <h3>Sklad a zařízení</h3>
-          <p>Evidence díly a zařízení. Přehled toho, co máte doma a co patří ke zakázce.</p>
+          <p>Co máte doma, co patří ke zakázce. Evidence dílů a zařízení bez zmatků.</p>
         </article>
         <article class="feature-card reveal">
-          <div class="feature-icon" aria-hidden="true">📄</div>
+          <span class="feature-icon" aria-hidden="true">📄</span>
           <h3>Dokumenty a tisk</h3>
-          <p>Zakázkové listy, předávací protokoly. Tisk jedním klikem.</p>
+          <p>Zakázkové listy a předávací protokoly. Tisk jedním klikem, když to potřebujete.</p>
         </article>
       </div>
     </section>
 
-    <!-- Ukázka – zakázky jako v Jobi -->
-    <section id="ukazka" class="section section-demo">
-      <h2 class="section-title reveal">Jak to vypadá v Jobi</h2>
-      <p class="section-desc reveal">Klikněte na zakázku nebo změňte stav. Ukázka vypadá stejně jako aplikace.</p>
-      <div class="demo-wrap reveal">
-        <div class="demo-app">
-          <div class="demo-sidebar">
-            <div class="demo-sidebar-logo"><img src="logo.svg" alt="Jobi" width="24" height="24" /></div>
-            <div class="demo-sidebar-item demo-sidebar-active" title="Zakázky">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M9 16h6M10 8h4M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></svg>
-            </div>
-            <div class="demo-sidebar-item" title="Zákazníci">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </div>
-            <div class="demo-sidebar-item" title="Sklad">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-            </div>
-          </div>
-          <div class="demo-main">
-            <div class="demo-toolbar">
-              <span class="demo-toolbar-title">Zakázky</span>
-            </div>
-            <div class="demo-orders" id="demo-orders">
-              <!-- Řádky zakázek – viz JS -->
-            </div>
-            <div class="demo-detail" id="demo-detail" hidden>
-              <div class="demo-detail-header">
-                <span class="demo-detail-code" id="demo-detail-code">J-28A99Z</span>
-                <button type="button" class="demo-detail-close" id="demo-detail-close" aria-label="Zavřít">×</button>
-              </div>
-              <div class="demo-detail-body">
-                <p class="demo-detail-meta"><strong>Zákazník:</strong> <span id="demo-detail-customer">Jan Novák</span></p>
-                <p class="demo-detail-meta"><strong>Zařízení:</strong> <span id="demo-detail-device">iPhone 14 Pro</span></p>
-                <p class="demo-detail-meta"><strong>Oprava:</strong> <span id="demo-detail-repair">Výměna displeje</span></p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="demo-toast" id="demo-toast" aria-live="polite"></div>
+    <section id="stazeni" class="section section-download" aria-labelledby="stazeni-heading">
+      <h2 id="stazeni-heading" class="section-title reveal">Stáhnout aplikaci</h2>
+      <p class="section-desc reveal">
+        Jedním klikem stáhnete Jobi i JobiDocs (DMG pro macOS) z nejnovějšího vydání.
+      </p>
+      <div class="download-block reveal">
+        <button type="button" class="btn btn-primary btn-download" id="download-macos-btn">
+          Stáhnout Jobi + JobiDocs (macOS)
+        </button>
+        <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
+        <p class="download-note">Připravujeme podporu pro další platformy.</p>
       </div>
-    </section>
-
-    <section id="stazeni" class="section download-section">
-      <h2 class="section-title reveal">Stáhnout aplikaci</h2>
-      <p class="section-desc reveal">Jedním klikem stáhnete Jobi i JobiDocs (DMG pro macOS) z nejnovějšího release.</p>
-      <div class="download-badges reveal">
-        <button type="button" class="btn btn-primary" id="download-macos-btn">Stáhnout Jobi + JobiDocs (macOS)</button>
-        <span class="download-loading" id="download-loading" hidden>Načítám…</span>
-      </div>
-      <p class="download-note">Připravujeme podporu pro další platformy.</p>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <a href="#" class="footer-logo">
-        <img src="logo.svg" alt="" width="28" height="28" />
+      <a href="/" class="footer-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="24" height="24" />
         Jobi
       </a>
       <div class="footer-links">
