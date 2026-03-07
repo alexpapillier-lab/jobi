@@ -17,26 +17,39 @@
       </a>
       <nav class="nav-links">
         <a href="#vyhody">Výhody</a>
+        <a href="#ukazka">Ukázka</a>
         <a href="#stazeni">Stáhnout</a>
       </nav>
     </div>
   </header>
 
   <main>
+    <!-- Hero s animovaným pozadím -->
     <section class="hero">
-      <h1>Servisní evidence, která dává smysl</h1>
-      <p class="lead">
-        Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
-      </p>
-      <div class="hero-cta">
-        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz" class="btn btn-primary" download>Stáhnout pro macOS</a>
-        <a href="#vyhody" class="btn btn-secondary">Jak to funguje</a>
+      <div class="hero-bg" aria-hidden="true">
+        <div class="hero-gradient"></div>
+        <div class="hero-orb hero-orb-1"></div>
+        <div class="hero-orb hero-orb-2"></div>
+        <div class="hero-orb hero-orb-3"></div>
+      </div>
+      <div class="hero-content">
+        <h1 class="hero-title">
+          <span class="hero-title-line">Servisní evidence,</span>
+          <span class="hero-title-line">která dává smysl</span>
+        </h1>
+        <p class="hero-lead">
+          Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
+        </p>
+        <div class="hero-cta">
+          <a href="#stazeni" class="btn btn-primary btn-download-hero">Stáhnout pro macOS</a>
+          <a href="#ukazka" class="btn btn-secondary">Ukázka v akci</a>
+        </div>
       </div>
     </section>
 
     <section id="vyhody" class="section">
       <h2 class="section-title reveal">Proč Jobi</h2>
-      <p class="section-desc reveal">Vše, co potřebuje servisní technik nebo malá opravna, bez zbytečností.</p>
+      <p class="section-desc reveal">Vše, co potřebuje servisní technik nebo malá opravna.</p>
       <div class="features-grid">
         <article class="feature-card reveal">
           <div class="feature-icon" aria-hidden="true">📋</div>
@@ -56,17 +69,53 @@
         <article class="feature-card reveal">
           <div class="feature-icon" aria-hidden="true">📄</div>
           <h3>Dokumenty a tisk</h3>
-          <p>Zakázkové listy, předávací protokoly a další dokumenty. Tisk jedním klikem.</p>
+          <p>Zakázkové listy, předávací protokoly. Tisk jedním klikem.</p>
         </article>
+      </div>
+    </section>
+
+    <!-- Ukázka – zakázky jako v Jobi -->
+    <section id="ukazka" class="section section-demo">
+      <h2 class="section-title reveal">Jak to vypadá v Jobi</h2>
+      <p class="section-desc reveal">Klikněte na zakázku nebo změňte stav. Ukázka vypadá stejně jako aplikace.</p>
+      <div class="demo-wrap reveal">
+        <div class="demo-app">
+          <div class="demo-sidebar">
+            <div class="demo-sidebar-logo"><img src="logo.svg" alt="" width="28" height="28" /></div>
+            <div class="demo-sidebar-item demo-sidebar-active">Zakázky</div>
+            <div class="demo-sidebar-item">Zákazníci</div>
+            <div class="demo-sidebar-item">Sklad</div>
+          </div>
+          <div class="demo-main">
+            <div class="demo-toolbar">
+              <span class="demo-toolbar-title">Zakázky</span>
+            </div>
+            <div class="demo-orders" id="demo-orders">
+              <!-- Řádky zakázek – viz JS -->
+            </div>
+            <div class="demo-detail" id="demo-detail" hidden>
+              <div class="demo-detail-header">
+                <span class="demo-detail-code" id="demo-detail-code">J-28A99Z</span>
+                <button type="button" class="demo-detail-close" id="demo-detail-close" aria-label="Zavřít">×</button>
+              </div>
+              <div class="demo-detail-body">
+                <p class="demo-detail-meta"><strong>Zákazník:</strong> <span id="demo-detail-customer">Jan Novák</span></p>
+                <p class="demo-detail-meta"><strong>Zařízení:</strong> <span id="demo-detail-device">iPhone 14 Pro</span></p>
+                <p class="demo-detail-meta"><strong>Oprava:</strong> <span id="demo-detail-repair">Výměna displeje</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-toast" id="demo-toast" aria-live="polite"></div>
       </div>
     </section>
 
     <section id="stazeni" class="section download-section">
       <h2 class="section-title reveal">Stáhnout aplikaci</h2>
-      <p class="section-desc reveal">Jobi je desktopová aplikace pro macOS. Kliknutím stáhnete nejnovější verzi; JobiDocs (pro tisk) je na stejné stránce release.</p>
+      <p class="section-desc reveal">Jedním klikem stáhnete Jobi i JobiDocs (DMG pro macOS) z nejnovějšího release.</p>
       <div class="download-badges reveal">
-        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest/download/jobi.app.tar.gz" class="btn btn-primary" id="download-macos" download>Stáhnout Jobi (macOS)</a>
-        <a href="https://github.com/alexpapillier-lab/jobi/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Otevřít release (Jobi + JobiDocs)</a>
+        <button type="button" class="btn btn-primary" id="download-macos-btn">Stáhnout Jobi + JobiDocs (macOS)</button>
+        <span class="download-loading" id="download-loading" hidden>Načítám…</span>
       </div>
       <p class="download-note">Připravujeme podporu pro další platformy.</p>
     </section>
@@ -84,22 +133,6 @@
     </div>
   </footer>
 
-  <script>
-    (function () {
-      var reveals = document.querySelectorAll('.reveal, .feature-card');
-      function reveal() {
-        reveals.forEach(function (el) {
-          var top = el.getBoundingClientRect().top;
-          var windowHeight = window.innerHeight;
-          if (top < windowHeight - 80) {
-            el.classList.add('visible');
-          }
-        });
-      }
-      window.addEventListener('scroll', reveal);
-      window.addEventListener('load', reveal);
-      reveal();
-    })();
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
