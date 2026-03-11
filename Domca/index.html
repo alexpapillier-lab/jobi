@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dominik Hasoň – Sportovní masáže & regenerace</title>
+  <meta name="description" content="Profesionální sportovní masáže a regenerace v Praze. Dominik Hasoň – 8 let zkušeností, individuální přístup." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0c10;
+      --bg2: #0f1117;
+      --bg3: #161b24;
+      --accent: #ff6b35;
+      --accent2: #ff9a6c;
+      --blue: #4fc3f7;
+      --text: #e8ecf1;
+      --text2: #8b95a5;
+      --text3: #5a6475;
+      --border: rgba(255,255,255,0.07);
+      --card: rgba(255,255,255,0.03);
+      --r: 16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+    /* ─── NOISE OVERLAY ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 1000; opacity: .4;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 900;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(1.5rem,5vw,4rem);
+      height: 72px;
+      background: rgba(10,12,16,0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      transition: all .3s;
+    }
+    nav.scrolled { height: 60px; background: rgba(10,12,16,0.95); }
+
+    .nav-logo {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+    .nav-logo span { color: var(--accent); }
+
+    .nav-links {
+      display: flex; gap: 2rem; list-style: none;
+    }
+    .nav-links a {
+      color: var(--text2); text-decoration: none;
+      font-size: .875rem; font-weight: 500;
+      transition: color .2s;
+      position: relative;
+    }
+    .nav-links a::after {
+      content: ''; position: absolute; bottom: -4px; left: 0; right: 0;
+      height: 1px; background: var(--accent);
+      transform: scaleX(0); transition: transform .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-links a:hover::after { transform: scaleX(1); }
+
+    .nav-cta {
+      background: var(--accent);
+      color: #fff !important; font-weight: 600 !important;
+      padding: .5rem 1.25rem; border-radius: 8px;
+      transition: background .2s, transform .15s !important;
+    }
+    .nav-cta::after { display: none !important; }
+    .nav-cta:hover { background: var(--accent2) !important; transform: translateY(-1px); }
+
+    .nav-burger {
+      display: none; flex-direction: column; gap: 5px;
+      cursor: pointer; padding: 4px;
+    }
+    .nav-burger span { display: block; width: 24px; height: 2px; background: var(--text); border-radius: 2px; transition: all .3s; }
+    .nav-burger.open span:nth-child(1) { transform: rotate(45deg) translate(5px,5px); }
+    .nav-burger.open span:nth-child(2) { opacity: 0; }
+    .nav-burger.open span:nth-child(3) { transform: rotate(-45deg) translate(5px,-5px); }
+
+    .nav-mobile {
+      display: none; position: fixed; top: 72px; left: 0; right: 0; bottom: 0;
+      background: rgba(10,12,16,0.98); backdrop-filter: blur(20px);
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 2.5rem; z-index: 899;
+    }
+    .nav-mobile.open { display: flex; }
+    .nav-mobile a { color: var(--text); font-size: 1.5rem; font-weight: 600; text-decoration: none; }
+
+    /* ─── HERO ─── */
+    #hero {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+      padding: 120px clamp(1.5rem,5vw,4rem) 80px;
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(255,107,53,.15) 0%, transparent 70%);
+      top: -100px; right: -100px; pointer-events: none;
+    }
+    .hero-glow2 {
+      position: absolute;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(79,195,247,.08) 0%, transparent 70%);
+      bottom: 0; left: 10%; pointer-events: none;
+    }
+
+    .hero-inner {
+      max-width: 1100px; width: 100%;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 4rem; align-items: center;
+      position: relative;
+    }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: rgba(255,107,53,.12); border: 1px solid rgba(255,107,53,.25);
+      padding: .4rem 1rem; border-radius: 999px;
+      font-size: .8rem; font-weight: 600;
+      color: var(--accent); letter-spacing: .05em; text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+    .hero-badge .dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity:1; transform: scale(1); } 50% { opacity:.5; transform: scale(1.3); } }
+
+    .hero-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-weight: 800; line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.25rem;
+    }
+    .hero-title .highlight {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      color: var(--text2); font-size: 1.05rem; line-height: 1.7;
+      max-width: 480px; margin-bottom: 2.5rem;
+    }
+
+    .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff; font-weight: 600; font-size: .9375rem;
+      padding: .875rem 2rem; border-radius: 10px;
+      text-decoration: none; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: .5rem;
+      transition: background .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 24px rgba(255,107,53,.25);
+    }
+    .btn-primary:hover { background: var(--accent2); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(255,107,53,.35); }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text); font-weight: 600; font-size: .9375rem;
+      padding: .875rem 2rem; border-radius: 10px;
+      text-decoration: none; border: 1px solid var(--border);
+      cursor: pointer; display: inline-flex; align-items: center; gap: .5rem;
+      transition: border-color .2s, background .2s, transform .15s;
+    }
+    .btn-secondary:hover { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.05); transform: translateY(-2px); }
+
+    .hero-stats {
+      display: flex; gap: 2.5rem; margin-top: 3rem;
+      padding-top: 2.5rem; border-top: 1px solid var(--border);
+    }
+    .hero-stat-num {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero-stat-label { color: var(--text2); font-size: .8125rem; margin-top: .15rem; }
+
+    /* Hero card */
+    .hero-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 24px; overflow: hidden;
+      position: relative;
+    }
+    .hero-card-img {
+      width: 100%; aspect-ratio: 3/4; object-fit: cover;
+      background: linear-gradient(135deg, var(--bg3), var(--bg2));
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hero-card-img-placeholder {
+      width: 100%; aspect-ratio: 3/4;
+      background: linear-gradient(160deg, #1a2035 0%, #0f1420 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+      color: var(--text3);
+    }
+    .hero-card-img-placeholder svg { width: 64px; height: 64px; opacity: .3; }
+    .hero-card-info {
+      padding: 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .hero-card-name { font-weight: 700; font-size: 1rem; }
+    .hero-card-role { color: var(--text2); font-size: .8125rem; margin-top: .2rem; }
+    .hero-card-badge {
+      background: rgba(255,107,53,.12); border: 1px solid rgba(255,107,53,.2);
+      color: var(--accent); font-size: .75rem; font-weight: 600;
+      padding: .3rem .75rem; border-radius: 999px;
+    }
+
+    /* ─── SECTION SHARED ─── */
+    section { padding: clamp(4rem,8vw,7rem) clamp(1.5rem,5vw,4rem); }
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    .section-label {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-size: .75rem; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    .section-label::before { content: ''; display: block; width: 20px; height: 1px; background: var(--accent); }
+
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+      font-weight: 800; letter-spacing: -0.03em;
+      line-height: 1.15; margin-bottom: 1rem;
+    }
+    .section-sub { color: var(--text2); font-size: 1rem; max-width: 560px; line-height: 1.7; }
+
+    /* ─── ABOUT ─── */
+    #about { background: var(--bg2); }
+
+    .about-grid {
+      display: grid; grid-template-columns: 1fr 1.3fr;
+      gap: 5rem; align-items: center;
+    }
+
+    .about-photo {
+      aspect-ratio: 4/5;
+      background: linear-gradient(160deg, #1a2035 0%, #0f1420 100%);
+      border-radius: 20px; overflow: hidden;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text3); font-size: .875rem; position: relative;
+    }
+    .about-photo::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 50%; background: linear-gradient(to top, var(--bg2), transparent);
+    }
+
+    .about-tag {
+      display: inline-block; background: rgba(79,195,247,.1);
+      border: 1px solid rgba(79,195,247,.2);
+      color: var(--blue); font-size: .75rem; font-weight: 600;
+      padding: .25rem .65rem; border-radius: 6px; margin-bottom: 1.5rem;
+    }
+
+    .about-text { color: var(--text2); line-height: 1.8; margin-bottom: 1.5rem; }
+
+    .edu-list { list-style: none; display: flex; flex-direction: column; gap: .75rem; margin-top: 2rem; }
+    .edu-item {
+      display: flex; gap: 1rem; align-items: flex-start;
+      padding: 1rem 1.25rem;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .edu-year {
+      font-size: .75rem; font-weight: 700; color: var(--accent);
+      white-space: nowrap; min-width: 56px; padding-top: .15rem;
+    }
+    .edu-desc { font-size: .9rem; color: var(--text2); }
+    .edu-desc strong { color: var(--text); display: block; }
+
+    .cert-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
+    .cert-chip {
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      color: var(--text2); font-size: .8rem; font-weight: 500;
+      padding: .35rem .8rem; border-radius: 8px;
+      transition: background .2s, color .2s;
+      cursor: default;
+    }
+    .cert-chip:hover { background: rgba(255,107,53,.1); color: var(--accent); border-color: rgba(255,107,53,.2); }
+
+    /* ─── SERVICES ─── */
+    #services { background: var(--bg); }
+
+    .services-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem; margin-top: 3rem;
+    }
+
+    .service-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.75rem;
+      transition: border-color .25s, transform .25s, box-shadow .25s;
+      cursor: default; position: relative; overflow: hidden;
+    }
+    .service-card::before {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transform: scaleX(0); transform-origin: left;
+      transition: transform .35s;
+    }
+    .service-card:hover { border-color: rgba(255,107,53,.2); transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,.4); }
+    .service-card:hover::before { transform: scaleX(1); }
+
+    .service-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: rgba(255,107,53,.12); border: 1px solid rgba(255,107,53,.2);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1.25rem; font-size: 1.25rem;
+    }
+    .service-name { font-weight: 700; font-size: 1rem; margin-bottom: .5rem; }
+    .service-desc { color: var(--text2); font-size: .875rem; line-height: 1.6; }
+    .service-price {
+      margin-top: 1.25rem; padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .service-price-val {
+      font-family: 'Syne', sans-serif; font-size: 1.5rem; font-weight: 800;
+      color: var(--accent);
+    }
+    .service-price-time { font-size: .8rem; color: var(--text3); }
+
+    .service-card.featured {
+      background: linear-gradient(160deg, rgba(255,107,53,.08) 0%, var(--bg3) 100%);
+      border-color: rgba(255,107,53,.2);
+    }
+    .badge-featured {
+      position: absolute; top: 1.25rem; right: 1.25rem;
+      background: var(--accent); color: #fff;
+      font-size: .7rem; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; padding: .25rem .65rem; border-radius: 999px;
+    }
+
+    /* ─── PRICE TABLE ─── */
+    #pricing { background: var(--bg2); }
+
+    .price-table {
+      margin-top: 3rem; border: 1px solid var(--border); border-radius: 20px;
+      overflow: hidden;
+    }
+    .price-row {
+      display: grid; grid-template-columns: 1fr auto auto;
+      align-items: center; gap: 1.5rem;
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--border);
+      transition: background .2s;
+    }
+    .price-row:last-child { border-bottom: none; }
+    .price-row:hover { background: rgba(255,255,255,.025); }
+    .price-row.header {
+      background: rgba(255,255,255,.04);
+      font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text3);
+    }
+    .price-row.header:hover { background: rgba(255,255,255,.04); }
+    .price-name { font-weight: 600; }
+    .price-name small { display: block; color: var(--text2); font-weight: 400; font-size: .85em; margin-top: .15rem; }
+    .price-time { color: var(--text2); font-size: .9rem; white-space: nowrap; }
+    .price-val { font-weight: 800; font-size: 1.1rem; color: var(--accent); white-space: nowrap; }
+    .price-row.highlight { background: rgba(255,107,53,.05); }
+
+    .first-visit-note {
+      margin-top: 2rem; padding: 1.5rem;
+      background: rgba(79,195,247,.05); border: 1px solid rgba(79,195,247,.15);
+      border-radius: 14px; display: flex; gap: 1rem;
+    }
+    .first-visit-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .first-visit-text h4 { font-weight: 700; color: var(--blue); margin-bottom: .3rem; }
+    .first-visit-text p { color: var(--text2); font-size: .9rem; line-height: 1.6; }
+
+    /* ─── PROCESS ─── */
+    #process { background: var(--bg); }
+
+    .process-steps {
+      margin-top: 3.5rem; position: relative;
+    }
+    .process-steps::before {
+      content: '';
+      position: absolute; top: 24px; left: 24px;
+      width: 2px; bottom: 24px;
+      background: linear-gradient(to bottom, var(--accent), transparent);
+    }
+
+    .process-step {
+      display: flex; gap: 2rem; margin-bottom: 2rem;
+      padding: 1.5rem; border-radius: var(--r);
+      background: var(--bg3); border: 1px solid var(--border);
+      position: relative; z-index: 1;
+      transition: border-color .25s, transform .25s;
+    }
+    .process-step:hover { border-color: rgba(255,107,53,.25); transform: translateX(6px); }
+
+    .step-num {
+      width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+      background: var(--accent); color: #fff;
+      font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .step-title { font-weight: 700; margin-bottom: .35rem; }
+    .step-desc { color: var(--text2); font-size: .9rem; line-height: 1.6; }
+
+    /* ─── CONTRAINDICATIONS (accordion) ─── */
+    #info { background: var(--bg2); }
+
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 3rem; }
+
+    .accordion { display: flex; flex-direction: column; gap: .75rem; }
+    .accordion-item {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); overflow: hidden;
+    }
+    .accordion-btn {
+      width: 100%; background: none; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 1.25rem;
+      color: var(--text); font-weight: 600; font-size: .9375rem;
+      text-align: left;
+    }
+    .accordion-icon {
+      width: 24px; height: 24px; border-radius: 6px;
+      background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.2);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: transform .3s, background .2s;
+      color: var(--accent); font-size: .75rem;
+    }
+    .accordion-item.open .accordion-icon { transform: rotate(45deg); background: var(--accent); color: #fff; }
+    .accordion-body {
+      max-height: 0; overflow: hidden;
+      transition: max-height .4s cubic-bezier(.4,0,.2,1), padding .4s;
+      padding: 0 1.25rem;
+    }
+    .accordion-item.open .accordion-body {
+      max-height: 800px; padding-bottom: 1.25rem;
+    }
+    .accordion-body ul { list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+    .accordion-body li {
+      display: flex; gap: .6rem; align-items: flex-start;
+      color: var(--text2); font-size: .875rem; line-height: 1.5;
+    }
+    .accordion-body li::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0; margin-top: .45rem;
+    }
+    .accordion-item.danger .accordion-body li::before { background: #f87171; }
+
+    .info-cards { display: flex; flex-direction: column; gap: 1.25rem; }
+    .info-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.5rem;
+    }
+    .info-card h4 { font-weight: 700; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+    .info-card p, .info-card li { color: var(--text2); font-size: .875rem; line-height: 1.65; }
+    .info-card ul { list-style: none; }
+    .info-card li { display: flex; gap: .5rem; align-items: flex-start; margin-bottom: .4rem; }
+    .info-card li::before { content: '→'; color: var(--accent); flex-shrink: 0; }
+
+    /* ─── CONTACT ─── */
+    #contact { background: var(--bg); }
+
+    .contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: start; margin-top: 3rem; }
+
+    .contact-methods { display: flex; flex-direction: column; gap: 1rem; }
+    .contact-method {
+      display: flex; align-items: center; gap: 1.25rem;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.25rem 1.5rem;
+      text-decoration: none; color: var(--text);
+      transition: border-color .2s, transform .2s;
+    }
+    .contact-method:hover { border-color: rgba(255,107,53,.3); transform: translateX(4px); }
+    .contact-method-icon {
+      width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+      background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.2);
+      display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+    }
+    .contact-method-label { font-size: .75rem; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+    .contact-method-val { font-weight: 600; margin-top: .15rem; }
+
+    .map-box {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 20px; overflow: hidden;
+    }
+    .map-embed {
+      width: 100%; height: 260px; border: none;
+      filter: grayscale(80%) invert(90%) brightness(.9);
+    }
+    .map-info {
+      padding: 1.25rem 1.5rem;
+      display: flex; align-items: flex-start; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem;
+    }
+    .map-addr { color: var(--text2); font-size: .9rem; line-height: 1.6; }
+    .map-addr strong { color: var(--text); display: block; margin-bottom: .2rem; }
+
+    .transport-pills { display: flex; flex-direction: column; gap: .5rem; }
+    .transport-pill {
+      display: flex; gap: .5rem; align-items: center;
+      background: rgba(255,255,255,.04); border: 1px solid var(--border);
+      border-radius: 8px; padding: .4rem .75rem; font-size: .8rem; color: var(--text2);
+    }
+    .pill-icon { font-size: 1rem; }
+
+    /* ─── ALLERGY ─── */
+    .allergy-box {
+      margin-top: 3rem; padding: 1.75rem;
+      background: rgba(248,113,113,.04); border: 1px solid rgba(248,113,113,.15);
+      border-radius: var(--r);
+    }
+    .allergy-box h4 { color: #f87171; font-weight: 700; margin-bottom: .75rem; display: flex; gap: .5rem; align-items: center; }
+    .allergy-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .allergy-chip {
+      background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.15);
+      color: #fca5a5; font-size: .8rem; padding: .3rem .75rem; border-radius: 8px;
+    }
+
+    /* ─── POLICIES ─── */
+    .policies-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1.25rem; margin-top: 3rem; }
+    .policy-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.5rem;
+    }
+    .policy-card h4 { font-weight: 700; margin-bottom: .75rem; display: flex; gap: .5rem; align-items: center; }
+    .policy-card p, .policy-card li { color: var(--text2); font-size: .875rem; line-height: 1.65; }
+    .policy-card ul { list-style: none; }
+    .policy-card li { margin-bottom: .35rem; display: flex; gap: .4rem; align-items: flex-start; }
+    .policy-card li::before { content: '—'; color: var(--text3); flex-shrink: 0; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background: var(--bg2); border-top: 1px solid var(--border);
+      padding: 3rem clamp(1.5rem,5vw,4rem);
+      text-align: center; color: var(--text3); font-size: .875rem;
+    }
+    footer strong { color: var(--text2); }
+    .footer-logo { font-family: 'Syne', sans-serif; font-size: 1.2rem; font-weight: 800; color: var(--text); margin-bottom: .5rem; }
+    .footer-logo span { color: var(--accent); }
+    .footer-links { display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap; margin: 1.25rem 0; }
+    .footer-links a { color: var(--text3); text-decoration: none; transition: color .2s; }
+    .footer-links a:hover { color: var(--accent); }
+
+    /* ─── FADE IN ─── */
+    .fade-in { opacity: 0; transform: translateY(24px); transition: opacity .6s, transform .6s; }
+    .fade-in.visible { opacity: 1; transform: none; }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 1024px) {
+      .services-grid { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-cta-desktop { display: none; }
+      .nav-burger { display: flex; }
+
+      .hero-inner { grid-template-columns: 1fr; }
+      .hero-card { display: none; }
+      .about-grid { grid-template-columns: 1fr; }
+      .about-photo { max-height: 360px; }
+      .services-grid { grid-template-columns: 1fr; }
+      .info-grid { grid-template-columns: 1fr; }
+      .contact-grid { grid-template-columns: 1fr; }
+      .policies-grid { grid-template-columns: 1fr; }
+      .hero-stats { gap: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─── -->
+<nav id="navbar">
+  <a href="#hero" class="nav-logo">Dominik<span>.</span></a>
+  <ul class="nav-links">
+    <li><a href="#about">O mně</a></li>
+    <li><a href="#services">Služby</a></li>
+    <li><a href="#pricing">Ceník</a></li>
+    <li><a href="#info">Informace</a></li>
+    <li><a href="#contact" class="nav-cta">Objednat se</a></li>
+  </ul>
+  <div class="nav-burger" id="burger" onclick="toggleMenu()" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<div class="nav-mobile" id="navMobile">
+  <a href="#about" onclick="closeMenu()">O mně</a>
+  <a href="#services" onclick="closeMenu()">Služby</a>
+  <a href="#pricing" onclick="closeMenu()">Ceník</a>
+  <a href="#info" onclick="closeMenu()">Informace</a>
+  <a href="#contact" onclick="closeMenu()" style="color:var(--accent)">Objednat se →</a>
+</div>
+
+<!-- ─── HERO ─── -->
+<section id="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-glow2"></div>
+  <div class="hero-inner">
+    <div>
+      <div class="hero-badge fade-in">
+        <span class="dot"></span>
+        Praha 5 · Dostupné termíny
+      </div>
+      <h1 class="hero-title fade-in">
+        Sportovní masáže<br>
+        &amp; <span class="highlight">regenerace</span><br>
+        na míru
+      </h1>
+      <p class="hero-sub fade-in">
+        8 let zkušeností, zdravotnické vzdělání, individuální přístup. Pomáhám sportovcům i lidem s chronickými bolestmi žít bez omezení.
+      </p>
+      <div class="hero-actions fade-in">
+        <a href="#contact" class="btn-primary">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          Objednat se přes WhatsApp
+        </a>
+        <a href="#services" class="btn-secondary">Prohlédnout služby →</a>
+      </div>
+      <div class="hero-stats fade-in">
+        <div>
+          <div class="hero-stat-num" data-target="8">0</div>
+          <div class="hero-stat-label">let praxe</div>
+        </div>
+        <div>
+          <div class="hero-stat-num" data-target="500">0</div>
+          <div class="hero-stat-label">spokojených klientů</div>
+        </div>
+        <div>
+          <div class="hero-stat-num" data-suffix="%">100</div>
+          <div class="hero-stat-label">individuální péče</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-card fade-in">
+      <div class="hero-card-img-placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span style="font-size:.8rem">Foto bude doplněno</span>
+      </div>
+      <div class="hero-card-info">
+        <div>
+          <div class="hero-card-name">Dominik Hasoň</div>
+          <div class="hero-card-role">Masér sportovní a rekondiční</div>
+        </div>
+        <div class="hero-card-badge">✓ Certifikovaný</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── ABOUT ─── -->
+<section id="about">
+  <div class="container">
+    <div class="about-grid">
+      <div class="about-photo fade-in">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="opacity:.2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="fade-in">
+        <div class="section-label">O mně</div>
+        <h2 class="section-title">Dominik Hasoň</h2>
+        <span class="about-tag">Studium fyzioterapie · VŠZ Praha</span>
+        <p class="about-text">
+          Masážím se profesionálně věnuji již <strong>8 let</strong>. Absolvoval jsem střední zdravotnické vzdělání oboru Masér sportovní a rekondiční a v současnosti studuji bakalářský obor Fyzioterapie na Vysoké škole zdravotnické.
+        </p>
+        <p class="about-text">
+          Specializuji se na sportovní masáže a regeneraci, ale rád pomůžu i s chronickými bolestmi nebo stresem. Ke každému klientovi přistupuji <strong>individuálně</strong> – nejde mi jen o masáž, ale o komplexní péči včetně rad na prevenci a domácí cvičení.
+        </p>
+
+        <ul class="edu-list">
+          <li class="edu-item">
+            <span class="edu-year">2020</span>
+            <span class="edu-desc"><strong>Masér sportovní a rekondiční</strong>Zdravotnická škola 5. května, Praha · Diplom masér ve zdravotnictví</span>
+          </li>
+          <li class="edu-item">
+            <span class="edu-year">2018–20</span>
+            <span class="edu-desc"><strong>Praxe v nemocnicích a rehabilitaci</strong>LDN, domovy seniorů, rehabilitační klinika</span>
+          </li>
+          <li class="edu-item">
+            <span class="edu-year">2021–</span>
+            <span class="edu-desc"><strong>Rehabilitační pracovník v soc. službách</strong>Aktivní praxe dodnes</span>
+          </li>
+          <li class="edu-item">
+            <span class="edu-year">2023–</span>
+            <span class="edu-desc"><strong>Fyzioterapie – VŠZ Praha</strong>Bakalářský obor · probíhá</span>
+          </li>
+        </ul>
+
+        <div class="cert-chips" style="margin-top:1.5rem">
+          <span class="cert-chip">🧿 Tradiční čínská medicína</span>
+          <span class="cert-chip">🔬 DNS – hluboký stabilizační systém</span>
+          <span class="cert-chip">🩹 Tejpování</span>
+          <span class="cert-chip">🫧 Baňkování</span>
+          <span class="cert-chip">🌋 Lávové kameny</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── SERVICES ─── -->
+<section id="services">
+  <div class="container">
+    <div class="fade-in">
+      <div class="section-label">Nabídka</div>
+      <h2 class="section-title">Co nabízím</h2>
+      <p class="section-sub">Sportovní masáže, doplňkové techniky a komplexní péče o vaše tělo.</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-card featured fade-in">
+        <span class="badge-featured">Nejoblíbenější</span>
+        <div class="service-icon">💆</div>
+        <div class="service-name">Sportovní & regenerační masáž</div>
+        <div class="service-desc">Komplexní masáž přizpůsobená vašim potřebám. Uvolnění napětí, zlepšení prokrvení a podpora regenerace.</div>
+        <div class="service-price">
+          <div>
+            <div class="service-price-val">1 000 Kč</div>
+            <div class="service-price-time">60 minut</div>
+          </div>
+          <a href="#contact" class="btn-primary" style="padding:.6rem 1.1rem;font-size:.85rem">Objednat →</a>
+        </div>
+      </div>
+
+      <div class="service-card fade-in">
+        <div class="service-icon">🩹</div>
+        <div class="service-name">Tejpování</div>
+        <div class="service-desc">Kinesio taping pro podporu pohybu, stabilizaci kloubů a zmírnění bolesti. Samostatně nebo jako doplněk masáže.</div>
+        <div class="service-price">
+          <div>
+            <div class="service-price-val">300 Kč</div>
+            <div class="service-price-time">samostatně · 200 Kč při masáži</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="service-card fade-in">
+        <div class="service-icon">🫧</div>
+        <div class="service-name">Baňkování</div>
+        <div class="service-desc">Tradiční technika pro uvolnění hlubokých tkání, zlepšení cirkulace a detoxikaci. Skvělý doplněk k masáži.</div>
+        <div class="service-price">
+          <div>
+            <div class="service-price-val">300 Kč</div>
+            <div class="service-price-time">samostatně · 200 Kč při masáži</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="service-card fade-in" style="grid-column: 1 / -1">
+        <div style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start">
+          <div style="flex:1;min-width:220px">
+            <div class="service-icon">⭐</div>
+            <div class="service-name">Navíc ke každé masáži</div>
+            <div class="service-desc">Ke každé masáži rád přidám hodnotné rady a individuální plán.</div>
+          </div>
+          <div style="flex:2;min-width:280px;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding-top:1rem">
+            <span class="cert-chip">Prevence sportovních zranění</span>
+            <span class="cert-chip">Doporučení protažení & posilování</span>
+            <span class="cert-chip">Domácí cviky na míru</span>
+            <span class="cert-chip">Pohybové stereotypy</span>
+            <span class="cert-chip">Podpora návratu po zranění</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PRICING ─── -->
+<section id="pricing">
+  <div class="container">
+    <div class="fade-in">
+      <div class="section-label">Ceník</div>
+      <h2 class="section-title">Transparentní ceny</h2>
+      <p class="section-sub">Žádné skryté poplatky. Platba hotově po masáži.</p>
+    </div>
+    <div class="price-table fade-in">
+      <div class="price-row header">
+        <div>Služba</div>
+        <div>Čas</div>
+        <div>Cena</div>
+      </div>
+      <div class="price-row highlight">
+        <div class="price-name">
+          Sportovní / regenerační masáž
+          <small>Klasická hodinová masáž</small>
+        </div>
+        <div class="price-time">60 min</div>
+        <div class="price-val">1 000 Kč</div>
+      </div>
+      <div class="price-row highlight">
+        <div class="price-name">
+          První návštěva
+          <small>Masáž + vstupní konzultace zdarma</small>
+        </div>
+        <div class="price-time">75 min</div>
+        <div class="price-val">1 000 Kč</div>
+      </div>
+      <div class="price-row">
+        <div class="price-name">Tejpování</div>
+        <div class="price-time">—</div>
+        <div class="price-val">300 Kč</div>
+      </div>
+      <div class="price-row">
+        <div class="price-name">
+          Tejpování
+          <small>V kombinaci s masáží</small>
+        </div>
+        <div class="price-time">—</div>
+        <div class="price-val">200 Kč</div>
+      </div>
+      <div class="price-row">
+        <div class="price-name">Baňkování</div>
+        <div class="price-time">—</div>
+        <div class="price-val">300 Kč</div>
+      </div>
+      <div class="price-row">
+        <div class="price-name">
+          Baňkování
+          <small>V kombinaci s masáží</small>
+        </div>
+        <div class="price-time">—</div>
+        <div class="price-val">200 Kč</div>
+      </div>
+    </div>
+
+    <div class="first-visit-note fade-in">
+      <div class="first-visit-icon">💡</div>
+      <div class="first-visit-text">
+        <h4>Co je zahrnuto v první návštěvě (zdarma)</h4>
+        <p>15 minut vstupní konzultace · Rozbor zdravotního stavu a zranění · Nastavení individuálního plánu péče · Plnohodnotná 60minutová masáž — vše za standardní cenu 1 000 Kč.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PROCESS ─── -->
+<section id="process">
+  <div class="container">
+    <div class="fade-in">
+      <div class="section-label">Průběh</div>
+      <h2 class="section-title">Jak to probíhá</h2>
+      <p class="section-sub">Jednoduchý a pohodový proces od objednání až po masáž.</p>
+    </div>
+    <div class="process-steps fade-in">
+      <div class="process-step">
+        <div class="step-num">1</div>
+        <div>
+          <div class="step-title">Kontaktujte mě</div>
+          <div class="step-desc">Napište mi WhatsApp nebo SMS na 775 584 379, případně email. Domluvíme termín, který vám vyhovuje – jsem maximálně flexibilní.</div>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="step-num">2</div>
+        <div>
+          <div class="step-title">Příprava</div>
+          <div class="step-desc">Přijďte v pohodlném oblečení, osprchovaní. Nejezte těžké jídlo 1–2 hodiny před masáží. Nic víc nepotřebujete – ručníky a prostěradla jsou zajištěny.</div>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="step-num">3</div>
+        <div>
+          <div class="step-title">Vstupní konzultace (první návštěva)</div>
+          <div class="step-desc">Projdeme váš zdravotní stav, zranění a cíle. Nastavíme individuální plán péče. Trvá 15 minut a je zdarma.</div>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="step-num">4</div>
+        <div>
+          <div class="step-title">Masáž</div>
+          <div class="step-desc">Plnohodnotná 60minutová masáž v klidné, soukromé místnosti. Budete zahaleni ručníkem, odhalena je vždy jen masírovaná partie.</div>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="step-num">5</div>
+        <div>
+          <div class="step-title">Péče po masáži</div>
+          <div class="step-desc">Dostanete doporučení pro optimální regeneraci – pitný režim, co vynechat, domácí cvičení. Platíte hotově na místě.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── INFO (kontraindikace, hygiena, atd.) ─── -->
+<section id="info">
+  <div class="container">
+    <div class="fade-in">
+      <div class="section-label">Důležité informace</div>
+      <h2 class="section-title">Vše, co potřebujete vědět</h2>
+      <p class="section-sub">Indikace, kontraindikace a další praktické informace před vaší návštěvou.</p>
+    </div>
+
+    <div class="info-grid fade-in">
+      <div class="accordion">
+        <div class="accordion-item open">
+          <button class="accordion-btn" onclick="toggleAccordion(this)">
+            <span>✅ Kdy masáž pomůže (indikace)</span>
+            <span class="accordion-icon">+</span>
+          </button>
+          <div class="accordion-body">
+            <ul>
+              <li>Svalové napětí a bolesti zad, šíje, ramen</li>
+              <li>Regenerace po sportu, tréninku nebo fyzické zátěži</li>
+              <li>Prevence sportovních zranění</li>
+              <li>Omezená pohyblivost kloubů a svalů</li>
+              <li>Stres, úzkost, psychické napětí</li>
+              <li>Únava a vyčerpání</li>
+              <li>Chronické bolesti pohybového aparátu</li>
+              <li>Zlepšení prokrvení a lymfatické drenáže</li>
+              <li>Podpora celkové regenerace organismu</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="accordion-item danger">
+          <button class="accordion-btn" onclick="toggleAccordion(this)">
+            <span>🚫 Absolutní kontraindikace</span>
+            <span class="accordion-icon">+</span>
+          </button>
+          <div class="accordion-body">
+            <ul>
+              <li>Horečka, akutní infekční onemocnění</li>
+              <li>Akutní zánět – červené, oteklé, horké místo</li>
+              <li>Čerstvé zlomeniny (do 6 týdnů po úrazu)</li>
+              <li>Čerstvé operace, otevřené rány, krvácení</li>
+              <li>Trombóza (krevní sraženina v žíle)</li>
+              <li>Onkologická onemocnění v aktivní fázi (bez souhlasu lékaře)</li>
+              <li>První trimestr těhotenství (1.–12. týden)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <button class="accordion-btn" onclick="toggleAccordion(this)">
+            <span>⚠️ Relativní kontraindikace</span>
+            <span class="accordion-icon">+</span>
+          </button>
+          <div class="accordion-body">
+            <ul>
+              <li>Vysoký krevní tlak (nezvládnutý léky)</li>
+              <li>Cukrovka s pokročilými komplikacemi</li>
+              <li>Křečové žíly (masáž lze, ale opatrně)</li>
+              <li>Osteoporóza (řídnutí kostí)</li>
+              <li>Epilepsie (masáž může být spouštěčem záchvatu)</li>
+              <li>Psychická onemocnění v akutní fázi</li>
+              <li>Menstruace (1.–2. den)</li>
+              <li>Gravidita (2. a 3. trimestr – po konzultaci)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-cards">
+        <div class="info-card">
+          <h4>🧼 Hygiena &amp; bezpečnost</h4>
+          <ul>
+            <li>Všechny pomůcky dezinfikovány po každém klientovi</li>
+            <li>Kvalitní masážní oleje a krémy</li>
+            <li>Čistá jednorázová prostěradla pro každého klienta</li>
+            <li>Místnost vyvětraná před každou návštěvou</li>
+          </ul>
+        </div>
+        <div class="info-card">
+          <h4>🔒 Soukromí &amp; diskrétnost</h4>
+          <p>Veškeré zdravotní informace jsou přísně důvěrné. Místnost je uzavřená, nikdo jiný nebude přítomen. Pracuji plně v souladu s GDPR.</p>
+        </div>
+        <div class="info-card">
+          <h4>💬 Komunikace během masáže</h4>
+          <ul>
+            <li>Kdykoliv řekněte, pokud je tlak silný nebo slabý</li>
+            <li>Přerušení masáže není žádný problém</li>
+            <li>Pravidelně se ptám, zda je vše v pořádku</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="allergy-box fade-in">
+      <h4>⚠️ Alergie – informujte mě předem</h4>
+      <div class="allergy-chips">
+        <span class="allergy-chip">Alergie na masážní oleje</span>
+        <span class="allergy-chip">Citlivost na vůně</span>
+        <span class="allergy-chip">Kožní onemocnění (ekzém, lupénka)</span>
+        <span class="allergy-chip">Astma</span>
+        <span class="allergy-chip">Alergie na latex</span>
+        <span class="allergy-chip">Alergie na akrylátové lepidlo (tejpy)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── CONTACT ─── -->
+<section id="contact">
+  <div class="container">
+    <div class="fade-in">
+      <div class="section-label">Kontakt</div>
+      <h2 class="section-title">Objednejte se</h2>
+      <p class="section-sub">Kontaktujte mě – domluvíme termín, který vám bude vyhovovat.</p>
+    </div>
+
+    <div class="contact-grid">
+      <div>
+        <div class="contact-methods fade-in">
+          <a href="https://wa.me/420775584379" class="contact-method" target="_blank" rel="noopener">
+            <div class="contact-method-icon">💬</div>
+            <div>
+              <div class="contact-method-label">WhatsApp / SMS</div>
+              <div class="contact-method-val">775 584 379</div>
+            </div>
+          </a>
+          <a href="tel:+420775584379" class="contact-method">
+            <div class="contact-method-icon">📞</div>
+            <div>
+              <div class="contact-method-label">Telefonicky</div>
+              <div class="contact-method-val">775 584 379 · 17:00–20:00</div>
+            </div>
+          </a>
+          <a href="mailto:dominik.masaze01@gmail.com" class="contact-method">
+            <div class="contact-method-icon">✉️</div>
+            <div>
+              <div class="contact-method-label">Email</div>
+              <div class="contact-method-val">dominik.masaze01@gmail.com</div>
+            </div>
+          </a>
+        </div>
+
+        <div class="policies-grid" style="margin-top:1.5rem">
+          <div class="policy-card fade-in">
+            <h4>📅 Rezervace</h4>
+            <ul>
+              <li>WhatsApp, SMS nebo telefonicky</li>
+              <li>Telefonáty 17:00–20:00</li>
+              <li>Flexibilní termíny</li>
+            </ul>
+          </div>
+          <div class="policy-card fade-in">
+            <h4>❌ Zrušení</h4>
+            <ul>
+              <li>Min. 24 h předem</li>
+              <li>Pozdní příchod zkracuje čas masáže</li>
+              <li>3. zrušení bez dodržení lhůty = 50 % ceny</li>
+            </ul>
+          </div>
+          <div class="policy-card fade-in">
+            <h4>💵 Platba</h4>
+            <ul>
+              <li>Hotově po masáži</li>
+              <li>Permanentky předem</li>
+              <li>Dárkové poukazy předem</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-box fade-in">
+        <iframe
+          class="map-embed"
+          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2561.4!2d14.39!3d50.07!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x470b94e5b2a9a2a3%3A0x0!2zVSBOaWtvbGFqa3kgMTA5Ny8zLCAxNTAgMDAgUHJhaGEgNQ!5e0!3m2!1scs!2scz!4v1"
+          allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+          title="Mapa – U Nikolajky 1097/3, Praha 5"
+        ></iframe>
+        <div class="map-info">
+          <div>
+            <div class="map-addr">
+              <strong>U Nikolajky 1097/3</strong>
+              Praha 5, 150 00
+            </div>
+          </div>
+          <div class="transport-pills">
+            <div class="transport-pill"><span class="pill-icon">🚇</span> Metro B – Anděl (10 min)</div>
+            <div class="transport-pill"><span class="pill-icon">🚌</span> Bus 137 – Santoška</div>
+            <div class="transport-pill"><span class="pill-icon">🚗</span> Modré zóny v okolí</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FOOTER ─── -->
+<footer>
+  <div class="footer-logo">Dominik<span>.</span></div>
+  <div class="footer-links">
+    <a href="#about">O mně</a>
+    <a href="#services">Služby</a>
+    <a href="#pricing">Ceník</a>
+    <a href="#info">Informace</a>
+    <a href="#contact">Kontakt</a>
+  </div>
+  <p>© 2025 <strong>Dominik Hasoň</strong> – Sportovní masáže &amp; regenerace · Praha 5</p>
+  <p style="margin-top:.5rem;font-size:.8rem">Veškeré zdravotní informace jsou zpracovávány v souladu s GDPR.</p>
+</footer>
+
+<script>
+  // ─── NAV SCROLL ───
+  window.addEventListener('scroll', () => {
+    document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
+  });
+
+  // ─── MOBILE MENU ───
+  function toggleMenu() {
+    document.getElementById('burger').classList.toggle('open');
+    document.getElementById('navMobile').classList.toggle('open');
+  }
+  function closeMenu() {
+    document.getElementById('burger').classList.remove('open');
+    document.getElementById('navMobile').classList.remove('open');
+  }
+
+  // ─── ACCORDION ───
+  function toggleAccordion(btn) {
+    const item = btn.closest('.accordion-item');
+    item.classList.toggle('open');
+  }
+
+  // ─── FADE IN ON SCROLL ───
+  const fadeEls = document.querySelectorAll('.fade-in');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        setTimeout(() => e.target.classList.add('visible'), i * 80);
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+  fadeEls.forEach(el => observer.observe(el));
+
+  // ─── COUNT UP ───
+  function countUp(el) {
+    const target = parseInt(el.dataset.target);
+    const suffix = el.dataset.suffix || '+';
+    const duration = 1800;
+    const step = target / (duration / 16);
+    let current = 0;
+    const timer = setInterval(() => {
+      current = Math.min(current + step, target);
+      el.textContent = Math.floor(current) + suffix;
+      if (current >= target) clearInterval(timer);
+    }, 16);
+  }
+  const statEls = document.querySelectorAll('[data-target]');
+  const statsObserver = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) { countUp(e.target); statsObserver.unobserve(e.target); }
+    });
+  }, { threshold: 0.5 });
+  statEls.forEach(el => statsObserver.observe(el));
+</script>
+</body>
+</html>
