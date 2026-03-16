@@ -6,11 +6,15 @@ type JobiDocsGuideModalProps = {
   onClose: () => void;
 };
 
-const STEPS = [
-  "Vyberte v JobiDocs výchozí tiskárnu pro tisk dokumentů.",
-  "Nastavte logo firmy (barvy a styl se berou z Nastavení v Jobi).",
-  "Doplňte právní texty a záhlaví/zápatí dle potřeby.",
-  "Přidejte razítko – např. pro záruční listy nebo potvrzení.",
+const STEPS_JOBIDOCS = [
+  "Vyberte výchozí tiskárnu pro tisk dokumentů.",
+  "Nahrajte logo firmy a razítko (např. pro záruční listy).",
+  "Upravte rozložení sekcí, záhlaví/zápatí a vlastní texty.",
+  "Zvolte design dokumentu (Klasický, Moderní, Minimální, Profesionální).",
+];
+
+const STEPS_JOBI = [
+  "V Nastavení → Tisk dokumentů nastavte automatický tisk při vytvoření zakázky nebo změně stavu.",
 ];
 
 export function JobiDocsGuideModal({ open, onClose }: JobiDocsGuideModalProps) {
@@ -61,8 +65,30 @@ export function JobiDocsGuideModal({ open, onClose }: JobiDocsGuideModalProps) {
           Nastavení JobiDocs
         </div>
         <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16, lineHeight: 1.45 }}>
-          JobiDocs je připojen. Pro pěkné tisky a PDF doporučujeme v aplikaci JobiDocs zkontrolovat:
+          JobiDocs je připojen. Zde je přehled, co kde nastavit:
         </p>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+          V aplikaci JobiDocs:
+        </div>
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 20,
+            fontSize: 14,
+            color: "var(--text)",
+            lineHeight: 1.6,
+            marginBottom: 16,
+          }}
+        >
+          {STEPS_JOBIDOCS.map((text, i) => (
+            <li key={i} style={{ marginBottom: 4 }}>
+              {text}
+            </li>
+          ))}
+        </ul>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+          V Jobi:
+        </div>
         <ul
           style={{
             margin: 0,
@@ -73,8 +99,8 @@ export function JobiDocsGuideModal({ open, onClose }: JobiDocsGuideModalProps) {
             marginBottom: 24,
           }}
         >
-          {STEPS.map((text, i) => (
-            <li key={i} style={{ marginBottom: 6 }}>
+          {STEPS_JOBI.map((text, i) => (
+            <li key={i} style={{ marginBottom: 4 }}>
               {text}
             </li>
           ))}

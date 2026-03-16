@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { safeLoadCompanyData } from "../Orders";
+import { safeLoadCompanyData } from "../../lib/companyData";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../../lib/settingsUi";
 
 type CompanyData = {

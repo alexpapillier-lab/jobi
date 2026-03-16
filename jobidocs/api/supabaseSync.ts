@@ -175,6 +175,72 @@ export async function saveDocumentsConfigToSupabase(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Profiles sync
+// ---------------------------------------------------------------------------
+
+export async function loadProfileFromSupabase(
+  serviceId: string,
+  docType: string,
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  accessToken: string
+): Promise<{ profile_json: unknown; version: number } | null> {
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+    const { data, error } = await supabase
+      .from("document_profiles")
+      .select("profile_json, version")
+      .eq("service_id", serviceId)
+      .eq("doc_type", docType)
+      .single();
+    if (error || !data) return null;
+    const profile_json = (data as { profile_json: unknown }).profile_json;
+    const version = typeof (data as { version?: number }).version === "number" ? (data as { version: number }).version : 1;
+    return { profile_json, version };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProfileToSupabase(
+  serviceId: string,
+  docType: string,
+  profileJson: unknown,
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  accessToken: string
+): Promise<{ ok: boolean; error?: string; version?: number }> {
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+    const { error } = await supabase
+      .from("document_profiles")
+      .upsert(
+        { service_id: serviceId, doc_type: docType, profile_json: profileJson ?? {} },
+        { onConflict: "service_id,doc_type" }
+      );
+    if (error) return { ok: false, error: error.message };
+    const { data } = await supabase
+      .from("document_profiles")
+      .select("version")
+      .eq("service_id", serviceId)
+      .eq("doc_type", docType)
+      .single();
+    const version = data && typeof (data as { version?: number }).version === "number" ? (data as { version: number }).version : 1;
+    return { ok: true, version };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Documents config sync
+// ---------------------------------------------------------------------------
+
 export async function loadDocumentsConfigFromSupabase(
   serviceId: string,
   supabaseUrl: string,

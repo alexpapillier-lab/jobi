@@ -16,5 +16,6 @@ Oprávnění pro zápis (upload) řídí JWT uživatele – nahrávat může jen
 
 - `{service_id}/logo.{ext}` – logo servisu (ext: png, jpg, gif, webp)
 - `{service_id}/stamp.{ext}` – razítko
+- `{service_id}/letterhead.pdf` – předtištěný hlavičkový papír (merge pod obsah dokumentu)
 
-Při každém uložení s novým obrázkem se soubor přepíše (`upsert: true`).
+Při každém uložení s novým obrázkem/PDF se soubor přepíše (`upsert: true`).

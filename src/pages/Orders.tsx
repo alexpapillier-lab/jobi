@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
-import { showToast } from "../components/Toast";
-import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, getProfileFromJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
+import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardModern, TicketCardSplit, TicketCardStripe, TicketTable, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
+import { showToast, showPersistentToast } from "../components/Toast";
+import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -27,63 +28,20 @@ import { useActiveRole } from "../hooks/useActiveRole";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
+import { safeLoadCompanyData, type CompanyData } from "../lib/companyData";
+import { trackDocumentAction, validateDocumentVariables } from "../lib/documentTelemetry";
+import {
+  escapeHtmlForDoc,
+  buildTicketVariablesForJobiDocs,
+  buildClaimVariablesForJobiDocs,
+  loadDocumentsConfigFromDB,
+  safeLoadDocumentsConfig,
+  getConfigWithProfile,
+  getDesignStylesForFallback,
+} from "../lib/documentHelpers";
 
-type CompanyData = {
-  abbreviation: string;
-  name: string;
-  ico: string;
-  dic: string;
-  language: string;
-  defaultPhonePrefix: string;
-  addressStreet: string;
-  addressCity: string;
-  addressZip: string;
-  phone: string;
-  email: string;
-  website: string;
-};
-
-function defaultCompanyData(): CompanyData {
-  return {
-    abbreviation: "",
-    name: "",
-    ico: "",
-    dic: "",
-    language: "cs",
-    defaultPhonePrefix: "+420",
-    addressStreet: "",
-    addressCity: "",
-    addressZip: "",
-    phone: "",
-    email: "",
-    website: "",
-  };
-}
-
-export function safeLoadCompanyData(): CompanyData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.COMPANY);
-    if (!raw) return defaultCompanyData();
-    const parsed = JSON.parse(raw);
-    const d = defaultCompanyData();
-    return {
-      abbreviation: typeof parsed?.abbreviation === "string" ? parsed.abbreviation : d.abbreviation,
-      name: typeof parsed?.name === "string" ? parsed.name : d.name,
-      ico: typeof parsed?.ico === "string" ? parsed.ico : d.ico,
-      dic: typeof parsed?.dic === "string" ? parsed.dic : d.dic,
-      language: typeof parsed?.language === "string" ? parsed.language : d.language,
-      defaultPhonePrefix: typeof parsed?.defaultPhonePrefix === "string" ? parsed.defaultPhonePrefix : d.defaultPhonePrefix,
-      addressStreet: typeof parsed?.addressStreet === "string" ? parsed.addressStreet : d.addressStreet,
-      addressCity: typeof parsed?.addressCity === "string" ? parsed.addressCity : d.addressCity,
-      addressZip: typeof parsed?.addressZip === "string" ? parsed.addressZip : d.addressZip,
-      phone: typeof parsed?.phone === "string" ? parsed.phone : d.phone,
-      email: typeof parsed?.email === "string" ? parsed.email : d.email,
-      website: typeof parsed?.website === "string" ? parsed.website : d.website,
-    };
-  } catch {
-    return defaultCompanyData();
-  }
-}
+export { safeLoadCompanyData } from "../lib/companyData";
+export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
 
 type DeviceRepair = {
   id: string;
@@ -186,10 +144,12 @@ type GroupKey = "all" | "active" | "final" | "reklamace";
 type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
+  sidebar: { position: "left" | "right" | "bottom" };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: "list" | "grid" | "compact" | "compact-extra"; pageSize: number; customerPhoneRequired: boolean };
+  orders: { displayMode: DisplayMode; pageSize: number; customerPhoneRequired: boolean; statusGroupedOrder?: string[] };
 };
 
 type OpenTicketIntent = {
@@ -336,9 +296,12 @@ type TicketComment = {
 // ========================
 // Utils: storage
 // ========================
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+
 function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
+    sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
   };
@@ -361,10 +324,14 @@ function safeLoadUIConfig(): UIConfig {
       ? pageSize
       : d.orders.pageSize;
 
+    const sidebarPos = parsed?.sidebar?.position;
     return {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? !!fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
+      },
+      sidebar: {
+        position: (["left", "right", "bottom"] as const).includes(sidebarPos) ? sidebarPos : d.sidebar.position,
       },
       home: {
         orderFilters: {
@@ -374,9 +341,10 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
+        displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
+        statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
       },
     };
   } catch {
@@ -673,267 +641,8 @@ function handoffLabel(m?: string) {
   return m;
 }
 
-function escapeHtmlForDoc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-/** Sestaví proměnné pro vlastní texty v šabloně JobiDocs ({{ticket_code}}, {{customer_name}} atd.) při tisku z Jobi. */
-function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<string, unknown>): Record<string, string> {
-  const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
-  const totalPrice = ticket.performedRepairs?.length
-    ? ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0)
-    : 0;
-  const repairDateFormatted = new Date(ticket.createdAt).toLocaleDateString("cs-CZ");
-  const completionFormatted = ticket.expectedDoneAt ? new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ") : "";
-  const serviceName = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name) : "";
-  const serviceAddr = [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ");
-  const repairItems = ticket.performedRepairs?.length
-    ? JSON.stringify(
-        ticket.performedRepairs.map((r) => ({
-          name: r.name ?? "",
-          price: r.price != null ? `${r.price} Kč` : "",
-          quantity: 1,
-          unit: "ks",
-          total: r.price != null ? `${r.price} Kč` : "",
-        }))
-      )
-    : "[]";
-  return {
-    ticket_code: ticket.code ?? "",
-    order_code: ticket.code ?? "",
-    customer_name: ticket.customerName ?? "",
-    customer_phone: ticket.customerPhone ?? "",
-    customer_email: ticket.customerEmail ?? "",
-    customer_address: addr,
-    device_name: ticket.deviceLabel ?? "",
-    device_serial: ticket.serialOrImei ?? "",
-    device_imei: ticket.serialOrImei ?? "",
-    device_state: ticket.deviceCondition ?? "",
-    device_problem: (ticket.requestedRepair || ticket.issueShort) ?? "",
-    service_name: serviceName,
-    service_phone: (companyData?.phone != null && String(companyData.phone).trim() !== "") ? String(companyData.phone) : "",
-    service_email: (companyData?.email != null && String(companyData.email).trim() !== "") ? String(companyData.email) : "",
-    service_address: serviceAddr,
-    service_ico: (companyData?.ico != null && String(companyData.ico).trim() !== "") ? String(companyData.ico) : "",
-    service_dic: (companyData?.dic != null && String(companyData.dic).trim() !== "") ? String(companyData.dic) : "",
-    repair_date: repairDateFormatted,
-    repair_completion_date: completionFormatted,
-    total_price: totalPrice > 0 ? `${totalPrice} Kč` : "",
-    warranty_until: "", // JobiDocs dopočte z repair_date a konfigurace záruky
-    diagnostic_text: ticket.diagnosticText ?? "",
-    note: (ticket as { notes?: string }).notes ?? "",
-    repair_items: repairItems,
-    photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
-    complaint_code: "",
-    reclamation_code: "",
-    original_ticket_code: ticket.code ?? "",
-  };
-}
-
-/** Sestaví proměnné pro dokument příjemky/výdejky reklamace (JobiDocs šablona). */
-function buildClaimVariablesForJobiDocs(claim: WarrantyClaimRow, originalTicketCode: string = ""): Record<string, string> {
-  const addr = [claim.customer_address_street, claim.customer_address_city, claim.customer_address_zip].filter(Boolean).join(", ");
-  return {
-    complaint_code: claim.code ?? "",
-    reclamation_code: claim.code ?? "",
-    original_ticket_code: originalTicketCode || "",
-    ticket_code: originalTicketCode || "",
-    customer_name: claim.customer_name ?? "",
-    customer_phone: claim.customer_phone ?? "",
-    customer_email: claim.customer_email ?? "",
-    customer_address: addr,
-    device_name: claim.device_label ?? "",
-    device_serial: claim.device_serial ?? "",
-    device_imei: claim.device_imei ?? "",
-    device_state: claim.device_condition ?? "",
-    device_problem: claim.notes ?? "",
-  };
-}
-
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
 
-async function getConfigWithProfile(
-  serviceId: string | null,
-  docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
-): Promise<any> {
-  const base = (await loadDocumentsConfigFromDB(serviceId)) || safeLoadDocumentsConfig();
-  const profile = await getProfileFromJobiDocs(serviceId ?? "", docType);
-  if (!profile) return base;
-  const section = docType === "zakazkovy_list" ? "ticketList" : docType === "zarucni_list" ? "warrantyCertificate" : "diagnosticProtocol";
-  return {
-    ...base,
-    [section]: { ...base[section], ...profile },
-  };
-}
-
-async function loadDocumentsConfigFromDB(serviceId: string | null): Promise<any | null> {
-  if (!supabase || !serviceId) return null;
-  
-  try {
-    const { data, error } = await supabase
-      .from("service_document_settings")
-      .select("config")
-      .eq("service_id", serviceId)
-      .single();
-    
-    if (error || !data) return null;
-    
-    // Validate and merge with defaults
-    const typedData = data as { config: any };
-    if (!typedData.config) return null;
-    const parsed = typedData.config as any;
-    const defaultConfig = {
-      ticketList: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDiagnostic: false,
-        includePhotos: false,
-        includeDates: true,
-      },
-      diagnosticProtocol: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeDiagnosticText: true,
-        includePhotos: true,
-        includeDates: true,
-      },
-      warrantyCertificate: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDates: true,
-      },
-    };
-    
-    return {
-      ticketList: {
-        includeServiceInfo: typeof parsed?.ticketList?.includeServiceInfo === "boolean" ? parsed.ticketList.includeServiceInfo : defaultConfig.ticketList.includeServiceInfo,
-        includeCustomerInfo: typeof parsed?.ticketList?.includeCustomerInfo === "boolean" ? parsed.ticketList.includeCustomerInfo : defaultConfig.ticketList.includeCustomerInfo,
-        includeDeviceInfo: typeof parsed?.ticketList?.includeDeviceInfo === "boolean" ? parsed.ticketList.includeDeviceInfo : defaultConfig.ticketList.includeDeviceInfo,
-        includeRepairs: typeof parsed?.ticketList?.includeRepairs === "boolean" ? parsed.ticketList.includeRepairs : defaultConfig.ticketList.includeRepairs,
-        includeDiagnostic: typeof parsed?.ticketList?.includeDiagnostic === "boolean" ? parsed.ticketList.includeDiagnostic : defaultConfig.ticketList.includeDiagnostic,
-        includePhotos: typeof parsed?.ticketList?.includePhotos === "boolean" ? parsed.ticketList.includePhotos : defaultConfig.ticketList.includePhotos,
-        includeDates: typeof parsed?.ticketList?.includeDates === "boolean" ? parsed.ticketList.includeDates : defaultConfig.ticketList.includeDates,
-      },
-      diagnosticProtocol: {
-        includeServiceInfo: typeof parsed?.diagnosticProtocol?.includeServiceInfo === "boolean" ? parsed.diagnosticProtocol.includeServiceInfo : defaultConfig.diagnosticProtocol.includeServiceInfo,
-        includeCustomerInfo: typeof parsed?.diagnosticProtocol?.includeCustomerInfo === "boolean" ? parsed.diagnosticProtocol.includeCustomerInfo : defaultConfig.diagnosticProtocol.includeCustomerInfo,
-        includeDeviceInfo: typeof parsed?.diagnosticProtocol?.includeDeviceInfo === "boolean" ? parsed.diagnosticProtocol.includeDeviceInfo : defaultConfig.diagnosticProtocol.includeDeviceInfo,
-        includeDiagnosticText: typeof parsed?.diagnosticProtocol?.includeDiagnosticText === "boolean" ? parsed.diagnosticProtocol.includeDiagnosticText : defaultConfig.diagnosticProtocol.includeDiagnosticText,
-        includePhotos: typeof parsed?.diagnosticProtocol?.includePhotos === "boolean" ? parsed.diagnosticProtocol.includePhotos : defaultConfig.diagnosticProtocol.includePhotos,
-        includeDates: typeof parsed?.diagnosticProtocol?.includeDates === "boolean" ? parsed.diagnosticProtocol.includeDates : defaultConfig.diagnosticProtocol.includeDates,
-      },
-      warrantyCertificate: {
-        includeServiceInfo: typeof parsed?.warrantyCertificate?.includeServiceInfo === "boolean" ? parsed.warrantyCertificate.includeServiceInfo : defaultConfig.warrantyCertificate.includeServiceInfo,
-        includeCustomerInfo: typeof parsed?.warrantyCertificate?.includeCustomerInfo === "boolean" ? parsed.warrantyCertificate.includeCustomerInfo : defaultConfig.warrantyCertificate.includeCustomerInfo,
-        includeDeviceInfo: typeof parsed?.warrantyCertificate?.includeDeviceInfo === "boolean" ? parsed.warrantyCertificate.includeDeviceInfo : defaultConfig.warrantyCertificate.includeDeviceInfo,
-        includeRepairs: typeof parsed?.warrantyCertificate?.includeRepairs === "boolean" ? parsed.warrantyCertificate.includeRepairs : defaultConfig.warrantyCertificate.includeRepairs,
-        includeDates: typeof parsed?.warrantyCertificate?.includeDates === "boolean" ? parsed.warrantyCertificate.includeDates : defaultConfig.warrantyCertificate.includeDates,
-      },
-      autoPrint: parsed?.autoPrint ? {
-        ticketListOnCreate: !!parsed.autoPrint.ticketListOnCreate,
-        ticketListOnStatusKey: parsed.autoPrint.ticketListOnStatusKey ?? null,
-        warrantyOnCreate: !!parsed.autoPrint.warrantyOnCreate,
-        warrantyOnStatusKey: parsed.autoPrint.warrantyOnStatusKey ?? null,
-        prijetiReklamaceOnCreate: !!parsed.autoPrint.prijetiReklamaceOnCreate,
-        prijetiReklamaceOnStatusKey: parsed.autoPrint.prijetiReklamaceOnStatusKey ?? null,
-        vydaniReklamaceOnStatusKey: parsed.autoPrint.vydaniReklamaceOnStatusKey ?? null,
-      } : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function safeLoadDocumentsConfig(): any {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
-    if (!raw) return {
-      ticketList: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDiagnostic: false,
-        includePhotos: false,
-        includeDates: true,
-      },
-      diagnosticProtocol: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeDiagnosticText: true,
-        includePhotos: true,
-        includeDates: true,
-      },
-      warrantyCertificate: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDates: true,
-      },
-    };
-    const parsed = JSON.parse(raw);
-    return {
-      ticketList: {
-        includeServiceInfo: parsed?.ticketList?.includeServiceInfo !== false,
-        includeCustomerInfo: parsed?.ticketList?.includeCustomerInfo !== false,
-        includeDeviceInfo: parsed?.ticketList?.includeDeviceInfo !== false,
-        includeRepairs: parsed?.ticketList?.includeRepairs !== false,
-        includeDiagnostic: parsed?.ticketList?.includeDiagnostic === true,
-        includePhotos: parsed?.ticketList?.includePhotos === true,
-        includeDates: parsed?.ticketList?.includeDates !== false,
-      },
-      diagnosticProtocol: {
-        includeServiceInfo: parsed?.diagnosticProtocol?.includeServiceInfo !== false,
-        includeCustomerInfo: parsed?.diagnosticProtocol?.includeCustomerInfo !== false,
-        includeDeviceInfo: parsed?.diagnosticProtocol?.includeDeviceInfo !== false,
-        includeDiagnosticText: parsed?.diagnosticProtocol?.includeDiagnosticText !== false,
-        includePhotos: parsed?.diagnosticProtocol?.includePhotos !== false,
-        includeDates: parsed?.diagnosticProtocol?.includeDates !== false,
-      },
-      warrantyCertificate: {
-        includeServiceInfo: parsed?.warrantyCertificate?.includeServiceInfo !== false,
-        includeCustomerInfo: parsed?.warrantyCertificate?.includeCustomerInfo !== false,
-        includeDeviceInfo: parsed?.warrantyCertificate?.includeDeviceInfo !== false,
-        includeRepairs: parsed?.warrantyCertificate?.includeRepairs !== false,
-        includeDates: parsed?.warrantyCertificate?.includeDates !== false,
-      },
-    };
-  } catch {
-    return {
-      ticketList: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDiagnostic: false,
-        includePhotos: false,
-        includeDates: true,
-      },
-      diagnosticProtocol: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeDiagnosticText: true,
-        includePhotos: true,
-        includeDates: true,
-      },
-      warrantyCertificate: {
-        includeServiceInfo: true,
-        includeCustomerInfo: true,
-        includeDeviceInfo: true,
-        includeRepairs: true,
-        includeDates: true,
-      },
-    };
-  }
-}
 
 export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, config?: any, _includeActions: boolean = false): string {
   const documentsConfig = config || safeLoadDocumentsConfig();
@@ -941,61 +650,7 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
   const design = documentsConfig.ticketList?.design || "classic";
   const colorMode = documentsConfig.colorMode || "color";
   
-  // Get design-specific styles
-  const getDesignStyles = (designType: string) => {
-    switch (designType) {
-      case "modern":
-        return {
-          primaryColor: "#1e40af",
-          secondaryColor: "#3b82f6",
-          accentColor: "#60a5fa",
-          borderColor: "#dbeafe",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1e40af",
-          sectionBg: "#ffffff",
-          sectionBorder: "2px solid #dbeafe",
-        };
-      case "minimal":
-        return {
-          primaryColor: "#1a1a1a",
-          secondaryColor: "#6b7280",
-          accentColor: "#9ca3af",
-          borderColor: "#e5e7eb",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1a1a1a",
-          sectionBg: "transparent",
-          sectionBorder: "none",
-        };
-      case "professional":
-        return {
-          primaryColor: "#0f172a",
-          secondaryColor: "#334155",
-          accentColor: "#475569",
-          borderColor: "#cbd5e1",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#0f172a",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e2e8f0",
-        };
-      default: // classic
-        return {
-          primaryColor: "#1f2937",
-          secondaryColor: "#4b5563",
-          accentColor: "#6b7280",
-          borderColor: "#d1d5db",
-          bgColor: "#ffffff",
-          headerBg: "#f9fafb",
-          headerText: "#1f2937",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e5e7eb",
-        };
-    }
-  };
-  
-  const styles = getDesignStyles(design);
+  const styles = getDesignStylesForFallback(design);
   
   return `
     <!DOCTYPE html>
@@ -1591,6 +1246,8 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro export.", "error");
     return;
   }
+  const start = performance.now();
+  let usedFallback = false;
   try {
     const { save } = await import("@tauri-apps/plugin-dialog");
     const filePath = await save({
@@ -1606,25 +1263,50 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
         return;
       }
       const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+      const validation = validateDocumentVariables(variables);
+      if (!validation.valid) {
+        devLog("[DocGuardrail]", validation.warnings);
+      }
       let res = await exportDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, filePath, { variables });
       if (!res.ok && res.error?.toLowerCase().includes("not found")) {
+        usedFallback = true;
         const htmlContent = generateTicketHTML(ticket, true, config);
         res = await exportViaJobiDocs(htmlContent, filePath);
       }
+      const durationMs = Math.round(performance.now() - start);
       if (res.ok) {
+        trackDocumentAction({ action: "export", docType: "zakazkovy_list", result: usedFallback ? "fallback" : "success", durationMs, usedFallback });
         const u = (await supabase?.auth.getUser())?.data?.user?.id;
         if (u) {
           checkAchievementOnFirstPrint(u);
           checkAchievementOnPaperless(u);
         }
-        showToast("PDF uložen", "success");
+        showExportSuccessToast(filePath);
       } else {
+        trackDocumentAction({ action: "export", docType: "zakazkovy_list", result: "error", durationMs, errorMessage: res.error, usedFallback });
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
     }
   } catch (e) {
+    const durationMs = Math.round(performance.now() - start);
+    trackDocumentAction({ action: "export", docType: "zakazkovy_list", result: "error", durationMs, errorMessage: e instanceof Error ? e.message : String(e) });
     showToast(`Chyba exportu: ${e instanceof Error ? e.message : String(e)}`, "error");
   }
+}
+
+function showExportSuccessToast(filePath: string) {
+  const shortPath = filePath.replace(/^.*[/\\]/, "");
+  showPersistentToast(`PDF uložen: ${shortPath}`, "success", {
+    actionLabel: "Otevřít složku",
+    onAction: async () => {
+      try {
+        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+        await revealItemInDir(filePath);
+      } catch (err) {
+        showToast("Nelze otevřít složku: " + (err instanceof Error ? err.message : String(err)), "error");
+      }
+    },
+  });
 }
 
 async function printTicket(ticket: TicketEx, serviceId?: string | null) {
@@ -1638,6 +1320,7 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     showToast("Vyberte servis pro tisk.", "error");
     return;
   }
+  const start = performance.now();
   const companyData = safeLoadCompanyData();
   const stillRunning = await isJobiDocsRunning();
   if (!stillRunning) {
@@ -1645,8 +1328,14 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     return;
   }
   const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  const validation = validateDocumentVariables(variables);
+  if (!validation.valid) {
+    devLog("[DocGuardrail]", validation.warnings);
+  }
   const res = await printDocumentViaJobiDocs("zakazkovy_list", sid, companyData as Record<string, unknown>, {}, { variables });
+  const durationMs = Math.round(performance.now() - start);
   if (res.ok) {
+    trackDocumentAction({ action: "print", docType: "zakazkovy_list", result: "success", durationMs });
     const u = (await supabase?.auth.getUser())?.data?.user?.id;
     if (u) {
       checkAchievementOnFirstPrint(u);
@@ -1654,6 +1343,7 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     }
     showToast("Úloha odeslána do fronty", "success");
   } else {
+    trackDocumentAction({ action: "print", docType: "zakazkovy_list", result: "error", durationMs, errorMessage: res.error });
     showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
   }
 }
@@ -1663,61 +1353,7 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
   const design = documentsConfig.diagnosticProtocol?.design || "classic";
   const colorMode = documentsConfig.colorMode || "color";
   
-  // Get design-specific styles (same as ticket)
-  const getDesignStyles = (designType: string) => {
-    switch (designType) {
-      case "modern":
-        return {
-          primaryColor: "#1e40af",
-          secondaryColor: "#3b82f6",
-          accentColor: "#60a5fa",
-          borderColor: "#dbeafe",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1e40af",
-          sectionBg: "#ffffff",
-          sectionBorder: "2px solid #dbeafe",
-        };
-      case "minimal":
-        return {
-          primaryColor: "#1a1a1a",
-          secondaryColor: "#6b7280",
-          accentColor: "#9ca3af",
-          borderColor: "#e5e7eb",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1a1a1a",
-          sectionBg: "transparent",
-          sectionBorder: "none",
-        };
-      case "professional":
-        return {
-          primaryColor: "#0f172a",
-          secondaryColor: "#334155",
-          accentColor: "#475569",
-          borderColor: "#cbd5e1",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#0f172a",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e2e8f0",
-        };
-      default: // classic
-        return {
-          primaryColor: "#1f2937",
-          secondaryColor: "#4b5563",
-          accentColor: "#6b7280",
-          borderColor: "#d1d5db",
-          bgColor: "#ffffff",
-          headerBg: "#f9fafb",
-          headerText: "#1f2937",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e5e7eb",
-        };
-    }
-  };
-  
-  const styles = getDesignStyles(design);
+  const styles = getDesignStylesForFallback(design);
   
   return `
     <!DOCTYPE html>
@@ -2295,7 +1931,7 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
           checkAchievementOnFirstPrint(u);
           checkAchievementOnPaperless(u);
         }
-        showToast("PDF uložen", "success");
+        showExportSuccessToast(filePath);
       } else {
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
@@ -2341,61 +1977,7 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
   const design = documentsConfig.warrantyCertificate?.design || "classic";
   const colorMode = documentsConfig.colorMode || "color";
   
-  // Get design-specific styles (same as ticket)
-  const getDesignStyles = (designType: string) => {
-    switch (designType) {
-      case "modern":
-        return {
-          primaryColor: "#1e40af",
-          secondaryColor: "#3b82f6",
-          accentColor: "#60a5fa",
-          borderColor: "#dbeafe",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1e40af",
-          sectionBg: "#ffffff",
-          sectionBorder: "2px solid #dbeafe",
-        };
-      case "minimal":
-        return {
-          primaryColor: "#1a1a1a",
-          secondaryColor: "#6b7280",
-          accentColor: "#9ca3af",
-          borderColor: "#e5e7eb",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#1a1a1a",
-          sectionBg: "transparent",
-          sectionBorder: "none",
-        };
-      case "professional":
-        return {
-          primaryColor: "#0f172a",
-          secondaryColor: "#334155",
-          accentColor: "#475569",
-          borderColor: "#cbd5e1",
-          bgColor: "#ffffff",
-          headerBg: "transparent",
-          headerText: "#0f172a",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e2e8f0",
-        };
-      default: // classic
-        return {
-          primaryColor: "#1f2937",
-          secondaryColor: "#4b5563",
-          accentColor: "#6b7280",
-          borderColor: "#d1d5db",
-          bgColor: "#ffffff",
-          headerBg: "#f9fafb",
-          headerText: "#1f2937",
-          sectionBg: "#ffffff",
-          sectionBorder: "1px solid #e5e7eb",
-        };
-    }
-  };
-  
-  const styles = getDesignStyles(design);
+  const styles = getDesignStylesForFallback(design);
   
   return `
     <!DOCTYPE html>
@@ -3095,7 +2677,7 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
           checkAchievementOnFirstPrint(u);
           checkAchievementOnPaperless(u);
         }
-        showToast("PDF uložen", "success");
+        showExportSuccessToast(filePath);
       } else {
         showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
       }
@@ -5133,26 +4715,6 @@ function StatusPicker({ value, statuses, getByKey, onChange, size = "md" }: Stat
 }
 
 // ========================
-// Icons
-// ========================
-function DeviceIcon({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
-      <path d="M12 18h.01"/>
-    </svg>
-  );
-}
-
-function WrenchIcon({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-    </svg>
-  );
-}
-
-// ========================
 // Page
 // ========================
 type ModelWithHierarchy = DeviceModel & {
@@ -5439,6 +5001,7 @@ export default function Orders({
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
   const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
   const [captureQRLoading, setCaptureQRLoading] = useState(false);
+  const newOrderPhotosBeforeInputRef = useRef<HTMLInputElement>(null);
   const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
 
   useEffect(() => {
@@ -6799,27 +6362,28 @@ export default function Orders({
   const handleCloseDetail = useCallback(async () => {
     devLog("[Close] clicked - about to save?");
     
-    // Check if there are any unsaved changes
-    const hasUnsavedChanges = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
+    const hasEditingChanges = isEditing && Object.keys(editedTicket).length > 0;
+    const hasEditingClaimChanges = isEditingClaim && Object.keys(editedClaim).length > 0;
     
-    if (hasUnsavedChanges) {
+    if (hasEditingChanges || hasEditingClaimChanges) {
+      showToast("Máte neuložené změny. Uložte nebo zrušte úpravy.", "error");
+      return;
+    }
+
+    const hasDirtyAutoSave = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
+    if (hasDirtyAutoSave) {
       try {
         const saved = await saveTicketChanges();
         if (!saved) {
-          console.error("[Close] saveTicketChanges returned false");
-          // Error already shown in saveTicketChanges via toast
           return;
         }
-        // Show success toast only if there were unsaved changes and save succeeded
         showToast("Změny uloženy", "success");
       } catch (err) {
-        console.error("[Close] saveTicketChanges threw error", err);
         showToast("Chyba při ukládání změn: " + (err instanceof Error ? err.message : "Neznámá chyba"), "error");
         return;
       }
     }
 
-    // Close detail view (either no changes or save succeeded)
     const page = returnToPage;
     const customerId = returnToCustomerIdRef.current;
     setDetailId(null);
@@ -6831,7 +6395,7 @@ export default function Orders({
     if (page && onReturnToPage) {
       onReturnToPage(page, customerId);
     }
-  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags]);
+  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags, isEditing, editedTicket, isEditingClaim, editedClaim]);
 
   // Escape: zavřít detail/modal; v capture phase + preventDefault, aby v fullscreen neukončil fullscreen
   useEffect(() => {
@@ -7105,196 +6669,95 @@ export default function Orders({
     setCommentDraftByTicket((p) => ({ ...p }));
   };
 
+  const toCardData = useCallback((t: (typeof filtered)[number]): TicketCardData => ({
+    id: t.id,
+    code: t.code,
+    customerName: t.customerName,
+    customerPhone: t.customerPhone,
+    deviceLabel: t.deviceLabel,
+    serialOrImei: t.serialOrImei,
+    issueShort: t.issueShort,
+    requestedRepair: t.requestedRepair,
+    createdAt: t.createdAt,
+    status: (t.status as any) ?? statusById[t.id] ?? null,
+    discountType: t.discountType,
+    discountValue: t.discountValue,
+    performedRepairs: t.performedRepairs,
+    expectedDoneAt: t.expectedDoneAt,
+  }), [statusById]);
+
+  const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
+    if (currentStatus !== null) {
+      return <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(ticketId, next)} size="sm" />;
+    }
+    return <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>;
+  }, [statuses, getByKey, setTicketStatus]);
+
+  const renderPrintButton = useCallback((t: TicketCardData, small?: boolean) => {
+    if (!canPrintExport) return null;
+    const sz = small ? 26 : 32;
+    return (
+      <button
+        type="button"
+        data-quick-print-trigger-id={t.id}
+        onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev: any) => (prev?.id === t.id ? null : t as any)); }}
+        title="Tisk"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: sz, height: sz, minWidth: sz, minHeight: sz, borderRadius: small ? 6 : 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: small ? 12 : 14, flexShrink: 0 }}
+      >🖨️</button>
+    );
+  }, [canPrintExport, setOpenQuickPrintTicket]);
+
   const renderTicketCard = (t: (typeof filtered)[number]) => {
     const raw = (t.status as any) ?? statusById[t.id];
     const currentStatus = normalizeStatus(raw);
     const meta = currentStatus !== null ? getByKey(currentStatus) : null;
-    const cardKey = t.id;
-    const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
-    return (
-      <div
-        key={cardKey}
-        onClick={() => { setDetailId(t.id); setDetailClaimId(null); }}
-        style={{
-          textAlign: "left",
-          padding: 0,
-          borderRadius: isCompactExtra ? 8 : 16,
-          border: meta?.bg ? `2px solid ${meta.bg}80` : "1px solid var(--border)",
-          background: meta?.bg ? `${meta.bg}30` : "var(--panel)",
-          cursor: "pointer",
-          boxShadow: meta?.bg ? `0 2px 8px ${meta.bg}30, 0 0 0 1px ${meta.bg}20` : "0 2px 8px rgba(0,0,0,0.06)",
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          color: "var(--text)",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          position: "relative",
-          overflow: "hidden",
-          display: "flex",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.boxShadow = meta?.bg ? `0 6px 16px ${meta.bg}40, 0 0 0 1px ${meta.bg}30` : "0 4px 12px rgba(0,0,0,0.1)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.boxShadow = meta?.bg ? `0 2px 8px ${meta.bg}30, 0 0 0 1px ${meta.bg}20` : "0 2px 8px rgba(0,0,0,0.06)";
-        }}
-      >
-        <div
-          style={{
-            width: isCompactExtra ? 6 : 10,
-            background: meta?.bg || "var(--border)",
-            flexShrink: 0,
-            boxShadow: meta?.bg ? `0 0 24px ${meta.bg}90, inset 0 0 12px ${meta.bg}60, 0 0 8px ${meta.bg}50` : "none",
-          }}
-        />
+    const cardData = toCardData(t);
+    const mode = uiCfg.orders.displayMode;
+    const onClick = () => { setDetailId(t.id); setDetailClaimId(null); };
+    const statusNode = renderStatusPicker(t.id, currentStatus);
+    const metaOrNull = meta ?? null;
 
-        <div style={{
-          flex: 1,
-          minWidth: 0,
-          padding: isCompactExtra ? "6px 10px" : uiCfg.orders.displayMode === "grid" ? 14 : 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: isCompactExtra ? 0 : uiCfg.orders.displayMode === "grid" ? 10 : 12
-        }}>
-          {isCompactExtra ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
-              <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
-              <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
-              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{t.deviceLabel || "—"}</div>
-              <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.customerName}</div>
-              {meta?.isFinal && <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}>✓</span>}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
-                {currentStatus !== null ? <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" /> : <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>}
-                {canPrintExport && (
-                  <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, minWidth: 26, minHeight: 26, borderRadius: 6, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>🖨️</button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: uiCfg.orders.displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
-                  <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }} title={formatCZ(t.createdAt)}>{formatCZ(t.createdAt)}</div>
-                  {meta?.isFinal && (
-                    <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "var(--accent-soft)", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>✓</span>
-                  )}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, minWidth: 100 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} data-quick-print-trigger>
-                  {currentStatus !== null ? (
-                    <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(t.id, next)} size="sm" />
-                  ) : (
-                    <div style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>
-                  )}
-                  {canPrintExport && (
-                    <button type="button" data-quick-print-trigger-id={t.id} onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev) => (prev?.id === t.id ? null : t)); }} title="Tisk dokumentu" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, minWidth: 32, minHeight: 32, borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: 14, flexShrink: 0 }}>🖨️</button>
-                  )}
-                </div>
-              </div>
-              {uiCfg.orders.displayMode === "compact" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 950, fontSize: 15, color: "var(--accent)", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-                      <DeviceIcon size={14} color="var(--accent)" />
-                      <span>{t.deviceLabel || "—"}</span>
-                    </div>
-                    <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{t.customerName}</div>
-                  </div>
-                  {(t.requestedRepair || t.issueShort) && (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                      <WrenchIcon size={12} color="var(--text)" />
-                      <span>{t.requestedRepair || t.issueShort}</span>
-                    </div>
-                  )}
-                  {(() => {
-                    const repairs = t.performedRepairs ?? [];
-                    const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-                    const discountType = t.discountType;
-                    const discountValue = t.discountValue || 0;
-                    let discountAmount = 0;
-                    if (discountType === "percentage") discountAmount = (totalPrice * discountValue) / 100;
-                    else if (discountType === "amount") discountAmount = discountValue;
-                    const finalPrice = Math.max(0, totalPrice - discountAmount);
-                    const hasRepairs = repairs.length > 0;
-                    const hasPrice = finalPrice > 0;
-                    if (hasRepairs || hasPrice) {
-                      return (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                          {hasRepairs && <span>{repairs.length} oprav</span>}
-                          {hasRepairs && hasPrice && <span>•</span>}
-                          {hasPrice && <span style={{ fontWeight: 700, color: "var(--accent)" }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0, marginTop: 2 }}>
-                      <DeviceIcon size={16} color="currentColor" />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                        <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{t.deviceLabel || "—"}</div>
-                        <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{t.customerName}</div>
-                      </div>
-                      {t.serialOrImei && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {t.serialOrImei}</div>}
-                    </div>
-                  </div>
-                  {(t.requestedRepair || t.issueShort) && (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
-                        <WrenchIcon size={16} color="currentColor" />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{t.requestedRepair || t.issueShort}</div>
-                      </div>
-                    </div>
-                  )}
-                  {(() => {
-                    const repairs = t.performedRepairs ?? [];
-                    const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-                    const discountType = t.discountType;
-                    const discountValue = t.discountValue || 0;
-                    let discountAmount = 0;
-                    if (discountType === "percentage") discountAmount = (totalPrice * discountValue) / 100;
-                    else if (discountType === "amount") discountAmount = discountValue;
-                    const finalPrice = Math.max(0, totalPrice - discountAmount);
-                    const hasRepairs = repairs.length > 0;
-                    const hasPrice = finalPrice > 0;
-                    return (
-                      <>
-                        {(hasRepairs || hasPrice) && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--panel)", borderRadius: 8, border: "1px solid var(--border)", marginTop: 8 }}>
-                            {hasRepairs && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)" }}>
-                                <WrenchIcon size={12} color="currentColor" />
-                                <span>{repairs.length} {repairs.length === 1 ? "oprava" : repairs.length < 5 ? "opravy" : "oprav"}</span>
-                              </div>
-                            )}
-                            {hasPrice && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--accent)", marginLeft: hasRepairs ? "auto" : 0 }}>
-                                <span>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {t.customerPhone && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingTop: 8, borderTop: "1px solid var(--border)", marginTop: 8 }}>
-                            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{formatPhoneNumber(t.customerPhone)}</div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+    switch (mode) {
+      case "compact":
+        return <TicketCardCompact key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "compact-extra":
+        return <TicketCardCompactExtra key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "grid":
+        return <TicketCardGrid key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "cards-modern":
+        return <TicketCardModern key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "split":
+        return <TicketCardSplit key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "stripe":
+        return <TicketCardStripe key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+      case "list":
+      default:
+        return <TicketCardList key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+    }
+  };
+
+  const renderClaimCard = (c: any, keyPrefix = "") => {
+    const rawStatus = (c.status as string | null) ?? "";
+    const currentStatus = normalizeStatus(rawStatus);
+    const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
+    const statusColor = claimMeta?.bg || "var(--border)";
+    const isSmall = uiCfg.orders.displayMode === "compact" || uiCfg.orders.displayMode === "compact-extra";
+    const claimAsCardData: TicketCardData = {
+      id: c.id, code: c.code, customerName: c.customer_name ?? "—",
+      deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "",
+      createdAt: c.created_at ?? "", status: c.status,
+    };
+    return (
+      <ClaimCard
+        key={`${keyPrefix}${c.id}`}
+        claim={c}
+        displayMode={uiCfg.orders.displayMode}
+        statusColor={statusColor}
+        statusLabel={claimMeta?.label}
+        onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+        statusPicker={<StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
+        printButton={renderPrintButton(claimAsCardData, isSmall)}
+      />
     );
   };
 
@@ -7472,257 +6935,67 @@ export default function Orders({
       {statusesReady && (activeGroup === "reklamace" ? !claimsLoading && !claimsError : !ticketsLoading && !ticketsError) && (
       <div data-tour="orders-list" style={{ 
         marginTop: 16, 
-        display: uiCfg.orders.displayMode === "grid" ? "grid" : "grid",
-        gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(350px, 1fr))" : "minmax(260px, 1fr)",
-        gap: uiCfg.orders.displayMode === "grid" ? 16 : uiCfg.orders.displayMode === "compact-extra" ? 2 : 8,
-        minWidth: 0,
+        ...(uiCfg.orders.displayMode === "table" || uiCfg.orders.displayMode === "timeline" || uiCfg.orders.displayMode === "status-grouped"
+          ? { minWidth: 0 }
+          : {
+              display: "grid",
+              gridTemplateColumns: uiCfg.orders.displayMode === "grid" || uiCfg.orders.displayMode === "cards-modern" ? "repeat(auto-fill, minmax(280px, 1fr))" : uiCfg.orders.displayMode === "split" ? "repeat(auto-fill, minmax(400px, 1fr))" : "minmax(260px, 1fr)",
+              gap: uiCfg.orders.displayMode === "grid" || uiCfg.orders.displayMode === "cards-modern" ? 12 : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" ? 2 : 6,
+              minWidth: 0,
+            }),
       }}>
-        {activeGroup === "reklamace"
-          ? paginatedClaims.map((c) => {
-              const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
-              const displayMode = uiCfg.orders.displayMode;
-              const rawStatus = (c.status as string | null) ?? "";
-              const currentStatus = normalizeStatus(rawStatus);
-              const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
-              const statusColor = claimMeta?.bg || "var(--border)";
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-                  style={{
-                    textAlign: "left",
-                    padding: 0,
-                    borderRadius: isCompactExtra ? 8 : 16,
-                    border: `2px solid ${statusColor}`,
-                    background: "#fff",
-                    cursor: "pointer",
-                    boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
-                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                    color: "var(--text)",
-                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                    position: "relative",
-                    overflow: "hidden",
-                    display: "flex",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
-                  }}
-                >
-                  <div style={{
-                    width: isCompactExtra ? 6 : 10,
-                    background: statusColor,
-                    flexShrink: 0,
-                  }} />
-                  <div style={{
-                    flex: 1,
-                    minWidth: 0,
-                    padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
-                  }}>
-                    {isCompactExtra ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
-                        <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
-                        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                        <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                          <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
-                            <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
-                            <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
-                            <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                            <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                          </div>
-                        </div>
-                        {displayMode === "compact" ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                              <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-                                <DeviceIcon size={14} color="#0d9488" />
-                                <span>{c.device_label || "—"}</span>
-                              </div>
-                              <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                            </div>
-                            {c.notes && (
-                              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                                <WrenchIcon size={12} color="var(--text)" />
-                                <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
-                                <DeviceIcon size={16} color="currentColor" />
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                                  <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
-                                  <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                                </div>
-                                {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
-                              </div>
-                            </div>
-                            {c.notes && (
-                              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
-                                  <WrenchIcon size={16} color="currentColor" />
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          : showClaimsInOrdersList
+        {/* Table / Timeline: full-container views rendered here */}
+        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "table" && (
+          <TicketTable
+            tickets={paginatedTickets.map(toCardData)}
+            getByKey={getByKey as any}
+            normalizeStatus={normalizeStatus}
+            onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
+            statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
+          />
+        )}
+        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "timeline" && (
+          <TicketTimeline
+            tickets={paginatedTickets.map(toCardData)}
+            getByKey={getByKey as any}
+            normalizeStatus={normalizeStatus}
+            onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
+          />
+        )}
+        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
+          <TicketStatusGrouped
+            tickets={paginatedTickets.map(toCardData)}
+            statuses={statuses as any}
+            normalizeStatus={normalizeStatus}
+            onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
+            statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
+            printButtonFor={(t) => renderPrintButton(t, true)}
+            customOrder={uiCfg.orders.statusGroupedOrder}
+          />
+        )}
+        {activeGroup === "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
+          <ClaimStatusGrouped
+            claims={paginatedClaims}
+            statuses={statuses as any}
+            normalizeStatus={normalizeStatus}
+            onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
+            statusPickerFor={(c) => <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
+            printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
+            customOrder={uiCfg.orders.statusGroupedOrder}
+          />
+        )}
+        {/* Card-based modes: render individual cards (skip if table/timeline/status-grouped already rendered above) */}
+        {activeGroup === "reklamace" && uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
+          ? paginatedClaims.map((c) => renderClaimCard(c))
+          : uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped" && showClaimsInOrdersList
             ? paginatedCombined.map((row) =>
                 row.type === "claim"
-                  ? (() => {
-                      const c = row.data;
-                      const isCompactExtra = uiCfg.orders.displayMode === "compact-extra";
-                      const displayMode = uiCfg.orders.displayMode;
-                      const rawStatus = (c.status as string | null) ?? "";
-                      const currentStatus = normalizeStatus(rawStatus);
-                      const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
-                      const statusColor = claimMeta?.bg || "var(--border)";
-                      return (
-                        <div
-                          key={`claim-${c.id}`}
-                          onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-                          style={{
-                            textAlign: "left",
-                            padding: 0,
-                            borderRadius: isCompactExtra ? 8 : 16,
-                            border: `2px solid ${statusColor}`,
-                            background: "#fff",
-                            cursor: "pointer",
-                            boxShadow: claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)",
-                            transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                            color: "var(--text)",
-                            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                            position: "relative",
-                            overflow: "hidden",
-                            display: "flex",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = "translateY(-1px)";
-                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 6px 16px ${statusColor}50, 0 0 0 1px ${statusColor}40` : "var(--shadow-hover)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "translateY(0)";
-                            e.currentTarget.style.boxShadow = claimMeta?.bg ? `0 2px 8px ${statusColor}40, 0 0 0 1px ${statusColor}30` : "var(--shadow-soft)";
-                          }}
-                        >
-                          <div style={{
-                            width: isCompactExtra ? 6 : 10,
-                            background: statusColor,
-                            flexShrink: 0,
-                          }} />
-                          <div style={{
-                            flex: 1,
-                            minWidth: 0,
-                            padding: isCompactExtra ? "6px 10px" : displayMode === "grid" ? 14 : 16,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: isCompactExtra ? 0 : displayMode === "grid" ? 10 : 12
-                          }}>
-                            {isCompactExtra ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
-                                <div style={{ fontWeight: 950, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
-                                <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
-                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.device_label || "—"}</div>
-                                <div style={{ fontSize: 11, color: "var(--muted)", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                                <span style={{ fontSize: 8, fontWeight: 900, padding: "1px 4px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", flexShrink: 0 }}>R</span>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                                  <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: displayMode === "grid" ? 8 : 4, flexWrap: "nowrap" }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, overflow: "hidden" }}>
-                                    <div style={{ fontWeight: 950, fontSize: 15, letterSpacing: "-0.01em", color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</div>
-                                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.created_at ? formatCZ(c.created_at) : "—"}</div>
-                                    <span style={{ fontSize: 9, fontWeight: 900, padding: "2px 5px", borderRadius: 4, background: "rgba(13,148,136,0.2)", color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Reklamace</span>
-                                  </div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                                    <StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />
-                                  </div>
-                                </div>
-                                {displayMode === "compact" ? (
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                                      <div style={{ fontWeight: 950, fontSize: 15, color: "#0d9488", minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-                                        <DeviceIcon size={14} color="#0d9488" />
-                                        <span>{c.device_label || "—"}</span>
-                                      </div>
-                                      <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                                    </div>
-                                    {c.notes && (
-                                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                                        <WrenchIcon size={12} color="var(--text)" />
-                                        <span>{(c.notes || "").toString().slice(0, 80)}{(c.notes || "").length > 80 ? "…" : ""}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "rgba(13,148,136,0.15)", color: "#0d9488", flexShrink: 0, marginTop: 2 }}>
-                                        <DeviceIcon size={16} color="currentColor" />
-                                      </div>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                                          <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", lineHeight: 1.4 }}>{c.device_label || "—"}</div>
-                                          <div style={{ fontWeight: 600, fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{c.customer_name ?? "—"}</div>
-                                        </div>
-                                        {c.device_serial && <div style={{ fontSize: 11, color: "var(--muted)" }}>SN: {c.device_serial}</div>}
-                                      </div>
-                                    </div>
-                                    {c.notes && (
-                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 4 }}>
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)", flexShrink: 0, marginTop: 2 }}>
-                                          <WrenchIcon size={16} color="currentColor" />
-                                        </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.4 }}>{(c.notes || "").toString().slice(0, 120)}{(c.notes || "").length > 120 ? "…" : ""}</div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()
+                  ? renderClaimCard(row.data, "claim-")
                   : renderTicketCard(row.data)
               )
-          : paginatedTickets.map((t) => renderTicketCard(t))
+          : uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
+            ? paginatedTickets.map((t) => renderTicketCard(t))
+            : null
         }
 
         {pageSize > 0 && listLength > pageSize && (() => {
@@ -7928,7 +7201,7 @@ export default function Orders({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", position: "sticky", top: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginBottom: 0, padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
           <div>
             <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>Nová zakázka</div>
             <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
@@ -8419,6 +7692,7 @@ export default function Orders({
             ))}
             <button
               type="button"
+              disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
               onClick={() =>
                 setNewDraft((p) => ({
                   ...p,
@@ -8428,16 +7702,18 @@ export default function Orders({
                   ],
                 }))
               }
-              style={{ ...softBtn, marginTop: 16, width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+              style={{ ...softBtn, marginTop: 16, width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: !newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? 0.6 : 1, cursor: !newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "not-allowed" : "pointer" }}
+              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Vyplňte nejdřív název zařízení v tomto řádku" : "Přidat další zařízení"}
             >
               + Přidat další zařízení
             </button>
           </div>
         </div>
 
-        {/* Fotky při příjmu */}
-        <div style={{ marginTop: 16, ...card, gridColumn: "1 / -1" }}>
-          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 10 }}>📷 Fotky při příjmu</div>
+        {/* Fotky při příjmu – nahrají se po vytvoření zakázky */}
+        <div id="new-order-photos-before" style={{ marginTop: 16, ...card, gridColumn: "1 / -1" }}>
+          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 4 }}>📷 Fotky při příjmu</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>Fotky se po vytvoření zakázky automaticky nahrají a připojí k zakázce.</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
               <div key={idx} style={{ position: "relative" }}>
@@ -8483,6 +7759,7 @@ export default function Orders({
           </div>
           <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: "pointer", marginTop: 8, display: "inline-block" }}>
             <input
+              ref={newOrderPhotosBeforeInputRef}
               type="file"
               accept="image/*"
               multiple
@@ -8510,7 +7787,7 @@ export default function Orders({
           </label>
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
           <button
             onClick={() => {
               setNewDraft(defaultDraft());
@@ -8530,6 +7807,7 @@ export default function Orders({
             Zrušit
           </button>
           <button
+            type="button"
             onClick={async () => {
               setSubmitAttempted(true);
               if (!canCreate) return;
@@ -8585,6 +7863,7 @@ export default function Orders({
               opacity: canCreate && !captureQRLoading ? 1 : 0.55,
               cursor: canCreate && !captureQRLoading ? "pointer" : "not-allowed",
             }}
+            title="Vytvořit zakázku a zobrazit QR kód pro focení přijímacích fotek z telefonu"
           >
             {captureQRLoading ? "⏳ Vytvářím…" : "📱 Udělat přijímací fotky"}
           </button>
@@ -8629,22 +7908,24 @@ export default function Orders({
           width: 1080,
           maxWidth: "calc(100vw - 24px)",
           maxHeight: "calc(100vh - 24px)",
-          overflow: "auto",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
           background: "var(--panel)",
           backdropFilter: "var(--blur)",
           WebkitBackdropFilter: "var(--blur)",
           border,
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow)",
-          padding: 18,
+          padding: 0,
           zIndex: 310,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
           willChange: (detailId || detailClaimId) ? "transform" : "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-          <div style={{ minWidth: 0 }}>
+        <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", zIndex: 5, background: "var(--panel)", padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
+          <div style={{ minWidth: 0, paddingRight: 70 }}>
             <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
               {detailedClaim ? detailedClaim.code : (detailedTicket ? detailedTicket.code : "—")}
               {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
@@ -8686,7 +7967,7 @@ export default function Orders({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", paddingRight: 70 }}>
             {detailedClaim ? (
               <>
                 {detailedClaim.source_ticket_id && (
@@ -8756,7 +8037,7 @@ export default function Orders({
                                   checkAchievementOnFirstPrint(u);
                                   checkAchievementOnPaperless(u);
                                 }
-                                showToast("PDF uložen", "success");
+                                showExportSuccessToast(filePath);
                               } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
                           } catch (e) {
@@ -8783,7 +8064,7 @@ export default function Orders({
                                   checkAchievementOnFirstPrint(u);
                                   checkAchievementOnPaperless(u);
                                 }
-                                showToast("PDF uložen", "success");
+                                showExportSuccessToast(filePath);
                               } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
                           } catch (e) {
@@ -8898,15 +8179,19 @@ export default function Orders({
               </button>
             )}
 
-            <button
-              onClick={handleCloseDetail}
-              style={softBtn}
-            >
-              Zavřít
-            </button>
           </div>
+
+          {/* Close button - uvnitř náhledu, s odsazením aby nezasahoval mimo */}
+          <button
+            onClick={handleCloseDetail}
+            style={{ ...softBtn, position: "absolute", top: 10, right: 10, zIndex: 2 }}
+            aria-label="Zavřít"
+          >
+            ×
+          </button>
         </div>
 
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 18 }}>
         {detailedClaim && (() => {
           const c = { ...detailedClaim, ...editedClaim };
           const sourceTicket = detailedClaim.source_ticket_id ? tickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
@@ -9058,8 +8343,18 @@ export default function Orders({
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                       <button
                         type="button"
+                        disabled={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim()}
                         onClick={() => setResolutionItems([...resolutionItems, { id: (crypto as any).randomUUID?.() ?? `z-${Date.now()}`, name: "" }])}
-                        style={{ ...primaryBtn, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px" }}
+                        style={{
+                          ...primaryBtn,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "10px 14px",
+                          opacity: resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? 0.6 : 1,
+                          cursor: resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "not-allowed" : "pointer",
+                        }}
+                        title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}
                       >
                         <span>+</span> Přidat zákrok
                       </button>
@@ -10750,6 +10045,7 @@ export default function Orders({
             </div>
           </>
         )}
+        </div>
       </div>
         </>,
         document.body

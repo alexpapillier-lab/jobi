@@ -33,7 +33,7 @@ import { getLogoColors, LOGO_PRESETS } from "./lib/logoPresets";
 import type { LogoPresetId } from "./lib/logoPresets";
 import type { ThemeMode } from "./theme/ThemeProvider";
 import { STORAGE_KEYS } from "./constants/storageKeys";
-import { safeLoadCompanyData } from "./pages/Orders";
+import { safeLoadCompanyData } from "./lib/companyData";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
 import { checkAchievementOnMultiservice, checkAchievementOnShortcutUsed } from "./lib/achievements";
 import { useAppUpdate } from "./context/AppUpdateContext";
@@ -65,16 +65,23 @@ type OpenClaimIntent = {
 };
 
 const ORDERS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
+type SidebarPosition = "left" | "right" | "bottom";
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
+
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
+  sidebar: { position: SidebarPosition };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: "list" | "grid" | "compact"; pageSize: number };
+  orders: { displayMode: DisplayMode; pageSize: number };
   achievementsEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
+    sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
     achievementsEnabled: true,
@@ -93,6 +100,7 @@ function safeLoadUIConfig(): UIConfig {
     const scale = parsed?.app?.uiScale;
     const displayMode = parsed?.orders?.displayMode;
     const pageSize = parsed?.orders?.pageSize;
+    const sidebarPos = parsed?.sidebar?.position;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || ORDERS_PAGE_SIZE_OPTIONS.includes(pageSize as any))
       ? pageSize
       : d.orders.pageSize;
@@ -103,6 +111,9 @@ function safeLoadUIConfig(): UIConfig {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
       },
+      sidebar: {
+        position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
+      },
       home: {
         orderFilters: {
           selectedQuickStatusFilters: Array.isArray(quick)
@@ -111,7 +122,7 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
+        displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
       },
       achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
@@ -249,7 +260,7 @@ export default function App() {
         page: "orders",
         title: "JobiDocs – tisk a PDF",
         description:
-          "Indikátor „JobiDocs ✓/✗“ vpravo nahoře ukazuje, zda je aplikace JobiDocs spuštěná. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, protokoly, záruční listy).",
+          "Indikátor „JobiDocs ✓/✗“ v postranním panelu ukazuje, zda je aplikace JobiDocs spuštěná. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, protokoly, záruční listy).",
         selector: "[data-tour=\"header-jobidocs\"]",
         icon: "jobidocs",
       },
@@ -993,6 +1004,7 @@ export default function App() {
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
           achievementsEnabled={uiCfg.achievementsEnabled !== false}
+          sidebarPosition={uiCfg.sidebar?.position || "left"}
         >
             {visitedPages.has("orders") && (
               <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
@@ -1135,8 +1147,8 @@ export default function App() {
                 title="Nová zakázka"
                 style={{
                   position: "fixed",
-                  right: 22,
-                  bottom: 22,
+                  right: uiCfg.sidebar.position === "right" ? 90 : 22,
+                  bottom: uiCfg.sidebar.position === "bottom" ? 62 : 22,
                   width: 56,
                   height: 56,
                   borderRadius: 999,
@@ -1150,7 +1162,7 @@ export default function App() {
                   display: "grid",
                   placeItems: "center",
                   fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                  transition: "var(--transition-smooth)",
+                  transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1)",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "scale(1.1) translateY(-2px)";

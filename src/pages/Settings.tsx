@@ -4,7 +4,7 @@ import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
 import { STATUS_COLOR_PALETTE, getContrastText } from "../utils/statusColors";
 import { supabase } from "../lib/supabaseClient";
-import { safeLoadCompanyData } from "./Orders";
+import { safeLoadCompanyData } from "../lib/companyData";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
@@ -30,6 +30,7 @@ import {
 import { getDeviceOptions, setDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions, setHandoffOptions } from "../lib/handoffOptions";
 import { loadDocumentsConfigRawFromDB, saveDocumentsConfigAutoPrint } from "../lib/documentSettings";
+import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { LOGO_PRESETS, getLogoColors, type LogoPresetId, type LogoColors } from "../lib/logoPresets";
 import { setAppIconFromPreset } from "../lib/setAppIcon";
@@ -108,10 +109,16 @@ const ORDERS_PAGE_SIZE_CHOICES: { value: number; label: string }[] = [
   { value: 0, label: "Vše" },
 ];
 
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
+type SidebarPosition = "left" | "right" | "bottom";
+
 type UIConfig = {
   app: {
     fabNewOrderEnabled: boolean;
     uiScale: number;
+  };
+  sidebar: {
+    position: SidebarPosition;
   };
   home: {
     orderFilters: {
@@ -119,16 +126,21 @@ type UIConfig = {
     };
   };
   orders: {
-    displayMode: "list" | "grid" | "compact" | "compact-extra";
+    displayMode: DisplayMode;
     pageSize: number;
     customerPhoneRequired: boolean;
+    statusGroupedOrder?: string[];
   };
   achievementsEnabled?: boolean;
 };
 
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
+
 function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1 },
+    sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
     achievementsEnabled: true,
@@ -149,6 +161,7 @@ function safeLoadUIConfig(): UIConfig {
     const pageSize = parsed?.orders?.pageSize;
     const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
     const achievementsEnabled = parsed?.achievementsEnabled;
+    const sidebarPos = parsed?.sidebar?.position;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
       ? pageSize
       : d.orders.pageSize;
@@ -158,6 +171,9 @@ function safeLoadUIConfig(): UIConfig {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
       },
+      sidebar: {
+        position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
+      },
       home: {
         orderFilters: {
           selectedQuickStatusFilters: Array.isArray(quick)
@@ -166,9 +182,10 @@ function safeLoadUIConfig(): UIConfig {
         },
       },
       orders: {
-        displayMode: displayMode === "list" || displayMode === "grid" || displayMode === "compact" || displayMode === "compact-extra" ? displayMode : d.orders.displayMode,
+        displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
+        statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
       },
       achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
     };
@@ -674,6 +691,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   });
   const [autoPrintFormLoading, setAutoPrintFormLoading] = useState(false);
   const [autoPrintFormSaveSuccess, setAutoPrintFormSaveSuccess] = useState(false);
+  const [jobiDocsConnected, setJobiDocsConnected] = useState<boolean | null>(null);
   const [appVersion, setAppVersion] = useState<string>("…");
   
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
@@ -726,6 +744,15 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
     loadServiceSettings();
   }, [activeServiceId]);
+
+  useEffect(() => {
+    if (section.subsection !== "orders_tisk_dokumentu") return;
+    let cancelled = false;
+    const check = () => { isJobiDocsRunning().then((ok) => { if (!cancelled) setJobiDocsConnected(ok); }); };
+    check();
+    const id = setInterval(check, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [section.subsection]);
 
   // Load auto-print config when opening Tisk dokumentů
   useEffect(() => {
@@ -2185,6 +2212,154 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     </div>
                   )
                 },
+                {
+                  value: "split",
+                  label: "Rozdělené",
+                  description: "Dva sloupce - zařízení vlevo, oprava vpravo",
+                  preview: (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+                      {["#ORD-001", "#ORD-002"].map((code) => (
+                        <div key={code} style={{ display: "flex", borderRadius: 4, border: "1px solid var(--border)", overflow: "hidden", background: "var(--panel)" }}>
+                          <div style={{ flex: 1, padding: "4px 6px", borderRight: "1px solid var(--border)" }}>
+                            <div style={{ fontSize: 8, fontWeight: 700 }}>{code}</div>
+                            <div style={{ fontSize: 7, color: "var(--accent)" }}>iPhone 15</div>
+                          </div>
+                          <div style={{ flex: 1, padding: "4px 6px" }}>
+                            <div style={{ fontSize: 7, color: "var(--muted)" }}>Výměna displeje</div>
+                            <div style={{ fontSize: 7, fontWeight: 700, color: "var(--accent)" }}>1 200 Kč</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                },
+                {
+                  value: "stripe",
+                  label: "Pruhy",
+                  description: "Barevné pruhy se statusem",
+                  preview: (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
+                      {[
+                        { code: "#ORD-001", color: "var(--accent)" },
+                        { code: "#ORD-002", color: "#f59e0b" },
+                      ].map(({ code, color }) => (
+                        <div key={code} style={{ display: "flex", alignItems: "center", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
+                          <div style={{ width: 6, background: color, alignSelf: "stretch" }} />
+                          <div style={{ flex: 1, padding: "4px 8px", display: "flex", alignItems: "center", gap: 8, fontSize: 7 }}>
+                            <span style={{ fontWeight: 700 }}>{code}</span>
+                            <span style={{ color: "var(--muted)" }}>iPhone 15 Pro</span>
+                            <span style={{ marginLeft: "auto", fontWeight: 700, color }}>1 200 Kč</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                },
+                {
+                  value: "status-grouped",
+                  label: "Podle statusu",
+                  description: "Zakázky seskupené a seřazené podle statusu",
+                  preview: (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                      {[
+                        { label: "Přijato", color: "var(--accent)", count: 3 },
+                        { label: "V opravě", color: "#f59e0b", count: 2 },
+                      ].map(({ label, color, count }) => (
+                        <div key={label}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, background: `${color}15`, marginBottom: 3 }}>
+                            <div style={{ width: 6, height: 6, borderRadius: 3, background: color }} />
+                            <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
+                            <span style={{ fontSize: 7, color, fontWeight: 700 }}>{count}</span>
+                          </div>
+                          <div style={{ paddingLeft: 4, borderLeft: `2px solid ${color}30`, display: "flex", flexDirection: "column", gap: 2 }}>
+                            <div style={{ padding: "2px 6px", borderRadius: 3, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 7, display: "flex", gap: 4 }}>
+                              <span style={{ fontWeight: 700 }}>#ORD-001</span>
+                              <span style={{ color: "var(--muted)" }}>iPhone</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                },
+                {
+                  value: "table",
+                  label: "Tabulka",
+                  description: "Klasická tabulka se sloupci, řazení",
+                  preview: (
+                    <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ display: "flex", gap: 0, background: "var(--panel-2)", padding: "3px 6px", fontSize: 7, fontWeight: 700, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+                        <span style={{ flex: 1 }}>Kód</span><span style={{ flex: 1 }}>Zařízení</span><span style={{ flex: 1 }}>Status</span>
+                      </div>
+                      {["#ORD-001 iPhone", "#ORD-002 Samsung"].map((r, i) => (
+                        <div key={r} style={{ display: "flex", gap: 0, padding: "3px 6px", fontSize: 7, background: i % 2 === 0 ? "transparent" : "var(--panel-2)" }}>
+                          <span style={{ flex: 1, fontWeight: 600 }}>{r.split(" ")[0]}</span><span style={{ flex: 1 }}>{r.split(" ")[1]}</span><span style={{ flex: 1, color: "var(--accent)", fontWeight: 600 }}>Přijato</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                },
+                {
+                  value: "timeline",
+                  label: "Časová osa",
+                  description: "Zakázky seskupené podle data na ose",
+                  preview: (
+                    <div style={{ marginTop: 8, paddingLeft: 12, position: "relative" }}>
+                      <div style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1, background: "var(--border)" }} />
+                      {["Dnes", "Včera"].map((d) => (
+                        <div key={d} style={{ marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, position: "relative" }}>
+                            <div style={{ position: "absolute", left: -12 + 4 - 3, width: 7, height: 7, borderRadius: 4, background: d === "Dnes" ? "var(--accent)" : "var(--panel-2)", border: "1px solid var(--border)" }} />
+                            <span style={{ fontSize: 8, fontWeight: 700, color: d === "Dnes" ? "var(--accent)" : "var(--text)" }}>{d}</span>
+                          </div>
+                          <div style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 7, display: "flex", gap: 4, alignItems: "center" }}>
+                            <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)" }} />
+                            <span style={{ fontWeight: 600 }}>#ORD-001</span><span style={{ color: "var(--muted)" }}>iPhone 15 Pro</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                },
+                {
+                  value: "cards-modern",
+                  label: "Moderní karty",
+                  description: "Vzdušné karty s gradient headerem a avatarem",
+                  preview: (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                      <div style={{ borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden" }}>
+                        <div style={{ padding: "4px 6px", background: "var(--accent-soft)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 8, fontWeight: 700 }}>#ORD-001</span>
+                          <span style={{ fontSize: 7, color: "var(--muted)" }}>12.12</span>
+                        </div>
+                        <div style={{ padding: "5px 6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <div style={{ width: 14, height: 14, borderRadius: 5, background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", display: "grid", placeItems: "center", color: "white", fontSize: 6, fontWeight: 700 }}>JN</div>
+                            <div>
+                              <div style={{ fontSize: 7, fontWeight: 600 }}>J. Novák</div>
+                              <div style={{ fontSize: 7, color: "var(--accent)" }}>iPhone 15 Pro</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden" }}>
+                        <div style={{ padding: "4px 6px", background: "var(--accent-soft)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 8, fontWeight: 700 }}>#ORD-002</span>
+                          <span style={{ fontSize: 7, color: "var(--muted)" }}>13.12</span>
+                        </div>
+                        <div style={{ padding: "5px 6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <div style={{ width: 14, height: 14, borderRadius: 5, background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", display: "grid", placeItems: "center", color: "white", fontSize: 6, fontWeight: 700 }}>MS</div>
+                            <div>
+                              <div style={{ fontSize: 7, fontWeight: 600 }}>M. Svobodová</div>
+                              <div style={{ fontSize: 7, color: "var(--accent)" }}>Samsung S23</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                },
               ].map((mode) => {
                 const isSelected = uiCfg.orders?.displayMode === mode.value;
                 return (
@@ -2194,7 +2369,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       e.preventDefault();
                       const newCfg = {
                         ...uiCfg,
-                        orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" | "compact-extra" },
+                        orders: { ...uiCfg.orders, displayMode: mode.value as DisplayMode },
                       };
                       setUiCfg(newCfg);
                       saveUIConfig(newCfg);
@@ -2232,7 +2407,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         onChange={() => {
                           const newCfg = {
                             ...uiCfg,
-                            orders: { ...uiCfg.orders, displayMode: mode.value as "list" | "grid" | "compact" | "compact-extra" },
+                            orders: { ...uiCfg.orders, displayMode: mode.value as DisplayMode },
                           };
                           setUiCfg(newCfg);
                           saveUIConfig(newCfg);
@@ -2246,6 +2421,181 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     </div>
                     {mode.preview}
                   </label>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Status-grouped order configuration */}
+          {uiCfg.orders?.displayMode === "status-grouped" && (
+            <Card>
+              <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 6, color: "var(--text)" }}>Pořadí statusů v zobrazení</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+                Přetáhněte statusy do požadovaného pořadí. Odškrtnuté statusy se nezobrazí.
+              </div>
+              {(() => {
+                const order: string[] = uiCfg.orders?.statusGroupedOrder ?? statuses.map((s) => s.key);
+                const enabledSet = new Set(order);
+                const allKeys = statuses.map((s) => s.key);
+                const disabledKeys = allKeys.filter((k) => !enabledSet.has(k));
+
+                const moveUp = (key: string) => {
+                  const idx = order.indexOf(key);
+                  if (idx <= 0) return;
+                  const next = [...order];
+                  [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                  const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, statusGroupedOrder: next } };
+                  setUiCfg(newCfg);
+                  saveUIConfig(newCfg);
+                };
+                const moveDown = (key: string) => {
+                  const idx = order.indexOf(key);
+                  if (idx < 0 || idx >= order.length - 1) return;
+                  const next = [...order];
+                  [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                  const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, statusGroupedOrder: next } };
+                  setUiCfg(newCfg);
+                  saveUIConfig(newCfg);
+                };
+                const toggleStatus = (key: string) => {
+                  let next: string[];
+                  if (enabledSet.has(key)) {
+                    next = order.filter((k) => k !== key);
+                  } else {
+                    next = [...order, key];
+                  }
+                  const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, statusGroupedOrder: next } };
+                  setUiCfg(newCfg);
+                  saveUIConfig(newCfg);
+                };
+                const resetOrder = () => {
+                  const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, statusGroupedOrder: undefined } };
+                  setUiCfg(newCfg);
+                  saveUIConfig(newCfg);
+                };
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {order.map((key, idx) => {
+                      const s = statuses.find((st) => st.key === key);
+                      if (!s) return null;
+                      const color = s.bg || "var(--muted)";
+                      return (
+                        <div key={key} style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "6px 10px", borderRadius: 8,
+                          border: `1px solid ${color}25`, background: `${color}06`,
+                        }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 5, background: color, flexShrink: 0 }} />
+                          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", flex: 1 }}>{s.label}</span>
+                          <button type="button" onClick={() => moveUp(key)} disabled={idx === 0} style={{ border: "none", background: "transparent", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, padding: 4, fontSize: 14, color: "var(--text)" }} title="Posunout nahoru">↑</button>
+                          <button type="button" onClick={() => moveDown(key)} disabled={idx === order.length - 1} style={{ border: "none", background: "transparent", cursor: idx === order.length - 1 ? "default" : "pointer", opacity: idx === order.length - 1 ? 0.3 : 1, padding: 4, fontSize: 14, color: "var(--text)" }} title="Posunout dolů">↓</button>
+                          <button type="button" onClick={() => toggleStatus(key)} style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4, fontSize: 14, color: "rgba(239,68,68,0.8)" }} title="Skrýt status">✕</button>
+                        </div>
+                      );
+                    })}
+                    {disabledKeys.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginBottom: 4 }}>Skryté statusy:</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {disabledKeys.map((key) => {
+                            const s = statuses.find((st) => st.key === key);
+                            if (!s) return null;
+                            return (
+                              <button key={key} type="button" onClick={() => toggleStatus(key)} style={{
+                                border: `1px dashed ${s.bg || "var(--muted)"}40`, background: "transparent",
+                                borderRadius: 6, padding: "4px 10px", cursor: "pointer",
+                                fontSize: 12, fontWeight: 600, color: "var(--muted)",
+                                display: "flex", alignItems: "center", gap: 4,
+                              }}>
+                                <div style={{ width: 6, height: 6, borderRadius: 3, background: s.bg || "var(--muted)", opacity: 0.5 }} />
+                                {s.label}
+                                <span style={{ fontSize: 10, color: "var(--accent)" }}>+</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <button type="button" onClick={resetOrder} style={{
+                      marginTop: 8, border: "1px solid var(--border)", background: "transparent",
+                      borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                      fontSize: 12, fontWeight: 600, color: "var(--muted)", alignSelf: "flex-start",
+                    }}>
+                      Obnovit výchozí pořadí
+                    </button>
+                  </div>
+                );
+              })()}
+            </Card>
+          )}
+
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Pozice sidebaru</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+              Zvolte umístění navigačního panelu.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {([
+                {
+                  value: "left" as SidebarPosition,
+                  label: "Vlevo",
+                  icon: (
+                    <div style={{ display: "flex", gap: 3, width: 40, height: 28 }}>
+                      <div style={{ width: 8, borderRadius: 3, background: "var(--accent)" }} />
+                      <div style={{ flex: 1, borderRadius: 3, background: "var(--panel-2)", border: "1px solid var(--border)" }} />
+                    </div>
+                  ),
+                },
+                {
+                  value: "right" as SidebarPosition,
+                  label: "Vpravo",
+                  icon: (
+                    <div style={{ display: "flex", gap: 3, width: 40, height: 28 }}>
+                      <div style={{ flex: 1, borderRadius: 3, background: "var(--panel-2)", border: "1px solid var(--border)" }} />
+                      <div style={{ width: 8, borderRadius: 3, background: "var(--accent)" }} />
+                    </div>
+                  ),
+                },
+                {
+                  value: "bottom" as SidebarPosition,
+                  label: "Dole",
+                  icon: (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, width: 40, height: 28 }}>
+                      <div style={{ flex: 1, borderRadius: 3, background: "var(--panel-2)", border: "1px solid var(--border)" }} />
+                      <div style={{ height: 6, borderRadius: 3, background: "var(--accent)" }} />
+                    </div>
+                  ),
+                },
+              ]).map((pos) => {
+                const isSelected = (uiCfg.sidebar?.position ?? "left") === pos.value;
+                return (
+                  <button
+                    key={pos.value}
+                    type="button"
+                    onClick={() => {
+                      const newCfg = { ...uiCfg, sidebar: { ...uiCfg.sidebar, position: pos.value } };
+                      setUiCfg(newCfg);
+                      saveUIConfig(newCfg);
+                    }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: 14,
+                      borderRadius: 10,
+                      border: isSelected ? "2px solid var(--accent)" : border,
+                      background: isSelected ? "var(--accent-soft)" : "var(--panel)",
+                      cursor: "pointer",
+                      transition: "var(--transition-smooth)",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.background = "var(--accent-soft)"; } }}
+                    onMouseLeave={(e) => { if (!isSelected) { e.currentTarget.style.borderColor = border.split(" ")[2]; e.currentTarget.style.background = "var(--panel)"; } }}
+                  >
+                    {pos.icon}
+                    <span style={{ fontWeight: 700, fontSize: 12, color: isSelected ? "var(--accent)" : "var(--text)" }}>{pos.label}</span>
+                  </button>
                 );
               })}
             </div>
@@ -2433,6 +2783,62 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {section.subsection === "orders_tisk_dokumentu" && (
         <>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Šablony dokumentů</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
+              Vzhled dokumentů (layout, sekce, logo, razítko, design a vlastní texty) se upravuje v aplikaci <strong>JobiDocs</strong>.
+              Zde v Nastavení lze nastavit pouze automatický tisk.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (jobiDocsConnected) {
+                    try {
+                      const { openUrl } = await import("@tauri-apps/plugin-opener");
+                      await openUrl("http://127.0.0.1:3847");
+                    } catch { /* fallback below */ }
+                  } else {
+                    const launched = await launchJobiDocsApp();
+                    if (!launched) await openJobiDocsDownload();
+                  }
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 20px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                <img src="/logos/jdlogo.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                {jobiDocsConnected ? "Otevřít JobiDocs" : "Spustit JobiDocs"}
+              </button>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: jobiDocsConnected === true ? "var(--success, #16a34a)" : jobiDocsConnected === false ? "var(--muted, #6b7280)" : "var(--warning, #ca8a04)",
+              }}>
+                <span style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: jobiDocsConnected === true ? "#22c55e" : jobiDocsConnected === false ? "#9ca3af" : "#fbbf24",
+                  display: "inline-block",
+                }} />
+                {jobiDocsConnected === true ? "Připojeno" : jobiDocsConnected === false ? "Nepřipojeno" : "Kontroluji…"}
+              </span>
+            </div>
+          </Card>
           <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Automatický tisk</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>

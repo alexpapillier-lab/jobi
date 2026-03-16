@@ -72,8 +72,9 @@ Když `accessToken` chybí (Jobi neběží, nebo uživatel není přihlášen), 
 
 ## Kontrolní seznam implementace
 
-- [ ] Jobi: přidat `accessToken`, `supabaseUrl`, `supabaseAnonKey` do `pushContextToJobiDocs`
-- [ ] JobiDocs: rozšířit `PUT /v1/context` o přijetí těchto polí
-- [ ] JobiDocs: `api/profiles.ts` – při `accessToken` volat Supabase místo lokálního souboru
-- [ ] JobiDocs: `npm install @supabase/supabase-js`
-- [ ] Migrace `document_profiles` nasazená (`supabase db push`)
+- [x] Jobi: přidat `accessToken`, `supabaseUrl`, `supabaseAnonKey` do `pushContextToJobiDocs`
+- [x] JobiDocs: rozšířit `PUT /v1/context` o přijetí těchto polí
+- [x] JobiDocs: profily – při `supabaseAccessToken` volat Supabase (GET: read from remote first, PUT: write to both local + remote)
+- [x] JobiDocs: `@supabase/supabase-js` already installed (used by supabaseSync.ts)
+- [x] Migrace `document_profiles` nasazená (`supabase db push`)
+- [x] Sync funkce `loadProfileFromSupabase` / `saveProfileToSupabase` v `supabaseSync.ts`

@@ -6,7 +6,7 @@ import { listPrinters } from "./printers.js";
 import { getSettings, putSettings, setSettingsPath } from "./settings.js";
 import { getProfile, putProfile, setProfilesPath } from "./profiles.js";
 import { getDocumentsConfig, putDocumentsConfig, setDocumentsConfigPath } from "./documentsConfig.js";
-import { saveDocumentsConfigToSupabase, loadDocumentsConfigFromSupabase, migrateConfigAssetsToStorage } from "./supabaseSync.js";
+import { saveDocumentsConfigToSupabase, loadDocumentsConfigFromSupabase, migrateConfigAssetsToStorage, loadProfileFromSupabase, saveProfileToSupabase } from "./supabaseSync.js";
 import { printPdf } from "./print.js";
 import { generateDocumentHtml } from "../src/documentToHtml.js";
 
@@ -247,7 +247,7 @@ export async function startApiServer(
     return { ...result, updated_at, version };
   });
 
-  // Profiles (per-service per-doc-type) – lokálně, později Supabase
+  // Profiles (per-service per-doc-type) – Supabase when auth available, local fallback
   fastify.get<{
     Querystring: { service_id: string; doc_type: string };
   }>("/v1/profiles", async (req, reply) => {
@@ -259,6 +259,13 @@ export async function startApiServer(
     const valid = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol"];
     if (!valid.includes(docType)) {
       return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list or diagnosticky_protokol" });
+    }
+    if (supabaseAuth?.supabaseAccessToken) {
+      const remote = await loadProfileFromSupabase(
+        serviceId, docType,
+        supabaseAuth.supabaseUrl, supabaseAuth.supabaseAnonKey, supabaseAuth.supabaseAccessToken
+      );
+      if (remote) return remote;
     }
     const profile = await getProfile(serviceId, docType);
     return profile ?? { profile_json: null, version: 0 };
@@ -279,6 +286,18 @@ export async function startApiServer(
     }
     const { profile_json } = req.body || {};
     const result = await putProfile(serviceId, docType, profile_json);
+    if (supabaseAuth?.supabaseAccessToken) {
+      const sync = await saveProfileToSupabase(
+        serviceId, docType, profile_json,
+        supabaseAuth.supabaseUrl, supabaseAuth.supabaseAnonKey, supabaseAuth.supabaseAccessToken
+      );
+      if (!sync.ok && sync.error) {
+        fastify.log.warn({ serviceId, docType, error: sync.error }, "Profiles Supabase sync failed");
+      }
+      if (typeof sync.version === "number") {
+        return { ...result, version: sync.version };
+      }
+    }
     return result;
   });
 

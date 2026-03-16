@@ -1,14 +1,7 @@
 import { supabase } from "./supabaseClient";
+import type { AutoPrintConfig } from "./documentHelpers";
 
-export type AutoPrintConfig = {
-  ticketListOnCreate: boolean;
-  ticketListOnStatusKey: string | null;
-  warrantyOnCreate: boolean;
-  warrantyOnStatusKey: string | null;
-  prijetiReklamaceOnCreate: boolean;
-  prijetiReklamaceOnStatusKey: string | null;
-  vydaniReklamaceOnStatusKey: string | null;
-};
+export type { AutoPrintConfig } from "./documentHelpers";
 
 /** Načte surový config + version z DB. */
 export async function loadDocumentsConfigRawFromDB(
@@ -48,13 +41,8 @@ export async function saveDocumentsConfigAutoPrint(
   }
 }
 
-export type WarrantyCertificateConfig = {
-  includeWarranty?: boolean;
-  warrantyType?: "unified" | "custom";
-  warrantyUnifiedDuration?: number;
-  warrantyUnifiedUnit?: "days" | "months" | "years";
-  warrantyCustomText?: string;
-};
+import type { WarrantyCertificateExtras } from "./documentHelpers";
+type WarrantyCertificateConfig = WarrantyCertificateExtras;
 
 /** Uloží do DB config s aktualizovaným warrantyCertificate (sloučí s existujícím). */
 export async function saveDocumentsConfigWarrantyCertificate(
