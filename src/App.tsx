@@ -8,7 +8,6 @@ import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
 import Calendar from "./pages/Calendar";
 import Achievements from "./pages/Achievements";
-import Preview from "./pages/Preview";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { AppLayout } from "./layout/AppLayout";
@@ -880,17 +879,6 @@ export default function App() {
         : "auto";
     setAppIconFromPreset(effective, theme);
   }, []);
-
-  // Check if we're on preview route
-  const isPreviewRoute = typeof window !== "undefined" && window.location.pathname === "/preview";
-
-  if (isPreviewRoute) {
-    return (
-      <ThemeProvider>
-        <Preview />
-      </ThemeProvider>
-    );
-  }
 
   // Guard: session must exist to render app shell (Sidebar, Orders, Customers, Settings)
   if (!session) {
