@@ -3,40 +3,60 @@
 
   // ---- Loading screen ----
   var loaderMessages = [
-    "Připravuji stránku…",
-    "Načítám…",
-    "Skoro hotovo…",
+    "Připravuji stránku",
+    "Načítám data",
+    "Skoro hotovo",
+    "Hotovo",
   ];
   var loaderEl = document.getElementById("page-loader");
   var loaderMsgEl = document.getElementById("loader-msg");
   var loaderBarEl = document.getElementById("loader-bar-fill");
   var loaderStart = Date.now();
-  var loaderMinMs = 1600;
+  var loaderMinMs = 1800;
   var loaderMsgIdx = 0;
+  var dotCount = 0;
+
+  // Dots animation on the message
+  var dotsInterval = setInterval(function () {
+    dotCount = (dotCount + 1) % 4;
+    if (loaderMsgEl) {
+      loaderMsgEl.textContent = loaderMessages[loaderMsgIdx] + ".".repeat(dotCount);
+    }
+  }, 280);
+
   var loaderMsgInterval = setInterval(function () {
-    loaderMsgIdx = (loaderMsgIdx + 1) % loaderMessages.length;
+    loaderMsgIdx = Math.min(loaderMsgIdx + 1, loaderMessages.length - 1);
+    dotCount = 0;
     if (loaderMsgEl) {
       loaderMsgEl.style.opacity = "0";
       setTimeout(function () {
         loaderMsgEl.textContent = loaderMessages[loaderMsgIdx];
         loaderMsgEl.style.opacity = "1";
-      }, 130);
+      }, 140);
     }
     if (loaderBarEl) {
-      var pct = Math.min(95, Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 90) + 10);
+      var pct = Math.min(92, Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 85) + 15);
       loaderBarEl.style.width = pct + "%";
     }
-  }, 380);
+  }, 420);
 
   function hideLoader() {
     clearInterval(loaderMsgInterval);
+    clearInterval(dotsInterval);
+    if (loaderMsgEl) {
+      loaderMsgEl.style.opacity = "0";
+      setTimeout(function () {
+        loaderMsgEl.textContent = "Hotovo";
+        loaderMsgEl.style.opacity = "1";
+      }, 140);
+    }
     if (loaderBarEl) loaderBarEl.style.width = "100%";
     setTimeout(function () {
       if (loaderEl) {
         loaderEl.classList.add("loader-out");
-        setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 460);
+        setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 480);
       }
-    }, 200);
+    }, 260);
   }
 
   window.addEventListener("load", function () {
@@ -85,17 +105,28 @@
   if (pricingToggle) {
     var monthlyEls = document.querySelectorAll(".pricing-monthly");
     var yearlyEls = document.querySelectorAll(".pricing-yearly");
+    var priceEls = document.querySelectorAll(".pricing-price");
     var labelMonthly = document.querySelector(".pricing-toggle-label[data-period='monthly']");
     var labelYearly = document.querySelector(".pricing-toggle-label[data-period='yearly']");
     var yearlyActive = false;
+    var toggling = false;
     function updatePricing() {
-      yearlyActive = !yearlyActive;
-      pricingToggle.setAttribute("aria-checked", yearlyActive ? "true" : "false");
-      pricingToggle.classList.toggle("pricing-toggle-yearly", yearlyActive);
-      monthlyEls.forEach(function (el) { el.hidden = yearlyActive; });
-      yearlyEls.forEach(function (el) { el.hidden = !yearlyActive; });
-      if (labelMonthly) labelMonthly.classList.toggle("pricing-toggle-label-active", !yearlyActive);
-      if (labelYearly) labelYearly.classList.toggle("pricing-toggle-label-active", yearlyActive);
+      if (toggling) return;
+      toggling = true;
+      // Fade out prices
+      priceEls.forEach(function (el) { el.classList.add("price-fade"); });
+      setTimeout(function () {
+        yearlyActive = !yearlyActive;
+        pricingToggle.setAttribute("aria-checked", yearlyActive ? "true" : "false");
+        pricingToggle.classList.toggle("pricing-toggle-yearly", yearlyActive);
+        monthlyEls.forEach(function (el) { el.hidden = yearlyActive; });
+        yearlyEls.forEach(function (el) { el.hidden = !yearlyActive; });
+        if (labelMonthly) labelMonthly.classList.toggle("pricing-toggle-label-active", !yearlyActive);
+        if (labelYearly) labelYearly.classList.toggle("pricing-toggle-label-active", yearlyActive);
+        // Fade back in
+        priceEls.forEach(function (el) { el.classList.remove("price-fade"); });
+        toggling = false;
+      }, 160);
     }
     pricingToggle.addEventListener("click", updatePricing);
   }
