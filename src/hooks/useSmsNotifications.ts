@@ -5,7 +5,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { supabase } from "../lib/supabaseClient";
+import { getTypedSupabaseClient } from "../lib/typedSupabase";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && !!(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -55,10 +55,11 @@ export function useSmsNotifications(
   onNotificationTicketClickRef.current = onNotificationTicketClick;
 
   useEffect(() => {
-    if (!isTauri() || !activeServiceId || !supabase) return;
+    const client = getTypedSupabaseClient();
+    if (!isTauri() || !activeServiceId || !client) return;
 
     const topic = `sms_notifications:${activeServiceId}`;
-    const channel = supabase
+    const channel = client
       .channel(topic)
       .on(
         "postgres_changes",
@@ -70,7 +71,7 @@ export function useSmsNotifications(
           const conversationId = row.conversation_id as string;
           const body = (row.body as string) ?? "";
 
-          const { data: conv } = await supabase
+          const { data: conv } = await client
             .from("sms_conversations")
             .select("service_id, ticket_id, customer_name, customer_phone")
             .eq("id", conversationId)
@@ -83,7 +84,7 @@ export function useSmsNotifications(
 
           let ticketCode = "";
           if (ticketId) {
-            const { data: ticket } = await supabase
+            const { data: ticket } = await client
               .from("tickets")
               .select("code")
               .eq("id", ticketId)
@@ -115,7 +116,7 @@ export function useSmsNotifications(
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      client.removeChannel(channel);
     };
   }, [activeServiceId, smsPanelTicketIdRef]);
 

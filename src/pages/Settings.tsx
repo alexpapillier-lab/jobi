@@ -4,6 +4,7 @@ import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
 import { STATUS_COLOR_PALETTE, getContrastText } from "../utils/statusColors";
 import { supabase, supabaseUrl, supabaseFetch } from "../lib/supabaseClient";
+import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
@@ -164,6 +165,7 @@ function safeLoadUIConfig(): UIConfig {
     const pageSize = parsed?.orders?.pageSize;
     const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
     const achievementsEnabled = parsed?.achievementsEnabled;
+    const invoicingEnabled = parsed?.invoicingEnabled;
     const sidebarPos = parsed?.sidebar?.position;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
       ? pageSize
@@ -760,13 +762,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   }, [activeServiceId]);
 
   useEffect(() => {
-    if (!activeServiceId || !supabase) {
+    const client = getTypedSupabaseClient();
+    if (!activeServiceId || !client) {
       setSmsPhoneRow(null);
       setSmsPhoneLoading(false);
       return;
     }
     setSmsPhoneLoading(true);
-    supabase
+    client
       .from("service_phone_numbers")
       .select("twilio_number, forwarding_number")
       .eq("service_id", activeServiceId)
@@ -783,12 +786,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   }, [activeServiceId]);
 
   useEffect(() => {
-    if (!activeServiceId || !supabase) {
+    const client = getTypedSupabaseClient();
+    if (!activeServiceId || !client) {
       setSmsAutomations([]);
       return;
     }
     setSmsAutomationsLoading(true);
-    supabase
+    client
       .from("sms_automations")
       .select("id, trigger_status_key, message_template, active, sort_order")
       .eq("service_id", activeServiceId)
@@ -1598,12 +1602,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     }
                     setSmsForwardingSaving(true);
                     try {
-                      const { error } = await supabase
+                      const client = getTypedSupabaseClient();
+                      if (!client) return;
+                      const { error } = await client
                         .from("service_phone_numbers")
                         .update({ forwarding_number: normalized })
                         .eq("service_id", activeServiceId);
                       if (error) throw error;
-                      setSmsPhoneRow((p) => (p ? { ...p, forwarding_number: normalized } : null));
+                      setSmsPhoneRow((p) => (p ? { ...p, forwarding_number: normalized ?? null } : null));
                       setSmsForwardingValue(normalized ?? "");
                       showToast("Uloženo", "success");
                     } catch (e) {
@@ -1630,7 +1636,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           </Card>
 
           {smsPhoneRow && (
-            <Card style={{ marginTop: 24 }}>
+            <div style={{ marginTop: 24 }}>
+              <Card>
               <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4, color: "var(--text)" }}>Automatické SMS při změně statusu</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
                 Když se status zakázky změní na zvolený, zákazníkovi se automaticky odešle SMS. V textu lze použít proměnné:{" "}
@@ -1670,7 +1677,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                               type="checkbox"
                               checked={a.active}
                               onChange={async () => {
-                                const { error } = await supabase.from("sms_automations").update({ active: !a.active }).eq("id", a.id);
+                                const client = getTypedSupabaseClient();
+                                if (!client) return;
+                                const { error } = await client.from("sms_automations").update({ active: !a.active }).eq("id", a.id);
                                 if (!error) setSmsAutomations((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: !x.active } : x)));
                               }}
                             />
@@ -1680,7 +1689,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                             type="button"
                             onClick={async () => {
                               if (!confirm("Smazat tuto automatizaci?")) return;
-                              const { error } = await supabase.from("sms_automations").delete().eq("id", a.id);
+                              const client = getTypedSupabaseClient();
+                              if (!client) return;
+                              const { error } = await client.from("sms_automations").delete().eq("id", a.id);
                               if (!error) setSmsAutomations((prev) => prev.filter((x) => x.id !== a.id));
                             }}
                             style={{ padding: "6px 10px", fontSize: 11, border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", cursor: "pointer" }}
@@ -1721,8 +1732,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           const tpl = document.getElementById("sms-auto-template") as HTMLTextAreaElement | null;
                           const trigger_status_key = sel?.value?.trim();
                           const message_template = tpl?.value?.trim() ?? "";
-                          if (!trigger_status_key || !activeServiceId) return;
-                          const { data, error } = await supabase
+                          const client = getTypedSupabaseClient();
+                          if (!trigger_status_key || !activeServiceId || !client) return;
+                          const { data, error } = await client
                             .from("sms_automations")
                             .insert({ service_id: activeServiceId, trigger_status_key, message_template, active: true, sort_order: smsAutomations.length })
                             .select("id, trigger_status_key, message_template, active, sort_order")
@@ -1741,7 +1753,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   </div>
                 </>
               )}
-            </Card>
+              </Card>
+            </div>
           )}
         </>
       )}

@@ -11,7 +11,7 @@ import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
-import { typedSupabase } from "../lib/typedSupabase";
+import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
 import {
   uploadDiagnosticPhotoWithWatermark,
@@ -31,16 +31,14 @@ import { useActiveRole } from "../hooks/useActiveRole";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
-import { safeLoadCompanyData, type CompanyData } from "../lib/companyData";
+import { safeLoadCompanyData } from "../lib/companyData";
 import { trackDocumentAction, validateDocumentVariables } from "../lib/documentTelemetry";
 import {
-  escapeHtmlForDoc,
   buildTicketVariablesForJobiDocs,
   buildClaimVariablesForJobiDocs,
   loadDocumentsConfigFromDB,
   safeLoadDocumentsConfig,
   getConfigWithProfile,
-  getDesignStylesForFallback,
 } from "../lib/documentHelpers";
 
 export { safeLoadCompanyData } from "../lib/companyData";
@@ -3509,19 +3507,20 @@ export default function Orders({
 
   // Load SMS unread count for current detail ticket
   useEffect(() => {
-    if (!detailId || !activeServiceId || !supabase) {
+    const client = getTypedSupabaseClient();
+    if (!detailId || !activeServiceId || !client) {
       setSmsUnreadCount(0);
       return;
     }
     let cancelled = false;
     (async () => {
-      const { data: convs } = await supabase.from("sms_conversations").select("id").eq("ticket_id", detailId);
+      const { data: convs } = await client.from("sms_conversations").select("id").eq("ticket_id", detailId);
       if (cancelled || !convs?.length) {
         if (!cancelled) setSmsUnreadCount(0);
         return;
       }
       const ids = convs.map((c) => c.id);
-      const { count, error } = await supabase
+      const { count, error } = await client
         .from("sms_messages")
         .select("id", { count: "exact", head: true })
         .in("conversation_id", ids)
@@ -4192,13 +4191,14 @@ export default function Orders({
 
   // Load SMS unread counts for tickets on current page (one batch) — only when SMS is activated
   useEffect(() => {
-    if (!smsActivatedForService || !activeServiceId || !supabase || paginatedTicketIds.length === 0) {
+    const client = getTypedSupabaseClient();
+    if (!smsActivatedForService || !activeServiceId || !client || paginatedTicketIds.length === 0) {
       setSmsUnreadByTicketId({});
       return;
     }
     let cancelled = false;
     (async () => {
-      const { data: convs } = await supabase
+      const { data: convs } = await client
         .from("sms_conversations")
         .select("id, ticket_id")
         .eq("service_id", activeServiceId)
@@ -4210,7 +4210,7 @@ export default function Orders({
       const convIds = convs.map((c) => c.id);
       const ticketByConvId: Record<string, string> = {};
       convs.forEach((c) => { if (c.ticket_id) ticketByConvId[c.id] = c.ticket_id; });
-      const { data: messages } = await supabase
+      const { data: messages } = await client
         .from("sms_messages")
         .select("conversation_id")
         .in("conversation_id", convIds)
@@ -4697,8 +4697,10 @@ export default function Orders({
           }
         }
         // SMS automations: send template message when status changes
-        if (ticketUpdated && (ticketUpdated as TicketEx).customerPhone?.trim()) {
-          const { data: automations } = await supabase
+        if (ticketUpdated && activeServiceId && (ticketUpdated as TicketEx).customerPhone?.trim()) {
+          const smsClient = getTypedSupabaseClient();
+          if (smsClient) {
+          const { data: automations } = await smsClient
             .from("sms_automations")
             .select("id, message_template")
             .eq("service_id", activeServiceId)
@@ -4720,7 +4722,7 @@ export default function Orders({
             const token = sessionData?.session?.access_token;
             if (token) {
               for (const a of automations) {
-                const body = (a.message_template || "").replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
+                const body = (a.message_template || "").replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? "");
                 if (!body.trim()) continue;
                 supabaseFetch(`${supabaseUrl}/functions/v1/sms-send`, {
                   method: "POST",
@@ -4739,6 +4741,7 @@ export default function Orders({
                 }).catch(() => showToast("SMS automatizace se nepodařila odeslat", "error"));
               }
             }
+          }
           }
         }
       } catch (err: any) {

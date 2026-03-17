@@ -641,6 +641,132 @@ export type Database = {
         }
         Relationships: []
       }
+      service_phone_numbers: {
+        Row: {
+          id: string
+          service_id: string
+          twilio_number: string
+          forwarding_number: string | null
+          active: boolean
+          provisioned_at: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          twilio_number: string
+          forwarding_number?: string | null
+          active?: boolean
+          provisioned_at?: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          twilio_number?: string
+          forwarding_number?: string | null
+          active?: boolean
+          provisioned_at?: string
+          twilio_sid?: string | null
+        }
+        Relationships: []
+      }
+      sms_conversations: {
+        Row: {
+          id: string
+          service_id: string
+          ticket_id: string | null
+          customer_phone: string
+          customer_name: string | null
+          created_at: string
+          updated_at: string
+          archived: boolean
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          ticket_id?: string | null
+          customer_phone: string
+          customer_name?: string | null
+          created_at?: string
+          updated_at?: string
+          archived?: boolean
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          ticket_id?: string | null
+          customer_phone?: string
+          customer_name?: string | null
+          created_at?: string
+          updated_at?: string
+          archived?: boolean
+        }
+        Relationships: []
+      }
+      sms_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          direction: string
+          body: string
+          sent_at: string
+          twilio_sid: string | null
+          status: string | null
+          read_at: string | null
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          direction: string
+          body: string
+          sent_at?: string
+          twilio_sid?: string | null
+          status?: string | null
+          read_at?: string | null
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          direction?: string
+          body?: string
+          sent_at?: string
+          twilio_sid?: string | null
+          status?: string | null
+          read_at?: string | null
+        }
+        Relationships: []
+      }
+      sms_automations: {
+        Row: {
+          id: string
+          service_id: string
+          trigger_status_key: string
+          message_template: string
+          active: boolean
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          trigger_status_key: string
+          message_template?: string
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          trigger_status_key?: string
+          message_template?: string
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { getTypedSupabaseClient } from "../lib/typedSupabase";
 
 /**
  * Returns total count of unread inbound SMS for the current service.
@@ -9,15 +9,15 @@ export function useGlobalSmsUnreadCount(activeServiceId: string | null): number 
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    if (!activeServiceId || !supabase) {
+    const client = getTypedSupabaseClient();
+    if (!activeServiceId || !client) {
       setCount(0);
       return;
     }
-
     let cancelled = false;
 
     const load = async () => {
-      const { data: convs } = await supabase
+      const { data: convs } = await client
         .from("sms_conversations")
         .select("id")
         .eq("service_id", activeServiceId);
@@ -26,7 +26,7 @@ export function useGlobalSmsUnreadCount(activeServiceId: string | null): number 
         return;
       }
       const convIds = convs.map((c) => c.id);
-      const { count: n, error } = await supabase
+      const { count: n, error } = await client
         .from("sms_messages")
         .select("id", { count: "exact", head: true })
         .in("conversation_id", convIds)
@@ -38,7 +38,7 @@ export function useGlobalSmsUnreadCount(activeServiceId: string | null): number 
     load();
 
     const topic = `sms_global_unread:${activeServiceId}`;
-    const channel = supabase
+    const channel = client
       .channel(topic)
       .on(
         "postgres_changes",
@@ -54,7 +54,7 @@ export function useGlobalSmsUnreadCount(activeServiceId: string | null): number 
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      client.removeChannel(channel);
     };
   }, [activeServiceId]);
 

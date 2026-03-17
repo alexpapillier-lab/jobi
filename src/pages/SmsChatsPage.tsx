@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { showToast } from "../components/Toast";
 import { SmsChat } from "../components/SmsChat";
 
@@ -33,14 +33,15 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
   const [selected, setSelected] = useState<ConversationRow | null>(null);
 
   useEffect(() => {
-    if (!activeServiceId || !supabase) {
+    const client = getTypedSupabaseClient();
+    if (!activeServiceId || !client) {
       setConversations([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     (async () => {
-      const { data: rows, error } = await supabase
+      const { data: rows, error } = await client
         .from("sms_conversations")
         .select("id, customer_phone, customer_name, ticket_id, updated_at, archived")
         .eq("service_id", activeServiceId)
@@ -57,14 +58,14 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
       const ticketIds = list.map((r) => r.ticket_id).filter(Boolean) as string[];
       let codes: Record<string, string> = {};
       if (ticketIds.length > 0) {
-        const { data: tickets } = await supabase.from("tickets").select("id, code").in("id", ticketIds);
+        const { data: tickets } = await client.from("tickets").select("id, code").in("id", ticketIds);
         if (tickets) codes = Object.fromEntries(tickets.map((t) => [t.id, t.code ?? ""]));
       }
 
       const convIds = list.map((c) => c.id);
       let unreadMap: Record<string, number> = {};
       if (convIds.length > 0) {
-        const { data: msgRows } = await supabase
+        const { data: msgRows } = await client
           .from("sms_messages")
           .select("conversation_id")
           .in("conversation_id", convIds)
@@ -89,8 +90,9 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
   }, [activeServiceId, showArchived]);
 
   const handleArchive = async (id: string, archive: boolean) => {
-    if (!supabase) return;
-    const { error } = await supabase.from("sms_conversations").update({ archived: archive }).eq("id", id);
+    const client = getTypedSupabaseClient();
+    if (!client) return;
+    const { error } = await client.from("sms_conversations").update({ archived: archive }).eq("id", id);
     if (error) {
       showToast("Nepodařilo archivovat", "error");
       return;

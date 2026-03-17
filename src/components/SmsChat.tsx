@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, supabaseUrl, supabaseFetch } from "../lib/supabaseClient";
+import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { showToast } from "./Toast";
 
 /** E.164 for Twilio. Czech: +420 + 9 digits (no leading 0). */
@@ -56,7 +57,7 @@ type SmsChatProps = {
   customerName: string | null;
 };
 
-export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceId, customerPhone, customerName }: SmsChatProps) {
+export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceId, customerPhone, customerName: _customerName }: SmsChatProps) {
   const [active, setActive] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SmsMessage[]>([]);
@@ -74,7 +75,8 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
   }, []);
 
   useEffect(() => {
-    if (!supabase || !serviceId) {
+    const client = getTypedSupabaseClient();
+    if (!client || !serviceId) {
       setActive(false);
       setLoading(false);
       return;
@@ -88,7 +90,7 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const { data: phoneRow } = await supabase
+      const { data: phoneRow } = await client
         .from("service_phone_numbers")
         .select("id")
         .eq("service_id", serviceId)
@@ -106,7 +108,7 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
       if (hasConversationId) {
         convId = conversationIdProp;
       } else {
-        const { data: conv } = await supabase
+        const { data: conv } = await client
           .from("sms_conversations")
           .select("id")
           .eq("service_id", serviceId)
@@ -118,14 +120,14 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
       setConversationId(convId);
 
       if (convId) {
-        const { data: rows } = await supabase
+        const { data: rows } = await client
           .from("sms_messages")
           .select("id, direction, body, sent_at, read_at, status")
           .eq("conversation_id", convId)
           .order("sent_at", { ascending: true });
-        if (!cancelled) setMessages((rows ?? []).map((r) => ({ ...r, pending: false })));
+        if (!cancelled) setMessages((rows ?? []).map((r) => ({ ...r, direction: r.direction as "inbound" | "outbound", pending: false })));
 
-        await supabase
+        await client
           .from("sms_messages")
           .update({ read_at: new Date().toISOString() })
           .eq("conversation_id", convId)
@@ -140,9 +142,10 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
   }, [serviceId, phoneNorm, conversationIdProp]);
 
   useEffect(() => {
-    if (!conversationId || !supabase) return;
+    const client = getTypedSupabaseClient();
+    if (!conversationId || !client) return;
     const topic = `sms_messages:${conversationId}`;
-    const channel = supabase
+    const channel = client
       .channel(topic)
       .on(
         "postgres_changes",
@@ -166,7 +169,7 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { client.removeChannel(channel); };
   }, [conversationId, scrollToBottom]);
 
   useEffect(() => {
@@ -175,7 +178,7 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
 
   const sendMessage = useCallback(async () => {
     const body = input.trim();
-    if (!body || !active || !phoneNorm || sending) return;
+    if (!body || !active || !phoneNorm || sending || !supabase) return;
 
     setInput("");
     const tempId = `pending-${Date.now()}`;
