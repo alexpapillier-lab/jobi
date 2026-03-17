@@ -513,6 +513,115 @@ body {
   line-height: 1.55;
 }
 
+/* ========== Ceník / Pricing ========== */
+.section-pricing {
+  padding-top: clamp(24px, 4vw, 40px);
+  padding-bottom: clamp(48px, 8vw, 80px);
+}
+
+.pricing-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+.pricing-card {
+  flex: 0 1 360px;
+  max-width: 100%;
+}
+
+.pricing-card-inner {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  box-shadow: var(--shadow-soft);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.pricing-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.pricing-desc {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.pricing-price {
+  margin-bottom: 24px;
+}
+
+.pricing-amount {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.03em;
+}
+
+.pricing-features {
+  list-style: none;
+  margin: 0 0 28px 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.pricing-features li {
+  padding-left: 1.5em;
+  position: relative;
+}
+
+.pricing-features li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pricing-cta {
+  margin-top: auto;
+  width: 100%;
+  justify-content: center;
+}
+
+.pricing-note {
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 28px;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.pricing-note a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.pricing-note a:hover {
+  text-decoration: underline;
+}
+
 /* ========== Download ========== */
 .section-download {
   padding-top: clamp(32px, 5vw, 48px);
@@ -575,9 +684,25 @@ body {
 .download-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 24px;
   justify-content: center;
+  align-items: stretch;
+}
+
+.download-option {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.download-option-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  max-width: 220px;
+  line-height: 1.4;
 }
 
 .btn-download-main {

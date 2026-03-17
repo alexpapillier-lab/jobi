@@ -31,6 +31,7 @@
       </a>
       <nav class="nav-links" aria-label="Hlavní navigace">
         <a href="#vyhody">Co umí</a>
+        <a href="#cenik">Ceník</a>
         <a href="#stazeni" class="nav-cta">Stáhnout</a>
       </nav>
     </div>
@@ -205,6 +206,32 @@
       </div>
     </section>
 
+    <!-- CENÍK / PRICING -->
+    <section id="cenik" class="section section-pricing" aria-labelledby="cenik-heading">
+      <div class="section-eyebrow reveal">Ceník</div>
+      <h2 id="cenik-heading" class="section-title reveal">Jednoduchá cena</h2>
+      <p class="section-desc reveal">Jobi a JobiDocs jsou v testovací verzi zdarma. Po spuštění plné verze bude cena přehledná a předvídatelná.</p>
+      <div class="pricing-grid">
+        <article class="pricing-card reveal">
+          <div class="pricing-card-inner">
+            <h3 class="pricing-name">Testovací verze</h3>
+            <p class="pricing-desc">Pro servisy, které chtějí Jobi vyzkoušet.</p>
+            <div class="pricing-price">
+              <span class="pricing-amount">Zdarma</span>
+            </div>
+            <ul class="pricing-features">
+              <li>Zakázky, zákazníci, sklad</li>
+              <li>Tisk a export PDF (JobiDocs)</li>
+              <li>Dokumenty a šablony</li>
+              <li>Bez časového omezení v testovací fázi</li>
+            </ul>
+            <a href="#stazeni" class="btn btn-primary pricing-cta">Stáhnout</a>
+          </div>
+        </article>
+      </div>
+      <p class="pricing-note reveal">Máte dotazy k ceně nebo nasazení? Napište na <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
+    </section>
+
     <!-- DOWNLOAD -->
     <section id="stazeni" class="section section-download" aria-labelledby="stazeni-heading">
       <div class="download-card reveal">
@@ -214,19 +241,25 @@
         </div>
         <div class="download-content">
           <img src="logo.svg" class="download-logo" alt="" width="64" height="64" />
-          <h2 id="stazeni-heading" class="download-title">Stáhnout Jobi</h2>
+          <h2 id="stazeni-heading" class="download-title">Stáhnout</h2>
           <p class="download-desc">
-            Stáhněte Jobi nebo JobiDocs z nejnovějšího vydání na GitHubu (DMG pro macOS).
+            DMG pro macOS z nejnovějšího vydání na GitHubu. Stáhněte Jobi (hlavní aplikace) nebo JobiDocs (tisk a PDF) zvlášť.
           </p>
           <div class="download-buttons">
-            <button type="button" class="btn-download-main" id="download-jobi-btn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Stáhnout Jobi
-            </button>
-            <button type="button" class="btn-download-main btn-download-secondary" id="download-jobidocs-btn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Stáhnout JobiDocs
-            </button>
+            <div class="download-option">
+              <button type="button" class="btn-download-main" id="download-jobi-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Stáhnout Jobi
+              </button>
+              <span class="download-option-desc">Hlavní aplikace – zakázky, zákazníci, sklad</span>
+            </div>
+            <div class="download-option">
+              <button type="button" class="btn-download-main btn-download-secondary" id="download-jobidocs-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Stáhnout JobiDocs
+              </button>
+              <span class="download-option-desc">Tisk a PDF – doplněk pro tisk dokumentů</span>
+            </div>
           </div>
           <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
           <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs · DMG<br>Verze pro Windows se připravuje.</p>
