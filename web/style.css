@@ -572,6 +572,14 @@ body {
   line-height: 1.6;
 }
 
+.download-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  align-items: center;
+}
+
 .btn-download-main {
   display: inline-flex;
   align-items: center;
@@ -596,6 +604,18 @@ body {
 }
 .btn-download-main:active { transform: translateY(0); }
 .btn-download-main:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+.btn-download-secondary {
+  background: transparent;
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+}
+.btn-download-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+}
 
 .download-loading {
   display: block;

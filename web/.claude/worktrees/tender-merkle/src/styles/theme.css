@@ -1,0 +1,689 @@
+:root {
+  /* Theme - Light (default) */
+  --bg: linear-gradient(135deg, #f6f7f9 0%, #eef0f4 100%);
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-2: rgba(251, 251, 252, 0.88);
+  --text: #111827;
+  --muted: #6b7280;
+  --border: rgba(17, 24, 39, 0.12);
+  --icon: #6b7280;
+
+  /* Effects */
+  --shadow: 0 25px 80px rgba(0, 0, 0, 0.15);
+  --shadow-soft: 0 15px 40px rgba(0, 0, 0, 0.10);
+  --shadow-hover: 0 30px 100px rgba(0, 0, 0, 0.20);
+  --glow: 0 0 20px rgba(37, 99, 235, 0.3);
+
+  /* Layout */
+  --radius-lg: 24px;
+  --radius-md: 18px;
+  --radius-sm: 12px;
+
+  --sidebar-collapsed: 68px;
+  --sidebar-expanded: 220px;
+
+  --pad-12: 12px;
+  --pad-16: 16px;
+  --pad-20: 20px;
+  --pad-24: 24px;
+
+  --topbar-h: 64px;
+
+  /* Accent */
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.15);
+  --accent-hover: #1d4ed8;
+  --accent-glow: rgba(37, 99, 235, 0.4);
+
+  color-scheme: light;
+  
+  /* Backdrop blur pro glassmorphism */
+  --blur: blur(24px);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+[data-theme="dark"] {
+  --bg: linear-gradient(135deg, #0a0c10 0%, #141720 100%);
+  --panel: rgba(30, 32, 40, 0.85);
+  --panel-2: rgba(35, 38, 48, 0.75);
+  --text: #f3f4f6;
+  --muted: #9ca3af;
+  --border: rgba(243, 244, 246, 0.12);
+  --icon: #9ca3af;
+
+  --shadow: 0 24px 72px rgba(0, 0, 0, 0.5);
+  --shadow-soft: 0 14px 38px rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 28px 84px rgba(0, 0, 0, 0.6);
+  --glow: 0 0 30px rgba(96, 165, 250, 0.4);
+
+  --accent: #60a5fa;
+  --accent-soft: rgba(96, 165, 250, 0.2);
+  --accent-hover: #3b82f6;
+  --accent-glow: rgba(96, 165, 250, 0.5);
+
+  color-scheme: dark;
+}
+
+[data-theme="blue"] {
+  --bg: linear-gradient(135deg, #0a1628 0%, #0f1e3a 100%);
+  --panel: rgba(14, 116, 184, 0.4);
+  --panel-2: rgba(14, 116, 184, 0.3);
+  --text: #e0f2fe;
+  --muted: #7dd3fc;
+  --border: rgba(14, 165, 233, 0.35);
+  --icon: #7dd3fc;
+
+  --shadow: 0 20px 60px rgba(14, 165, 233, 0.25);
+  --shadow-soft: 0 12px 32px rgba(14, 165, 233, 0.18);
+  --shadow-hover: 0 24px 72px rgba(14, 165, 233, 0.35);
+  --glow: 0 0 30px rgba(14, 165, 233, 0.5);
+
+  --accent: #0ea5e9;
+  --accent-soft: rgba(14, 165, 233, 0.25);
+  --accent-hover: #0284c7;
+  --accent-glow: rgba(14, 165, 233, 0.6);
+
+  color-scheme: dark;
+}
+
+[data-theme="green"] {
+  --bg: linear-gradient(135deg, #0a1f0e 0%, #0f2a14 100%);
+  --panel: rgba(34, 197, 94, 0.4);
+  --panel-2: rgba(34, 197, 94, 0.3);
+  --text: #dcfce7;
+  --muted: #86efac;
+  --border: rgba(34, 197, 94, 0.35);
+  --icon: #86efac;
+
+  --shadow: 0 20px 60px rgba(34, 197, 94, 0.25);
+  --shadow-soft: 0 12px 32px rgba(34, 197, 94, 0.18);
+  --shadow-hover: 0 24px 72px rgba(34, 197, 94, 0.35);
+  --glow: 0 0 30px rgba(34, 197, 94, 0.5);
+
+  --accent: #22c55e;
+  --accent-soft: rgba(34, 197, 94, 0.25);
+  --accent-hover: #16a34a;
+  --accent-glow: rgba(34, 197, 94, 0.6);
+
+  color-scheme: dark;
+}
+
+[data-theme="orange"] {
+  --bg: linear-gradient(135deg, #2a1a0a 0%, #3a2410 100%);
+  --panel: rgba(249, 115, 22, 0.4);
+  --panel-2: rgba(249, 115, 22, 0.3);
+  --text: #fff7ed;
+  --muted: #fed7aa;
+  --border: rgba(249, 115, 22, 0.35);
+  --icon: #fed7aa;
+
+  --shadow: 0 20px 60px rgba(249, 115, 22, 0.25);
+  --shadow-soft: 0 12px 32px rgba(249, 115, 22, 0.18);
+  --shadow-hover: 0 24px 72px rgba(249, 115, 22, 0.35);
+  --glow: 0 0 30px rgba(249, 115, 22, 0.5);
+
+  --accent: #f97316;
+  --accent-soft: rgba(249, 115, 22, 0.25);
+  --accent-hover: #ea580c;
+  --accent-glow: rgba(249, 115, 22, 0.6);
+
+  color-scheme: dark;
+}
+
+[data-theme="purple"] {
+  --bg: linear-gradient(135deg, #1a0f2a 0%, #251438 100%);
+  --panel: rgba(139, 92, 246, 0.4);
+  --panel-2: rgba(139, 92, 246, 0.3);
+  --text: #faf5ff;
+  --muted: #c4b5fd;
+  --border: rgba(139, 92, 246, 0.35);
+  --icon: #c4b5fd;
+
+  --shadow: 0 20px 60px rgba(139, 92, 246, 0.25);
+  --shadow-soft: 0 12px 32px rgba(139, 92, 246, 0.18);
+  --shadow-hover: 0 24px 72px rgba(139, 92, 246, 0.35);
+  --glow: 0 0 30px rgba(139, 92, 246, 0.5);
+
+  --accent: #8b5cf6;
+  --accent-soft: rgba(139, 92, 246, 0.25);
+  --accent-hover: #7c3aed;
+  --accent-glow: rgba(139, 92, 246, 0.6);
+
+  color-scheme: dark;
+}
+
+[data-theme="pink"] {
+  --bg: linear-gradient(135deg, #2a0f1a 0%, #381420 100%);
+  --panel: rgba(236, 72, 153, 0.4);
+  --panel-2: rgba(236, 72, 153, 0.3);
+  --text: #fdf2f8;
+  --muted: #f9a8d4;
+  --border: rgba(236, 72, 153, 0.35);
+  --icon: #f9a8d4;
+
+  --shadow: 0 20px 60px rgba(236, 72, 153, 0.25);
+  --shadow-soft: 0 12px 32px rgba(236, 72, 153, 0.18);
+  --shadow-hover: 0 24px 72px rgba(236, 72, 153, 0.35);
+  --glow: 0 0 30px rgba(236, 72, 153, 0.5);
+
+  --accent: #ec4899;
+  --accent-soft: rgba(236, 72, 153, 0.25);
+  --accent-hover: #db2777;
+  --accent-glow: rgba(236, 72, 153, 0.6);
+
+  color-scheme: dark;
+}
+
+/* Light themes - světlejší verze */
+[data-theme="light-blue"] {
+  --bg: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(240, 249, 255, 0.8);
+  --text: #0c4a6e;
+  --muted: #0369a1;
+  --border: rgba(14, 165, 233, 0.25);
+  --icon: #0284c7;
+
+  --shadow: 0 20px 60px rgba(14, 165, 233, 0.15);
+  --shadow-soft: 0 12px 32px rgba(14, 165, 233, 0.12);
+  --shadow-hover: 0 24px 72px rgba(14, 165, 233, 0.2);
+  --glow: 0 0 25px rgba(14, 165, 233, 0.3);
+
+  --accent: #0ea5e9;
+  --accent-soft: rgba(14, 165, 233, 0.2);
+  --accent-hover: #0284c7;
+  --accent-glow: rgba(14, 165, 233, 0.4);
+
+  color-scheme: light;
+}
+
+[data-theme="light-green"] {
+  --bg: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(240, 253, 244, 0.8);
+  --text: #14532d;
+  --muted: #15803d;
+  --border: rgba(34, 197, 94, 0.25);
+  --icon: #16a34a;
+
+  --shadow: 0 20px 60px rgba(34, 197, 94, 0.15);
+  --shadow-soft: 0 12px 32px rgba(34, 197, 94, 0.12);
+  --shadow-hover: 0 24px 72px rgba(34, 197, 94, 0.2);
+  --glow: 0 0 25px rgba(34, 197, 94, 0.3);
+
+  --accent: #22c55e;
+  --accent-soft: rgba(34, 197, 94, 0.2);
+  --accent-hover: #16a34a;
+  --accent-glow: rgba(34, 197, 94, 0.4);
+
+  color-scheme: light;
+}
+
+[data-theme="light-orange"] {
+  --bg: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(255, 247, 237, 0.8);
+  --text: #7c2d12;
+  --muted: #c2410c;
+  --border: rgba(249, 115, 22, 0.25);
+  --icon: #ea580c;
+
+  --shadow: 0 20px 60px rgba(249, 115, 22, 0.15);
+  --shadow-soft: 0 12px 32px rgba(249, 115, 22, 0.12);
+  --shadow-hover: 0 24px 72px rgba(249, 115, 22, 0.2);
+  --glow: 0 0 25px rgba(249, 115, 22, 0.3);
+
+  --accent: #f97316;
+  --accent-soft: rgba(249, 115, 22, 0.2);
+  --accent-hover: #ea580c;
+  --accent-glow: rgba(249, 115, 22, 0.4);
+
+  color-scheme: light;
+}
+
+[data-theme="light-purple"] {
+  --bg: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(250, 245, 255, 0.8);
+  --text: #4c1d95;
+  --muted: #6d28d9;
+  --border: rgba(139, 92, 246, 0.25);
+  --icon: #7c3aed;
+
+  --shadow: 0 20px 60px rgba(139, 92, 246, 0.15);
+  --shadow-soft: 0 12px 32px rgba(139, 92, 246, 0.12);
+  --shadow-hover: 0 24px 72px rgba(139, 92, 246, 0.2);
+  --glow: 0 0 25px rgba(139, 92, 246, 0.3);
+
+  --accent: #8b5cf6;
+  --accent-soft: rgba(139, 92, 246, 0.2);
+  --accent-hover: #7c3aed;
+  --accent-glow: rgba(139, 92, 246, 0.4);
+
+  color-scheme: light;
+}
+
+[data-theme="light-pink"] {
+  --bg: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(253, 242, 248, 0.8);
+  --text: #831843;
+  --muted: #be185d;
+  --border: rgba(236, 72, 153, 0.25);
+  --icon: #db2777;
+
+  --shadow: 0 20px 60px rgba(236, 72, 153, 0.15);
+  --shadow-soft: 0 12px 32px rgba(236, 72, 153, 0.12);
+  --shadow-hover: 0 24px 72px rgba(236, 72, 153, 0.2);
+  --glow: 0 0 25px rgba(236, 72, 153, 0.3);
+
+  --accent: #ec4899;
+  --accent-soft: rgba(236, 72, 153, 0.2);
+  --accent-hover: #db2777;
+  --accent-glow: rgba(236, 72, 153, 0.4);
+
+  color-scheme: light;
+}
+
+/* Halloween theme */
+[data-theme="halloween"] {
+  --bg: linear-gradient(135deg, #0a0505 0%, #1a0f0f 100%);
+  --panel: rgba(124, 58, 237, 0.35);
+  --panel-2: rgba(249, 115, 22, 0.3);
+  --text: #fef3c7;
+  --muted: #fbbf24;
+  --border: rgba(249, 115, 22, 0.45);
+  --icon: #f59e0b;
+
+  --shadow: 0 20px 60px rgba(124, 58, 237, 0.4);
+  --shadow-soft: 0 12px 32px rgba(249, 115, 22, 0.3);
+  --shadow-hover: 0 24px 72px rgba(124, 58, 237, 0.5);
+  --glow: 0 0 35px rgba(249, 115, 22, 0.7);
+
+  --accent: #f97316;
+  --accent-soft: rgba(249, 115, 22, 0.35);
+  --accent-hover: #ea580c;
+  --accent-glow: rgba(249, 115, 22, 0.8);
+
+  color-scheme: dark;
+}
+
+/* Christmas theme */
+[data-theme="christmas"] {
+  --bg: linear-gradient(135deg, #0d1b1f 0%, #1a2e35 100%);
+  --panel: rgba(34, 197, 94, 0.35);
+  --panel-2: rgba(251, 191, 36, 0.2);
+  --text: #f0fdf4;
+  --muted: #86efac;
+  --border: rgba(34, 197, 94, 0.45);
+  --icon: #22c55e;
+
+  --shadow: 0 20px 60px rgba(34, 197, 94, 0.4);
+  --shadow-soft: 0 12px 32px rgba(251, 191, 36, 0.25);
+  --shadow-hover: 0 24px 72px rgba(34, 197, 94, 0.5);
+  --glow: 0 0 40px rgba(251, 191, 36, 0.5);
+
+  --accent: #22c55e;
+  --accent-soft: rgba(34, 197, 94, 0.4);
+  --accent-hover: #16a34a;
+  --accent-glow: rgba(251, 191, 36, 0.6);
+
+  color-scheme: dark;
+}
+
+/* Aby padající vločky (ThemeAnimations canvas) byly vidět – obsah průhledný */
+[data-theme="christmas"] [data-app-content],
+[data-theme="christmas"] main {
+  background: transparent !important;
+}
+
+/* Tron Red – černé pozadí, tenké červené neonové linie (jako lightcycle); barva jen v obrysech */
+[data-theme="tron-red"] {
+  --bg: linear-gradient(135deg, #040405 0%, #0a0809 50%, #050406 100%);
+  --panel: rgba(18, 18, 20, 0.92);
+  --panel-2: rgba(24, 22, 23, 0.88);
+  --text: #e5e5e5;
+  --muted: #a3a3a3;
+  --border: rgba(221, 34, 0, 0.55);
+  --icon: #f87171;
+
+  --shadow: 0 0 0 1px rgba(221, 34, 0, 0.15);
+  --shadow-soft: 0 0 0 1px rgba(221, 34, 0, 0.08);
+  --shadow-hover: 0 0 12px rgba(255, 59, 26, 0.25);
+  --glow: 0 0 20px rgba(255, 59, 26, 0.2);
+
+  --accent: #DD2200;
+  --accent-soft: rgba(221, 34, 0, 0.08);
+  --accent-hover: #FF3B1A;
+  --accent-glow: rgba(255, 59, 26, 0.35);
+
+  color-scheme: dark;
+}
+
+/* Tron Cyan – velmi tmavé pozadí, tenké cyan neonové linie; barva jen v obrysech */
+[data-theme="tron-cyan"] {
+  --bg: linear-gradient(135deg, #040506 0%, #070b0e 50%, #05080a 100%);
+  --panel: rgba(14, 18, 20, 0.92);
+  --panel-2: rgba(18, 22, 25, 0.88);
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --border: rgba(4, 191, 191, 0.5);
+  --icon: #22d3ee;
+
+  --shadow: 0 0 0 1px rgba(4, 191, 191, 0.12);
+  --shadow-soft: 0 0 0 1px rgba(4, 191, 191, 0.06);
+  --shadow-hover: 0 0 12px rgba(24, 202, 230, 0.22);
+  --glow: 0 0 20px rgba(24, 202, 230, 0.18);
+
+  --accent: #04BFBF;
+  --accent-soft: rgba(4, 191, 191, 0.07);
+  --accent-hover: #18CAE6;
+  --accent-glow: rgba(24, 202, 230, 0.3);
+
+  color-scheme: dark;
+}
+
+/* Synthwave Neon – 80s outrun: tenké cyan / magenta / violet neonové linie, minimální záře */
+[data-theme="synthwave"] {
+  --bg: linear-gradient(160deg, #060510 0%, #0a0820 40%, #080618 100%);
+  --panel: rgba(12, 12, 28, 0.94);
+  --panel-2: rgba(18, 18, 38, 0.9);
+  --text: #EDEBFF;
+  --muted: #A8A4C8;
+  /* Cyan = tenká neonová linie (okraje panelů) */
+  --border: rgba(0, 229, 255, 0.65);
+  --icon: #A78BFA;
+
+  /* Jen tenké linie + 4–6px „neon tube“ bloom, žádné velké halo */
+  --shadow: 0 0 0 1px rgba(0, 229, 255, 0.4), 0 0 4px rgba(0, 229, 255, 0.06);
+  --shadow-soft: 0 0 0 1px rgba(0, 229, 255, 0.28);
+  --shadow-hover: 0 0 0 1px rgba(255, 43, 214, 0.6), 0 0 6px rgba(255, 43, 214, 0.1);
+  --glow: 0 0 6px rgba(255, 43, 214, 0.12);
+
+  /* Magenta = CTA, aktivní (čistá neonová barva) */
+  --accent: #FF2BD6;
+  /* Violet = highlight / vybrané pozadí */
+  --accent-soft: rgba(124, 58, 237, 0.18);
+  --accent-hover: #FF6AF0;
+  /* Velmi jemná záře, aby tlačítka nebyly „rozmazané“ */
+  --accent-glow: rgba(255, 43, 214, 0.16);
+
+  /* Cyan = focus, linky */
+  --accent-focus: #00E5FF;
+  --accent-secondary: #00E5FF;
+  --accent-tertiary: #7C3AED;
+
+  color-scheme: dark;
+}
+
+/* Synthwave: tlačítka a panely = tenká neonová linie, ne velký glow */
+[data-theme="synthwave"] .btn-primary {
+  box-shadow: 0 0 0 1px rgba(255, 43, 214, 0.75), 0 0 6px rgba(255, 43, 214, 0.12);
+}
+[data-theme="synthwave"] .btn-primary:hover {
+  box-shadow: 0 0 0 1px #FF6AF0, 0 0 8px rgba(255, 43, 214, 0.18);
+}
+[data-theme="synthwave"] .glass-panel {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.35), 0 0 4px rgba(0, 229, 255, 0.05);
+}
+[data-theme="synthwave"] .glass-panel:hover {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.5), 0 0 6px rgba(0, 229, 255, 0.08);
+}
+
+/* ========== Světlá témata (Paper Mint, Sand & Ink, Sky Blueprint, Lilac Frost) ========== */
+
+/* Paper Mint – čisté papírové UI s mint/teal akcentem */
+[data-theme="paper-mint"] {
+  --bg: #F7FBFA;
+  --panel: #FFFFFF;
+  --panel-2: #EFF7F5;
+  --text: #0F172A;
+  --muted: #475569;
+  --border: #D6E6E2;
+  --icon: #475569;
+
+  --shadow: 0 20px 60px rgba(20, 184, 166, 0.08);
+  --shadow-soft: 0 12px 32px rgba(20, 184, 166, 0.06);
+  --shadow-hover: 0 24px 72px rgba(20, 184, 166, 0.12);
+  --glow: 0 0 20px rgba(94, 234, 212, 0.25);
+
+  --accent: #14B8A6;
+  --accent-soft: rgba(20, 184, 166, 0.15);
+  --accent-hover: #0EA5A4;
+  --accent-glow: rgba(94, 234, 212, 0.35);
+  --accent-focus: #5EEAD4;
+
+  color-scheme: light;
+}
+
+/* Sand & Ink – teplé světlé téma (písek) s tlumeným oranžovým akcentem */
+[data-theme="sand-ink"] {
+  --bg: #FBF7F1;
+  --panel: #FFFFFF;
+  --panel-2: #F4EDE3;
+  --text: #111827;
+  --muted: #4B5563;
+  --border: #E6D7C5;
+  --icon: #4B5563;
+
+  --shadow: 0 20px 60px rgba(245, 158, 11, 0.08);
+  --shadow-soft: 0 12px 32px rgba(245, 158, 11, 0.06);
+  --shadow-hover: 0 24px 72px rgba(245, 158, 11, 0.12);
+  --glow: 0 0 20px rgba(252, 211, 77, 0.25);
+
+  --accent: #F59E0B;
+  --accent-soft: rgba(245, 158, 11, 0.15);
+  --accent-hover: #D97706;
+  --accent-glow: rgba(252, 211, 77, 0.35);
+  --accent-focus: #FCD34D;
+
+  color-scheme: light;
+}
+
+/* Sky Blueprint – světlé tech téma s chladnou modrou (blueprint/saas) */
+[data-theme="sky-blueprint"] {
+  --bg: #F5FAFF;
+  --panel: #FFFFFF;
+  --panel-2: #EAF3FF;
+  --text: #0B1220;
+  --muted: #3B4A66;
+  --border: #CFE3FF;
+  --icon: #3B4A66;
+
+  --shadow: 0 20px 60px rgba(37, 99, 235, 0.08);
+  --shadow-soft: 0 12px 32px rgba(37, 99, 235, 0.06);
+  --shadow-hover: 0 24px 72px rgba(37, 99, 235, 0.12);
+  --glow: 0 0 20px rgba(147, 197, 253, 0.3);
+
+  --accent: #2563EB;
+  --accent-soft: rgba(37, 99, 235, 0.15);
+  --accent-hover: #1D4ED8;
+  --accent-glow: rgba(147, 197, 253, 0.4);
+  --accent-focus: #93C5FD;
+
+  color-scheme: light;
+}
+
+/* Lilac Frost – jemně fialové světlé UI, creative ale business */
+[data-theme="lilac-frost"] {
+  --bg: #FAF8FF;
+  --panel: #FFFFFF;
+  --panel-2: #F1ECFF;
+  --text: #111827;
+  --muted: #4B5563;
+  --border: #DED7FF;
+  --icon: #4B5563;
+
+  --shadow: 0 20px 60px rgba(124, 58, 237, 0.08);
+  --shadow-soft: 0 12px 32px rgba(124, 58, 237, 0.06);
+  --shadow-hover: 0 24px 72px rgba(124, 58, 237, 0.12);
+  --glow: 0 0 20px rgba(196, 181, 253, 0.3);
+
+  --accent: #7C3AED;
+  --accent-soft: rgba(124, 58, 237, 0.15);
+  --accent-hover: #6D28D9;
+  --accent-glow: rgba(196, 181, 253, 0.4);
+  --accent-focus: #C4B5FD;
+
+  color-scheme: light;
+}
+
+
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1), color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glassmorphism efekt pro panely */
+.glass-panel {
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  transition: var(--transition-smooth);
+}
+
+/* Panely s theme barvou (jako CleanMyMac) */
+[data-theme] .glass-panel,
+[data-theme] [style*="background: var(--panel)"] {
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+.glass-panel:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-4px) scale(1.02);
+}
+
+/* Animace pro buttons a interaktivní prvky */
+button, a, [role="button"] {
+  transition: var(--transition-smooth);
+  border-radius: 16px;
+}
+
+button:hover:not(:disabled), a:hover, [role="button"]:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+button:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent-focus, var(--accent));
+  outline-offset: 2px;
+}
+
+/* Ikony používají theme barvu */
+svg {
+  color: var(--icon);
+  transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Inputy a textarea - globální styly */
+input, textarea, select {
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: var(--transition-smooth);
+  box-shadow: var(--shadow-soft);
+}
+
+input:hover, textarea:hover, select:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
+
+input:focus, textarea:focus, select:focus {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--accent-focus, var(--accent));
+  outline: none;
+}
+
+button:active:not(:disabled), a:active, [role="button"]:active {
+  transform: scale(0.96) translateY(0);
+}
+
+/* Bubbly hover effects for cards and panels */
+.glass-panel:hover, .card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+/* Enhanced button styles */
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  border: none;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px var(--accent-glow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 25px var(--accent-glow);
+}
+
+.btn-soft {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 20px;
+  border-radius: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-soft:hover {
+  background: var(--panel-2);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toastSlideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}

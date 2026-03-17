@@ -428,8 +428,219 @@ export type Database = {
         }
         Relationships: []
       }
-      // TODO: Přidat další tabulky po vygenerování správných typů
-      // service_memberships, service_invites, service_settings, atd.
+      invoices: {
+        Row: {
+          id: string
+          service_id: string
+          customer_id: string | null
+          ticket_id: string | null
+          number: string
+          variable_symbol: string | null
+          status: string
+          issue_date: string
+          due_date: string
+          taxable_date: string | null
+          paid_at: string | null
+          sent_at: string | null
+          currency: string
+          subtotal: number
+          vat_amount: number
+          total: number
+          rounding: number
+          supplier_name: string | null
+          supplier_ico: string | null
+          supplier_dic: string | null
+          supplier_address: string | null
+          supplier_email: string | null
+          supplier_phone: string | null
+          supplier_bank_account: string | null
+          supplier_iban: string | null
+          supplier_swift: string | null
+          customer_name: string | null
+          customer_ico: string | null
+          customer_dic: string | null
+          customer_address: string | null
+          customer_email: string | null
+          customer_phone: string | null
+          notes: string | null
+          internal_note: string | null
+          created_at: string
+          updated_at: string | null
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          customer_id?: string | null
+          ticket_id?: string | null
+          number: string
+          variable_symbol?: string | null
+          status?: string
+          issue_date?: string
+          due_date?: string
+          taxable_date?: string | null
+          paid_at?: string | null
+          sent_at?: string | null
+          currency?: string
+          subtotal?: number
+          vat_amount?: number
+          total?: number
+          rounding?: number
+          supplier_name?: string | null
+          supplier_ico?: string | null
+          supplier_dic?: string | null
+          supplier_address?: string | null
+          supplier_email?: string | null
+          supplier_phone?: string | null
+          supplier_bank_account?: string | null
+          supplier_iban?: string | null
+          supplier_swift?: string | null
+          customer_name?: string | null
+          customer_ico?: string | null
+          customer_dic?: string | null
+          customer_address?: string | null
+          customer_email?: string | null
+          customer_phone?: string | null
+          notes?: string | null
+          internal_note?: string | null
+          created_at?: string
+          updated_at?: string | null
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          customer_id?: string | null
+          ticket_id?: string | null
+          number?: string
+          variable_symbol?: string | null
+          status?: string
+          issue_date?: string
+          due_date?: string
+          taxable_date?: string | null
+          paid_at?: string | null
+          sent_at?: string | null
+          currency?: string
+          subtotal?: number
+          vat_amount?: number
+          total?: number
+          rounding?: number
+          supplier_name?: string | null
+          supplier_ico?: string | null
+          supplier_dic?: string | null
+          supplier_address?: string | null
+          supplier_email?: string | null
+          supplier_phone?: string | null
+          supplier_bank_account?: string | null
+          supplier_iban?: string | null
+          supplier_swift?: string | null
+          customer_name?: string | null
+          customer_ico?: string | null
+          customer_dic?: string | null
+          customer_address?: string | null
+          customer_email?: string | null
+          customer_phone?: string | null
+          notes?: string | null
+          internal_note?: string | null
+          created_at?: string
+          updated_at?: string | null
+          deleted_at?: string | null
+        }
+        Relationships: []
+      }
+      invoice_items: {
+        Row: {
+          id: string
+          invoice_id: string
+          sort_order: number
+          name: string
+          qty: number
+          unit: string
+          unit_price: number
+          vat_rate: number
+          line_total: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          sort_order?: number
+          name?: string
+          qty?: number
+          unit?: string
+          unit_price?: number
+          vat_rate?: number
+          line_total?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          sort_order?: number
+          name?: string
+          qty?: number
+          unit?: string
+          unit_price?: number
+          vat_rate?: number
+          line_total?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      invoice_events: {
+        Row: {
+          id: string
+          invoice_id: string
+          type: string
+          payload: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          type: string
+          payload?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          type?: string
+          payload?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      invoice_series: {
+        Row: {
+          id: string
+          service_id: string
+          prefix: string
+          year: number
+          next_value: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          prefix?: string
+          year?: number
+          next_value?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          service_id?: string
+          prefix?: string
+          year?: number
+          next_value?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

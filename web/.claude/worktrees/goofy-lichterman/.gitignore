@@ -1,0 +1,54 @@
+# Logs
+logs
+*.log
+notarize-log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ENV
+.env
+.env.*
+!.env.example
+
+# OTA signing secrets (local only)
+docs/OTA_SIGNING_SECRETS.md
+
+# DB backup (obsahuje citlivé cesty/URL)
+backup/
+.env.backup
+
+# Tauri
+src-tauri/target
+src-tauri/gen
+
+# Tooling cache
+.vite
+.cache
+
+# Coverage
+coverage
+
+# Build / release artefakty (zip, test release složka)
+jobi-test-release/
+jobi-test-release.zip
+jobi-jobidocs-instalace.zip
+Releases/

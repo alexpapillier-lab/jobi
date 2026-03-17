@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { supabase, resetTauriFetchState } from "../../../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseFetch, resetTauriFetchState } from "../../../lib/supabaseClient";
 import { devLog, devWarn } from "../../../lib/devLog";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
@@ -232,6 +232,8 @@ type CreateTicketParams = {
   newDraft: any;
   customerMatchDecision: "undecided" | "accepted" | "rejected";
   onSuccess: (tickets: TicketEx[]) => void;
+  /** Token z draft capture (QR bez vytvoření zakázky); po vytvoření zakázky se fotky claimnou do první zakázky */
+  draftCaptureToken?: string;
 };
 
 type SaveTicketChangesParams = {
@@ -255,7 +257,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   } = deps;
 
   const createTicket = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
-    const { newDraft, customerMatchDecision, onSuccess } = params;
+    const { newDraft, customerMatchDecision, onSuccess, draftCaptureToken } = params;
 
     if (!activeServiceId || !supabase) {
       showToast("Vytváření zakázek vyžaduje přihlášení a aktivní službu", "error");
@@ -392,6 +394,27 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
 
       onSuccess(createdTickets);
+
+      if (draftCaptureToken && createdTickets.length > 0 && supabase && supabaseUrl) {
+        try {
+          const { data: session } = await supabase.auth.getSession();
+          const authToken = session?.session?.access_token;
+          if (authToken) {
+            const res = await supabaseFetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/capture-claim-draft`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+              body: JSON.stringify({ token: draftCaptureToken, ticketId: createdTickets[0].id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              console.warn("[createTicket] capture-claim-draft failed:", (data as { error?: string })?.error ?? res.status);
+            }
+          }
+        } catch (e) {
+          console.warn("[createTicket] capture-claim-draft error:", e);
+        }
+      }
+
       if (userId) {
         const newTotal = cloudTickets.length + createdTickets.length;
         checkAchievementsOnTicketsChanged(userId, activeServiceId, newTotal);

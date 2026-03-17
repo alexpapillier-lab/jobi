@@ -82,66 +82,60 @@
   window.addEventListener("load", reveal);
   reveal();
 
-  // ---- Stáhnout Jobi + JobiDocs DMG z GitHub ----
-  var downloadBtn = document.getElementById("download-macos-btn");
+  // ---- Stáhnout Jobi nebo JobiDocs DMG z GitHub ----
   var downloadLoading = document.getElementById("download-loading");
-  if (downloadBtn) {
-    downloadBtn.addEventListener("click", function () {
-      downloadBtn.disabled = true;
-      if (downloadLoading) downloadLoading.hidden = false;
-      fetch(GITHUB_RELEASE)
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          var assets = (data.assets || []).filter(function (a) {
-            var n = (a.name || "").toLowerCase();
-            return n.endsWith(".dmg");
-          });
-          var jobiDmg = assets.find(function (a) {
-            var n = (a.name || "").toLowerCase();
-            return n.startsWith("jobi") && n.endsWith(".dmg") && n.indexOf("jobidocs") === -1;
-          });
-          var jobidocsDmg = assets.find(function (a) {
-            var n = (a.name || "").toLowerCase();
-            return n.indexOf("jobidocs") !== -1 && n.endsWith(".dmg");
-          });
 
-          function triggerDownload(url, filename) {
-            var a = document.createElement("a");
-            a.href = url;
-            a.download = filename || "";
-            a.rel = "noopener";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-          }
-
-          if (jobiDmg && jobiDmg.browser_download_url) {
-            triggerDownload(jobiDmg.browser_download_url, jobiDmg.name);
-          }
-          if (jobidocsDmg && jobidocsDmg.browser_download_url) {
-            setTimeout(function () {
-              triggerDownload(jobidocsDmg.browser_download_url, jobidocsDmg.name);
-            }, 350);
-          }
-          if (!jobiDmg && !jobidocsDmg) {
-            window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
-          }
-        })
-        .catch(function () {
-          window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
-        })
-        .finally(function () {
-          downloadBtn.disabled = false;
-          if (downloadLoading) downloadLoading.hidden = true;
-        });
-    });
+  function triggerDownload(url, filename) {
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
-  var heroDownload = document.querySelector(".btn-download-hero");
-  if (heroDownload && downloadBtn) {
-    heroDownload.addEventListener("click", function (e) {
-      e.preventDefault();
-      downloadBtn.click();
-    });
+  function fetchReleaseAndDownload(which, btn) {
+    if (!btn) return;
+    btn.disabled = true;
+    if (downloadLoading) downloadLoading.hidden = false;
+    fetch(GITHUB_RELEASE)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var assets = (data.assets || []).filter(function (a) {
+          var n = (a.name || "").toLowerCase();
+          return n.endsWith(".dmg");
+        });
+        var jobiDmg = assets.find(function (a) {
+          var n = (a.name || "").toLowerCase();
+          return n.startsWith("jobi") && n.endsWith(".dmg") && n.indexOf("jobidocs") === -1;
+        });
+        var jobidocsDmg = assets.find(function (a) {
+          var n = (a.name || "").toLowerCase();
+          return n.indexOf("jobidocs") !== -1 && n.endsWith(".dmg");
+        });
+        var dmg = which === "jobi" ? jobiDmg : jobidocsDmg;
+        if (dmg && dmg.browser_download_url) {
+          triggerDownload(dmg.browser_download_url, dmg.name);
+        } else {
+          window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
+        }
+      })
+      .catch(function () {
+        window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
+      })
+      .finally(function () {
+        btn.disabled = false;
+        if (downloadLoading) downloadLoading.hidden = true;
+      });
+  }
+
+  var jobiBtn = document.getElementById("download-jobi-btn");
+  var jobidocsBtn = document.getElementById("download-jobidocs-btn");
+  if (jobiBtn) {
+    jobiBtn.addEventListener("click", function () { fetchReleaseAndDownload("jobi", jobiBtn); });
+  }
+  if (jobidocsBtn) {
+    jobidocsBtn.addEventListener("click", function () { fetchReleaseAndDownload("jobidocs", jobidocsBtn); });
   }
 })();

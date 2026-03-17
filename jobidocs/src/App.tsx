@@ -3,6 +3,9 @@ import packageJson from "../package.json";
 import { generateDocumentHtml } from "./documentToHtml";
 import { AppLogo } from "./components/AppLogo";
 import { getDesignStyles, type DocumentDesign, type LayoutSpec, type SectionStyle } from "./documentDesign";
+import { useConfigHistory } from "./useConfigHistory";
+import { DESIGN_PRESETS } from "./DesignPresets";
+import { SegmentedControl, AccordionPanel, FormGroup, Toggle, Slider, PresetCard } from "./components/ui";
 import {
   DndContext,
   DragOverlay,
@@ -119,8 +122,8 @@ type Printer = { name: string; status: string; available: boolean };
 type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
 type ServiceEntry = { service_id: string; service_name: string; role: string };
 
-type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
-type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate" | "prijemkaReklamace" | "vydejkaReklamace";
+type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
+type DocTypeUI = "ticketList" | "diagnosticProtocol" | "warrantyCertificate" | "prijemkaReklamace" | "vydejkaReklamace" | "faktura";
 
 const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
   zakazkovy_list: "Zakázkový list",
@@ -128,6 +131,7 @@ const DOC_TYPE_LABELS: Record<DocTypeKey, string> = {
   diagnosticky_protokol: "Diagnostický protokol",
   prijemka_reklamace: "Příjemka reklamace",
   vydejka_reklamace: "Výdejka reklamace",
+  faktura: "Faktura",
 };
 
 const DOC_TYPE_TO_UI: Record<DocTypeKey, DocTypeUI> = {
@@ -136,6 +140,7 @@ const DOC_TYPE_TO_UI: Record<DocTypeKey, DocTypeUI> = {
   diagnosticky_protokol: "diagnosticProtocol",
   prijemka_reklamace: "prijemkaReklamace",
   vydejka_reklamace: "vydejkaReklamace",
+  faktura: "faktura",
 };
 
 const DESIGN_OPTIONS: { value: DocumentDesign; label: string }[] = [
@@ -211,7 +216,31 @@ const SAMPLE_DATA: Record<string, { label: string; content: React.ReactNode }> =
   },
   warranty: {
     label: "Záruka",
-    content: null, // vykreslí se dynamicky z docConfig v SectionCardContent
+    content: null,
+  },
+  invoice_supplier: {
+    label: "Dodavatel",
+    content: null,
+  },
+  invoice_customer: {
+    label: "Odběratel",
+    content: null,
+  },
+  invoice_meta: {
+    label: "Fakturační údaje",
+    content: (<><div>Číslo faktury: FV-2026-001</div><div>Datum vystavení: {new Date().toLocaleDateString("cs-CZ")}</div><div>Splatnost: {new Date(Date.now() + 14 * 86400000).toLocaleDateString("cs-CZ")}</div></>),
+  },
+  invoice_items: {
+    label: "Položky",
+    content: (<div style={{ width: "100%", fontSize: 10 }}><div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(0,0,0,0.08)" }}><span>Výměna displeje iPhone 13 Pro</span><span>3 500 Kč</span></div><div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(0,0,0,0.08)" }}><span>Ochranné sklo</span><span>299 Kč</span></div><div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontWeight: 700, marginTop: 4 }}><span>Celkem</span><span>5 204 Kč</span></div></div>),
+  },
+  invoice_summary: {
+    label: "Rekapitulace DPH",
+    content: (<><div>Základ: 4 299 Kč</div><div>DPH 21%: 905 Kč</div><div style={{ fontWeight: 700, marginTop: 4 }}>Celkem: 5 204 Kč</div></>),
+  },
+  invoice_payment: {
+    label: "Platební údaje",
+    content: (<><div>Účet: 19-2000145399/0800</div><div>IBAN: CZ65 0800 0000 1920 0014 5399</div><div>VS: 2026001</div></>),
   },
 };
 
@@ -221,6 +250,7 @@ const DEFAULT_SECTION_ORDER: Record<DocTypeUI, string[]> = {
   warrantyCertificate: ["device", "service", "repairs", "warranty", "dates", "custom-5bbd72cc-33a7-405b-a0a3-e726af943779"],
   prijemkaReklamace: ["service", "customer", "device", "dates"],
   vydejkaReklamace: ["service", "customer", "dates", "device", "repairs"],
+  faktura: ["invoice_supplier", "invoice_customer", "invoice_meta", "invoice_items", "invoice_summary", "invoice_payment"],
 };
 
 type SectionWidth = "full" | "half";
@@ -243,7 +273,7 @@ const TEMPLATE_PLACEHOLDERS_BY_SECTION: Record<string, string[]> = {
   repairs: ["total_price"],
   diag: ["diagnostic_text"],
   photos: [],
-  dates: ["ticket_code", "repair_date", "repair_completion_date"],
+  dates: ["ticket_code", "repair_date", "repair_completion_date", "complaint_code", "original_ticket_code"],
   warranty: ["warranty_until"],
 };
 /** Pro sekce s výběrem polí: klíč pole v sectionFields -> pořadí v TEMPLATE_PLACEHOLDERS (index). */
@@ -263,6 +293,12 @@ const INCLUDE_KEY_TO_SECTION_KEY: Record<string, string> = {
   includeDiagnosticText: "diag",
   includePhotos: "photos",
   includeDates: "dates",
+  includeInvSupplier: "invoice_supplier",
+  includeInvCustomer: "invoice_customer",
+  includeInvMeta: "invoice_meta",
+  includeInvItems: "invoice_items",
+  includeInvSummary: "invoice_summary",
+  includeInvPayment: "invoice_payment",
 };
 
 const SECTION_KEY_TO_INCLUDE_BY_DOC: Record<DocTypeKey, Record<string, string>> = {
@@ -271,6 +307,7 @@ const SECTION_KEY_TO_INCLUDE_BY_DOC: Record<DocTypeKey, Record<string, string>> 
   zarucni_list: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", warranty: "includeWarranty", dates: "includeDates" },
   prijemka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", dates: "includeDates" },
   vydejka_reklamace: { service: "includeServiceInfo", customer: "includeCustomerInfo", device: "includeDeviceInfo", repairs: "includeRepairs", dates: "includeDates" },
+  faktura: { invoice_supplier: "includeInvSupplier", invoice_customer: "includeInvCustomer", invoice_meta: "includeInvMeta", invoice_items: "includeInvItems", invoice_summary: "includeInvSummary", invoice_payment: "includeInvPayment" },
 };
 
 // Draggable palette item for section (drag from palette into preview)
@@ -508,6 +545,39 @@ function CustomTextEditor({ value, onChange }: { value: string; onChange: (html:
   );
 }
 
+function PdfPreviewIframe({ srcDoc }: { srcDoc: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const availableWidth = entry.contentRect.width;
+        setScale(Math.min(1, availableWidth / 794));
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const scaledHeight = Math.round(1123 * scale);
+
+  return (
+    <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
+      <div style={{ width: "100%", height: scaledHeight, display: "flex", justifyContent: "center" }}>
+        <div style={{ width: 794, height: 1123, flexShrink: 0, transform: `scale(${scale})`, transformOrigin: "top center", boxShadow: "0 4px 24px rgba(0,0,0,0.12)", borderRadius: 4 }}>
+          <iframe
+            srcDoc={srcDoc}
+            style={{ width: 794, height: 1123, border: "none", display: "block" }}
+            title="PDF náhled"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Drop zone mezi sekcemi – levá a pravá polovina (pro poloviční sekce).
 function SectionDropZone({ index }: { index: number }) {
   const left = useDroppable({ id: `drop-${index}-left` });
@@ -529,24 +599,24 @@ function SectionDropZone({ index }: { index: number }) {
         style={{
           ...baseStyle,
           flex: 1,
-          minHeight: left.isOver ? 44 : 28,
+          minHeight: left.isOver ? 48 : 28,
           background: left.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
           border: left.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
         }}
       >
-        {left.isOver && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>Pustit vlevo</span>}
+        {left.isOver && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>↓ Pustit vlevo</span>}
       </div>
       <div
         ref={right.setNodeRef}
         style={{
           ...baseStyle,
           flex: 1,
-          minHeight: right.isOver ? 44 : 28,
+          minHeight: right.isOver ? 48 : 28,
           background: right.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
           border: right.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
         }}
       >
-        {right.isOver && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>Pustit vpravo</span>}
+        {right.isOver && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>↓ Pustit vpravo</span>}
       </div>
     </div>
   );
@@ -579,7 +649,7 @@ function defaultDocumentsConfig(): Record<string, unknown> {
     qrOnWarranty: true,
     qrOnPrijemka: false,
     qrOnVydejka: false,
-    colorMode: "color",
+    colorMode: "bw",
     designAccentColor: "",
     designPrimaryColor: "",
     designSecondaryColor: "",
@@ -806,7 +876,7 @@ function Breadcrumbs({ items }: { items: { label: string; current?: boolean }[] 
 function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: (v: DocTypeKey) => void }) {
   return (
     <div className="doc-type-tabs">
-      {(["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace"] as DocTypeKey[]).map((dt) => (
+      {(["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace", "faktura"] as DocTypeKey[]).map((dt) => (
         <button
           key={dt}
           type="button"
@@ -820,18 +890,6 @@ function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: 
   );
 }
 
-// Accordion pro skupiny nastavení (Návrh 8)
-function Accordion({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
-  return (
-    <div className="accordion-group">
-      <button type="button" className="accordion-head" onClick={onToggle} aria-expanded={open}>
-        {title}
-        <span style={{ fontSize: 18, lineHeight: 1 }}>{open ? "−" : "+"}</span>
-      </button>
-      {open && <div className="accordion-body">{children}</div>}
-    </div>
-  );
-}
 
 // Render service section content from companyData (from Jobi settings). visibleFields: which fields to show (default all true).
 function renderServiceContent(companyData: Record<string, unknown>, visibleFields?: ServiceSectionFields | null) {
@@ -1102,10 +1160,47 @@ function SortableSection({
   );
 }
 
-// Placeholder in section list so signature blocks keep their order in DnD; real signature is rendered in overlay
-function SortableSignaturePlaceholder({ id }: { id: string }) {
-  const { setNodeRef } = useSortable({ id });
-  return <div ref={setNodeRef} style={{ height: 0, minHeight: 0, overflow: "hidden", margin: 0, padding: 0, border: "none", flex: "0 0 0" }} aria-hidden />;
+// Visible signature placeholder in section list – sortable card showing label + underline
+function SortableSignaturePlaceholder({ id, styles, docConfig, onEditClick, selectedSectionId }: { id: string; styles: Record<string, unknown>; docConfig: Record<string, unknown>; onEditClick?: (id: string) => void; selectedSectionId?: string | null }) {
+  const { setNodeRef, attributes, listeners, transform, isDragging } = useSortable({ id });
+  const blockId = id.slice(7);
+  const blocks = (docConfig?.customBlocks as Record<string, { type?: string; content?: string }>) || {};
+  const label = blocks[blockId]?.content || "Podpis";
+  const isSelected = selectedSectionId === id;
+  const style: React.CSSProperties = {
+    width: "100%",
+    flexShrink: 0,
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? "none" : "transform 0.2s ease",
+    opacity: isDragging ? 0.4 : 1,
+    cursor: "grab",
+    touchAction: "none",
+  };
+  const cardStyle: React.CSSProperties = {
+    padding: "8px 12px",
+    background: (styles.sectionBg as string) ?? "#fff",
+    borderRadius: 6,
+    border: isSelected ? "2px solid var(--accent)" : `1px solid ${(styles.borderColor as string) ?? "#e5e7eb"}`,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flex: "1 1 680px",
+    width: 680,
+    minWidth: 680,
+    maxWidth: 680,
+    boxSizing: "border-box",
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={() => onEditClick?.(id)} role="button" tabIndex={0} aria-label={`Podpis: ${label}`}>
+      <div style={cardStyle}>
+        <span style={{ fontSize: 10, opacity: 0.5, userSelect: "none" }}>⋮⋮</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ width: "100%", maxWidth: 120, borderBottom: `1px solid ${(styles.contentColor as string) ?? "#171717"}`, marginBottom: 2 }} />
+          <div style={{ fontSize: 9, color: (styles.contentColor as string) ?? "#171717" }}>{label}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 type CustomBlockData = {
@@ -1331,15 +1426,17 @@ function DocumentPreview({
 
   const orderedSections = useMemo(() => {
     if (orderedSectionsProp !== undefined) return orderedSectionsProp;
+    const sectionVis = docConfig?.sectionVisibility as Record<string, string> | undefined;
     return sectionOrder.filter((key) => {
       if (key.startsWith("custom-")) return true;
       const includeKey = sectionKeyToInclude[key];
       if (!includeKey) return false;
       const val = docConfig?.[includeKey];
       if (key === "warranty" && docType === "zarucni_list" && val === undefined) return true;
+      if (key === "warranty" && sectionVis?.warranty === "when_repair_date_set" && previewMode === "sample") return true;
       return (val as boolean) !== false;
     });
-  }, [orderedSectionsProp, sectionOrder, docConfig, sectionKeyToInclude, docType]);
+  }, [orderedSectionsProp, sectionOrder, docConfig, sectionKeyToInclude, docType, previewMode]);
 
   const customBlocks = (docConfig?.customBlocks as Record<string, { type?: string; content?: string }>) || {};
   const signatureBlockIds = useMemo(
@@ -1411,7 +1508,7 @@ function DocumentPreview({
 
   const renderSectionItem = (key: string) =>
     key.startsWith("custom-") && customBlocks[key.slice(7)]?.type === "signature" ? (
-      <SortableSignaturePlaceholder key={key} id={key} />
+      <SortableSignaturePlaceholder key={key} id={key} styles={styles} docConfig={docConfig || {}} onEditClick={onSectionSelect} selectedSectionId={selectedSectionId} />
     ) : key.startsWith("custom-") ? (
       <SortableCustomBlock key={key} id={key} styles={styles} spec={spec} docConfig={docConfig} onEditClick={onSectionSelect} selectedSectionId={selectedSectionId} />
     ) : (
@@ -1513,6 +1610,30 @@ function DocumentPreview({
   const STAMP_H = Math.round(35 * stampSize);
   const SIGNATURE_LINE_W = 100;
   const SIGNATURE_LINE_H = 28;
+
+  const SNAP_THRESHOLD = 8;
+  const SNAP_LINES = { vertical: [57, 397, 737], horizontal: [57, 561, 1066] };
+  const [activeGuides, setActiveGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] });
+  const snapPosition = useCallback((x: number, y: number, w: number, h: number) => {
+    const vGuides: number[] = [];
+    const hGuides: number[] = [];
+    let sx = x;
+    let sy = y;
+    for (const line of SNAP_LINES.vertical) {
+      if (Math.abs(x - line) < SNAP_THRESHOLD) { sx = line; vGuides.push(line); }
+      if (Math.abs(x + w / 2 - line) < SNAP_THRESHOLD) { sx = line - w / 2; vGuides.push(line); }
+      if (Math.abs(x + w - line) < SNAP_THRESHOLD) { sx = line - w; vGuides.push(line); }
+    }
+    for (const line of SNAP_LINES.horizontal) {
+      if (Math.abs(y - line) < SNAP_THRESHOLD) { sy = line; hGuides.push(line); }
+      if (Math.abs(y + h / 2 - line) < SNAP_THRESHOLD) { sy = line - h / 2; hGuides.push(line); }
+      if (Math.abs(y + h - line) < SNAP_THRESHOLD) { sy = line - h; hGuides.push(line); }
+    }
+    setActiveGuides({ vertical: vGuides, horizontal: hGuides });
+    return { x: sx, y: sy };
+  }, []);
+  const clearGuides = useCallback(() => setActiveGuides({ vertical: [], horizontal: [] }), []);
+
   const [isQrDragging, setIsQrDragging] = useState(false);
   const [qrDragPosition, setQrDragPosition] = useState<{ x: number; y: number } | null>(null);
   const qrDragStartRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
@@ -1535,17 +1656,20 @@ function DocumentPreview({
 
   useEffect(() => {
     if (!isQrDragging) return;
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       const start = qrDragStartRef.current;
       if (!start || !documentRef.current) return;
+      if ("touches" in e) e.preventDefault();
+      const clientX = "touches" in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       const rect = documentRef.current.getBoundingClientRect();
       const scaleX = 794 / rect.width;
       const scaleY = 1123 / rect.height;
-      const dx = (e.clientX - start.clientX) * scaleX;
-      const dy = (e.clientY - start.clientY) * scaleY;
-      const newX = Math.max(0, Math.min(794 - qrCodeSize, start.x + dx));
-      const newY = Math.max(0, Math.min(1123 - qrCodeSize, start.y + dy));
-      const pos = { x: newX, y: newY };
+      const dx = (clientX - start.clientX) * scaleX;
+      const dy = (clientY - start.clientY) * scaleY;
+      const rawX = Math.max(0, Math.min(794 - qrCodeSize, start.x + dx));
+      const rawY = Math.max(0, Math.min(1123 - qrCodeSize, start.y + dy));
+      const pos = snapPosition(rawX, rawY, qrCodeSize, qrCodeSize);
       qrDragCurrentRef.current = pos;
       setQrDragPosition(pos);
     };
@@ -1558,28 +1682,36 @@ function DocumentPreview({
       qrDragCurrentRef.current = null;
       setQrDragPosition(final);
       setIsQrDragging(false);
+      clearGuides();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
     };
   }, [isQrDragging, onQrPositionChange, qrCodeSize, qrPosition]);
 
   useEffect(() => {
     if (!isLogoDragging) return;
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       const start = logoDragStartRef.current;
       if (!start || !documentRef.current) return;
+      if ("touches" in e) e.preventDefault();
+      const clientX = "touches" in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       const rect = documentRef.current.getBoundingClientRect();
       const scaleX = 794 / rect.width;
       const scaleY = 1123 / rect.height;
-      const dx = (e.clientX - start.clientX) * scaleX;
-      const dy = (e.clientY - start.clientY) * scaleY;
-      const newX = Math.max(0, Math.min(794 - LOGO_W, start.x + dx));
-      const newY = Math.max(0, Math.min(1123 - LOGO_H, start.y + dy));
-      const pos = { x: newX, y: newY };
+      const dx = (clientX - start.clientX) * scaleX;
+      const dy = (clientY - start.clientY) * scaleY;
+      const rawX = Math.max(0, Math.min(794 - LOGO_W, start.x + dx));
+      const rawY = Math.max(0, Math.min(1123 - LOGO_H, start.y + dy));
+      const pos = snapPosition(rawX, rawY, LOGO_W, LOGO_H);
       logoDragCurrentRef.current = pos;
       setLogoDragPosition(pos);
     };
@@ -1595,28 +1727,36 @@ function DocumentPreview({
       logoDragCurrentRef.current = null;
       setLogoDragPosition(final);
       setIsLogoDragging(false);
+      clearGuides();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
     };
-  }, [isLogoDragging, onLogoPositionChange, LOGO_W, LOGO_H]);
+  }, [isLogoDragging, clearGuides, snapPosition, onLogoPositionChange, LOGO_W, LOGO_H]);
 
   useEffect(() => {
     if (!isStampDragging) return;
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       const start = stampDragStartRef.current;
       if (!start || !documentRef.current) return;
+      if ("touches" in e) e.preventDefault();
+      const clientX = "touches" in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       const rect = documentRef.current.getBoundingClientRect();
       const scaleX = 794 / rect.width;
       const scaleY = 1123 / rect.height;
-      const dx = (e.clientX - start.clientX) * scaleX;
-      const dy = (e.clientY - start.clientY) * scaleY;
-      const newX = Math.max(0, Math.min(794 - STAMP_W, start.x + dx));
-      const newY = Math.max(0, Math.min(1123 - STAMP_H, start.y + dy));
-      const pos = { x: newX, y: newY };
+      const dx = (clientX - start.clientX) * scaleX;
+      const dy = (clientY - start.clientY) * scaleY;
+      const rawX = Math.max(0, Math.min(794 - STAMP_W, start.x + dx));
+      const rawY = Math.max(0, Math.min(1123 - STAMP_H, start.y + dy));
+      const pos = snapPosition(rawX, rawY, STAMP_W, STAMP_H);
       stampDragCurrentRef.current = pos;
       setStampDragPosition(pos);
     };
@@ -1632,12 +1772,17 @@ function DocumentPreview({
       stampDragCurrentRef.current = null;
       setStampDragPosition(final);
       setIsStampDragging(false);
+      clearGuides();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
     };
   }, [isStampDragging, onStampPositionChange, STAMP_W, STAMP_H]);
 
@@ -1645,18 +1790,21 @@ function DocumentPreview({
     if (!signatureDraggingBlockId) return;
     const start = signatureDragStartRef.current;
     if (!start || start.blockId !== signatureDraggingBlockId) return;
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       if (!documentRef.current) return;
+      if ("touches" in e) e.preventDefault();
+      const clientX = "touches" in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       const rect = documentRef.current.getBoundingClientRect();
       const scaleX = 794 / rect.width;
       const scaleY = 1123 / rect.height;
-      const dx = (e.clientX - start.clientX) * scaleX;
-      const dy = (e.clientY - start.clientY) * scaleY;
-      const newX = Math.max(0, Math.min(794 - SIGNATURE_LINE_W, start.x + dx));
-      const newY = Math.max(0, Math.min(1123 - SIGNATURE_LINE_H, start.y + dy));
-      const pos = { x: newX, y: newY };
+      const dx = (clientX - start.clientX) * scaleX;
+      const dy = (clientY - start.clientY) * scaleY;
+      const rawX = Math.max(0, Math.min(794 - SIGNATURE_LINE_W, start.x + dx));
+      const rawY = Math.max(0, Math.min(1123 - SIGNATURE_LINE_H, start.y + dy));
+      const pos = snapPosition(rawX, rawY, SIGNATURE_LINE_W, SIGNATURE_LINE_H);
       signatureDragCurrentRef.current = pos;
-      setSignatureDragState((prev) => (prev ? { ...prev, x: newX, y: newY } : null));
+      setSignatureDragState((prev) => (prev ? { ...prev, x: pos.x, y: pos.y } : null));
     };
     const onUp = () => {
       const lastPos = signatureDragCurrentRef.current;
@@ -1668,12 +1816,17 @@ function DocumentPreview({
       signatureDragCurrentRef.current = null;
       setSignatureDraggingBlockId(null);
       setSignatureDragState(null);
+      clearGuides();
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
     };
   }, [signatureDraggingBlockId, onSignaturePositionChange, signaturePositions, SIGNATURE_LINE_W, SIGNATURE_LINE_H]);
 
@@ -1774,8 +1927,17 @@ function DocumentPreview({
                 setLogoDragPosition({ x: 0, y: 28 });
                 setIsLogoDragging(true);
               }}
+              onTouchStart={(e) => {
+                if (!onLogoPositionChange) return;
+                e.preventDefault();
+                logoDidDragRef.current = false;
+                const t = e.touches[0];
+                logoDragStartRef.current = { clientX: t.clientX, clientY: t.clientY, x: 0, y: 28 };
+                setLogoDragPosition({ x: 0, y: 28 });
+                setIsLogoDragging(true);
+              }}
               onClick={(e) => { e.stopPropagation(); if (!logoDidDragRef.current) onLogoSelect?.(); logoDidDragRef.current = false; }}
-              style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", cursor: "grab", userSelect: "none" }}
+              style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", cursor: "grab", userSelect: "none", touchAction: "none" }}
             >
               <img src={config.logoUrl as string} alt="Logo" style={{ maxWidth: LOGO_W, maxHeight: LOGO_H, objectFit: "contain", pointerEvents: "none" }} draggable={false} />
             </div>
@@ -1821,6 +1983,15 @@ function DocumentPreview({
                 logoDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
                 setIsLogoDragging(true);
               }}
+              onTouchStart={(e) => {
+                if (!onLogoPositionChange) return;
+                e.preventDefault();
+                logoDidDragRef.current = false;
+                const t = e.touches[0];
+                const pos = logoDragPosition ?? logoPosition ?? { x: 0, y: 28 };
+                logoDragStartRef.current = { clientX: t.clientX, clientY: t.clientY, x: pos.x, y: pos.y };
+                setIsLogoDragging(true);
+              }}
               onClick={(e) => { e.stopPropagation(); if (!logoDidDragRef.current) onLogoSelect?.(); logoDidDragRef.current = false; }}
               style={{
                 position: "absolute",
@@ -1828,6 +1999,7 @@ function DocumentPreview({
                 top: (logoDragPosition ?? logoPosition ?? { x: 0, y: 28 }).y,
                 cursor: isLogoDragging ? "grabbing" : "grab",
                 userSelect: "none",
+                touchAction: "none",
                 zIndex: 10,
               }}
             >
@@ -1848,6 +2020,16 @@ function DocumentPreview({
                 stampDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
                 setIsStampDragging(true);
               }}
+              onTouchStart={(e) => {
+                if (!onStampPositionChange) return;
+                e.preventDefault();
+                stampDidDragRef.current = false;
+                const t = e.touches[0];
+                const defaultPos = { x: 362, y: 1050 };
+                const pos = stampDragPosition ?? stampPosition ?? defaultPos;
+                stampDragStartRef.current = { clientX: t.clientX, clientY: t.clientY, x: pos.x, y: pos.y };
+                setIsStampDragging(true);
+              }}
               onClick={(e) => { e.stopPropagation(); if (!stampDidDragRef.current) onStampSelect?.(); stampDidDragRef.current = false; }}
               style={{
                 position: "absolute",
@@ -1855,6 +2037,7 @@ function DocumentPreview({
                 top: (stampDragPosition ?? stampPosition ?? { x: 362, y: 1050 }).y,
                 cursor: isStampDragging ? "grabbing" : "grab",
                 userSelect: "none",
+                touchAction: "none",
                 zIndex: 10,
               }}
             >
@@ -1873,10 +2056,19 @@ function DocumentPreview({
                 qrDragStartRef.current = { clientX: e.clientX, clientY: e.clientY, x: pos.x, y: pos.y };
                 setIsQrDragging(true);
               }}
+              onTouchStart={(e) => {
+                if (!onQrPositionChange) return;
+                e.preventDefault();
+                const t = e.touches[0];
+                const pos = qrDragPosition ?? qrPosition;
+                qrDragStartRef.current = { clientX: t.clientX, clientY: t.clientY, x: pos.x, y: pos.y };
+                setIsQrDragging(true);
+              }}
               style={{
                 position: "absolute",
                 left: (qrDragPosition ?? qrPosition).x,
                 top: (qrDragPosition ?? qrPosition).y,
+                touchAction: "none",
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
@@ -1906,6 +2098,15 @@ function DocumentPreview({
                   setSignatureDraggingBlockId(blockId);
                   setSignatureDragState({ blockId, x: cur.x, y: cur.y });
                 }}
+                onTouchStart={(e) => {
+                  if (!onSignaturePositionChange) return;
+                  e.preventDefault();
+                  const t = e.touches[0];
+                  const cur = signaturePositions[blockId] ?? { x: 50, y: 500 + idx * 40 };
+                  signatureDragStartRef.current = { clientX: t.clientX, clientY: t.clientY, x: cur.x, y: cur.y, blockId };
+                  setSignatureDraggingBlockId(blockId);
+                  setSignatureDragState({ blockId, x: cur.x, y: cur.y });
+                }}
                 onClick={(e) => { e.stopPropagation(); onSectionSelect?.(`custom-${blockId}`); }}
                 style={{
                   position: "absolute",
@@ -1914,6 +2115,7 @@ function DocumentPreview({
                   width: SIGNATURE_LINE_W,
                   cursor: isDragging ? "grabbing" : "grab",
                   userSelect: "none",
+                  touchAction: "none",
                   zIndex: 10,
                 }}
               >
@@ -1939,6 +2141,13 @@ function DocumentPreview({
             {legalText}
           </div>
         )}
+
+        {activeGuides.vertical.map((x) => (
+          <div key={`vg-${x}`} style={{ position: "absolute", left: x, top: 0, width: 1, height: 1123, background: "rgba(37,99,235,0.5)", pointerEvents: "none", zIndex: 100 }} />
+        ))}
+        {activeGuides.horizontal.map((y) => (
+          <div key={`hg-${y}`} style={{ position: "absolute", left: 0, top: y, width: 794, height: 1, background: "rgba(37,99,235,0.5)", pointerEvents: "none", zIndex: 100 }} />
+        ))}
 
       </div>
     </div>
@@ -2169,7 +2378,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [docType, setDocType] = useState<DocTypeKey>("zakazkovy_list");
-  const [config, setConfig] = useState<Record<string, unknown>>(() => defaultDocumentsConfig());
+  const { config, setConfig, replaceConfig, undo, redo, canUndo, canRedo } = useConfigHistory(defaultDocumentsConfig());
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
   const [configUpdatedAt, setConfigUpdatedAt] = useState<string | null>(null);
@@ -2177,6 +2386,9 @@ export default function App() {
   const [selectedPreviewSectionId, setSelectedPreviewSectionId] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<"logo" | "stamp" | null>(null);
   const [previewMode, setPreviewMode] = useState<"sample" | "template">("sample");
+  const [viewMode, setViewMode] = useState<"editor" | "pdfPreview">("editor");
+  const [sidebarTab, setSidebarTab] = useState<"obsah" | "vzhled" | "prvky">("obsah");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sectionKey?: string; element?: string } | null>(null);
   const [accordionOpen, setAccordionOpen] = useState<Record<string, boolean>>({
     logo: true, design: true, qr: true, sections: true, signatures: true, warranty: true, legal: true,
   });
@@ -2337,7 +2549,7 @@ export default function App() {
         }
         const merged = { ...defaultDocumentsConfig(), ...raw };
         lastSavedConfigRef.current = JSON.parse(JSON.stringify(merged));
-        setConfig(merged);
+        replaceConfig(merged);
         setConfigUpdatedAt(typeof d.updated_at === "string" ? d.updated_at : null);
       }
     } catch {
@@ -2404,7 +2616,39 @@ export default function App() {
     };
   }, []);
 
-  // Nepřepisujeme config z context.documentsConfig – jinak by se lokální změny (odkliknutí sekce, celá/polovina) vracely zpět při každé aktualizaci kontextu.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && e.shiftKey) { e.preventDefault(); redo(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "y") { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
+
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (!e.data || typeof e.data !== "object") return;
+      const { type, key, element, x, y } = e.data;
+      if (type === "section-click" && key) {
+        setSelectedPreviewSectionId(key);
+        setSelectedAsset(null);
+      }
+      if (type === "element-click") {
+        if (element === "logo") { setSelectedAsset("logo"); setSelectedPreviewSectionId(null); }
+        if (element === "stamp") { setSelectedAsset("stamp"); setSelectedPreviewSectionId(null); }
+        if (element === "qr") setSidebarTab("prvky");
+      }
+      if (type === "section-context" && key) {
+        setContextMenu({ x: x ?? 0, y: y ?? 0, sectionKey: key });
+      }
+      if (type === "element-context" && element) {
+        setContextMenu({ x: x ?? 0, y: y ?? 0, element });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   const companyData = context.companyData || {};
 
@@ -2683,16 +2927,25 @@ export default function App() {
                 { key: "includeRepairs", label: "Provedené opravy" },
                 { key: "includeDates", label: "Data" },
               ]
-          : [
-              { key: "includeServiceInfo", label: "Údaje o servisu" },
-              { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
-              { key: "includeDeviceInfo", label: "Údaje o zařízení" },
-              { key: "includeRepairs", label: "Provedené opravy" },
-              { key: "includeWarranty", label: "Záruka" },
-              { key: "includeDates", label: "Data" },
-              { key: "includeStamp", label: "Razítko / podpis" },
-              { key: "includeCustomerSignature", label: "Podpis zákazníka" },
-            ];
+          : docType === "faktura"
+            ? [
+                { key: "includeInvSupplier", label: "Dodavatel" },
+                { key: "includeInvCustomer", label: "Odběratel" },
+                { key: "includeInvMeta", label: "Fakturační údaje" },
+                { key: "includeInvItems", label: "Položky" },
+                { key: "includeInvSummary", label: "Rekapitulace DPH" },
+                { key: "includeInvPayment", label: "Platební údaje" },
+              ]
+            : [
+                { key: "includeServiceInfo", label: "Údaje o servisu" },
+                { key: "includeCustomerInfo", label: "Údaje o zákazníkovi" },
+                { key: "includeDeviceInfo", label: "Údaje o zařízení" },
+                { key: "includeRepairs", label: "Provedené opravy" },
+                { key: "includeWarranty", label: "Záruka" },
+                { key: "includeDates", label: "Data" },
+                { key: "includeStamp", label: "Razítko / podpis" },
+                { key: "includeCustomerSignature", label: "Podpis zákazníka" },
+              ];
 
   const documentsSectionOrder = useMemo(() => {
     const order = docConfig?.sectionOrder as string[] | undefined;
@@ -2717,6 +2970,15 @@ export default function App() {
       return (val as boolean) !== false;
     });
   }, [documentsSectionOrder, docConfig, sectionKeyToIncludeDoc, docType]);
+
+  const pdfPreviewHtml = useMemo(() => {
+    if (viewMode !== "pdfPreview") return "";
+    return generateDocumentHtml(config, docType, context.companyData || {}, undefined, {
+      variables: getSampleVariablesForPreview(context.companyData || {}),
+      templateMode: previewMode === "template",
+      interactive: true,
+    });
+  }, [viewMode, config, docType, context.companyData, previewMode]);
 
   const documentsSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
@@ -3468,108 +3730,93 @@ export default function App() {
                   </div>
                 )}
 
-                <div style={{ padding: "12px 0" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Vzhled hlavičky</div>
-                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Velikosti textů v hlavičce (název dokumentu, kód zakázky, název servisu). Prázdné = výchozí z designu.</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div>
-                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – název dokumentu (px)</label>
-                      <input
-                        type="number"
-                        min={10}
-                        max={24}
-                        value={(docConfig?.headerTitleFontSize as number) ?? ""}
-                        onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
-                        placeholder="14"
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
-                      />
-                    </div>
-                    {docType === "zakazkovy_list" && (
-                      <div>
-                        <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – kód zakázky (px)</label>
-                        <input
-                          type="number"
-                          min={12}
-                          max={24}
-                          value={(docConfig?.headerTicketCodeFontSize as number) ?? ""}
-                          onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTicketCodeFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
-                          placeholder="18"
-                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
-                        />
+                <SegmentedControl
+                  options={[
+                    { value: "obsah" as const, label: "Obsah" },
+                    { value: "vzhled" as const, label: "Vzhled" },
+                    { value: "prvky" as const, label: "Prvky" },
+                  ]}
+                  value={sidebarTab}
+                  onChange={setSidebarTab}
+                />
+
+                {sidebarTab === "vzhled" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <FormGroup label="Název dokumentu" hint="velikost (px)">
+                    <input className="ui-input" type="number" min={10} max={24}
+                      value={(docConfig?.headerTitleFontSize as number) ?? ""}
+                      onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                      placeholder="14" />
+                  </FormGroup>
+                  {docType === "zakazkovy_list" && (
+                    <FormGroup label="Kód zakázky" hint="velikost (px)">
+                      <input className="ui-input" type="number" min={12} max={24}
+                        value={(docConfig?.headerTicketCodeFontSize as number) ?? ""}
+                        onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerTicketCodeFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                        placeholder="18" />
+                    </FormGroup>
+                  )}
+                  <FormGroup label="Název servisu" hint="velikost (px) · z Údajů o servisu">
+                    <input className="ui-input" type="number" min={10} max={24}
+                      value={(docConfig?.headerSubtitleFontSize as number) ?? ""}
+                      onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerSubtitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
+                      placeholder="14" />
+                  </FormGroup>
+                </div>
+                )}
+
+                {sidebarTab === "prvky" && (
+                <AccordionPanel title="Logo a razítko" open={accordionOpen.logo} onToggle={() => toggleAccordion("logo")}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <p className="fg-hint" style={{ margin: 0 }}>Logo a razítko lze v náhledu vpravo chytit a přetáhnout na libovolné místo.</p>
+                    <FormGroup label="Logo v dokumentech">
+                      <input ref={fileInputLogo} type="file" accept="image/*" onChange={handleFileLogo} style={{ display: "none" }} />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button type="button" className="ui-btn" onClick={() => fileInputLogo.current?.click()}>
+                          {config.logoUrl ? "Změnit logo" : "Nahrát logo"}
+                        </button>
+                        <Slider label="Velikost" value={(config.logoSize as number) ?? 100} min={50} max={150} unit="%" onChange={(v) => setConfig((prev) => ({ ...prev, logoSize: v }))} />
+                        {(config.logoPosition as { x: number; y: number } | undefined) && (
+                          <button type="button" className="ui-btn ui-btn-sm ui-btn-ghost" onClick={() => setConfig((prev) => ({ ...prev, logoPosition: undefined }))}>
+                            Vrátit logo do hlavičky
+                          </button>
+                        )}
                       </div>
-                    )}
-                    <div>
-                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--text)" }}>Velikost – název servisu (px)</label>
-                      <input
-                        type="number"
-                        min={10}
-                        max={24}
-                        value={(docConfig?.headerSubtitleFontSize as number) ?? ""}
-                        onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); updateDocConfig(["headerSubtitleFontSize"], Number.isNaN(v) || v == null ? undefined : v); }}
-                        placeholder="14"
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, boxSizing: "border-box" }}
-                      />
-                      <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Název servisu se bere z Údaje o servisu (Jobi).</p>
-                    </div>
+                    </FormGroup>
+                    <FormGroup label="Razítko / podpis">
+                      <input ref={fileInputStamp} type="file" accept="image/*" onChange={handleFileStamp} style={{ display: "none" }} />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button type="button" className="ui-btn" onClick={() => fileInputStamp.current?.click()}>
+                          {config.stampUrl ? "Změnit razítko / podpis" : "Nahrát razítko / podpis"}
+                        </button>
+                        <Slider label="Velikost" value={(config.stampSize as number) ?? 100} min={50} max={250} unit="%" onChange={(v) => setConfig((prev) => ({ ...prev, stampSize: v }))} />
+                        {(config.stampPosition as { x: number; y: number } | undefined) && (
+                          <button type="button" className="ui-btn ui-btn-sm ui-btn-ghost" onClick={() => setConfig((prev) => ({ ...prev, stampPosition: undefined }))}>
+                            Vrátit razítko do řádku podpisů
+                          </button>
+                        )}
+                      </div>
+                    </FormGroup>
+                    <FormGroup label="Předtištěné PDF" hint="hlavičkový papír">
+                      <p className="fg-hint" style={{ margin: 0 }}>Nahrajte PDF – při tisku se dokument vykreslí na toto pozadí (první stránka).</p>
+                      <input ref={fileInputLetterhead} type="file" accept=".pdf,application/pdf" onChange={handleFileLetterhead} style={{ display: "none" }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <button type="button" className="ui-btn" onClick={() => fileInputLetterhead.current?.click()}>
+                          {(config.letterheadPdfUrl as string | undefined) ? "Změnit PDF" : "Nahrát PDF"}
+                        </button>
+                        {(config.letterheadPdfUrl as string | undefined) && (
+                          <button type="button" className="ui-btn ui-btn-sm ui-btn-danger" onClick={() => setConfig((prev) => ({ ...prev, letterheadPdfUrl: undefined }))}>
+                            Odebrat
+                          </button>
+                        )}
+                      </div>
+                    </FormGroup>
                   </div>
-                </div>
-
-                <Accordion title="Logo a razítko" open={accordionOpen.logo} onToggle={() => toggleAccordion("logo")}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Logo a razítko lze v náhledu vpravo chytit a přetáhnout na libovolné místo.</p>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Logo v dokumentech</div>
-                <input ref={fileInputLogo} type="file" accept="image/*" onChange={handleFileLogo} style={{ display: "none" }} />
-                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
-                  <button type="button" onClick={() => fileInputLogo.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
-                    {config.logoUrl ? "Změnit logo" : "Nahrát logo"}
-                  </button>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.logoSize as number) ?? 100)}%</span>
-                  <input type="range" min={50} max={150} value={((config.logoSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, logoSize: Number(e.target.value) }))} style={{ flex: 1 }} />
-                </div>
-                {(config.logoPosition as { x: number; y: number } | undefined) && (
-                  <button type="button" onClick={() => setConfig((prev) => ({ ...prev, logoPosition: undefined }))} style={{ marginTop: 6, fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                    Vrátit logo do hlavičky
-                  </button>
+                </AccordionPanel>
                 )}
-              </div>
 
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Razítko / podpis</div>
-                <input ref={fileInputStamp} type="file" accept="image/*" onChange={handleFileStamp} style={{ display: "none" }} />
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <button type="button" onClick={() => fileInputStamp.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
-                    {config.stampUrl ? "Změnit razítko / podpis" : "Nahrát razítko / podpis"}
-                  </button>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost: {((config.stampSize as number) ?? 100)}%</span>
-                  <input type="range" min={50} max={250} value={((config.stampSize as number) ?? 100)} onChange={(e) => setConfig((prev) => ({ ...prev, stampSize: Number(e.target.value) }))} style={{ flex: 1 }} />
-                </div>
-                {(config.stampPosition as { x: number; y: number } | undefined) && (
-                  <button type="button" onClick={() => setConfig((prev) => ({ ...prev, stampPosition: undefined }))} style={{ marginTop: 6, fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                    Vrátit razítko do řádku podpisů
-                  </button>
-                )}
-              </div>
-
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Předtištěné PDF (hlavičkový papír)</div>
-                <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Nahrajte PDF – při tisku se dokument vykreslí na toto pozadí (první stránka PDF).</p>
-                <input ref={fileInputLetterhead} type="file" accept=".pdf,application/pdf" onChange={handleFileLetterhead} style={{ display: "none" }} />
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <button type="button" onClick={() => fileInputLetterhead.current?.click()} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, cursor: "pointer" }}>
-                    {(config.letterheadPdfUrl as string | undefined) ? "Změnit PDF" : "Nahrát PDF"}
-                  </button>
-                  {(config.letterheadPdfUrl as string | undefined) ? (
-                    <button type="button" onClick={() => setConfig((prev) => ({ ...prev, letterheadPdfUrl: undefined }))} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", fontSize: 12, cursor: "pointer" }}>
-                      Odebrat
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-                  </div>
-                </Accordion>
-
-              <Accordion title="Viditelné sekce a pořadí" open={accordionOpen.sections} onToggle={() => toggleAccordion("sections")}>
+                {sidebarTab === "obsah" && (
+              <AccordionPanel title="Viditelné sekce a pořadí" open={accordionOpen.sections} onToggle={() => toggleAccordion("sections")}>
               <div>
                 {documentsSectionOrder.filter((k) => k.startsWith("custom-")).length > 0 && (
                   <>
@@ -3582,7 +3829,6 @@ export default function App() {
                           const blocks = (docConfig.customBlocks as Record<string, CustomBlockData>) || {};
                           const block = blocks[blockId] || { type: "text", content: "" };
                           const blockType = block.type || "text";
-                          const typeLabels: Record<string, string> = { text: "Vlastní text", heading: "Vlastní nadpis", separator: "Oddělovač", spacer: "Prázdný řádek", signature: "Řádek na podpis" };
                           const removeBtn = (
                             <button
                               type="button"
@@ -3691,10 +3937,11 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              </Accordion>
+              </AccordionPanel>
+              )}
 
-              {docType === "zakazkovy_list" && (
-                <Accordion title="Podpisy" open={accordionOpen.signatures} onToggle={() => toggleAccordion("signatures")}>
+                {sidebarTab === "prvky" && docType === "zakazkovy_list" && (
+                <AccordionPanel title="Podpisy" open={accordionOpen.signatures} onToggle={() => toggleAccordion("signatures")}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Bloky podpisů (dole na dokumentu)</div>
                   <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Texty a pozice jednotlivých bloků podpisů.</p>
@@ -3726,10 +3973,12 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-                </Accordion>
+                </AccordionPanel>
               )}
 
-              <Accordion title="Design a barvy" open={accordionOpen.design} onToggle={() => toggleAccordion("design")}>
+              {sidebarTab === "vzhled" && (
+              <>
+              <AccordionPanel title="Design a barvy" open={accordionOpen.design} onToggle={() => toggleAccordion("design")}>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Design</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -3970,10 +4219,38 @@ export default function App() {
                 </div>
               )}
               </div>
-              </Accordion>
+              </AccordionPanel>
 
-              {docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true && (
-                <Accordion title="Záruka" open={accordionOpen.warranty} onToggle={() => toggleAccordion("warranty")}>
+              <div style={{ padding: "12px 0" }}>
+                <FormGroup label="Barevné presety" hint="jedním klikem">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {DESIGN_PRESETS.map((preset) => (
+                      <PresetCard
+                        key={preset.name}
+                        name={preset.name}
+                        description={preset.description}
+                        colors={{
+                          accent: preset.values.designAccentColor,
+                          primary: preset.values.designPrimaryColor,
+                          secondary: preset.values.designSecondaryColor,
+                          headerBg: preset.values.designHeaderBg,
+                          border: preset.values.designSectionBorder,
+                        }}
+                        active={
+                          (config.designAccentColor as string) === preset.values.designAccentColor &&
+                          (config.designPrimaryColor as string) === preset.values.designPrimaryColor
+                        }
+                        onClick={() => setConfig((prev) => ({ ...prev, designAccentColor: preset.values.designAccentColor, designPrimaryColor: preset.values.designPrimaryColor, designSecondaryColor: preset.values.designSecondaryColor, designHeaderBg: preset.values.designHeaderBg, designSectionBorder: preset.values.designSectionBorder, ...(preset.values.colorMode ? { colorMode: preset.values.colorMode } : {}) }))}
+                      />
+                    ))}
+                  </div>
+                </FormGroup>
+              </div>
+              </>
+              )}
+
+              {sidebarTab === "obsah" && docType === "zarucni_list" && (docConfig.includeWarranty as boolean) === true && (
+                <AccordionPanel title="Záruka" open={accordionOpen.warranty} onToggle={() => toggleAccordion("warranty")}>
                 <div
                   className="glass-panel"
                   style={{
@@ -4214,9 +4491,10 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                </Accordion>
+                </AccordionPanel>
               )}
 
+              {sidebarTab === "vzhled" && (
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>Styl sekcí</div>
                 <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Vzhled jednotlivých sekcí (přepíše výchozí styl designu).</p>
@@ -4248,7 +4526,9 @@ export default function App() {
                   })}
                 </div>
               </div>
+              )}
 
+              {sidebarTab === "obsah" && (
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Vlastní text (právní ustanovení)</label>
                 <textarea
@@ -4276,7 +4556,10 @@ export default function App() {
                   ))}
                 </div>
               </div>
+              )}
 
+              {sidebarTab === "prvky" && (
+              <>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--text)" }}>QR kód (odkaz na recenze)</div>
                 <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
@@ -4342,23 +4625,23 @@ export default function App() {
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, marginBottom: 10 }}
                 />
               </div>
-              <Accordion title="QR kód" open={accordionOpen.qr} onToggle={() => toggleAccordion("qr")}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: "var(--text)" }}>Zobrazit QR na dokumentech</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <ModernCheckbox checked={(config.qrOnTicketList as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnTicketList: v }))} label="Zakázkový list" />
-                  <ModernCheckbox checked={(config.qrOnDiagnostic as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnDiagnostic: v }))} label="Diagnostický protokol" />
-                  <ModernCheckbox checked={(config.qrOnWarranty as boolean) !== false} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnWarranty: v }))} label="Záruční list" />
-                  <ModernCheckbox checked={(config.qrOnPrijemka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnPrijemka: v }))} label="Příjemka reklamace" />
-                  <ModernCheckbox checked={(config.qrOnVydejka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnVydejka: v }))} label="Výdejka reklamace" />
+              <AccordionPanel title="QR kód" open={accordionOpen.qr} onToggle={() => toggleAccordion("qr")}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <FormGroup label="Zobrazit QR na dokumentech">
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Toggle checked={(config.qrOnTicketList as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnTicketList: v }))} label="Zakázkový list" />
+                      <Toggle checked={(config.qrOnDiagnostic as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnDiagnostic: v }))} label="Diagnostický protokol" />
+                      <Toggle checked={(config.qrOnWarranty as boolean) !== false} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnWarranty: v }))} label="Záruční list" />
+                      <Toggle checked={(config.qrOnPrijemka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnPrijemka: v }))} label="Příjemka reklamace" />
+                      <Toggle checked={(config.qrOnVydejka as boolean) === true} onChange={(v) => setConfig((prev) => ({ ...prev, qrOnVydejka: v }))} label="Výdejka reklamace" />
+                    </div>
+                  </FormGroup>
+                  <Slider label="Velikost QR" value={(config.qrCodeSize as number) ?? 120} min={80} max={200} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, qrCodeSize: v }))} />
+                  <p className="fg-hint" style={{ margin: 0 }}>Pozici QR kódu změníte tažením v náhledu dokumentu vpravo.</p>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Velikost QR: {((config.qrCodeSize as number) ?? 120)} px</span>
-                  <input type="range" min={80} max={200} value={((config.qrCodeSize as number) ?? 120)} onChange={(e) => setConfig((prev) => ({ ...prev, qrCodeSize: Number(e.target.value) }))} style={{ flex: 1 }} />
-                </div>
-                <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Pozici QR kódu změníte tažením v náhledu dokumentu vpravo.</p>
-              </div>
-              </Accordion>
+              </AccordionPanel>
+              </>
+              )}
 
               <p style={{ fontSize: 12, color: "var(--muted)" }}>Pořadí sekcí upravíte tažením přímo v dokumentu vpravo. Poloviční sekce se zobrazí dvě vedle sebe.</p>
 
@@ -4372,56 +4655,62 @@ export default function App() {
                   Naposledy upraveno: {new Date(configUpdatedAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </p>
               )}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" className={`ui-btn ui-btn-sm ${canUndo ? "" : "ui-btn-ghost"}`} onClick={undo} disabled={!canUndo} title="Zpět (Ctrl+Z)" style={{ opacity: canUndo ? 1 : 0.3, cursor: canUndo ? "pointer" : "not-allowed" }}>↩</button>
+                  <button type="button" className={`ui-btn ui-btn-sm ${canRedo ? "" : "ui-btn-ghost"}`} onClick={redo} disabled={!canRedo} title="Znovu (Ctrl+Shift+Z)" style={{ opacity: canRedo ? 1 : 0.3, cursor: canRedo ? "pointer" : "not-allowed" }}>↪</button>
+                </div>
                 <button
+                  className={`ui-btn ${configSaved ? "" : "ui-btn-primary"}`}
                   onClick={handleSaveConfig}
                   disabled={configLoading || !serviceId || context.canManageDocuments === false}
-                  style={{ padding: "14px 24px", borderRadius: 12, border: "none", background: configSaved ? "#16a34a" : "var(--accent)", color: "white", fontWeight: 700, fontSize: 14, cursor: configLoading || !serviceId || context.canManageDocuments === false ? "not-allowed" : "pointer", opacity: context.canManageDocuments === false ? 0.6 : 1 }}
+                  style={{ flex: 1, ...(configSaved ? { background: "#16a34a", color: "white", borderColor: "#16a34a" } : {}), opacity: context.canManageDocuments === false ? 0.6 : 1 }}
                 >
-                  {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení dokumentů"}
+                  {configLoading ? "Ukládám…" : configSaved ? "Uloženo ✓" : "Uložit nastavení"}
                 </button>
+                {hasUnsavedConfigChanges && !configSaved && (
+                  <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>● Neuložené změny</span>
+                )}
               </div>
             </div>
 
             <section className="glass-panel document-preview-section" style={{ overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
                 <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text)" }}>Náhled dokumentu</h2>
-                <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode("sample")}
-                    style={{
-                      padding: "8px 14px",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      border: "none",
-                      background: previewMode === "sample" ? "var(--accent)" : "var(--panel)",
-                      color: previewMode === "sample" ? "white" : "var(--text)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Náhled
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode("template")}
-                    style={{
-                      padding: "8px 14px",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      border: "none",
-                      borderLeft: "1px solid var(--border)",
-                      background: previewMode === "template" ? "var(--accent)" : "var(--panel)",
-                      color: previewMode === "template" ? "white" : "var(--text)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Šablona
-                  </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <SegmentedControl
+                    options={[
+                      { value: "editor" as const, label: "Editor" },
+                      { value: "pdfPreview" as const, label: "PDF náhled" },
+                    ]}
+                    value={viewMode as "editor" | "pdfPreview"}
+                    onChange={(v) => setViewMode(v)}
+                  />
+                  {viewMode === "editor" && (
+                    <SegmentedControl
+                      options={[
+                        { value: "sample" as const, label: "Náhled" },
+                        { value: "template" as const, label: "Šablona" },
+                      ]}
+                      value={previewMode as "sample" | "template"}
+                      onChange={(v) => setPreviewMode(v)}
+                    />
+                  )}
                 </div>
               </div>
-              <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí. Šablona zobrazí placeholdery typu {"{{customer_name}}"}, {"{{ticket_code}}"}.</p>
-              <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} onSignaturePositionChange={(blockId, pos) => { const docKey = DOC_TYPE_TO_UI[docType]; const doc = config[docKey] as Record<string, unknown> | undefined; const current = (doc?.signaturePositions || {}) as Record<string, { x: number; y: number }>; const merged = { ...current }; if (pos == null) delete merged[blockId]; else merged[blockId] = pos; updateDocConfig(["signaturePositions"], merged); }} onLogoSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("logo"); }} onStampSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("stamp"); }} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} selectedSectionId={selectedPreviewSectionId} onSectionSelect={(id) => { setSelectedPreviewSectionId(id); setSelectedAsset(null); }} />
+              {viewMode === "pdfPreview" ? (
+                <>
+                  <div style={{ textAlign: "center", padding: "8px 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
+                    Přesný náhled PDF výstupu. Pro editaci přepněte na Editor.
+                  </div>
+                  <PdfPreviewIframe srcDoc={pdfPreviewHtml} />
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Přetáhněte sekce pro změnu pořadí. Šablona zobrazí placeholdery typu {"{{customer_name}}"}, {"{{ticket_code}}"}.</p>
+                  <DocumentPreview docType={docType} config={config} companyData={companyData} onSectionOrderChange={handleSectionOrderChange} onQrPositionChange={(pos) => setConfig((prev) => ({ ...prev, qrPosition: pos }))} onLogoPositionChange={(pos) => setConfig((prev) => ({ ...prev, logoPosition: pos ?? undefined }))} onStampPositionChange={(pos) => setConfig((prev) => ({ ...prev, stampPosition: pos ?? undefined }))} onSignaturePositionChange={(blockId, pos) => { const docKey = DOC_TYPE_TO_UI[docType]; const doc = config[docKey] as Record<string, unknown> | undefined; const current = (doc?.signaturePositions || {}) as Record<string, { x: number; y: number }>; const merged = { ...current }; if (pos == null) delete merged[blockId]; else merged[blockId] = pos; updateDocConfig(["signaturePositions"], merged); }} onLogoSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("logo"); }} onStampSelect={() => { setSelectedPreviewSectionId(null); setSelectedAsset("stamp"); }} externalDnd sectionOrder={documentsSectionOrder} orderedSections={documentsOrderedSections} previewMode={previewMode} selectedSectionId={selectedPreviewSectionId} onSectionSelect={(id) => { setSelectedPreviewSectionId(id); setSelectedAsset(null); }} />
+                </>
+              )}
               <button
                 type="button"
                 onClick={handlePrintPreview}
@@ -4458,8 +4747,8 @@ export default function App() {
                   >
                     <span style={{ opacity: 0.6 }}>⋮⋮</span>
                     {documentsDragActiveId.startsWith("palette-")
-                      ? getSectionDragLabel(documentsDragActiveId.replace("palette-", ""), docConfig)
-                      : getPaletteDragLabel(documentsDragActiveId)}
+                      ? getPaletteDragLabel(documentsDragActiveId)
+                      : getSectionDragLabel(documentsDragActiveId, docConfig)}
                   </div>
                 ) : documentsOrderedSections.includes(documentsDragActiveId) ? (
                   <div
@@ -4845,6 +5134,32 @@ export default function App() {
             />
           </div>
         </div>
+      )}
+
+      {contextMenu && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 9999, minWidth: 180, background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", padding: "6px 0", fontSize: 13 }}>
+            {contextMenu.sectionKey && (
+              <>
+                <button type="button" onClick={() => { setSelectedPreviewSectionId(contextMenu.sectionKey!); setSidebarTab("obsah"); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13 }}>Upravit sekci</button>
+                {!contextMenu.sectionKey.startsWith("custom-") && (() => {
+                  const sw = (docConfig?.sectionWidths as Record<string, string>) || {};
+                  const cur = sw[contextMenu.sectionKey!] ?? "full";
+                  return <button type="button" onClick={() => { updateDocConfig(["sectionWidths", contextMenu.sectionKey!], cur === "full" ? "half" : "full"); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13 }}>{cur === "full" ? "Nastavit na poloviční šířku" : "Nastavit na plnou šířku"}</button>;
+                })()}
+                <button type="button" onClick={() => { updateDocConfig(["sectionOrder"], documentsSectionOrder.filter((x) => x !== contextMenu.sectionKey)); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "#dc2626", cursor: "pointer", textAlign: "left", fontSize: 13 }}>Odebrat z dokumentu</button>
+              </>
+            )}
+            {contextMenu.element && (
+              <>
+                {contextMenu.element === "logo" && <button type="button" onClick={() => { setSelectedAsset("logo"); setSidebarTab("prvky"); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13 }}>Nastavení loga</button>}
+                {contextMenu.element === "stamp" && <button type="button" onClick={() => { setSelectedAsset("stamp"); setSidebarTab("prvky"); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13 }}>Nastavení razítka</button>}
+                {contextMenu.element === "qr" && <button type="button" onClick={() => { setSidebarTab("prvky"); setContextMenu(null); }} style={{ display: "block", width: "100%", padding: "8px 16px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13 }}>Nastavení QR kódu</button>}
+              </>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

@@ -239,6 +239,7 @@ export async function startApiServer(
       );
       if (!sync.ok && sync.error) {
         fastify.log.warn({ serviceId, error: sync.error }, "Supabase sync failed");
+        return { ...result, updated_at, version, syncWarning: sync.error };
       } else if (sync.updated_at) {
         updated_at = sync.updated_at;
         if (typeof sync.version === "number") version = sync.version;
@@ -256,9 +257,9 @@ export async function startApiServer(
     if (!serviceId || !docType) {
       return reply.status(400).send({ error: "service_id and doc_type required" });
     }
-    const valid = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol"];
-    if (!valid.includes(docType)) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list or diagnosticky_protokol" });
+    const validProfiles = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace", "faktura"];
+    if (!validProfiles.includes(docType)) {
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
     }
     if (supabaseAuth?.supabaseAccessToken) {
       const remote = await loadProfileFromSupabase(
@@ -280,9 +281,9 @@ export async function startApiServer(
     if (!serviceId || !docType) {
       return reply.status(400).send({ error: "service_id and doc_type required" });
     }
-    const valid = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol"];
-    if (!valid.includes(docType)) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list or diagnosticky_protokol" });
+    const validProfilesPut = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace", "faktura"];
+    if (!validProfilesPut.includes(docType)) {
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
     }
     const { profile_json } = req.body || {};
     const result = await putProfile(serviceId, docType, profile_json);
@@ -293,6 +294,7 @@ export async function startApiServer(
       );
       if (!sync.ok && sync.error) {
         fastify.log.warn({ serviceId, docType, error: sync.error }, "Profiles Supabase sync failed");
+        return { ...result, syncWarning: sync.error };
       }
       if (typeof sync.version === "number") {
         return { ...result, version: sync.version };
@@ -364,7 +366,7 @@ export async function startApiServer(
 
   // Print using JobiDocs template + data from Jobi (so layout matches JobiDocs design)
   type PrintDocumentBody = {
-    doc_type: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
+    doc_type: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
     service_id: string;
     company_data: Record<string, unknown>;
     sections?: Partial<Record<string, string>>;
@@ -377,6 +379,7 @@ export async function startApiServer(
     diagnosticky_protokol: "diagnosticProtocol",
     prijemka_reklamace: "prijemkaReklamace",
     vydejka_reklamace: "vydejkaReklamace",
+    faktura: "faktura",
   };
   fastify.post<{ Body: PrintDocumentBody }>("/v1/print-document", async (req, reply) => {
     if (!htmlToPdf) {
@@ -388,7 +391,7 @@ export async function startApiServer(
     }
     const sectionKey = DOC_TYPE_TO_SECTION_KEY[doc_type];
     if (!sectionKey) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace or vydejka_reklamace" });
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
     }
     try {
       const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
@@ -443,7 +446,7 @@ export async function startApiServer(
     }
     const sectionKeyExport = DOC_TYPE_TO_SECTION_KEY[doc_type];
     if (!sectionKeyExport) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace or vydejka_reklamace" });
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
     }
     try {
       const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
@@ -478,6 +481,51 @@ export async function startApiServer(
       pushActivity("export", "error", msg);
       fastify.log.error(err);
       return reply.status(500).send({ error: msg || "Export failed" });
+    }
+  });
+
+  // Render PDF and return as binary (for email attachments, previews, etc.)
+  fastify.post<{ Body: PrintDocumentBody }>("/v1/render-pdf", async (req, reply) => {
+    if (!htmlToPdf) {
+      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
+    }
+    const { doc_type, service_id, company_data, sections, repair_date, variables } = req.body || {};
+    if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
+      return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
+    }
+    const sectionKeyRender = DOC_TYPE_TO_SECTION_KEY[doc_type];
+    if (!sectionKeyRender) {
+      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
+    }
+    try {
+      const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
+      const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
+      const profile = await getProfile(service_id, doc_type);
+      const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
+      const existing = (baseConfig[sectionKeyRender] as Record<string, unknown>) || {};
+      const config = { ...baseConfig, [sectionKeyRender]: { ...existing, ...profileJson } };
+      const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
+      const hasVariablesRender = variables && typeof variables === "object" && !Array.isArray(variables) && Object.keys(variables).length > 0;
+      const hasSectionOverridesRender = sections && typeof sections === "object" && !Array.isArray(sections) && Object.keys(sections).length > 0;
+      const optionsRender: { repairDate?: string; variables?: Record<string, string>; useSampleFallbacks?: boolean } = {};
+      if (repair_date && typeof repair_date === "string") optionsRender.repairDate = repair_date;
+      if (hasVariablesRender) optionsRender.variables = variables as Record<string, string>;
+      if (hasVariablesRender && !hasSectionOverridesRender) optionsRender.useSampleFallbacks = false;
+      const html = generateDocumentHtml(config, doc_type, companyData, hasSectionOverridesRender ? (sections as Partial<Record<string, string>>) : undefined, Object.keys(optionsRender).length ? optionsRender : undefined);
+      const PDF_TIMEOUT_MS = 60000;
+      let timeoutId: ReturnType<typeof setTimeout>;
+      let pdfBuffer = await Promise.race([
+        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
+        }),
+      ]);
+      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
+      return reply.type("application/pdf").send(pdfBuffer);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      fastify.log.error(err);
+      return reply.status(500).send({ error: msg || "Render failed" });
     }
   });
 

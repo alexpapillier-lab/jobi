@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Web (landing)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "web", "-p", "8080", "--no-clipboard"],
+      "port": 8080
+    },
+    {
+      "name": "Jobi (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 1420
+    },
+    {
+      "name": "JobiDocs (Vite)",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd jobidocs && npm run dev"],
+      "port": 5173
+    },
+    {
+      "name": "JobiDocs API",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd jobidocs && npm run api:dev"],
+      "port": 3847
+    }
+  ]
+}

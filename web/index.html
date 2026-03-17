@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Jobi – servisní evidence pro servisy. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
+  <meta name="description" content="Jobi – servisní evidence pro servisy. Zakázky, zákazníci, sklad a dokumenty na jednom místě." />
   <meta property="og:title" content="Jobi – Servisní evidence pro servisy" />
-  <meta property="og:description" content="Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik." />
+  <meta property="og:description" content="Zakázky, zákazníci, sklad a dokumenty na jednom místě. Tisk na jeden klik." />
   <meta property="og:type" content="website" />
   <title>Jobi – Servisní evidence pro servisy</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -52,13 +52,13 @@
             <span class="hero-title-line">která dává smysl</span>
           </h1>
           <p class="hero-lead">
-            Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
+            Zakázky, zákazníci, sklad a dokumenty na jednom místě. Tisk na jeden klik.
           </p>
           <div class="hero-actions">
-            <button type="button" class="btn btn-primary btn-download-hero">
+            <a href="#stazeni" class="btn btn-primary btn-download-hero">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Stáhnout pro macOS
-            </button>
+            </a>
             <a href="#vyhody" class="btn btn-ghost">Co umí Jobi</a>
           </div>
           <p class="hero-sub">Jobi + JobiDocs · DMG · zdarma</p>
@@ -216,12 +216,18 @@
           <img src="logo.svg" class="download-logo" alt="" width="64" height="64" />
           <h2 id="stazeni-heading" class="download-title">Stáhnout Jobi</h2>
           <p class="download-desc">
-            Jedním klikem stáhnete Jobi i JobiDocs z nejnovějšího vydání na GitHubu.
+            Stáhněte Jobi nebo JobiDocs z nejnovějšího vydání na GitHubu (DMG pro macOS).
           </p>
-          <button type="button" class="btn-download-main" id="download-macos-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Stáhnout pro macOS
-          </button>
+          <div class="download-buttons">
+            <button type="button" class="btn-download-main" id="download-jobi-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Stáhnout Jobi
+            </button>
+            <button type="button" class="btn-download-main btn-download-secondary" id="download-jobidocs-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Stáhnout JobiDocs
+            </button>
+          </div>
           <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
           <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs · DMG<br>Verze pro Windows se připravuje.</p>
         </div>

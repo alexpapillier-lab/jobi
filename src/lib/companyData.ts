@@ -13,6 +13,9 @@ export type CompanyData = {
   phone: string;
   email: string;
   website: string;
+  bankAccount: string;
+  iban: string;
+  swift: string;
 };
 
 export function defaultCompanyData(): CompanyData {
@@ -29,6 +32,9 @@ export function defaultCompanyData(): CompanyData {
     phone: "",
     email: "",
     website: "",
+    bankAccount: "",
+    iban: "",
+    swift: "",
   };
 }
 
@@ -51,6 +57,9 @@ export function safeLoadCompanyData(): CompanyData {
       phone: typeof parsed?.phone === "string" ? parsed.phone : d.phone,
       email: typeof parsed?.email === "string" ? parsed.email : d.email,
       website: typeof parsed?.website === "string" ? parsed.website : d.website,
+      bankAccount: typeof parsed?.bankAccount === "string" ? parsed.bankAccount : d.bankAccount,
+      iban: typeof parsed?.iban === "string" ? parsed.iban : d.iban,
+      swift: typeof parsed?.swift === "string" ? parsed.swift : d.swift,
     };
   } catch {
     return defaultCompanyData();

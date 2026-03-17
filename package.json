@@ -20,7 +20,9 @@
     "gen-dmg-background": "node scripts/gen-dmg-background.js",
     "build:all": "bash scripts/build-jobi-and-jobidocs.sh",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "db:migrate": "npx supabase db push",
+    "db:migrate:local": "npx supabase migration up"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
@@ -28,6 +30,7 @@
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-http": "2.5.7",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.0",

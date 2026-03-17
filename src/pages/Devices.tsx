@@ -170,7 +170,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     (async () => {
       try {
       // Načítáme zařízení i sklad paralelně – zkrátí to celkovou dobu
-      const [loadRes, invDb] = await Promise.all([
+      const [loadRes, invRes] = await Promise.all([
         loadDevicesFromDb(activeServiceId),
         loadInventoryFromDb(activeServiceId),
       ]);
@@ -216,6 +216,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       justLoadedRef.current = true;
       setData(devicesData);
       initialLoadDoneRef.current = true;
+      const invDb = invRes.data;
 
       let invProducts = invDb.products;
       const hasDbInventory = invDb.productCategories.length > 0 || invDb.products.length > 0;
@@ -300,7 +301,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       if (inventoryReloadTimer) clearTimeout(inventoryReloadTimer);
       inventoryReloadTimer = setTimeout(() => {
         inventoryReloadTimer = null;
-        loadInventoryFromDb(activeServiceId).then((inv) => setInventoryData((prev) => ({ ...prev, products: inv.products })));
+        loadInventoryFromDb(activeServiceId).then((res) => { if (!res.error) setInventoryData((prev) => ({ ...prev, products: res.data.products })); });
       }, 2000);
     };
     const topic = `devices:${activeServiceId}`;

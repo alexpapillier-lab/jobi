@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Jobi – servisní evidence pro opravny. Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci." />
+  <title>Jobi – Servisní evidence pro opravny</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="logo.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="/" class="site-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="40" height="40" />
+        <span>Jobi</span>
+      </a>
+      <nav class="nav-links" aria-label="Hlavní navigace">
+        <a href="#vyhody">Co umí</a>
+        <a href="#stazeni">Stáhnout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="hero-gradient"></div>
+        <div class="hero-orb hero-orb-1"></div>
+        <div class="hero-orb hero-orb-2"></div>
+        <div class="hero-orb hero-orb-3"></div>
+      </div>
+      <div class="hero-content">
+        <h1 class="hero-title">
+          <span class="hero-title-line">Servisní evidence,</span>
+          <span class="hero-title-line">která dává smysl</span>
+        </h1>
+        <p class="hero-lead">
+          Zakázky, zákazníci, sklad a dokumenty v jedné aplikaci. Tisk na jeden klik.
+        </p>
+        <a href="#stazeni" class="btn btn-primary btn-download-hero">
+          Stáhnout pro macOS
+        </a>
+      </div>
+    </section>
+
+    <section id="vyhody" class="section" aria-labelledby="vyhody-heading">
+      <h2 id="vyhody-heading" class="section-title reveal">Co vám Jobi přinese</h2>
+      <p class="section-desc reveal">
+        Jedna aplikace pro celou opravnu. Bez zbytečností, s přehledem o každé zakázce.
+      </p>
+      <div class="features-grid">
+        <article class="feature-card reveal">
+          <span class="feature-icon" aria-hidden="true">📋</span>
+          <h3>Zakázky a stavy</h3>
+          <p>Evidence zakázek s vlastními stavy, kódy a termíny. List nebo mřížka – jak vám to vyhovuje.</p>
+        </article>
+        <article class="feature-card reveal">
+          <span class="feature-icon" aria-hidden="true">👥</span>
+          <h3>Zákazníci</h3>
+          <p>Kontakty a historie na jednom místě. Rychlé vyhledávání a přehled o tom, co už u vás bylo.</p>
+        </article>
+        <article class="feature-card reveal">
+          <span class="feature-icon" aria-hidden="true">📦</span>
+          <h3>Sklad a zařízení</h3>
+          <p>Co máte doma, co patří ke zakázce. Evidence dílů a zařízení bez zmatků.</p>
+        </article>
+        <article class="feature-card reveal">
+          <span class="feature-icon" aria-hidden="true">📄</span>
+          <h3>Dokumenty a tisk</h3>
+          <p>Zakázkové listy a předávací protokoly. Tisk jedním klikem, když to potřebujete.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="stazeni" class="section section-download" aria-labelledby="stazeni-heading">
+      <h2 id="stazeni-heading" class="section-title reveal">Stáhnout aplikaci</h2>
+      <p class="section-desc reveal">
+        Jedním klikem stáhnete Jobi i JobiDocs (DMG pro macOS) z nejnovějšího vydání.
+      </p>
+      <div class="download-block reveal">
+        <button type="button" class="btn btn-primary btn-download" id="download-macos-btn">
+          Stáhnout Jobi + JobiDocs (macOS)
+        </button>
+        <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
+        <p class="download-note">Připravujeme podporu pro další platformy.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <a href="/" class="footer-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="24" height="24" />
+        Jobi
+      </a>
+      <div class="footer-links">
+        <a href="mailto:info@appjobi.com">Kontakt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

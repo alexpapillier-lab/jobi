@@ -65,6 +65,10 @@ export function formatJobiDocsErrorForUser(error: string | undefined): string {
   if (lower.includes("not found") || lower.includes("nenalezen") || lower.includes("not_found")) {
     return `${error} — V aplikaci JobiDocs zkontrolujte, že je vybraný správný servis a že existuje šablona dokumentu. Případně restartujte JobiDocs a zkuste znovu.`;
   }
+  // Stará verze JobiDocs nezná doc_type "faktura" – běží starý zkompilovaný kód (dist-electron). Návod:
+  if (lower.includes("doc_type must be") && !lower.includes("faktura")) {
+    return "JobiDocs používá starý kód. Úplně ukončete JobiDocs (včetně ikony v tray), v terminálu přejděte do jobidocs/ a spusťte: npm run electron:dev:fresh (nebo smažte složku dist-electron a pak npm run electron:dev).";
+  }
   return error;
 }
 
@@ -157,7 +161,7 @@ export async function pushContextToJobiDocs(
   }
 }
 
-export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace";
+export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
 
 /**
  * Tisk přes vzor v JobiDocs – data se vloží do šablony JobiDocs, takže vzhled odpovídá nastavení v JobiDocs.
@@ -229,6 +233,40 @@ export async function exportDocumentViaJobiDocs(
       return { ok: false, error: (d as { error?: string }).error || r.statusText };
     }
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function renderPdfViaJobiDocs(
+  docType: DocTypeForPrint,
+  serviceId: string,
+  companyData: Record<string, unknown>,
+  sections: Partial<Record<string, string>>,
+  options?: { repair_date?: string; variables?: Record<string, string> }
+): Promise<{ ok: boolean; data?: ArrayBuffer; error?: string }> {
+  try {
+    const f = await getJobiDocsFetch();
+    const body: Record<string, unknown> = {
+      doc_type: docType,
+      service_id: serviceId,
+      company_data: companyData,
+      sections,
+    };
+    if (options?.repair_date != null) body.repair_date = options.repair_date;
+    if (options?.variables != null) body.variables = options.variables;
+    const r = await f(`${JOBIDOCS_API}/v1/render-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      connectTimeout: 60000,
+    } as RequestInit & { connectTimeout?: number });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      return { ok: false, error: (d as { error?: string }).error || r.statusText };
+    }
+    const data = await r.arrayBuffer();
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

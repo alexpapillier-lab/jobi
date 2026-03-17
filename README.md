@@ -34,7 +34,7 @@ npm run lint
 2. Vyplň `VITE_SUPABASE_URL` a `VITE_SUPABASE_ANON_KEY` z Supabase Dashboardu (Project Settings → API).
 3. (Volitelně) Nastav `VITE_ROOT_OWNER_ID` – UUID uživatele z Auth, který má přístup ke všem servisům.
 
-Migrace databáze: `npx supabase db push` (projekt musí být napojený přes `supabase link`).
+Migrace databáze: `npm run db:migrate` resp. `npx supabase db push` (projekt musí být napojený přes `supabase link`). Pro zapnutí faktur viz **docs/FAKTURY_SETUP.md**.
 
 ## Build pro produkci
 

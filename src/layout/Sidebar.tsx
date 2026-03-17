@@ -7,8 +7,9 @@ import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAppUpdate } from "../context/AppUpdateContext";
 import { devLog } from "../lib/devLog";
+import { JobiDocsStatus } from "../components/JobiDocsStatus";
 
-export type NavKey = "orders" | "calendar" | "inventory" | "devices" | "customers" | "statistics" | "achievements" | "settings";
+export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "achievements" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -116,12 +117,37 @@ export type SidebarProps = {
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
   achievementsEnabled?: boolean;
+  invoicingEnabled?: boolean;
+  smsUnreadCount?: number;
+  /** When false, "SMS chaty" is hidden from the nav. */
+  smsEnabled?: boolean;
+  onJobiDocsFirstConnect?: () => void;
+  horizontal?: boolean;
 };
 
 function AchievementsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 9V4a2 2 0 012-2h0a2 2 0 012 2v5M10 14l2 2 4-4" />
+    </svg>
+  );
+}
+
+function InvoicesIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="12" y2="17" />
+    </svg>
+  );
+}
+
+function SmsIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
@@ -137,6 +163,11 @@ export function Sidebar({
   activeServiceId,
   setActiveServiceId,
   achievementsEnabled = true,
+  invoicingEnabled = true,
+  smsUnreadCount = 0,
+  smsEnabled = false,
+  onJobiDocsFirstConnect,
+  horizontal = false,
 }: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
@@ -295,6 +326,225 @@ export function Sidebar({
       document.removeEventListener("mousedown", handleClickOutside, true);
     };
   }, [serviceMenuOpen]);
+  if (horizontal) {
+    return (
+      <div
+        style={{
+          padding: "4px 12px",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          transition: "var(--transition-smooth)",
+          width: "100%",
+          height: "100%",
+          overflow: "hidden",
+          position: "relative",
+          minWidth: 0,
+        }}
+      >
+        {/* Nav items in a row – horizontální scroll při větším počtu položek */}
+        <nav style={{ display: "flex", flexDirection: "row", gap: 12, alignItems: "center", flex: "1 1 0", minWidth: 0, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "thin", WebkitOverflowScrolling: "touch", padding: "2px 4px" }}>
+          {[
+            { key: "orders" as const, label: "Zakázky", icon: OrdersIcon },
+            ...(smsEnabled ? [{ key: "sms" as const, label: "SMS chaty", icon: SmsIcon }] : []),
+            { key: "calendar" as const, label: "Kalendář", icon: CalendarIcon },
+            { key: "inventory" as const, label: "Sklad", icon: BoxIcon },
+            { key: "devices" as const, label: "Zařízení", icon: DevicesIcon },
+            { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
+            ...(invoicingEnabled ? [{ key: "invoices" as const, label: "Faktury", icon: InvoicesIcon }] : []),
+            { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
+            ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
+            { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
+          ].map((item) => {
+            const isActive = item.key === active;
+            const IconComponent = item.icon;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onNavigate(item.key)}
+                title={item.label}
+                style={{
+                  border: "none",
+                  background: isActive ? "var(--accent-soft)" : "transparent",
+                  color: isActive ? "var(--accent)" : "var(--text)",
+                  padding: 6,
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  outline: "none",
+                  boxShadow: isActive ? "0 2px 6px var(--accent-glow)" : "none",
+                  flexShrink: 0,
+                  width: 36,
+                  height: 36,
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--panel-2)"; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <IconComponent size={18} />
+                  {(item.key === "orders" || item.key === "sms") && smsUnreadCount > 0 && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: -6,
+                        right: -6,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        background: "#FF3B30",
+                        color: "#fff",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "0 4px",
+                      }}
+                    >
+                      {smsUnreadCount > 99 ? "99+" : smsUnreadCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div style={{ width: 1, height: 20, background: "var(--border)", margin: "0 10px", flexShrink: 0 }} />
+
+        {/* User avatar */}
+        <div style={{ flexShrink: 0 }} ref={userMenuRef}>
+          <button
+            type="button"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            title={displayName}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: 0,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" style={{ width: 28, height: 28, borderRadius: 9, objectFit: "cover", border: "1px solid var(--border)" }} />
+            ) : (
+              <div style={{ width: 28, height: 28, borderRadius: 9, background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", color: "white", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 11 }}>
+                {(displayName || "A").charAt(0).toUpperCase()}
+              </div>
+            )}
+          </button>
+
+          {userMenuOpen && createPortal(
+            <div
+              ref={userMenuDropdownRef}
+              style={{
+                position: "fixed",
+                bottom: 58,
+                right: 16,
+                minWidth: 200,
+                background: "var(--panel)",
+                backdropFilter: "var(--blur)",
+                WebkitBackdropFilter: "var(--blur)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                boxShadow: "0 -4px 24px rgba(0,0,0,0.15)",
+                overflow: "hidden",
+                zIndex: 10000,
+              }}
+            >
+              <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                {displayName}
+              </div>
+
+              {showServiceDropdown && (
+                <div style={{ borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ padding: "6px 14px", fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Servis
+                  </div>
+                  {services.length === 0 ? (
+                    <div style={{ padding: "6px 14px", color: "var(--muted)", fontSize: 12 }}>Zatím žádné servisy</div>
+                  ) : (
+                    services.map((service) => (
+                      <button
+                        key={service.service_id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveServiceId(service.service_id);
+                          setUserMenuOpen(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "8px 14px",
+                          background: service.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
+                          border: "none",
+                          color: service.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
+                          fontSize: 13,
+                          fontWeight: service.service_id === activeServiceId ? 600 : 400,
+                          textAlign: "left",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (service.service_id !== activeServiceId) e.currentTarget.style.background = "var(--bg)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (service.service_id !== activeServiceId) e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{service.service_name}</span>
+                        {service.service_id === activeServiceId && <span style={{ fontSize: 12 }}>✓</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setUserMenuOpen(false);
+                  onSignOut().catch((error) => {
+                    console.error("[Sidebar] Error signing out:", error);
+                  });
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--text)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  transition: "var(--transition-smooth)",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--panel-2)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                Odhlásit se
+              </button>
+            </div>,
+            document.body
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
       style={{ 
@@ -303,10 +553,14 @@ export function Sidebar({
         flexDirection: "column", 
         gap: 14,
         transition: "var(--transition-smooth)",
+        height: "100%",
+        minHeight: 0,
+        overflow: "hidden",
       }}
     >
       {/* Brand – pozadí = barva pozadí aktuálně zvoleného loga Jobi */}
       <div style={{ 
+        flexShrink: 0,
         display: "flex", 
         alignItems: "center", 
         gap: expanded ? 12 : 0, 
@@ -405,16 +659,19 @@ export function Sidebar({
         </div>
       </div>
 
-      <div style={{ height: 1, background: "var(--border)", margin: "6px 0 2px" }} />
+      <div style={{ height: 1, background: "var(--border)", margin: "6px 0 2px", flexShrink: 0 }} />
 
-      {/* Nav */}
+      {/* Nav – scroll when many items */}
+      <div style={{ flex: "1 1 0", minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", WebkitOverflowScrolling: "touch" }}>
       <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
           { key: "orders" as const, label: "Zakázky", icon: OrdersIcon },
+          ...(smsEnabled ? [{ key: "sms" as const, label: "SMS chaty", icon: SmsIcon }] : []),
           { key: "calendar" as const, label: "Kalendář", icon: CalendarIcon },
           { key: "inventory" as const, label: "Sklad", icon: BoxIcon },
           { key: "devices" as const, label: "Zařízení", icon: DevicesIcon },
           { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
+          ...(invoicingEnabled ? [{ key: "invoices" as const, label: "Faktury", icon: InvoicesIcon }] : []),
           { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
           ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
           { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
@@ -465,6 +722,28 @@ export function Sidebar({
                 <IconBox size={expanded ? 40 : 28}>
                   <IconComponent size={iconSize} />
                 </IconBox>
+                {(item.key === "orders" || item.key === "sms") && smsUnreadCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -6,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: "#FF3B30",
+                      color: "#fff",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                    }}
+                  >
+                    {smsUnreadCount > 99 ? "99+" : smsUnreadCount}
+                  </span>
+                )}
                 {item.key === "settings" && updateAvailable && (
                   <span
                     style={{
@@ -514,13 +793,19 @@ export function Sidebar({
         })}
       </nav>
 
-      <div style={{ flex: 1 }} />
+      <div style={{ marginTop: 6, flexShrink: 0 }}>
+        <JobiDocsStatus onFirstConnect={onJobiDocsFirstConnect} compact={!expanded} />
+      </div>
+      </div>
+
+      <div style={{ flex: "0 0 auto" }} />
 
       {/* Bottom user profile - only show when expanded */}
       {expanded && (
         <div
           ref={userMenuRef}
           style={{
+            flexShrink: 0,
             position: "relative",
             padding: "12px 12px",
             borderRadius: 16,

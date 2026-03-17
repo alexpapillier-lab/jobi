@@ -35,13 +35,6 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
   const [statuses, setStatuses] = useState<StatusMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [visibilityKey, setVisibilityKey] = useState(0);
-
-  useEffect(() => {
-    const onVisible = () => setVisibilityKey((k) => k + 1);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
 
   useEffect(() => {
     // If activeServiceId is null, don't load statuses
@@ -161,7 +154,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
         setError(normalizeError(err) || "Neznámá chyba při načítání statusů");
       }
     })();
-  }, [activeServiceId, visibilityKey]);
+  }, [activeServiceId]);
 
   // Realtime: při změně statusů v Nastavení (jiná záložka/zařízení) přenačíst
   useEffect(() => {

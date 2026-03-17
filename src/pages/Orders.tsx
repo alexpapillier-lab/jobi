@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardModern, TicketCardSplit, TicketCardStripe, TicketTable, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
+import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
 import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
@@ -10,6 +11,7 @@ import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
+import { typedSupabase } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
 import {
   uploadDiagnosticPhotoWithWatermark,
@@ -21,6 +23,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
+import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { checkAchievementOnFirstPrint, checkAchievementOnPaperless, checkAchievementOnFirstCapturePhoto, checkAchievementOnShortcutUsed } from "../lib/achievements";
 import { useUserProfile } from "../hooks/useUserProfile";
@@ -159,10 +162,12 @@ type OpenTicketIntent = {
   mode?: "panel" | "detail";
   returnToPage?: NavKey;
   returnToCustomerId?: string;
+  openSmsPanel?: boolean;
 };
 
 type OrdersProps = {
   activeServiceId: string | null;
+  smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
   newOrderPrefill: { customerId?: string } | null;
   onNewOrderPrefillConsumed: () => void;
 
@@ -174,6 +179,22 @@ type OrdersProps = {
 
   onOpenCustomer?: (customerId: string) => void;
   onReturnToPage?: (page: NavKey, customerId?: string) => void;
+  onCreateInvoice?: (prefill: {
+    ticketId: string;
+    customerId?: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    customerIco?: string;
+    customerDic?: string;
+    customerAddress?: string;
+    items?: { name: string; qty: number; unit: string; unit_price: number; vat_rate: number }[];
+  }) => void;
+  /** When ticket already has an invoice, open that invoice (navigate to Faktury and open editor). */
+  onOpenInvoice?: (invoiceId: string) => void;
+
+  /** When true, detail panel (ticket/claim) is closed. Used when navigating to e.g. Faktury so the preview does not stay on top. */
+  closeDetailWhen?: boolean;
 };
 
 const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
@@ -2967,10 +2988,14 @@ export default function Orders({
   onNewOrderPrefillConsumed,
   openTicketIntent,
   onOpenTicketIntentConsumed,
+  smsPanelTicketIdRef,
   openClaimIntent,
   onOpenClaimIntentConsumed,
   onOpenCustomer,
   onReturnToPage,
+  onCreateInvoice,
+  onOpenInvoice,
+  closeDetailWhen,
 }: OrdersProps) {
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
   const { session } = useAuth();
@@ -2985,15 +3010,8 @@ export default function Orders({
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
-  const [visibilityKey, setVisibilityKey] = useState(0);
   
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
-
-  useEffect(() => {
-    const onVisible = () => setVisibilityKey((k) => k + 1);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
   
   // Refs for race condition protection
   const ticketsReqIdRef = useRef(0);
@@ -3166,7 +3184,7 @@ export default function Orders({
     return () => {
       ticketsReqIdRef.current++;
     };
-  }, [activeServiceId, supabase, visibilityKey]);
+  }, [activeServiceId, supabase]);
 
   // Load warranty claims when activeServiceId changes
   useEffect(() => {
@@ -3201,7 +3219,7 @@ export default function Orders({
     };
     loadClaims();
     return () => { claimsReqIdRef.current++; };
-  }, [activeServiceId, supabase, visibilityKey]);
+  }, [activeServiceId, supabase]);
 
   const refetchClaims = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
@@ -3241,6 +3259,8 @@ export default function Orders({
   const [captureQRLoading, setCaptureQRLoading] = useState(false);
   const newOrderPhotosBeforeInputRef = useRef<HTMLInputElement>(null);
   const draftCaptureTokenRef = useRef<string | null>(null);
+  const [draftCapturePreviewUrls, setDraftCapturePreviewUrls] = useState<string[]>([]);
+  const [draftCaptureLiveCount, setDraftCaptureLiveCount] = useState(0);
   const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
 
   useEffect(() => {
@@ -3249,6 +3269,14 @@ export default function Orders({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [photoLightbox]);
+
+  // When navigating away (e.g. to Faktury), close detail so the preview is not left open on top
+  useEffect(() => {
+    if (closeDetailWhen) {
+      setDetailId(null);
+      setDetailClaimId(null);
+    }
+  }, [closeDetailWhen]);
 
   // Realtime subscription for tickets
   useEffect(() => {
@@ -3450,6 +3478,60 @@ export default function Orders({
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<string[]>([]);
   const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
+  const [smsPanelOpen, setSmsPanelOpen] = useState(false);
+  const [smsUnreadCount, setSmsUnreadCount] = useState(0);
+  const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
+  const [smsActivatedForService, setSmsActivatedForService] = useState(false);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setSmsActivatedForService(false);
+      return;
+    }
+    supabase
+      .from("service_phone_numbers")
+      .select("id")
+      .eq("service_id", activeServiceId)
+      .eq("active", true)
+      .maybeSingle()
+      .then(({ data }) => setSmsActivatedForService(!!data));
+  }, [activeServiceId]);
+
+  // Sync ref for SMS notifications: when SMS panel is open for a ticket, don't show OS notification for that ticket
+  useEffect(() => {
+    if (smsPanelTicketIdRef) {
+      smsPanelTicketIdRef.current = smsPanelOpen && detailId ? detailId : null;
+    }
+    return () => {
+      if (smsPanelTicketIdRef) smsPanelTicketIdRef.current = null;
+    };
+  }, [smsPanelOpen, detailId, smsPanelTicketIdRef]);
+
+  // Load SMS unread count for current detail ticket
+  useEffect(() => {
+    if (!detailId || !activeServiceId || !supabase) {
+      setSmsUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: convs } = await supabase.from("sms_conversations").select("id").eq("ticket_id", detailId);
+      if (cancelled || !convs?.length) {
+        if (!cancelled) setSmsUnreadCount(0);
+        return;
+      }
+      const ids = convs.map((c) => c.id);
+      const { count, error } = await supabase
+        .from("sms_messages")
+        .select("id", { count: "exact", head: true })
+        .in("conversation_id", ids)
+        .eq("direction", "inbound")
+        .is("read_at", null);
+      if (cancelled) return;
+      setSmsUnreadCount(error ? 0 : count ?? 0);
+    })();
+    return () => { cancelled = true; };
+  }, [detailId, activeServiceId]);
 
   // Load ticket history when history modal opens
   useEffect(() => {
@@ -3601,7 +3683,7 @@ export default function Orders({
   useEffect(() => {
     if (!openTicketIntent) return;
 
-    const { ticketId, mode, returnToPage: returnPage, returnToCustomerId } = openTicketIntent;
+    const { ticketId, mode, returnToPage: returnPage, returnToCustomerId, openSmsPanel } = openTicketIntent;
     const exists = tickets.some((t) => t.id === ticketId);
 
     if (exists) {
@@ -3609,6 +3691,7 @@ export default function Orders({
         setDetailId(ticketId);
         setReturnToPage(returnPage || null);
         returnToCustomerIdRef.current = returnToCustomerId;
+        if (openSmsPanel) setSmsPanelOpen(true);
       } else {
         setDetailId(null);
         setReturnToPage(null);
@@ -3637,6 +3720,32 @@ export default function Orders({
     }
     onOpenClaimIntentConsumed();
   }, [openClaimIntent, cloudClaims, onOpenClaimIntentConsumed]);
+
+  // Map ticket_id -> invoice id for "Přejít na fakturu" when invoice already exists
+  const [invoiceIdByTicketId, setInvoiceIdByTicketId] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!activeServiceId || (!onCreateInvoice && !onOpenInvoice)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await typedSupabase
+          .from("invoices")
+          .select("id, ticket_id")
+          .eq("service_id", activeServiceId)
+          .not("ticket_id", "is", null)
+          .is("deleted_at", null);
+        if (cancelled || !data) return;
+        const map: Record<string, string> = {};
+        for (const row of data) {
+          if (row.ticket_id) map[row.ticket_id] = row.id;
+        }
+        setInvoiceIdByTicketId(map);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeServiceId, onCreateInvoice, onOpenInvoice]);
 
   const devicesData: DevicesData = useMemo(() => safeLoadDevicesData(), []);
   const inventoryData: InventoryData = useMemo(() => safeLoadInventoryData(), []);
@@ -4047,7 +4156,7 @@ export default function Orders({
     const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
     const claimsForGroup = filteredClaims.filter((c) => {
       const st = normalizeStatus((c.status as string) ?? "");
-      if (st === null) return activeGroup === "all";
+      if (st === null) return activeGroup !== "final";
       if (activeGroup === "all") return true;
       if (activeGroup === "final") return isFinal(st);
       return !isFinal(st);
@@ -4078,6 +4187,47 @@ export default function Orders({
     () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
     [combinedList, ordersPage, pageSize, effectivePageSize]
   );
+
+  const paginatedTicketIds = useMemo(() => paginatedTickets.map((t) => t.id), [paginatedTickets]);
+
+  // Load SMS unread counts for tickets on current page (one batch) — only when SMS is activated
+  useEffect(() => {
+    if (!smsActivatedForService || !activeServiceId || !supabase || paginatedTicketIds.length === 0) {
+      setSmsUnreadByTicketId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: convs } = await supabase
+        .from("sms_conversations")
+        .select("id, ticket_id")
+        .eq("service_id", activeServiceId)
+        .in("ticket_id", paginatedTicketIds);
+      if (cancelled || !convs?.length) {
+        if (!cancelled) setSmsUnreadByTicketId({});
+        return;
+      }
+      const convIds = convs.map((c) => c.id);
+      const ticketByConvId: Record<string, string> = {};
+      convs.forEach((c) => { if (c.ticket_id) ticketByConvId[c.id] = c.ticket_id; });
+      const { data: messages } = await supabase
+        .from("sms_messages")
+        .select("conversation_id")
+        .in("conversation_id", convIds)
+        .eq("direction", "inbound")
+        .is("read_at", null);
+      if (cancelled) return;
+      const countByConv: Record<string, number> = {};
+      (messages ?? []).forEach((m) => { countByConv[m.conversation_id] = (countByConv[m.conversation_id] ?? 0) + 1; });
+      const byTicket: Record<string, number> = {};
+      Object.entries(countByConv).forEach(([cid, n]) => {
+        const tid = ticketByConvId[cid];
+        if (tid) byTicket[tid] = (byTicket[tid] ?? 0) + n;
+      });
+      setSmsUnreadByTicketId(byTicket);
+    })();
+    return () => { cancelled = true; };
+  }, [smsActivatedForService, activeServiceId, paginatedTicketIds]);
 
   useEffect(() => {
     setOrdersPage(0);
@@ -4546,6 +4696,51 @@ export default function Orders({
             printWarranty(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
         }
+        // SMS automations: send template message when status changes
+        if (ticketUpdated && (ticketUpdated as TicketEx).customerPhone?.trim()) {
+          const { data: automations } = await supabase
+            .from("sms_automations")
+            .select("id, message_template")
+            .eq("service_id", activeServiceId)
+            .eq("trigger_status_key", next)
+            .eq("active", true);
+          const statusLabel = statuses.find((s) => s.key === next)?.label ?? next;
+          const totalPrice = computeFinalPrice(toCardData(ticketUpdated as (typeof filtered)[number]));
+          const vars: Record<string, string> = {
+            code: (ticketUpdated as TicketEx).code ?? "",
+            customer_name: (ticketUpdated as TicketEx).customerName ?? "",
+            device_label: (ticketUpdated as TicketEx).deviceLabel ?? "",
+            total_price: String(totalPrice),
+            status: statusLabel,
+            notes: (ticketUpdated as TicketEx).issueShort ?? "",
+          };
+          const phoneNorm = normalizePhone((ticketUpdated as TicketEx).customerPhone!);
+          if (automations?.length && phoneNorm) {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData?.session?.access_token;
+            if (token) {
+              for (const a of automations) {
+                const body = (a.message_template || "").replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
+                if (!body.trim()) continue;
+                supabaseFetch(`${supabaseUrl}/functions/v1/sms-send`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({
+                    service_id: activeServiceId,
+                    to: phoneNorm,
+                    body,
+                    ticket_id: ticketId,
+                  }),
+                }).then(async (res) => {
+                  const raw = await res.text();
+                  let data: { error?: string } = {};
+                  try { if (raw) data = JSON.parse(raw); } catch { }
+                  if (!res.ok || data.error) showToast(data.error ?? "SMS automatizace se nepodařila odeslat", "error");
+                }).catch(() => showToast("SMS automatizace se nepodařila odeslat", "error"));
+              }
+            }
+          }
+        }
       } catch (err: any) {
         // Rollback optimistic update
         setStatusById((prev) => {
@@ -4640,10 +4835,14 @@ export default function Orders({
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      const hasSomethingToClose = ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
+      const hasSomethingToClose = smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
       if (!hasSomethingToClose) return;
       e.preventDefault();
       e.stopPropagation();
+      if (smsPanelOpen) {
+        setSmsPanelOpen(false);
+        return;
+      }
       if (ticketHistoryModalOpen) {
         setTicketHistoryModalOpen(false);
         return;
@@ -4671,7 +4870,7 @@ export default function Orders({
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
+  }, [smsPanelOpen, detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
   useEffect(() => {
@@ -4837,6 +5036,8 @@ export default function Orders({
       draftCaptureToken: draftCaptureTokenRef.current ?? undefined,
       onSuccess: async (tickets) => {
         draftCaptureTokenRef.current = null;
+        setDraftCapturePreviewUrls([]);
+        setDraftCaptureLiveCount(0);
         setNewDraft(defaultDraft());
         setIsNewOpen(false);
         setSubmitAttempted(false);
@@ -4861,6 +5062,50 @@ export default function Orders({
       },
     });
   };
+
+  const loadDraftCapturePreviews = useCallback(async (showAddedToast: boolean = true) => {
+    const draftToken = draftCaptureTokenRef.current;
+    if (!draftToken || !supabase || !supabaseUrl || !supabaseAnonKey) return;
+    try {
+      const authToken = (await supabase.auth.getSession()).data?.session?.access_token;
+      if (!authToken) return;
+      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-list-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}`, apikey: supabaseAnonKey },
+        body: JSON.stringify({ token: draftToken }),
+      });
+      const raw = await res.text();
+      const data: { urls?: string[]; error?: string } = raw ? JSON.parse(raw) : {};
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      if (Array.isArray(data.urls)) {
+        setDraftCaptureLiveCount(data.urls.length);
+        setDraftCapturePreviewUrls((prev) => {
+          const added = Math.max(0, data.urls!.length - prev.length);
+          if (showAddedToast && added > 0) {
+            const suffix = added === 1 ? "fotka" : added >= 2 && added <= 4 ? "fotky" : "fotek";
+            showToast(`Načteno ${added} ${suffix} z mobilu`, "success");
+          }
+          return data.urls!;
+        });
+      }
+    } catch (err) {
+      console.warn("[Orders] loadDraftCapturePreviews failed", err);
+    }
+  }, []);
+
+  const closeCaptureQrModal = useCallback(() => {
+    setCaptureQRItems(null);
+    void loadDraftCapturePreviews(true);
+  }, [loadDraftCapturePreviews]);
+
+  useEffect(() => {
+    if (!captureQRItems || !draftCaptureTokenRef.current) return;
+    void loadDraftCapturePreviews(false);
+    const t = setInterval(() => {
+      void loadDraftCapturePreviews(false);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [captureQRItems, loadDraftCapturePreviews]);
 
   const commentsFor = (ticketId: string): TicketComment[] => {
     const map = safeLoadCommentsMap();
@@ -4948,6 +5193,34 @@ export default function Orders({
     );
   }, [canPrintExport, setOpenQuickPrintTicket]);
 
+  const smsBadge = (ticketId: string) => {
+    const n = smsUnreadByTicketId[ticketId] ?? 0;
+    if (n <= 0) return null;
+    return (
+      <span
+        style={{
+          position: "absolute",
+          top: -8,
+          right: -8,
+          minWidth: 20,
+          height: 20,
+          borderRadius: "50%",
+          background: "#FF3B30",
+          color: "#fff",
+          fontSize: 11,
+          fontWeight: 700,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0 6px",
+          zIndex: 1,
+        }}
+      >
+        {n > 99 ? "99+" : n}
+      </span>
+    );
+  };
+
   const renderTicketCard = (t: (typeof filtered)[number]) => {
     const raw = (t.status as any) ?? statusById[t.id];
     const currentStatus = normalizeStatus(raw);
@@ -4957,23 +5230,32 @@ export default function Orders({
     const onClick = () => { setDetailId(t.id); setDetailClaimId(null); };
     const statusNode = renderStatusPicker(t.id, currentStatus);
     const metaOrNull = meta ?? null;
+    const wrap = (node: React.ReactNode) =>
+      (smsUnreadByTicketId[t.id] ?? 0) > 0 ? (
+        <div key={t.id} style={{ position: "relative" }}>
+          {smsBadge(t.id)}
+          {node}
+        </div>
+      ) : (
+        <React.Fragment key={t.id}>{node}</React.Fragment>
+      );
 
     switch (mode) {
       case "compact":
-        return <TicketCardCompact key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardCompact ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "compact-extra":
-        return <TicketCardCompactExtra key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardCompactExtra ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "grid":
-        return <TicketCardGrid key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardGrid ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "cards-modern":
-        return <TicketCardModern key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardModern ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "split":
-        return <TicketCardSplit key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardSplit ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "stripe":
-        return <TicketCardStripe key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardStripe ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "list":
       default:
-        return <TicketCardList key={t.id} ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />;
+        return wrap(<TicketCardList ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
     }
   };
 
@@ -5193,6 +5475,7 @@ export default function Orders({
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
             statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
+            smsUnreadByTicketId={smsUnreadByTicketId}
           />
         )}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "timeline" && (
@@ -5201,13 +5484,14 @@ export default function Orders({
             getByKey={getByKey as any}
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
+            smsUnreadByTicketId={smsUnreadByTicketId}
           />
         )}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
           showClaimsInOrdersList ? (
             <CombinedStatusGrouped
-              tickets={paginatedCombined.filter((r) => r.type === "ticket").map((r) => toCardData((r as { type: "ticket"; data: (typeof filtered)[number] }).data))}
-              claims={paginatedCombined.filter((r) => r.type === "claim").map((r) => (r as { type: "claim"; data: WarrantyClaimRow }).data)}
+              tickets={combinedList.filter((r) => r.type === "ticket").map((r) => toCardData((r as { type: "ticket"; data: (typeof filtered)[number] }).data))}
+              claims={combinedList.filter((r) => r.type === "claim").map((r) => (r as { type: "claim"; data: WarrantyClaimRow }).data)}
               statuses={statuses as any}
               normalizeStatus={normalizeStatus}
               onClickTicket={(id) => { setDetailId(id); setDetailClaimId(null); }}
@@ -5217,16 +5501,18 @@ export default function Orders({
               printButtonForTicket={(t) => renderPrintButton(t, true)}
               printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
+              smsUnreadByTicketId={smsUnreadByTicketId}
             />
           ) : (
             <TicketStatusGrouped
-              tickets={paginatedTickets.map(toCardData)}
+              tickets={filtered.map(toCardData)}
               statuses={statuses as any}
               normalizeStatus={normalizeStatus}
               onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
               statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
               printButtonFor={(t) => renderPrintButton(t, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
+              smsUnreadByTicketId={smsUnreadByTicketId}
             />
           )
         )}
@@ -6013,6 +6299,38 @@ export default function Orders({
                 </button>
               </div>
             ))}
+            {draftCapturePreviewUrls.map((photoUrl, idx) => (
+              <div key={`draft-${idx}`} style={{ position: "relative" }}>
+                <img
+                  src={photoUrl}
+                  alt={`QR fotka ${idx + 1}`}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 4,
+                    right: 4,
+                    bottom: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    borderRadius: 6,
+                    background: "rgba(0,0,0,0.55)",
+                    color: "white",
+                    textAlign: "center",
+                    padding: "2px 4px",
+                  }}
+                >
+                  z mobilu
+                </div>
+              </div>
+            ))}
           </div>
           <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: "pointer", marginTop: 8, display: "inline-block" }}>
             <input
@@ -6047,6 +6365,9 @@ export default function Orders({
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
           <button
             onClick={() => {
+              draftCaptureTokenRef.current = null;
+              setDraftCapturePreviewUrls([]);
+              setDraftCaptureLiveCount(0);
               setNewDraft(defaultDraft());
               safeSaveDraft(null);
               window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
@@ -6084,6 +6405,8 @@ export default function Orders({
                 const raw = await res.text();
                 const data: { url?: string; token?: string; error?: string } = raw ? JSON.parse(raw) : {};
                 if (!res.ok) throw new Error(data.error || res.statusText);
+                setDraftCapturePreviewUrls([]);
+                setDraftCaptureLiveCount(0);
                 if (data.token) draftCaptureTokenRef.current = data.token;
                 if (data.url) {
                   setCaptureQRItems([{ deviceLabel: "Přijímací fotky (před vytvořením zakázky)", url: data.url }]);
@@ -6403,9 +6726,85 @@ export default function Orders({
                     else if (action === "print") printWarranty(detailedTicket, activeServiceId);
                   }}
                 />
+                {(onCreateInvoice || onOpenInvoice) && (() => {
+                  const existingInvoiceId = invoiceIdByTicketId[detailedTicket.id];
+                  return existingInvoiceId && onOpenInvoice ? (
+                    <button
+                      key="open-invoice"
+                      onClick={() => onOpenInvoice(existingInvoiceId)}
+                      style={softBtn}
+                      title="Otevřít fakturu k této zakázce"
+                    >
+                      📄 Přejít na fakturu
+                    </button>
+                  ) : onCreateInvoice ? (
+                    <button
+                      key="create-invoice"
+                      onClick={() => {
+                        const t = detailedTicket;
+                        const repairs = (t.performedRepairs || []).filter((r) => r.name);
+                        onCreateInvoice({
+                          ticketId: t.id,
+                          customerId: t.customerId || undefined,
+                          customerName: t.customerName || t.customerCompany || undefined,
+                          customerEmail: t.customerEmail || undefined,
+                          customerPhone: t.customerPhone || undefined,
+                          customerIco: t.customerIco || undefined,
+                          customerAddress: [t.customerAddressStreet, t.customerAddressCity, t.customerAddressZip].filter(Boolean).join(", ") || undefined,
+                          items: repairs.length > 0 ? repairs.map((r) => ({
+                            name: r.name,
+                            qty: 1,
+                            unit: "ks",
+                            unit_price: r.price ?? 0,
+                            vat_rate: 21,
+                          })) : undefined,
+                        });
+                      }}
+                      style={softBtn}
+                      title="Vytvořit fakturu z této zakázky"
+                    >
+                      💰 Vystavit fakturu
+                    </button>
+                  ) : null;
+                })()}
               </div>
             )}
 
+            {detailedTicket && !detailedClaim && smsActivatedForService && (
+              <button
+                type="button"
+                onClick={() => { setSmsPanelOpen(true); setSmsUnreadCount(0); }}
+                style={{ ...softBtn, position: "relative" }}
+                title="SMS chat se zákazníkem"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                SMS
+                {smsUnreadCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -8,
+                      right: -8,
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      background: "#FF3B30",
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 6px",
+                    }}
+                  >
+                    {smsUnreadCount > 99 ? "99+" : smsUnreadCount}
+                  </span>
+                )}
+              </button>
+            )}
             {detailedTicket && !detailedClaim && (
               <button
                 onClick={() => setTicketHistoryModalOpen(true)}
@@ -8284,6 +8683,63 @@ export default function Orders({
         )}
         </div>
       </div>
+
+      {/* SMS slide-over panel – respektuje pozici sidebaru (dole / vpravo), aby nebyl překryt */}
+      {smsPanelOpen && detailedTicket && activeServiceId && (() => {
+        const sidebarPos = uiCfg.sidebar?.position ?? "left";
+        const isSidebarBottom = sidebarPos === "bottom";
+        const isSidebarRight = sidebarPos === "right";
+        const panelStyle: React.CSSProperties = {
+          position: "fixed",
+          top: 0,
+          right: isSidebarRight ? "var(--sidebar-collapsed)" : 0,
+          width: 380,
+          maxWidth: "100vw",
+          height: isSidebarBottom ? "calc(100vh - var(--sidebar-bottom-collapsed))" : "100vh",
+          background: "var(--panel)",
+          borderLeft: "1px solid var(--border)",
+          boxShadow: "var(--shadow)",
+          zIndex: 321,
+          display: "flex",
+          flexDirection: "column",
+          transform: "translateX(0)",
+          transition: "transform 400ms ease",
+        };
+        return (
+        <>
+          <div
+            role="presentation"
+            onClick={() => setSmsPanelOpen(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 320 }}
+          />
+          <div
+            style={panelStyle}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 12, borderBottom: "1px solid var(--border)" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>
+                  {detailedTicket.customerName?.trim() || "Zákazník"}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  {detailedTicket.code && <span style={{ marginRight: 8 }}>Zakázka {detailedTicket.code}</span>}
+                  {detailedTicket.customerPhone?.trim() && <span>{detailedTicket.customerPhone.trim()}</span>}
+                </div>
+              </div>
+              <button type="button" onClick={() => setSmsPanelOpen(false)} style={{ ...softBtn, width: 36, height: 36 }} aria-label="Zavřít">×</button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+              <SmsChat
+                ticketId={detailedTicket.id}
+                serviceId={(detailedTicket as { service_id?: string }).service_id ?? activeServiceId ?? undefined}
+                customerPhone={detailedTicket.customerPhone ?? null}
+                customerName={detailedTicket.customerName ?? null}
+              />
+            </div>
+          </div>
+        </>
+        );
+      })()}
         </>,
         document.body
       )}
@@ -8630,7 +9086,7 @@ export default function Orders({
             background: "rgba(0,0,0,0.5)",
             padding: 24,
           }}
-          onClick={() => setCaptureQRItems(null)}
+          onClick={closeCaptureQrModal}
         >
           <div
             style={{
@@ -8653,7 +9109,9 @@ export default function Orders({
           >
             <div style={{ fontWeight: 950, fontSize: 18 }}>📱 Vyfotit z telefonu</div>
             <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
-              {captureQRItems.length > 1
+              {draftCaptureTokenRef.current
+                ? "Naskenujte QR kód mobilem. Vyfocené fotky se po zavření tohoto okna načtou do rozpracované zakázky."
+                : captureQRItems.length > 1
                 ? "Naskenujte QR kód podle zařízení. Fotka se uloží k příslušné zakázce."
                 : "Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce."}
             </p>
@@ -8682,8 +9140,15 @@ export default function Orders({
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => setCaptureQRItems(null)} style={{ ...softBtn, padding: "10px 14px", marginTop: 8 }}>
-              Zavřít
+            {draftCaptureTokenRef.current && (
+              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center" }}>
+                Aktuálně nafoceno: <b style={{ color: "var(--text)" }}>{draftCaptureLiveCount}</b>. Zavřete až po nafocení všech fotek.
+              </div>
+            )}
+            <button type="button" onClick={closeCaptureQrModal} style={{ ...softBtn, padding: "10px 14px", marginTop: 8 }}>
+              {draftCaptureTokenRef.current
+                ? `Zavřít (${draftCaptureLiveCount} ${draftCaptureLiveCount === 1 ? "fotka" : draftCaptureLiveCount >= 2 && draftCaptureLiveCount <= 4 ? "fotky" : "fotek"})`
+                : "Zavřít"}
             </button>
           </div>
         </div>,

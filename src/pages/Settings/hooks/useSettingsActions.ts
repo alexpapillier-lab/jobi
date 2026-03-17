@@ -17,6 +17,9 @@ type CompanyData = {
   phone: string;
   email: string;
   website: string;
+  bankAccount: string;
+  iban: string;
+  swift: string;
 };
 
 type UseSettingsActionsParams = {

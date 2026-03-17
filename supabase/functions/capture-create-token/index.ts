@@ -66,53 +66,82 @@ serve(async (req) => {
     const body = await req.json();
     const ticketId = body?.ticketId;
     const isBefore = body?.isBefore === true;
-    if (!ticketId) {
-      return new Response(
-        JSON.stringify({ error: "Missing ticketId" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const isDraft = body?.draft === true || body?.draft === "true" || (!!body?.serviceId && !ticketId);
+    const serviceIdParam = body?.serviceId;
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
 
-    const { data: ticket, error: ticketErr } = await svc
-      .from("tickets")
-      .select("id, service_id")
-      .eq("id", ticketId)
-      .is("deleted_at", null)
-      .single();
+    let serviceId: string;
 
-    if (ticketErr || !ticket) {
-      return new Response(
-        JSON.stringify({ error: "Zakázka nenalezena" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (isDraft) {
+      if (!serviceIdParam) {
+        return new Response(
+          JSON.stringify({ error: "Missing serviceId for draft" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const { data: membership } = await svc
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", serviceIdParam)
+        .eq("user_id", userId)
+        .single();
+      if (!membership) {
+        return new Response(
+          JSON.stringify({ error: "Nemáte oprávnění k tomuto servisu" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      serviceId = serviceIdParam;
+    } else {
+      if (!ticketId) {
+        return new Response(
+          JSON.stringify({ error: "Missing ticketId" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const { data: ticket, error: ticketErr } = await svc
+        .from("tickets")
+        .select("id, service_id")
+        .eq("id", ticketId)
+        .is("deleted_at", null)
+        .single();
 
-    const { data: membership } = await svc
-      .from("service_memberships")
-      .select("role")
-      .eq("service_id", ticket.service_id)
-      .eq("user_id", userId)
-      .single();
+      if (ticketErr || !ticket) {
+        return new Response(
+          JSON.stringify({ error: "Zakázka nenalezena" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-    if (!membership) {
-      return new Response(
-        JSON.stringify({ error: "Nemáte oprávnění k této zakázce" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const { data: membership } = await svc
+        .from("service_memberships")
+        .select("role")
+        .eq("service_id", ticket.service_id)
+        .eq("user_id", userId)
+        .single();
+
+      if (!membership) {
+        return new Response(
+          JSON.stringify({ error: "Nemáte oprávnění k této zakázce" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      serviceId = ticket.service_id;
     }
 
     const token = generateToken();
     const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000).toISOString();
 
-    const { error: insertErr } = await svc.from("capture_tokens").insert({
+    const insertPayload: { token: string; ticket_id: string | null; service_id: string; expires_at: string } = {
       token,
-      ticket_id: ticketId,
-      service_id: ticket.service_id,
+      ticket_id: isDraft ? null : ticketId,
+      service_id: serviceId,
       expires_at: expiresAt,
-    });
+    };
+
+    const { error: insertErr } = await svc.from("capture_tokens").insert(insertPayload);
 
     if (insertErr) {
       console.error("[capture-create-token] insert error:", insertErr);
@@ -123,8 +152,9 @@ serve(async (req) => {
     }
 
     const captureBase = Deno.env.get("CAPTURE_BASE_URL") || CAPTURE_BASE_URL;
-    const base = `${captureBase.replace(/\/$/, "")}/?ticket=${encodeURIComponent(ticketId)}&token=${encodeURIComponent(token)}`;
-    const url = isBefore ? `${base}&scope=before` : base;
+    const ticketParam = isDraft ? "draft" : ticketId;
+    const base = `${captureBase.replace(/\/$/, "")}/?ticket=${encodeURIComponent(ticketParam)}&token=${encodeURIComponent(token)}`;
+    const url = isBefore || isDraft ? `${base}&scope=before` : base;
 
     return new Response(
       JSON.stringify({ token, url }),

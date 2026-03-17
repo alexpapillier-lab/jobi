@@ -123,49 +123,49 @@ const COLOR_BY_DESIGN: Record<
   }
 > = {
   classic: {
-    primaryColor: "#1f2937",
-    secondaryColor: "#4b5563",
+    primaryColor: "#111827",
+    secondaryColor: "#374151",
     headerBg: "#f9fafb",
-    headerText: "#1f2937",
+    headerText: "#111827",
     sectionBorder: "1px solid #e5e7eb",
-    headerBorder: "2px solid #d1d5db",
-    sectionRadius: 8,
+    headerBorder: "2px solid #111827",
+    sectionRadius: 0,
   },
   modern: {
     primaryColor: "#0c4a6e",
     secondaryColor: "#0284c7",
     headerBg: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
     headerText: "#0c4a6e",
-    sectionBorder: "1px solid #bae6fd",
+    sectionBorder: "1px solid #e2e8f0",
     headerBorder: "2px solid #38bdf8",
-    sectionRadius: 12,
+    sectionRadius: 8,
   },
   minimal: {
-    primaryColor: "#171717",
-    secondaryColor: "#525252",
+    primaryColor: "#0a0a0a",
+    secondaryColor: "#404040",
     headerBg: "transparent",
-    headerText: "#171717",
+    headerText: "#0a0a0a",
     sectionBorder: "1px solid #e5e5e5",
     headerBorder: "1px solid #d4d4d4",
     sectionRadius: 0,
   },
   professional: {
-    primaryColor: "#1e3a5f",
+    primaryColor: "#1e293b",
     secondaryColor: "#334155",
-    headerBg: "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
-    headerText: "#1e3a5f",
-    sectionBorder: "1px solid #cbd5e1",
-    headerBorder: "2px solid #94a3b8",
-    sectionRadius: 6,
+    headerBg: "#f8fafc",
+    headerText: "#1e293b",
+    sectionBorder: "1px solid #e2e8f0",
+    headerBorder: "2px solid #334155",
+    sectionRadius: 4,
   },
 };
 
 /** BW: per-design greyscale – zachovává rozdíly (lineStyle, sectionHeaderStyle, lineWeight) */
 const BW_COLORS: Record<DocumentDesign, { headerBg: string; headerBorder: string; sectionBorder: string }> = {
-  classic: { headerBg: "#fafafa", headerBorder: "1px solid #d4d4d4", sectionBorder: "1px solid #e5e5e5" },
-  modern: { headerBg: "#f5f5f5", headerBorder: "2px solid #a3a3a3", sectionBorder: "1px solid #d4d4d4" },
-  minimal: { headerBg: "transparent", headerBorder: "1px solid #e5e5e5", sectionBorder: "1px solid #f0f0f0" },
-  professional: { headerBg: "#f8f8f8", headerBorder: "1px solid #94a3b8", sectionBorder: "1px solid #cbd5e1" },
+  classic: { headerBg: "transparent", headerBorder: "2px solid #171717", sectionBorder: "1px solid #e5e5e5" },
+  modern: { headerBg: "#fafafa", headerBorder: "2px solid #404040", sectionBorder: "1px solid #e5e5e5" },
+  minimal: { headerBg: "transparent", headerBorder: "1px solid #d4d4d4", sectionBorder: "1px solid #f0f0f0" },
+  professional: { headerBg: "transparent", headerBorder: "2px solid #1e293b", sectionBorder: "1px solid #e2e8f0" },
 };
 
 const ACCENT_USAGE_BY_DESIGN: Record<DocumentDesign, DesignTokens["accentUsage"]> = {

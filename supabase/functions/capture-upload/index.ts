@@ -30,29 +30,35 @@ serve(async (req) => {
     const body = await req.json();
     const { ticketId, token, image, scope } = body;
 
-    if (!ticketId || !token || !image || typeof image !== "string") {
+    if (!token || !image || typeof image !== "string") {
       return new Response(
-        JSON.stringify({ error: "Chybí ticketId, token nebo obrázek." }),
+        JSON.stringify({ error: "Chybí token nebo obrázek." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
 
-    // Validace tokenu
+    // Validace tokenu: token je unikátní, proto načteme jen podle tokenu + expirace.
     const { data: row, error: tokenErr } = await svc
       .from("capture_tokens")
       .select("id, ticket_id, service_id")
       .eq("token", token)
-      .eq("ticket_id", ticketId)
       .gt("expires_at", new Date().toISOString())
       .single();
 
     if (tokenErr || !row) {
       return new Response(
         JSON.stringify({ error: "Neplatný nebo vypršený odkaz. Naskenujte QR kód znovu v aplikaci Jobi." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const isDraftToken = row.ticket_id === null;
+    if (!isDraftToken && ticketId !== row.ticket_id) {
+      return new Response(
+        JSON.stringify({ error: "Neplatný odkaz pro tuto zakázku. Naskenujte QR kód znovu v aplikaci Jobi." }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -73,7 +79,9 @@ serve(async (req) => {
     }
 
     const uuid = crypto.randomUUID();
-    const path = `${serviceId}/${ticketId}/${uuid}.jpg`;
+    const path = isDraftToken
+      ? `${serviceId}/draft/${row.id}/${uuid}.jpg`
+      : `${serviceId}/${ticketId}/${uuid}.jpg`;
 
     const { error: uploadErr } = await svc.storage
       .from(BUCKET)
@@ -92,6 +100,24 @@ serve(async (req) => {
 
     const { data: urlData } = svc.storage.from(BUCKET).getPublicUrl(path);
     const photoUrl = urlData.publicUrl;
+
+    if (isDraftToken) {
+      const { error: insertErr } = await svc.from("draft_capture_photos").insert({
+        capture_token_id: row.id,
+        photo_url: photoUrl,
+      });
+      if (insertErr) {
+        console.error("[capture-upload] draft_capture_photos insert error:", insertErr);
+        return new Response(
+          JSON.stringify({ error: "Nepodařilo se uložit fotku." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const isBefore = scope === "before";
 

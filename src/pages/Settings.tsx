@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
 import { STATUS_COLOR_PALETTE, getContrastText } from "../utils/statusColors";
-import { supabase } from "../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseFetch } from "../lib/supabaseClient";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
@@ -90,7 +90,7 @@ function LogoPresetButton({
 
 type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about";
 type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_team" | "service_owner"
+  | "service_basic" | "service_contact" | "service_sms" | "service_team" | "service_owner"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_achievements"
   | "profile_me"
@@ -132,6 +132,8 @@ type UIConfig = {
     statusGroupedOrder?: string[];
   };
   achievementsEnabled?: boolean;
+  /** Zapnutý modul Faktury. Vypnout, pokud používáte vlastní fakturační systém. */
+  invoicingEnabled?: boolean;
 };
 
 const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
@@ -144,6 +146,7 @@ function defaultUIConfig(): UIConfig {
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
     achievementsEnabled: true,
+    invoicingEnabled: true,
   };
 }
 
@@ -188,13 +191,14 @@ function safeLoadUIConfig(): UIConfig {
         statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
       },
       achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
+      invoicingEnabled: typeof invoicingEnabled === "boolean" ? invoicingEnabled : true,
     };
   } catch {
     return defaultUIConfig();
   }
 }
 
-function saveUIConfig(cfg: UIConfig & { achievementsEnabled?: boolean }) {
+function saveUIConfig(cfg: UIConfig & { achievementsEnabled?: boolean; invoicingEnabled?: boolean }) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
@@ -212,6 +216,9 @@ type CompanyData = {
   phone: string;
   email: string;
   website: string;
+  bankAccount: string;
+  iban: string;
+  swift: string;
 };
 
 // safeLoadCompanyData is imported from Orders.tsx
@@ -693,7 +700,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [autoPrintFormSaveSuccess, setAutoPrintFormSaveSuccess] = useState(false);
   const [jobiDocsConnected, setJobiDocsConnected] = useState<boolean | null>(null);
   const [appVersion, setAppVersion] = useState<string>("…");
-  
+  const [smsPhoneRow, setSmsPhoneRow] = useState<{ twilio_number: string; forwarding_number: string | null } | null>(null);
+  const [smsPhoneLoading, setSmsPhoneLoading] = useState(false);
+  const [smsProvisionLoading, setSmsProvisionLoading] = useState(false);
+  const [smsForwardingValue, setSmsForwardingValue] = useState("");
+  const [smsForwardingSaving, setSmsForwardingSaving] = useState(false);
+  const [smsAutomations, setSmsAutomations] = useState<Array<{ id: string; trigger_status_key: string; message_template: string; active: boolean; sort_order: number }>>([]);
+  const [smsAutomationsLoading, setSmsAutomationsLoading] = useState(false);
+
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
 
   useEffect(() => {
@@ -743,6 +757,47 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     };
 
     loadServiceSettings();
+  }, [activeServiceId]);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setSmsPhoneRow(null);
+      setSmsPhoneLoading(false);
+      return;
+    }
+    setSmsPhoneLoading(true);
+    supabase
+      .from("service_phone_numbers")
+      .select("twilio_number, forwarding_number")
+      .eq("service_id", activeServiceId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        setSmsPhoneLoading(false);
+        if (error) {
+          setSmsPhoneRow(null);
+          return;
+        }
+        setSmsPhoneRow(data ?? null);
+        setSmsForwardingValue(data?.forwarding_number ?? "");
+      });
+  }, [activeServiceId]);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setSmsAutomations([]);
+      return;
+    }
+    setSmsAutomationsLoading(true);
+    supabase
+      .from("sms_automations")
+      .select("id, trigger_status_key, message_template, active, sort_order")
+      .eq("service_id", activeServiceId)
+      .order("sort_order", { ascending: true })
+      .then(({ data, error }) => {
+        setSmsAutomationsLoading(false);
+        if (!error && data) setSmsAutomations(data);
+        else setSmsAutomations([]);
+      });
   }, [activeServiceId]);
 
   useEffect(() => {
@@ -942,6 +997,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         { key: "service_basic" as const, label: "Základní údaje" },
         ...(canManageDocuments ? [{ key: "service_contact" as const, label: "Kontaktní údaje" }] : []),
+        ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS komunikace" }] : []),
         ...(isAdmin ? [{ key: "service_team" as const, label: "Tým / Přístupy" }] : []),
         ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner" }] : []),
       ],
@@ -1018,9 +1074,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     },
   ], [isRootOwner, isAdmin, canManageDocuments]);
 
-  // Member nemá přístup k Tým/Přístupy – při výběru servisu kde je member přesměruj z service_team
+  // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if (section.subsection === "service_team" && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_sms") && !isAdmin) {
       setSection((prev) => ({ ...prev, subsection: "service_basic" }));
     }
   }, [section.subsection, isAdmin]);
@@ -1367,6 +1423,38 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 8, paddingTop: 16 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", marginBottom: 12 }}>Bankovní údaje</div>
+              </div>
+
+              <div>
+                <FieldLabel>Číslo účtu</FieldLabel>
+                <TextInput
+                  value={companyData.bankAccount}
+                  onChange={(e: any) => setCompanyData((p) => ({ ...p, bankAccount: e.target.value }))}
+                  placeholder="123456789/0100"
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <FieldLabel>IBAN</FieldLabel>
+                  <TextInput
+                    value={companyData.iban}
+                    onChange={(e: any) => setCompanyData((p) => ({ ...p, iban: e.target.value }))}
+                    placeholder="CZ6508000000192000145399"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>SWIFT / BIC</FieldLabel>
+                  <TextInput
+                    value={companyData.swift}
+                    onChange={(e: any) => setCompanyData((p) => ({ ...p, swift: e.target.value }))}
+                    placeholder="GIBACZPX"
+                  />
+                </div>
+              </div>
+
               <button
                 onClick={async () => {
                   try {
@@ -1400,6 +1488,261 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               </button>
             </div>
           </Card>
+        </>
+      )}
+
+      {/* SERVIS - SMS KOMUNIKACE */}
+      {section.subsection === "service_sms" && activeServiceId && (
+        <>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>SMS komunikace</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Vlastní telefonní číslo pro SMS a hovory se zákazníky
+            </div>
+
+            {smsPhoneLoading ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Načítám…</div>
+            ) : !smsPhoneRow ? (
+              <>
+                <p style={{ marginBottom: 16, color: "var(--text)", fontSize: 13 }}>
+                  Aktivací SMS získáte vlastní telefonní číslo pro komunikaci se zákazníky.
+                </p>
+                <button
+                  type="button"
+                  disabled={smsProvisionLoading}
+                  onClick={async () => {
+                    const token = session?.access_token;
+                    if (!token || !activeServiceId) {
+                      showToast("Přihlaste se a zvolte servis", "error");
+                      return;
+                    }
+                    setSmsProvisionLoading(true);
+                    try {
+                      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/sms-provision`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ service_id: activeServiceId }),
+                      });
+                      const raw = await res.text();
+                      let data: { error?: string; detail?: string; twilio_number?: string } = {};
+                      try {
+                        if (raw) data = JSON.parse(raw);
+                      } catch {
+                        if (!res.ok) data = { error: raw || `HTTP ${res.status}` };
+                      }
+                      if (!res.ok) {
+                        const msg = (data.error ?? data.detail ?? raw) || `Chyba ${res.status}`;
+                        throw new Error(msg);
+                      }
+                      const errMsg = data.error;
+                      if (errMsg) throw new Error(errMsg);
+                      if (data.twilio_number) {
+                        setSmsPhoneRow({ twilio_number: data.twilio_number, forwarding_number: null });
+                        setSmsForwardingValue("");
+                        showToast("SMS aktivována. Číslo: " + data.twilio_number, "success");
+                      }
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : "Nepodařilo se aktivovat SMS";
+                      showToast(msg, "error");
+                    } finally {
+                      setSmsProvisionLoading(false);
+                    }
+                  }}
+                  style={{
+                    padding: "12px 24px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: smsProvisionLoading ? "var(--panel-2)" : "var(--accent)",
+                    color: smsProvisionLoading ? "var(--muted)" : "var(--accent-fg)",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: smsProvisionLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {smsProvisionLoading ? "Aktivuji…" : "Aktivovat SMS"}
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                  <span style={{ fontSize: 13, color: "var(--text)" }}>
+                    Přidělené číslo: <strong>{smsPhoneRow.twilio_number.replace(/(\+420)(\d{3})(\d{3})(\d{3})/, "$1 $2 $3 $4")}</strong>
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--success)", background: "var(--success-muted)", padding: "4px 8px", borderRadius: 8 }}>Aktivní</span>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <FieldLabel>Přesměrování hovorů</FieldLabel>
+                  <TextInput
+                    type="tel"
+                    value={smsForwardingValue}
+                    onChange={(e) => setSmsForwardingValue(e.target.value)}
+                    placeholder="+420 xxx xxx xxx"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={smsForwardingSaving}
+                  onClick={async () => {
+                    const raw = smsForwardingValue.trim();
+                    const normalized = /^\+[1-9]\d{6,14}$/.test(raw.replace(/\s/g, ""))
+                      ? raw.replace(/\s/g, "")
+                      : raw === ""
+                        ? null
+                        : undefined;
+                    if (normalized === undefined) {
+                      showToast("Zadejte číslo ve formátu E.164 (např. +420 123 456 789)", "error");
+                      return;
+                    }
+                    setSmsForwardingSaving(true);
+                    try {
+                      const { error } = await supabase
+                        .from("service_phone_numbers")
+                        .update({ forwarding_number: normalized })
+                        .eq("service_id", activeServiceId);
+                      if (error) throw error;
+                      setSmsPhoneRow((p) => (p ? { ...p, forwarding_number: normalized } : null));
+                      setSmsForwardingValue(normalized ?? "");
+                      showToast("Uloženo", "success");
+                    } catch (e) {
+                      showToast(e instanceof Error ? e.message : "Chyba ukládání", "error");
+                    } finally {
+                      setSmsForwardingSaving(false);
+                    }
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: smsForwardingSaving ? "var(--panel-2)" : "var(--accent)",
+                    color: smsForwardingSaving ? "var(--muted)" : "var(--accent-fg)",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: smsForwardingSaving ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {smsForwardingSaving ? "Ukládám…" : "Uložit"}
+                </button>
+              </>
+            )}
+          </Card>
+
+          {smsPhoneRow && (
+            <Card style={{ marginTop: 24 }}>
+              <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4, color: "var(--text)" }}>Automatické SMS při změně statusu</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
+                Když se status zakázky změní na zvolený, zákazníkovi se automaticky odešle SMS. V textu lze použít proměnné:{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{code}}`}</code>,{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{customer_name}}`}</code>,{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{device_label}}`}</code>,{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{total_price}}`}</code>,{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{status}}`}</code>,{" "}
+                <code style={{ fontSize: 11, background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{notes}}`}</code>.
+              </div>
+              {smsAutomationsLoading ? (
+                <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Načítám…</div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    {smsAutomations.map((a) => {
+                      const statusLabel = statuses.find((s) => s.key === a.trigger_status_key)?.label ?? a.trigger_status_key;
+                      return (
+                        <div
+                          key={a.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            padding: 12,
+                            borderRadius: 10,
+                            border: "1px solid var(--border)",
+                            background: a.active ? "var(--panel)" : "var(--panel-2)",
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", marginBottom: 4 }}>Status: {statusLabel}</div>
+                            <div style={{ fontSize: 12, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message_template || "(prázdná zpráva)"}</div>
+                          </div>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", flexShrink: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={a.active}
+                              onChange={async () => {
+                                const { error } = await supabase.from("sms_automations").update({ active: !a.active }).eq("id", a.id);
+                                if (!error) setSmsAutomations((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: !x.active } : x)));
+                              }}
+                            />
+                            Aktivní
+                          </label>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm("Smazat tuto automatizaci?")) return;
+                              const { error } = await supabase.from("sms_automations").delete().eq("id", a.id);
+                              if (!error) setSmsAutomations((prev) => prev.filter((x) => x.id !== a.id));
+                            }}
+                            style={{ padding: "6px 10px", fontSize: 11, border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", cursor: "pointer" }}
+                          >
+                            Smazat
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ padding: 12, border: "1px dashed var(--border)", borderRadius: 10, background: "var(--panel-2)" }}>
+                    <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: "var(--text)" }}>Přidat automatizaci</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <FieldLabel>Kdy (status zakázky)</FieldLabel>
+                        <select
+                          id="sms-auto-status"
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13 }}
+                        >
+                          {statuses.map((s) => (
+                            <option key={s.key} value={s.key}>{s.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel>Text zprávy (s proměnnými)</FieldLabel>
+                        <textarea
+                          id="sms-auto-template"
+                          placeholder="Dobrý den, zakázka {{code}} je ve stavu {{status}}. Celková cena: {{total_price}} Kč."
+                          rows={3}
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, resize: "vertical" }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const sel = document.getElementById("sms-auto-status") as HTMLSelectElement | null;
+                          const tpl = document.getElementById("sms-auto-template") as HTMLTextAreaElement | null;
+                          const trigger_status_key = sel?.value?.trim();
+                          const message_template = tpl?.value?.trim() ?? "";
+                          if (!trigger_status_key || !activeServiceId) return;
+                          const { data, error } = await supabase
+                            .from("sms_automations")
+                            .insert({ service_id: activeServiceId, trigger_status_key, message_template, active: true, sort_order: smsAutomations.length })
+                            .select("id, trigger_status_key, message_template, active, sort_order")
+                            .single();
+                          if (!error && data) {
+                            setSmsAutomations((prev) => [...prev, data]);
+                            if (tpl) tpl.value = "";
+                            showToast("Automatizace přidána", "success");
+                          }
+                        }}
+                        style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 700, fontSize: 13, cursor: "pointer", alignSelf: "flex-start" }}
+                      >
+                        Přidat
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
         </>
       )}
 
@@ -2610,6 +2953,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {/* VZHLED - ACHIEVEMENTY */}
       {section.subsection === "appearance_achievements" && (
+        <>
         <Card>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Achievementy</div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
@@ -2640,6 +2984,38 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             />
           </label>
         </Card>
+
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Fakturační systém</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+            Zapnutý modul Faktury v Jobi (stránka Faktury, tlačítka „Vystavit fakturu“ / „Přejít na fakturu“ u zakázek). Vypněte, pokud používáte vlastní fakturační systém a nechcete v Jobi nic s fakturami.
+          </div>
+          <label
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Modul Faktury zapnutý</span>
+            <input
+              type="checkbox"
+              checked={uiCfg.invoicingEnabled !== false}
+              onChange={(e) => {
+                const v = e.target.checked;
+                const newCfg = { ...uiCfg, invoicingEnabled: v };
+                setUiCfg(newCfg);
+                saveUIConfig(newCfg);
+              }}
+            />
+          </label>
+        </Card>
+        </>
       )}
 
       {section.subsection === "orders_device_options" && (

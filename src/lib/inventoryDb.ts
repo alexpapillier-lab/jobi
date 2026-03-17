@@ -70,25 +70,31 @@ function mapProductRow(r: {
   };
 }
 
-/** Načte data skladu z databáze pro daný servis. */
-export async function loadInventoryFromDb(serviceId: string | null): Promise<InventoryData> {
+export type LoadInventoryResult = { data: InventoryData; error?: string };
+
+/** Načte data skladu z databáze pro daný servis. Při chybě vrací { data: prázdné, error } – nekračuj stav prázdnými daty. */
+export async function loadInventoryFromDb(serviceId: string | null): Promise<LoadInventoryResult> {
   const supabase = getSupabaseClient();
   if (!supabase || !serviceId) {
-    return { productCategories: [], products: [] };
+    return { data: { productCategories: [], products: [] } };
   }
 
-  // Sekvenčně místo paralelně – méně tlak na connection pool (PGRST683)
   const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
   const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
 
   if (categoriesRes.error || productsRes.error) {
-    console.error("[inventoryDb] Load error:", categoriesRes.error || productsRes.error);
-    return { productCategories: [], products: [] };
+    const err = categoriesRes.error || productsRes.error;
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[inventoryDb] Load failed (síť/DB):", err?.message ?? err);
+    }
+    return { data: { productCategories: [], products: [] }, error: (err as { message?: string })?.message ?? "Load failed" };
   }
 
   return {
-    productCategories: (categoriesRes.data ?? []).map(mapProductCategoryRow),
-    products: (productsRes.data ?? []).map(mapProductRow),
+    data: {
+      productCategories: (categoriesRes.data ?? []).map(mapProductCategoryRow),
+      products: (productsRes.data ?? []).map(mapProductRow),
+    },
   };
 }
 
@@ -102,20 +108,18 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
   const categoryIds = new Set(data.productCategories.map((c) => c.id));
   const productIds = new Set(data.products.map((p) => p.id));
 
-  // Smazat odstraněné produkty
+  // Smazat odstraněné produkty (jedno volání místo N)
   const { data: existingProducts } = await (supabase.from("inventory_products") as any).select("id").eq("service_id", serviceId);
-  for (const p of existingProducts ?? []) {
-    if (!productIds.has(p.id)) {
-      await (supabase.from("inventory_products") as any).delete().eq("id", p.id);
-    }
+  const toDeleteProductIds = (existingProducts ?? []).map((p: { id: string }) => p.id).filter((id: string) => !productIds.has(id));
+  if (toDeleteProductIds.length > 0) {
+    await (supabase.from("inventory_products") as any).delete().in("id", toDeleteProductIds);
   }
 
-  // Smazat odstraněné kategorie
+  // Smazat odstraněné kategorie (jedno volání místo N)
   const { data: existingCategories } = await (supabase.from("inventory_product_categories") as any).select("id").eq("service_id", serviceId);
-  for (const c of existingCategories ?? []) {
-    if (!categoryIds.has(c.id)) {
-      await (supabase.from("inventory_product_categories") as any).delete().eq("id", c.id);
-    }
+  const toDeleteCategoryIds = (existingCategories ?? []).map((c: { id: string }) => c.id).filter((id: string) => !categoryIds.has(id));
+  if (toDeleteCategoryIds.length > 0) {
+    await (supabase.from("inventory_product_categories") as any).delete().in("id", toDeleteCategoryIds);
   }
 
   // Upsert categories
@@ -130,7 +134,7 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
     }));
     const { error } = await (supabase.from("inventory_product_categories") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[inventoryDb] Upsert categories error:", error);
+      if (typeof console !== "undefined" && console.warn) console.warn("[inventoryDb] Upsert categories:", error.message);
       return { error: error.message };
     }
   }
@@ -154,7 +158,7 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
     }));
     const { error } = await (supabase.from("inventory_products") as any).upsert(rows, { onConflict: "id" });
     if (error) {
-      console.error("[inventoryDb] Upsert products error:", error);
+      if (typeof console !== "undefined" && console.warn) console.warn("[inventoryDb] Upsert products:", error.message);
       return { error: error.message };
     }
   }

@@ -37,7 +37,8 @@
     "electron:build": "npm run build:electron && electron-builder",
     "electron:build:universal": "npm run build:electron && electron-builder --mac --universal",
     "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev:fresh": "rm -rf dist-electron && npm run electron:dev",
     "preview": "vite preview"
   },
-  "version": "0.2.2"
+  "version": "0.2.3"
 }

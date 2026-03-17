@@ -1,0 +1,3 @@
+-- Seed data for local/reset (optional).
+-- Add INSERTs here if you need default data after migrations.
+-- Empty file is valid.

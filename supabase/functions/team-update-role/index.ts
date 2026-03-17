@@ -81,6 +81,8 @@ serve(async (req) => {
     const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
     const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
+    let callerRole: string | null = null;
+
     if (!isRootOwner) {
       const { data: callerMembership, error: callerError } = await svc
         .from("service_memberships")
@@ -102,6 +104,16 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      callerRole = callerMembership.role;
+    }
+
+    // Only owner (or root owner) can promote someone to owner.
+    if (roleNorm === "owner" && !isRootOwner && callerRole !== "owner") {
+      return new Response(
+        JSON.stringify({ error: "Only owner can assign owner role" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Check target user's current role

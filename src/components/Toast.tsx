@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { playSaved, playDeleted, playAchievementUnlock, areSoundsEnabled } from "../lib/sounds";
 import { resetTauriFetchState } from "../lib/supabaseClient";
@@ -10,12 +10,12 @@ type Toast = {
   message: string;
   type?: "success" | "error" | "info" | "achievement";
   isClosing?: boolean;
-  /** Nezmizí po čase ani po najetí myší; zobrazí tlačítko akce */
   persistent?: boolean;
   actionLabel?: string;
   onAction?: () => void;
-  /** Pro type=achievement */
   achievement?: { title: string; description: string; trophy: TrophyTier };
+  createdAt: number;
+  duration: number;
 };
 
 let toastId = 0;
@@ -46,19 +46,10 @@ export function showToast(message: string, type: "success" | "error" | "info" = 
   }
 
   const id = `toast-${++toastId}`;
-  toasts.push({ id, message, type });
+  toasts.push({ id, message, type, createdAt: Date.now(), duration: 3000 });
   notify();
-
-  setTimeout(() => {
-    const idx = toasts.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      toasts.splice(idx, 1);
-      notify();
-    }
-  }, 3000);
 }
 
-/** Toast, který nezmizí při najetí myší a má tlačítko (např. „Jít do nastavení“). Vrátí id pro pozdější removeToast. */
 export function showPersistentToast(
   message: string,
   type: "success" | "error" | "info",
@@ -73,6 +64,8 @@ export function showPersistentToast(
     persistent: true,
     actionLabel: options.actionLabel,
     onAction: options.onAction,
+    createdAt: Date.now(),
+    duration: 0,
   });
   notify();
   return id;
@@ -86,7 +79,6 @@ export function removeToast(id: string) {
   }
 }
 
-/** Ukázkový achievement toast – vždy zobrazí (pro testování v nastavení Owner) */
 export function showDemoAchievementToast() {
   playAchievementUnlock();
   const id = `toast-ach-demo-${++toastId}`;
@@ -99,15 +91,10 @@ export function showDemoAchievementToast() {
       description: "Tohle je jen demo. Skutečné achievementy získáte plněním úkolů.",
       trophy: "gold",
     },
+    createdAt: Date.now(),
+    duration: 4500,
   });
   notify();
-  setTimeout(() => {
-    const idx = toasts.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      toasts.splice(idx, 1);
-      notify();
-    }
-  }, 4500);
 }
 
 export function showAchievementToast(title: string, description: string, trophy: TrophyTier) {
@@ -119,15 +106,10 @@ export function showAchievementToast(title: string, description: string, trophy:
     message: title,
     type: "achievement",
     achievement: { title, description, trophy },
+    createdAt: Date.now(),
+    duration: 4500,
   });
   notify();
-  setTimeout(() => {
-    const idx = toasts.findIndex((t) => t.id === id);
-    if (idx >= 0) {
-      toasts.splice(idx, 1);
-      notify();
-    }
-  }, 4500);
 }
 
 function areAchievementsEnabled(): boolean {
@@ -183,6 +165,46 @@ function ToastItem({ toast }: { toast: Toast }) {
   const isPersistent = toast.persistent === true;
   const bg = isAchievement ? "var(--panel)" : isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
 
+  const [hovered, setHovered] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remainingRef = useRef(toast.duration);
+  const lastTickRef = useRef(Date.now());
+
+  const scheduleRemoval = useCallback(() => {
+    if (isPersistent || remainingRef.current <= 0) return;
+    lastTickRef.current = Date.now();
+    timerRef.current = setTimeout(() => {
+      removeToast(toast.id);
+    }, remainingRef.current);
+  }, [toast.id, isPersistent]);
+
+  useEffect(() => {
+    if (isPersistent) return;
+    remainingRef.current = toast.duration;
+    scheduleRemoval();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [toast.id, toast.duration, isPersistent, scheduleRemoval]);
+
+  useEffect(() => {
+    if (isPersistent) return;
+    if (hovered) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      const elapsed = Date.now() - lastTickRef.current;
+      remainingRef.current = Math.max(0, remainingRef.current - elapsed);
+    } else {
+      if (remainingRef.current > 0) {
+        scheduleRemoval();
+      } else {
+        removeToast(toast.id);
+      }
+    }
+  }, [hovered, isPersistent, toast.id, scheduleRemoval]);
+
   const handleAnimationEnd = (e: React.AnimationEvent) => {
     if (e.animationName === "toastSlideOut" && isClosing) {
       removeToast(toast.id);
@@ -205,7 +227,8 @@ function ToastItem({ toast }: { toast: Toast }) {
       role={isPersistent ? "alert" : "button"}
       tabIndex={0}
       onAnimationEnd={handleAnimationEnd}
-      onMouseEnter={isPersistent ? undefined : dismiss}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onClick={isPersistent ? undefined : dismiss}
       onKeyDown={isPersistent ? undefined : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dismiss(); } }}
       style={{
@@ -229,7 +252,7 @@ function ToastItem({ toast }: { toast: Toast }) {
         userSelect: "text",
         WebkitUserSelect: "text",
       }}
-      title={isPersistent ? undefined : "Kliknutím nebo najetím myší zavřete"}
+      title={isPersistent ? undefined : "Kliknutím zavřete"}
     >
       {isAchievement && toast.achievement && (
         <TrophyIcon tier={toast.achievement.trophy} size={28} />
@@ -285,4 +308,3 @@ function ToastItem({ toast }: { toast: Toast }) {
     </div>
   );
 }
-

@@ -410,7 +410,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
 
   const [newProduct, setNewProduct] = useState({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [] as string[], imageUrl: "", repairIds: [] as string[], categoryId: "" });
+  const [newProductUnassigned, setNewProductUnassigned] = useState(false);
   const [newProductCategoryName, setNewProductCategoryName] = useState("");
+
+  useEffect(() => {
+    setNewProductUnassigned(!selectedModelId);
+  }, [selectedModelId]);
   const [selectedProductCategoryId, setSelectedProductCategoryId] = useState<string | null>(null);
   
   // Filters for product list
@@ -443,15 +448,14 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     }
     let cancelled = false;
     (async () => {
-      // Load devices (for filtering products)
       const devicesRes = await loadDevicesFromDb(activeServiceId);
       if (cancelled) return;
       if (!devicesRes.error) setDevicesData(devicesRes.data);
 
-      // Load inventory from DB
-      let invData = await loadInventoryFromDb(activeServiceId);
+      const loadRes = await loadInventoryFromDb(activeServiceId);
       if (cancelled) return;
-      const hasDb = invData.productCategories.length > 0 || invData.products.length > 0;
+      let invData = loadRes.data;
+      const hasDb = !loadRes.error && (invData.productCategories.length > 0 || invData.products.length > 0);
       if (!hasDb) {
         const fromStorage = loadInventoryFromKey(getInventoryKey(activeServiceId));
         const legacy = loadInventoryFromKey(STORAGE_KEYS.INVENTORY);
@@ -473,12 +477,25 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
   }, [activeServiceId]);
 
-  // Save inventory to DB when data changes
+  // Po vlastním uložení neřešit realtime reload (zabrání smyčce: save → realtime → setData → save)
+  const lastSaveAtRef = useRef<number>(0);
+  // Save inventory to DB when data changes – debounced, max jeden toast za chybu
+  const saveErrorToastRef = useRef<number>(0);
   useEffect(() => {
     if (!activeServiceId) return;
-    saveInventoryToDb(activeServiceId, data).then((r) => {
-      if (r.error) showToast("Chyba uložení skladu: " + r.error, "error");
-    });
+    const t = setTimeout(() => {
+      saveInventoryToDb(activeServiceId, data).then((r) => {
+        if (!r.error) lastSaveAtRef.current = Date.now();
+        else {
+          const now = Date.now();
+          if (now - saveErrorToastRef.current > 5000) {
+            saveErrorToastRef.current = now;
+            showToast("Chyba uložení skladu: " + r.error, "error");
+          }
+        }
+      });
+    }, 1200);
+    return () => clearTimeout(t);
   }, [activeServiceId, data]);
 
   useEffect(() => {
@@ -492,15 +509,27 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   // Refresh inventory from DB when returning from import
   useEffect(() => {
     if (!showImport && activeServiceId) {
-      loadInventoryFromDb(activeServiceId).then((invData) => setData(invData));
+      loadInventoryFromDb(activeServiceId).then((res) => {
+        if (!res.error) setData(res.data);
+      });
     }
   }, [showImport, activeServiceId]);
 
-  // Realtime: při změně skladu nebo zařízení v jiné záložce/zařízení přenačíst
+  // Realtime: přenačíst jen při změně od jiného klienta; debounce + ignorovat reload chvíli po vlastním save (zabrání záplavě requestů)
   useEffect(() => {
     if (!activeServiceId || !supabase) return;
     const topic = `inventory:${activeServiceId}`;
-    const reloadInventory = () => loadInventoryFromDb(activeServiceId).then(setData);
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const reloadInventory = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        if (Date.now() - lastSaveAtRef.current < 4000) return; // vlastní save – nepřenačítat
+        loadInventoryFromDb(activeServiceId).then((res) => {
+          if (!res.error) setData(res.data);
+        });
+      }, 800);
+    };
     const reloadDevices = () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) setDevicesData(r.data); });
     const channel = supabase
       .channel(topic)
@@ -536,6 +565,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       )
       .subscribe();
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
       if (supabase) supabase.removeChannel(channel);
     };
   }, [activeServiceId]);
@@ -615,7 +645,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   // Brands, categories and models are loaded from Devices - no add/edit/delete functions needed
 
   const addProductCategory = () => {
-    if (!newProductCategoryName.trim()) return;
+    if (!newProductCategoryName.trim()) {
+      showToast("Zadejte název kategorie", "error");
+      return;
+    }
     const category: ProductCategory = {
       id: uuid(),
       name: newProductCategoryName.trim(),
@@ -664,7 +697,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   const addProduct = () => {
     if (!newProduct.name.trim()) return;
-    const modelIds = selectedModelId ? [selectedModelId] : [];
+    const modelIds = newProductUnassigned ? [] : (selectedModelId ? [selectedModelId] : []);
     const stock = parseInt(newProduct.stock) || 0;
 
     if (stock < 1) {
@@ -683,7 +716,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         };
         setData((d) => ({ ...d, products: [...d.products, product] }));
         setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-        showToast(modelIds.length > 0 ? "Produkt přidán" : "Nezávislý produkt přidán", "success");
+        showToast("Produkt přidán", "success");
       });
       setLowStockDialogOpen(true);
       return;
@@ -703,7 +736,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
     setData((d) => ({ ...d, products: [...d.products, product] }));
     setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-    showToast(modelIds.length > 0 ? "Produkt přidán" : "Nezávislý produkt přidán", "success");
+    showToast("Produkt přidán", "success");
   };
 
   // Brands, categories and models are managed in Devices page - no delete functions needed
@@ -1189,7 +1222,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             </div>
           </div>
           <button onClick={() => setShowImport(false)} style={{ ...softBtn, padding: "10px 16px" }}>
-            Zpět na správu
+            Zpět na Sklad
           </button>
         </div>
 
@@ -1853,10 +1886,19 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                 placeholder="Nová kategorie…"
                 value={newProductCategoryName}
                 onChange={(e) => setNewProductCategoryName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addProductCategory()}
+                onKeyDown={(e) => e.key === "Enter" && newProductCategoryName.trim() && addProductCategory()}
                   style={inputStyle}
                 />
-              <button onClick={addProductCategory} style={primaryBtn}>
+              <button
+                  onClick={() => newProductCategoryName.trim() && addProductCategory()}
+                  style={{
+                    ...primaryBtn,
+                    opacity: !newProductCategoryName.trim() ? 0.6 : 1,
+                    cursor: !newProductCategoryName.trim() ? "not-allowed" : "pointer",
+                  }}
+                  disabled={!newProductCategoryName.trim()}
+                  title={!newProductCategoryName.trim() ? "Zadejte název kategorie" : "Přidat kategorii"}
+                >
                   +
                 </button>
               </div>
@@ -1988,15 +2030,18 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           <div style={{ ...card, maxHeight: "none" }}>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>
               {selectedModelId && selectedModel
-                ? `Přidání produktu · ${selectedModel.name}`
-                : "Přidání nezávislého produktu (bez přiřazení k modelu)"}
+                ? `Přidat produkt${selectedModel.name ? ` · ${selectedModel.name}` : ""}`
+                : "Přidat produkt"}
           </div>
-          {!selectedModelId && (
-            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>
-              Produkt nebude přiřazen k žádnému modelu zařízení. Můžete ho později přiřadit v editaci, nebo vyberte vlevo model a přidejte produkt k němu.
-            </div>
-          )}
               <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={newProductUnassigned}
+                    onChange={(e) => setNewProductUnassigned(e.target.checked)}
+                  />
+                  <span style={{ fontSize: 13, color: "var(--text)" }}>Nepřiřazovat k zařízení</span>
+                </label>
                 <input
                   placeholder="Název produktu…"
                   value={newProduct.name}
@@ -2042,7 +2087,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     >
                       <option value="">Bez kategorie</option>
                       {data.productCategories
-                        .filter((cat) => !selectedModelId || (cat.modelIds || []).includes(selectedModelId))
+                        .filter((cat) => newProductUnassigned || !selectedModelId || (cat.modelIds || []).includes(selectedModelId))
                         .map((cat) => (
                           <option key={cat.id} value={cat.id}>
                             {cat.name}
@@ -2097,8 +2142,17 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                     </div>
                   )}
-                <button onClick={addProduct} style={primaryBtn} disabled={!newProduct.name.trim()}>
-                  {selectedModelId ? "Přidat produkt k modelu" : "Přidat nezávislý produkt"}
+                <button
+                  onClick={() => newProduct.name.trim() && addProduct()}
+                  style={{
+                    ...primaryBtn,
+                    opacity: !newProduct.name.trim() ? 0.6 : 1,
+                    cursor: !newProduct.name.trim() ? "not-allowed" : "pointer",
+                  }}
+                  disabled={!newProduct.name.trim()}
+                  title={!newProduct.name.trim() ? "Zadejte název produktu" : "Přidat produkt"}
+                >
+                  Přidat produkt
                 </button>
               </div>
           </div>

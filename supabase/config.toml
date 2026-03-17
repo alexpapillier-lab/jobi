@@ -409,3 +409,15 @@ verify_jwt = false
 
 [functions.capture-create-token]
 verify_jwt = false
+
+[functions.capture-claim-draft]
+verify_jwt = false
+
+[functions.capture-list-draft]
+verify_jwt = false
+
+[functions.sms-provision]
+verify_jwt = false
+
+[functions.sms-send]
+verify_jwt = false

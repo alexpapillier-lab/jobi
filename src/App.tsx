@@ -8,6 +8,8 @@ import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
 import Calendar from "./pages/Calendar";
 import Achievements from "./pages/Achievements";
+import Invoices from "./pages/Invoices";
+import SmsChatsPage from "./pages/SmsChatsPage";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { AppLayout } from "./layout/AppLayout";
@@ -25,7 +27,7 @@ import { showToast, showPersistentToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
-import { pushContextToJobiDocs, openJobiDocsDownload } from "./lib/jobidocs";
+import { pushContextToJobiDocs, openJobiDocsDownload, isJobiDocsRunning, launchJobiDocsApp } from "./lib/jobidocs";
 import { loadDocumentsConfigRawFromDB } from "./lib/documentSettings";
 import { useActiveRole } from "./hooks/useActiveRole";
 import { getLogoColors, LOGO_PRESETS } from "./lib/logoPresets";
@@ -34,6 +36,9 @@ import type { ThemeMode } from "./theme/ThemeProvider";
 import { STORAGE_KEYS } from "./constants/storageKeys";
 import { safeLoadCompanyData } from "./lib/companyData";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
+import { useSmsNotifications } from "./hooks/useSmsNotifications";
+import { useGlobalSmsUnreadCount } from "./hooks/useGlobalSmsUnreadCount";
+import { useSmsEnabled } from "./hooks/useSmsEnabled";
 import { checkAchievementOnMultiservice, checkAchievementOnShortcutUsed } from "./lib/achievements";
 import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
@@ -52,6 +57,7 @@ type OpenTicketIntent = {
   mode?: "panel" | "detail";
   returnToPage?: NavKey; // Page to return to when ticket is closed
   returnToCustomerId?: string; // Customer ID to open when returning to customers page
+  openSmsPanel?: boolean; // When true, open SMS chat panel after opening ticket (e.g. from notification click)
 };
 
 type OpenCustomerIntent = {
@@ -75,6 +81,8 @@ type UIConfig = {
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: DisplayMode; pageSize: number };
   achievementsEnabled?: boolean;
+  /** Zapnutý modul Faktury (stránka, tlačítka u zakázek). Vypnout, pokud používáte vlastní fakturační systém. */
+  invoicingEnabled?: boolean;
 };
 
 function defaultUIConfig(): UIConfig {
@@ -84,6 +92,7 @@ function defaultUIConfig(): UIConfig {
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
     achievementsEnabled: true,
+    invoicingEnabled: true,
   };
 }
 
@@ -105,6 +114,7 @@ function safeLoadUIConfig(): UIConfig {
       : d.orders.pageSize;
 
     const achievementsEnabled = parsed?.achievementsEnabled;
+    const invoicingEnabled = parsed?.invoicingEnabled;
     return {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
@@ -125,6 +135,7 @@ function safeLoadUIConfig(): UIConfig {
         pageSize: validPageSize,
       },
       achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
+      invoicingEnabled: typeof invoicingEnabled === "boolean" ? invoicingEnabled : true,
     };
   } catch {
     return defaultUIConfig();
@@ -163,6 +174,19 @@ export default function App() {
 
   // one-shot intent: navigate to Orders and open a specific ticket
   const [openTicketIntent, setOpenTicketIntent] = useState<OpenTicketIntent | null>(null);
+  const smsPanelTicketIdRef = useRef<string | null>(null);
+
+  useSmsNotifications(
+    activeServiceId,
+    smsPanelTicketIdRef,
+    useCallback((ticketId: string) => {
+      setOpenTicketIntent({ ticketId, mode: "detail", openSmsPanel: true });
+      setActivePage("orders");
+    }, [])
+  );
+
+  const globalSmsUnreadCount = useGlobalSmsUnreadCount(activeServiceId);
+  const smsEnabled = useSmsEnabled(activeServiceId);
 
   const [openClaimIntent, setOpenClaimIntent] = useState<OpenClaimIntent | null>(null);
 
@@ -171,6 +195,8 @@ export default function App() {
 
   // create new order intent (prefill)
   const [newOrderPrefill, setNewOrderPrefill] = useState<{ customerId?: string } | null>(null);
+  const [invoicePrefill, setInvoicePrefill] = useState<any>(null);
+  const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
 
   // UI config
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
@@ -178,9 +204,9 @@ export default function App() {
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
 
-  // Po přihlášení s pozvánkou: neukazovat hlavní app, dokud nevyřídíme invite a neukážeme „Pozvánka přijata“
-  const [resolvingInvite, setResolvingInvite] = useState(false);
-  const [inviteAcceptStatus, setInviteAcceptStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  // Invite token resolution guards (aby se flow nespouštěl opakovaně po refreshi session)
+  const inviteResolvingTokenRef = useRef<string | null>(null);
+  const inviteResolvedTokenRef = useRef<string | null>(null);
 
   // Průvodce aplikací (krok za krokem po stránkách)
   const [isTourActive, setIsTourActive] = useState(false);
@@ -622,6 +648,32 @@ export default function App() {
     document.documentElement.style.setProperty("zoom", String(s));
   }, [uiCfg.app.uiScale]);
 
+  // Při otevření Jobi automaticky spustit JobiDocs do tray, pokud neběží (pro tisk/export)
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        const running = await isJobiDocsRunning();
+        if (!running) await launchJobiDocsApp();
+      } catch {
+        // ignore (např. v prohlížeči launch neexistuje)
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Když je fakturační modul vypnutý a uživatel je na Fakturách, přesměruj na Zakázky
+  useEffect(() => {
+    if (uiCfg.invoicingEnabled === false && activePage === "invoices") {
+      setActivePage("orders");
+    }
+  }, [uiCfg.invoicingEnabled, activePage]);
+
+  useEffect(() => {
+    if (smsEnabled === false && activePage === "sms") {
+      setActivePage("orders");
+    }
+  }, [smsEnabled, activePage]);
+
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
   useEffect(() => {
     const onUiUpdated = () => setUiCfg(safeLoadUIConfig());
@@ -657,11 +709,13 @@ export default function App() {
         nav_inventory: "inventory",
         nav_devices: "devices",
         nav_customers: "customers",
+        nav_invoices: "invoices",
         nav_statistics: "statistics",
         nav_settings: "settings",
       };
       for (const [id, page] of Object.entries(navMap)) {
         if (comboMatchesEvent(e, getShortcut(id as ShortcutId))) {
+          if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
           e.preventDefault();
           e.stopPropagation();
           const uid = session?.user?.id;
@@ -684,24 +738,25 @@ export default function App() {
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [session, shortcutsHelpOpen]);
+  }, [session, shortcutsHelpOpen, uiCfg.invoicingEnabled]);
 
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {
     const onNav = (e: Event) => {
       const ev = e as CustomEvent<{ page: NavKey }>;
       const page = ev.detail?.page;
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "statistics", "settings", "achievements"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings", "achievements"].includes(page)) {
+        if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
         setActivePage(page);
       }
     };
     window.addEventListener("jobsheet:navigate" as any, onNav);
     document.addEventListener("jobsheet:navigate" as any, onNav);
     return () => {
-      window.removeEventListener("jobsheet:navigate" as any, onNav);
-      document.removeEventListener("jobsheet:navigate" as any, onNav);
+window.removeEventListener("jobsheet:navigate" as any, onNav);
+    document.removeEventListener("jobsheet:navigate" as any, onNav);
     };
-  }, []);
+  }, [uiCfg.invoicingEnabled]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -734,9 +789,9 @@ export default function App() {
 
     const token = getPendingInviteToken();
     if (!token) return;
-
-    setResolvingInvite(true);
-    setInviteAcceptStatus("loading");
+    // Session se může po návratu do okna refreshnout; stejný token proto neřeš opakovaně.
+    if (inviteResolvingTokenRef.current === token || inviteResolvedTokenRef.current === token) return;
+    inviteResolvingTokenRef.current = token;
 
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 2000;
@@ -747,8 +802,23 @@ export default function App() {
         const accessToken = sessionData?.session?.access_token;
         if (!accessToken) {
           console.error("[App] No access token for invite-accept");
-          setInviteAcceptStatus("error");
-          setResolvingInvite(false);
+          inviteResolvingTokenRef.current = null;
+          return;
+        }
+
+        // Uživatel už má členství/služby => starý pending invite token je irelevantní.
+        const { data: listDataPre } = await client.functions.invoke("services-list", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const listPre = (listDataPre?.services as Array<{ service_id: string; service_name: string; role: string }>) || [];
+        if (listPre.length > 0) {
+          clearPendingInviteToken();
+          inviteResolvedTokenRef.current = token;
+          inviteResolvingTokenRef.current = null;
+          setServices(listPre);
+          const currentActive = activeServiceId;
+          const valid = currentActive && listPre.some((s) => s.service_id === currentActive);
+          if (!valid) setActiveServiceId(listPre[0].service_id);
           return;
         }
 
@@ -765,24 +835,33 @@ export default function App() {
             } catch {}
           }
           console.error("[App] invite-accept error (attempt " + (attempt + 1) + ")", { error, detail });
+          const rawErr = `${error?.message || ""} ${detail || ""}`.toLowerCase();
+          const looksLikeInvalidInvite =
+            /(invite|pozv|token)/.test(rawErr) &&
+            /(invalid|neplat|not found|nenalez|expired|vypr|id)/.test(rawErr);
+          if (looksLikeInvalidInvite) {
+            clearPendingInviteToken();
+            inviteResolvedTokenRef.current = token;
+            inviteResolvingTokenRef.current = null;
+            showToast("Pozvánka už není platná. Starý kód byl odstraněn.", "error");
+            return;
+          }
           if (attempt < MAX_RETRIES - 1) {
-            setInviteAcceptStatus("loading"); // zůstane "Připravuji váš servis" s podtitulem
             await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
             return handleInvite(attempt + 1);
           }
           showToast(`Chyba při přijetí pozvánky: ${error.message}${detail ? " | " + detail : ""}`, "error");
-          setInviteAcceptStatus("error");
-          setResolvingInvite(false);
+          inviteResolvingTokenRef.current = null;
           return;
         }
 
         if (data?.serviceId) {
           clearPendingInviteToken();
-          setInviteAcceptStatus("success");
+          inviteResolvedTokenRef.current = token;
+          inviteResolvingTokenRef.current = null;
           showToast("Pozvánka přijata", "success");
           await refreshServices();
           setActiveServiceId(data.serviceId);
-          setTimeout(() => setResolvingInvite(false), 1400);
           return;
         }
 
@@ -797,11 +876,11 @@ export default function App() {
           const list = (listData?.services as Array<{ service_id: string }>) || [];
           if (list.length > 0) {
             clearPendingInviteToken();
-            setInviteAcceptStatus("success");
+            inviteResolvedTokenRef.current = token;
+            inviteResolvingTokenRef.current = null;
             showToast("Pozvánka přijata", "success");
             setServices(list as Array<{ service_id: string; service_name: string; role: string }>);
             setActiveServiceId(list[0].service_id);
-            setTimeout(() => setResolvingInvite(false), 1400);
             return;
           }
         }
@@ -810,8 +889,7 @@ export default function App() {
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
           return handleInvite(attempt + 1);
         }
-        setInviteAcceptStatus("error");
-        setResolvingInvite(false);
+        inviteResolvingTokenRef.current = null;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
         console.error("[App] invite-accept exception (attempt " + (attempt + 1) + ")", err);
@@ -820,13 +898,12 @@ export default function App() {
           return handleInvite(attempt + 1);
         }
         showToast(`Chyba při přijetí pozvánky: ${errorMessage}`, "error");
-        setInviteAcceptStatus("error");
-        setResolvingInvite(false);
+        inviteResolvingTokenRef.current = null;
       }
     };
 
     handleInvite();
-  }, [session, refreshServices, setActiveServiceId]);
+  }, [session, activeServiceId, refreshServices, setActiveServiceId]);
 
   const pageTitle = useMemo(() => {
     switch (activePage) {
@@ -842,6 +919,8 @@ export default function App() {
         return "Customers";
       case "statistics":
         return "Statistiky";
+      case "invoices":
+        return "Faktury";
       case "achievements":
         return "Achievementy";
       case "settings":
@@ -891,50 +970,6 @@ export default function App() {
               setAuthenticatedState(true);
             }}
           />
-        </OnlineGate>
-      </ThemeProvider>
-    );
-  }
-
-  // Screen „Připravuji váš servis“: vyřídí pozvánku a ověří přístup, až pak hlavní app
-  if (resolvingInvite) {
-    return (
-      <ThemeProvider>
-        <OnlineGate>
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "var(--bg, #f8fafc)",
-              color: "var(--text, #1e293b)",
-            }}
-          >
-            {inviteAcceptStatus === "loading" && (
-              <>
-                <div style={{ width: 40, height: 40, border: "3px solid var(--accent, #8b5cf6)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                <p style={{ marginTop: 16, fontSize: 18, fontWeight: 600 }}>Připravuji váš servis</p>
-                <p style={{ marginTop: 6, fontSize: 14, color: "var(--text-muted, #64748b)" }}>Kontroluji pozvánku a přístup…</p>
-              </>
-            )}
-            {inviteAcceptStatus === "success" && (
-              <>
-                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--accent, #8b5cf6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>✓</div>
-                <p style={{ marginTop: 16, fontSize: 18, fontWeight: 600 }}>Pozvánka přijata</p>
-                <p style={{ marginTop: 4, fontSize: 14, color: "var(--text-muted, #64748b)" }}>Přesměrovávám do servisu…</p>
-              </>
-            )}
-            {inviteAcceptStatus === "error" && (
-              <>
-                <p style={{ fontSize: 16, fontWeight: 500 }}>Něco se nepovedlo</p>
-                <p style={{ marginTop: 8, fontSize: 14, color: "var(--text-muted, #64748b)", maxWidth: 320, textAlign: "center" }}>Zkus to znovu nebo kontaktuj vlastníka servisu.</p>
-              </>
-            )}
-          </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </OnlineGate>
       </ThemeProvider>
     );
@@ -992,12 +1027,16 @@ export default function App() {
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
           achievementsEnabled={uiCfg.achievementsEnabled !== false}
+          invoicingEnabled={uiCfg.invoicingEnabled !== false}
           sidebarPosition={uiCfg.sidebar?.position || "left"}
+          smsUnreadCount={globalSmsUnreadCount}
+          smsEnabled={smsEnabled}
         >
             {visitedPages.has("orders") && (
               <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
                 <Orders
                   activeServiceId={activeServiceId}
+                  smsPanelTicketIdRef={smsPanelTicketIdRef}
                   newOrderPrefill={newOrderPrefill}
                   onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
                   openTicketIntent={openTicketIntent}
@@ -1014,9 +1053,32 @@ export default function App() {
                       setOpenCustomerIntent({ customerId });
                     }
                   }}
+                  onCreateInvoice={uiCfg.invoicingEnabled !== false ? (prefill) => {
+                    setInvoicePrefill(prefill);
+                    setOpenInvoiceId(null);
+                    setActivePage("invoices");
+                  } : undefined}
+                  onOpenInvoice={uiCfg.invoicingEnabled !== false ? (id) => {
+                    setOpenInvoiceId(id);
+                    setInvoicePrefill(null);
+                    setActivePage("invoices");
+                  } : undefined}
+                  closeDetailWhen={activePage !== "orders"}
                 />
               </div>
             )}
+
+          {visitedPages.has("sms") && (
+            <div style={{ display: activePage === "sms" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "sms"}>
+              <SmsChatsPage
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId, openSmsPanel) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", openSmsPanel: openSmsPanel ?? true });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
 
           {visitedPages.has("calendar") && (
             <div style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
@@ -1087,6 +1149,22 @@ export default function App() {
             </div>
           )}
 
+          {uiCfg.invoicingEnabled !== false && visitedPages.has("invoices") && (
+            <div style={{ display: activePage === "invoices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "invoices"}>
+              <Invoices
+                activeServiceId={activeServiceId}
+                prefillFromTicket={invoicePrefill}
+                onPrefillConsumed={() => setInvoicePrefill(null)}
+                openInvoiceId={openInvoiceId}
+                onOpenInvoiceIdConsumed={() => setOpenInvoiceId(null)}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "invoices" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
           {visitedPages.has("settings") && (
             <div style={{ display: activePage === "settings" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "settings"}>
             <Settings
@@ -1106,7 +1184,7 @@ export default function App() {
             </div>
           )}
 
-          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "achievements"].includes(activePage) && (
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "achievements", "invoices"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",
