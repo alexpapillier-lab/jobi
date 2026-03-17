@@ -80,6 +80,26 @@
   window.addEventListener("load", reveal);
   reveal();
 
+  // ---- Pricing toggle (měsíčně / ročně) ----
+  var pricingToggle = document.getElementById("pricing-toggle");
+  if (pricingToggle) {
+    var monthlyEls = document.querySelectorAll(".pricing-monthly");
+    var yearlyEls = document.querySelectorAll(".pricing-yearly");
+    var labelMonthly = document.querySelector(".pricing-toggle-label[data-period='monthly']");
+    var labelYearly = document.querySelector(".pricing-toggle-label[data-period='yearly']");
+    var yearlyActive = false;
+    function updatePricing() {
+      yearlyActive = !yearlyActive;
+      pricingToggle.setAttribute("aria-checked", yearlyActive ? "true" : "false");
+      pricingToggle.classList.toggle("pricing-toggle-yearly", yearlyActive);
+      monthlyEls.forEach(function (el) { el.hidden = yearlyActive; });
+      yearlyEls.forEach(function (el) { el.hidden = !yearlyActive; });
+      if (labelMonthly) labelMonthly.classList.toggle("pricing-toggle-label-active", !yearlyActive);
+      if (labelYearly) labelYearly.classList.toggle("pricing-toggle-label-active", yearlyActive);
+    }
+    pricingToggle.addEventListener("click", updatePricing);
+  }
+
   // ---- Stáhnout Jobi nebo JobiDocs DMG z GitHub ----
   var downloadLoading = document.getElementById("download-loading");
 
