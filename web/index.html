@@ -15,10 +15,16 @@
 <body>
   <!-- Loading screen -->
   <div id="page-loader" aria-hidden="true">
+    <div class="loader-bg" aria-hidden="true">
+      <div class="loader-orb loader-orb-1"></div>
+      <div class="loader-orb loader-orb-2"></div>
+    </div>
     <div class="loader-inner">
-      <img src="logo.svg" class="loader-logo" alt="" width="64" height="64" />
+      <div class="loader-logo-wrap">
+        <img src="logo.svg" class="loader-logo" alt="" width="72" height="72" />
+      </div>
       <div class="loader-name">Jobi</div>
-      <div class="loader-msg" id="loader-msg">Načítám zakázky…</div>
+      <div class="loader-msg" id="loader-msg">Připravuji stránku…</div>
       <div class="loader-bar"><div class="loader-bar-fill" id="loader-bar-fill"></div></div>
     </div>
   </div>

@@ -3,11 +3,9 @@
 
   // ---- Loading screen ----
   var loaderMessages = [
-    "Načítám zakázky…",
-    "Připravuji evidenci…",
-    "Synchronizuji zákazníky…",
-    "Kontroluji sklad…",
-    "Skoro připraveno…",
+    "Připravuji stránku…",
+    "Načítám…",
+    "Skoro hotovo…",
   ];
   var loaderEl = document.getElementById("page-loader");
   var loaderMsgEl = document.getElementById("loader-msg");
