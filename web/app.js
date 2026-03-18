@@ -15,9 +15,11 @@
   var loaderMinMs = 1800;
   var loaderMsgIdx = 0;
   var dotCount = 0;
+  var msgChanging = false;
 
-  // Dots animation on the message
+  // Dots animation – skips during message transitions to prevent overlap
   var dotsInterval = setInterval(function () {
+    if (msgChanging) return;
     dotCount = (dotCount + 1) % 4;
     if (loaderMsgEl) {
       loaderMsgEl.textContent = loaderMessages[loaderMsgIdx] + ".".repeat(dotCount);
@@ -27,12 +29,16 @@
   var loaderMsgInterval = setInterval(function () {
     loaderMsgIdx = Math.min(loaderMsgIdx + 1, loaderMessages.length - 1);
     dotCount = 0;
+    msgChanging = true;
     if (loaderMsgEl) {
       loaderMsgEl.style.opacity = "0";
       setTimeout(function () {
-        loaderMsgEl.textContent = loaderMessages[loaderMsgIdx];
-        loaderMsgEl.style.opacity = "1";
-      }, 140);
+        if (loaderMsgEl) {
+          loaderMsgEl.textContent = loaderMessages[loaderMsgIdx];
+          loaderMsgEl.style.opacity = "1";
+        }
+        msgChanging = false;
+      }, 150);
     }
     if (loaderBarEl) {
       var pct = Math.min(92, Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 85) + 15);

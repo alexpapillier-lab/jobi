@@ -1,16 +1,17 @@
 /* Jobi – landing page (2026 redesign) */
 :root {
-  --bg: #f6f7f9;
-  --panel: rgba(255, 255, 255, 0.97);
-  --text: #0f172a;
-  --muted: #64748b;
-  --border: rgba(15, 23, 42, 0.09);
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.1);
-  --accent-hover: #1d4ed8;
-  --accent-glow: rgba(37, 99, 235, 0.3);
-  --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.06);
-  --shadow: 0 12px 48px rgba(0, 0, 0, 0.1);
+  --bg: #0c0e18;
+  --panel: rgba(255, 255, 255, 0.05);
+  --panel-hi: rgba(255, 255, 255, 0.08);
+  --text: #e8edff;
+  --muted: rgba(232, 237, 255, 0.48);
+  --border: rgba(255, 255, 255, 0.09);
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent-hover: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.4);
+  --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 20px;
@@ -26,6 +27,10 @@ html { scroll-behavior: smooth; }
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 900px 700px at 85% 5%, rgba(37, 99, 235, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 700px 600px at 15% 65%, rgba(99, 102, 241, 0.07) 0%, transparent 70%);
+  background-attachment: fixed;
   color: var(--text);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -436,6 +441,12 @@ body {
   padding: clamp(64px, 10vw, 96px) var(--pad);
 }
 
+section#vyhody,
+section#cenik,
+section#stazeni {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 .section-eyebrow {
   font-size: 12px;
   font-weight: 700;
@@ -486,8 +497,9 @@ body {
 .feature-card:nth-child(4).visible { transition-delay: 0.2s; }
 
 .feature-card:hover {
-  box-shadow: var(--shadow);
-  border-color: rgba(37, 99, 235, 0.18);
+  background: var(--panel-hi);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25), var(--shadow);
+  border-color: rgba(59, 130, 246, 0.3);
   transform: translateY(-4px);
 }
 
@@ -552,8 +564,8 @@ body {
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 700;
-  background: rgba(34, 197, 94, 0.15);
-  color: #15803d;
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
   border-radius: 20px;
 }
 .pricing-toggle {
@@ -624,13 +636,13 @@ body {
   z-index: 1;
 }
 .pricing-card-popular .pricing-card-inner {
-  border-color: var(--accent);
-  background: linear-gradient(160deg, rgba(37, 99, 235, 0.05) 0%, #fff 55%);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 20px 56px rgba(37, 99, 235, 0.14);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.13) 0%, var(--panel) 55%);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3), 0 20px 56px rgba(59, 130, 246, 0.18);
   padding-top: 32px;
 }
 .pricing-card-popular:hover .pricing-card-inner {
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.28), 0 28px 64px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45), 0 28px 64px rgba(59, 130, 246, 0.25);
   transform: translateY(-5px);
 }
 
@@ -692,9 +704,9 @@ body {
   margin-top: 7px;
   font-size: 12px;
   font-weight: 600;
-  color: #15803d;
-  background: rgba(34, 197, 94, 0.13);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.2);
   border-radius: 6px;
   padding: 3px 9px;
 }
@@ -722,7 +734,7 @@ body {
   height: 14px;
   background-color: var(--accent-soft);
   border-radius: 50%;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5l2.5 2.5L8.5 2.5' stroke='%232563eb' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5l2.5 2.5L8.5 2.5' stroke='%233b82f6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
 }
@@ -776,14 +788,14 @@ body {
 .pricing-table th {
   font-weight: 700;
   color: var(--text);
-  background: rgba(37, 99, 235, 0.05);
-  border-bottom: 2px solid rgba(37, 99, 235, 0.12);
+  background: rgba(59, 130, 246, 0.1);
+  border-bottom: 2px solid rgba(59, 130, 246, 0.18);
 }
 .pricing-table tbody tr:nth-child(even) td {
-  background: rgba(0, 0, 0, 0.017);
+  background: rgba(255, 255, 255, 0.03);
 }
 .pricing-table tbody tr:hover td {
-  background: rgba(37, 99, 235, 0.05);
+  background: rgba(59, 130, 246, 0.08);
   transition: background 0.15s;
 }
 .pricing-table th:first-child,
