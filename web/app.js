@@ -3,10 +3,9 @@
 
   // ---- Loading screen ----
   var loaderMessages = [
-    "Připravuji stránku",
-    "Načítám data",
-    "Skoro hotovo",
-    "Hotovo",
+    "Připravuji stránku…",
+    "Načítám komponenty…",
+    "Skoro hotovo…",
   ];
   var loaderEl = document.getElementById("page-loader");
   var loaderMsgEl = document.getElementById("loader-msg");
@@ -14,55 +13,39 @@
   var loaderStart = Date.now();
   var loaderMinMs = 1800;
   var loaderMsgIdx = 0;
-  var dotCount = 0;
-  var msgChanging = false;
 
-  // Dots animation – skips during message transitions to prevent overlap
-  var dotsInterval = setInterval(function () {
-    if (msgChanging) return;
-    dotCount = (dotCount + 1) % 4;
-    if (loaderMsgEl) {
-      loaderMsgEl.textContent = loaderMessages[loaderMsgIdx] + ".".repeat(dotCount);
-    }
-  }, 280);
+  function setLoaderMsg(text, barPct) {
+    if (!loaderMsgEl) return;
+    loaderMsgEl.style.opacity = "0";
+    if (loaderBarEl && barPct !== undefined) loaderBarEl.style.width = barPct + "%";
+    setTimeout(function () {
+      if (loaderMsgEl) {
+        loaderMsgEl.textContent = text;
+        loaderMsgEl.style.opacity = "1";
+      }
+    }, 220);
+  }
 
+  // Single interval – no race conditions
   var loaderMsgInterval = setInterval(function () {
-    loaderMsgIdx = Math.min(loaderMsgIdx + 1, loaderMessages.length - 1);
-    dotCount = 0;
-    msgChanging = true;
-    if (loaderMsgEl) {
-      loaderMsgEl.style.opacity = "0";
-      setTimeout(function () {
-        if (loaderMsgEl) {
-          loaderMsgEl.textContent = loaderMessages[loaderMsgIdx];
-          loaderMsgEl.style.opacity = "1";
-        }
-        msgChanging = false;
-      }, 150);
+    loaderMsgIdx++;
+    if (loaderMsgIdx >= loaderMessages.length) {
+      clearInterval(loaderMsgInterval);
+      return;
     }
-    if (loaderBarEl) {
-      var pct = Math.min(92, Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 85) + 15);
-      loaderBarEl.style.width = pct + "%";
-    }
-  }, 420);
+    var pct = Math.round((loaderMsgIdx / (loaderMessages.length - 1)) * 75) + 20;
+    setLoaderMsg(loaderMessages[loaderMsgIdx], pct);
+  }, 750);
 
   function hideLoader() {
     clearInterval(loaderMsgInterval);
-    clearInterval(dotsInterval);
-    if (loaderMsgEl) {
-      loaderMsgEl.style.opacity = "0";
-      setTimeout(function () {
-        loaderMsgEl.textContent = "Hotovo";
-        loaderMsgEl.style.opacity = "1";
-      }, 140);
-    }
     if (loaderBarEl) loaderBarEl.style.width = "100%";
     setTimeout(function () {
       if (loaderEl) {
         loaderEl.classList.add("loader-out");
-        setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 480);
+        setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 500);
       }
-    }, 260);
+    }, 320);
   }
 
   window.addEventListener("load", function () {

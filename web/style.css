@@ -1143,7 +1143,8 @@ section#stazeni {
   color: rgba(255, 255, 255, 0.5);
   margin-bottom: 24px;
   min-height: 22px;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.18s ease;
+  will-change: opacity;
 }
 
 .loader-bar {
