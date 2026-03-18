@@ -1,7 +1,12 @@
 /**
  * Edge Function: sms-provision
- * Provision a Twilio phone number for a service (SMS + voice). Requires owner/admin or service_role.
+ * Provision a Twilio phone number for a service (SMS + voice). Requires owner/admin.
  * POST body: { service_id: string, forwarding_number?: string }
+ *
+ * Number assignment strategy (automatic):
+ *   1. If service already has a number → return it.
+ *   2. If an existing CZ number has capacity (< SMS_POOL_MAX_SERVICES, default 20) → join that pool.
+ *   3. Otherwise → purchase a new number from Twilio (CZ first, US fallback).
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -63,11 +68,6 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const serviceId = body?.service_id?.trim?.();
     const forwardingNumber = body?.forwarding_number?.trim?.() || null;
-    // shared_number: assign an already-purchased Twilio number to this service (pool sharing).
-    // When provided, no Twilio purchase is made – only a DB row is inserted.
-    // is_pool_primary: if true this service receives unsolicited inbounds on the shared number.
-    const sharedNumber: string | null = body?.shared_number?.trim?.() || null;
-    const isPoolPrimary: boolean = body?.is_pool_primary !== false; // default true
 
     if (!serviceId) {
       return new Response(
@@ -125,6 +125,61 @@ serve(async (req) => {
       );
     }
 
+    // ---- Auto pool: join existing CZ number if capacity available ----
+    // Env var SMS_POOL_MAX_SERVICES controls max services per shared number (default 20).
+    const poolMax = parseInt(Deno.env.get("SMS_POOL_MAX_SERVICES") ?? "20");
+
+    const { data: czRows } = await svc
+      .from("service_phone_numbers")
+      .select("twilio_number, twilio_sid")
+      .eq("active", true)
+      .eq("country_code", "CZ");
+
+    if (czRows && czRows.length > 0) {
+      // Count services per number
+      const counts: Record<string, { twilio_number: string; twilio_sid: string | null; count: number }> = {};
+      for (const row of czRows as { twilio_number: string; twilio_sid: string | null }[]) {
+        const n = row.twilio_number;
+        if (!counts[n]) counts[n] = { twilio_number: n, twilio_sid: row.twilio_sid ?? null, count: 0 };
+        counts[n].count++;
+      }
+      // Pick the most-filled pool that still has capacity (pack existing pools first)
+      const available = Object.values(counts)
+        .filter((c) => c.count < poolMax)
+        .sort((a, b) => b.count - a.count)[0];
+
+      if (available) {
+        const { error: insertErr } = await svc.from("service_phone_numbers").insert({
+          service_id: serviceId,
+          twilio_number: available.twilio_number,
+          forwarding_number: forwardingNumber,
+          twilio_sid: available.twilio_sid,
+          active: true,
+          country_code: "CZ",
+          is_pool_primary: false,
+        });
+
+        if (insertErr) {
+          return new Response(
+            JSON.stringify({ error: "Failed to join number pool", detail: insertErr.message }),
+            { status: 500, headers: jsonHeaders }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            twilio_number: available.twilio_number,
+            service_id: serviceId,
+            country_code: "CZ",
+            shared: true,
+            pool_size: available.count + 1,
+          }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+    }
+
+    // ---- Purchase new number ----
     const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
     if (!accountSid || !authToken) {
@@ -134,59 +189,6 @@ serve(async (req) => {
       );
     }
     const twilioAuth = twilioAuthHeader(accountSid, authToken);
-
-    // ---- Shared-number path: assign existing Twilio number without purchasing ----
-    if (sharedNumber) {
-      // Verify the number actually exists in Twilio (owned by this account)
-      const listUrl = `${TWILIO_BASE}/Accounts/${accountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(sharedNumber)}`;
-      const listRes = await fetch(listUrl, { headers: { Authorization: twilioAuth } });
-      if (!listRes.ok) {
-        const errText = await listRes.text();
-        return new Response(
-          JSON.stringify({ error: "Twilio API error (verify shared number)", detail: errText.slice(0, 500) }),
-          { status: 502, headers: jsonHeaders }
-        );
-      }
-      const listData = await listRes.json();
-      const owned = listData?.incoming_phone_numbers;
-      if (!Array.isArray(owned) || owned.length === 0) {
-        return new Response(
-          JSON.stringify({ error: "Shared number not found in your Twilio account", detail: sharedNumber }),
-          { status: 400, headers: jsonHeaders }
-        );
-      }
-      const numSid = owned[0]?.sid ?? null;
-      // Detect country code from number prefix
-      const cc = sharedNumber.startsWith("+420") ? "CZ" : sharedNumber.startsWith("+1") ? "US" : "XX";
-
-      const { error: insertErr } = await svc.from("service_phone_numbers").insert({
-        service_id: serviceId,
-        twilio_number: sharedNumber,
-        forwarding_number: forwardingNumber,
-        twilio_sid: numSid,
-        active: true,
-        country_code: cc,
-        is_pool_primary: isPoolPrimary,
-      });
-
-      if (insertErr) {
-        return new Response(
-          JSON.stringify({ error: "Failed to save shared number assignment", detail: insertErr.message }),
-          { status: 500, headers: jsonHeaders }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          twilio_number: sharedNumber,
-          service_id: serviceId,
-          country_code: cc,
-          shared: true,
-          is_pool_primary: isPoolPrimary,
-        }),
-        { status: 200, headers: jsonHeaders }
-      );
-    }
 
     const functionsBase = `${supabaseUrl.replace(/\/$/, "")}/functions/v1`;
     const smsUrl = `${functionsBase}/sms-incoming`;
@@ -274,6 +276,7 @@ serve(async (req) => {
       twilio_sid: sid,
       active: true,
       country_code: countryCode,
+      is_pool_primary: true,
     });
 
     if (insertErr) {
