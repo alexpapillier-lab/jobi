@@ -140,8 +140,6 @@ serve(async (req) => {
       // Verify the number actually exists in Twilio (owned by this account)
       const listUrl = `${TWILIO_BASE}/Accounts/${accountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(sharedNumber)}`;
       const listRes = await fetch(listUrl, { headers: { Authorization: twilioAuth } });
-      const listUrl = `${TWILIO_BASE}/Accounts/${accountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(sharedNumber)}`;
-      const listRes = await fetch(listUrl, { headers: { Authorization: twilioAuth } });
       if (!listRes.ok) {
         const errText = await listRes.text();
         return new Response(
