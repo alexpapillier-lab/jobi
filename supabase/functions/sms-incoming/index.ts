@@ -89,19 +89,44 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const svc = createClient(supabaseUrl, serviceKey);
 
-  const { data: phoneRow, error: phoneErr } = await svc
+  // Find all services that own this Twilio number (may be shared across multiple services)
+  const { data: phoneRows, error: phoneErr } = await svc
     .from("service_phone_numbers")
-    .select("service_id")
+    .select("service_id, is_pool_primary")
     .eq("twilio_number", to)
-    .eq("active", true)
-    .maybeSingle();
+    .eq("active", true);
 
-  if (phoneErr || !phoneRow) {
+  if (phoneErr || !phoneRows || phoneRows.length === 0) {
     return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
   }
 
-  const serviceId = phoneRow.service_id;
   const fromNorm = normalizeE164(from);
+
+  // Resolve which service this inbound belongs to
+  let serviceId: string;
+  if (phoneRows.length === 1) {
+    // Dedicated number – original behavior
+    serviceId = phoneRows[0].service_id;
+  } else {
+    // Shared number: try to match an existing conversation first
+    const serviceIds = phoneRows.map((r: { service_id: string }) => r.service_id);
+    const { data: existingConvs } = await svc
+      .from("sms_conversations")
+      .select("service_id, updated_at")
+      .in("service_id", serviceIds)
+      .eq("customer_phone", fromNorm)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+
+    if (existingConvs && existingConvs.length > 0) {
+      // Route to the service with the most recent conversation for this customer
+      serviceId = existingConvs[0].service_id;
+    } else {
+      // No prior conversation – route to pool primary, fallback to first row
+      const primary = phoneRows.find((r: { is_pool_primary: boolean }) => r.is_pool_primary);
+      serviceId = (primary ?? phoneRows[0]).service_id;
+    }
+  }
 
   if (messageSid) {
     const { data: existing } = await svc
