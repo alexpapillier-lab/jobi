@@ -1,678 +1,648 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Derma receptář – procvičování</title>
-  <style>
-    :root {
-      --bg: #0c0e18;
-      --panel: rgba(255,255,255,0.05);
-      --panel-hi: rgba(255,255,255,0.09);
-      --text: #e8edff;
-      --muted: rgba(232,237,255,0.5);
-      --border: rgba(255,255,255,0.09);
-      --accent: #3b82f6;
-      --accent-soft: rgba(59,130,246,0.18);
-      --accent-hover: #2563eb;
-      --green: #22c55e;
-      --green-soft: rgba(34,197,94,0.18);
-      --red: #ef4444;
-      --red-soft: rgba(239,68,68,0.18);
-      --yellow: #eab308;
-      --yellow-soft: rgba(234,179,8,0.15);
-      --radius: 14px;
-      --ease: cubic-bezier(.4,0,.2,1);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      padding: 24px 16px 64px;
-    }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Derma receptář</title>
+<style>
+:root {
+  --bg:        #0b0d17;
+  --surface:   #131626;
+  --card:      #181c2e;
+  --border:    rgba(255,255,255,0.08);
+  --border2:   rgba(255,255,255,0.13);
+  --text:      #dde3ff;
+  --muted:     rgba(221,227,255,0.45);
+  --accent:    #4f7ef8;
+  --accent2:   #3563e9;
+  --as:        rgba(79,126,248,0.15);
+  --green:     #34d399;
+  --gs:        rgba(52,211,153,0.13);
+  --red:       #f87171;
+  --rs:        rgba(248,113,113,0.13);
+  --yellow:    #fbbf24;
+  --ys:        rgba(251,191,36,0.13);
+  --r:         12px;
+  --ease:      cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:var(--bg); color:var(--text);
+  min-height:100vh; padding:0 0 80px;
+}
 
-    /* ── header ── */
-    .top-bar {
-      display: flex; align-items: center; gap: 12px;
-      max-width: 860px; margin: 0 auto 32px;
-    }
-    .top-bar a {
-      color: var(--muted); text-decoration: none; font-size: .85rem;
-      transition: color .2s;
-    }
-    .top-bar a:hover { color: var(--text); }
-    .top-bar .sep { color: var(--border); }
-    h1 {
-      max-width: 860px; margin: 0 auto 6px;
-      font-size: clamp(1.4rem, 3vw, 2rem); font-weight: 700; letter-spacing: -.02em;
-    }
-    .subtitle {
-      max-width: 860px; margin: 0 auto 28px;
-      color: var(--muted); font-size: .9rem;
-    }
+/* ─ header ─ */
+header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 24px; border-bottom:1px solid var(--border);
+  background:var(--surface); position:sticky; top:0; z-index:100;
+}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-icon{
+  width:30px;height:30px;border-radius:8px;
+  background:linear-gradient(135deg,var(--accent),#7c3aed);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.9rem;
+}
+.logo-text{font-weight:700;font-size:1rem;color:var(--text)}
+.logo-sub{font-size:.75rem;color:var(--muted);margin-left:2px}
+.header-right{display:flex;align-items:center;gap:12px}
+.progress-wrap{
+  width:120px;height:6px;background:var(--border);
+  border-radius:999px;overflow:hidden;
+}
+.progress-fill{
+  height:100%;background:linear-gradient(90deg,var(--accent),var(--green));
+  border-radius:999px;transition:width .5s var(--ease);
+}
+.prog-label{font-size:.75rem;color:var(--muted);white-space:nowrap}
 
-    /* ── score bar ── */
-    .score-bar {
-      max-width: 860px; margin: 0 auto 24px;
-      display: flex; gap: 12px; flex-wrap: wrap;
-    }
-    .badge {
-      padding: 5px 14px; border-radius: 999px; font-size: .8rem; font-weight: 600;
-      background: var(--panel); border: 1px solid var(--border);
-    }
-    .badge.green { background: var(--green-soft); border-color: rgba(34,197,94,.3); color: var(--green); }
-    .badge.red   { background: var(--red-soft);   border-color: rgba(239,68,68,.3);  color: var(--red); }
-    .badge.blue  { background: var(--accent-soft); border-color: rgba(59,130,246,.3); color: var(--accent); }
+/* ─ layout ─ */
+.layout{
+  display:grid;
+  grid-template-columns:260px 1fr;
+  max-width:1100px;margin:0 auto;
+  gap:0; min-height:calc(100vh - 58px);
+}
 
-    /* ── card ── */
-    .card {
-      max-width: 860px; margin: 0 auto 20px;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 24px;
-    }
-    .card-title {
-      font-size: 1.15rem; font-weight: 700; margin-bottom: 4px;
-    }
-    .card-desc {
-      color: var(--muted); font-size: .85rem; line-height: 1.5; margin-bottom: 20px;
-    }
-    .card-use {
-      font-size: .8rem; color: var(--accent); margin-bottom: 6px;
-    }
+/* ─ sidebar ─ */
+.sidebar{
+  border-right:1px solid var(--border);
+  padding:20px 16px;
+  position:sticky; top:57px;
+  height:calc(100vh - 57px);
+  overflow-y:auto;
+}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.sidebar-title{
+  font-size:.7rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding:0 4px;
+}
+.recipe-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px; border-radius:var(--r);
+  cursor:pointer; transition:background .15s,border-color .15s;
+  border:1px solid transparent; margin-bottom:4px;
+  user-select:none;
+}
+.recipe-item:hover{background:rgba(255,255,255,.05)}
+.recipe-item.active{
+  background:var(--as); border-color:rgba(79,126,248,.4);
+}
+.recipe-item .ri-check{
+  width:18px;height:18px;border-radius:50%;flex-shrink:0;
+  border:1.5px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.6rem; color:transparent; transition:.2s;
+}
+.recipe-item.mastered .ri-check{
+  background:var(--green);border-color:var(--green);color:#000;
+}
+.recipe-item .ri-name{font-size:.82rem;font-weight:500;line-height:1.3}
+.recipe-item .ri-tag{font-size:.7rem;color:var(--muted);margin-top:1px}
 
-    /* ── ingredience grid ── */
-    .ing-label {
-      font-size: .75rem; font-weight: 600; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
-    }
-    .ing-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-    .ing-btn {
-      background: var(--panel-hi); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px;
-      cursor: pointer; text-align: left; color: var(--text);
-      font-size: .82rem; font-weight: 500;
-      transition: background .15s, border-color .15s, transform .1s;
-      display: flex; align-items: center; gap: 8px;
-      user-select: none;
-    }
-    .ing-btn:hover { background: rgba(255,255,255,.1); }
-    .ing-btn.selected {
-      background: var(--accent-soft); border-color: rgba(59,130,246,.5);
-      color: var(--text);
-    }
-    .ing-btn .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--border); flex-shrink: 0; transition: background .15s;
-    }
-    .ing-btn.selected .dot { background: var(--accent); }
+/* ─ main ─ */
+.main{padding:28px 32px}
 
-    /* ── amount inputs ── */
-    .selected-panel {
-      margin-bottom: 20px;
-    }
-    .sel-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 0; border-bottom: 1px solid var(--border);
-      flex-wrap: wrap;
-    }
-    .sel-row:last-child { border-bottom: none; }
-    .sel-name { flex: 1; min-width: 140px; font-size: .85rem; }
-    .sel-type {
-      font-size: .72rem; color: var(--muted);
-      background: var(--panel-hi); border-radius: 6px; padding: 2px 8px;
-    }
-    .sel-amount {
-      display: flex; align-items: center; gap: 6px;
-    }
-    .sel-amount input {
-      width: 72px; padding: 5px 8px;
-      background: var(--panel-hi); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: .85rem;
-      text-align: center; outline: none;
-      transition: border-color .15s;
-    }
-    .sel-amount input:focus { border-color: var(--accent); }
-    .sel-amount .unit { font-size: .75rem; color: var(--muted); }
-    .sel-amount select {
-      padding: 5px 8px;
-      background: var(--panel-hi); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: .82rem;
-      outline: none; cursor: pointer;
-      transition: border-color .15s;
-    }
-    .sel-amount select:focus { border-color: var(--accent); }
-    .remove-btn {
-      background: none; border: none; color: var(--muted);
-      cursor: pointer; font-size: 1.1rem; padding: 2px 4px;
-      border-radius: 6px; transition: color .15s, background .15s;
-    }
-    .remove-btn:hover { color: var(--red); background: var(--red-soft); }
+/* welcome state */
+.welcome{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:400px; text-align:center; gap:12px;
+}
+.welcome-icon{font-size:3rem;margin-bottom:8px}
+.welcome h2{font-size:1.4rem;font-weight:700}
+.welcome p{color:var(--muted);font-size:.9rem;max-width:340px;line-height:1.6}
 
-    /* ── actions ── */
-    .actions {
-      display: flex; gap: 10px; flex-wrap: wrap;
-    }
-    .btn {
-      padding: 10px 22px; border-radius: 10px; font-size: .875rem; font-weight: 600;
-      cursor: pointer; border: none; transition: background .15s, transform .1s;
-    }
-    .btn:active { transform: scale(.97); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: var(--accent-hover); }
-    .btn-secondary {
-      background: var(--panel-hi); color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover { background: rgba(255,255,255,.1); }
+/* target card */
+.target-card{
+  background:var(--card); border:1px solid var(--border2);
+  border-radius:16px; padding:24px; margin-bottom:20px;
+}
+.tc-label{
+  font-size:.7rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:6px;
+}
+.tc-name{font-size:1.4rem;font-weight:800;letter-spacing:-.02em;margin-bottom:14px}
+.tc-pills{display:flex;flex-wrap:wrap;gap:8px}
+.tc-pill{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:999px;font-size:.78rem;
+  background:var(--surface); border:1px solid var(--border2);
+}
+.tc-pill .pill-icon{font-size:.85rem}
+.tc-pill strong{color:var(--text)}
+.tc-pill span{color:var(--muted)}
 
-    /* ── result ── */
-    .result-box {
-      max-width: 860px; margin: 0 auto 20px;
-      border-radius: var(--radius); padding: 20px 24px;
-      border: 1px solid var(--border); display: none;
-    }
-    .result-box.correct {
-      display: block;
-      background: var(--green-soft); border-color: rgba(34,197,94,.4);
-    }
-    .result-box.wrong {
-      display: block;
-      background: var(--red-soft); border-color: rgba(239,68,68,.35);
-    }
-    .result-box.hint {
-      display: block;
-      background: var(--yellow-soft); border-color: rgba(234,179,8,.3);
-    }
-    .result-title {
-      font-weight: 700; font-size: 1rem; margin-bottom: 8px;
-    }
-    .result-box.correct .result-title { color: var(--green); }
-    .result-box.wrong   .result-title { color: var(--red); }
-    .result-box.hint    .result-title { color: var(--yellow); }
-    .result-list { font-size: .83rem; line-height: 1.8; }
-    .result-list .ok  { color: var(--green); }
-    .result-list .err { color: var(--red); }
-    .result-list .miss{ color: var(--yellow); }
+/* section labels */
+.sec-label{
+  font-size:.7rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);
+  margin-bottom:10px;display:flex;align-items:center;gap:8px;
+}
+.sec-label::after{
+  content:""; flex:1; height:1px; background:var(--border);
+}
 
-    /* ── recipe book ── */
-    .section-title {
-      max-width: 860px; margin: 40px auto 14px;
-      font-size: .75rem; font-weight: 600; letter-spacing: .1em;
-      text-transform: uppercase; color: var(--muted);
-    }
-    .recipes-grid {
-      max-width: 860px; margin: 0 auto;
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 10px;
-    }
-    .recipe-mini {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 14px 16px;
-      cursor: pointer; transition: background .15s, border-color .15s;
-    }
-    .recipe-mini:hover {
-      background: var(--panel-hi); border-color: rgba(59,130,246,.3);
-    }
-    .recipe-mini.active {
-      border-color: var(--accent); background: var(--accent-soft);
-    }
-    .recipe-mini-name { font-size: .88rem; font-weight: 600; margin-bottom: 4px; }
-    .recipe-mini-tag  { font-size: .72rem; color: var(--muted); }
-    .recipe-mini.mastered .recipe-mini-name::before {
-      content: "✓ "; color: var(--green);
-    }
+/* ingredient picker */
+.ing-picker{
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:24px;
+}
+.ing-chip{
+  padding:6px 14px;border-radius:999px;font-size:.8rem;font-weight:500;
+  border:1px solid var(--border2);background:var(--surface);
+  cursor:pointer; transition:all .15s; user-select:none;
+  display:flex;align-items:center;gap:5px;
+}
+.ing-chip:hover{background:rgba(255,255,255,.07);border-color:var(--border2)}
+.ing-chip.selected{
+  background:var(--as);border-color:rgba(79,126,248,.5);color:var(--text);
+}
+.ing-chip .chip-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--border2); transition:.15s;flex-shrink:0;
+}
+.ing-chip.selected .chip-dot{background:var(--accent)}
 
-    /* ── progress bar ── */
-    .progress-wrap {
-      max-width: 860px; margin: 0 auto 28px;
-      background: var(--panel); border-radius: 999px; height: 6px; overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%; background: var(--accent); border-radius: 999px;
-      transition: width .5s var(--ease);
-    }
+/* mixing table */
+.mix-table{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;margin-bottom:20px;
+}
+.mix-empty{
+  padding:24px;text-align:center;color:var(--muted);font-size:.85rem;
+}
+.mix-row{
+  display:grid;
+  grid-template-columns:1fr 110px 160px 36px;
+  align-items:center;gap:12px;
+  padding:10px 16px; border-bottom:1px solid var(--border);
+  transition:background .15s;
+}
+.mix-row:last-child{border-bottom:none}
+.mix-row:hover{background:rgba(255,255,255,.02)}
+.mix-name{font-size:.85rem;font-weight:500}
+.mix-input{
+  width:100%;padding:6px 10px;text-align:right;
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:8px;color:var(--text);font-size:.85rem;outline:none;
+  transition:border-color .15s;
+}
+.mix-input:focus{border-color:var(--accent)}
+.mix-input::placeholder{color:var(--muted)}
+.mix-select{
+  width:100%;padding:6px 8px;
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:8px;color:var(--text);font-size:.78rem;outline:none;
+  cursor:pointer; transition:border-color .15s;
+}
+.mix-select:focus{border-color:var(--accent)}
+.mix-remove{
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  padding:4px;border-radius:6px;font-size:1rem;
+  transition:color .15s,background .15s;display:flex;align-items:center;
+}
+.mix-remove:hover{color:var(--red);background:var(--rs)}
 
-    /* responsive */
-    @media (max-width: 500px) {
-      .ing-grid { grid-template-columns: repeat(2, 1fr); }
-      .sel-row { gap: 6px; }
-    }
-  </style>
+/* actions */
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.btn{
+  padding:10px 20px;border-radius:10px;font-size:.85rem;font-weight:600;
+  cursor:pointer;border:none;transition:all .15s;display:flex;align-items:center;gap:6px;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;box-shadow:0 2px 12px rgba(79,126,248,.3);
+}
+.btn-primary:hover{box-shadow:0 4px 20px rgba(79,126,248,.45);filter:brightness(1.05)}
+.btn-ghost{
+  background:var(--surface);color:var(--text);
+  border:1px solid var(--border2);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.07)}
+.btn-next{margin-left:auto}
+
+/* result */
+.result{
+  border-radius:var(--r);padding:16px 20px;margin-bottom:20px;
+  display:none;animation:slideIn .2s var(--ease);
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.result.show{display:block}
+.result.correct{background:var(--gs);border:1px solid rgba(52,211,153,.3)}
+.result.wrong{background:var(--rs);border:1px solid rgba(248,113,113,.25)}
+.result.hint{background:var(--ys);border:1px solid rgba(251,191,36,.25)}
+.result-head{font-weight:700;font-size:.95rem;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.result.correct .result-head{color:var(--green)}
+.result.wrong   .result-head{color:var(--red)}
+.result.hint    .result-head{color:var(--yellow)}
+.result-rows{display:flex;flex-direction:column;gap:4px}
+.r-row{font-size:.82rem;padding:4px 0;display:flex;align-items:baseline;gap:6px;line-height:1.4}
+.r-row.ok  {color:var(--green)}
+.r-row.err {color:var(--red)}
+.r-row.miss{color:var(--yellow)}
+.r-row .r-icon{flex-shrink:0;font-size:.75rem}
+.r-row .r-note{color:var(--muted);font-size:.78rem}
+
+/* responsive */
+@media(max-width:700px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border)}
+  .main{padding:20px 16px}
+}
+</style>
 </head>
 <body>
 
-<div class="top-bar">
-  <a href="/">← Jobi</a>
-  <span class="sep">/</span>
-  <span style="color:var(--muted);font-size:.85rem">Derma receptář</span>
-</div>
-
-<h1>🧪 Derma receptář</h1>
-<p class="subtitle">Namíchej správné ingredience ve správném množství. Procvič si receptář na zkoušku.</p>
-
-<div class="score-bar">
-  <span class="badge blue" id="badge-total">0 / 12 receptů</span>
-  <span class="badge green" id="badge-ok">✓ 0 správně</span>
-  <span class="badge red"   id="badge-err">✗ 0 chybně</span>
-</div>
-
-<div class="progress-wrap">
-  <div class="progress-fill" id="progress-fill" style="width:0%"></div>
-</div>
-
-<!-- GAME CARD -->
-<div class="card" id="game-card">
-  <div class="card-use" id="card-use"></div>
-  <div class="card-title" id="card-title">Vyber recept níže</div>
-  <div class="card-desc"  id="card-desc">Klikni na název přípravku v seznamu níže a začni míchat.</div>
-
-  <div class="ing-label">Dostupné suroviny — vyber a zadej množství</div>
-  <div class="ing-grid" id="ing-grid"></div>
-
-  <div class="selected-panel" id="selected-panel"></div>
-
-  <div class="actions">
-    <button class="btn btn-primary"   id="btn-check"  onclick="checkRecipe()">Zkontrolovat recept</button>
-    <button class="btn btn-secondary" id="btn-hint"   onclick="showHint()">Napovědět</button>
-    <button class="btn btn-secondary" id="btn-reset"  onclick="resetMix()">Vyčistit</button>
-    <button class="btn btn-secondary" id="btn-next"   onclick="nextRecipe()" style="margin-left:auto">Další recept →</button>
+<header>
+  <a href="/" class="logo">
+    <div class="logo-icon">🧪</div>
+    <div>
+      <div class="logo-text">Derma receptář</div>
+      <div class="logo-sub">procvičování na zkoušku</div>
+    </div>
+  </a>
+  <div class="header-right">
+    <span class="prog-label" id="prog-label">0 / 12</span>
+    <div class="progress-wrap">
+      <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+    </div>
   </div>
-</div>
+</header>
 
-<div class="result-box" id="result-box">
-  <div class="result-title" id="result-title"></div>
-  <div class="result-list" id="result-list"></div>
-</div>
+<div class="layout">
 
-<div class="section-title">Všechny recepty</div>
-<div class="recipes-grid" id="recipes-grid"></div>
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-title">Recepty</div>
+    <div id="recipe-list"></div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main" id="main">
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">💊</div>
+      <h2>Vyber recept vlevo</h2>
+      <p>Klikni na název přípravku a namíchej správné ingredience ve správném množství.</p>
+    </div>
+    <div id="game" style="display:none">
+      <div class="target-card" id="target-card"></div>
+      <div class="sec-label">Dostupné suroviny</div>
+      <div class="ing-picker" id="ing-picker"></div>
+      <div class="sec-label">Tvůj recept</div>
+      <div class="mix-table" id="mix-table"></div>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="checkRecipe()">✓ Zkontrolovat</button>
+        <button class="btn btn-ghost" onclick="showHint()">💡 Napovědět</button>
+        <button class="btn btn-ghost" onclick="resetMix()">✕ Vyčistit</button>
+        <button class="btn btn-ghost btn-next" onclick="nextRecipe()">Další →</button>
+      </div>
+      <div class="result" id="result"></div>
+    </div>
+  </main>
+
+</div>
 
 <script>
-// ── DATA ────────────────────────────────────────────────────────────────────
-
-// Typy množství: "pevne" = přesná hodnota, "ad" = doplnit do, "aa" = ana partes (stejné díly)
 const RECIPES = [
   {
-    id: "jarischuv",
-    name: "Jarischův roztok",
-    use: "Obklady na obličeji – mokvající ekzém",
-    desc: "Protizánětlivý a mírně protimikrobiální roztok. Hodí se k obkladům hlavně na obličeji, např. u mokvajícího ekzému.",
-    ing: [
-      { name: "Acidi borici",  amount: 20,   type: "pevne" },
-      { name: "Glycerini",     amount: 40,   type: "pevne" },
-      { name: "Aqua destilata",amount: 1000, type: "ad"    },
+    id:"jarischuv", name:"Jarischův roztok",
+    use:"Protizánětlivý a mírně protimikrobiální",
+    indication:"Obklady na obličeji – mokvající ekzém",
+    dosage:"2× denně na obklady",
+    form:"roztok",
+    ing:[
+      {name:"Acidi borici",    amount:20,   type:"pevne"},
+      {name:"Glycerini",       amount:40,   type:"pevne"},
+      {name:"Aqua destilata",  amount:1000, type:"ad"},
     ]
   },
   {
-    id: "salicylresorcinovy",
-    name: "Salicylresorcinový líh",
-    use: "Seboroická dermatitida – ochlupené části těla",
-    desc: "Protizánětlivý líh vhodný hlavně do ochlupených částí těla, používá se např. u seboroické dermatitidy.",
-    ing: [
-      { name: "Acidi salicylici", amount: 4,   type: "aa"    },
-      { name: "Resorcini",        amount: 4,   type: "aa"    },
-      { name: "Glycerini",        amount: 10,  type: "pevne" },
-      { name: "Spiritus vini dil.",amount: 200, type: "ad"   },
+    id:"salicylresorcinovy", name:"Salicylresorcinový líh",
+    use:"Protizánětlivý",
+    indication:"Seboroická dermatitida – ochlupené části těla",
+    dosage:"2× denně natřít",
+    form:"líh",
+    ing:[
+      {name:"Acidi salicylici",  amount:4,   type:"aa"},
+      {name:"Resorcini",         amount:4,   type:"aa"},
+      {name:"Glycerini",         amount:10,  type:"pevne"},
+      {name:"Spiritus vini dil.",amount:200, type:"ad"},
     ]
   },
   {
-    id: "tekutypudr",
-    name: "Tekutý pudr s mentolem",
-    use: "Kopřivka – protisvědivý",
-    desc: "Má protisvědivý účinek, používá se např. u kopřivky.",
-    ing: [
-      { name: "Mentoli",       amount: 2,   type: "pevne" },
-      { name: "Zinci oxydati", amount: 30,  type: "aa"    },
-      { name: "Talcum venetum",amount: 30,  type: "aa"    },
-      { name: "Glyceroli",     amount: 30,  type: "aa"    },
-      { name: "Aqua destilata",amount: 200, type: "ad"    },
+    id:"tekutypudr", name:"Tekutý pudr s mentolem",
+    use:"Protisvědivý",
+    indication:"Kopřivka",
+    dosage:"2× denně natřít",
+    form:"pudr",
+    ing:[
+      {name:"Mentoli",         amount:2,   type:"pevne"},
+      {name:"Zinci oxydati",   amount:30,  type:"aa"},
+      {name:"Talcum venetum",  amount:30,  type:"aa"},
+      {name:"Glyceroli",       amount:30,  type:"aa"},
+      {name:"Aqua destilata",  amount:200, type:"ad"},
     ]
   },
   {
-    id: "bortaninovy",
-    name: "Bortaninový zásyp",
-    use: "Intertrigo – vysušuje kůži",
-    desc: "Používá se např. u intertriga, kůži vysušuje.",
-    ing: [
-      { name: "Acidi borici",  amount: 1.5, type: "aa"    },
-      { name: "Acidi tannici", amount: 1.5, type: "aa"    },
-      { name: "Zinci oxydati", amount: 50,  type: "aa_ad" },
-      { name: "Talcum venetum",amount: 50,  type: "aa_ad" },
+    id:"bortaninovy", name:"Bortaninový zásyp",
+    use:"Vysušuje kůži",
+    indication:"Intertrigo",
+    dosage:"2× denně zasypat",
+    form:"zásyp",
+    ing:[
+      {name:"Acidi borici",   amount:1.5, type:"aa"},
+      {name:"Acidi tannici",  amount:1.5, type:"aa"},
+      {name:"Zinci oxydati",  amount:50,  type:"aa_ad"},
+      {name:"Talcum venetum", amount:50,  type:"aa_ad"},
     ]
   },
   {
-    id: "pletovlemleko",
-    name: "Pleťové mléko",
-    use: "Hydratace přesušené pokožky",
-    desc: "Slouží k promazání a hydrataci přesušené pokožky.",
-    ing: [
-      { name: "Ambidermani",   amount: 30,  type: "pevne" },
-      { name: "Aqua destilata",amount: 100, type: "ad"    },
+    id:"pletovemléko", name:"Pleťové mléko",
+    use:"Promazání a hydratace",
+    indication:"Přesušená pokožka",
+    dosage:"2× denně natřít",
+    form:"mléko",
+    ing:[
+      {name:"Ambidermani",    amount:30,  type:"pevne"},
+      {name:"Aqua destilata", amount:100, type:"ad"},
     ]
   },
   {
-    id: "saloxylovyolej",
-    name: "Saloxylový olej",
-    use: "Impetiginizované dermatózy",
-    desc: "Olej s protibakteriálními a protizánětlivými účinky, používá se u impetiginizovaných dermatóz.",
-    ing: [
-      { name: "Saloxyl ung.",    amount: 30,  type: "pevne" },
-      { name: "Oleum helianthi", amount: 100, type: "ad"    },
+    id:"saloxylovyolej", name:"Saloxylový olej",
+    use:"Protibakteriální, protizánětlivý",
+    indication:"Impetiginizované dermatózy",
+    dosage:"2× denně natřít",
+    form:"olej",
+    ing:[
+      {name:"Saloxyl ung.",    amount:30,  type:"pevne"},
+      {name:"Oleum helianthi", amount:100, type:"ad"},
     ]
   },
   {
-    id: "kortikoidnimast",
-    name: "Kortikoidní mast",
-    use: "Kortikoidní přípravek",
-    desc: "Kortikosteroidní mast s dexametazonem. Silné protizánětlivé a imunosupresivní účinky.",
-    ing: [
-      { name: "Dexamethazoni", amount: 0.02, type: "pevne" },
-      { name: "Cutilani",      amount: 100,  type: "ad"    },
+    id:"kortikoidnimast", name:"Kortikoidní mast",
+    use:"Protizánětlivá, imunosupresivní",
+    indication:"Záněty kůže vyžadující kortikoid",
+    dosage:"2× denně natřít",
+    form:"mast",
+    ing:[
+      {name:"Dexamethazoni", amount:0.02, type:"pevne"},
+      {name:"Cutilani",      amount:100,  type:"ad"},
     ]
   },
   {
-    id: "salicylavazelina",
-    name: "Salicylová vazelina 5%",
-    use: "Psoriáza, chronický ekzém",
-    desc: "Nejběžnější mast s kyselinou salicylovou používaná hlavně u psoriázy, chronického ekzému.",
-    ing: [
-      { name: "Acidi salicylici", amount: 5,   type: "pevne" },
-      { name: "Vaselinum",        amount: 100, type: "ad"    },
+    id:"salicylavazelina", name:"Salicylová vazelina 5%",
+    use:"Keratolytická",
+    indication:"Psoriáza, chronický ekzém",
+    dosage:"2× denně natřít",
+    form:"mast",
+    ing:[
+      {name:"Acidi salicylici", amount:5,   type:"pevne"},
+      {name:"Vaselinum",        amount:100, type:"ad"},
     ]
   },
   {
-    id: "pastasalidet",
-    name: "Pasta se salicylem a dehtem 5%",
-    use: "Psoriáza – pasta s kamenouhelným dehtem",
-    desc: "Pasta s kamenouhelným dehtem používaná hlavně u psoriázy.",
-    ing: [
-      { name: "Acidi salicylici",    amount: 5,   type: "aa"    },
-      { name: "Picis lithantracis",  amount: 5,   type: "aa"    },
-      { name: "Zinci oxydati",       amount: 10,  type: "aa"    },
-      { name: "Talcum venetum",      amount: 10,  type: "aa"    },
-      { name: "Vaselinum",           amount: 100, type: "ad"    },
+    id:"pastasalidet", name:"Pasta se salicylem a dehtem 5%",
+    use:"Keratolytická, antipruriginózní",
+    indication:"Psoriáza – pasta s kamenouhelným dehtem",
+    dosage:"1× denně natřít",
+    form:"pasta",
+    ing:[
+      {name:"Acidi salicylici",   amount:5,   type:"aa"},
+      {name:"Picis lithantracis", amount:5,   type:"aa"},
+      {name:"Zinci oxydati",      amount:10,  type:"aa"},
+      {name:"Talcum venetum",     amount:10,  type:"aa"},
+      {name:"Vaselinum",          amount:100, type:"ad"},
     ]
   },
   {
-    id: "lassarova",
-    name: "Lassarova pasta",
-    use: "Bércový vřed – krycí pasta",
-    desc: "Tuhá pasta, která má krycí účinky, např. chrání okolí bércového vředu.",
-    ing: [
-      { name: "Acidi salicylici", amount: 2,   type: "pevne" },
-      { name: "Oleum helianthi",  amount: 10,  type: "pevne" },
-      { name: "Pasta zinci oxid.",amount: 100, type: "ad"    },
+    id:"lassarova", name:"Lassarova pasta",
+    use:"Krycí, ochranná",
+    indication:"Bércový vřed – chrání okolní kůži",
+    dosage:"1× denně natřít",
+    form:"pasta",
+    ing:[
+      {name:"Acidi salicylici",  amount:2,   type:"pevne"},
+      {name:"Oleum helianthi",   amount:10,  type:"pevne"},
+      {name:"Pasta zinci oxid.", amount:100, type:"ad"},
     ]
   },
   {
-    id: "kolodium",
-    name: "Kolodium",
-    use: "Bradavice, mozoly, hyperkeratózy",
-    desc: "Má keratolytický účinek na bradavice, mozoly, hyperkeratózy.",
-    ing: [
-      { name: "Acidi salicylici",  amount: 6,  type: "aa"    },
-      { name: "Acidi lactici",     amount: 6,  type: "aa"    },
-      { name: "Collodium elasticum",amount: 30, type: "ad"   },
+    id:"kolodium", name:"Kolodium",
+    use:"Keratolytické",
+    indication:"Bradavice, mozoly, hyperkeratózy",
+    dosage:"Nanést na bradavice",
+    form:"roztok",
+    ing:[
+      {name:"Acidi salicylici",    amount:6,  type:"aa"},
+      {name:"Acidi lactici",       amount:6,  type:"aa"},
+      {name:"Collodium elasticum", amount:30, type:"ad"},
     ]
   },
   {
-    id: "sampon",
-    name: "Šampon",
-    use: "Psoriáza kštice, seboroická dermatitida",
-    desc: "Používá se u psoriázy kštice, seboroické dermatitidy a k odstranění zevních léků z kštice.",
-    ing: [
-      { name: "Acidi salicylici",     amount: 6,   type: "aa"  },
-      { name: "Resorcini",            amount: 6,   type: "aa"  },
-      { name: "Spiritus saponis kal.",amount: 300, type: "ad"  },
+    id:"sampon", name:"Šampon",
+    use:"Keratolytický, protiseboroický",
+    indication:"Psoriáza kštice, seboroická dermatitida",
+    dosage:"Jako šampon",
+    form:"šampon",
+    ing:[
+      {name:"Acidi salicylici",      amount:6,   type:"aa"},
+      {name:"Resorcini",             amount:6,   type:"aa"},
+      {name:"Spiritus saponis kal.", amount:300, type:"ad"},
     ]
   },
 ];
 
-// Všechny unikátní ingredience
-const ALL_ING = [...new Set(RECIPES.flatMap(r => r.ing.map(i => i.name)))].sort();
-
 const TYPE_LABELS = {
-  pevne:  "pevné množství",
+  pevne:  "pevné",
   ad:     "ad (doplnit do)",
   aa:     "aa (stejné díly)",
-  aa_ad:  "aa ad (stejné díly do)",
+  aa_ad:  "aa ad",
 };
 
-// ── STATE ───────────────────────────────────────────────────────────────────
-let currentRecipe = null;
-let selectedIng   = {};  // { name: { amount: "", type: "pevne"|"ad"|"aa"|"aa_ad" } }
-let mastered      = new Set(JSON.parse(localStorage.getItem("derma_mastered") || "[]"));
-let wrongCounts   = JSON.parse(localStorage.getItem("derma_wrong") || "{}");
-let totalCorrect  = parseInt(localStorage.getItem("derma_correct") || "0");
-let totalWrong    = parseInt(localStorage.getItem("derma_wrong_total") || "0");
+const ALL_ING = [...new Set(RECIPES.flatMap(r => r.ing.map(i => i.name)))].sort();
 
-// ── INIT ────────────────────────────────────────────────────────────────────
-window.onload = () => {
-  renderRecipeGrid();
-  renderIngGrid();
-  updateScore();
-};
+// state
+let current  = null;
+let mix      = {};   // { name: { amount, type } }
+let mastered = new Set(JSON.parse(localStorage.getItem("dm_mastered")||"[]"));
+let stats    = JSON.parse(localStorage.getItem("dm_stats")||'{"ok":0,"err":0}');
 
-function renderRecipeGrid() {
-  const grid = document.getElementById("recipes-grid");
-  grid.innerHTML = RECIPES.map(r => `
-    <div class="recipe-mini ${mastered.has(r.id) ? "mastered" : ""} ${currentRecipe?.id === r.id ? "active" : ""}"
-         id="mini-${r.id}" onclick="loadRecipe('${r.id}')">
-      <div class="recipe-mini-name">${r.name}</div>
-      <div class="recipe-mini-tag">${r.use}</div>
-    </div>
-  `).join("");
+// ── boot ────────────────────────────────────────────────────────────────────
+window.onload = () => { renderSidebar(); renderIngPicker(); updateProgress(); };
+
+// ── sidebar ──────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  document.getElementById("recipe-list").innerHTML = RECIPES.map(r => `
+    <div class="recipe-item ${mastered.has(r.id)?"mastered":""} ${current?.id===r.id?"active":""}"
+         onclick="loadRecipe('${r.id}')">
+      <div class="ri-check">${mastered.has(r.id)?"✓":""}</div>
+      <div>
+        <div class="ri-name">${r.name}</div>
+        <div class="ri-tag">${r.form} · ${r.indication.split("–")[0].trim()}</div>
+      </div>
+    </div>`).join("");
 }
 
-function renderIngGrid() {
-  const grid = document.getElementById("ing-grid");
-  grid.innerHTML = ALL_ING.map(name => `
-    <button class="ing-btn ${selectedIng[name] ? "selected" : ""}"
-            onclick="toggleIng('${name.replace(/'/g,"\\'")}')">
-      <span class="dot"></span>
-      <span>${name}</span>
-    </button>
-  `).join("");
-}
-
-function renderSelectedPanel() {
-  const panel = document.getElementById("selected-panel");
-  const names = Object.keys(selectedIng);
-  if (!names.length) { panel.innerHTML = ""; return; }
-
-  panel.innerHTML = `
-    <div class="ing-label" style="margin-top:4px">Zvolené ingredience</div>
-    ${names.map(name => {
-      const ing = selectedIng[name];
-      return `
-        <div class="sel-row">
-          <span class="sel-name">${name}</span>
-          <div class="sel-amount">
-            <input type="number" min="0" step="0.01"
-                   value="${ing.amount}"
-                   placeholder="množství"
-                   oninput="setAmount('${name.replace(/'/g,"\\'")}', this.value)"
-                   id="inp-${slugify(name)}" />
-            <span class="unit">g</span>
-            <select onchange="setType('${name.replace(/'/g,"\\'")}', this.value)">
-              ${Object.entries(TYPE_LABELS).map(([k,v]) =>
-                `<option value="${k}" ${ing.type===k?"selected":""}>${k}</option>`
-              ).join("")}
-            </select>
-          </div>
-          <button class="remove-btn" onclick="removeIng('${name.replace(/'/g,"\\'")}')">✕</button>
-        </div>`;
-    }).join("")}
-  `;
-}
-
-// ── RECIPE LOAD ──────────────────────────────────────────────────────────────
+// ── load recipe ──────────────────────────────────────────────────────────────
 function loadRecipe(id) {
-  currentRecipe = RECIPES.find(r => r.id === id);
-  selectedIng   = {};
+  current = RECIPES.find(r => r.id === id);
+  mix = {};
   hideResult();
+  document.getElementById("welcome").style.display = "none";
+  document.getElementById("game").style.display = "block";
 
-  document.getElementById("card-title").textContent = currentRecipe.name;
-  document.getElementById("card-desc").textContent  = currentRecipe.desc;
-  document.getElementById("card-use").textContent   = "✦ " + currentRecipe.use;
+  // target card
+  document.getElementById("target-card").innerHTML = `
+    <div class="tc-label">Namíchej tento přípravek</div>
+    <div class="tc-name">${current.name}</div>
+    <div class="tc-pills">
+      <div class="tc-pill"><span class="pill-icon">🎯</span><strong>${current.use}</strong></div>
+      <div class="tc-pill"><span class="pill-icon">📋</span><span>Indikace:</span><strong>${current.indication}</strong></div>
+      <div class="tc-pill"><span class="pill-icon">💊</span><span>Dávkování:</span><strong>${current.dosage}</strong></div>
+      <div class="tc-pill"><span class="pill-icon">🧴</span><span>Forma:</span><strong>${current.form}</strong></div>
+    </div>`;
 
-  renderIngGrid();
-  renderSelectedPanel();
-  renderRecipeGrid();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  renderIngPicker();
+  renderMixTable();
+  renderSidebar();
+  window.scrollTo({top:0,behavior:"smooth"});
 }
 
-// ── ING TOGGLE ───────────────────────────────────────────────────────────────
+// ── ingredient picker ────────────────────────────────────────────────────────
+function renderIngPicker() {
+  document.getElementById("ing-picker").innerHTML = ALL_ING.map(name => `
+    <div class="ing-chip ${mix[name]?"selected":""}"
+         onclick="toggleIng('${esc(name)}')">
+      <span class="chip-dot"></span>${name}
+    </div>`).join("");
+}
+
 function toggleIng(name) {
-  if (selectedIng[name]) {
-    delete selectedIng[name];
-  } else {
-    selectedIng[name] = { amount: "", type: "pevne" };
-  }
-  renderIngGrid();
-  renderSelectedPanel();
+  if (mix[name]) { delete mix[name]; }
+  else { mix[name] = { amount:"", type:"pevne" }; }
+  renderIngPicker();
+  renderMixTable();
 }
 
-function removeIng(name) {
-  delete selectedIng[name];
-  renderIngGrid();
-  renderSelectedPanel();
-}
-
-function setAmount(name, val) {
-  if (selectedIng[name]) selectedIng[name].amount = val;
-}
-
-function setType(name, val) {
-  if (selectedIng[name]) selectedIng[name].type = val;
-}
-
-// ── RESET ────────────────────────────────────────────────────────────────────
-function resetMix() {
-  selectedIng = {};
-  hideResult();
-  renderIngGrid();
-  renderSelectedPanel();
-}
-
-// ── HINT ─────────────────────────────────────────────────────────────────────
-function showHint() {
-  if (!currentRecipe) return;
-  const box   = document.getElementById("result-box");
-  const title = document.getElementById("result-title");
-  const list  = document.getElementById("result-list");
-
-  box.className   = "result-box hint";
-  title.textContent = "💡 Správný recept";
-  list.innerHTML  = currentRecipe.ing.map(i =>
-    `<div>${i.name} <strong>${i.amount}</strong> g <em>(${TYPE_LABELS[i.type]})</em></div>`
-  ).join("");
-  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-// ── CHECK ────────────────────────────────────────────────────────────────────
-function checkRecipe() {
-  if (!currentRecipe) {
-    alert("Nejdřív vyber recept ze seznamu níže!");
+// ── mix table ────────────────────────────────────────────────────────────────
+function renderMixTable() {
+  const keys = Object.keys(mix);
+  const el = document.getElementById("mix-table");
+  if (!keys.length) {
+    el.innerHTML = `<div class="mix-empty">Klikni na suroviny výše ↑ a přidej je do receptu.</div>`;
     return;
   }
+  el.innerHTML = keys.map(name => `
+    <div class="mix-row">
+      <div class="mix-name">${name}</div>
+      <input class="mix-input" type="number" min="0" step="0.01"
+             value="${mix[name].amount}" placeholder="množství (g)"
+             oninput="setAmt('${esc(name)}',this.value)"/>
+      <select class="mix-select" onchange="setType('${esc(name)}',this.value)">
+        ${Object.entries(TYPE_LABELS).map(([k,v])=>
+          `<option value="${k}" ${mix[name].type===k?"selected":""}>${v}</option>`
+        ).join("")}
+      </select>
+      <button class="mix-remove" onclick="removeIng('${esc(name)}')">✕</button>
+    </div>`).join("");
+}
 
-  const box   = document.getElementById("result-box");
-  const title = document.getElementById("result-title");
-  const list  = document.getElementById("result-list");
+function setAmt(name,v)  { if(mix[name]) mix[name].amount=v; }
+function setType(name,v) { if(mix[name]) mix[name].type=v; }
+function removeIng(name) { delete mix[name]; renderIngPicker(); renderMixTable(); }
+function resetMix()      { mix={}; hideResult(); renderIngPicker(); renderMixTable(); }
 
-  const correct = currentRecipe.ing;
-  let lines     = [];
-  let allOk     = true;
+// ── check ────────────────────────────────────────────────────────────────────
+function checkRecipe() {
+  if (!current) return;
+  const correct = current.ing;
+  let rows = []; let allOk = true;
 
-  // Check each correct ingredient
   correct.forEach(ci => {
-    const user = selectedIng[ci.name];
-    if (!user) {
-      lines.push(`<div class="miss">✗ Chybí: <strong>${ci.name}</strong> ${ci.amount} g (${ci.type})</div>`);
-      allOk = false;
-      return;
+    const u = mix[ci.name];
+    if (!u) {
+      rows.push({cls:"miss", icon:"✗", text:`Chybí: <strong>${ci.name}</strong>`, note:`má být ${ci.amount} g · ${TYPE_LABELS[ci.type]}`});
+      allOk=false; return;
     }
-    const amtOk  = Math.abs(parseFloat(user.amount) - ci.amount) < 0.001;
-    const typeOk = user.type === ci.type;
-    if (amtOk && typeOk) {
-      lines.push(`<div class="ok">✓ ${ci.name} ${ci.amount} g (${ci.type})</div>`);
+    const amtOk  = Math.abs(parseFloat(u.amount)-ci.amount) < 0.001;
+    const typeOk = u.type===ci.type;
+    if (amtOk&&typeOk) {
+      rows.push({cls:"ok", icon:"✓", text:`${ci.name} — ${ci.amount} g`, note:TYPE_LABELS[ci.type]});
     } else {
-      allOk = false;
-      let err = `<div class="err">✗ ${ci.name}: `;
-      if (!amtOk) err += `množství má být <strong>${ci.amount}</strong>, ty zadal/a <strong>${user.amount||"nic"}</strong>. `;
-      if (!typeOk) err += `typ má být <strong>${ci.type}</strong>, ty vybral/a <strong>${user.type}</strong>.`;
-      err += `</div>`;
-      lines.push(err);
+      allOk=false;
+      let note="";
+      if(!amtOk)  note+=`množství: máš <em>${u.amount||"—"}</em>, má být <strong>${ci.amount}</strong> g. `;
+      if(!typeOk) note+=`typ: máš <em>${TYPE_LABELS[u.type]}</em>, má být <strong>${TYPE_LABELS[ci.type]}</strong>.`;
+      rows.push({cls:"err",icon:"✗",text:ci.name,note});
     }
   });
 
-  // Extra ingredience co tam nepatří
-  Object.keys(selectedIng).forEach(name => {
-    if (!correct.find(ci => ci.name === name)) {
-      lines.push(`<div class="err">✗ ${name} tam nepatří!</div>`);
-      allOk = false;
-    }
+  Object.keys(mix).forEach(name => {
+    if (!correct.find(ci=>ci.name===name))
+      rows.push({cls:"err",icon:"✗",text:`${name}`,note:"tato surovina tam nepatří"});
+      allOk=false;
   });
 
   if (allOk) {
-    box.className     = "result-box correct";
-    title.textContent = "🎉 Perfektní! Recept je správně.";
-    mastered.add(currentRecipe.id);
-    localStorage.setItem("derma_mastered", JSON.stringify([...mastered]));
-    totalCorrect++;
-    localStorage.setItem("derma_correct", totalCorrect);
+    mastered.add(current.id);
+    localStorage.setItem("dm_mastered", JSON.stringify([...mastered]));
+    stats.ok++; localStorage.setItem("dm_stats",JSON.stringify(stats));
+    showResult("correct","🎉 Správně! Recept je perfektní.",rows);
   } else {
-    box.className     = "result-box wrong";
-    title.textContent = "✗ Recept není správně — zkus to znovu.";
-    wrongCounts[currentRecipe.id] = (wrongCounts[currentRecipe.id] || 0) + 1;
-    localStorage.setItem("derma_wrong", JSON.stringify(wrongCounts));
-    totalWrong++;
-    localStorage.setItem("derma_wrong_total", totalWrong);
+    stats.err++; localStorage.setItem("dm_stats",JSON.stringify(stats));
+    showResult("wrong","✗ Recept má chyby — oprav je a zkus znovu.",rows);
   }
-
-  list.innerHTML = lines.join("");
-  updateScore();
-  renderRecipeGrid();
-  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  updateProgress(); renderSidebar();
 }
 
-// ── NEXT ─────────────────────────────────────────────────────────────────────
+// ── hint ─────────────────────────────────────────────────────────────────────
+function showHint() {
+  if (!current) return;
+  const rows = current.ing.map(ci=>({
+    cls:"miss", icon:"→",
+    text:`${ci.name} — <strong>${ci.amount} g</strong>`,
+    note:TYPE_LABELS[ci.type]
+  }));
+  showResult("hint","💡 Správný recept:",rows);
+}
+
+// ── result ───────────────────────────────────────────────────────────────────
+function showResult(cls, head, rows) {
+  const el = document.getElementById("result");
+  el.className = `result show ${cls}`;
+  el.innerHTML = `
+    <div class="result-head">${head}</div>
+    <div class="result-rows">
+      ${rows.map(r=>`
+        <div class="r-row ${r.cls}">
+          <span class="r-icon">${r.icon}</span>
+          <span>${r.text}</span>
+          ${r.note?`<span class="r-note">– ${r.note}</span>`:""}
+        </div>`).join("")}
+    </div>`;
+  el.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function hideResult() { const el=document.getElementById("result"); if(el){el.className="result";el.innerHTML="";} }
+
+// ── next ──────────────────────────────────────────────────────────────────────
 function nextRecipe() {
-  const unmastered = RECIPES.filter(r => !mastered.has(r.id));
-  if (!unmastered.length) {
-    alert("🎓 Zvládl/a jsi všechny recepty! Gratuluju!");
-    return;
-  }
-  const next = unmastered[Math.floor(Math.random() * unmastered.length)];
-  loadRecipe(next.id);
+  const pool = RECIPES.filter(r=>!mastered.has(r.id));
+  if (!pool.length) { alert("🎓 Skvělé! Zvládl/a jsi všechny recepty!"); return; }
+  loadRecipe(pool[Math.floor(Math.random()*pool.length)].id);
 }
 
-// ── SCORE ─────────────────────────────────────────────────────────────────────
-function updateScore() {
-  document.getElementById("badge-total").textContent =
-    `${mastered.size} / ${RECIPES.length} receptů`;
-  document.getElementById("badge-ok").textContent  = `✓ ${totalCorrect} správně`;
-  document.getElementById("badge-err").textContent = `✗ ${totalWrong} chybně`;
-  document.getElementById("progress-fill").style.width =
-    (mastered.size / RECIPES.length * 100) + "%";
+// ── progress ──────────────────────────────────────────────────────────────────
+function updateProgress() {
+  const n = mastered.size, t = RECIPES.length;
+  document.getElementById("prog-label").textContent = `${n} / ${t}`;
+  document.getElementById("prog-fill").style.width  = (n/t*100)+"%";
 }
 
-function hideResult() {
-  document.getElementById("result-box").className = "result-box";
-}
-
-function slugify(s) {
-  return s.replace(/[^a-zA-Z0-9]/g, "_");
-}
+function esc(s) { return s.replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
