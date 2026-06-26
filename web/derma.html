@@ -3,646 +3,772 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Derma receptář</title>
+<title>Jsi manipulativní? – Test komunikačních vzorců</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,700;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:        #0b0d17;
-  --surface:   #131626;
-  --card:      #181c2e;
-  --border:    rgba(255,255,255,0.08);
-  --border2:   rgba(255,255,255,0.13);
-  --text:      #dde3ff;
-  --muted:     rgba(221,227,255,0.45);
-  --accent:    #4f7ef8;
-  --accent2:   #3563e9;
-  --as:        rgba(79,126,248,0.15);
-  --green:     #34d399;
-  --gs:        rgba(52,211,153,0.13);
-  --red:       #f87171;
-  --rs:        rgba(248,113,113,0.13);
-  --yellow:    #fbbf24;
-  --ys:        rgba(251,191,36,0.13);
-  --r:         12px;
-  --ease:      cubic-bezier(.4,0,.2,1);
+  --bg:      #09090f;
+  --s1:      #111118;
+  --s2:      #18181f;
+  --s3:      #22222b;
+  --border:  rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.12);
+  --text:    #e4e4f0;
+  --muted:   rgba(228,228,240,0.42);
+  --muted2:  rgba(228,228,240,0.65);
+  --amber:   #e8a84a;
+  --amber2:  #d4903a;
+  --as:      rgba(232,168,74,0.12);
+  --green:   #4ade80;
+  --gs:      rgba(74,222,128,0.1);
+  --yellow:  #facc15;
+  --ys:      rgba(250,204,21,0.1);
+  --orange:  #fb923c;
+  --os:      rgba(251,146,60,0.1);
+  --red:     #f87171;
+  --rs:      rgba(248,113,113,0.1);
+  --crimson: #ef4444;
+  --cs:      rgba(239,68,68,0.1);
+  --ease:    cubic-bezier(.4,0,.2,1);
+  --spring:  cubic-bezier(.34,1.56,.64,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{
-  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+
+body {
+  font-family:'DM Sans',system-ui,sans-serif;
   background:var(--bg); color:var(--text);
-  min-height:100vh; padding:0 0 80px;
+  min-height:100vh; overflow-x:hidden;
 }
 
-/* ─ header ─ */
-header{
+/* ─ screens ─ */
+.screen { display:none; min-height:100vh; }
+.screen.active { display:flex; flex-direction:column; }
+
+/* ─ INTRO ─ */
+#screen-intro {
+  align-items:center; justify-content:center;
+  padding:32px 20px;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 10%, rgba(232,168,74,0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 80% 90%, rgba(139,92,246,0.05) 0%, transparent 60%),
+    var(--bg);
+}
+.intro-inner {
+  max-width:600px; width:100%;
+  display:flex; flex-direction:column; gap:0;
+}
+.intro-tag {
+  font-size:.75rem; font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--amber);
+  margin-bottom:20px;
+  display:flex; align-items:center; gap:8px;
+}
+.intro-tag::before {
+  content:""; width:24px; height:1px; background:var(--amber);
+}
+.intro-title {
+  font-family:'Fraunces',Georgia,serif;
+  font-size:clamp(2.2rem,6vw,3.4rem);
+  font-weight:700; line-height:1.1;
+  letter-spacing:-.03em; margin-bottom:8px;
+}
+.intro-title em {
+  font-style:italic; font-weight:300; color:var(--amber);
+}
+.intro-subtitle {
+  font-size:.9rem; color:var(--muted2); margin-bottom:28px;
+  font-weight:300;
+}
+.intro-divider {
+  width:40px; height:2px; background:var(--border2);
+  margin-bottom:24px;
+}
+.intro-desc {
+  font-size:.95rem; line-height:1.75; color:var(--muted2);
+  margin-bottom:32px; font-weight:300;
+}
+.intro-meta {
+  display:flex; gap:16px; flex-wrap:wrap; margin-bottom:40px;
+}
+.meta-pill {
+  display:flex; align-items:center; gap:6px;
+  font-size:.78rem; color:var(--muted); font-weight:400;
+}
+.meta-pill svg { opacity:.5; }
+.btn-start {
+  display:inline-flex; align-items:center; gap:10px;
+  padding:16px 32px;
+  background:var(--amber); color:#0a0a0f;
+  font-family:'DM Sans',sans-serif; font-size:.95rem; font-weight:600;
+  border:none; border-radius:12px; cursor:pointer;
+  transition:all .2s var(--ease); align-self:flex-start;
+  box-shadow:0 0 0 0 rgba(232,168,74,0);
+}
+.btn-start:hover {
+  background:var(--amber2); transform:translateY(-1px);
+  box-shadow:0 8px 32px rgba(232,168,74,0.25);
+}
+.btn-start:active { transform:translateY(0); }
+.btn-start svg { transition:transform .2s; }
+.btn-start:hover svg { transform:translateX(3px); }
+
+/* ─ QUIZ ─ */
+#screen-quiz {
+  flex-direction:column; min-height:100vh;
+}
+.quiz-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding:14px 24px; border-bottom:1px solid var(--border);
-  background:var(--surface); position:sticky; top:0; z-index:100;
+  padding:18px 32px; border-bottom:1px solid var(--border);
+  background:var(--s1); position:sticky; top:0; z-index:10;
 }
-.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-.logo-icon{
-  width:30px;height:30px;border-radius:8px;
-  background:linear-gradient(135deg,var(--accent),#7c3aed);
-  display:flex;align-items:center;justify-content:center;
-  font-size:.9rem;
+.quiz-logo {
+  font-family:'Fraunces',serif; font-size:1rem; font-weight:700;
+  color:var(--text); letter-spacing:-.02em;
 }
-.logo-text{font-weight:700;font-size:1rem;color:var(--text)}
-.logo-sub{font-size:.75rem;color:var(--muted);margin-left:2px}
-.header-right{display:flex;align-items:center;gap:12px}
-.progress-wrap{
-  width:120px;height:6px;background:var(--border);
-  border-radius:999px;overflow:hidden;
+.quiz-counter {
+  font-size:.82rem; color:var(--muted); font-weight:400;
 }
-.progress-fill{
-  height:100%;background:linear-gradient(90deg,var(--accent),var(--green));
-  border-radius:999px;transition:width .5s var(--ease);
+.quiz-skip {
+  font-size:.82rem; color:var(--muted); cursor:pointer;
+  background:none; border:none; padding:4px 8px; border-radius:6px;
+  transition:color .15s;
 }
-.prog-label{font-size:.75rem;color:var(--muted);white-space:nowrap}
+.quiz-skip:hover { color:var(--text); }
 
-/* ─ layout ─ */
-.layout{
-  display:grid;
-  grid-template-columns:260px 1fr;
-  max-width:1100px;margin:0 auto;
-  gap:0; min-height:calc(100vh - 58px);
+.progress-track {
+  height:3px; background:var(--s2);
+  position:sticky; top:57px; z-index:9;
+}
+.progress-bar {
+  height:100%; background:var(--amber);
+  transition:width .4s var(--ease); border-radius:0 2px 2px 0;
 }
 
-/* ─ sidebar ─ */
-.sidebar{
-  border-right:1px solid var(--border);
-  padding:20px 16px;
-  position:sticky; top:57px;
-  height:calc(100vh - 57px);
-  overflow-y:auto;
-}
-.sidebar::-webkit-scrollbar{width:4px}
-.sidebar::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-.sidebar-title{
-  font-size:.7rem;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding:0 4px;
-}
-.recipe-item{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 12px; border-radius:var(--r);
-  cursor:pointer; transition:background .15s,border-color .15s;
-  border:1px solid transparent; margin-bottom:4px;
-  user-select:none;
-}
-.recipe-item:hover{background:rgba(255,255,255,.05)}
-.recipe-item.active{
-  background:var(--as); border-color:rgba(79,126,248,.4);
-}
-.recipe-item .ri-check{
-  width:18px;height:18px;border-radius:50%;flex-shrink:0;
-  border:1.5px solid var(--border2);
-  display:flex;align-items:center;justify-content:center;
-  font-size:.6rem; color:transparent; transition:.2s;
-}
-.recipe-item.mastered .ri-check{
-  background:var(--green);border-color:var(--green);color:#000;
-}
-.recipe-item .ri-name{font-size:.82rem;font-weight:500;line-height:1.3}
-.recipe-item .ri-tag{font-size:.7rem;color:var(--muted);margin-top:1px}
-
-/* ─ main ─ */
-.main{padding:28px 32px}
-
-/* welcome state */
-.welcome{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  min-height:400px; text-align:center; gap:12px;
-}
-.welcome-icon{font-size:3rem;margin-bottom:8px}
-.welcome h2{font-size:1.4rem;font-weight:700}
-.welcome p{color:var(--muted);font-size:.9rem;max-width:340px;line-height:1.6}
-
-/* target card */
-.target-card{
-  background:var(--card); border:1px solid var(--border2);
-  border-radius:16px; padding:24px; margin-bottom:20px;
-}
-.tc-label{
-  font-size:.7rem;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--accent);margin-bottom:6px;
-}
-.tc-name{font-size:1.4rem;font-weight:800;letter-spacing:-.02em;margin-bottom:14px}
-.tc-pills{display:flex;flex-wrap:wrap;gap:8px}
-.tc-pill{
-  display:flex;align-items:center;gap:6px;
-  padding:5px 12px;border-radius:999px;font-size:.78rem;
-  background:var(--surface); border:1px solid var(--border2);
-}
-.tc-pill .pill-icon{font-size:.85rem}
-.tc-pill strong{color:var(--text)}
-.tc-pill span{color:var(--muted)}
-
-/* section labels */
-.sec-label{
-  font-size:.7rem;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--muted);
-  margin-bottom:10px;display:flex;align-items:center;gap:8px;
-}
-.sec-label::after{
-  content:""; flex:1; height:1px; background:var(--border);
+.quiz-body {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  padding:48px 20px; position:relative; overflow:hidden;
 }
 
-/* ingredient picker */
-.ing-picker{
-  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:24px;
+.question-wrap {
+  max-width:640px; width:100%;
+  animation:qIn .35s var(--ease) both;
 }
-.ing-chip{
-  padding:6px 14px;border-radius:999px;font-size:.8rem;font-weight:500;
-  border:1px solid var(--border2);background:var(--surface);
-  cursor:pointer; transition:all .15s; user-select:none;
-  display:flex;align-items:center;gap:5px;
+@keyframes qIn {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:none; }
 }
-.ing-chip:hover{background:rgba(255,255,255,.07);border-color:var(--border2)}
-.ing-chip.selected{
-  background:var(--as);border-color:rgba(79,126,248,.5);color:var(--text);
+.question-wrap.leaving {
+  animation:qOut .25s var(--ease) both;
 }
-.ing-chip .chip-dot{
-  width:6px;height:6px;border-radius:50%;
-  background:var(--border2); transition:.15s;flex-shrink:0;
+@keyframes qOut {
+  from { opacity:1; transform:none; }
+  to   { opacity:0; transform:translateY(-12px); }
 }
-.ing-chip.selected .chip-dot{background:var(--accent)}
 
-/* mixing table */
-.mix-table{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--r);overflow:hidden;margin-bottom:20px;
+.q-num {
+  font-size:.72rem; font-weight:600; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--amber); margin-bottom:20px;
 }
-.mix-empty{
-  padding:24px;text-align:center;color:var(--muted);font-size:.85rem;
+.q-text {
+  font-family:'Fraunces',serif;
+  font-size:clamp(1.3rem,3vw,1.7rem);
+  font-weight:400; line-height:1.45;
+  letter-spacing:-.01em; margin-bottom:36px;
 }
-.mix-row{
-  display:grid;
-  grid-template-columns:1fr 110px 160px 36px;
-  align-items:center;gap:12px;
-  padding:10px 16px; border-bottom:1px solid var(--border);
-  transition:background .15s;
-}
-.mix-row:last-child{border-bottom:none}
-.mix-row:hover{background:rgba(255,255,255,.02)}
-.mix-name{font-size:.85rem;font-weight:500}
-.mix-input{
-  width:100%;padding:6px 10px;text-align:right;
-  background:var(--surface);border:1px solid var(--border2);
-  border-radius:8px;color:var(--text);font-size:.85rem;outline:none;
-  transition:border-color .15s;
-}
-.mix-input:focus{border-color:var(--accent)}
-.mix-input::placeholder{color:var(--muted)}
-.mix-select{
-  width:100%;padding:6px 8px;
-  background:var(--surface);border:1px solid var(--border2);
-  border-radius:8px;color:var(--text);font-size:.78rem;outline:none;
-  cursor:pointer; transition:border-color .15s;
-}
-.mix-select:focus{border-color:var(--accent)}
-.mix-remove{
-  background:none;border:none;color:var(--muted);cursor:pointer;
-  padding:4px;border-radius:6px;font-size:1rem;
-  transition:color .15s,background .15s;display:flex;align-items:center;
-}
-.mix-remove:hover{color:var(--red);background:var(--rs)}
 
-/* actions */
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-.btn{
-  padding:10px 20px;border-radius:10px;font-size:.85rem;font-weight:600;
-  cursor:pointer;border:none;transition:all .15s;display:flex;align-items:center;gap:6px;
+.answers {
+  display:flex; flex-direction:column; gap:8px;
 }
-.btn:active{transform:scale(.97)}
-.btn-primary{
-  background:linear-gradient(135deg,var(--accent),var(--accent2));
-  color:#fff;box-shadow:0 2px 12px rgba(79,126,248,.3);
+.answer-btn {
+  display:flex; align-items:center; gap:14px;
+  padding:14px 18px;
+  background:var(--s2); border:1px solid var(--border);
+  border-radius:12px; cursor:pointer; text-align:left;
+  color:var(--muted2); font-family:'DM Sans',sans-serif;
+  font-size:.9rem; font-weight:400;
+  transition:all .18s var(--ease); user-select:none;
 }
-.btn-primary:hover{box-shadow:0 4px 20px rgba(79,126,248,.45);filter:brightness(1.05)}
-.btn-ghost{
-  background:var(--surface);color:var(--text);
-  border:1px solid var(--border2);
+.answer-btn:hover {
+  background:var(--s3); border-color:var(--border2); color:var(--text);
+  transform:translateX(4px);
 }
-.btn-ghost:hover{background:rgba(255,255,255,.07)}
-.btn-next{margin-left:auto}
+.answer-btn.selected {
+  background:var(--as); border-color:rgba(232,168,74,.4);
+  color:var(--text);
+}
+.answer-btn .a-dot {
+  width:10px; height:10px; border-radius:50%; flex-shrink:0;
+  border:1.5px solid var(--border2); transition:all .18s;
+}
+.answer-btn.selected .a-dot {
+  background:var(--amber); border-color:var(--amber);
+  box-shadow:0 0 8px rgba(232,168,74,.4);
+}
+.answer-btn .a-val {
+  margin-left:auto; font-size:.72rem; color:var(--border2);
+  font-variant-numeric:tabular-nums;
+}
 
-/* result */
-.result{
-  border-radius:var(--r);padding:16px 20px;margin-bottom:20px;
-  display:none;animation:slideIn .2s var(--ease);
+.quiz-nav {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:20px 32px; border-top:1px solid var(--border);
+  background:var(--s1);
 }
-@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.result.show{display:block}
-.result.correct{background:var(--gs);border:1px solid rgba(52,211,153,.3)}
-.result.wrong{background:var(--rs);border:1px solid rgba(248,113,113,.25)}
-.result.hint{background:var(--ys);border:1px solid rgba(251,191,36,.25)}
-.result-head{font-weight:700;font-size:.95rem;margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.result.correct .result-head{color:var(--green)}
-.result.wrong   .result-head{color:var(--red)}
-.result.hint    .result-head{color:var(--yellow)}
-.result-rows{display:flex;flex-direction:column;gap:4px}
-.r-row{font-size:.82rem;padding:4px 0;display:flex;align-items:baseline;gap:6px;line-height:1.4}
-.r-row.ok  {color:var(--green)}
-.r-row.err {color:var(--red)}
-.r-row.miss{color:var(--yellow)}
-.r-row .r-icon{flex-shrink:0;font-size:.75rem}
-.r-row .r-note{color:var(--muted);font-size:.78rem}
+.btn-nav {
+  padding:10px 22px; border-radius:10px; font-size:.85rem; font-weight:600;
+  cursor:pointer; border:1px solid var(--border2);
+  background:var(--s2); color:var(--muted2);
+  transition:all .15s; font-family:'DM Sans',sans-serif;
+}
+.btn-nav:hover { background:var(--s3); color:var(--text); }
+.btn-nav:disabled { opacity:.3; pointer-events:none; }
+.btn-nav-primary {
+  background:var(--amber); color:#0a0a0f;
+  border-color:transparent; color:#0a0a0f;
+}
+.btn-nav-primary:hover { background:var(--amber2); color:#0a0a0f; }
+
+/* ─ RESULTS ─ */
+#screen-result {
+  flex-direction:column; align-items:center;
+  padding:0 20px 80px;
+  background:
+    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(232,168,74,0.06) 0%, transparent 60%),
+    var(--bg);
+}
+
+.result-header {
+  width:100%; max-width:700px; padding:40px 0 0;
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  margin-bottom:40px;
+}
+.result-tag {
+  font-size:.72rem; font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--amber); margin-bottom:20px;
+}
+
+.score-ring-wrap {
+  position:relative; width:140px; height:140px; margin-bottom:28px;
+}
+.score-ring-wrap svg { position:absolute; inset:0; transform:rotate(-90deg); }
+.score-ring-bg { fill:none; stroke:var(--s3); stroke-width:8; }
+.score-ring-fill {
+  fill:none; stroke-width:8; stroke-linecap:round;
+  stroke-dasharray:339.3; stroke-dashoffset:339.3;
+  transition:stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1) .3s;
+}
+.score-num {
+  position:absolute; inset:0; display:flex;
+  flex-direction:column; align-items:center; justify-content:center;
+  font-family:'Fraunces',serif;
+}
+.score-big {
+  font-size:2.4rem; font-weight:700; line-height:1; letter-spacing:-.03em;
+}
+.score-max { font-size:.72rem; color:var(--muted); }
+
+.result-cat {
+  font-family:'Fraunces',serif;
+  font-size:clamp(1.4rem,4vw,1.9rem);
+  font-weight:700; line-height:1.2; letter-spacing:-.02em;
+  margin-bottom:8px;
+}
+.result-range {
+  font-size:.8rem; color:var(--muted);
+  background:var(--s2); border:1px solid var(--border);
+  padding:3px 12px; border-radius:999px; margin-bottom:20px;
+}
+
+.result-desc-box {
+  background:var(--s1); border:1px solid var(--border);
+  border-radius:16px; padding:24px 28px;
+  max-width:700px; width:100%; margin-bottom:24px;
+  text-align:left;
+}
+.result-desc-text {
+  font-size:.92rem; line-height:1.75; color:var(--muted2); font-weight:300;
+  margin-bottom:16px;
+}
+.result-highlights {
+  display:flex; flex-direction:column; gap:10px;
+}
+.result-hl {
+  display:flex; gap:12px; font-size:.85rem; line-height:1.5;
+}
+.hl-label {
+  font-weight:600; color:var(--amber); white-space:nowrap;
+  min-width:100px;
+}
+.hl-text { color:var(--muted2); font-weight:300; }
+
+/* subcategories */
+.sub-section {
+  max-width:700px; width:100%; margin-bottom:28px;
+}
+.sub-title {
+  font-size:.72rem; font-weight:600; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:16px;
+  display:flex; align-items:center; gap:10px;
+}
+.sub-title::after { content:""; flex:1; height:1px; background:var(--border); }
+
+.sub-bars { display:flex; flex-direction:column; gap:14px; }
+.sub-bar-row { display:flex; flex-direction:column; gap:6px; }
+.sub-bar-top {
+  display:flex; justify-content:space-between; align-items:baseline;
+}
+.sub-bar-name { font-size:.85rem; font-weight:500; }
+.sub-bar-val {
+  font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums;
+}
+.sub-bar-track {
+  height:7px; background:var(--s3); border-radius:999px; overflow:hidden;
+}
+.sub-bar-fill {
+  height:100%; border-radius:999px; width:0;
+  transition:width 1s var(--ease);
+}
+.sub-bar-label {
+  font-size:.72rem; color:var(--muted);
+}
+
+/* CTA */
+.cta-box {
+  max-width:700px; width:100%;
+  border:1px solid var(--border2); border-radius:16px;
+  padding:28px; background:var(--s1);
+  margin-bottom:24px;
+}
+.cta-title {
+  font-family:'Fraunces',serif; font-size:1.1rem; font-weight:700;
+  margin-bottom:10px;
+}
+.cta-text {
+  font-size:.88rem; line-height:1.7; color:var(--muted2); font-weight:300;
+  margin-bottom:18px;
+}
+.cta-phrases {
+  display:flex; flex-direction:column; gap:8px; margin-bottom:0;
+}
+.cta-phrase {
+  display:flex; align-items:flex-start; gap:10px;
+  font-size:.85rem; color:var(--muted2); font-weight:300;
+}
+.cta-phrase::before {
+  content:'"'; color:var(--amber); font-size:1.2rem; line-height:1;
+  flex-shrink:0; margin-top:-1px;
+}
+
+.disclaimer {
+  max-width:700px; width:100%;
+  font-size:.78rem; color:var(--muted); line-height:1.65; font-weight:300;
+  text-align:center; padding:0 8px;
+}
+
+.btn-restart {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:11px 24px; border-radius:10px; font-size:.85rem; font-weight:600;
+  border:1px solid var(--border2); background:var(--s2); color:var(--muted2);
+  cursor:pointer; font-family:'DM Sans',sans-serif;
+  transition:all .15s; margin-bottom:28px;
+}
+.btn-restart:hover { background:var(--s3); color:var(--text); }
 
 /* responsive */
-@media(max-width:700px){
-  .layout{grid-template-columns:1fr}
-  .sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--border)}
-  .main{padding:20px 16px}
+@media(max-width:500px){
+  .quiz-header { padding:14px 16px; }
+  .quiz-nav    { padding:14px 16px; }
+  .quiz-body   { padding:32px 16px; }
+  .result-desc-box { padding:20px; }
 }
 </style>
 </head>
 <body>
 
-<header>
-  <a href="/" class="logo">
-    <div class="logo-icon">🧪</div>
-    <div>
-      <div class="logo-text">Derma receptář</div>
-      <div class="logo-sub">procvičování na zkoušku</div>
+<!-- ── INTRO ───────────────────────────────────────────────────────────── -->
+<section class="screen active" id="screen-intro">
+  <div class="intro-inner">
+    <div class="intro-tag">Test komunikačních vzorců</div>
+    <h1 class="intro-title">Jsi<br><em>manipulativní?</em></h1>
+    <p class="intro-subtitle">Otestuj své komunikační vzorce</p>
+    <div class="intro-divider"></div>
+    <p class="intro-desc">
+      Každý člověk někdy používá tlak, výčitky, mlčení nebo nepřímou komunikaci —
+      zvlášť ve stresu. Tento test neříká, jestli jsi špatný člověk.
+      Ukazuje spíš to, jak často se u tebe mohou objevovat manipulativní vzorce
+      v komunikaci, vztazích nebo konfliktech.<br><br>
+      Odpovídej podle toho, jak se <strong>většinou chováš v reálném životě</strong>,
+      ne podle toho, jak bys chtěl/a působit.
+    </p>
+    <div class="intro-meta">
+      <span class="meta-pill">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        cca 5–7 minut
+      </span>
+      <span class="meta-pill">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+        20 otázek
+      </span>
+      <span class="meta-pill">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        anonymní, nic se neukládá
+      </span>
     </div>
-  </a>
-  <div class="header-right">
-    <span class="prog-label" id="prog-label">0 / 12</span>
-    <div class="progress-wrap">
-      <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+    <button class="btn-start" onclick="startQuiz()">
+      Začít test
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </button>
+  </div>
+</section>
+
+<!-- ── QUIZ ────────────────────────────────────────────────────────────── -->
+<section class="screen" id="screen-quiz">
+  <header class="quiz-header">
+    <div class="quiz-logo">Jsi manipulativní?</div>
+    <span class="quiz-counter" id="quiz-counter">1 / 20</span>
+    <button class="quiz-skip" onclick="confirmSkip()">Ukončit</button>
+  </header>
+  <div class="progress-track">
+    <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+  </div>
+
+  <div class="quiz-body">
+    <div class="question-wrap" id="question-wrap">
+      <!-- rendered by JS -->
     </div>
   </div>
-</header>
 
-<div class="layout">
+  <nav class="quiz-nav">
+    <button class="btn-nav" id="btn-prev" onclick="goQuestion(-1)" disabled>← Zpět</button>
+    <button class="btn-nav btn-nav-primary" id="btn-next" onclick="goQuestion(1)">Další →</button>
+  </nav>
+</section>
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-title">Recepty</div>
-    <div id="recipe-list"></div>
-  </aside>
+<!-- ── RESULT ──────────────────────────────────────────────────────────── -->
+<section class="screen" id="screen-result">
+  <div class="result-header">
+    <div class="result-tag">Tvůj výsledek</div>
 
-  <!-- MAIN -->
-  <main class="main" id="main">
-    <div class="welcome" id="welcome">
-      <div class="welcome-icon">💊</div>
-      <h2>Vyber recept vlevo</h2>
-      <p>Klikni na název přípravku a namíchej správné ingredience ve správném množství.</p>
-    </div>
-    <div id="game" style="display:none">
-      <div class="target-card" id="target-card"></div>
-      <div class="sec-label">Dostupné suroviny</div>
-      <div class="ing-picker" id="ing-picker"></div>
-      <div class="sec-label">Tvůj recept</div>
-      <div class="mix-table" id="mix-table"></div>
-      <div class="actions">
-        <button class="btn btn-primary" onclick="checkRecipe()">✓ Zkontrolovat</button>
-        <button class="btn btn-ghost" onclick="showHint()">💡 Napovědět</button>
-        <button class="btn btn-ghost" onclick="resetMix()">✕ Vyčistit</button>
-        <button class="btn btn-ghost btn-next" onclick="nextRecipe()">Další →</button>
+    <div class="score-ring-wrap" id="score-ring-wrap">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <circle class="score-ring-bg" cx="60" cy="60" r="54"/>
+        <circle class="score-ring-fill" id="score-ring" cx="60" cy="60" r="54"/>
+      </svg>
+      <div class="score-num">
+        <span class="score-big" id="score-num">0</span>
+        <span class="score-max">/ 80</span>
       </div>
-      <div class="result" id="result"></div>
     </div>
-  </main>
 
-</div>
+    <div class="result-cat" id="result-cat"></div>
+    <div class="result-range" id="result-range"></div>
+  </div>
+
+  <div class="result-desc-box" id="result-desc-box"></div>
+  <div class="sub-section" id="sub-section"></div>
+  <div class="cta-box" id="cta-box"></div>
+
+  <p class="disclaimer">
+    Tento test není psychologická diagnóza. Výsledek ukazuje pouze pravděpodobné komunikační
+    vzorce podle tvých odpovědí. Manipulativní chování se často zhoršuje ve stresu,
+    při strachu z odmítnutí nebo v konfliktech. Komunikační vzorce se dají měnit,
+    pokud si jich člověk všimne včas.
+  </p>
+
+  <br>
+  <button class="btn-restart" onclick="restart()">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-3.68"/></svg>
+    Udělat test znovu
+  </button>
+</section>
 
 <script>
-const RECIPES = [
+// ── DATA ─────────────────────────────────────────────────────────────────────
+
+const QUESTIONS = [
+  { id:1,  text:"Když chci něčeho dosáhnout, někdy zveličím následky, aby mě druhý bral vážněji.", rev:false },
+  { id:2,  text:"Připomínám lidem, co jsem pro ně udělal/a, aby měli pocit, že by mi měli vyhovět.", rev:false },
+  { id:3,  text:"Když mě někdo zklame, dávám mu to najevo mlčením, chladem nebo odtažitostí.", rev:false },
+  { id:4,  text:"Když mi někdo řekne „ne", většinou to respektuji bez dalšího tlaku.", rev:true },
+  { id:5,  text:"Někdy řeknu jen část pravdy, když vím, že celá pravda by mi zkomplikovala situaci.", rev:false },
+  { id:6,  text:"V konfliktu někdy popíšu situaci tak, aby moje verze působila lépe než realita.", rev:false },
+  { id:7,  text:"Dokážu říct napřímo, co chci, bez nátlaku, výčitek nebo obcházení.", rev:true },
+  { id:8,  text:"Když udělám chybu, umím ji přiznat bez svádění viny na druhé.", rev:true },
+  { id:9,  text:"Používám výčitky, aby si druhý uvědomil, že mi ublížil.", rev:false },
+  { id:10, text:"Když se cítím ohroženě, snažím se získat ostatní na svou stranu.", rev:false },
+  { id:11, text:"Někdy druhé „testuji", abych zjistil/a, jestli jim na mně opravdu záleží.", rev:false },
+  { id:12, text:"Vadí mi, když si druhý nastaví hranici, která mi nevyhovuje.", rev:false },
+  { id:13, text:"Mám tendenci kontrolovat, s kým se druhý baví, kam jde nebo co dělá.", rev:false },
+  { id:14, text:"Když druhý neodpovídá, tlačím na rychlou reakci, i když vím, že nemusí mít prostor.", rev:false },
+  { id:15, text:"V hádce vytahuji starší věci, i když přímo nesouvisí s aktuálním problémem.", rev:false },
+  { id:16, text:"Dokážu přijmout, že moje potřeby nejsou automaticky důležitější než potřeby druhého.", rev:true },
+  { id:17, text:"Když něco nechci říct přímo, naznačuji a čekám, že druhý pochopí, co má udělat.", rev:false },
+  { id:18, text:"Když něco pokazím, častěji hledám vysvětlení nebo obhajobu než převzetí odpovědnosti.", rev:false },
+  { id:19, text:"Umím se omluvit konkrétně, bez „ale" a bez toho, abych hned řešil/a chyby druhého.", rev:true },
+  { id:20, text:"Když se bojím odmítnutí, snažím se situaci řídit tak, aby druhý neměl moc prostoru odmítnout.", rev:false },
+];
+
+const ANSWERS = [
+  { label:"Nikdy / téměř nikdy", val:0 },
+  { label:"Spíše ne",            val:1 },
+  { label:"Někdy",               val:2 },
+  { label:"Často",               val:3 },
+  { label:"Velmi často",         val:4 },
+];
+
+const SUBCATS = [
+  { name:"Emoční tlak",                    questions:[1,2,3,9],    color:"#e8a84a" },
+  { name:"Práce s pravdou",                questions:[5,6,8,18],   color:"#a78bfa" },
+  { name:"Respekt k hranicím",             questions:[4,12,14,16], color:"#34d399" },
+  { name:"Kontrola ve vztazích",           questions:[10,11,13,20],color:"#f87171" },
+  { name:"Přímá komunikace a odpovědnost", questions:[7,15,17,19], color:"#60a5fa" },
+];
+
+const SUB_LABELS = ["Nízký výskyt","Občasný výskyt","Výraznější vzorec","Silně přítomný vzorec"];
+
+const RESULTS = [
   {
-    id:"jarischuv", name:"Jarischův roztok",
-    use:"Protizánětlivý a mírně protimikrobiální",
-    indication:"Obklady na obličeji – mokvající ekzém",
-    dosage:"k obkladům",
-    form:"roztok",
-    ing:[
-      {name:"Acidi borici",    amount:20,   type:"pevne"},
-      {name:"Glycerini",       amount:40,   type:"pevne"},
-      {name:"Aqua destilata",  amount:1000, type:"ad"},
-    ]
+    min:0,max:15,
+    cat:"Nízká míra manipulativních vzorců",
+    range:"0–15 bodů",
+    color:"var(--green)", ringColor:"#4ade80",
+    desc:`Tvoje komunikace pravděpodobně stojí hlavně na přímém vyjadřování, respektu k hranicím a schopnosti přijmout odmítnutí. To neznamená, že nikdy nepoužiješ tlak nebo nepříjemnou reakci, ale podle odpovědí to u tebe nebude hlavní způsob, jak dosahovat svého.`,
+    silna:"Umíš komunikovat relativně férově a necháváš druhým prostor.",
+    riziko:"Můžeš někdy až příliš ustupovat, pokud se bojíš konfliktu.",
+    ctaType:"low",
   },
   {
-    id:"salicylresorcinovy", name:"Salicylresorcinový líh",
-    use:"Protizánětlivý",
-    indication:"Seboroická dermatitida – ochlupené části těla",
-    dosage:"2× denně natřít",
-    form:"líh",
-    ing:[
-      {name:"Acidi salicylici",  amount:4,   type:"aa"},
-      {name:"Resorcini",         amount:4,   type:"aa"},
-      {name:"Glycerini",         amount:10,  type:"pevne"},
-      {name:"Spiritus vini dil.",amount:200, type:"ad"},
-    ]
+    min:16,max:31,
+    cat:"Občasné manipulativní tendence",
+    range:"16–31 bodů",
+    color:"var(--yellow)", ringColor:"#facc15",
+    desc:`U tebe se manipulativní prvky mohou objevovat hlavně ve stresu, při nejistotě, v hádce nebo ve chvílích, kdy se bojíš ztráty kontroly. Nemusí jít o vědomou manipulaci. Často to může být naučený způsob, jak se chránit, získat pozornost nebo si vynutit reakci.`,
+    typicke:"Výčitky, tiché trestání, naznačování, tlak na odpověď.",
+    doporuceni:"Trénovat přímé formulace bez obviňování.",
+    ctaType:"mid",
   },
   {
-    id:"tekutypudr", name:"Tekutý pudr s mentolem",
-    use:"Protisvědivý",
-    indication:"Kopřivka",
-    dosage:"2× denně natřít",
-    form:"pudr",
-    ing:[
-      {name:"Mentoli",         amount:2,   type:"pevne"},
-      {name:"Zinci oxydati",   amount:30,  type:"aa"},
-      {name:"Talcum venetum",  amount:30,  type:"aa"},
-      {name:"Glyceroli",       amount:30,  type:"aa"},
-      {name:"Aqua destilata",  amount:200, type:"ad"},
-    ]
+    min:32,max:47,
+    cat:"Střední míra manipulativních vzorců",
+    range:"32–47 bodů",
+    color:"var(--orange)", ringColor:"#fb923c",
+    desc:`Manipulativní komunikace u tebe může být poměrně častý nástroj, hlavně v blízkých vztazích nebo konfliktech. Pravděpodobně nejde jen o jednotlivé situace, ale o opakující se vzorec: snaha získat kontrolu, vyvolat v druhém vinu, obejít přímé odmítnutí nebo upravit realitu ve svůj prospěch.`,
+    typicke:"Výčitky, přetáčení situace, testování druhých, tlak na hranice.",
+    riziko:"Druzí se mohou cítit pod tlakem, i když ty sám/sama máš pocit, že jen bojuješ o pochopení.",
+    doporuceni:"Zaměřit se na odpovědnost, přímou komunikaci a respektování „ne".",
+    ctaType:"high",
   },
   {
-    id:"bortaninovy", name:"Bortaninový zásyp",
-    use:"Vysušuje kůži",
-    indication:"Intertrigo",
-    dosage:"2× denně zasypat",
-    form:"zásyp",
-    ing:[
-      {name:"Acidi borici",   amount:1.5, type:"aa"},
-      {name:"Acidi tannici",  amount:1.5, type:"aa"},
-      {name:"Zinci oxydati",  amount:50,  type:"aa_ad"},
-      {name:"Talcum venetum", amount:50,  type:"aa_ad"},
-    ]
+    min:48,max:63,
+    cat:"Vyšší míra manipulativních vzorců",
+    range:"48–63 bodů",
+    color:"var(--red)", ringColor:"#f87171",
+    desc:`Tvoje odpovědi ukazují, že v komunikaci může být výrazná potřeba řídit situaci, reakce druhých nebo výsledek konfliktu. Může se objevovat tlak, vina, kontrola, nepřímé trestání nebo záměrné dávkování informací. To může dlouhodobě poškozovat důvěru ve vztazích.`,
+    typicke:"Kontrola, přetahování reality na svou stranu, nerespektování hranic, emoční tlak.",
+    riziko:"Druzí se mohou začít stahovat, lhát, vyhýbat se ti nebo komunikovat defenzivně.",
+    doporuceni:"Zpomalit reakce v konfliktu, nepoužívat mlčení jako trest, ptát se přímo a přijímat odpověď bez nátlaku.",
+    ctaType:"high",
   },
   {
-    id:"pletovemléko", name:"Pleťové mléko",
-    use:"Promazání a hydratace",
-    indication:"Přesušená pokožka",
-    dosage:"2× denně natřít",
-    form:"mléko",
-    ing:[
-      {name:"Ambidermani",    amount:30,  type:"pevne"},
-      {name:"Aqua destilata", amount:100, type:"ad"},
-    ]
-  },
-  {
-    id:"saloxylovyolej", name:"Saloxylový olej",
-    use:"Protibakteriální, protizánětlivý",
-    indication:"Impetiginizované dermatózy",
-    dosage:"2× denně natřít",
-    form:"olej",
-    ing:[
-      {name:"Saloxyl ung.",    amount:30,  type:"pevne"},
-      {name:"Oleum helianthi", amount:100, type:"ad"},
-    ]
-  },
-  {
-    id:"kortikoidnimast", name:"Kortikoidní mast",
-    use:"Protizánětlivá, imunosupresivní",
-    indication:"Záněty kůže vyžadující kortikoid",
-    dosage:"2× denně natřít",
-    form:"mast",
-    ing:[
-      {name:"Dexamethazoni", amount:0.02, type:"pevne"},
-      {name:"Cutilani",      amount:100,  type:"ad"},
-    ]
-  },
-  {
-    id:"salicylavazelina", name:"Salicylová vazelina 5%",
-    use:"Keratolytická",
-    indication:"Psoriáza, chronický ekzém",
-    dosage:"2× denně natřít",
-    form:"mast",
-    ing:[
-      {name:"Acidi salicylici", amount:5,   type:"pevne"},
-      {name:"Vaselinum",        amount:100, type:"ad"},
-    ]
-  },
-  {
-    id:"pastasalidet", name:"Pasta se salicylem a dehtem 5%",
-    use:"Keratolytická, antipruriginózní",
-    indication:"Psoriáza – pasta s kamenouhelným dehtem",
-    dosage:"1× denně natřít",
-    form:"pasta",
-    ing:[
-      {name:"Acidi salicylici",   amount:5,   type:"aa"},
-      {name:"Picis lithantracis", amount:5,   type:"aa"},
-      {name:"Zinci oxydati",      amount:10,  type:"aa"},
-      {name:"Talcum venetum",     amount:10,  type:"aa"},
-      {name:"Vaselinum",          amount:100, type:"ad"},
-    ]
-  },
-  {
-    id:"lassarova", name:"Lassarova pasta",
-    use:"Krycí, ochranná",
-    indication:"Bércový vřed – chrání okolní kůži",
-    dosage:"1× denně natřít",
-    form:"pasta",
-    ing:[
-      {name:"Acidi salicylici",  amount:2,   type:"pevne"},
-      {name:"Oleum helianthi",   amount:10,  type:"pevne"},
-      {name:"Pasta zinci oxid.", amount:100, type:"ad"},
-    ]
-  },
-  {
-    id:"kolodium", name:"Kolodium",
-    use:"Keratolytické",
-    indication:"Bradavice, mozoly, hyperkeratózy",
-    dosage:"Nanést na bradavice",
-    form:"roztok",
-    ing:[
-      {name:"Acidi salicylici",    amount:6,  type:"aa"},
-      {name:"Acidi lactici",       amount:6,  type:"aa"},
-      {name:"Collodium elasticum", amount:30, type:"ad"},
-    ]
-  },
-  {
-    id:"sampon", name:"Šampon",
-    use:"Keratolytický, protiseboroický",
-    indication:"Psoriáza kštice, seboroická dermatitida",
-    dosage:"Jako šampon",
-    form:"šampon",
-    ing:[
-      {name:"Acidi salicylici",      amount:6,   type:"aa"},
-      {name:"Resorcini",             amount:6,   type:"aa"},
-      {name:"Spiritus saponis kal.", amount:300, type:"ad"},
-    ]
+    min:64,max:80,
+    cat:"Velmi výrazné manipulativní vzorce",
+    range:"64–80 bodů",
+    color:"var(--crimson)", ringColor:"#ef4444",
+    desc:`Výsledek naznačuje, že manipulativní prvky mohou být u tebe velmi silně přítomné. Může jít o kombinaci kontroly, emočního tlaku, výčitek, obcházení pravdy, nerespektování hranic a snahy získat výhodu v konfliktu. Tento výsledek neznamená diagnózu, ale je to signál, že tvoje komunikace může být pro okolí dlouhodobě zatěžující.`,
+    typicke:"Silná potřeba kontroly, tlak na druhé, slabší respekt k odmítnutí, obracení viny.",
+    riziko:"Vztahy mohou fungovat spíš přes strach, vinu nebo únavu než přes důvěru.",
+    doporuceni:"Zvážit práci s terapeutem, koučem nebo mediátorem, hlavně pokud se podobné konflikty opakují ve více vztazích.",
+    ctaType:"high",
   },
 ];
 
-const TYPE_LABELS = {
-  pevne:  "pevné",
-  ad:     "ad (doplnit do)",
-  aa:     "aa (stejné díly)",
-  aa_ad:  "aa ad",
-};
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let current  = 0;
+let answers  = new Array(20).fill(null);
 
-const ALL_ING = [...new Set(RECIPES.flatMap(r => r.ing.map(i => i.name)))].sort();
-
-// state
-let current  = null;
-let mix      = {};   // { name: { amount, type } }
-let mastered = new Set(JSON.parse(localStorage.getItem("dm_mastered")||"[]"));
-let stats    = JSON.parse(localStorage.getItem("dm_stats")||'{"ok":0,"err":0}');
-
-// ── boot ────────────────────────────────────────────────────────────────────
-window.onload = () => { renderSidebar(); renderIngPicker(); updateProgress(); };
-
-// ── sidebar ──────────────────────────────────────────────────────────────────
-function renderSidebar() {
-  document.getElementById("recipe-list").innerHTML = RECIPES.map(r => `
-    <div class="recipe-item ${mastered.has(r.id)?"mastered":""} ${current?.id===r.id?"active":""}"
-         onclick="loadRecipe('${r.id}')">
-      <div class="ri-check">${mastered.has(r.id)?"✓":""}</div>
-      <div>
-        <div class="ri-name">${r.name}</div>
-        <div class="ri-tag">${r.form} · ${r.indication.split("–")[0].trim()}</div>
-      </div>
-    </div>`).join("");
+// ── QUIZ LOGIC ────────────────────────────────────────────────────────────────
+function startQuiz() {
+  showScreen('quiz');
+  renderQuestion();
 }
 
-// ── load recipe ──────────────────────────────────────────────────────────────
-function loadRecipe(id) {
-  current = RECIPES.find(r => r.id === id);
-  mix = {};
-  hideResult();
-  document.getElementById("welcome").style.display = "none";
-  document.getElementById("game").style.display = "block";
-
-  // target card
-  document.getElementById("target-card").innerHTML = `
-    <div class="tc-label">Namíchej tento přípravek</div>
-    <div class="tc-name">${current.name}</div>
-    <div class="tc-pills">
-      <div class="tc-pill"><span class="pill-icon">🎯</span><strong>${current.use}</strong></div>
-      <div class="tc-pill"><span class="pill-icon">📋</span><span>Indikace:</span><strong>${current.indication}</strong></div>
-      <div class="tc-pill"><span class="pill-icon">💊</span><span>Dávkování:</span><strong>${current.dosage}</strong></div>
-      <div class="tc-pill"><span class="pill-icon">🧴</span><span>Forma:</span><strong>${current.form}</strong></div>
-    </div>`;
-
-  renderIngPicker();
-  renderMixTable();
-  renderSidebar();
-  window.scrollTo({top:0,behavior:"smooth"});
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+  window.scrollTo(0,0);
 }
 
-// ── ingredient picker ────────────────────────────────────────────────────────
-function renderIngPicker() {
-  document.getElementById("ing-picker").innerHTML = ALL_ING.map(name => `
-    <div class="ing-chip ${mix[name]?"selected":""}"
-         onclick="toggleIng('${esc(name)}')">
-      <span class="chip-dot"></span>${name}
-    </div>`).join("");
+function renderQuestion(direction=1) {
+  const q   = QUESTIONS[current];
+  const wrap = document.getElementById('question-wrap');
+
+  // animate out then in
+  wrap.classList.add('leaving');
+  setTimeout(() => {
+    wrap.classList.remove('leaving');
+    wrap.innerHTML = `
+      <div class="q-num">Otázka ${current+1} ze ${QUESTIONS.length}</div>
+      <div class="q-text">${q.text}</div>
+      <div class="answers">
+        ${ANSWERS.map((a,i) => `
+          <button class="answer-btn ${answers[current]===i?'selected':''}"
+                  onclick="selectAnswer(${i})">
+            <span class="a-dot"></span>
+            ${a.label}
+          </button>`).join('')}
+      </div>`;
+  }, 200);
+
+  // header + progress
+  document.getElementById('quiz-counter').textContent = `${current+1} / ${QUESTIONS.length}`;
+  document.getElementById('progress-bar').style.width = `${(current/QUESTIONS.length)*100}%`;
+  document.getElementById('btn-prev').disabled = current === 0;
+  document.getElementById('btn-next').textContent =
+    current === QUESTIONS.length-1 ? 'Zobrazit výsledek →' : 'Další →';
 }
 
-function toggleIng(name) {
-  if (mix[name]) { delete mix[name]; }
-  else { mix[name] = { amount:"", type:"pevne" }; }
-  renderIngPicker();
-  renderMixTable();
-}
-
-// ── mix table ────────────────────────────────────────────────────────────────
-function renderMixTable() {
-  const keys = Object.keys(mix);
-  const el = document.getElementById("mix-table");
-  if (!keys.length) {
-    el.innerHTML = `<div class="mix-empty">Klikni na suroviny výše ↑ a přidej je do receptu.</div>`;
-    return;
+function selectAnswer(idx) {
+  answers[current] = idx;
+  document.querySelectorAll('.answer-btn').forEach((btn,i) => {
+    btn.classList.toggle('selected', i===idx);
+  });
+  // auto-advance after brief pause
+  if (current < QUESTIONS.length-1) {
+    setTimeout(() => goQuestion(1), 380);
   }
-  el.innerHTML = keys.map(name => `
-    <div class="mix-row">
-      <div class="mix-name">${name}</div>
-      <input class="mix-input" type="number" min="0" step="0.01"
-             value="${mix[name].amount}" placeholder="množství (g)"
-             oninput="setAmt('${esc(name)}',this.value)"/>
-      <select class="mix-select" onchange="setType('${esc(name)}',this.value)">
-        ${Object.entries(TYPE_LABELS).map(([k,v])=>
-          `<option value="${k}" ${mix[name].type===k?"selected":""}>${v}</option>`
-        ).join("")}
-      </select>
-      <button class="mix-remove" onclick="removeIng('${esc(name)}')">✕</button>
-    </div>`).join("");
 }
 
-function setAmt(name,v)  { if(mix[name]) mix[name].amount=v; }
-function setType(name,v) { if(mix[name]) mix[name].type=v; }
-function removeIng(name) { delete mix[name]; renderIngPicker(); renderMixTable(); }
-function resetMix()      { mix={}; hideResult(); renderIngPicker(); renderMixTable(); }
+function goQuestion(dir) {
+  if (dir === 1 && current === QUESTIONS.length-1) {
+    showResult(); return;
+  }
+  if (dir === -1 && current === 0) return;
+  current += dir;
+  renderQuestion(dir);
+}
 
-// ── check ────────────────────────────────────────────────────────────────────
-function checkRecipe() {
-  if (!current) return;
-  const correct = current.ing;
-  let rows = []; let allOk = true;
+function confirmSkip() {
+  if (confirm('Opravdu chceš test ukončit? Výsledek nebude zobrazen.')) {
+    restart();
+  }
+}
 
-  correct.forEach(ci => {
-    const u = mix[ci.name];
-    if (!u) {
-      rows.push({cls:"miss", icon:"✗", text:`Chybí: <strong>${ci.name}</strong>`, note:`má být ${ci.amount} g · ${TYPE_LABELS[ci.type]}`});
-      allOk=false; return;
-    }
-    const amtOk  = Math.abs(parseFloat(u.amount)-ci.amount) < 0.001;
-    const typeOk = u.type===ci.type;
-    if (amtOk&&typeOk) {
-      rows.push({cls:"ok", icon:"✓", text:`${ci.name} — ${ci.amount} g`, note:TYPE_LABELS[ci.type]});
-    } else {
-      allOk=false;
-      let note="";
-      if(!amtOk)  note+=`množství: máš <em>${u.amount||"—"}</em>, má být <strong>${ci.amount}</strong> g. `;
-      if(!typeOk) note+=`typ: máš <em>${TYPE_LABELS[u.type]}</em>, má být <strong>${TYPE_LABELS[ci.type]}</strong>.`;
-      rows.push({cls:"err",icon:"✗",text:ci.name,note});
-    }
+// ── SCORING ───────────────────────────────────────────────────────────────────
+function score(qIdx, ansVal) {
+  // qIdx is 0-based
+  if (ansVal === null) return 0;
+  return QUESTIONS[qIdx].rev ? (4 - ansVal) : ansVal;
+}
+
+function showResult() {
+  showScreen('result');
+
+  // total
+  const total = answers.reduce((sum, a, i) => sum + score(i, a), 0);
+  const res   = RESULTS.find(r => total >= r.min && total <= r.max);
+
+  // score ring
+  const circ = 2 * Math.PI * 54; // ~339.3
+  const pct  = total / 80;
+  setTimeout(() => {
+    const ring = document.getElementById('score-ring');
+    ring.style.stroke = res.ringColor;
+    ring.style.strokeDashoffset = circ * (1 - pct);
+    // count up
+    let n = 0;
+    const el = document.getElementById('score-num');
+    const step = () => {
+      n = Math.min(n + Math.ceil(total/40), total);
+      el.textContent = n;
+      if (n < total) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, 100);
+
+  document.getElementById('score-num').style.color = res.ringColor;
+  document.getElementById('result-cat').textContent = res.cat;
+  document.getElementById('result-cat').style.color = res.color;
+  document.getElementById('result-range').textContent = res.range;
+
+  // desc box
+  const box = document.getElementById('result-desc-box');
+  let hlHTML = '';
+  if (res.silna)       hlHTML += `<div class="result-hl"><span class="hl-label">Silná stránka:</span><span class="hl-text">${res.silna}</span></div>`;
+  if (res.typicke)     hlHTML += `<div class="result-hl"><span class="hl-label">Typické projevy:</span><span class="hl-text">${res.typicke}</span></div>`;
+  if (res.riziko)      hlHTML += `<div class="result-hl"><span class="hl-label">Riziko:</span><span class="hl-text">${res.riziko}</span></div>`;
+  if (res.doporuceni)  hlHTML += `<div class="result-hl"><span class="hl-label">Doporučení:</span><span class="hl-text">${res.doporuceni}</span></div>`;
+  box.innerHTML = `
+    <p class="result-desc-text">${res.desc}</p>
+    <div class="result-highlights">${hlHTML}</div>`;
+
+  // subcategories
+  const subEl = document.getElementById('sub-section');
+  let barsHTML = '<div class="sub-bars">';
+  SUBCATS.forEach(sub => {
+    let subScore = 0;
+    sub.questions.forEach(qId => {
+      const idx = qId - 1;
+      subScore += score(idx, answers[idx]);
+    });
+    const subPct = subScore / 16 * 100;
+    const labelIdx = subScore<=4?0 : subScore<=8?1 : subScore<=12?2 : 3;
+    barsHTML += `
+      <div class="sub-bar-row">
+        <div class="sub-bar-top">
+          <span class="sub-bar-name">${sub.name}</span>
+          <span class="sub-bar-val">${subScore} / 16</span>
+        </div>
+        <div class="sub-bar-track">
+          <div class="sub-bar-fill" data-w="${subPct}" style="background:${sub.color}"></div>
+        </div>
+        <span class="sub-bar-label">${SUB_LABELS[labelIdx]}</span>
+      </div>`;
   });
+  barsHTML += '</div>';
+  subEl.innerHTML = `<div class="sub-title">Dílčí oblasti</div>${barsHTML}`;
 
-  Object.keys(mix).forEach(name => {
-    if (!correct.find(ci=>ci.name===name))
-      rows.push({cls:"err",icon:"✗",text:`${name}`,note:"tato surovina tam nepatří"});
-      allOk=false;
-  });
+  // animate bars
+  setTimeout(() => {
+    document.querySelectorAll('.sub-bar-fill').forEach(el => {
+      el.style.width = el.dataset.w + '%';
+    });
+  }, 200);
 
-  if (allOk) {
-    mastered.add(current.id);
-    localStorage.setItem("dm_mastered", JSON.stringify([...mastered]));
-    stats.ok++; localStorage.setItem("dm_stats",JSON.stringify(stats));
-    showResult("correct","🎉 Správně! Recept je perfektní.",rows);
+  // CTA
+  const ctaEl = document.getElementById('cta-box');
+  if (res.ctaType === 'low') {
+    ctaEl.innerHTML = `
+      <div class="cta-title">Co dál?</div>
+      <p class="cta-text">Chceš si ověřit i druhou stranu? Zamysli se, jestli se naopak snadno nechávám ovlivňovat nebo manipulovat. To je taky důležitá otázka.</p>`;
+  } else if (res.ctaType === 'mid') {
+    ctaEl.innerHTML = `
+      <div class="cta-title">3 věty, které pomáhají mluvit napřímo</div>
+      <p class="cta-text">Zkus si je uložit a použít místo výčitek nebo naznačování:</p>
+      <div class="cta-phrases">
+        <div class="cta-phrase">Potřebuji…"</div>
+        <div class="cta-phrase">Vadí mi…"</div>
+        <div class="cta-phrase">Respektuji tvoje ne, ale chci říct, co to se mnou dělá."</div>
+      </div>`;
   } else {
-    stats.err++; localStorage.setItem("dm_stats",JSON.stringify(stats));
-    showResult("wrong","✗ Recept má chyby — oprav je a zkus znovu.",rows);
+    ctaEl.innerHTML = `
+      <div class="cta-title">Co stojí za prozkoumání</div>
+      <p class="cta-text">Pokud se ti podobné konflikty opakují, stojí za to podívat se na konkrétní situace:</p>
+      <div class="cta-phrases">
+        <div class="cta-phrase">Kdy tlačím a proč?"</div>
+        <div class="cta-phrase">Kdy používám mlčení jako trest?"</div>
+        <div class="cta-phrase">Kdy se bojím říct věci napřímo a co se pak stane?"</div>
+      </div>`;
   }
-  updateProgress(); renderSidebar();
 }
 
-// ── hint ─────────────────────────────────────────────────────────────────────
-function showHint() {
-  if (!current) return;
-  const rows = current.ing.map(ci=>({
-    cls:"miss", icon:"→",
-    text:`${ci.name} — <strong>${ci.amount} g</strong>`,
-    note:TYPE_LABELS[ci.type]
-  }));
-  showResult("hint","💡 Správný recept:",rows);
+function restart() {
+  current = 0;
+  answers = new Array(20).fill(null);
+  showScreen('intro');
 }
-
-// ── result ───────────────────────────────────────────────────────────────────
-function showResult(cls, head, rows) {
-  const el = document.getElementById("result");
-  el.className = `result show ${cls}`;
-  el.innerHTML = `
-    <div class="result-head">${head}</div>
-    <div class="result-rows">
-      ${rows.map(r=>`
-        <div class="r-row ${r.cls}">
-          <span class="r-icon">${r.icon}</span>
-          <span>${r.text}</span>
-          ${r.note?`<span class="r-note">– ${r.note}</span>`:""}
-        </div>`).join("")}
-    </div>`;
-  el.scrollIntoView({behavior:"smooth",block:"nearest"});
-}
-function hideResult() { const el=document.getElementById("result"); if(el){el.className="result";el.innerHTML="";} }
-
-// ── next ──────────────────────────────────────────────────────────────────────
-function nextRecipe() {
-  const pool = RECIPES.filter(r=>!mastered.has(r.id));
-  if (!pool.length) { alert("🎓 Skvělé! Zvládl/a jsi všechny recepty!"); return; }
-  loadRecipe(pool[Math.floor(Math.random()*pool.length)].id);
-}
-
-// ── progress ──────────────────────────────────────────────────────────────────
-function updateProgress() {
-  const n = mastered.size, t = RECIPES.length;
-  document.getElementById("prog-label").textContent = `${n} / ${t}`;
-  document.getElementById("prog-fill").style.width  = (n/t*100)+"%";
-}
-
-function esc(s) { return s.replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
 </script>
 </body>
 </html>
