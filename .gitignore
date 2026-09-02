@@ -56,3 +56,6 @@ src-tauri/jobi-universal.zip
 
 # Claude Code – worktrees / cache (celé duplicitní repo; nebuildí se z nich)
 web/.claude/
+
+# Supabase CLI cache (vzniká při práci s CLI, nepatří do repa)
+supabase/.temp/linked-project.json
