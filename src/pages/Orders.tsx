@@ -6731,6 +6731,10 @@ export default function Orders({
                 };
                 const formatHistoryVal = (key: string, val: unknown): string => {
                   if (val === null || val === undefined) return "—";
+                  // V databázi je stav anglický klíč ("received"). Zbytek aplikace
+                  // ho překládá přes getByKey; historie ho vypisovala surový, takže
+                  // uživatel četl "received → ready" místo "Přijato → Připraveno".
+                  if (key === "status") return getByKey(String(val))?.label ?? String(val);
                   if (key === "estimated_price" && typeof val === "number") return `${val} Kč`;
                   if (key === "performed_repairs" && Array.isArray(val)) {
                     return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${r.price} Kč)` : ""}`).join(", ") || "—";
@@ -6766,7 +6770,11 @@ export default function Orders({
                     }
                   } else if (details?.status_old !== undefined || details?.title_old !== undefined) {
                     if (details.status_old !== undefined && details.status_new !== undefined) {
-                      out.push({ label: "Stav", oldVal: String(details.status_old), newVal: String(details.status_new) });
+                      out.push({
+                        label: "Stav",
+                        oldVal: formatHistoryVal("status", details.status_old),
+                        newVal: formatHistoryVal("status", details.status_new),
+                      });
                     }
                     if (details.title_old !== undefined && details.title_new !== undefined) {
                       out.push({ label: "Zakázka / zařízení", oldVal: String(details.title_old), newVal: String(details.title_new) });
@@ -6795,6 +6803,14 @@ export default function Orders({
                                 )}
                               </div>
                               <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
+                              {e.action === "updated" && changes.length === 0 && (
+                                // Starší záznamy vznikly před migrací s plným diffem, takže
+                                // co se změnilo, se nikam neuložilo. Bez téhle věty vidí
+                                // uživatel jen „Upravena" a nemá jak zjistit proč.
+                                <div style={{ color: "var(--muted)", marginTop: 2, fontSize: 12, fontStyle: "italic" }}>
+                                  Podrobnosti u tohoto záznamu nejsou – zaznamenávají se až u novějších změn.
+                                </div>
+                              )}
                             </div>
                             {changes.length > 0 && (
                               <button
@@ -6898,7 +6914,7 @@ export default function Orders({
                         <div style={{ fontWeight: 700 }}>{actionLabel}</div>
                         {e.action === "status_changed" && statusOld != null && statusNew != null && (
                           <div style={{ fontWeight: 600, color: "var(--muted)", marginTop: 4 }}>
-                            Stav: {String(statusOld)} → {String(statusNew)}
+                            Stav: {getByKey(String(statusOld))?.label ?? String(statusOld)} → {getByKey(String(statusNew))?.label ?? String(statusNew)}
                           </div>
                         )}
                         <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
