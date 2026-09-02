@@ -1,0 +1,132 @@
+/*
+ * Primitiva rozhraní.
+ *
+ * Vzniklo proto, že aplikace neměla žádnou sdílenou vrstvu komponent:
+ * 2 392 inline stylů a pět různých definic "primárního tlačítka", které
+ * se lišily odsazením (10×14 vs 12×16), poloměrem (12 vs 16), tloušťkou
+ * písma (600 vs 900) i pozadím (plné vs gradient).
+ *
+ * Proč CSS třídy a ne inline styly: :hover, :focus-visible, :active
+ * a :disabled se inline stylem vyjádřit nedají. Dosud to každé tlačítko
+ * řešilo vlastními onMouseEnter/onMouseLeave, což je víc kódu a hlavně
+ * to nefunguje pro klávesnici.
+ *
+ * Všechny hodnoty jsou tokeny z theme.css – žádná magická čísla.
+ */
+
+/* ---------- Tlačítko ---------- */
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.ui-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ui-btn:disabled,
+.ui-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Velikosti */
+.ui-btn--sm { padding: 6px var(--space-3); font-size: var(--text-sm); border-radius: var(--radius-xs); }
+.ui-btn--lg { padding: 12px var(--space-5); font-size: var(--text-lg); }
+
+/* Varianta: primární */
+.ui-btn--primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+.ui-btn--primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px var(--accent-glow); }
+.ui-btn--primary:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 8px var(--accent-glow); }
+
+/* Varianta: sekundární (dřív softBtn) */
+.ui-btn--soft {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+.ui-btn--soft:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+
+/* Varianta: nenápadná */
+.ui-btn--ghost {
+  background: transparent;
+  color: var(--muted);
+}
+.ui-btn--ghost:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+
+/* Varianta: destruktivní. Záměrně nenápadná – "Smazat" nemá být
+   nejvýraznější prvek na obrazovce vedle "Uložit". Zčervená až na hover. */
+.ui-btn--danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--border);
+}
+.ui-btn--danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
+
+/* Jen ikona */
+.ui-btn--icon { padding: 8px; gap: 0; }
+.ui-btn--icon.ui-btn--sm { padding: 6px; }
+
+/* ---------- Karta ---------- */
+
+.ui-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--pad-16);
+}
+.ui-card--flush { padding: 0; }
+
+/* ---------- Pilulka / odznak ---------- */
+
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Hlavička stránky ---------- */
+
+.ui-page-header { display: flex; flex-direction: column; gap: var(--space-1); }
+.ui-page-header__title { font-size: var(--text-2xl); font-weight: 800; color: var(--text); line-height: 1.2; }
+.ui-page-header__subtitle { font-size: var(--text-base); color: var(--muted); }
+
+/* ---------- Panel nástrojů ---------- */
+
+.ui-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ui-toolbar__spacer { margin-left: auto; }
