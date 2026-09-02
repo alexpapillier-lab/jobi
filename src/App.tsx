@@ -548,6 +548,18 @@ export default function App() {
 
   // Load services and set activeServiceId when session changes
   const servicesListRunRef = useRef(0);
+  /**
+   * activeServiceId se v efektu níž čte až PO awaitu na services-list.
+   * Přes uzávěr by to byla hodnota z okamžiku spuštění efektu – kdyby
+   * uživatel mezitím servis přepnul, kód by mu volbu přepsal. Ref drží
+   * vždy aktuální hodnotu, a přitom efekt neznovuspouští (to by načítalo
+   * seznam servisů dokola).
+   */
+  const activeServiceIdRef = useRef(activeServiceId);
+  // Zápis v efektu, ne během renderu – stejně jako v useGlobalSmsUnreadCount.
+  useEffect(() => {
+    activeServiceIdRef.current = activeServiceId;
+  }, [activeServiceId]);
   useEffect(() => {
     if (!session || !supabase) return;
     const runId = ++servicesListRunRef.current;
@@ -573,7 +585,8 @@ export default function App() {
         setServices(servicesList);
         
         // If activeServiceId is null, try to restore from localStorage or use first service
-        if (!activeServiceId) {
+        const aktivni = activeServiceIdRef.current;
+        if (!aktivni) {
           try {
             const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
             const isValidStored = stored && servicesList.some(s => s.service_id === stored);
@@ -588,7 +601,7 @@ export default function App() {
           }
         } else {
           // Validate that current activeServiceId exists in services list
-          const isValid = servicesList.some(s => s.service_id === activeServiceId);
+          const isValid = servicesList.some(s => s.service_id === aktivni);
           if (!isValid) {
             setActiveServiceId(servicesList[0].service_id);
           }
@@ -599,7 +612,7 @@ export default function App() {
         }
       }
     })();
-  }, [session, supabase]);
+  }, [session]);
 
   const refreshServices = useCallback(async () => {
     if (!session?.user?.id || !supabase) return;
@@ -620,7 +633,7 @@ export default function App() {
     } catch (err) {
       console.error("[App] refreshServices error:", err);
     }
-  }, [session, supabase, activeServiceId]);
+  }, [session, activeServiceId]);
 
   // Push services + activeServiceId + documentsConfig (z DB) + companyData + jobidocsLogo + Supabase auth + canManageDocuments do JobiDocs
   useEffect(() => {

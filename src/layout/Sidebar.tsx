@@ -205,6 +205,11 @@ export function Sidebar({
   const logoPresetId = useMemo((): LogoPresetId => {
     if (typeof localStorage === "undefined") return "auto";
     return (localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null) ?? "auto";
+  // logoPresetVersion je záměrný cache-buster: useMemo čte localStorage, což
+  // React nevidí jako stav. Verzi zvyšuje událost jobsheet:logo-preset-changed
+  // (posílá ji Settings.tsx). Bez téhle závislosti by se logo po změně presetu
+  // nepřekreslilo, proto ji lint hlásí jako zbytečnou neprávem.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logoPresetVersion]);
 
   const effectiveLogoId = useMemo(() => {

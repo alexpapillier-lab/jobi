@@ -150,7 +150,7 @@ export default function Customers({
     };
 
     loadCustomers();
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId]);
 
   // Realtime subscription for customers
   useEffect(() => {
@@ -209,7 +209,7 @@ export default function Customers({
         supabase.removeChannel(channel);
       }
     };
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId]);
 
   const customers = cloudCustomers;
 
@@ -285,7 +285,7 @@ export default function Customers({
     };
 
     loadCustomerTickets();
-  }, [openId, activeServiceId, supabase]);
+  }, [openId, activeServiceId]);
 
   // Load customer history when customer detail is opened
   useEffect(() => {
@@ -329,7 +329,7 @@ export default function Customers({
     };
 
     loadCustomerHistory();
-  }, [openId, activeServiceId, supabase]);
+  }, [openId, activeServiceId]);
 
   // Listen for customer tickets refresh event (when customer_id changes in ticket)
   useEffect(() => {
@@ -374,7 +374,7 @@ export default function Customers({
 
     window.addEventListener("jobsheet:customer-tickets-refresh" as any, handleRefresh);
     return () => window.removeEventListener("jobsheet:customer-tickets-refresh" as any, handleRefresh);
-  }, [openId, supabase, activeServiceId]);
+  }, [openId, activeServiceId]);
 
   // Handle openCustomerIntent - automatically open customer profile
   useEffect(() => {

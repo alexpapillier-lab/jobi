@@ -58,6 +58,11 @@ export function AppLogo({ size = 40, style, colors: colorsOverride, minimal: min
   const presetId = useMemo(() => {
     if (typeof localStorage === "undefined") return "auto" as LogoPresetId;
     return (localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null) ?? "auto";
+  // logoPresetVersion je záměrný cache-buster: useMemo čte localStorage, což
+  // React nevidí jako stav. Verzi zvyšuje událost jobsheet:logo-preset-changed
+  // (posílá ji Settings.tsx). Bez téhle závislosti by se logo po změně presetu
+  // nepřekreslilo, proto ji lint hlásí jako zbytečnou neprávem.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logoPresetVersion]);
 
   const minimal = useMemo(() => {
@@ -67,6 +72,11 @@ export function AppLogo({ size = 40, style, colors: colorsOverride, minimal: min
     } catch {
       return false;
     }
+  // logoPresetVersion je záměrný cache-buster: useMemo čte localStorage, což
+  // React nevidí jako stav. Verzi zvyšuje událost jobsheet:logo-preset-changed
+  // (posílá ji Settings.tsx). Bez téhle závislosti by se logo po změně presetu
+  // nepřekreslilo, proto ji lint hlásí jako zbytečnou neprávem.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minimalOverride, logoPresetVersion]);
 
   const colors = useMemo(() => {

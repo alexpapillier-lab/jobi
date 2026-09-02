@@ -93,7 +93,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
     };
 
     loadDeletedTickets();
-  }, [activeServiceId, session, supabase]);
+  }, [activeServiceId, session]);
 
   const handleRestoreTicket = async () => {
     if (!restoreTicketId || !supabase) return;
