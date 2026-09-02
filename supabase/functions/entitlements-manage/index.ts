@@ -21,7 +21,7 @@ const corsHeaders = {
 };
 
 /** Moduly, které lze prodávat. Nový modul se přidá sem. */
-const KNOWN_MODULES = ["sms", "invoices"] as const;
+const KNOWN_MODULES = ["sms", "invoices", "api_catalog", "api_inventory"] as const;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

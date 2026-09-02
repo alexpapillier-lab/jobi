@@ -13,6 +13,8 @@ import { TeamSettings } from "./Settings/TeamSettings";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
+import { ApiNastaveni } from "./Settings/ApiNastaveni";
+import { useEntitlements } from "../hooks/useEntitlements";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
@@ -39,7 +41,7 @@ import { useAuth } from "../auth/AuthProvider";
 
 type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about";
 type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_sms" | "service_team" | "service_owner"
+  | "service_basic" | "service_contact" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
@@ -206,6 +208,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const appUpdate = useAppUpdate();
   const updateAvailable = !!(appUpdate?.update);
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const { has: maModul } = useEntitlements(activeServiceId);
+  /** Sekce API se ukazuje, jen když servis aspoň jeden z modulů má. */
+  const maApi = maModul("api_catalog") || maModul("api_inventory");
   const isRootOwner = useIsRootOwner();
   const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
   const { createStatus, deleteStatus, saveServiceSettings } = useSettingsActions({ activeServiceId });
@@ -578,6 +583,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         ...(canManageDocuments ? [{ key: "service_contact" as const, label: "Kontaktní údaje" }] : []),
         ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS komunikace" }] : []),
         ...(isAdmin ? [{ key: "service_team" as const, label: "Tým / Přístupy" }] : []),
+        ...(maApi ? [{ key: "service_api" as const, label: "API" }] : []),
         ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner" }] : []),
       ],
     },
@@ -1403,6 +1409,16 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* Owner – pouze pro root ownera; správa servisů (vytvoření, mazání, deaktivace). Admin vidí vše kromě této záložky a nemůže přidávat/mazat servisy. */}
+      {section.subsection === "service_api" && maApi && (
+        <Card>
+          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4, color: "var(--text)" }}>Veřejné API</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
+            Údaje pro napojení webu nebo jiného systému na data tohohle servisu.
+          </div>
+          <ApiNastaveni activeServiceId={activeServiceId} />
+        </Card>
+      )}
+
       {section.subsection === "service_owner" && isRootOwner && refreshServices && (
         <OwnerSettings services={services} refreshServices={refreshServices} setActiveServiceId={setActiveServiceId} />
       )}

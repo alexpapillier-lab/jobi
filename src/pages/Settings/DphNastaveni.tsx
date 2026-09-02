@@ -14,10 +14,21 @@ import { showToast } from "../../components/Toast";
  */
 export function DphNastaveni({ activeServiceId }: { activeServiceId: string | null }) {
   const ulozene = useServiceVat(activeServiceId);
+  const [slug, setSlug] = useState("");
   const [platce, setPlatce] = useState(VYCHOZI_DPH.vatPayer);
   const [sazba, setSazba] = useState(String(VYCHOZI_DPH.defaultVatRate));
   const [cenySDph, setCenySDph] = useState(VYCHOZI_DPH.pricesIncludeVat);
   const [uklada, setUklada] = useState(false);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    let zruseno = false;
+    (async () => {
+      const { data } = await supabase.from("services").select("public_slug").eq("id", activeServiceId).maybeSingle();
+      if (!zruseno) setSlug(((data as { public_slug?: string } | null)?.public_slug) ?? "");
+    })();
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
 
   useEffect(() => {
     if (ulozene.loading) return;
@@ -33,10 +44,22 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
       showToast("Sazba DPH musí být mezi 0 a 100.", "error");
       return;
     }
+    const adresa = slug.trim().toLowerCase();
+    // Stejné omezení má i CHECK constraint – ať se chyba ukáže tady,
+    // ne až jako hláška z databáze.
+    if (adresa && !/^[a-z0-9]([a-z0-9-]{1,48}[a-z0-9])?$/.test(adresa)) {
+      showToast("Adresa smí obsahovat jen malá písmena, číslice a pomlčky (2–50 znaků).", "error");
+      return;
+    }
     setUklada(true);
     const { error } = await supabase
       .from("services")
-      .update({ vat_payer: platce, default_vat_rate: cislo, prices_include_vat: cenySDph } as never)
+      .update({
+        vat_payer: platce,
+        default_vat_rate: cislo,
+        prices_include_vat: cenySDph,
+        public_slug: adresa || null,
+      } as never)
       .eq("id", activeServiceId);
     setUklada(false);
     showToast(error ? `Uložení selhalo: ${error.message}` : "Nastavení DPH uloženo", error ? "error" : "success");
@@ -49,7 +72,7 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
   return (
     <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4, color: "var(--text)" }}>DPH</div>
+      <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4, color: "var(--text)" }}>DPH a veřejné API</div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
         Určuje sazbu u nových položek faktur a co se tiskne na dokumentu.
       </div>
@@ -103,6 +126,26 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
         </span>
       </label>
 
+      <div style={{ marginTop: 12 }}>
+        <FieldLabel>Adresa ve veřejném API</FieldLabel>
+        <input
+          type="text"
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          placeholder="nazev-servisu"
+          spellCheck={false}
+          style={{
+            width: "100%", maxWidth: 320, padding: "10px 12px", borderRadius: 10,
+            border: "1px solid var(--border)", background: "var(--panel)",
+            color: "var(--text)", fontFamily: "inherit", fontSize: 14,
+          }}
+        />
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+          Bez vyplnění se ceník ani sklad ven nedostanou, i kdyby byl modul zapnutý.
+          Malá písmena, číslice a pomlčky.
+        </div>
+      </div>
+
       <button
         type="button"
         onClick={uloz}
@@ -114,7 +157,7 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
           cursor: uklada ? "not-allowed" : "pointer", opacity: uklada ? 0.6 : 1,
         }}
       >
-        {uklada ? "Ukládám…" : "Uložit nastavení DPH"}
+        {uklada ? "Ukládám…" : "Uložit"}
       </button>
     </div>
   );

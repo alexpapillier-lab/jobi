@@ -25,6 +25,8 @@ type Service = { service_id: string; service_name: string };
 const MODULE_LABELS: Record<string, string> = {
   sms: "SMS",
   invoices: "Faktury",
+  api_catalog: "Veřejné API – ceník",
+  api_inventory: "Veřejné API – sklad",
 };
 
 async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[] }> {
@@ -64,7 +66,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
     try {
       const data = await callManage({ action: "list" });
       setRows(data.entitlements ?? []);
-      setModules(data.modules ?? ["sms", "invoices"]);
+      setModules(data.modules ?? ["sms", "invoices", "api_catalog", "api_inventory"]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
