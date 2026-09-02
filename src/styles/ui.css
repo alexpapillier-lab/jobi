@@ -250,3 +250,70 @@
   font-size: var(--text-sm);
 }
 .ui-label--spaced { padding-top: 10px; }
+
+/* --------------------------------------------------------------------------
+   Vybíratelná karta / řádek
+
+   Vzor „klikni pro odfiltrování“ ve Statistikách: karta nese libovolný obsah
+   (pruh grafu, popisky, čísla) a sama o sobě je přepínač.
+
+   Aktivní stav se dřív značil zesílením rámečku z 1px na 2px, což obsah karty
+   posunulo o pixel. Tady drží rámeček šířku a zvýraznění dělá vnitřní stín.
+   -------------------------------------------------------------------------- */
+.ui-selectable {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ui-selectable:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.ui-selectable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ui-selectable[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.ui-selectable:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Řádek bez vlastního pozadí – používá se tam, kde kartu tvoří až obsah
+   (např. řádek s pruhem grafu). */
+.ui-selectable--plain {
+  background: transparent;
+  border-color: transparent;
+  padding: var(--space-1);
+}
+.ui-selectable--plain[aria-pressed="true"] {
+  /* Zvýraznění dělá jen podbarvení – rámeček by tu soupeřil s pruhem grafu. */
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Rozvržení obsahu uvnitř karty. */
+.ui-selectable--row,
+.ui-selectable--between {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ui-selectable--between {
+  justify-content: space-between;
+}
+
+.ui-selectable--sm { padding: var(--space-2) var(--space-3); }
+.ui-selectable--lg { padding: var(--space-4); }

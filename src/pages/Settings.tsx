@@ -2595,29 +2595,16 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               Počet zakázek na stránce v seznamu. „Vše“ zobrazí všechny zakázky bez stránkování.
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {ORDERS_PAGE_SIZE_CHOICES.map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
+              <Segmented
+                  ariaLabel="Počet zakázek na stránce"
+                  value={uiCfg.orders.pageSize}
+                  onChange={(value) => {
                     const newCfg = { ...uiCfg, orders: { ...uiCfg.orders, pageSize: value } };
                     setUiCfg(newCfg);
                     saveUIConfig(newCfg);
                   }}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: uiCfg.orders.pageSize === value ? "var(--accent-soft)" : "var(--panel)",
-                    color: uiCfg.orders.pageSize === value ? "var(--accent)" : "var(--text)",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+                  options={ORDERS_PAGE_SIZE_CHOICES.map(({ value, label }) => ({ value, label }))}
+                />
             </div>
           </Card>
           <Card>

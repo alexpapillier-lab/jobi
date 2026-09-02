@@ -1,5 +1,5 @@
 import type React from "react";
-import { Button, Segmented } from "../components/ui";
+import { Button, Segmented, Selectable } from "../components/ui";
 import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
@@ -865,22 +865,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                 Object.entries(stats.byStatus).map(([status, count]) => {
                   const isActive = drillDown?.type === "status" && drillDown.value === status;
                   return (
-                    <button
+                    <Selectable
+                      selected={isActive}
+                      layout="row"
+                      variant="plain"
                       key={status}
-                      type="button"
                       onClick={() => setDrillDown((prev) => (prev?.type === "status" && prev.value === status ? null : { type: "status", value: status }))}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        width: "100%",
-                        padding: 4,
-                        border: "none",
-                        borderRadius: 10,
-                        background: isActive ? "var(--accent-soft)" : "transparent",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
                       title={`Filtrovat: ${nazevStavu(status)} (${count} zakázek)`}
                     >
                       <span style={{ minWidth: 120, fontSize: 13, color: "var(--text)" }}>{nazevStavu(status)}</span>
@@ -890,14 +880,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                             width: `${(count / maxCount) * 100}%`,
                             minWidth: count > 0 ? 24 : 0,
                             height: "100%",
-                            background: isActive ? "var(--accent)" : "var(--accent)",
+                            background: "var(--accent)",
                             borderRadius: 8,
                             transition: "width 0.3s ease",
                           }}
                         />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", minWidth: 36 }}>{count}</span>
-                    </button>
+                    </Selectable>
                   );
                 })
               )}
@@ -915,6 +905,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                   return (
                     <button
                       key={m.month}
+                      aria-pressed={isActive}
                       type="button"
                       onClick={() =>
                         setDrillDown((prev) =>
@@ -981,23 +972,15 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {Object.entries(stats.byStatus).map(([status, count]) => {
             const isActive = drillDown?.type === "status" && drillDown.value === status;
             return (
-              <button
+              <Selectable
+                selected={isActive}
                 key={status}
-                type="button"
                 onClick={() => setDrillDown((prev) => (prev?.type === "status" && prev.value === status ? null : { type: "status", value: status }))}
-                style={{
-                  padding: 12,
-                  borderRadius: 10,
-                  background: isActive ? "var(--accent-soft)" : "var(--panel-2)",
-                  border: isActive ? "2px solid var(--accent)" : "1px solid var(--border)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
                 title={`Filtrovat: ${nazevStavu(status)}`}
               >
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{nazevStavu(status)}</div>
                 <div style={{ fontWeight: 700, fontSize: 20, color: "var(--text)" }}>{count}</div>
-              </button>
+              </Selectable>
             );
           })}
         </div>
@@ -1027,22 +1010,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               stats.topRepairs.map((repair, idx) => {
                 const isActive = drillDown?.type === "repair" && drillDown.value === repair.name;
                 return (
-                  <button
+                  <Selectable
+                    selected={isActive}
+                    layout="between"
+                    size="sm"
                     key={repair.name}
-                    type="button"
                     onClick={() => setDrillDown((prev) => (prev?.type === "repair" && prev.value === repair.name ? null : { type: "repair", value: repair.name }))}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: 10,
-                      borderRadius: 8,
-                      background: isActive ? "var(--accent-soft)" : "var(--panel-2)",
-                      border: isActive ? "2px solid var(--accent)" : "1px solid var(--border)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      width: "100%",
-                    }}
                     title={`Filtrovat: ${repair.name}`}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1050,7 +1023,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{repair.name}</span>
                     </div>
                     <span style={{ fontWeight: 700, color: "var(--accent)" }}>{repair.count}x</span>
-                  </button>
+                  </Selectable>
                 );
               })
             ) : (
@@ -1081,22 +1054,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               stats.topDevices.map((device, idx) => {
                 const isActive = drillDown?.type === "device" && drillDown.value === device.name;
                 return (
-                  <button
+                  <Selectable
+                    selected={isActive}
+                    layout="between"
+                    size="sm"
                     key={device.name}
-                    type="button"
                     onClick={() => setDrillDown((prev) => (prev?.type === "device" && prev.value === device.name ? null : { type: "device", value: device.name }))}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: 10,
-                      borderRadius: 8,
-                      background: isActive ? "var(--accent-soft)" : "var(--panel-2)",
-                      border: isActive ? "2px solid var(--accent)" : "1px solid var(--border)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      width: "100%",
-                    }}
                     title={`Filtrovat: ${device.name}`}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1104,7 +1067,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{device.name}</span>
                     </div>
                     <span style={{ fontWeight: 700, color: "var(--accent)" }}>{device.count}x</span>
-                  </button>
+                  </Selectable>
                 );
               })
             ) : (
@@ -1138,28 +1101,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {stats.monthlyStats.map((month) => {
             const isActive = drillDown?.type === "month" && drillDown.year === month.year && drillDown.month === month.monthIndex;
             return (
-              <button
+              <Selectable
+                selected={isActive}
+                size="lg"
                 key={month.month}
-                type="button"
                 onClick={() =>
                   setDrillDown((prev) =>
                     prev?.type === "month" && prev.year === month.year && prev.month === month.monthIndex ? null : { type: "month", year: month.year, month: month.monthIndex }
                   )
                 }
-                style={{
-                  padding: 16,
-                  borderRadius: 10,
-                  background: isActive ? "var(--accent-soft)" : "var(--panel-2)",
-                  border: isActive ? "2px solid var(--accent)" : "1px solid var(--border)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
                 title={`Filtrovat: ${month.month}`}
               >
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{month.month}</div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 4 }}>{month.count} zakázek</div>
                 <div style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>{formatCurrency(month.revenue)}</div>
-              </button>
+              </Selectable>
             );
           })}
         </div>

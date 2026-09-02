@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useStatuses } from "../state/StatusesStore";
@@ -458,26 +459,16 @@ export default function Calendar({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {(["day", "week", "month"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: view === v ? "2px solid var(--accent)" : "1px solid var(--border)",
-                background: view === v ? "var(--accent-soft)" : "var(--panel)",
-                color: view === v ? "var(--accent)" : "var(--text)",
-                fontWeight: view === v ? 700 : 500,
-                fontSize: 13,
-                cursor: "pointer",
-                textTransform: "capitalize",
-              }}
-            >
-              {v === "day" ? "Den" : v === "week" ? "Týden" : "Měsíc"}
-            </button>
-          ))}
+          <Segmented
+              ariaLabel="Zobrazení kalendáře"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "day", label: "Den" },
+                { value: "week", label: "Týden" },
+                { value: "month", label: "Měsíc" },
+              ]}
+            />
           <div style={{ position: "relative", marginLeft: 8 }}>
             <button
               ref={filterButtonRef}

@@ -26,6 +26,7 @@ export function Segmented<T extends string | number>({
   size = "md",
   ariaLabel,
   className = "",
+  dataTour,
 }: {
   value: T;
   options: SegmentedOption<T>[];
@@ -33,11 +34,14 @@ export function Segmented<T extends string | number>({
   size?: "sm" | "md";
   ariaLabel?: string;
   className?: string;
+  /** Kotva pro průvodce aplikací (AppTourOverlay). */
+  dataTour?: string;
 }) {
   return (
     <div
       role="group"
       aria-label={ariaLabel}
+      data-tour={dataTour}
       className={["ui-segmented", size === "sm" ? "ui-segmented--sm" : "", className].filter(Boolean).join(" ")}
     >
       {options.map((o) => (

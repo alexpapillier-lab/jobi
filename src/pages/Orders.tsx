@@ -2583,19 +2583,6 @@ export default function Orders({
 
 
 
-  const smallPillBase: React.CSSProperties = useMemo(
-    () => ({
-      padding: "7px 10px",
-      borderRadius: 999,
-      border,
-      cursor: "pointer",
-      fontSize: 12,
-      fontWeight: 900,
-      transition: "transform 120ms ease, background 120ms ease, color 120ms ease",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    }),
-    [border]
-  );
 
   const fieldLabel: React.CSSProperties = useMemo(() => ({ fontSize: 12, color: "var(--muted)", marginTop: 10 }), []);
   const fieldHint: React.CSSProperties = useMemo(() => ({ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }), []);
@@ -3436,41 +3423,17 @@ export default function Orders({
 
       {/* Secondary quick status filters */}
       {showSecondaryFiltersRow && (
-        <div data-tour="orders-filters" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            onClick={() => setActiveStatusKey(null)}
-            style={{
-              ...smallPillBase,
-              background: activeStatusKey === null ? "var(--panel-2)" : "var(--panel)",
-              color: activeStatusKey === null ? "var(--text)" : "var(--muted)",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.01)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
-          >
-            Všechny stavy
-          </button>
-
-          {quickStatuses.map((s) => {
-            const active = s.key === activeStatusKey;
-            return (
-              <button
-                key={s.key}
-                onClick={() => setActiveStatusKey(s.key)}
-                style={{
-                  ...smallPillBase,
-                  background: active ? "var(--panel-2)" : "var(--panel)",
-                  color: "var(--text)",
-                  opacity: active ? 1 : 0.9,
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.01)")}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
-                title={s.label}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
+          <Segmented
+            dataTour="orders-filters"
+            ariaLabel="Filtr stavů"
+            size="sm"
+            value={activeStatusKey ?? ""}
+            onChange={(key) => setActiveStatusKey(key === "" ? null : key)}
+            options={[
+              { value: "", label: "Všechny stavy" },
+              ...quickStatuses.map((st) => ({ value: st.key, label: st.label, title: st.label })),
+            ]}
+          />
       )}
 
       {/* Loading/Error states */}

@@ -45,8 +45,21 @@ describe("ui.css stojí na tokenech", () => {
     expect(missing).toEqual([]);
   });
 
-  it("varianty tlačítka mají stav pro klávesnici", () => {
-    expect(css).toContain(".ui-btn:focus-visible");
+  it.each([".ui-btn", ".ui-segmented__option", ".ui-selectable"])(
+    "%s má stav pro klávesnici",
+    (cls) => {
+      expect(css).toContain(`${cls}:focus-visible`);
+    },
+  );
+
+  it("vybraný stav nemění šířku rámečku", () => {
+    // Karty ve Statistikách dřív při výběru přepínaly rámeček z 1px na 2px,
+    // takže se obsah posunul o pixel. Zvýraznění musí dělat barva nebo stín.
+    const pressed = [...css.matchAll(/\[aria-pressed="true"\]\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(pressed.length).toBeGreaterThan(0);
+    for (const block of pressed) {
+      expect(block).not.toMatch(/border(-width)?\s*:\s*\d/);
+    }
   });
 });
 

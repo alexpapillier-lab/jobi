@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Segmented } from "../ui";
 import { type DevicesData, type InventoryData, type DeviceRepair, safeLoadInventoryData } from "../../lib/catalogStorage";
 import { RepairPicker } from "./RepairPicker";
 
@@ -56,38 +57,16 @@ export function PerformedRepairAdder({
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          onClick={() => setMode("select")}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border,
-            background: mode === "select" ? "var(--accent-soft)" : "var(--panel)",
-            color: mode === "select" ? "var(--accent)" : "var(--text)",
-            fontWeight: 700,
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
-          Vybrat z katalogu
-        </button>
-        <button
-          onClick={() => setMode("manual")}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 8,
-            border,
-            background: mode === "manual" ? "var(--accent-soft)" : "var(--panel)",
-            color: mode === "manual" ? "var(--accent)" : "var(--text)",
-            fontWeight: 700,
-            fontSize: 12,
-            cursor: "pointer",
-          }}
-        >
-          Manuálně zadat
-        </button>
-      </div>
+      <Segmented
+        ariaLabel="Způsob zadání opravy"
+        size="sm"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "select", label: "Vybrat z katalogu" },
+          { value: "manual", label: "Manuálně zadat" },
+        ]}
+      />
 
       {mode === "select" && (
         <div style={{ display: "grid", gap: 8 }}>
