@@ -407,14 +407,26 @@ function getSectionDragLabel(sectionId: string, docConfig?: Record<string, unkno
   return (SAMPLE_DATA[sectionId] as { label?: string } | undefined)?.label ?? sectionId;
 }
 
+/**
+ * Položka palety sekcí.
+ *
+ * Sekci lze přidat kliknutím (přidá se na konec dokumentu) nebo tažením
+ * na konkrétní místo. Dřív šlo jen tažení, což se špatně objevuje –
+ * rozhraní k tomu potřebovalo větu s návodem.
+ *
+ * Kliknutí se s tažením nepobije: senzor má activationConstraint
+ * distance 10 px, takže klik bez posunu tažení nespustí.
+ */
 function SectionPaletteItem({
   sectionKey,
   inDocument,
   docConfig,
+  onAdd,
 }: {
   sectionKey: string;
   inDocument: boolean;
   docConfig?: Record<string, unknown>;
+  onAdd?: () => void;
 }) {
   const label = sectionKey.startsWith("custom-") && docConfig
     ? getSectionDragLabel(sectionKey, docConfig)
@@ -426,6 +438,8 @@ function SectionPaletteItem({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onClick={onAdd}
+      title={onAdd ? "Kliknutím přidat na konec, tažením na konkrétní místo" : undefined}
       style={{
         padding: "8px 12px",
         borderRadius: 10,
@@ -448,13 +462,15 @@ function SectionPaletteItem({
   );
 }
 
-function PaletteCustomBlockItem({ id, label, hasAny }: { id: string; label: string; hasAny: boolean }) {
+function PaletteCustomBlockItem({ id, label, hasAny, onAdd }: { id: string; label: string; hasAny: boolean; onAdd?: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { type: id } });
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onClick={onAdd}
+      title={onAdd ? "Kliknutím přidat na konec, tažením na konkrétní místo" : undefined}
       style={{
         padding: "8px 12px",
         borderRadius: 10,
@@ -2986,6 +3002,25 @@ export default function App() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  /**
+   * Přidá vlastní blok (text, nadpis, oddělovač, prázdný řádek, podpis).
+   * Vytaženo zvlášť, aby ho mohlo použít jak puštění při tažení,
+   * tak kliknutí v paletě – jinak by se logika psala dvakrát.
+   */
+  const handleCustomBlockAdd = useCallback(
+    (paletteId: string, index: number) => {
+      const newId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cb-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const customKey = `custom-${newId}`;
+      const type = paletteId === PALETTE_CUSTOM_TEXT_ID ? "text" : paletteId === PALETTE_CUSTOM_HEADING_ID ? "heading" : paletteId === PALETTE_CUSTOM_SEPARATOR_ID ? "separator" : paletteId === PALETTE_CUSTOM_SPACER_ID ? "spacer" : "signature";
+      const content = type === "heading" ? "Nadpis" : type === "spacer" ? "24" : type === "signature" ? "podpis" : "";
+      updateDocConfig(["customBlocks", newId], { type, content });
+      const fullOrder = [...documentsSectionOrder];
+      fullOrder.splice(index, 0, customKey);
+      updateDocConfig(["sectionOrder"], fullOrder);
+    },
+    [documentsSectionOrder, updateDocConfig]
+  );
+
   const handleSectionAdd = useCallback(
     (sectionKey: string, index: number) => {
       const includeKey = sectionKeyToIncludeDoc[sectionKey];
@@ -3023,14 +3058,7 @@ export default function App() {
         const sectionWidthsDoc = (docConf?.sectionWidths || {}) as Record<string, string>;
         if (aid.startsWith("palette-")) {
           if (aid === PALETTE_CUSTOM_TEXT_ID || aid === PALETTE_CUSTOM_HEADING_ID || aid === PALETTE_CUSTOM_SEPARATOR_ID || aid === PALETTE_CUSTOM_SPACER_ID || aid === PALETTE_SIGNATURE_LINE_ID) {
-            const newId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cb-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-            const customKey = `custom-${newId}`;
-            const type = aid === PALETTE_CUSTOM_TEXT_ID ? "text" : aid === PALETTE_CUSTOM_HEADING_ID ? "heading" : aid === PALETTE_CUSTOM_SEPARATOR_ID ? "separator" : aid === PALETTE_CUSTOM_SPACER_ID ? "spacer" : "signature";
-            const content = type === "heading" ? "Nadpis" : type === "spacer" ? "24" : type === "signature" ? "podpis" : "";
-            updateDocConfig(["customBlocks", newId], { type, content });
-            const fullOrder = [...documentsSectionOrder];
-            fullOrder.splice(dropIndex, 0, customKey);
-            updateDocConfig(["sectionOrder"], fullOrder);
+            handleCustomBlockAdd(aid, dropIndex);
           } else {
             const sectionKey = aid.replace("palette-", "");
             handleSectionAdd(sectionKey, dropIndex);
@@ -3328,7 +3356,7 @@ export default function App() {
 
                 <div style={{ padding: "14px 0" }}>
                   <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: "var(--text)" }}>Paleta sekcí</div>
-                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Přetáhněte sekci do náhledu vpravo. ✓ = již v dokumentu.</p>
+                  <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Kliknutím přidáte na konec, tažením na konkrétní místo. ✓ = již v dokumentu.</p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {(DEFAULT_SECTION_ORDER[DOC_TYPE_TO_UI[docType]] ?? []).map((sectionKey) => (
                       <SectionPaletteItem
@@ -3336,6 +3364,7 @@ export default function App() {
                         sectionKey={sectionKey}
                         inDocument={documentsOrderedSections.includes(sectionKey)}
                         docConfig={docConfig}
+                        onAdd={() => handleSectionAdd(sectionKey, documentsOrderedSections.length)}
                       />
                     ))}
                     {[
@@ -3348,7 +3377,15 @@ export default function App() {
                     const wantType = PALETTE_CUSTOM_ID_TO_TYPE[id];
                     const blocks = (docConfig.customBlocks as Record<string, { type?: string }>) || {};
                     const hasAny = wantType ? documentsSectionOrder.some((k) => k.startsWith("custom-") && blocks[k.slice(7)]?.type === wantType) : false;
-                    return <PaletteCustomBlockItem key={id} id={id} label={label} hasAny={hasAny} />;
+                    return (
+                      <PaletteCustomBlockItem
+                        key={id}
+                        id={id}
+                        label={label}
+                        hasAny={hasAny}
+                        onAdd={() => handleCustomBlockAdd(id, documentsSectionOrder.length)}
+                      />
+                    );
                   })}
                   </div>
                 </div>
@@ -4678,31 +4715,46 @@ export default function App() {
             <section className="glass-panel document-preview-section" style={{ overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
                 <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--text)" }}>Náhled dokumentu</h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <SegmentedControl
-                    options={[
-                      { value: "editor" as const, label: "Editor" },
-                      { value: "pdfPreview" as const, label: "PDF náhled" },
-                    ]}
-                    value={viewMode as "editor" | "pdfPreview"}
-                    onChange={(v) => setViewMode(v)}
-                  />
-                  {viewMode === "editor" && (
-                    <SegmentedControl
-                      options={[
-                        { value: "sample" as const, label: "Náhled" },
-                        { value: "template" as const, label: "Šablona" },
-                      ]}
-                      value={previewMode as "sample" | "template"}
-                      onChange={(v) => setPreviewMode(v)}
-                    />
-                  )}
-                </div>
+                {/*
+                  Jeden přepínač se třemi stavy místo dvou přepínačů.
+
+                  Dřív tu stály vedle sebe "Editor / PDF náhled" a
+                  "Náhled / Šablona". Oba ovládaly tutéž pravou stranu, druhý
+                  se navíc objevoval jen v režimu Editor – a nic nenaznačovalo,
+                  jak spolu souvisí. Uživatel musel vyzkoušet všechny kombinace,
+                  aby zjistil, co dělají.
+
+                  Přitom se vybírá jedna ze tří věcí, ne dvě nezávislé:
+                    úpravy      = editor + ukázková data
+                    šablona     = editor + zástupné texty {{...}}
+                    PDF náhled  = hotový výstup, bez úprav
+
+                  Stavy viewMode a previewMode zůstaly, jen se nastavují
+                  společně – kód okolo se tak nemusel měnit.
+                */}
+                <SegmentedControl
+                  options={[
+                    { value: "upravy" as const, label: "Úpravy" },
+                    { value: "sablona" as const, label: "Šablona" },
+                    { value: "pdf" as const, label: "PDF náhled" },
+                  ]}
+                  value={
+                    viewMode === "pdfPreview" ? "pdf" : previewMode === "template" ? "sablona" : "upravy"
+                  }
+                  onChange={(v) => {
+                    if (v === "pdf") {
+                      setViewMode("pdfPreview");
+                      return;
+                    }
+                    setViewMode("editor");
+                    setPreviewMode(v === "sablona" ? "template" : "sample");
+                  }}
+                />
               </div>
               {viewMode === "pdfPreview" ? (
                 <>
                   <div style={{ textAlign: "center", padding: "8px 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
-                    Přesný náhled PDF výstupu. Pro editaci přepněte na Editor.
+                    Přesný náhled PDF výstupu. Pro úpravy přepněte na Úpravy.
                   </div>
                   <PdfPreviewIframe srcDoc={pdfPreviewHtml} />
                 </>
