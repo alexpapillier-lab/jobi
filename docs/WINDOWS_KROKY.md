@@ -213,6 +213,33 @@ a soubory `api/print.ts` a `api/printers.ts` zůstaly záměrně nezměněné.
 
 ---
 
+## Diagnostika: nativní ARM64 build
+
+Parallels na Apple Silicon běží Windows na ARM, ale běžný build je **x64**,
+takže jede přes emulaci Prism. Část případného sekání jde tedy za emulací,
+ne za aplikací.
+
+Rozlišit to jde nativním ARM64 buildem:
+
+```bash
+gh workflow run "Build Windows" -f include_arm64=true
+```
+
+Artefakt `jobi-windows-arm64` pak v Parallels poběží nativně. Srovnání:
+
+| Co vidíš | Co to znamená |
+|---|---|
+| ARM64 běží plynule, x64 sekal | Za sekání mohla emulace, aplikace je v pořádku |
+| Sekají obě | Problém je v aplikaci – zkusit Nastavení → Vzhled → Rozhraní → **Omezit efekty** |
+| Obě plynulé po vypnutí efektů | Brzdilo rozostření (backdrop-filter), viz commit „perf: vypínač efektů" |
+
+**ARM64 je zatím jen diagnostika, ne produkt.** Zákazníkům stačí x64, ten
+na Windows ARM funguje přes emulaci. Povýšit na plnohodnotný build má smysl,
+až se objeví zákazník s ARM notebookem – pak přibude i `windows-aarch64`
+do `latest.json`.
+
+---
+
 ## ČÁST E – co zbývá potom
 
 | Věc | Proč |
