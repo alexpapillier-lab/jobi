@@ -3,7 +3,6 @@ import { supabase, supabaseUrl, supabaseFetch, resetTauriFetchState } from "../.
 import { devLog, devWarn } from "../../../lib/devLog";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
-import { checkAchievementsOnTicketsChanged, checkAchievementsOnCustomersChanged } from "../../../lib/achievements";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
@@ -415,20 +414,6 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         }
       }
 
-      if (userId) {
-        const newTotal = cloudTickets.length + createdTickets.length;
-        checkAchievementsOnTicketsChanged(userId, activeServiceId, newTotal);
-        (async () => {
-          try {
-            const { count } = await (supabase.from("customers") as any)
-              .select("*", { count: "exact", head: true })
-              .eq("service_id", activeServiceId);
-            if (typeof count === "number") checkAchievementsOnCustomersChanged(userId, activeServiceId, count);
-          } catch {
-            // ignore
-          }
-        })();
-      }
       showToast(createdTickets.length === 1 ? "Zakázka vytvořena" : `Vytvořeno ${createdTickets.length} zakázek`, "success");
       return true;
     } catch (err) {

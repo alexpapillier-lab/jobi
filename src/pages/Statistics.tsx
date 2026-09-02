@@ -1,8 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
-import { useAuth } from "../auth/AuthProvider";
-import { checkAchievementOnStatisticsOpen } from "../lib/achievements";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 
 const TICKETS_SELECT =
@@ -214,7 +212,6 @@ type StatisticsProps = {
 };
 
 export default function Statistics({ activeServiceId, onOpenTicket }: StatisticsProps) {
-  const { session } = useAuth();
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
@@ -224,11 +221,6 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const [viewMode, setViewMode] = useState<"cards" | "table" | "charts">("cards");
   const [drillDown, setDrillDown] = useState<DrillDown>(null);
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
-
-  useEffect(() => {
-    const uid = session?.user?.id;
-    if (uid) checkAchievementOnStatisticsOpen(uid);
-  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {

@@ -25,9 +25,9 @@ import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarr
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
-import { checkAchievementOnFirstPrint, checkAchievementOnPaperless, checkAchievementOnFirstCapturePhoto, checkAchievementOnShortcutUsed } from "../lib/achievements";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useActiveRole } from "../hooks/useActiveRole";
+import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
@@ -701,11 +701,6 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
       const durationMs = Math.round(performance.now() - start);
       if (res.ok) {
         trackDocumentAction({ action: "export", docType: "zakazkovy_list", result: usedFallback ? "fallback" : "success", durationMs, usedFallback });
-        const u = (await supabase?.auth.getUser())?.data?.user?.id;
-        if (u) {
-          checkAchievementOnFirstPrint(u);
-          checkAchievementOnPaperless(u);
-        }
         showExportSuccessToast(filePath);
       } else {
         trackDocumentAction({ action: "export", docType: "zakazkovy_list", result: "error", durationMs, errorMessage: res.error, usedFallback });
@@ -761,11 +756,6 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
   const durationMs = Math.round(performance.now() - start);
   if (res.ok) {
     trackDocumentAction({ action: "print", docType: "zakazkovy_list", result: "success", durationMs });
-    const u = (await supabase?.auth.getUser())?.data?.user?.id;
-    if (u) {
-      checkAchievementOnFirstPrint(u);
-      checkAchievementOnPaperless(u);
-    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     trackDocumentAction({ action: "print", docType: "zakazkovy_list", result: "error", durationMs, errorMessage: res.error });
@@ -815,11 +805,6 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
       const durationMs = Math.round(performance.now() - start);
       if (res.ok) {
         trackDocumentAction({ action: "export", docType: "diagnosticky_protokol", result: usedFallback ? "fallback" : "success", durationMs, usedFallback });
-        const u = (await supabase?.auth.getUser())?.data?.user?.id;
-        if (u) {
-          checkAchievementOnFirstPrint(u);
-          checkAchievementOnPaperless(u);
-        }
         showExportSuccessToast(filePath);
       } else {
         trackDocumentAction({ action: "export", docType: "diagnosticky_protokol", result: "error", durationMs, errorMessage: res.error, usedFallback });
@@ -860,11 +845,6 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
   const durationMs = Math.round(performance.now() - start);
   if (res.ok) {
     trackDocumentAction({ action: "print", docType: "diagnosticky_protokol", result: "success", durationMs });
-    const u = (await supabase?.auth.getUser())?.data?.user?.id;
-    if (u) {
-      checkAchievementOnFirstPrint(u);
-      checkAchievementOnPaperless(u);
-    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     trackDocumentAction({ action: "print", docType: "diagnosticky_protokol", result: "error", durationMs, errorMessage: res.error });
@@ -918,11 +898,6 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
       const durationMs = Math.round(performance.now() - start);
       if (res.ok) {
         trackDocumentAction({ action: "export", docType: "zarucni_list", result: usedFallback ? "fallback" : "success", durationMs, usedFallback });
-        const u = (await supabase?.auth.getUser())?.data?.user?.id;
-        if (u) {
-          checkAchievementOnFirstPrint(u);
-          checkAchievementOnPaperless(u);
-        }
         showExportSuccessToast(filePath);
       } else {
         trackDocumentAction({ action: "export", docType: "zarucni_list", result: "error", durationMs, errorMessage: res.error, usedFallback });
@@ -966,11 +941,6 @@ async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
   const durationMs = Math.round(performance.now() - start);
   if (res.ok) {
     trackDocumentAction({ action: "print", docType: "zarucni_list", result: "success", durationMs });
-    const u = (await supabase?.auth.getUser())?.data?.user?.id;
-    if (u) {
-      checkAchievementOnFirstPrint(u);
-      checkAchievementOnPaperless(u);
-    }
     showToast("Úloha odeslána do fronty", "success");
   } else {
     trackDocumentAction({ action: "print", docType: "zarucni_list", result: "error", durationMs, errorMessage: res.error });
@@ -3479,6 +3449,7 @@ export default function Orders({
   const [smsPanelOpen, setSmsPanelOpen] = useState(false);
   const [smsUnreadCount, setSmsUnreadCount] = useState(0);
   const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
+  const [smsUnreadListBump, setSmsUnreadListBump] = useState(0);
   const [smsActivatedForService, setSmsActivatedForService] = useState(false);
 
   useEffect(() => {
@@ -3505,7 +3476,7 @@ export default function Orders({
     };
   }, [smsPanelOpen, detailId, smsPanelTicketIdRef]);
 
-  // Load SMS unread count for current detail ticket
+  // SMS unread on detail header: conv linked by ticket_id OR same customer phone (shared thread)
   useEffect(() => {
     const client = getTypedSupabaseClient();
     if (!detailId || !activeServiceId || !client) {
@@ -3514,16 +3485,33 @@ export default function Orders({
     }
     let cancelled = false;
     (async () => {
-      const { data: convs } = await client.from("sms_conversations").select("id").eq("ticket_id", detailId);
-      if (cancelled || !convs?.length) {
+      const convIdSet = new Set<string>();
+      const { data: convsTicket } = await client.from("sms_conversations").select("id").eq("ticket_id", detailId);
+      convsTicket?.forEach((c) => convIdSet.add(c.id));
+      const { data: tick } = await client
+        .from("tickets")
+        .select("customer_phone")
+        .eq("id", detailId)
+        .eq("service_id", activeServiceId)
+        .maybeSingle();
+      const phoneNorm = tick?.customer_phone ? normalizePhone(String(tick.customer_phone)) : null;
+      if (phoneNorm) {
+        const { data: convPhone } = await client
+          .from("sms_conversations")
+          .select("id")
+          .eq("service_id", activeServiceId)
+          .eq("customer_phone", phoneNorm)
+          .maybeSingle();
+        if (convPhone?.id) convIdSet.add(convPhone.id);
+      }
+      if (convIdSet.size === 0) {
         if (!cancelled) setSmsUnreadCount(0);
         return;
       }
-      const ids = convs.map((c) => c.id);
       const { count, error } = await client
         .from("sms_messages")
         .select("id", { count: "exact", head: true })
-        .in("conversation_id", ids)
+        .in("conversation_id", [...convIdSet])
         .eq("direction", "inbound")
         .is("read_at", null);
       if (cancelled) return;
@@ -4187,47 +4175,135 @@ export default function Orders({
     [combinedList, ordersPage, pageSize, effectivePageSize]
   );
 
-  const paginatedTicketIds = useMemo(() => paginatedTickets.map((t) => t.id), [paginatedTickets]);
+  /** Zakázky, u kterých má smysl načíst SMS badge (shodné s tím, co je ve výpisu) */
+  const ticketsForSmsUnread = useMemo(() => {
+    if (activeGroup === "reklamace") return [];
+    const mode = uiCfg.orders.displayMode;
+    if (mode === "status-grouped") {
+      if (showClaimsInOrdersList) {
+        return paginatedCombined.filter((r) => r.type === "ticket").map((r) => r.data);
+      }
+      return filtered;
+    }
+    return paginatedTickets;
+  }, [
+    activeGroup,
+    uiCfg.orders.displayMode,
+    showClaimsInOrdersList,
+    paginatedCombined,
+    filtered,
+    paginatedTickets,
+  ]);
 
-  // Load SMS unread counts for tickets on current page (one batch) — only when SMS is activated
+  // Realtime: po příchozí SMS nebo označení přečteného přepočíst badge u řádků
   useEffect(() => {
     const client = getTypedSupabaseClient();
-    if (!smsActivatedForService || !activeServiceId || !client || paginatedTicketIds.length === 0) {
+    if (!smsActivatedForService || !activeServiceId || !client) return;
+    const topic = `orders_sms_unread_rt:${activeServiceId}`;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "sms_messages" },
+        (payload) => {
+          if ((payload.new as { direction?: string })?.direction === "inbound") {
+            setSmsUnreadListBump((n) => n + 1);
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [smsActivatedForService, activeServiceId]);
+
+  // SMS unread per řádek: konverzace podle ticket_id nebo stejného telefonu jako u detailu
+  useEffect(() => {
+    const client = getTypedSupabaseClient();
+    if (!smsActivatedForService || !activeServiceId || !client || ticketsForSmsUnread.length === 0) {
       setSmsUnreadByTicketId({});
       return;
     }
+    const ticketRows = ticketsForSmsUnread;
+    const ticketIds = ticketRows.map((t) => t.id);
+    const idSet = new Set(ticketIds);
+    const chunk = 180;
     let cancelled = false;
     (async () => {
-      const { data: convs } = await client
-        .from("sms_conversations")
-        .select("id, ticket_id")
-        .eq("service_id", activeServiceId)
-        .in("ticket_id", paginatedTicketIds);
-      if (cancelled || !convs?.length) {
+      const convsByTicket: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
+      for (let i = 0; i < ticketIds.length; i += chunk) {
+        const { data } = await client
+          .from("sms_conversations")
+          .select("id, ticket_id, customer_phone")
+          .eq("service_id", activeServiceId)
+          .in("ticket_id", ticketIds.slice(i, i + chunk));
+        convsByTicket.push(...((data ?? []) as typeof convsByTicket));
+      }
+      const phones = [
+        ...new Set(ticketRows.map((t) => normalizePhone(t.customerPhone)).filter((p): p is string => !!p)),
+      ];
+      const convsByPhone: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
+      for (let i = 0; i < phones.length; i += chunk) {
+        const { data } = await client
+          .from("sms_conversations")
+          .select("id, ticket_id, customer_phone")
+          .eq("service_id", activeServiceId)
+          .in("customer_phone", phones.slice(i, i + chunk));
+        for (const row of data ?? []) {
+          convsByPhone.push(row as (typeof convsByPhone)[number]);
+        }
+      }
+      const convMap = new Map<string, { id: string; ticket_id: string | null; customer_phone: string }>();
+      for (const c of [...convsByTicket, ...convsByPhone]) {
+        convMap.set(c.id, c);
+      }
+      const convIds = [...convMap.keys()];
+      if (convIds.length === 0) {
         if (!cancelled) setSmsUnreadByTicketId({});
         return;
       }
-      const convIds = convs.map((c) => c.id);
-      const ticketByConvId: Record<string, string> = {};
-      convs.forEach((c) => { if (c.ticket_id) ticketByConvId[c.id] = c.ticket_id; });
-      const { data: messages } = await client
-        .from("sms_messages")
-        .select("conversation_id")
-        .in("conversation_id", convIds)
-        .eq("direction", "inbound")
-        .is("read_at", null);
-      if (cancelled) return;
       const countByConv: Record<string, number> = {};
-      (messages ?? []).forEach((m) => { countByConv[m.conversation_id] = (countByConv[m.conversation_id] ?? 0) + 1; });
+      for (let i = 0; i < convIds.length; i += chunk) {
+        const slice = convIds.slice(i, i + chunk);
+        const { data: messages } = await client
+          .from("sms_messages")
+          .select("conversation_id")
+          .in("conversation_id", slice)
+          .eq("direction", "inbound")
+          .is("read_at", null);
+        if (cancelled) return;
+        (messages ?? []).forEach((m) => {
+          countByConv[m.conversation_id] = (countByConv[m.conversation_id] ?? 0) + 1;
+        });
+      }
+      const phonesMatch = (a: string | null | undefined, b: string | null | undefined) => {
+        const na = normalizePhone(a);
+        const nb = normalizePhone(b);
+        if (na && nb && na === nb) return true;
+        const da = String(a ?? "").replace(/\D/g, "");
+        const db = String(b ?? "").replace(/\D/g, "");
+        return da.length >= 9 && db.length >= 9 && da.slice(-9) === db.slice(-9);
+      };
       const byTicket: Record<string, number> = {};
-      Object.entries(countByConv).forEach(([cid, n]) => {
-        const tid = ticketByConvId[cid];
-        if (tid) byTicket[tid] = (byTicket[tid] ?? 0) + n;
-      });
-      setSmsUnreadByTicketId(byTicket);
+      for (const [cid, n] of Object.entries(countByConv)) {
+        const conv = convMap.get(cid);
+        if (!conv) continue;
+        if (conv.ticket_id && idSet.has(conv.ticket_id)) {
+          byTicket[conv.ticket_id] = (byTicket[conv.ticket_id] ?? 0) + n;
+        } else {
+          for (const t of ticketRows) {
+            if (phonesMatch(t.customerPhone, conv.customer_phone)) {
+              byTicket[t.id] = (byTicket[t.id] ?? 0) + n;
+            }
+          }
+        }
+      }
+      if (!cancelled) setSmsUnreadByTicketId(byTicket);
     })();
-    return () => { cancelled = true; };
-  }, [smsActivatedForService, activeServiceId, paginatedTicketIds]);
+    return () => {
+      cancelled = true;
+    };
+  }, [smsActivatedForService, activeServiceId, ticketsForSmsUnread, smsUnreadListBump]);
 
   useEffect(() => {
     setOrdersPage(0);
@@ -4245,6 +4321,21 @@ export default function Orders({
     () => (detailId ? tickets.find((t) => t.id === detailId) : undefined),
     [detailId, tickets]
   );
+
+  // After detailedTicket exists: sync ref so SMS OS notifications skip this thread when panel is open
+  useEffect(() => {
+    if (smsPanelOpen && detailId && detailedTicket?.customerPhone?.trim()) {
+      smsDoNotNotifyRef.panelTicketId = detailId;
+      smsDoNotNotifyRef.panelCustomerPhoneNorm = normalizePhone(detailedTicket.customerPhone) ?? null;
+    } else {
+      smsDoNotNotifyRef.panelTicketId = null;
+      smsDoNotNotifyRef.panelCustomerPhoneNorm = null;
+    }
+    return () => {
+      smsDoNotNotifyRef.panelTicketId = null;
+      smsDoNotNotifyRef.panelCustomerPhoneNorm = null;
+    };
+  }, [smsPanelOpen, detailId, detailedTicket?.customerPhone]);
 
   const detailedClaim: WarrantyClaimRow | undefined = useMemo(
     () => (detailClaimId ? cloudClaims.find((c) => c.id === detailClaimId) : undefined),
@@ -4901,8 +4992,6 @@ export default function Orders({
     const onKey = (e: KeyboardEvent) => {
       if (comboMatchesEvent(e, getShortcut("order_print"))) {
         e.preventDefault();
-        const uid = session?.user?.id;
-        if (uid) checkAchievementOnShortcutUsed(uid);
         printTicket(detailedTicket, activeServiceId);
       }
     };
@@ -4973,7 +5062,6 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_search"))) {
         e.preventDefault();
         e.stopPropagation();
-        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         searchInputRef.current?.focus();
         return;
       }
@@ -4981,21 +5069,18 @@ export default function Orders({
       if (comboMatchesEvent(e, getShortcut("orders_new"))) {
         e.preventDefault();
         e.stopPropagation();
-        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         openNewOrderRef.current();
         return;
       }
       if (detailId && !isEditing && comboMatchesEvent(e, getShortcut("order_detail_edit"))) {
         e.preventDefault();
         e.stopPropagation();
-        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         startEditingRef.current();
         return;
       }
       if (detailId && isEditing && comboMatchesEvent(e, getShortcut("order_detail_save"))) {
         e.preventDefault();
         e.stopPropagation();
-        if (session?.user?.id) checkAchievementOnShortcutUsed(session.user.id);
         saveTicketChangesRef.current();
         return;
       }
@@ -5196,8 +5281,19 @@ export default function Orders({
     );
   }, [canPrintExport, setOpenQuickPrintTicket]);
 
+  const smsUnreadForTicket = (ticketId: string) => {
+    if (smsPanelOpen && detailId === ticketId) return 0;
+    return smsUnreadByTicketId[ticketId] ?? 0;
+  };
+
+  const smsUnreadByTicketIdDisplay = useMemo(() => {
+    const o = { ...smsUnreadByTicketId };
+    if (smsPanelOpen && detailId) o[detailId] = 0;
+    return o;
+  }, [smsUnreadByTicketId, smsPanelOpen, detailId]);
+
   const smsBadge = (ticketId: string) => {
-    const n = smsUnreadByTicketId[ticketId] ?? 0;
+    const n = smsUnreadForTicket(ticketId);
     if (n <= 0) return null;
     return (
       <span
@@ -5234,7 +5330,7 @@ export default function Orders({
     const statusNode = renderStatusPicker(t.id, currentStatus);
     const metaOrNull = meta ?? null;
     const wrap = (node: React.ReactNode) =>
-      (smsUnreadByTicketId[t.id] ?? 0) > 0 ? (
+      smsUnreadForTicket(t.id) > 0 ? (
         <div key={t.id} style={{ position: "relative" }}>
           {smsBadge(t.id)}
           {node}
@@ -5478,7 +5574,7 @@ export default function Orders({
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
             statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
-            smsUnreadByTicketId={smsUnreadByTicketId}
+            smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
           />
         )}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "timeline" && (
@@ -5487,7 +5583,7 @@ export default function Orders({
             getByKey={getByKey as any}
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
-            smsUnreadByTicketId={smsUnreadByTicketId}
+            smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
           />
         )}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
@@ -5504,7 +5600,7 @@ export default function Orders({
               printButtonForTicket={(t) => renderPrintButton(t, true)}
               printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
-              smsUnreadByTicketId={smsUnreadByTicketId}
+              smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
             />
           ) : (
             <TicketStatusGrouped
@@ -5515,7 +5611,7 @@ export default function Orders({
               statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
               printButtonFor={(t) => renderPrintButton(t, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
-              smsUnreadByTicketId={smsUnreadByTicketId}
+              smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
             />
           )
         )}
@@ -6578,11 +6674,6 @@ export default function Orders({
                         if (action === "print") {
                           const res = await printDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, { variables });
                           if (res.ok) {
-                            const u = (await supabase?.auth.getUser())?.data?.user?.id;
-                            if (u) {
-                              checkAchievementOnFirstPrint(u);
-                              checkAchievementOnPaperless(u);
-                            }
                             showToast("Úloha odeslána do fronty", "success");
                           } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                         } else {
@@ -6595,11 +6686,6 @@ export default function Orders({
                             if (filePath) {
                               const res = await exportDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, filePath, { variables });
                               if (res.ok) {
-                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
-                                if (u) {
-                                  checkAchievementOnFirstPrint(u);
-                                  checkAchievementOnPaperless(u);
-                                }
                                 showExportSuccessToast(filePath);
                               } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
@@ -6622,11 +6708,6 @@ export default function Orders({
                             if (filePath) {
                               const res = await exportViaJobiDocs(html, filePath);
                               if (res.ok) {
-                                const u = (await supabase?.auth.getUser())?.data?.user?.id;
-                                if (u) {
-                                  checkAchievementOnFirstPrint(u);
-                                  checkAchievementOnPaperless(u);
-                                }
                                 showExportSuccessToast(filePath);
                               } else showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
                             }
@@ -6776,7 +6857,7 @@ export default function Orders({
             {detailedTicket && !detailedClaim && smsActivatedForService && (
               <button
                 type="button"
-                onClick={() => { setSmsPanelOpen(true); setSmsUnreadCount(0); }}
+                onClick={() => { setSmsPanelOpen(true); }}
                 style={{ ...softBtn, position: "relative" }}
                 title="SMS chat se zákazníkem"
               >
@@ -6784,7 +6865,7 @@ export default function Orders({
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
                 SMS
-                {smsUnreadCount > 0 && (
+                {smsUnreadCount > 0 && !smsPanelOpen && (
                   <span
                     style={{
                       position: "absolute",
@@ -7238,8 +7319,6 @@ export default function Orders({
                                   const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file);
                                   urls.push(url);
                                 }
-                                const uid = session?.user?.id;
-                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
                                     t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
@@ -8333,8 +8412,6 @@ export default function Orders({
                                   const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file);
                                   urls.push(url);
                                 }
-                                const uid = session?.user?.id;
-                                if (uid) checkAchievementOnFirstCapturePhoto(uid);
                                 setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
@@ -8506,8 +8583,6 @@ export default function Orders({
                                   );
                                     urls.push(url);
                                   }
-                                  const uid = session?.user?.id;
-                                  if (uid) checkAchievementOnFirstCapturePhoto(uid);
                                   setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                                   setCloudTickets((prev) =>
                                     prev.map((t) =>
@@ -8737,6 +8812,10 @@ export default function Orders({
                 serviceId={(detailedTicket as { service_id?: string }).service_id ?? activeServiceId ?? undefined}
                 customerPhone={detailedTicket.customerPhone ?? null}
                 customerName={detailedTicket.customerName ?? null}
+                onInboundMarkedRead={() => {
+                  setSmsUnreadCount(0);
+                  setSmsUnreadListBump((n) => n + 1);
+                }}
               />
             </div>
           </div>

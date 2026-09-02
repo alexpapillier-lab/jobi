@@ -7,7 +7,6 @@ import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
 import Calendar from "./pages/Calendar";
-import Achievements from "./pages/Achievements";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
 
@@ -37,9 +36,11 @@ import { STORAGE_KEYS } from "./constants/storageKeys";
 import { safeLoadCompanyData } from "./lib/companyData";
 import { useCheckForAppUpdate } from "./hooks/useCheckForAppUpdate";
 import { useSmsNotifications } from "./hooks/useSmsNotifications";
-import { useGlobalSmsUnreadCount } from "./hooks/useGlobalSmsUnreadCount";
+import {
+  useGlobalSmsUnreadCount,
+  type InboundSmsNavigatePayload,
+} from "./hooks/useGlobalSmsUnreadCount";
 import { useSmsEnabled } from "./hooks/useSmsEnabled";
-import { checkAchievementOnMultiservice, checkAchievementOnShortcutUsed } from "./lib/achievements";
 import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import {
@@ -80,7 +81,6 @@ type UIConfig = {
   sidebar: { position: SidebarPosition };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: DisplayMode; pageSize: number };
-  achievementsEnabled?: boolean;
   /** Zapnutý modul Faktury (stránka, tlačítka u zakázek). Vypnout, pokud používáte vlastní fakturační systém. */
   invoicingEnabled?: boolean;
 };
@@ -91,7 +91,6 @@ function defaultUIConfig(): UIConfig {
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
-    achievementsEnabled: true,
     invoicingEnabled: true,
   };
 }
@@ -113,7 +112,6 @@ function safeLoadUIConfig(): UIConfig {
       ? pageSize
       : d.orders.pageSize;
 
-    const achievementsEnabled = parsed?.achievementsEnabled;
     const invoicingEnabled = parsed?.invoicingEnabled;
     return {
       app: {
@@ -134,7 +132,6 @@ function safeLoadUIConfig(): UIConfig {
         displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
       },
-      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
       invoicingEnabled: typeof invoicingEnabled === "boolean" ? invoicingEnabled : true,
     };
   } catch {
@@ -174,7 +171,13 @@ export default function App() {
 
   // one-shot intent: navigate to Orders and open a specific ticket
   const [openTicketIntent, setOpenTicketIntent] = useState<OpenTicketIntent | null>(null);
+  const [openSmsIntent, setOpenSmsIntent] = useState<{
+    phone: string;
+    displayName?: string;
+    conversationId?: string;
+  } | null>(null);
   const smsPanelTicketIdRef = useRef<string | null>(null);
+  const clearOpenSmsIntent = useCallback(() => setOpenSmsIntent(null), []);
 
   useSmsNotifications(
     activeServiceId,
@@ -185,8 +188,17 @@ export default function App() {
     }, [])
   );
 
-  const globalSmsUnreadCount = useGlobalSmsUnreadCount(activeServiceId);
   const smsEnabled = useSmsEnabled(activeServiceId);
+  const globalSmsUnreadCount = useGlobalSmsUnreadCount(activeServiceId, {
+    onInboundSmsNavigate: useCallback((p: InboundSmsNavigatePayload) => {
+      setOpenSmsIntent({
+        phone: p.phone,
+        displayName: p.displayName,
+        conversationId: p.conversationId,
+      });
+      setActivePage("sms");
+    }, []),
+  });
 
   const [openClaimIntent, setOpenClaimIntent] = useState<OpenClaimIntent | null>(null);
 
@@ -614,14 +626,6 @@ export default function App() {
     return () => clearInterval(id);
   }, [services, activeServiceId, canManageDocuments]);
 
-  // Achievement: multiservice (2+ pobočky)
-  useEffect(() => {
-    const uid = session?.user?.id;
-    if (uid && activeServiceId && services.length >= 2) {
-      checkAchievementOnMultiservice(uid, activeServiceId, services.length);
-    }
-  }, [session?.user?.id, activeServiceId, services.length]);
-
   // Clear service-scoped cache when activeServiceId changes
   useEffect(() => {
     const prevServiceId = prevActiveServiceIdRef.current;
@@ -718,16 +722,12 @@ export default function App() {
           if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
           e.preventDefault();
           e.stopPropagation();
-          const uid = session?.user?.id;
-          if (uid) checkAchievementOnShortcutUsed(uid);
           setActivePage(page);
           return;
         }
       }
       if (comboMatchesEvent(e, getShortcut("help"))) {
         e.preventDefault();
-        const uid = session?.user?.id;
-        if (uid) checkAchievementOnShortcutUsed(uid);
         setShortcutsHelpOpen(true);
         return;
       }
@@ -745,7 +745,7 @@ export default function App() {
     const onNav = (e: Event) => {
       const ev = e as CustomEvent<{ page: NavKey }>;
       const page = ev.detail?.page;
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings", "achievements"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings"].includes(page)) {
         if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
         setActivePage(page);
       }
@@ -921,8 +921,6 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         return "Statistiky";
       case "invoices":
         return "Faktury";
-      case "achievements":
-        return "Achievementy";
       case "settings":
         return "Settings";
       default:
@@ -1026,7 +1024,6 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
-          achievementsEnabled={uiCfg.achievementsEnabled !== false}
           invoicingEnabled={uiCfg.invoicingEnabled !== false}
           sidebarPosition={uiCfg.sidebar?.position || "left"}
           smsUnreadCount={globalSmsUnreadCount}
@@ -1072,6 +1069,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             <div style={{ display: activePage === "sms" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "sms"}>
               <SmsChatsPage
                 activeServiceId={activeServiceId}
+                openSmsIntent={openSmsIntent}
+                onOpenSmsIntentConsumed={clearOpenSmsIntent}
                 onOpenTicket={(ticketId, openSmsPanel) => {
                   setOpenTicketIntent({ ticketId, mode: "detail", openSmsPanel: openSmsPanel ?? true });
                   setActivePage("orders");
@@ -1104,6 +1103,10 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               onOpenCustomerIntentConsumed={() => setOpenCustomerIntent(null)}
               openTicketIntent={openTicketIntent}
               onOpenTicketIntentConsumed={() => setOpenTicketIntent(null)}
+              onOpenSmsChat={(phone, displayName) => {
+                setOpenSmsIntent({ phone, displayName });
+                setActivePage("sms");
+              }}
                 onOpenTicket={(ticketId, mode, returnToCustomerId) => {
                 // Navigate to Orders and open ticket detail there (same as clicking in Orders)
                 // Mark that we should return to customers when ticket is closed
@@ -1128,12 +1131,6 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           {visitedPages.has("devices") && (
             <div style={{ display: activePage === "devices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "devices"}>
               <Devices activeServiceId={activeServiceId} />
-            </div>
-          )}
-
-          {visitedPages.has("achievements") && (
-            <div style={{ display: activePage === "achievements" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "achievements"}>
-              <Achievements activeServiceId={activeServiceId} servicesCount={services.length} />
             </div>
           )}
 
@@ -1184,7 +1181,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
-          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "achievements", "invoices"].includes(activePage) && (
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

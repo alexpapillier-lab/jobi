@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { showToast } from "../../../components/Toast";
-import { checkAchievementOnFirstClaim } from "../../../lib/achievements";
 import type { TicketEx } from "../../Orders";
 import type { Database } from "../../../types/supabase";
 
@@ -113,7 +112,6 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         details: { warranty_claim_id: data.id, warranty_claim_code: data.code },
         });
       }
-      if (uid) checkAchievementOnFirstClaim(uid);
       showToast(`Reklamace ${data.code} vytvořena`, "success");
       return data as WarrantyClaimRow;
     },
@@ -148,8 +146,6 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         showToast(`Chyba při vytváření reklamace: ${error.message}`, "error");
         return null;
       }
-      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-      if (uid) checkAchievementOnFirstClaim(uid);
       showToast(`Reklamace ${data.code} vytvořena`, "success");
       return data as WarrantyClaimRow;
     },

@@ -93,7 +93,7 @@ type SettingsCategory = "service" | "orders" | "appearance" | "profile" | "about
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_sms" | "service_team" | "service_owner"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
-  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_achievements"
+  | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
   | "about_app" | "about_updates";
 
@@ -132,7 +132,6 @@ type UIConfig = {
     customerPhoneRequired: boolean;
     statusGroupedOrder?: string[];
   };
-  achievementsEnabled?: boolean;
   /** Zapnutý modul Faktury. Vypnout, pokud používáte vlastní fakturační systém. */
   invoicingEnabled?: boolean;
 };
@@ -146,7 +145,6 @@ function defaultUIConfig(): UIConfig {
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
-    achievementsEnabled: true,
     invoicingEnabled: true,
   };
 }
@@ -164,7 +162,6 @@ function safeLoadUIConfig(): UIConfig {
     const displayMode = parsed?.orders?.displayMode;
     const pageSize = parsed?.orders?.pageSize;
     const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
-    const achievementsEnabled = parsed?.achievementsEnabled;
     const invoicingEnabled = parsed?.invoicingEnabled;
     const sidebarPos = parsed?.sidebar?.position;
     const validPageSize = typeof pageSize === "number" && (pageSize === 0 || [25, 50, 100, 200].includes(pageSize))
@@ -192,7 +189,6 @@ function safeLoadUIConfig(): UIConfig {
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
         statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
       },
-      achievementsEnabled: typeof achievementsEnabled === "boolean" ? achievementsEnabled : true,
       invoicingEnabled: typeof invoicingEnabled === "boolean" ? invoicingEnabled : true,
     };
   } catch {
@@ -200,7 +196,7 @@ function safeLoadUIConfig(): UIConfig {
   }
 }
 
-function saveUIConfig(cfg: UIConfig & { achievementsEnabled?: boolean; invoicingEnabled?: boolean }) {
+function saveUIConfig(cfg: UIConfig & { invoicingEnabled?: boolean }) {
   localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
@@ -705,6 +701,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [smsPhoneRow, setSmsPhoneRow] = useState<{ twilio_number: string; forwarding_number: string | null } | null>(null);
   const [smsPhoneLoading, setSmsPhoneLoading] = useState(false);
   const [smsProvisionLoading, setSmsProvisionLoading] = useState(false);
+  const [smsDisconnectLoading, setSmsDisconnectLoading] = useState(false);
   const [smsForwardingValue, setSmsForwardingValue] = useState("");
   const [smsForwardingSaving, setSmsForwardingSaving] = useState(false);
   const [smsAutomations, setSmsAutomations] = useState<Array<{ id: string; trigger_status_key: string; message_template: string; active: boolean; sort_order: number }>>([]);
@@ -1045,7 +1042,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_ui" as const, label: "Rozhraní" },
         { key: "appearance_theme" as const, label: "Barevné téma" },
         { key: "appearance_shortcuts" as const, label: "Klávesové zkratky" },
-        { key: "appearance_achievements" as const, label: "Achievementy" },
+        { key: "appearance_modules" as const, label: "Moduly" },
       ],
     },
     {
@@ -1631,6 +1628,56 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 >
                   {smsForwardingSaving ? "Ukládám…" : "Uložit"}
                 </button>
+                {isAdmin && (
+                  <div
+                    style={{
+                      marginTop: 24,
+                      paddingTop: 20,
+                      borderTop: "1px solid var(--border)",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={smsDisconnectLoading}
+                      onClick={async () => {
+                        if (
+                          !confirm(
+                            "Odpojit SMS u tohoto servisu?\n\nTento servis přestane používat přiřazené číslo. Konverzace v Jobi zůstanou. U jiných servisů se stejným sdíleným číslem nic nemění."
+                          )
+                        ) {
+                          return;
+                        }
+                        const client = getTypedSupabaseClient();
+                        if (!client || !activeServiceId) return;
+                        setSmsDisconnectLoading(true);
+                        try {
+                          const { error } = await client.from("service_phone_numbers").delete().eq("service_id", activeServiceId);
+                          if (error) throw error;
+                          setSmsPhoneRow(null);
+                          setSmsForwardingValue("");
+                          showToast("SMS odpojena. Můžete znovu aktivovat.", "success");
+                        } catch (e) {
+                          showToast(e instanceof Error ? e.message : "Nepodařilo se odpojit SMS", "error");
+                        } finally {
+                          setSmsDisconnectLoading(false);
+                        }
+                      }}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 10,
+                        border: "1px solid var(--danger, #c62828)",
+                        background: "transparent",
+                        color: "var(--danger, #c62828)",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: smsDisconnectLoading ? "not-allowed" : "pointer",
+                        opacity: smsDisconnectLoading ? 0.6 : 1,
+                      }}
+                    >
+                      {smsDisconnectLoading ? "Odpojuji…" : "Odpojit SMS u tohoto servisu"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </Card>
@@ -2964,40 +3011,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         <ShortcutsSettingsSection />
       )}
 
-      {/* VZHLED - ACHIEVEMENTY */}
-      {section.subsection === "appearance_achievements" && (
-        <>
-        <Card>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Achievementy</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-            Při odemčení achievementu se zobrazí toast s trofejí. Když vypnete, toasty nepřijdou a achievementy se nezobrazí v sidebaru.
-          </div>
-          <label
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--panel)",
-              cursor: "pointer",
-            }}
-          >
-            <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>Zobrazovat achievementy</span>
-            <input
-              type="checkbox"
-              checked={uiCfg.achievementsEnabled !== false}
-              onChange={(e) => {
-                const v = e.target.checked;
-                const newCfg = { ...uiCfg, achievementsEnabled: v };
-                setUiCfg(newCfg);
-                saveUIConfig(newCfg);
-              }}
-            />
-          </label>
-        </Card>
-
+      {/* VZHLED - MODULY */}
+      {section.subsection === "appearance_modules" && (
         <Card>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Fakturační systém</div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
@@ -3028,7 +3043,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             />
           </label>
         </Card>
-        </>
       )}
 
       {section.subsection === "orders_device_options" && (

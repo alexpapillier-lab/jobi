@@ -18,7 +18,6 @@ export function AppLayout({
   services,
   activeServiceId,
   setActiveServiceId,
-  achievementsEnabled = true,
   invoicingEnabled = true,
   sidebarPosition = "left",
   smsUnreadCount = 0,
@@ -34,7 +33,6 @@ export function AppLayout({
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
-  achievementsEnabled?: boolean;
   invoicingEnabled?: boolean;
   sidebarPosition?: SidebarPosition;
   smsUnreadCount?: number;
@@ -161,7 +159,6 @@ export function AppLayout({
             services,
             activeServiceId,
             setActiveServiceId,
-            achievementsEnabled,
             invoicingEnabled,
             onJobiDocsFirstConnect: () => setShowJobiDocsGuide(true),
             horizontal: isBottom,

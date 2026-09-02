@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
-import { useAuth } from "../auth/AuthProvider";
-import { checkAchievementOnCalendarOpen } from "../lib/achievements";
 import { useStatuses } from "../state/StatusesStore";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import type { WarrantyClaimRow } from "./Orders/hooks/useWarrantyClaims";
@@ -52,7 +50,6 @@ export default function Calendar({
   onOpenTicket,
   onOpenClaim,
 }: CalendarProps) {
-  const { session } = useAuth();
   const { statuses, loading: statusesLoading, getByKey, isFinal, fallbackKey } = useStatuses();
   const statusKeysSet = useMemo(() => new Set(statuses.map((s) => s.key)), [statuses]);
   const normalizeStatus = useCallback(
@@ -76,11 +73,6 @@ export default function Calendar({
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const [filterDropdownRect, setFilterDropdownRect] = useState<{ top: number; left: number } | null>(null);
   const hasInitializedFilter = useRef(false);
-
-  useEffect(() => {
-    const uid = session?.user?.id;
-    if (uid) checkAchievementOnCalendarOpen(uid);
-  }, [session?.user?.id]);
 
   useEffect(() => {
     if (statuses.length > 0 && !hasInitializedFilter.current) {

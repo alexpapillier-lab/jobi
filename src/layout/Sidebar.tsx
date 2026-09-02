@@ -9,7 +9,7 @@ import { useAppUpdate } from "../context/AppUpdateContext";
 import { devLog } from "../lib/devLog";
 import { JobiDocsStatus } from "../components/JobiDocsStatus";
 
-export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "achievements" | "settings";
+export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -116,7 +116,6 @@ export type SidebarProps = {
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
-  achievementsEnabled?: boolean;
   invoicingEnabled?: boolean;
   smsUnreadCount?: number;
   /** When false, "SMS chaty" is hidden from the nav. */
@@ -124,14 +123,6 @@ export type SidebarProps = {
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
 };
-
-function AchievementsIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 9V4a2 2 0 012-2h0a2 2 0 012 2v5M10 14l2 2 4-4" />
-    </svg>
-  );
-}
 
 function InvoicesIcon({ size = 20 }: { size?: number }) {
   return (
@@ -162,7 +153,6 @@ export function Sidebar({
   services,
   activeServiceId,
   setActiveServiceId,
-  achievementsEnabled = true,
   invoicingEnabled = true,
   smsUnreadCount = 0,
   smsEnabled = false,
@@ -355,7 +345,6 @@ export function Sidebar({
             { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
             ...(invoicingEnabled ? [{ key: "invoices" as const, label: "Faktury", icon: InvoicesIcon }] : []),
             { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
-            ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
             { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
           ].map((item) => {
             const isActive = item.key === active;
@@ -387,7 +376,7 @@ export function Sidebar({
               >
                 <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <IconComponent size={18} />
-                  {(item.key === "orders" || item.key === "sms") && smsUnreadCount > 0 && (
+                  {item.key === "sms" && smsUnreadCount > 0 && (
                     <span
                       style={{
                         position: "absolute",
@@ -673,7 +662,6 @@ export function Sidebar({
           { key: "customers" as const, label: "Zákazníci", icon: UsersIcon },
           ...(invoicingEnabled ? [{ key: "invoices" as const, label: "Faktury", icon: InvoicesIcon }] : []),
           { key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon },
-          ...(achievementsEnabled ? [{ key: "achievements" as const, label: "Achievementy", icon: AchievementsIcon }] : []),
           { key: "settings" as const, label: "Nastavení", icon: SettingsIcon },
         ].map((item) => {
           const isActive = item.key === active;
@@ -722,7 +710,7 @@ export function Sidebar({
                 <IconBox size={expanded ? 40 : 28}>
                   <IconComponent size={iconSize} />
                 </IconBox>
-                {(item.key === "orders" || item.key === "sms") && smsUnreadCount > 0 && (
+                {item.key === "sms" && smsUnreadCount > 0 && (
                   <span
                     style={{
                       position: "absolute",
