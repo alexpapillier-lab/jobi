@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { Button } from "../components/ui";
 import { BoxIcon, WarningIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
@@ -606,37 +607,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     boxShadow: "var(--shadow-soft)",
   };
 
-  const primaryBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
-    color: "white",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-    boxShadow: `0 4px 12px var(--accent-glow)`,
-    transition: "var(--transition-smooth)",
-  };
 
-  const softBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--panel)",
-    color: "var(--text)",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
-  const dangerBtn: React.CSSProperties = {
-    ...softBtn,
-    color: "rgba(239,68,68,0.95)",
-    borderColor: "rgba(239,68,68,0.3)",
-  };
 
   const arrowBtn = (disabled: boolean): React.CSSProperties => ({
     background: "none",
@@ -1238,9 +1210,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
               Importujte produkty z TXT souboru s automatickým přiřazením k modelům
             </div>
           </div>
-          <button onClick={() => setShowImport(false)} style={{ ...softBtn, padding: "10px 16px" }}>
+          <Button variant="soft" onClick={() => setShowImport(false)}>
             Zpět na Sklad
-          </button>
+          </Button>
         </div>
 
         <div style={card}>
@@ -1263,9 +1235,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             <p style={{ marginBottom: 12 }}>
               <strong>Komentáře:</strong> Řádky začínající <code style={{ background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>#</code> jsou ignorovány.
             </p>
-            <button onClick={downloadTemplate} style={{ ...primaryBtn, marginTop: 8 }}>
+            <Button variant="primary" onClick={downloadTemplate} style={{ marginTop: 8 }}>
               Stáhnout vzorový soubor
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1417,12 +1389,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
               </div>
             )}
 
-            <button
-              onClick={executeImport}
-              style={{ ...primaryBtn, marginTop: 16, width: "100%" }}
+            <Button variant="primary"
+              onClick={executeImport} style={{ marginTop: 16, width: "100%" }}
             >
               Provedit import ({importPreview.products.length} produktů)
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -1438,9 +1409,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           Spravujte produkty na skladě. Produkty mohou být pro více modelů.
         </div>
         </div>
-        <button data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px", marginRight: 120 }}>
+        <Button variant="primary" data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ marginRight: 120 }}>
           Import
-        </button>
+        </Button>
       </div>
 
       {/* NASKLADNĚNÍ */}
@@ -1906,18 +1877,14 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                 onKeyDown={(e) => e.key === "Enter" && newProductCategoryName.trim() && addProductCategory()}
                   style={inputStyle}
                 />
-              <button
-                  onClick={() => newProductCategoryName.trim() && addProductCategory()}
-                  style={{
-                    ...primaryBtn,
-                    opacity: !newProductCategoryName.trim() ? 0.6 : 1,
-                    cursor: !newProductCategoryName.trim() ? "not-allowed" : "pointer",
-                  }}
+              <Button variant="primary"
+                  onClick={() => newProductCategoryName.trim() && addProductCategory()} style={{ opacity: !newProductCategoryName.trim() ? 0.6 : 1,
+                    cursor: !newProductCategoryName.trim() ? "not-allowed" : "pointer" }}
                   disabled={!newProductCategoryName.trim()}
                   title={!newProductCategoryName.trim() ? "Zadejte název kategorie" : "Přidat kategorii"}
                 >
                   +
-                </button>
+                </Button>
               </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
@@ -1946,12 +1913,12 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
                           autoFocus
                         />
-                      <button onClick={() => updateProductCategory(c.id, editProductCategoryName)} style={{ ...primaryBtn, padding: "6px 10px" }}>
+                      <Button variant="primary" size="sm" onClick={() => updateProductCategory(c.id, editProductCategoryName)}>
                           ✓
-                        </button>
-                      <button onClick={() => setEditingProductCategory(null)} style={{ ...softBtn, padding: "6px 10px" }}>
+                        </Button>
+                      <Button variant="soft" size="sm" onClick={() => setEditingProductCategory(null)}>
                           ✕
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                     <div>
@@ -2125,12 +2092,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     {newProduct.imageUrl && (
                       <div style={{ marginTop: 8 }}>
                         <img src={newProduct.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
-                        <button
-                          onClick={() => setNewProduct((p) => ({ ...p, imageUrl: "" }))}
-                          style={{ ...dangerBtn, marginTop: 8, padding: "6px 10px", fontSize: 12 }}
+                        <Button variant="danger" size="sm"
+                          onClick={() => setNewProduct((p) => ({ ...p, imageUrl: "" }))} style={{ marginTop: 8,  fontSize: 12 }}
                         >
                           Odstranit obrázek
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -2159,18 +2125,14 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                     </div>
                   )}
-                <button
-                  onClick={() => newProduct.name.trim() && addProduct()}
-                  style={{
-                    ...primaryBtn,
-                    opacity: !newProduct.name.trim() ? 0.6 : 1,
-                    cursor: !newProduct.name.trim() ? "not-allowed" : "pointer",
-                  }}
+                <Button variant="primary"
+                  onClick={() => newProduct.name.trim() && addProduct()} style={{ opacity: !newProduct.name.trim() ? 0.6 : 1,
+                    cursor: !newProduct.name.trim() ? "not-allowed" : "pointer" }}
                   disabled={!newProduct.name.trim()}
                   title={!newProduct.name.trim() ? "Zadejte název produktu" : "Přidat produkt"}
                 >
                   Přidat produkt
-                </button>
+                </Button>
               </div>
           </div>
         </div>
@@ -2497,12 +2459,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                         {editProductData.imageUrl && (
                           <div style={{ marginTop: 8 }}>
                             <img src={editProductData.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
-                            <button
-                              onClick={() => setEditProductData((d) => ({ ...d, imageUrl: "" }))}
-                              style={{ ...dangerBtn, marginTop: 8, padding: "6px 10px", fontSize: 12 }}
+                            <Button variant="danger" size="sm"
+                              onClick={() => setEditProductData((d) => ({ ...d, imageUrl: "" }))} style={{ marginTop: 8,  fontSize: 12 }}
                             >
                               Odstranit obrázek
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -2532,12 +2493,12 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                         </div>
                       )}
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => updateProduct(p.id, editProductData)} style={{ ...primaryBtn, padding: "8px 12px", flex: 1 }}>
+                          <Button variant="primary" onClick={() => updateProduct(p.id, editProductData)} style={{ flex: 1 }}>
                             Uložit
-                          </button>
-                          <button onClick={() => setEditingProduct(null)} style={{ ...softBtn, padding: "8px 12px" }}>
+                          </Button>
+                          <Button variant="soft" onClick={() => setEditingProduct(null)}>
                             Zrušit
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ) : productDisplayMode === "list" ? (
@@ -2578,7 +2539,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                             {productCategory?.name || "—"}
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button
+                            <Button variant="soft" size="sm"
                               onClick={() => {
                                 setEditProductData({ 
                                   name: p.name, 
@@ -2593,17 +2554,15 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                   modelSearch: "",
                                 });
                                 setEditingProduct(p.id);
-                              }}
-                              style={{ ...softBtn, padding: "6px 10px", fontSize: 11 }}
+                              }} style={{ fontSize: 11 }}
                             >
                               Upravit
-                            </button>
-                            <button
-                              onClick={() => deleteProduct(p.id)}
-                              style={{ ...dangerBtn, padding: "6px 10px", fontSize: 11 }}
+                            </Button>
+                            <Button variant="danger" size="sm"
+                              onClick={() => deleteProduct(p.id)} style={{ fontSize: 11 }}
                             >
                               Smazat
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       </>
@@ -2653,7 +2612,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button
+                          <Button variant="soft"
                             onClick={() => {
                               setEditProductData({ 
                                 name: p.name, 
@@ -2668,17 +2627,15 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                 modelSearch: "",
                               });
                               setEditingProduct(p.id);
-                            }}
-                            style={{ ...softBtn, padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
+                            }} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
                           >
                             Upravit
-                          </button>
-                          <button
-                            onClick={() => deleteProduct(p.id)}
-                            style={{ ...dangerBtn, padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
+                          </Button>
+                          <Button variant="danger"
+                            onClick={() => deleteProduct(p.id)} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
                           >
                             Smazat
-                          </button>
+                          </Button>
                         </div>
                       </div>
 

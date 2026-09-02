@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import { Button } from "../components/ui";
 import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
 import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
@@ -352,37 +353,8 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     boxShadow: "var(--shadow-soft)",
   };
 
-  const primaryBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
-    color: "white",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-    boxShadow: `0 4px 12px var(--accent-glow)`,
-    transition: "var(--transition-smooth)",
-  };
 
-  const softBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--panel)",
-    color: "var(--text)",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
-  const dangerBtn: React.CSSProperties = {
-    ...softBtn,
-    color: "rgba(239,68,68,0.95)",
-    borderColor: "rgba(239,68,68,0.3)",
-  };
 
   const arrowBtn = (disabled: boolean): React.CSSProperties => ({
     background: "none",
@@ -966,9 +938,9 @@ DETALY: Výměna opotřebované baterie
               Importujte značky, kategorie, modely a opravy z TXT souboru
             </div>
           </div>
-          <button onClick={() => setShowImport(false)} style={{ ...softBtn, padding: "10px 16px" }}>
+          <Button variant="soft" onClick={() => setShowImport(false)}>
             Zpět na správu
-          </button>
+          </Button>
         </div>
 
         <div style={card}>
@@ -994,9 +966,9 @@ DETALY: Výměna opotřebované baterie
             <p style={{ marginBottom: 12 }}>
               <strong>Kontrola duplicit:</strong> Systém automaticky kontroluje, zda se nepokoušíte importovat položky, které již existují. Duplicitní položky budou přeskočeny.
             </p>
-            <button onClick={downloadTemplate} style={{ ...primaryBtn, marginTop: 8 }}>
+            <Button variant="primary" onClick={downloadTemplate} style={{ marginTop: 8 }}>
               Stáhnout vzorový soubor
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1107,12 +1079,11 @@ DETALY: Výměna opotřebované baterie
               </div>
             )}
 
-            <button
-              onClick={executeImport}
-              style={{ ...primaryBtn, marginTop: 16, width: "100%" }}
+            <Button variant="primary"
+              onClick={executeImport} style={{ marginTop: 16, width: "100%" }}
             >
               Provedit import ({importPreview.brands.length} značek, {importPreview.categories.length} kategorií, {importPreview.models.length} modelů, {importPreview.repairs.length} oprav)
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -1190,9 +1161,9 @@ DETALY: Výměna opotřebované baterie
             Spravujte značky, kategorie, modely a jejich opravy. Použijte ↑↓ pro změnu pořadí.
           </div>
         </div>
-        <button onClick={() => setShowImport(true)} style={{ ...primaryBtn, padding: "10px 16px", marginRight: 120 }}>
+        <Button variant="primary" onClick={() => setShowImport(true)} style={{ marginRight: 120 }}>
           Import
-        </button>
+        </Button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1210,9 +1181,9 @@ DETALY: Výměna opotřebované baterie
               onKeyDown={(e) => e.key === "Enter" && addBrand()}
               style={inputStyle}
             />
-            <button onClick={addBrand} style={primaryBtn}>
+            <Button variant="primary" onClick={addBrand}>
               +
-            </button>
+            </Button>
           </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
@@ -1241,12 +1212,12 @@ DETALY: Výměna opotřebované baterie
                       style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
                       autoFocus
                     />
-                    <button onClick={() => updateBrand(b.id, editBrandName)} style={{ ...primaryBtn, padding: "6px 10px" }}>
+                    <Button variant="primary" size="sm" onClick={() => updateBrand(b.id, editBrandName)}>
                       ✓
-                    </button>
-                    <button onClick={() => setEditingBrand(null)} style={{ ...softBtn, padding: "6px 10px" }}>
+                    </Button>
+                    <Button variant="soft" size="sm" onClick={() => setEditingBrand(null)}>
                       ✕
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <div
@@ -1366,9 +1337,9 @@ DETALY: Výměna opotřebované baterie
                   onKeyDown={(e) => e.key === "Enter" && addCategory()}
                   style={inputStyle}
                 />
-                <button onClick={addCategory} style={primaryBtn}>
+                <Button variant="primary" onClick={addCategory}>
                   +
-                </button>
+                </Button>
               </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
@@ -1397,12 +1368,12 @@ DETALY: Výměna opotřebované baterie
                           style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
                           autoFocus
                         />
-                        <button onClick={() => updateCategory(c.id, editCategoryName)} style={{ ...primaryBtn, padding: "6px 10px" }}>
+                        <Button variant="primary" size="sm" onClick={() => updateCategory(c.id, editCategoryName)}>
                           ✓
-                        </button>
-                        <button onClick={() => setEditingCategory(null)} style={{ ...softBtn, padding: "6px 10px" }}>
+                        </Button>
+                        <Button variant="soft" size="sm" onClick={() => setEditingCategory(null)}>
                           ✕
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <div
@@ -1458,9 +1429,9 @@ DETALY: Výměna opotřebované baterie
                   onKeyDown={(e) => e.key === "Enter" && addModel()}
                   style={inputStyle}
                 />
-                <button onClick={addModel} style={primaryBtn}>
+                <Button variant="primary" onClick={addModel}>
                   +
-                </button>
+                </Button>
               </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
@@ -1519,12 +1490,12 @@ DETALY: Výměna opotřebované baterie
                           style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
                           autoFocus
                         />
-                        <button onClick={() => updateModel(m.id, editModelName)} style={{ ...primaryBtn, padding: "6px 10px" }}>
+                        <Button variant="primary" size="sm" onClick={() => updateModel(m.id, editModelName)}>
                           ✓
-                        </button>
-                        <button onClick={() => setEditingModel(null)} style={{ ...softBtn, padding: "6px 10px" }}>
+                        </Button>
+                        <Button variant="soft" size="sm" onClick={() => setEditingModel(null)}>
                           ✕
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <div
@@ -1806,9 +1777,9 @@ DETALY: Výměna opotřebované baterie
                   onChange={(e) => setNewRepair((p) => ({ ...p, details: e.target.value }))}
                   style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
                 />
-                <button onClick={addRepairItem} style={primaryBtn}>
+                <Button variant="primary" onClick={addRepairItem}>
                   Přidat opravu
-                </button>
+                </Button>
               </div>
               </>
             )}
@@ -2180,12 +2151,12 @@ DETALY: Výměna opotřebované baterie
                           style={{ ...inputStyle, minHeight: 50, resize: "vertical", fontSize: 13, padding: "8px 10px" }}
                         />
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => updateRepair(r.id, editRepairData)} style={{ ...primaryBtn, padding: "8px 12px", flex: 1 }}>
+                          <Button variant="primary" onClick={() => updateRepair(r.id, editRepairData)} style={{ flex: 1 }}>
                             Uložit
-                          </button>
-                          <button onClick={() => setEditingRepair(null)} style={{ ...softBtn, padding: "8px 12px" }}>
+                          </Button>
+                          <Button variant="soft" onClick={() => setEditingRepair(null)}>
                             Zrušit
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ) : (
@@ -2211,7 +2182,7 @@ DETALY: Výměna opotřebované baterie
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button
+                          <Button variant="soft"
                             onClick={() => {
                               setEditRepairData({ 
                                 name: r.name, 
@@ -2225,17 +2196,15 @@ DETALY: Výměna opotřebované baterie
                                 modelSearch: "",
                               });
                               setEditingRepair(r.id);
-                            }}
-                            style={{ ...softBtn, padding: "8px 12px", fontSize: 12 }}
+                            }} style={{ fontSize: 12 }}
                           >
                             Upravit
-                          </button>
-                          <button
-                            onClick={() => deleteRepair(r.id)}
-                            style={{ ...dangerBtn, padding: "8px 12px", fontSize: 12 }}
+                          </Button>
+                          <Button variant="danger"
+                            onClick={() => deleteRepair(r.id)} style={{ fontSize: 12 }}
                           >
                             Smazat
-                          </button>
+                          </Button>
                         </div>
                       </div>
 
