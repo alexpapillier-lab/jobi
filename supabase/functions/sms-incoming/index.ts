@@ -1,6 +1,9 @@
 /**
  * Edge Function: sms-incoming
  * Twilio webhook for incoming SMS. Validates signature, finds service by To, stores message, returns TwiML.
+ *
+ * Signature: Twilio signs the exact public URL they POST to. Supabase proxy / forwarded headers
+ * can differ from SUPABASE_URL — we try several URL candidates (worked before when only one matched).
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -10,12 +13,50 @@ const TWIML_HEADERS = { "Content-Type": "text/xml; charset=utf-8" };
 
 function normalizeE164(phone: string): string {
   const digits = phone.replace(/\D/g, "");
-  if (digits.length === 9 && digits.startsWith("9")) return `+420${digits}`;
-  if (digits.length >= 9 && !phone.startsWith("+")) return `+${digits}`;
-  return phone.startsWith("+") ? phone : `+${phone}`;
+  if (digits.length === 9 && /^[5-9]/.test(digits)) return `+420${digits}`;
+  if (digits.length === 10 && digits.startsWith("0") && /^0[79]/.test(digits)) return `+420${digits.slice(1)}`;
+  if (digits.startsWith("420") && digits.length === 12) return `+${digits}`;
+  if (digits.length >= 9 && !phone.trim().startsWith("+")) return `+${digits}`;
+  return phone.trim().startsWith("+") ? `+${digits}` : `+${digits}`;
 }
 
-/** Validate X-Twilio-Signature using HMAC-SHA1 over url + sorted params (name+value). */
+/** Normalize Twilio "To" (our number) to match service_phone_numbers.twilio_number */
+function normalizeOurNumber(to: string): string {
+  return normalizeE164(to.trim());
+}
+
+function webhookUrlCandidates(req: Request): string[] {
+  const out: string[] = [];
+  const extra = Deno.env.get("TWILIO_SMS_WEBHOOK_URL")?.replace(/\/$/, "").trim();
+  if (extra) {
+    out.push(extra);
+    out.push(`${extra}/`);
+  }
+  const base = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "") ?? "";
+  if (base) {
+    out.push(`${base}/functions/v1/sms-incoming`);
+    out.push(`${base}/functions/v1/sms-incoming/`);
+  }
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "")
+    .split(",")[0]
+    .trim();
+  const proto = (req.headers.get("x-forwarded-proto") ?? "https").split(",")[0].trim() || "https";
+  if (host && !host.startsWith("127.") && host !== "localhost") {
+    out.push(`${proto}://${host}/functions/v1/sms-incoming`);
+    out.push(`${proto}://${host}/functions/v1/sms-incoming/`);
+  }
+  try {
+    const u = new URL(req.url);
+    if (u.hostname && u.hostname.length > 4 && u.pathname.includes("sms-incoming")) {
+      const path = u.pathname.replace(/\/$/, "") || "/functions/v1/sms-incoming";
+      out.push(`${u.protocol}//${u.host}${path}`);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...new Set(out)];
+}
+
 async function validateTwilioSignature(
   authToken: string,
   signature: string,
@@ -31,13 +72,29 @@ async function validateTwilioSignature(
     false,
     ["sign"]
   );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(data)
-  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
   const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
   return computed === signature;
+}
+
+async function signatureValid(
+  authToken: string,
+  signature: string,
+  params: Record<string, string>,
+  req: Request
+): Promise<boolean> {
+  if (!signature) return false;
+  for (const url of webhookUrlCandidates(req)) {
+    try {
+      if (await validateTwilioSignature(authToken, signature, url, params)) return true;
+    } catch {
+      /* next candidate */
+    }
+  }
+  console.error(
+    "[sms-incoming] Twilio signature rejected for all URL candidates. Set TWILIO_SMS_WEBHOOK_URL in Edge secrets to the exact webhook URL from Twilio Console."
+  );
+  return false;
 }
 
 serve(async (req) => {
@@ -63,15 +120,12 @@ serve(async (req) => {
   });
 
   const signature = req.headers.get("X-Twilio-Signature") ?? "";
-  const baseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "") ?? "";
-  const webhookUrl = `${baseUrl}/functions/v1/sms-incoming`;
-
-  const valid = await validateTwilioSignature(authToken, signature, webhookUrl, params);
+  const valid = await signatureValid(authToken, signature, params, req);
   if (!valid) {
     return new Response("Unauthorized", { status: 403 });
   }
 
-  const to = params.To?.trim();
+  const toRaw = params.To?.trim() ?? "";
   const from = params.From?.trim();
   const messageBody = params.Body ?? "";
   const messageSid = params.MessageSid?.trim();
@@ -81,34 +135,72 @@ serve(async (req) => {
     console.log("Incoming SMS has media, NumMedia:", numMedia);
   }
 
-  if (!to || !from) {
+  if (!toRaw || !from) {
     return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
   }
+
+  const toNorm = normalizeOurNumber(toRaw);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const svc = createClient(supabaseUrl, serviceKey);
 
-  // Find all services that own this Twilio number (may be shared across multiple services)
-  const { data: phoneRows, error: phoneErr } = await svc
-    .from("service_phone_numbers")
-    .select("service_id, is_pool_primary")
-    .eq("twilio_number", to)
-    .eq("active", true);
+  let phoneRows =
+    (
+      await svc
+        .from("service_phone_numbers")
+        .select("service_id, is_pool_primary, twilio_number")
+        .eq("twilio_number", toRaw)
+        .eq("active", true)
+    ).data ?? [];
 
-  if (phoneErr || !phoneRows || phoneRows.length === 0) {
+  if (phoneRows.length === 0 && toNorm !== toRaw) {
+    const { data } = await svc
+      .from("service_phone_numbers")
+      .select("service_id, is_pool_primary, twilio_number")
+      .eq("twilio_number", toNorm)
+      .eq("active", true);
+    phoneRows = data ?? [];
+  }
+
+  if (phoneRows.length === 0) {
+    const { data: allNums, error: listErr } = await svc
+      .from("service_phone_numbers")
+      .select("service_id, is_pool_primary, twilio_number")
+      .eq("active", true);
+    if (!listErr && allNums?.length) {
+      const wantA = toNorm.replace(/\D/g, "");
+      const wantB = toRaw.replace(/\D/g, "");
+      phoneRows = allNums.filter((r: { twilio_number: string }) => {
+        const d = (r.twilio_number || "").replace(/\D/g, "");
+        return d === wantA || d === wantB;
+      }) as typeof phoneRows;
+    }
+  }
+
+  if (phoneRows.length === 0) {
+    console.error("[sms-incoming] No service_phone_numbers for To=", toRaw, "normalized=", toNorm);
     return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
   }
 
   const fromNorm = normalizeE164(from);
+  const fromDigits = fromNorm.replace(/\D/g, "");
 
-  // Resolve which service this inbound belongs to
+  function phoneMatchesTicket(raw: string | null): boolean {
+    if (!raw?.trim()) return false;
+    const tp = normalizeE164(raw);
+    const td = tp.replace(/\D/g, "");
+    if (tp === fromNorm || td === fromDigits) return true;
+    if (fromDigits.length >= 9 && td.length >= 9 && (td.endsWith(fromDigits.slice(-9)) || fromDigits.endsWith(td.slice(-9)))) {
+      return true;
+    }
+    return false;
+  }
+
   let serviceId: string;
   if (phoneRows.length === 1) {
-    // Dedicated number – original behavior
     serviceId = phoneRows[0].service_id;
   } else {
-    // Shared number: try to match an existing conversation first
     const serviceIds = phoneRows.map((r: { service_id: string }) => r.service_id);
     const { data: existingConvs } = await svc
       .from("sms_conversations")
@@ -119,12 +211,44 @@ serve(async (req) => {
       .limit(1);
 
     if (existingConvs && existingConvs.length > 0) {
-      // Route to the service with the most recent conversation for this customer
       serviceId = existingConvs[0].service_id;
     } else {
-      // No prior conversation – route to pool primary, fallback to first row
-      const primary = phoneRows.find((r: { is_pool_primary: boolean }) => r.is_pool_primary);
-      serviceId = (primary ?? phoneRows[0]).service_id;
+      const { data: tix } = await svc
+        .from("tickets")
+        .select("service_id, customer_phone, updated_at")
+        .in("service_id", serviceIds)
+        .is("deleted_at", null)
+        .not("customer_phone", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(1000);
+
+      let ticketService: string | null = null;
+      for (const t of tix ?? []) {
+        const row = t as { service_id: string; customer_phone: string | null };
+        if (phoneMatchesTicket(row.customer_phone)) {
+          ticketService = row.service_id;
+          break;
+        }
+      }
+
+      if (ticketService && serviceIds.includes(ticketService)) {
+        serviceId = ticketService;
+      } else {
+        const { data: custRows } = await svc
+          .from("customers")
+          .select("service_id, updated_at")
+          .in("service_id", serviceIds)
+          .eq("phone_norm", fromNorm)
+          .order("updated_at", { ascending: false })
+          .limit(5);
+
+        if (custRows && custRows.length > 0) {
+          serviceId = (custRows[0] as { service_id: string }).service_id;
+        } else {
+          const primary = phoneRows.find((r: { is_pool_primary: boolean }) => r.is_pool_primary);
+          serviceId = (primary ?? phoneRows[0]).service_id;
+        }
+      }
     }
   }
 
@@ -149,7 +273,6 @@ serve(async (req) => {
   if (customer?.name) customerName = customer.name;
 
   let conversationId: string;
-  let ticketId: string | null = null;
 
   const { data: existingConv } = await svc
     .from("sms_conversations")
@@ -160,16 +283,32 @@ serve(async (req) => {
 
   if (existingConv) {
     conversationId = existingConv.id;
-    ticketId = existingConv.ticket_id;
+    const ticketId = existingConv.ticket_id;
     if (!ticketId) {
-      const byPhone = await svc.from("tickets").select("id").eq("service_id", serviceId).eq("customer_phone", fromNorm).is("deleted_at", null).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      const byPhone = await svc
+        .from("tickets")
+        .select("id")
+        .eq("service_id", serviceId)
+        .eq("customer_phone", fromNorm)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       const openId = byPhone.data?.id ?? null;
       if (openId) {
         await svc.from("sms_conversations").update({ ticket_id: openId }).eq("id", conversationId);
       }
     }
   } else {
-    const byPhone = await svc.from("tickets").select("id").eq("service_id", serviceId).eq("customer_phone", fromNorm).is("deleted_at", null).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    const byPhone = await svc
+      .from("tickets")
+      .select("id")
+      .eq("service_id", serviceId)
+      .eq("customer_phone", fromNorm)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     const ticketIdToSet = byPhone.data?.id ?? null;
 
     const { data: newConv, error: insertConvErr } = await svc
@@ -184,17 +323,22 @@ serve(async (req) => {
       .single();
 
     if (insertConvErr || !newConv) {
+      console.error("[sms-incoming] conversation insert failed:", insertConvErr?.message);
       return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
     }
     conversationId = newConv.id;
   }
 
-  await svc.from("sms_messages").insert({
+  const { error: msgErr } = await svc.from("sms_messages").insert({
     conversation_id: conversationId,
     direction: "inbound",
     body: messageBody,
     twilio_sid: messageSid || null,
   });
+
+  if (msgErr) {
+    console.error("[sms-incoming] sms_messages insert failed:", msgErr.message);
+  }
 
   return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
 });

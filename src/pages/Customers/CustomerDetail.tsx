@@ -3,6 +3,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useStatuses } from "../../state/StatusesStore";
 import { CustomerRecord } from "./CustomerList";
 import { useCustomerActions } from "./hooks/useCustomerActions";
+import { useSmsEnabled } from "../../hooks/useSmsEnabled";
 
 type TicketLite = {
   id: string;
@@ -91,6 +92,7 @@ type CustomerDetailProps = {
   customerHistoryLoading: boolean;
   activeServiceId: string | null;
   onOpenTicket: (ticketId: string, mode?: "panel" | "detail", returnToCustomerId?: string) => void;
+  onOpenSmsChat?: (phone: string, displayName: string) => void;
   onSave: (updatedCustomer: CustomerRecord, finalCustomerId: string) => void;
   onDelete: (customerId: string) => void;
   onHistoryRefresh?: () => void;
@@ -104,10 +106,12 @@ export function CustomerDetail({
   customerHistoryLoading,
   activeServiceId,
   onOpenTicket,
+  onOpenSmsChat,
   onSave,
   onDelete,
   onHistoryRefresh,
 }: CustomerDetailProps) {
+  const smsEnabled = useSmsEnabled(activeServiceId);
   const { getByKey } = useStatuses();
   const normalizeStatus = (key: string): string | null => {
     if (!key || typeof key !== "string") return null;
@@ -296,6 +300,25 @@ export function CustomerDetail({
                     >
                       + Vytvořit zakázku
                     </button>
+                    {smsEnabled && onOpenSmsChat && (customer.phone?.trim() ?? "") !== "" && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenSmsChat(customer.phone!.trim(), (customer.name ?? "").trim())}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: border,
+                          background: "var(--panel)",
+                          color: "var(--text)",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                          boxShadow: "var(--shadow-soft)",
+                        }}
+                        title="Otevřít SMS chaty s tímto číslem"
+                      >
+                        💬 SMS
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

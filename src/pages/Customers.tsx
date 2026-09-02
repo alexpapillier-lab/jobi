@@ -28,6 +28,7 @@ type CustomersProps = {
   openTicketIntent: OpenTicketIntent | null;
   onOpenTicketIntentConsumed: () => void;
   onOpenTicket: (ticketId: string, mode?: "panel" | "detail", returnToCustomerId?: string) => void;
+  onOpenSmsChat?: (phone: string, displayName: string) => void;
 };
 
 export default function Customers({
@@ -37,6 +38,7 @@ export default function Customers({
   openTicketIntent,
   onOpenTicketIntentConsumed,
   onOpenTicket,
+  onOpenSmsChat,
 }: CustomersProps) {
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -556,6 +558,7 @@ export default function Customers({
           customerHistoryLoading={customerHistoryLoading}
           activeServiceId={activeServiceId}
           onOpenTicket={onOpenTicket}
+          onOpenSmsChat={onOpenSmsChat}
           onSave={handleSaveCustomer}
           onDelete={handleDeleteCustomer}
           onHistoryRefresh={handleHistoryRefresh}

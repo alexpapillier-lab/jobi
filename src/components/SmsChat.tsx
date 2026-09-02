@@ -55,9 +55,25 @@ type SmsChatProps = {
   serviceId: string;
   customerPhone: string | null;
   customerName: string | null;
+  /** Called after inbound messages are marked read (DB updated). */
+  onInboundMarkedRead?: () => void;
+  /** First outbound message created a new conversation (no conversationId prop). */
+  onConversationCreated?: (conversationId: string) => void;
 };
 
-export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceId, customerPhone, customerName: _customerName }: SmsChatProps) {
+export function SmsChat({
+  conversationId: conversationIdProp,
+  ticketId,
+  serviceId,
+  customerPhone,
+  customerName: _customerName,
+  onInboundMarkedRead,
+  onConversationCreated,
+}: SmsChatProps) {
+  const onInboundMarkedReadRef = useRef(onInboundMarkedRead);
+  onInboundMarkedReadRef.current = onInboundMarkedRead;
+  const onConversationCreatedRef = useRef(onConversationCreated);
+  onConversationCreatedRef.current = onConversationCreated;
   const [active, setActive] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SmsMessage[]>([]);
@@ -127,12 +143,13 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
           .order("sent_at", { ascending: true });
         if (!cancelled) setMessages((rows ?? []).map((r) => ({ ...r, direction: r.direction as "inbound" | "outbound", pending: false })));
 
-        await client
+        const { error: readErr } = await client
           .from("sms_messages")
           .update({ read_at: new Date().toISOString() })
           .eq("conversation_id", convId)
           .is("read_at", null)
           .eq("direction", "inbound");
+        if (!readErr) onInboundMarkedReadRef.current?.();
       } else {
         if (!cancelled) setMessages([]);
       }
@@ -211,6 +228,7 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
           to: phoneNorm,
           body,
           ticket_id: ticketId ?? null,
+          customer_name: _customerName?.trim() || undefined,
         }),
       });
       const raw = await res.text();
@@ -229,7 +247,10 @@ export function SmsChat({ conversationId: conversationIdProp, ticketId, serviceI
 
       const messageId = data.message_id;
       const newConvId = data.conversation_id;
-      if (newConvId && !conversationId) setConversationId(newConvId);
+      if (newConvId && !conversationId) {
+        setConversationId(newConvId);
+        if (!conversationIdProp) onConversationCreatedRef.current?.(newConvId);
+      }
 
       setMessages((prev) =>
         prev.map((m) =>

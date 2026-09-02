@@ -82,6 +82,8 @@ serve(async (req) => {
     let to = body?.to?.trim?.();
     const messageBody = body?.body;
     const ticketId = body?.ticket_id?.trim?.() || null;
+    const customerName =
+      typeof body?.customer_name === "string" ? body.customer_name.trim().slice(0, 200) || null : null;
 
     if (!serviceId || !to) {
       return new Response(
@@ -136,8 +138,16 @@ serve(async (req) => {
 
     if (existingConv) {
       conversationId = existingConv.id;
-      if (ticketId) {
-        await svc.from("sms_conversations").update({ ticket_id: ticketId }).eq("id", conversationId);
+      const updates: Record<string, unknown> = {};
+      if (ticketId) updates.ticket_id = ticketId;
+      if (customerName) {
+        const { data: cn } = await svc.from("sms_conversations").select("customer_name").eq("id", conversationId).maybeSingle();
+        if (cn && !(cn as { customer_name?: string }).customer_name?.trim()) {
+          updates.customer_name = customerName;
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        await svc.from("sms_conversations").update(updates).eq("id", conversationId);
       }
     } else {
       const { data: newConv, error: insertConvErr } = await svc
@@ -146,6 +156,7 @@ serve(async (req) => {
           service_id: serviceId,
           customer_phone: to,
           ticket_id: ticketId,
+          customer_name: customerName,
         })
         .select("id")
         .single();

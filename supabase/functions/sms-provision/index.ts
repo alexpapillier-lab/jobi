@@ -179,7 +179,6 @@ serve(async (req) => {
       }
     }
 
-    // ---- Purchase new number ----
     const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
     if (!accountSid || !authToken) {
@@ -189,11 +188,105 @@ serve(async (req) => {
       );
     }
     const twilioAuth = twilioAuthHeader(accountSid, authToken);
-
     const functionsBase = `${supabaseUrl.replace(/\/$/, "")}/functions/v1`;
     const smsUrl = `${functionsBase}/sms-incoming`;
     const voiceUrl = `${functionsBase}/sms-voice`;
 
+    // ---- Use already-owned Twilio +420 number (e.g. bought manually in Console) ----
+    // DB pool above only sees numbers already in service_phone_numbers; manual CZ buys are invisible there,
+    // which previously led to "purchase" and US fallback when CZ catalog was empty.
+    let pageUri: string | null = `${TWILIO_BASE}/Accounts/${accountSid}/IncomingPhoneNumbers.json?PageSize=100`;
+    const ownedCz: { phone_number: string; sid: string }[] = [];
+    while (pageUri) {
+      const listOwned = await fetch(pageUri, { headers: { Authorization: twilioAuth } });
+      if (!listOwned.ok) break;
+      const ownedJson = await listOwned.json();
+      for (const inn of ownedJson.incoming_phone_numbers ?? []) {
+        const pn = inn.phone_number as string;
+        if (pn?.startsWith("+420")) ownedCz.push({ phone_number: pn, sid: inn.sid as string });
+      }
+      const next = ownedJson.next_page_uri as string | null;
+      pageUri = next ? (next.startsWith("http") ? next : `https://api.twilio.com${next}`) : null;
+    }
+    if (ownedCz.length > 0) {
+      const byNumber = new Map<string, { sid: string; count: number }>();
+      for (const o of ownedCz) {
+        if (!byNumber.has(o.phone_number)) byNumber.set(o.phone_number, { sid: o.sid, count: 0 });
+      }
+      const { data: countRows } = await svc
+        .from("service_phone_numbers")
+        .select("twilio_number")
+        .eq("active", true);
+      for (const row of countRows ?? []) {
+        const e = byNumber.get(row.twilio_number as string);
+        if (e) e.count++;
+      }
+      const ownedCandidates = [...byNumber.entries()]
+        .filter(([, v]) => v.count < poolMax)
+        .sort((a, b) => b[1].count - a[1].count);
+      if (ownedCandidates.length > 0) {
+        const [twilioNumber, { sid, count: _c }] = ownedCandidates[0];
+        const { count: liveCount } = await svc
+          .from("service_phone_numbers")
+          .select("id", { count: "exact", head: true })
+          .eq("twilio_number", twilioNumber)
+          .eq("active", true);
+        const count = liveCount ?? 0;
+        if (count < poolMax) {
+          const hookRes = await fetch(`${TWILIO_BASE}/Accounts/${accountSid}/IncomingPhoneNumbers/${sid}.json`, {
+            method: "POST",
+            headers: {
+              Authorization: twilioAuth,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              SmsUrl: smsUrl,
+              SmsMethod: "POST",
+              VoiceUrl: voiceUrl,
+              VoiceMethod: "POST",
+            }).toString(),
+          });
+          if (!hookRes.ok) {
+            const errText = await hookRes.text();
+            return new Response(
+              JSON.stringify({
+                error: "Could not point your Czech Twilio number to Jobi webhooks",
+                detail: errText.slice(0, 500),
+              }),
+              { status: 502, headers: jsonHeaders }
+            );
+          }
+          const { error: insertOwnedErr } = await svc.from("service_phone_numbers").insert({
+            service_id: serviceId,
+            twilio_number: twilioNumber,
+            forwarding_number: forwardingNumber,
+            twilio_sid: sid,
+            active: true,
+            country_code: "CZ",
+            is_pool_primary: count === 0,
+          });
+          if (insertOwnedErr) {
+            return new Response(
+              JSON.stringify({ error: "Failed to assign owned CZ number", detail: insertOwnedErr.message }),
+              { status: 500, headers: jsonHeaders }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              twilio_number: twilioNumber,
+              service_id: serviceId,
+              country_code: "CZ",
+              shared: count > 0,
+              pool_size: count + 1,
+              from_owned_twilio: true,
+            }),
+            { status: 200, headers: jsonHeaders }
+          );
+        }
+      }
+    }
+
+    // ---- Purchase new number ----
     // Fetch available numbers: CZ (Local, Mobile) first, then US (Local, Mobile) as fallback
     const countryTypes: { country: string; types: ("Local" | "Mobile")[] }[] = [
       { country: "CZ", types: ["Local", "Mobile"] },

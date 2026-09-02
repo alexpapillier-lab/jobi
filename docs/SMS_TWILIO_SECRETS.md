@@ -20,11 +20,9 @@ Twilio neumožňuje posílat z amerického čísla (From: +1…) na české čí
 
 > Message cannot be sent with the current combination of 'To' (+420…) and/or 'From' (+1…) parameters
 
-- Při **aktivaci SMS v Jobi** (Nastavení → SMS komunikace) se automaticky hledá nejdřív **české** číslo, pokud není k dispozici, použije se americké.
-- Pokud máš tedy **americké číslo** (From: +1…), na české zákazníky z něj SMS nepošleš. Možnosti:
-  1. **Zkus znovu aktivovat SMS** později – občas jsou česká čísla v Twilio k dispozici.
-  2. **Koupit české číslo ručně** v [Twilio Console](https://console.twilio.com) → Phone Numbers → Manage → Buy a number, zvolit zemi Czech Republic. Číslo pak v Jobi zatím nejde jen „doplňkově“ zadat; pokud to budeš potřebovat, napiš.
-  3. Pro testování můžeš v Twilio trial ověřit české číslo (Verify → Phone Numbers) a posílat na něj z US čísla v rámci US→US/CZ omezení – ale na reálná zákaznická +420 čísla to nebude fungovat bez CZ „From“ čísla.
+- Při **aktivaci SMS** Jobi nejdřív zkusí připojit existující **+420 číslo, které už máš v účtu Twilio** (např. ručně koupené v Console) — nastaví na něj webhooky a přiřadí servis. Teprve když žádné takové číslo není nebo je pool plný (20 servisů na číslo), zkusí koupit nové z katalogu Twilio (CZ → případně US).
+- Pokud máš jen **americké číslo** (From: +1…), na české zákazníky z něj SMS nepošleš. Řešení: **koupit české číslo** ve stejném Twilio účtu → v Jobi **Nastavení → SMS komunikace → Odpojit SMS u tohoto servisu** → znovu **Aktivovat SMS** (vlastník/admin). Bez odpojení zůstane u servisu staré číslo. Po `supabase db push` je k dispozici RLS politika pro smazání vazby.
+- Pro testování můžeš v Twilio trial ověřit české číslo (Verify → Phone Numbers) — na reálná zákaznická +420 ale potřebuješ CZ „From“ číslo v účtu.
 
 ---
 
@@ -112,3 +110,25 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.sms_conversations;
 | 3 | (Volitelně) Supabase → Database → Replication | Zapnout Realtime pro `sms_messages`, `sms_conversations` |
 
 Webhooky pro příchozí SMS a hovory (`sms-incoming`, `sms-voice`) jsou při provisioning čísla nastaveny automaticky na URL tvého projektu (např. `https://<project-ref>.supabase.co/functions/v1/sms-incoming`). Nic dalšího v Twilio konzoli pro ně nastavovat nemusíš.
+
+### Kde v Twilio najdu URL webhooku (pro příchozí SMS)
+
+1. [Twilio Console](https://console.twilio.com) → **Phone Numbers** → **Manage** → **Active numbers**
+2. Klikni na **své číslo** (to, na které chodí SMS).
+3. Sekce **Messaging configuration** (někdy jen **Configure**): u **„A message comes in“** je buď **Webhook** a vedle něj **URL**, nebo **Studio** – u webhooku zkopíruj přesnou adresu (typicky `https://….supabase.co/functions/v1/sms-incoming`).
+
+### Sdílené číslo (více servisů / poboček)
+
+První SMS od zákazníka dřív šla jen k **primárnímu** servisu u toho čísla. Teď se servis vybírá takto:  
+nejprve existující konverzace → jinak **nedávná zakázka** se stejným telefonem v některém z těch servisů → jinak záznam **zákazníka** (`phone_norm`) → až nakonec primární servis.  
+Tím pádem příchozí uvidíš u té pobočky, kde má zákazník zakázku.
+
+### Příchozí SMS v Twilio „projdou“, ale v Jobi nejsou
+
+Twilio podpis webhooku musí sedět s **přesnou URL**, na kterou Twilio POSTuje. Funkce `sms-incoming` zkouší několik variant (včetně URL z hlaviček `Host` / `x-forwarded-host`). Pokud i tak nic neukládá:
+
+1. V **Twilio Console** → číslo → **A message comes in** zkopíruj přesnou URL webhooku.
+2. V Supabase → **Edge Functions → Secrets** přidej **`TWILIO_SMS_WEBHOOK_URL`** = tahle URL **bez** koncového lomítka (např. `https://abcdefgh.supabase.co/functions/v1/sms-incoming`).
+3. Znovu nasaď: `supabase functions deploy sms-incoming --no-verify-jwt`.
+
+Pak nasaď aktualizovanou funkci z repa (lepší párování čísla **To** s DB).

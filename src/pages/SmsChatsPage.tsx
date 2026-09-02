@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { showToast } from "../components/Toast";
 import { SmsChat } from "../components/SmsChat";
+import { normalizePhone } from "../lib/phone";
+import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 
 type ConversationRow = {
   id: string;
   customer_phone: string;
   customer_name: string | null;
+  /** Jméno pro zobrazení (DB + zákazník / zakázka) */
+  display_name: string | null;
   ticket_id: string | null;
   updated_at: string;
   archived: boolean;
@@ -14,10 +18,13 @@ type ConversationRow = {
   unread: number;
 };
 
+type OpenSmsIntent = { phone: string; displayName?: string; conversationId?: string };
+
 type Props = {
   activeServiceId: string | null;
-  /** Optional – used for "Otevřít zakázku" when conversation is linked to a ticket. */
   onOpenTicket?: (ticketId: string, openSmsPanel: boolean) => void;
+  openSmsIntent?: OpenSmsIntent | null;
+  onOpenSmsIntentConsumed?: () => void;
 };
 
 function formatPhoneShort(phone: string): string {
@@ -26,68 +33,232 @@ function formatPhoneShort(phone: string): string {
   return phone;
 }
 
-export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
+async function enrichDisplayNames(
+  client: NonNullable<ReturnType<typeof getTypedSupabaseClient>>,
+  activeServiceId: string,
+  rows: Array<{
+    id: string;
+    customer_phone: string;
+    customer_name: string | null;
+  }>
+): Promise<Map<string, string>> {
+  const displayById = new Map<string, string>();
+  const phones = [...new Set(rows.map((r) => r.customer_phone))];
+  const nameByPhone: Record<string, string> = {};
+
+  const { data: custs } = await client
+    .from("customers")
+    .select("name, phone_norm")
+    .eq("service_id", activeServiceId)
+    .in("phone_norm", phones);
+  for (const c of custs ?? []) {
+    const pn = (c as { phone_norm?: string; name?: string }).phone_norm;
+    const nm = (c as { name?: string }).name?.trim();
+    if (pn && nm) nameByPhone[pn] = nm;
+  }
+
+  const needTicket = phones.filter((p) => {
+    const row = rows.find((r) => r.customer_phone === p);
+    return !(row?.customer_name?.trim()) && !nameByPhone[p];
+  });
+
+  if (needTicket.length > 0) {
+    const { data: tix } = await client
+      .from("tickets")
+      .select("customer_phone, customer_name, updated_at")
+      .eq("service_id", activeServiceId)
+      .not("customer_phone", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(4000);
+    const ticketNameByNorm: Record<string, string> = {};
+    const needSet = new Set(needTicket);
+    for (const t of tix ?? []) {
+      const raw = (t as { customer_phone?: string; customer_name?: string }).customer_phone;
+      const nm = (t as { customer_name?: string }).customer_name?.trim();
+      const n = raw ? normalizePhone(raw) : null;
+      if (!n || !nm || ticketNameByNorm[n] || !needSet.has(n)) continue;
+      ticketNameByNorm[n] = nm;
+    }
+    for (const p of needTicket) {
+      if (ticketNameByNorm[p]) nameByPhone[p] = ticketNameByNorm[p];
+    }
+  }
+
+  for (const r of rows) {
+    const d = r.customer_name?.trim() || nameByPhone[r.customer_phone] || null;
+    displayById.set(r.id, d ?? "");
+  }
+  return displayById;
+}
+
+export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsIntent, onOpenSmsIntentConsumed }: Props) {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<ConversationRow | null>(null);
+  const [synthetic, setSynthetic] = useState<{ phone: string; displayName: string } | null>(null);
 
-  useEffect(() => {
+  const loadConversations = useCallback(async (): Promise<ConversationRow[]> => {
     const client = getTypedSupabaseClient();
     if (!activeServiceId || !client) {
       setConversations([]);
       setLoading(false);
-      return;
+      return [];
     }
-    setLoading(true);
-    (async () => {
-      const { data: rows, error } = await client
-        .from("sms_conversations")
-        .select("id, customer_phone, customer_name, ticket_id, updated_at, archived")
-        .eq("service_id", activeServiceId)
-        .eq("archived", showArchived)
-        .order("updated_at", { ascending: false });
+    const { data: rows, error } = await client
+      .from("sms_conversations")
+      .select("id, customer_phone, customer_name, ticket_id, updated_at, archived")
+      .eq("service_id", activeServiceId)
+      .eq("archived", showArchived)
+      .order("updated_at", { ascending: false });
 
-      if (error) {
-        setConversations([]);
-        setLoading(false);
-        return;
-      }
+    if (error || !rows?.length) {
+      setConversations([]);
+      setLoading(false);
+      return [];
+    }
 
-      const list = rows ?? [];
-      const ticketIds = list.map((r) => r.ticket_id).filter(Boolean) as string[];
-      let codes: Record<string, string> = {};
-      if (ticketIds.length > 0) {
-        const { data: tickets } = await client.from("tickets").select("id, code").in("id", ticketIds);
-        if (tickets) codes = Object.fromEntries(tickets.map((t) => [t.id, t.code ?? ""]));
-      }
+    const list = rows as ConversationRow[];
+    const displayMap = await enrichDisplayNames(client, activeServiceId, list);
 
-      const convIds = list.map((c) => c.id);
-      let unreadMap: Record<string, number> = {};
-      if (convIds.length > 0) {
-        const { data: msgRows } = await client
-          .from("sms_messages")
-          .select("conversation_id")
-          .in("conversation_id", convIds)
-          .eq("direction", "inbound")
-          .is("read_at", null);
-        if (msgRows) {
-          for (const r of msgRows) {
-            unreadMap[r.conversation_id] = (unreadMap[r.conversation_id] ?? 0) + 1;
-          }
+    const ticketIds = list.map((r) => r.ticket_id).filter(Boolean) as string[];
+    let codes: Record<string, string> = {};
+    if (ticketIds.length > 0) {
+      const { data: tickets } = await client.from("tickets").select("id, code").in("id", ticketIds);
+      if (tickets) codes = Object.fromEntries(tickets.map((t) => [t.id, t.code ?? ""]));
+    }
+
+    const convIds = list.map((c) => c.id);
+    const unreadMap: Record<string, number> = {};
+    if (convIds.length > 0) {
+      const { data: msgRows } = await client
+        .from("sms_messages")
+        .select("conversation_id")
+        .in("conversation_id", convIds)
+        .eq("direction", "inbound")
+        .is("read_at", null);
+      if (msgRows) {
+        for (const r of msgRows) {
+          unreadMap[r.conversation_id] = (unreadMap[r.conversation_id] ?? 0) + 1;
         }
       }
+    }
 
-      setConversations(
-        list.map((c) => ({
-          ...c,
-          ticket_code: c.ticket_id ? codes[c.ticket_id] ?? null : null,
-          unread: unreadMap[c.id] ?? 0,
-        }))
-      );
-      setLoading(false);
-    })();
+    const enriched: ConversationRow[] = list.map((c) => ({
+      ...c,
+      display_name: displayMap.get(c.id) || c.customer_name?.trim() || null,
+      ticket_code: c.ticket_id ? codes[c.ticket_id] ?? null : null,
+      unread: unreadMap[c.id] ?? 0,
+    }));
+
+    setConversations(enriched);
+    setLoading(false);
+
+    for (const c of enriched) {
+      const disp = c.display_name?.trim();
+      if (disp && !c.customer_name?.trim()) {
+        client.from("sms_conversations").update({ customer_name: disp }).eq("id", c.id).then(() => {});
+      }
+    }
+
+    return enriched;
   }, [activeServiceId, showArchived]);
+
+  useEffect(() => {
+    setLoading(true);
+    void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    smsDoNotNotifyRef.conversationId = selected?.id ?? null;
+    return () => {
+      smsDoNotNotifyRef.conversationId = null;
+    };
+  }, [selected?.id]);
+
+  useEffect(() => {
+    if (!openSmsIntent || !activeServiceId || loading) return;
+
+    if (openSmsIntent.conversationId) {
+      const cid = openSmsIntent.conversationId;
+      const row = conversations.find((c) => c.id === cid);
+      if (row) {
+        setSelected(row);
+        setSynthetic(null);
+        onOpenSmsIntentConsumed?.();
+        return;
+      }
+      let cancelled = false;
+      void (async () => {
+        const client = getTypedSupabaseClient();
+        if (!client) {
+          onOpenSmsIntentConsumed?.();
+          return;
+        }
+        const { data: conv } = await client
+          .from("sms_conversations")
+          .select("id, customer_phone, customer_name, ticket_id, updated_at, archived")
+          .eq("id", cid)
+          .eq("service_id", activeServiceId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!conv) {
+          onOpenSmsIntentConsumed?.();
+          return;
+        }
+        if (conv.archived !== showArchived) {
+          setShowArchived(conv.archived);
+          return;
+        }
+        const enriched = await loadConversations();
+        if (cancelled) return;
+        const r = enriched.find((c) => c.id === cid);
+        if (r) {
+          setSelected(r);
+          setSynthetic(null);
+        } else {
+          const norm = normalizePhone(openSmsIntent.phone || conv.customer_phone);
+          if (norm) {
+            setSelected(null);
+            setSynthetic({
+              phone: norm,
+              displayName: (openSmsIntent.displayName ?? conv.customer_name ?? "").trim(),
+            });
+          }
+        }
+        onOpenSmsIntentConsumed?.();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const norm = normalizePhone(openSmsIntent.phone);
+    if (!norm) {
+      onOpenSmsIntentConsumed?.();
+      return;
+    }
+    const row = conversations.find((c) => c.customer_phone === norm);
+    if (row) {
+      setSelected(row);
+      setSynthetic(null);
+    } else {
+      setSelected(null);
+      setSynthetic({
+        phone: norm,
+        displayName: (openSmsIntent.displayName ?? "").trim(),
+      });
+    }
+    onOpenSmsIntentConsumed?.();
+  }, [
+    openSmsIntent,
+    loading,
+    conversations,
+    activeServiceId,
+    onOpenSmsIntentConsumed,
+    showArchived,
+    loadConversations,
+  ]);
 
   const handleArchive = async (id: string, archive: boolean) => {
     const client = getTypedSupabaseClient();
@@ -102,6 +273,45 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
     showToast(archive ? "Přesunuto do archivu" : "Vyjmuto z archivu", "success");
   };
 
+  const selectRow = (c: ConversationRow) => {
+    setSynthetic(null);
+    setSelected(c);
+  };
+
+  const handleConversationCreated = async (newId: string) => {
+    const enriched = await loadConversations();
+    let row = enriched.find((r) => r.id === newId);
+    const client = getTypedSupabaseClient();
+    if (!row && client && activeServiceId) {
+      const { data: raw } = await client
+        .from("sms_conversations")
+        .select("id, customer_phone, customer_name, ticket_id, updated_at, archived")
+        .eq("id", newId)
+        .maybeSingle();
+      if (raw) {
+        const dm = await enrichDisplayNames(client, activeServiceId, [raw as { id: string; customer_phone: string; customer_name: string | null }]);
+        let ticket_code: string | null = null;
+        if (raw.ticket_id) {
+          const { data: tk } = await client.from("tickets").select("code").eq("id", raw.ticket_id).maybeSingle();
+          ticket_code = (tk as { code?: string })?.code ?? null;
+        }
+        row = {
+          ...(raw as ConversationRow),
+          display_name: dm.get(raw.id) || (raw as { customer_name?: string }).customer_name?.trim() || null,
+          ticket_code,
+          unread: 0,
+        };
+        if ((raw as { archived?: boolean }).archived === showArchived) {
+          setConversations((prev) => [row!, ...prev.filter((c) => c.id !== newId)]);
+        }
+      }
+    }
+    if (row) {
+      setSelected(row);
+      setSynthetic(null);
+    }
+  };
+
   if (!activeServiceId) {
     return (
       <div style={{ padding: 24, color: "var(--muted)", textAlign: "center" }}>
@@ -109,6 +319,15 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
       </div>
     );
   }
+
+  const panelTitle = selected
+    ? selected.display_name?.trim() || selected.customer_name?.trim() || "Zákazník"
+    : synthetic
+      ? synthetic.displayName || "Zákazník"
+      : "";
+  const panelPhone = selected?.customer_phone ?? synthetic?.phone ?? "";
+  const panelTicketId = selected?.ticket_id ?? null;
+  const panelTicketCode = selected?.ticket_code ?? null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, padding: "var(--pad-24)" }}>
@@ -120,24 +339,40 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
       </div>
 
       <div style={{ display: "flex", gap: 24, flex: 1, minHeight: 0 }}>
-        {/* Seznam konverzací */}
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: "0 0 320px" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "var(--text)", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-            />
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
             Zobrazit archivované
           </label>
           {loading ? (
             <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Načítám…</div>
-          ) : conversations.length === 0 ? (
+          ) : conversations.length === 0 && !synthetic ? (
             <div style={{ padding: 24, textAlign: "center", color: "var(--muted)", borderRadius: 12, background: "var(--panel-2)" }}>
               {showArchived ? "Žádné archivované chaty." : "Žádné SMS konverzace."}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {synthetic && !conversations.some((c) => c.customer_phone === synthetic.phone) && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    border: "2px solid var(--accent)",
+                    background: "var(--panel-2)",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
+                      {synthetic.displayName || formatPhoneShort(synthetic.phone)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{synthetic.phone}</div>
+                    <div style={{ fontSize: 11, color: "var(--accent)", marginTop: 4 }}>Nový chat – pošlete první zprávu</div>
+                  </div>
+                </div>
+              )}
               {conversations.map((c) => (
                 <div
                   key={c.id}
@@ -151,11 +386,11 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
                     background: selected?.id === c.id ? "var(--panel-2)" : "var(--panel)",
                     cursor: "pointer",
                   }}
-                  onClick={() => setSelected(c)}
+                  onClick={() => selectRow(c)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      setSelected(c);
+                      selectRow(c);
                     }
                   }}
                   role="button"
@@ -164,10 +399,18 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
-                        {c.customer_name || formatPhoneShort(c.customer_phone)}
+                        {c.display_name?.trim() || c.customer_name?.trim() || formatPhoneShort(c.customer_phone)}
                       </span>
                       {c.ticket_code && (
-                        <span style={{ fontSize: 11, color: "var(--muted)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 6 }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--muted)",
+                            background: "var(--panel-2)",
+                            padding: "2px 6px",
+                            borderRadius: 6,
+                          }}
+                        >
                           {c.ticket_code}
                         </span>
                       )}
@@ -218,7 +461,6 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
           )}
         </div>
 
-        {/* Chat panel */}
         <div
           style={{
             flex: 1,
@@ -231,7 +473,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
             overflow: "hidden",
           }}
         >
-          {selected ? (
+          {selected || synthetic ? (
             <>
               <div
                 style={{
@@ -245,16 +487,14 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>
-                    {selected.customer_name?.trim() || "Zákazník"}
-                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{panelTitle}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                    {selected.ticket_code && (
+                    {panelTicketCode && panelTicketId && (
                       <>
-                        {onOpenTicket && selected.ticket_id ? (
+                        {onOpenTicket ? (
                           <button
                             type="button"
-                            onClick={() => onOpenTicket(selected.ticket_id!, true)}
+                            onClick={() => onOpenTicket(panelTicketId, true)}
                             style={{
                               fontSize: 12,
                               color: "var(--accent)",
@@ -266,19 +506,22 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
                               marginRight: 8,
                             }}
                           >
-                            Zakázka {selected.ticket_code}
+                            Zakázka {panelTicketCode}
                           </button>
                         ) : (
-                          <span style={{ marginRight: 8 }}>Zakázka {selected.ticket_code}</span>
+                          <span style={{ marginRight: 8 }}>Zakázka {panelTicketCode}</span>
                         )}
                       </>
                     )}
-                    <span>{selected.customer_phone}</span>
+                    <span>{panelPhone}</span>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSelected(null)}
+                  onClick={() => {
+                    setSelected(null);
+                    setSynthetic(null);
+                  }}
                   style={{
                     width: 36,
                     height: 36,
@@ -297,11 +540,12 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket }: Props) {
               </div>
               <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 <SmsChat
-                  conversationId={selected.id}
-                  ticketId={selected.ticket_id}
+                  conversationId={selected?.id}
+                  ticketId={selected?.ticket_id ?? null}
                   serviceId={activeServiceId}
-                  customerPhone={selected.customer_phone}
-                  customerName={selected.customer_name}
+                  customerPhone={panelPhone}
+                  customerName={selected?.display_name?.trim() || selected?.customer_name?.trim() || synthetic?.displayName || null}
+                  onConversationCreated={handleConversationCreated}
                 />
               </div>
             </>
