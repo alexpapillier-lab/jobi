@@ -1,8 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { qrDataUrl } from "./qr";
+import { DocIcon, PrinterIcon, ActivityIcon, InfoIcon } from "./components/icons";
 import packageJson from "../package.json";
 import { generateDocumentHtml } from "./documentToHtml";
 import { AppLogo } from "./components/AppLogo";
+import { ModernCheckbox } from "./components/ModernCheckbox";
+import { Breadcrumbs } from "./components/Breadcrumbs";
+import { PdfPreviewIframe } from "./components/PdfPreviewIframe";
+import { PaletteCustomBlockItem } from "./components/PaletteCustomBlockItem";
+import { SectionDropZone } from "./components/SectionDropZone";
+import { SortableSignaturePlaceholder } from "./components/SortableSignaturePlaceholder";
+import { JobiDocsUpdateCard } from "./components/JobiDocsUpdateCard";
 import { getDesignStyles, type DocumentDesign, type LayoutSpec, type SectionStyle } from "./documentDesign";
 import { useConfigHistory } from "./useConfigHistory";
 import { DESIGN_PRESETS } from "./DesignPresets";
@@ -16,7 +24,6 @@ import {
   useSensor,
   useSensors,
   useDraggable,
-  useDroppable,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -462,36 +469,6 @@ function SectionPaletteItem({
   );
 }
 
-function PaletteCustomBlockItem({ id, label, hasAny, onAdd }: { id: string; label: string; hasAny: boolean; onAdd?: () => void }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { type: id } });
-  return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      onClick={onAdd}
-      title={onAdd ? "Kliknutím přidat na konec, tažením na konkrétní místo" : undefined}
-      style={{
-        padding: "8px 12px",
-        borderRadius: 10,
-        border: "1px solid var(--border)",
-        background: hasAny ? "var(--accent-soft)" : "var(--panel)",
-        color: "var(--text)",
-        fontSize: 12,
-        fontWeight: 500,
-        cursor: "grab",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        opacity: isDragging ? 0.6 : 1,
-      }}
-    >
-      <span style={{ opacity: 0.6 }}>⋮⋮</span>
-      {label}
-      {hasAny && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>✓</span>}
-    </div>
-  );
-}
 
 /** Editor vlastního textu s možností tučného (bold) a vložení proměnných. */
 function CustomTextEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
@@ -562,82 +539,8 @@ function CustomTextEditor({ value, onChange }: { value: string; onChange: (html:
   );
 }
 
-function PdfPreviewIframe({ srcDoc }: { srcDoc: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const availableWidth = entry.contentRect.width;
-        setScale(Math.min(1, availableWidth / 794));
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const scaledHeight = Math.round(1123 * scale);
-
-  return (
-    <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
-      <div style={{ width: "100%", height: scaledHeight, display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 794, height: 1123, flexShrink: 0, transform: `scale(${scale})`, transformOrigin: "top center", boxShadow: "0 4px 24px rgba(0,0,0,0.12)", borderRadius: 4 }}>
-          <iframe
-            srcDoc={srcDoc}
-            style={{ width: 794, height: 1123, border: "none", display: "block" }}
-            title="PDF náhled"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Drop zone mezi sekcemi – levá a pravá polovina (pro poloviční sekce).
-function SectionDropZone({ index }: { index: number }) {
-  const left = useDroppable({ id: `drop-${index}-left` });
-  const right = useDroppable({ id: `drop-${index}-right` });
-  const baseStyle: React.CSSProperties = {
-    minHeight: 28,
-    flexShrink: 0,
-    borderRadius: 6,
-    transition: "background 0.2s ease, border 0.2s ease, min-height 0.2s ease",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxSizing: "border-box",
-  };
-  return (
-    <div style={{ width: "100%", display: "flex", gap: 4 }}>
-      <div
-        ref={left.setNodeRef}
-        style={{
-          ...baseStyle,
-          flex: 1,
-          minHeight: left.isOver ? 48 : 28,
-          background: left.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
-          border: left.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
-        }}
-      >
-        {left.isOver && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>↓ Pustit vlevo</span>}
-      </div>
-      <div
-        ref={right.setNodeRef}
-        style={{
-          ...baseStyle,
-          flex: 1,
-          minHeight: right.isOver ? 48 : 28,
-          background: right.isOver ? "var(--accent-soft)" : "rgba(0,0,0,0.03)",
-          border: right.isOver ? "2px dashed var(--accent)" : "1px dashed var(--border)",
-        }}
-      >
-        {right.isOver && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>↓ Pustit vpravo</span>}
-      </div>
-    </div>
-  );
-}
 
 // Default DocumentsConfig shape (matches Jobi)
 const DESIGN_ACCENT_PRESETS: { value: string; label: string }[] = [
@@ -864,30 +767,8 @@ function getEffectiveSectionStyle(
 }
 
 // Modern Checkbox
-function ModernCheckbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: checked ? "var(--accent-soft)" : "var(--panel)", transition: "var(--transition-smooth)" }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
-      <span style={{ fontSize: 14, color: "var(--text)" }}>{label}</span>
-    </label>
-  );
-}
 
 // Breadcrumbs (Návrh 6) – orientace v aplikaci
-function Breadcrumbs({ items }: { items: { label: string; current?: boolean }[] }) {
-  return (
-    <nav aria-label="Breadcrumb" style={{ marginBottom: 12, fontSize: 13, color: "var(--muted)" }}>
-      {items.map((item, i) => (
-        <span key={i}>
-          {i > 0 && <span style={{ margin: "0 6px", opacity: 0.6 }}>›</span>}
-          <span style={{ color: item.current ? "var(--text)" : "var(--muted)", fontWeight: item.current ? 600 : 400 }}>
-            {item.label}
-          </span>
-        </span>
-      ))}
-    </nav>
-  );
-}
 
 // Document type picker – horní tab bar (Návrh 5)
 function DocumentTypePicker({ value, onChange }: { value: DocTypeKey; onChange: (v: DocTypeKey) => void }) {
@@ -1178,47 +1059,6 @@ function SortableSection({
 }
 
 // Visible signature placeholder in section list – sortable card showing label + underline
-function SortableSignaturePlaceholder({ id, styles, docConfig, onEditClick, selectedSectionId }: { id: string; styles: Record<string, unknown>; docConfig: Record<string, unknown>; onEditClick?: (id: string) => void; selectedSectionId?: string | null }) {
-  const { setNodeRef, attributes, listeners, transform, isDragging } = useSortable({ id });
-  const blockId = id.slice(7);
-  const blocks = (docConfig?.customBlocks as Record<string, { type?: string; content?: string }>) || {};
-  const label = blocks[blockId]?.content || "Podpis";
-  const isSelected = selectedSectionId === id;
-  const style: React.CSSProperties = {
-    width: "100%",
-    flexShrink: 0,
-    transform: CSS.Transform.toString(transform),
-    transition: isDragging ? "none" : "transform 0.2s ease",
-    opacity: isDragging ? 0.4 : 1,
-    cursor: "grab",
-    touchAction: "none",
-  };
-  const cardStyle: React.CSSProperties = {
-    padding: "8px 12px",
-    background: (styles.sectionBg as string) ?? "#fff",
-    borderRadius: 6,
-    border: isSelected ? "2px solid var(--accent)" : `1px solid ${(styles.borderColor as string) ?? "#e5e7eb"}`,
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    flex: "1 1 680px",
-    width: 680,
-    minWidth: 680,
-    maxWidth: 680,
-    boxSizing: "border-box",
-  };
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={() => onEditClick?.(id)} role="button" tabIndex={0} aria-label={`Podpis: ${label}`}>
-      <div style={cardStyle}>
-        <span style={{ fontSize: 10, opacity: 0.5, userSelect: "none" }}>⋮⋮</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ width: "100%", maxWidth: 120, borderBottom: `1px solid ${(styles.contentColor as string) ?? "#171717"}`, marginBottom: 2 }} />
-          <div style={{ fontSize: 9, color: (styles.contentColor as string) ?? "#171717" }}>{label}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 type CustomBlockData = {
   type: "text" | "heading" | "separator" | "spacer" | "signature";
@@ -2171,127 +2011,6 @@ function DocumentPreview({
   );
 }
 
-function JobiDocsUpdateCard({
-  updateState,
-  updateError,
-  updateChecking,
-  updateDownloading,
-  onCheck,
-  onDownload,
-  onRestart,
-}: {
-  updateState: { version: string; downloaded: boolean; progress: number } | null;
-  updateError: string | null;
-  updateChecking: boolean;
-  updateDownloading: boolean;
-  onCheck: () => Promise<void>;
-  onDownload: () => Promise<void>;
-  onRestart: () => void;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {updateError && (
-        <div style={{ fontSize: 13, color: "var(--error)" }}>
-          Kontrola aktualizací selhala: {updateError}
-        </div>
-      )}
-      {!updateState && !updateChecking && !updateError && (
-        <div style={{ fontSize: 13, color: "var(--muted)" }}>
-          Aktuálně nemáte k dispozici žádnou novou verzi. Kontrola probíhá automaticky.
-        </div>
-      )}
-      {updateChecking && <div style={{ fontSize: 13, color: "var(--muted)" }}>Kontroluji aktualizace…</div>}
-      {updateState && !updateState.downloaded && (
-        <>
-          <div style={{ fontSize: 13, color: "var(--text)" }}>
-            K dispozici je nová verze <strong>{updateState.version}</strong>
-          </div>
-          {!updateDownloading && updateState.progress === 0 ? (
-            <button
-              type="button"
-              onClick={onDownload}
-              style={{
-                padding: "10px 20px",
-                background: "var(--accent)",
-                color: "white",
-                border: "none",
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer",
-                fontWeight: 600,
-                fontSize: 14,
-                alignSelf: "flex-start",
-              }}
-            >
-              Nainstalovat
-            </button>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div
-                  style={{
-                    flex: 1,
-                    height: 8,
-                    background: "var(--panel-2)",
-                    borderRadius: 4,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${updateState.progress}%`,
-                      height: "100%",
-                      background: "var(--accent)",
-                      borderRadius: 4,
-                      transition: "width 0.2s ease",
-                    }}
-                  />
-                </div>
-                <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 36 }}>{Math.round(updateState.progress)}%</span>
-              </div>
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>Stahuji…</div>
-            </>
-          )}
-        </>
-      )}
-      {updateState?.downloaded && (
-        <button
-          type="button"
-          onClick={onRestart}
-          style={{
-            padding: "10px 20px",
-            background: "var(--accent)",
-            color: "white",
-            border: "none",
-            borderRadius: "var(--radius-md)",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: 14,
-            alignSelf: "flex-start",
-          }}
-        >
-          Restartovat a nainstalovat
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={onCheck}
-        disabled={updateChecking}
-        style={{
-          padding: "8px 14px",
-          background: "var(--panel-2)",
-          color: "var(--text)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-md)",
-          cursor: updateChecking ? "not-allowed" : "pointer",
-          fontSize: 12,
-          alignSelf: "flex-start",
-        }}
-      >
-        {updateChecking ? "Kontroluji…" : "Zkontrolovat aktualizace"}
-      </button>
-    </div>
-  );
-}
 
 // Tab key and sidebar navigation (kap. 3 – levý sidebar s ikonami)
 type TabKey = "aktivity" | "tiskarna" | "dokumenty" | "o_aplikaci";
@@ -2302,43 +2021,6 @@ const SIDEBAR_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: "aktivity", label: "Aktivity", icon: <ActivityIcon /> },
   { key: "o_aplikaci", label: "O aplikaci", icon: <InfoIcon /> },
 ];
-
-function DocIcon() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  );
-}
-function PrinterIcon() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 9 6 2 18 2 18 9" />
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-      <rect x="6" y="14" width="12" height="8" />
-    </svg>
-  );
-}
-function ActivityIcon() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
-  );
-}
-function InfoIcon() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="16" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  );
-}
 
 function SidebarNav({ active, onChange, updateBadge, compact }: { active: TabKey; onChange: (t: TabKey) => void; updateBadge?: boolean; compact?: boolean }) {
   return (
