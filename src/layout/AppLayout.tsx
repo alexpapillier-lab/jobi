@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
 import { JobiDocsGuideModal } from "../components/JobiDocsGuideModal";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { BottomNav } from "./BottomNav";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
 type SidebarPosition = "left" | "right" | "bottom";
@@ -136,6 +137,9 @@ export function AppLayout({
 
   return (
     <div style={{ display: "flex", flexDirection: isBottom ? "column" : "row", height: "100%", position: "relative" }}>
+      {/* Na úzké obrazovce boční lištu nevykreslujeme vůbec – zabírala by
+          68 px z 375, obsah by se nevešel. Navigaci přebírá BottomNav. */}
+      {!isNarrow && (
       <aside
         style={{
           ...sidebarStyle,
@@ -171,6 +175,17 @@ export function AppLayout({
           } satisfies SidebarProps)}
         />
       </aside>
+      )}
+
+      {isNarrow && (
+        <BottomNav
+          active={activePage}
+          onNavigate={onNavigate}
+          invoicingEnabled={invoicingEnabled}
+          smsEnabled={smsEnabled}
+          smsUnreadCount={smsUnreadCount}
+        />
+      )}
 
       <div
         data-app-content
@@ -180,7 +195,7 @@ export function AppLayout({
           flexDirection: "column",
           minWidth: 0,
           minHeight: 0,
-          ...contentStyle,
+          ...(isNarrow ? {} : contentStyle),
           position: "relative",
           background: "var(--bg)",
         }}
@@ -191,7 +206,9 @@ export function AppLayout({
           style={{
             flex: 1,
             padding: "var(--pad-24)",
-            paddingBottom: isBottom ? "calc(var(--pad-24) + 8px)" : "calc(var(--pad-24) + 8px)",
+            paddingBottom: isNarrow
+              ? "calc(var(--bottom-nav-h) + var(--safe-bottom) + 12px)"
+              : "calc(var(--pad-24) + 8px)",
             overflow: "auto",
             transform: "translateZ(0)",
             contain: "paint",

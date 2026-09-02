@@ -24,6 +24,12 @@
   --sidebar-bottom-collapsed: 52px;
   --sidebar-bottom-expanded: 52px;
 
+  /* Spodní navigace na úzkých obrazovkách (webová verze na telefonu).
+     --safe-bottom respektuje domovský indikátor na iPhonu. */
+  --bottom-nav-h: 56px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --touch-min: 44px;
+
   --pad-12: 12px;
   --pad-16: 16px;
   --pad-20: 20px;
