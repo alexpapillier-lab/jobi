@@ -1,4 +1,5 @@
 import { defineConfig, mergeConfig } from "vite";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import baseConfig from "./vite.config";
@@ -18,9 +19,41 @@ const stub = (name: string) => path.resolve(__dirname, "web-stubs", name);
  *   npm run dev:web     – vývojový server na portu 1430
  *   npm run build:web   – produkční build do dist-web/
  */
+/**
+ * Zapíše do výstupu hlavičky pro Cloudflare Pages.
+ *
+ * Assety mají v názvu hash, takže se dají kešovat natrvalo. index.html se
+ * musí revalidovat vždy, jinak by prohlížeč kombinoval nové HTML se starými
+ * assety – přesně to se stalo na marketingovém webu (viz web/_headers).
+ */
+const cloudflareHeaders = () => ({
+  name: "cloudflare-headers",
+  writeBundle() {
+    const outDir = path.resolve(__dirname, "dist-web");
+    const content = [
+      "# Cloudflare Pages – webová verze Jobi",
+      "",
+      "/assets/*",
+      "  Cache-Control: public, max-age=31536000, immutable",
+      "",
+      "/index.html",
+      "  Cache-Control: public, max-age=0, must-revalidate",
+      "",
+      "/*",
+      "  X-Frame-Options: SAMEORIGIN",
+      "  X-Content-Type-Options: nosniff",
+      "  Referrer-Policy: strict-origin-when-cross-origin",
+      "",
+    ].join("\n");
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, "_headers"), content, "utf-8");
+  },
+});
+
 export default mergeConfig(
   baseConfig,
   defineConfig({
+    plugins: [cloudflareHeaders()],
     resolve: {
       alias: {
         "@tauri-apps/api/core": stub("tauri-core.ts"),
