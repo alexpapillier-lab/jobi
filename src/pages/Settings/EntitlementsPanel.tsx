@@ -1,0 +1,183 @@
+import { useCallback, useEffect, useState } from "react";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
+import { Card } from "../../lib/settingsUi";
+import { showToast } from "../../components/Toast";
+
+/**
+ * Správa nároků servisů na placené moduly. Jen pro root ownera.
+ *
+ * Data jdou přes Edge Function entitlements-manage – tabulka
+ * service_entitlements má RLS, která zápis nikomu nepovoluje.
+ */
+
+type Row = {
+  id: string;
+  service_id: string;
+  service_name: string | null;
+  module: string;
+  active: boolean;
+  valid_until: string | null;
+  note: string | null;
+};
+
+type Service = { service_id: string; service_name: string };
+
+const MODULE_LABELS: Record<string, string> = {
+  sms: "SMS",
+  invoices: "Faktury",
+};
+
+async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[] }> {
+  const client = supabase;
+  if (!client || !supabaseUrl || !supabaseAnonKey) throw new Error("Chybí konfigurace Supabase.");
+  // refreshSession: v desktopu getSession() často vrací prošlý token -> 401
+  const { data: refreshed } = await client.auth.refreshSession();
+  const token =
+    refreshed?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
+  if (!token) throw new Error("Nejste přihlášeni.");
+
+  const res = await supabaseFetch(`${supabaseUrl}/functions/v1/entitlements-manage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      apikey: supabaseAnonKey,
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await res.text();
+  const data = raw ? JSON.parse(raw) : {};
+  if (!res.ok) throw new Error(data?.error || `Chyba ${res.status}`);
+  return data;
+}
+
+export function EntitlementsPanel({ services }: { services: Service[] }) {
+  const [rows, setRows] = useState<Row[]>([]);
+  const [modules, setModules] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await callManage({ action: "list" });
+      setRows(data.entitlements ?? []);
+      setModules(data.modules ?? ["sms", "invoices"]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = async (serviceId: string, module: string, grant: boolean) => {
+    const key = `${serviceId}:${module}`;
+    setBusy(key);
+    try {
+      await callManage({ action: grant ? "grant" : "revoke", serviceId, module });
+      showToast(
+        `${MODULE_LABELS[module] ?? module} ${grant ? "zapnuto" : "vypnuto"}`,
+        "success"
+      );
+      await load();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Má servis daný modul právě teď platný? */
+  const isActive = (serviceId: string, module: string) => {
+    const r = rows.find((x) => x.service_id === serviceId && x.module === module);
+    if (!r || !r.active) return false;
+    return !r.valid_until || r.valid_until > new Date().toISOString();
+  };
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+        <div>
+          <div style={{ fontWeight: 950, fontSize: "var(--text-lg)", marginBottom: 4, color: "var(--text)" }}>
+            Placené moduly
+          </div>
+          <div style={{ fontSize: "var(--text-base)", color: "var(--muted)" }}>
+            Co má který servis zaplacené. Vypnutí modul jen zneplatní, záznam zůstane.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          style={{
+            padding: "8px 16px", borderRadius: "var(--radius-2xs)", border: "1px solid var(--border)",
+            background: "var(--panel)", color: "var(--text)", fontWeight: 600,
+            fontSize: "var(--text-base)", cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Načítám…" : "Obnovit"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ padding: "var(--space-3)", borderRadius: "var(--radius-xs)", background: "var(--danger-soft)", color: "var(--danger-text)", fontSize: "var(--text-base)", marginBottom: "var(--space-3)" }}>
+          {error}
+        </div>
+      )}
+
+      {services.length === 0 && !loading && (
+        <div style={{ fontSize: "var(--text-base)", color: "var(--muted)" }}>Žádné servisy k zobrazení.</div>
+      )}
+
+      <div style={{ display: "grid", gap: "var(--space-2)" }}>
+        {services.map((s) => (
+          <div
+            key={s.service_id}
+            style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              flexWrap: "wrap", gap: "var(--space-3)",
+              padding: "var(--space-3)", borderRadius: "var(--radius-xs)",
+              border: "1px solid var(--border)", background: "var(--panel)",
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)" }}>
+              {s.service_name}
+            </span>
+            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+              {modules.map((m) => {
+                const on = isActive(s.service_id, m);
+                const key = `${s.service_id}:${m}`;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    disabled={busy === key}
+                    onClick={() => void toggle(s.service_id, m, !on)}
+                    title={on ? "Kliknutím vypnout" : "Kliknutím zapnout"}
+                    style={{
+                      padding: "6px 14px", borderRadius: "var(--radius-pill)",
+                      border: `1px solid ${on ? "var(--success)" : "var(--border)"}`,
+                      background: on ? "var(--success-soft)" : "transparent",
+                      color: on ? "var(--success-text)" : "var(--muted)",
+                      fontWeight: 700, fontSize: "var(--text-sm)",
+                      cursor: busy === key ? "default" : "pointer",
+                      opacity: busy === key ? 0.5 : 1,
+                    }}
+                  >
+                    {MODULE_LABELS[m] ?? m} {on ? "✓" : "—"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
