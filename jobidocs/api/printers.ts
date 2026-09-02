@@ -13,14 +13,21 @@ export type PrinterInfo = {
   available: boolean;
 };
 
-function parseLpstatP(stdout: string): PrinterInfo[] {
+/**
+ * `lpstat -p` vypisuje "printer NAME is idle.  enabled since ...", tedy stav
+ * s tečkou na konci. Původní (\S+) ji zachytilo taky, takže porovnání
+ * s "idle" nikdy nesedělo a KAŽDÁ tiskárna vycházela jako nedostupná.
+ * Zjištěno při upgradu Electronu 2. 9. 2026.
+ */
+export function parseLpstatP(stdout: string): PrinterInfo[] {
   const lines = stdout.trim().split("\n").filter(Boolean);
   const printers: PrinterInfo[] = [];
   for (const line of lines) {
     const match = line.match(/^printer\s+(\S+)\s+is\s+(\S+)/);
     if (match) {
-      const [, name, status] = match;
-      const statusLower = (status || "").toLowerCase();
+      const [, name, rawStatus] = match;
+      const status = (rawStatus || "").replace(/[.,;:]+$/, "");
+      const statusLower = status.toLowerCase();
       printers.push({
         name: name || "",
         status: status || "unknown",

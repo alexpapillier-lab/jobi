@@ -73,11 +73,25 @@ async function listPrintersElectronWindows(): Promise<
   const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
   try {
     const printers = await win.webContents.getPrintersAsync();
-    return printers.map((pr) => ({
-      name: pr.name,
-      status: pr.status === 0 ? "idle" : String(pr.status),
-      available: pr.status === 0,
-    }));
+    return printers.map((pr) => {
+      // Electron 44 odstranil PrinterInfo.status (dřív Windows DWORD, 0 = připravena).
+      // Stav teď dodává OS v options, pokud vůbec – klíč printer-state podle IPP:
+      // 3 = idle, 4 = tiskne, 5 = zastavena.
+      const raw = (pr.options as Record<string, unknown> | undefined)?.["printer-state"];
+      const state = raw === undefined || raw === null ? null : String(raw);
+      const status =
+        state === null ? "unknown"
+        : state === "3" ? "idle"
+        : state === "4" ? "printing"
+        : state === "5" ? "stopped"
+        : state;
+      return {
+        name: pr.name,
+        status,
+        // Když stav OS nedodá, tiskárnu radši nabídneme, než abychom ji schovali.
+        available: state === null ? true : state === "3" || state === "4",
+      };
+    });
   } catch {
     return [];
   } finally {
@@ -108,7 +122,8 @@ async function htmlToPdfElectron(html: string): Promise<Buffer> {
 
     const pdfBuffer = await win.webContents.printToPDF({
       printBackground: true,
-      margins: { marginType: "none" },
+      // Electron 44 zrušil marginType; nulové okraje se zadávají čísly (v palcích).
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
       pageSize: "A4",
       preferCSSPageSize: true,
     });
