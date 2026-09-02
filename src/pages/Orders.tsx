@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../components/ui";
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
@@ -29,7 +30,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
 import { SectionHeading } from "../components/SectionHeading";
-import { BoltIcon, CameraIcon, CheckIcon, CoinsIcon, DeviceIcon, DocumentIcon, HashIcon, InboxIcon, LinkIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PrintIcon, SearchIcon, StatusIcon, UserIcon, WrenchIcon } from "../components/icons";
+import { BoltIcon, CameraIcon, CheckIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, InboxIcon, LinkIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PrintIcon, SaveIcon, SearchIcon, StatusIcon, TrashIcon, UserIcon, WrenchIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import {
   type DevicesData,
@@ -4656,22 +4657,19 @@ export default function Orders({
                 )}
                 {!isEditingClaim ? (
                   <>
-                    <button onClick={startEditingClaim} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }} title="Upravit reklamaci">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                    <Button variant="primary" onClick={startEditingClaim} title="Upravit reklamaci" icon={<EditIcon size={16} />}>
                       Upravit
-                    </button>
-                    <button onClick={() => { setDeleteClaimId(detailedClaim.id); setDeleteClaimDialogOpen(true); }} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(239, 68, 68, 0.9)" }} title="Smazat reklamaci">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                      Smazat reklamaci
-                    </button>
+                    </Button>
+                    <Button variant="danger" onClick={() => { setDeleteClaimId(detailedClaim.id); setDeleteClaimDialogOpen(true); }} title="Smazat reklamaci" icon={<TrashIcon size={16} />}>
+                      Smazat
+                    </Button>
                   </>
                 ) : (
                   <>
-                    <button onClick={() => saveClaimChanges().then((ok) => ok && showToast("Změny uloženy", "success"))} style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }} title="Uložit změny">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    <Button variant="primary" onClick={() => saveClaimChanges().then((ok) => ok && showToast("Změny uloženy", "success"))} title="Uložit změny" icon={<SaveIcon size={16} />}>
                       Uložit
-                    </button>
-                    <button onClick={() => { setIsEditingClaim(false); setEditedClaim({}); }} style={softBtn} title="Zrušit úpravy">Zrušit</button>
+                    </Button>
+                    <Button onClick={() => { setIsEditingClaim(false); setEditedClaim({}); }} title="Zrušit úpravy">Zrušit</Button>
                   </>
                 )}
                 {canPrintExport && (
@@ -4747,69 +4745,41 @@ export default function Orders({
                     }}
                   />
                 )}
-                <button onClick={() => setClaimHistoryModalOpen(true)} style={softBtn} title="Historie změn reklamace">Historie</button>
+                <Button onClick={() => setClaimHistoryModalOpen(true)} title="Historie změn reklamace">Historie</Button>
               </>
             ) : !isEditing ? (
               <>
-              <button
-                onClick={startEditing}
-                style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }}
-                title="Upravit zakázku"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
+              <Button variant="primary" onClick={startEditing} title="Upravit zakázku" icon={<EditIcon size={16} />}>
                 Upravit
-              </button>
+              </Button>
                 {detailedTicket && (
-                  <button
+                  <Button
+                    variant="danger"
                     onClick={() => {
                       setDeleteTicketId(detailedTicket.id);
                       setDeleteDialogOpen(true);
                     }}
-                    style={{
-                      ...primaryBtn,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "10px 14px",
-                      background: "rgba(239, 68, 68, 0.9)",
-                    }}
                     title="Smazat zakázku"
+                    icon={<TrashIcon size={16} />}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 6h18" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                    Smazat zakázku
-                  </button>
+                    Smazat
+                  </Button>
                 )}
               </>
             ) : (
               <>
-                <button
-                  onClick={saveTicketChanges}
-                  style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }}
-                  title="Uložit změny"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                    <polyline points="17 21 17 13 7 13 7 21" />
-                    <polyline points="7 3 7 8 15 8" />
-                  </svg>
+                <Button variant="primary" onClick={saveTicketChanges} title="Uložit změny" icon={<SaveIcon size={16} />}>
                   Uložit
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => {
                     setIsEditing(false);
                     setEditedTicket({});
                   }}
-                  style={softBtn}
                   title="Zrušit úpravy"
                 >
                   Zrušit
-                </button>
+                </Button>
               </>
             )}
 
@@ -4841,14 +4811,14 @@ export default function Orders({
                 {(onCreateInvoice || onOpenInvoice) && (() => {
                   const existingInvoiceId = invoiceIdByTicketId[detailedTicket.id];
                   return existingInvoiceId && onOpenInvoice ? (
-                    <button
+                    <Button
                       key="open-invoice"
                       onClick={() => onOpenInvoice(existingInvoiceId)}
-                      style={softBtn}
                       title="Otevřít fakturu k této zakázce"
+                      icon={<DocumentIcon size={14} />}
                     >
-                      <DocumentIcon size={14} /> Přejít na fakturu
-                    </button>
+                      Přejít na fakturu
+                    </Button>
                   ) : onCreateInvoice ? (
                     <button
                       key="create-invoice"
