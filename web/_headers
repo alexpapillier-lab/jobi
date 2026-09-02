@@ -1,0 +1,18 @@
+# Cloudflare Pages – hlavičky pro appjobi.com
+#
+# index.html se revaliduje vždy, ale app.js a style.css se dřív držely
+# 4 hodiny. Po nasazení tak prohlížeč kombinoval NOVÉ HTML se STARÝM JS,
+# což rozbilo přepínač macOS/Windows u stahování.
+#
+# Řešení má dvě vrstvy: v index.html je u assetů ?v=<časová značka>
+# (nová URL po každé změně) a tyhle hlavičky drží kešování krátké,
+# aby to nemohlo rozejít ani při ruční editaci.
+
+/app.js
+  Cache-Control: public, max-age=300, must-revalidate
+
+/style.css
+  Cache-Control: public, max-age=300, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
