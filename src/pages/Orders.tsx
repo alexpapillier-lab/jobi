@@ -26,6 +26,8 @@ import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClai
 import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
+import { isWeb } from "../lib/platform";
+import { printDocumentInBrowser } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
@@ -716,6 +718,11 @@ async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
 
 function showExportSuccessToast(filePath: string) {
   const shortPath = filePath.replace(/^.*[/\\]/, "");
+  // Ve webu soubor jen spadne do složky Stažené – není co otevírat ve Finderu.
+  if (isWeb()) {
+    showToast(`PDF uložen: ${shortPath}`, "success");
+    return;
+  }
   showPersistentToast(`PDF uložen: ${shortPath}`, "success", {
     actionLabel: "Otevřít složku",
     onAction: async () => {
@@ -730,14 +737,42 @@ function showExportSuccessToast(filePath: string) {
 }
 
 async function printTicket(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro tisk.", "error");
-    return;
-  }
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+
+  // Webová verze tiskne přes prohlížeč – JobiDocs tam není a není potřeba.
+  if (isWeb()) {
+    const startWeb = performance.now();
+    try {
+      const companyDataWeb = safeLoadCompanyData();
+      const variablesWeb = buildTicketVariablesForJobiDocs(ticket, companyDataWeb as Record<string, unknown>);
+      await printDocumentInBrowser("zakazkovy_list", sid, { variables: variablesWeb });
+      trackDocumentAction({
+        action: "print",
+        docType: "zakazkovy_list",
+        result: "success",
+        durationMs: Math.round(performance.now() - startWeb),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      trackDocumentAction({
+        action: "print",
+        docType: "zakazkovy_list",
+        result: "error",
+        durationMs: Math.round(performance.now() - startWeb),
+        errorMessage: msg,
+      });
+      showToast(`Tisk se nezdařil: ${msg}`, "error");
+    }
+    return;
+  }
+
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
     return;
   }
   const start = performance.now();

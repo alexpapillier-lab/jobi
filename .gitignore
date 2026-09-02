@@ -59,3 +59,6 @@ web/.claude/
 
 # Supabase CLI cache (vzniká při práci s CLI, nepatří do repa)
 supabase/.temp/linked-project.json
+
+# Web build
+dist-web

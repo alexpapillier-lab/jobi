@@ -14,6 +14,7 @@ import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
+import { isDesktop } from "../lib/platform";
 import { showToast } from "../components/Toast";
 import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
 import {
@@ -1070,7 +1071,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         { key: "about_app" as const, label: "O aplikaci" },
-        { key: "about_updates" as const, label: "Aktualizace" },
+        // Aktualizace jsou jen pro desktop – web je vždy aktuální.
+        ...(isDesktop() ? [{ key: "about_updates" as const, label: "Aktualizace" }] : []),
       ],
     },
   ], [isRootOwner, isAdmin, canManageDocuments]);

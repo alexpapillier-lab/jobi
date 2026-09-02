@@ -20,12 +20,18 @@ export function isWeb(): boolean {
 }
 
 /**
- * Platforma pro telemetrii a chybové logy: "macos" | "windows" | "web".
+ * Platforma pro telemetrii a chybové logy.
  * Na desktopu se rozlišuje podle user agenta, protože Tauri webview ho dědí
- * od systému.
+ * od systému. Neznámý systém se nehádá – vrací se "unknown".
+ *
+ * Pozn.: stejnou logiku má zatím i detectPlatform() v src/lib/errorLog.ts,
+ * který vznikl souběžně. Až se ustálí, patří sjednotit sem.
  */
-export function platformName(): "macos" | "windows" | "web" {
+export function platformName(): "macos" | "windows" | "web" | "unknown" {
+  if (typeof window === "undefined") return "unknown";
   if (!isDesktop()) return "web";
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  return /Windows/i.test(ua) ? "windows" : "macos";
+  if (/Windows|Win64|Win32/i.test(ua)) return "windows";
+  if (/Mac OS X|Macintosh/i.test(ua)) return "macos";
+  return "unknown";
 }
