@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
-import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardModern, TicketCardSplit, TicketCardStripe, TicketTable, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
+import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
 import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
@@ -5425,10 +5425,6 @@ export default function Orders({
         return wrap(<TicketCardCompactExtra ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "grid":
         return wrap(<TicketCardGrid ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
-      case "cards-modern":
-        return wrap(<TicketCardModern ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
-      case "split":
-        return wrap(<TicketCardSplit ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "stripe":
         return wrap(<TicketCardStripe ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
       case "list":
@@ -5645,17 +5641,7 @@ export default function Orders({
               minWidth: 0,
             }),
       }}>
-        {/* Table / Timeline: full-container views rendered here */}
-        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "table" && (
-          <TicketTable
-            tickets={paginatedTickets.map(toCardData)}
-            getByKey={getByKey as any}
-            normalizeStatus={normalizeStatus}
-            onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
-            statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
-            smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
-          />
-        )}
+        {/* Timeline a seskupení podle stavu: pohledy přes celý kontejner */}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "timeline" && (
           <TicketTimeline
             tickets={paginatedTickets.map(toCardData)}

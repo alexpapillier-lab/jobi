@@ -72,9 +72,9 @@ type OpenClaimIntent = {
 };
 
 const ORDERS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
-type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 type SidebarPosition = "left" | "right" | "bottom";
-const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
 const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
 type UIConfig = {

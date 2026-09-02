@@ -112,7 +112,7 @@ const ORDERS_PAGE_SIZE_CHOICES: { value: number; label: string }[] = [
   { value: 0, label: "Vše" },
 ];
 
-type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 type SidebarPosition = "left" | "right" | "bottom";
 
 type UIConfig = {
@@ -139,7 +139,7 @@ type UIConfig = {
   invoicingEnabled?: boolean;
 };
 
-const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
 const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
 /** Windows startují s vypnutými efekty – rozostření tam prokazatelně trhá.
@@ -2666,27 +2666,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   )
                 },
                 {
-                  value: "split",
-                  label: "Rozdělené",
-                  description: "Dva sloupce - zařízení vlevo, oprava vpravo",
-                  preview: (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                      {["#ORD-001", "#ORD-002"].map((code) => (
-                        <div key={code} style={{ display: "flex", borderRadius: 4, border: "1px solid var(--border)", overflow: "hidden", background: "var(--panel)" }}>
-                          <div style={{ flex: 1, padding: "4px 6px", borderRight: "1px solid var(--border)" }}>
-                            <div style={{ fontSize: 8, fontWeight: 700 }}>{code}</div>
-                            <div style={{ fontSize: 7, color: "var(--accent)" }}>iPhone 15</div>
-                          </div>
-                          <div style={{ flex: 1, padding: "4px 6px" }}>
-                            <div style={{ fontSize: 7, color: "var(--muted)" }}>Výměna displeje</div>
-                            <div style={{ fontSize: 7, fontWeight: 700, color: "var(--accent)" }}>1 200 Kč</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                },
-                {
                   value: "stripe",
                   label: "Pruhy",
                   description: "Barevné pruhy se statusem",
@@ -2736,23 +2715,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   )
                 },
                 {
-                  value: "table",
-                  label: "Tabulka",
-                  description: "Klasická tabulka se sloupci, řazení",
-                  preview: (
-                    <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ display: "flex", gap: 0, background: "var(--panel-2)", padding: "3px 6px", fontSize: 7, fontWeight: 700, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
-                        <span style={{ flex: 1 }}>Kód</span><span style={{ flex: 1 }}>Zařízení</span><span style={{ flex: 1 }}>Status</span>
-                      </div>
-                      {["#ORD-001 iPhone", "#ORD-002 Samsung"].map((r, i) => (
-                        <div key={r} style={{ display: "flex", gap: 0, padding: "3px 6px", fontSize: 7, background: i % 2 === 0 ? "transparent" : "var(--panel-2)" }}>
-                          <span style={{ flex: 1, fontWeight: 600 }}>{r.split(" ")[0]}</span><span style={{ flex: 1 }}>{r.split(" ")[1]}</span><span style={{ flex: 1, color: "var(--accent)", fontWeight: 600 }}>Přijato</span>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                },
-                {
                   value: "timeline",
                   label: "Časová osa",
                   description: "Zakázky seskupené podle data na ose",
@@ -2771,45 +2733,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           </div>
                         </div>
                       ))}
-                    </div>
-                  )
-                },
-                {
-                  value: "cards-modern",
-                  label: "Moderní karty",
-                  description: "Vzdušné karty s gradient headerem a avatarem",
-                  preview: (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
-                      <div style={{ borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden" }}>
-                        <div style={{ padding: "4px 6px", background: "var(--accent-soft)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: 8, fontWeight: 700 }}>#ORD-001</span>
-                          <span style={{ fontSize: 7, color: "var(--muted)" }}>12.12</span>
-                        </div>
-                        <div style={{ padding: "5px 6px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <div style={{ width: 14, height: 14, borderRadius: 5, background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", display: "grid", placeItems: "center", color: "white", fontSize: 6, fontWeight: 700 }}>JN</div>
-                            <div>
-                              <div style={{ fontSize: 7, fontWeight: 600 }}>J. Novák</div>
-                              <div style={{ fontSize: 7, color: "var(--accent)" }}>iPhone 15 Pro</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ borderRadius: 6, border: "1px solid var(--border)", overflow: "hidden" }}>
-                        <div style={{ padding: "4px 6px", background: "var(--accent-soft)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: 8, fontWeight: 700 }}>#ORD-002</span>
-                          <span style={{ fontSize: 7, color: "var(--muted)" }}>13.12</span>
-                        </div>
-                        <div style={{ padding: "5px 6px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <div style={{ width: 14, height: 14, borderRadius: 5, background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", display: "grid", placeItems: "center", color: "white", fontSize: 6, fontWeight: 700 }}>MS</div>
-                            <div>
-                              <div style={{ fontSize: 7, fontWeight: 600 }}>M. Svobodová</div>
-                              <div style={{ fontSize: 7, color: "var(--accent)" }}>Samsung S23</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   )
                 },
