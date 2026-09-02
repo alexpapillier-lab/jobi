@@ -1,16 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/** Stejná odpověď pro neexistující účet i pro překročený limit – nejde enumerovat. */
+const GENERIC_OK_MESSAGE =
+  "Pokud účet s tímto e-mailem existuje, přijde vám e-mail s kódem.";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function generateToken(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+/**
+ * Kryptograficky bezpečný kód pro obnovu hesla.
+ *
+ * Uživatel kód OPISUJE RUČNĚ z e-mailu, proto Crockford base32 – 32 znaků
+ * bez zaměnitelných I, L, O, U. Délka 32 dělí 256 beze zbytku, takže modulo
+ * nezavádí bias. 10 znaků = 50 bitů entropie (dřív: 12 znaků z Math.random(),
+ * tedy predikovatelných).
+ */
+const CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+function generateToken(len = 10): string {
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
   let token = "";
-  for (let i = 0; i < 12; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < len; i++) {
+    token += CODE_ALPHABET.charAt(bytes[i] % CODE_ALPHABET.length);
   }
   return token;
 }
@@ -38,13 +53,61 @@ serve(async (req) => {
     const { data: userId } = await svc.rpc("get_auth_user_id_by_email", { p_email: emailTrim });
     if (!userId) {
       return new Response(
-        JSON.stringify({ ok: true, message: "Pokud účet s tímto e-mailem existuje, přijde vám e-mail s kódem." }),
+        JSON.stringify({ ok: true, message: GENERIC_OK_MESSAGE }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // --- Rate limiting -------------------------------------------------
+    // 1 žádost za minutu a max 5 za hodinu na e-mail. Při překročení vracíme
+    // stejnou obecnou hlášku jako jindy, aby nešlo enumerovat účty ani zjistit,
+    // že je limit aktivní.
+    const MIN_INTERVAL_MS = 60 * 1000;
+    const WINDOW_MS = 60 * 60 * 1000;
+    const MAX_PER_WINDOW = 5;
+    const nowMs = Date.now();
+
+    const { data: rl } = await svc
+      .from("password_reset_rate_limit")
+      .select("window_started_at, request_count, last_request_at")
+      .eq("email", emailTrim)
+      .maybeSingle();
+
+    let windowStart = nowMs;
+    let requestCount = 0;
+
+    if (rl) {
+      const lastRequestMs = new Date(rl.last_request_at).getTime();
+      const windowStartMs = new Date(rl.window_started_at).getTime();
+      const windowStillOpen = nowMs - windowStartMs < WINDOW_MS;
+
+      if (nowMs - lastRequestMs < MIN_INTERVAL_MS) {
+        return new Response(
+          JSON.stringify({ ok: true, message: GENERIC_OK_MESSAGE }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (windowStillOpen && rl.request_count >= MAX_PER_WINDOW) {
+        return new Response(
+          JSON.stringify({ ok: true, message: GENERIC_OK_MESSAGE }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      windowStart = windowStillOpen ? windowStartMs : nowMs;
+      requestCount = windowStillOpen ? rl.request_count : 0;
+    }
+
+    await svc.from("password_reset_rate_limit").upsert({
+      email: emailTrim,
+      window_started_at: new Date(windowStart).toISOString(),
+      request_count: requestCount + 1,
+      last_request_at: new Date(nowMs).toISOString(),
+    });
+    // --------------------------------------------------------------------
+
     const token = generateToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(nowMs + 60 * 60 * 1000).toISOString();
     await svc.from("password_reset_tokens").delete().eq("email", emailTrim);
     const { error: insertErr } = await svc
       .from("password_reset_tokens")
@@ -101,7 +164,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, message: "Pokud účet s tímto e-mailem existuje, přijde vám e-mail s kódem." }),
+      JSON.stringify({ ok: true, message: GENERIC_OK_MESSAGE }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {

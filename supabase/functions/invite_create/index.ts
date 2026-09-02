@@ -7,11 +7,17 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function generateToken(): string {
+/**
+ * Kryptograficky bezpečný token.
+ * Abeceda má 64 znaků (URL-safe), takže 256 % 64 == 0 a modulo nezavádí bias.
+ */
+function generateToken(len = 32): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
   let token = "";
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < len; i++) {
+    token += chars.charAt(bytes[i] % chars.length);
   }
   return token;
 }

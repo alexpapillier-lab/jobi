@@ -14,7 +14,10 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const emailTrim = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-    const token = typeof body?.token === "string" ? body.token.trim() : "";
+    // Kód je Crockford base32 (velká písmena) a uživatel ho opisuje ručně,
+    // proto tolerujeme malá písmena i mezery z kopírování.
+    const token =
+      typeof body?.token === "string" ? body.token.trim().replace(/\s+/g, "").toUpperCase() : "";
     const newPassword = typeof body?.newPassword === "string" ? body.newPassword : "";
 
     if (!emailTrim || !token) {
