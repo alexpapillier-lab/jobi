@@ -1,6 +1,7 @@
 import React from "react";
-import { type TicketCardData, formatCZDate, computeFinalPrice } from "./types";
-import { DeviceIcon, WrenchIcon } from "./icons";
+import { type TicketCardData, computeFinalPrice } from "./types";
+import { WrenchIcon } from "./icons";
+import { TicketCode, TicketDate, TicketDevice, TicketCustomer, MetaSeparator } from "./fields";
 
 type Props = {
   ticket: TicketCardData;
@@ -47,14 +48,11 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
       <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
         {/* Row 1: code, date, device, customer */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
-          <span style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
-          <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
-            <DeviceIcon size={12} color="var(--accent)" />
-            <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
-          </div>
-          <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.customerName}</span>
+          <TicketCode code={t.code} />
+          <TicketDate value={t.createdAt} />
+          <MetaSeparator />
+          <TicketDevice label={t.deviceLabel} />
+          <TicketCustomer name={t.customerName} />
           <div style={{ flex: 1 }} />
           <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
             {statusPicker}

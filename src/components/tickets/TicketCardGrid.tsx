@@ -1,5 +1,6 @@
 import React from "react";
-import { type TicketCardData, formatCZDate, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice } from "./types";
+import { TicketCode, TicketDate } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 
 type Props = {
@@ -49,8 +50,8 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
         gap: 6,
         minWidth: 0,
       }}>
-        <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-        <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+        <TicketCode code={t.code} dense />
+        <TicketDate value={t.createdAt} />
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}

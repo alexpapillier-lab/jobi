@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
-import { type TicketCardData, formatCZDate } from "./types";
+import { type TicketCardData } from "./types";
+import { TicketCode, TicketDate } from "./fields";
 import { DeviceIcon } from "./icons";
 
 type Props = {
@@ -50,8 +51,8 @@ function KanbanCard({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-        <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)" }}>{t.code}</span>
-        <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>{formatCZDate(t.createdAt)}</span>
+        <TicketCode code={t.code} dense />
+        <TicketDate value={t.createdAt} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
         <DeviceIcon size={12} color={statusColor} />

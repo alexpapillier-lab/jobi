@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
-import { type TicketCardData, formatCZDate, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice } from "./types";
+import { TicketCode, TicketCustomer, TicketDate } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 
 type Props = {
@@ -62,13 +63,13 @@ function GroupedCard({
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{t.code}{smsBadge(smsUnread)}</span>
-      <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+      <TicketCode code={t.code} dense>{smsBadge(smsUnread)}</TicketCode>
+      <TicketDate value={t.createdAt} />
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
         <DeviceIcon size={11} color={statusColor} />
         <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
       </div>
-      <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.customerName}</span>
+      <TicketCustomer name={t.customerName} />
       {(t.requestedRepair || t.issueShort) && (
         <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
           <WrenchIcon size={10} color="var(--muted)" />

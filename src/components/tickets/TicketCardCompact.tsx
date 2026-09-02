@@ -1,5 +1,6 @@
 import React from "react";
-import { type TicketCardData, formatCZDate, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice } from "./types";
+import { TicketCode, TicketCustomer, TicketDate } from "./fields";
 import { DeviceIcon } from "./icons";
 
 type Props = {
@@ -46,8 +47,8 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
       <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
         {/* Header: code + date left, status + print right */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
-          <span style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+          <TicketCode code={t.code} />
+          <TicketDate value={t.createdAt} />
           {meta?.label && (
             <span style={{
               fontSize: "var(--text-xs)", fontWeight: 700, padding: "1px 5px", borderRadius: 4,
@@ -70,7 +71,7 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
           </div>
           <span style={{ color: "var(--border)" }}>·</span>
-          <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.customerName}</span>
+          <TicketCustomer name={t.customerName} />
           {(t.requestedRepair || t.issueShort) && (
             <>
               <span style={{ color: "var(--border)" }}>·</span>

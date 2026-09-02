@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
+import { TicketCode, TicketCustomer } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 
 type Props = {
@@ -128,14 +129,14 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
                   {/* Status dot */}
                   <div style={{ width: 6, height: 6, borderRadius: 3, background: statusColor, flexShrink: 0, boxShadow: `0 0 4px ${statusColor}60` }} />
 
-                  <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{t.code}{smsBadge(smsUnreadByTicketId[t.id] ?? 0)}</span>
+                  <TicketCode code={t.code} dense>{smsBadge(smsUnreadByTicketId[t.id] ?? 0)}</TicketCode>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0, overflow: "hidden" }}>
                     <DeviceIcon size={13} color={statusColor} />
                     <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
                   </div>
 
-                  <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{t.customerName}</span>
+                  <TicketCustomer name={t.customerName} />
 
                   {(t.requestedRepair || t.issueShort) && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
