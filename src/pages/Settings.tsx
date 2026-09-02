@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
+import { Button, Segmented } from "../components/ui";
 import { assetUrl } from "../lib/assetUrl";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
@@ -559,29 +560,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   };
 
   const border = "1px solid var(--border)";
-  const primaryBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--accent)",
-    color: "white",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
-  const softBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--panel)",
-    color: "var(--text)",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
   const categories = useMemo(() => [
     {
@@ -1846,10 +1825,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   {draft.label || "Náhled"}
                 </div>
 
-                <button
-                  type="button"
-                  disabled={!canSave}
-                  onClick={async () => {
+                  <Button
+                    variant="primary"
+                    disabled={!canSave}
+                    onClick={async () => {
                     if (!canSave) return;
                     await handleStatusUpsert({
                       key: keyTrim,
@@ -1861,14 +1840,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     setDraft({ key: "", label: "", bg: STATUS_COLOR_PALETTE[0].bg, fg: STATUS_COLOR_PALETTE[0].fg, isFinal: false });
                     setShowCustomColor(false);
                   }}
-                  style={{
-                    ...primaryBtn,
-                    opacity: canSave ? 1 : 0.4,
-                    cursor: canSave ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {keyExists ? "Aktualizovat" : "Přidat"}
-                </button>
+                  >
+                    {keyExists ? "Aktualizovat" : "Přidat"}
+                  </Button>
               </div>
             </div>
           </Card>
@@ -1914,21 +1888,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   </div>
 
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setDraft({ ...s })} style={softBtn}>
+                    <Button size="sm" onClick={() => setDraft({ ...s })}>
                       Upravit
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
                       onClick={() => deleteStatus(s.key)}
                       disabled={s.key === fallbackKey}
-                      style={{
-                        ...softBtn,
-                        opacity: s.key === fallbackKey ? 0.4 : 1,
-                        cursor: s.key === fallbackKey ? "not-allowed" : "pointer",
-                        color: s.key === fallbackKey ? "var(--muted)" : "rgba(239,68,68,0.9)",
-                      }}
+                      title={s.key === fallbackKey ? "Fallback status nelze smazat" : "Smazat status"}
                     >
                       Smazat
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -2005,23 +1976,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               />
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {[0.85, 0.9, 1, 1.1, 1.25, 1.35].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => {
-                      const newCfg = { ...uiCfg, app: { ...uiCfg.app, uiScale: v } };
-                      setUiCfg(newCfg);
-                      saveUIConfig(newCfg);
-                    }}
-                    style={{
-                      ...softBtn,
-                      background: uiCfg.app.uiScale === v ? "var(--accent-soft)" : "var(--panel)",
-                      color: uiCfg.app.uiScale === v ? "var(--accent)" : "var(--text)",
-                    }}
-                  >
-                    {Math.round(v * 100)}%
-                  </button>
-                ))}
+                <Segmented<number>
+                  ariaLabel="Měřítko rozhraní"
+                  size="sm"
+                  value={uiCfg.app.uiScale}
+                  onChange={(v) => {
+                    const newCfg = { ...uiCfg, app: { ...uiCfg.app, uiScale: v } };
+                    setUiCfg(newCfg);
+                    saveUIConfig(newCfg);
+                  }}
+                  options={[0.85, 0.9, 1, 1.1, 1.25, 1.35].map((v) => ({
+                    value: v,
+                    label: `${Math.round(v * 100)}%`,
+                  }))}
+                />
               </div>
             </div>
           </Card>

@@ -3,3 +3,4 @@ export { Card } from "./Card";
 export { Pill } from "./Pill";
 export { PageHeader } from "./PageHeader";
 export { Toolbar, ToolbarSpacer } from "./Toolbar";
+export { Segmented, type SegmentedOption } from "./Segmented";

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Button } from "../components/ui";
+import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
@@ -2598,23 +2598,6 @@ export default function Orders({
     [border]
   );
 
-  const pillBase: React.CSSProperties = useMemo(
-    () => ({
-      padding: "10px 16px",
-      borderRadius: 20,
-      border,
-      cursor: "pointer",
-      fontSize: 13,
-      fontWeight: 600,
-      transition: "var(--transition-smooth)",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      boxShadow: "var(--shadow-soft)",
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-    }),
-    [border]
-  );
 
   const smallPillBase: React.CSSProperties = useMemo(
     () => ({
@@ -3438,76 +3421,35 @@ export default function Orders({
       </div>
 
       {/* Group tabs */}
-      <div data-tour="orders-groups" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {[
-          { key: "all" as const, label: "Vše" },
-          { key: "active" as const, label: "Aktivní" },
-          { key: "final" as const, label: "Final" },
-          { key: "reklamace" as const, label: "Reklamace" },
-        ].map((g) => {
-          const active = g.key === activeGroup;
-          return (
-            <button
-              key={g.key}
-              onClick={() => setActiveGroup(g.key)}
-              style={{
-                ...pillBase,
-                background: active ? "var(--accent-soft)" : "var(--panel)",
-                color: active ? "var(--accent)" : "var(--text)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "scale(1.05) translateY(-1px)";
-                e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "scale(1.0) translateY(0)";
-                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
-              }}
-            >
-              {g.label}
-            </button>
-          );
-        })}
+      <div data-tour="orders-groups">
+        <Segmented<GroupKey>
+          ariaLabel="Filtr zakázek"
+          value={activeGroup}
+          onChange={setActiveGroup}
+          options={[
+            { value: "all", label: "Vše" },
+            { value: "active", label: "Aktivní" },
+            { value: "final", label: "Final" },
+            { value: "reklamace", label: "Reklamace" },
+          ]}
+        />
       </div>
 
       {/* Reklamace sub-filter: Aktivní / Final */}
       {activeGroup === "reklamace" && (
-        <div data-tour="orders-claims-subfilter" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {[
-            { key: "all" as const, label: "Vše" },
-            { key: "active" as const, label: "Aktivní" },
-            { key: "final" as const, label: "Final" },
-          ].map((g) => {
-            const active = g.key === claimsSubGroup;
-            return (
-              <button
-                key={g.key}
-                onClick={() => setClaimsSubGroup(g.key)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: active ? "var(--accent-soft)" : "var(--panel)",
-                  color: active ? "var(--accent)" : "var(--text)",
-                  fontWeight: active ? 700 : 500,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                  boxShadow: "var(--shadow-soft)",
-                  transition: "var(--transition-smooth)",
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.background = "var(--panel-2)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.background = "var(--panel)";
-                }}
-              >
-                {g.label}
-              </button>
-            );
-          })}
-        </div>
+          <div data-tour="orders-claims-subfilter" style={{ marginTop: 10 }}>
+            <Segmented<ClaimsSubGroup>
+              size="sm"
+              ariaLabel="Filtr reklamací"
+              value={claimsSubGroup}
+              onChange={setClaimsSubGroup}
+              options={[
+                { value: "all", label: "Vše" },
+                { value: "active", label: "Aktivní" },
+                { value: "final", label: "Final" },
+              ]}
+            />
+          </div>
       )}
 
       {/* Secondary quick status filters */}
