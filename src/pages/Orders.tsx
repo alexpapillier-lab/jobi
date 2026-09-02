@@ -122,6 +122,13 @@ type OrdersProps = {
 
   /** When true, detail panel (ticket/claim) is closed. Used when navigating to e.g. Faktury so the preview does not stay on top. */
   closeDetailWhen?: boolean;
+  /**
+   * SMS jsou pro servis dostupné: má aktivní číslo A ZÁROVEŇ zaplacený modul.
+   * App to počítá jako smsProvisioned && hasModule("sms"); Orders si dřív
+   * ověřovaly jen to číslo, takže se SMS tlačítko ukazovalo i servisům
+   * s vypnutým modulem. Bez propu radši skryté – modul je placený.
+   */
+  smsEnabled?: boolean;
 };
 
 const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
@@ -966,6 +973,7 @@ export default function Orders({
   onCreateInvoice,
   onOpenInvoice,
   closeDetailWhen,
+  smsEnabled = false,
 }: OrdersProps) {
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
   const { session } = useAuth();
@@ -1469,6 +1477,8 @@ export default function Orders({
   const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
   const [smsUnreadListBump, setSmsUnreadListBump] = useState(0);
   const [smsActivatedForService, setSmsActivatedForService] = useState(false);
+  /** Číslo i modul zároveň – jen tak se SMS smí kdekoli objevit. */
+  const smsAvailable = smsActivatedForService && smsEnabled;
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -2216,7 +2226,7 @@ export default function Orders({
   // Realtime: po příchozí SMS nebo označení přečteného přepočíst badge u řádků
   useEffect(() => {
     const client = getTypedSupabaseClient();
-    if (!smsActivatedForService || !activeServiceId || !client) return;
+    if (!smsAvailable || !activeServiceId || !client) return;
     const topic = `orders_sms_unread_rt:${activeServiceId}`;
     const channel = client
       .channel(topic)
@@ -2233,7 +2243,7 @@ export default function Orders({
     return () => {
       client.removeChannel(channel);
     };
-  }, [smsActivatedForService, activeServiceId]);
+  }, [smsAvailable, activeServiceId]);
 
   /**
    * Klíč z obsahu, ne z identity pole.
@@ -2253,7 +2263,7 @@ export default function Orders({
   useEffect(() => {
     const client = getTypedSupabaseClient();
     const ticketRowsAll = ticketsForSmsUnreadRef.current;
-    if (!smsActivatedForService || !activeServiceId || !client || ticketRowsAll.length === 0) {
+    if (!smsAvailable || !activeServiceId || !client || ticketRowsAll.length === 0) {
       // Nový prázdný objekt by byl pokaždé jiná reference a vynutil další render.
       setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       return;
@@ -2341,7 +2351,7 @@ export default function Orders({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [smsActivatedForService, activeServiceId, smsUnreadKey, smsUnreadListBump]);
+  }, [smsAvailable, activeServiceId, smsUnreadKey, smsUnreadListBump]);
 
   useEffect(() => {
     setOrdersPage(0);
@@ -4716,7 +4726,7 @@ export default function Orders({
               </div>
             )}
 
-            {detailedTicket && !detailedClaim && smsActivatedForService && (
+            {detailedTicket && !detailedClaim && smsAvailable && (
               <Button variant="soft"
                 onClick={() => { setSmsPanelOpen(true); }} style={{ position: "relative" }}
                 title="SMS chat se zákazníkem"

@@ -1121,6 +1121,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                     setActivePage("invoices");
                   } : undefined}
                   closeDetailWhen={activePage !== "orders"}
+                  smsEnabled={smsEnabled}
                 />
               </div>
             )}
