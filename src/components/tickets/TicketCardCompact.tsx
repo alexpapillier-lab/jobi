@@ -1,7 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
-import { TicketCode, TicketCustomer, TicketDate } from "./fields";
-import { DeviceIcon } from "./icons";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator } from "./fields";
 
 type Props = {
   ticket: TicketCardData;
@@ -44,47 +43,42 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
     >
       <div style={{ width: 4, background: bg, flexShrink: 0 }} />
 
-      <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-        {/* Header: code + date left, status + print right */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
-          <TicketCode code={t.code} />
-          <TicketDate value={t.createdAt} />
-          {meta?.label && (
-            <span style={{
-              fontSize: "var(--text-xs)", fontWeight: 700, padding: "1px 5px", borderRadius: 4,
-              background: `${bg}18`, color: bg, whiteSpace: "nowrap", flexShrink: 0,
-            }}>
-              {meta.isFinal ? "✓ " : ""}{meta.label}
-            </span>
-          )}
-          <div style={{ flex: 1 }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-            {statusPicker}
-            {printButton}
-          </div>
+      {/*
+        Jeden řádek místo dvou – stejně jako u režimu "list".
+        Oprava sedí ve volném středu a roztahuje se podle místa.
+      */}
+      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24 }}>
+        <TicketCode code={t.code} />
+        <TicketDate value={t.createdAt} />
+        <MetaSeparator />
+        <TicketDevice label={t.deviceLabel} />
+        <TicketCustomer name={t.customerName} />
+
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+          <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>
 
-        {/* Device + customer + repair in one row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13, color: "var(--accent)", minWidth: 0, overflow: "hidden" }}>
-            <DeviceIcon size={12} color="var(--accent)" />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
-          </div>
-          <span style={{ color: "var(--border)" }}>·</span>
-          <TicketCustomer name={t.customerName} />
-          {(t.requestedRepair || t.issueShort) && (
-            <>
-              <span style={{ color: "var(--border)" }}>·</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>
-                {t.requestedRepair || t.issueShort}
-              </span>
-            </>
-          )}
-          {finalPrice > 0 && (
-            <span style={{ fontSize: 12, fontWeight: 700, color: bg, whiteSpace: "nowrap", flexShrink: 0 }}>
-              {finalPrice.toLocaleString("cs-CZ")} Kč
-            </span>
-          )}
+        {/*
+          Odznak se stavem tu býval, ale po přechodu na jeden řádek se ocitl
+          hned vedle pilulky se stavem – tentýž údaj dvakrát pod sebou.
+          Zůstává jen značka dokončení, kterou pilulka neukazuje.
+        */}
+        {meta?.isFinal && (
+          <span style={{
+            fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 5px", borderRadius: "var(--radius-2xs)",
+            background: `${bg}18`, color: bg, whiteSpace: "nowrap", flexShrink: 0,
+          }}>
+            ✓
+          </span>
+        )}
+        {finalPrice > 0 && (
+          <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>
+            {finalPrice.toLocaleString("cs-CZ")} Kč
+          </span>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          {statusPicker}
+          {printButton}
         </div>
       </div>
     </div>

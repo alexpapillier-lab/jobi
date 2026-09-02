@@ -64,11 +64,21 @@ export function TicketDate({ value }: { value: string | number | Date | null | u
   );
 }
 
-/** Zařízení včetně ikony. Zkrátí se třemi tečkami, když se nevejde. */
-export function TicketDevice({ label, dense }: { label?: string | null } & Dense) {
+/**
+ * Zařízení včetně ikony. Zkrátí se třemi tečkami, když se nevejde.
+ *
+ * `iconColor` je tu kvůli seskupeným pohledům (podle stavu, kanban),
+ * kde se ikona barví podle stavu zakázky místo akcentem. Je to smysluplný
+ * rozdíl, ne nahodilost – proto se nesjednocuje pryč.
+ */
+export function TicketDevice({
+  label,
+  dense,
+  iconColor = "var(--accent)",
+}: { label?: string | null; iconColor?: string } & Dense) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", minWidth: 0, overflow: "hidden" }}>
-      <DeviceIcon size={12} color="var(--accent)" />
+      <DeviceIcon size={12} color={iconColor} />
       <span
         style={{
           fontWeight: 700,

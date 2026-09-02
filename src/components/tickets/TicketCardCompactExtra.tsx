@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData } from "./types";
-import { TicketCode, TicketCustomer, TicketDate } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
 
 type Props = {
   ticket: TicketCardData;
@@ -47,13 +47,11 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
       <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
         <TicketCode code={t.code} dense />
         <TicketDate value={t.createdAt} />
-        <span style={{ minWidth: 0, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)", flexShrink: 1 }}>{t.deviceLabel || "—"}</span>
+        <TicketDevice label={t.deviceLabel} dense />
         <TicketCustomer name={t.customerName} />
-        {(t.requestedRepair || t.issueShort) && (
-          <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {(t.requestedRepair || t.issueShort || "").slice(0, 60)}
-          </span>
-        )}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+          <TicketRepair text={t.requestedRepair || t.issueShort} />
+        </div>
         {meta?.isFinal && <span style={{ fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 4px", borderRadius: 4, background: `${bg}18`, color: bg, flexShrink: 0 }}>✓</span>}
         <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}

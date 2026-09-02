@@ -1,8 +1,8 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice } from "./types";
-import { DeviceIcon, WrenchIcon } from "./icons";
-import { TicketCode, TicketDate, TicketCustomer } from "./fields";
+import { WrenchIcon } from "./icons";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
 
 export type ClaimLike = {
   id: string;
@@ -88,8 +88,7 @@ function TicketRow({
       <TicketCode code={t.code} dense>{smsBadge(smsUnread)}</TicketCode>
       <TicketDate value={t.createdAt} />
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
-        <DeviceIcon size={11} color={statusColor} />
-        <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</span>
+        <TicketDevice label={t.deviceLabel} dense iconColor={statusColor} />
       </div>
       <TicketCustomer name={t.customerName} />
       {(t.requestedRepair || t.issueShort) && (

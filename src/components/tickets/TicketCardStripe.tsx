@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
-import { TicketCode, TicketCustomer, TicketDate } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
 
 type Props = {
   ticket: TicketCardData;
@@ -49,15 +49,13 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
       <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
         <TicketCode code={t.code} dense />
         <TicketDate value={t.createdAt} />
-        <span style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 80, maxWidth: 180, flexShrink: 1 }}>{t.deviceLabel || "—"}</span>
+        <TicketDevice label={t.deviceLabel} dense />
         <TicketCustomer name={t.customerName} />
-        {(t.requestedRepair || t.issueShort) && (
-          <span style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {t.requestedRepair || t.issueShort}
-          </span>
-        )}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+          <TicketRepair text={t.requestedRepair || t.issueShort} />
+        </div>
         {finalPrice > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: bg, whiteSpace: "nowrap", flexShrink: 0 }}>
+          <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {finalPrice.toLocaleString("cs-CZ")} Kč
           </span>
         )}
