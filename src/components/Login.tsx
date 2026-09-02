@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
@@ -22,7 +22,6 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [prefillError, setPrefillError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Check for pending invite token
   useEffect(() => {
@@ -33,80 +32,6 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
     }
   }, []);
 
-  // Animated background
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let animationFrameId: number;
-    let time = 0;
-
-    const particles: Array<{
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      size: number;
-      hue: number;
-    }> = [];
-
-    // Create particles
-    for (let i = 0; i < 50; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        size: Math.random() * 3 + 1,
-        hue: 260 + Math.random() * 40, // Purple range
-      });
-    }
-
-    const animate = () => {
-      time += 0.01;
-      ctx.fillStyle = "rgba(15, 23, 42, 0.1)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      particles.forEach((particle) => {
-        particle.x += particle.vx + Math.sin(time + particle.x * 0.01) * 0.5;
-        particle.y += particle.vy + Math.cos(time + particle.y * 0.01) * 0.5;
-
-        if (particle.x < 0 || particle.x > canvas.width) particle.vx *= -1;
-        if (particle.y < 0 || particle.y > canvas.height) particle.vy *= -1;
-
-        const gradient = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size * 20);
-        gradient.addColorStop(0, `hsla(${particle.hue}, 70%, 60%, 0.6)`);
-        gradient.addColorStop(1, `hsla(${particle.hue}, 70%, 60%, 0)`);
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size * 20, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
 
   const fetchInvitePrefill = async () => {
     const token = inviteToken.trim();
@@ -260,42 +185,31 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
         overflow: "hidden",
       }}
     >
-      {/* Animated background canvas */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-        }}
-      />
+      {/*
+        Statická hloubka pozadí.
 
-      {/* Animated gradient overlay */}
+        Dřív tu byl canvas s 50 poletujícími částicemi a k tomu překryv,
+        který navíc pulzoval a zvětšoval se. Kromě toho, že to působilo
+        neklidně, se pro každou částici při KAŽDÉM snímku vytvářel nový
+        radiální gradient a kreslil kruh o poloměru až 80 px – tedy
+        50 gradientů a 50 výplní šedesátkrát za sekundu.
+
+        Tři statické radiální přechody dají stejný dojem hloubky
+        a nestojí po vykreslení nic.
+      */}
       <div
+        aria-hidden="true"
         style={{
           position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          inset: 0,
+          pointerEvents: "none",
           background: `
-            radial-gradient(circle at 20% 50%, rgba(139, 92, 246, 0.3) 0%, transparent 50%),
-            radial-gradient(circle at 80% 80%, rgba(109, 40, 217, 0.3) 0%, transparent 50%),
-            radial-gradient(circle at 40% 20%, rgba(76, 29, 149, 0.2) 0%, transparent 50%)
+            radial-gradient(circle at 18% 42%, rgba(139, 92, 246, 0.32) 0%, transparent 55%),
+            radial-gradient(circle at 82% 78%, rgba(109, 40, 217, 0.28) 0%, transparent 55%),
+            radial-gradient(circle at 45% 12%, rgba(76, 29, 149, 0.22) 0%, transparent 50%)
           `,
-          animation: "pulse 8s ease-in-out infinite",
         }}
       />
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.8; transform: scale(1.1); }
-        }
-      `}</style>
 
       <div
         style={{
@@ -303,7 +217,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
           maxWidth: 440,
           background: "rgba(255, 255, 255, 0.95)",
           backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "var(--blur)",
           borderRadius: 28,
           padding: "48px 40px",
           boxShadow: "0 25px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)",
