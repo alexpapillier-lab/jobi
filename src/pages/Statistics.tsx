@@ -1,4 +1,6 @@
+import type React from "react";
 import { useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
+import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
@@ -733,14 +735,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <StatCard
           title="Celkem zakázek"
           value={stats.totalTickets}
-          icon="📋"
+          icon={<DocumentIcon size={22} />}
           delta={compareWithPrevious ? stats.totalTickets - prevStats.totalTickets : undefined}
           deltaLabel="vs. předch. období"
         />
         <StatCard
           title="Celkový příjem"
           value={`${stats.totalRevenue.toFixed(2)} Kč`}
-          icon="💰"
+          icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalRevenue > 0 ? ((stats.totalRevenue - prevStats.totalRevenue) / prevStats.totalRevenue) * 100 : undefined}
           deltaPercent
           deltaLabel="vs. předch. období"
@@ -748,7 +750,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <StatCard
           title="Celkové náklady"
           value={`${stats.totalCosts.toFixed(2)} Kč`}
-          icon="💸"
+          icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalCosts > 0 ? ((stats.totalCosts - prevStats.totalCosts) / prevStats.totalCosts) * 100 : undefined}
           deltaPercent
           deltaLabel="vs. předch. období"
@@ -756,7 +758,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <StatCard
           title="Zisk"
           value={`${stats.profit.toFixed(2)} Kč`}
-          icon="📈"
+          icon={<TrendIcon size={22} />}
           color={stats.profit >= 0 ? "var(--accent)" : "rgba(239,68,68,0.9)"}
           delta={compareWithPrevious ? stats.profit - prevStats.profit : undefined}
           deltaLabel="vs. předch. období"
@@ -765,7 +767,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <StatCard
           title="Průměrná cena"
           value={`${stats.averageTicketPrice.toFixed(2)} Kč`}
-          icon="📊"
+          icon={<StatusIcon size={22} />}
           delta={compareWithPrevious && prevStats.averageTicketPrice > 0 ? ((stats.averageTicketPrice - prevStats.averageTicketPrice) / prevStats.averageTicketPrice) * 100 : undefined}
           deltaPercent
           deltaLabel="vs. předch. období"
@@ -773,7 +775,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <StatCard
           title="Celkové slevy"
           value={`${stats.totalDiscounts.toFixed(2)} Kč`}
-          icon="🎁"
+          icon={<GiftIcon size={22} />}
         />
         <StatCard
           title="Průměrná doba zakázky"
@@ -1191,7 +1193,7 @@ function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: string;
+  icon: React.ReactNode;
   color?: string;
   delta?: number;
   deltaPercent?: boolean;
@@ -1231,7 +1233,7 @@ function StatCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <span style={{ fontSize: 24 }}>{icon}</span>
+        <span style={{ display: "flex", color: "var(--muted)" }}>{icon}</span>
         <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{title}</div>
       </div>
       <div

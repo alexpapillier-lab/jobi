@@ -27,6 +27,8 @@ import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
+import { SectionHeading } from "../components/SectionHeading";
+import { UserIcon, DeviceIcon, WrenchIcon, StatusIcon, SearchIcon, ChatIcon, PrintIcon } from "../components/icons";
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
@@ -5354,7 +5356,7 @@ export default function Orders({
         onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev: any) => (prev?.id === t.id ? null : t as any)); }}
         title="Tisk"
         style={{ display: "flex", alignItems: "center", justifyContent: "center", width: sz, height: sz, minWidth: sz, minHeight: sz, borderRadius: small ? 6 : 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: small ? 12 : 14, flexShrink: 0 }}
-      >🖨️</button>
+      ><PrintIcon size={small ? 13 : 15} /></button>
     );
   }, [canPrintExport, setOpenQuickPrintTicket]);
 
@@ -7009,7 +7011,7 @@ export default function Orders({
           <>
           <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div style={card}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>👤 Zákazník</div>
+              <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
               {!isEditingClaim ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.customer_name ?? "—"}</div>
@@ -7051,7 +7053,7 @@ export default function Orders({
               )}
             </div>
             <div style={card}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📱 Zařízení</div>
+              <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
               {!isEditingClaim ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.device_label || c.device_serial || "—"}</div>
@@ -7212,7 +7214,7 @@ export default function Orders({
           {sourceTicket ? (
             <>
               <div style={{ ...card, marginTop: 16 }}>
-                <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>🔍 Diagnostika</div>
+                <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky. Pro uložení do databáze otevřete zakázku a klikněte na Uložit.</div>
                 <div style={{ display: "grid", gap: 12 }}>
                   <div>
@@ -7451,7 +7453,7 @@ export default function Orders({
               </div>
 
               <div style={{ ...card, marginTop: 16 }}>
-                <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>💬 Interní komentáře (chat)</div>
+                <SectionHeading icon={<ChatIcon size={16} />} size="sm">Interní komentáře (chat)</SectionHeading>
                 <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                   {commentsFor(sourceTicket.id).map((c) => {
                     const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
@@ -7562,7 +7564,7 @@ export default function Orders({
               <>
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                   <div style={card}>
-                    <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>👤 Zákazník</div>
+                    <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
                       <div
                         onClick={() => {
@@ -7640,7 +7642,7 @@ export default function Orders({
                   })()}
 
                   <div style={card}>
-                    <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📱 Zařízení</div>
+                    <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{detailedTicket.deviceLabel}</div>
                       {detailedTicket.serialOrImei && (
@@ -7674,7 +7676,7 @@ export default function Orders({
 
                 <div style={{ display: "grid", gap: 16 }}>
                   <div style={card}>
-                    <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>👤 Zákazník</div>
+                    <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 12 }}>
                       <div>
                         <div style={fieldLabel}>Jméno *</div>
@@ -7915,7 +7917,7 @@ export default function Orders({
                   </div>
 
                   <div style={card}>
-                    <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📱 Zařízení</div>
+                    <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
                     <div style={{ display: "grid", gap: 12 }}>
                       <div>
                         <div style={fieldLabel}>Zařízení *</div>
@@ -8049,7 +8051,7 @@ export default function Orders({
             {!isEditing && (
               <>
                 <div style={{ ...card, marginTop: 16 }}>
-                  <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📊 Stav zakázky</div>
+                  <SectionHeading icon={<StatusIcon size={16} />}>Stav zakázky</SectionHeading>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                       {(() => {
@@ -8212,7 +8214,7 @@ export default function Orders({
                 </div>
 
                 <div style={{ ...card, marginTop: 16 }}>
-                  <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>🔧 Provedené opravy</div>
+                  <SectionHeading icon={<WrenchIcon size={16} />}>Provedené opravy</SectionHeading>
 
                   <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
                     {(detailedTicket.performedRepairs ?? []).map((repair) => (
@@ -8339,7 +8341,7 @@ export default function Orders({
                 </div>
 
                 <div style={{ ...card, marginTop: 16 }}>
-                  <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>🔍 Diagnostika</div>
+                  <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
                   
                   <div style={{ display: "grid", gap: 12 }}>
                     <div>
@@ -8727,7 +8729,7 @@ export default function Orders({
 
             {/* Komentáře - vždy viditelné */}
             <div style={{ ...card, marginTop: 16 }}>
-              <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>💬 Interní komentáře (chat)</div>
+              <SectionHeading icon={<ChatIcon size={16} />} size="sm">Interní komentáře (chat)</SectionHeading>
 
               <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                 {commentsFor(detailedTicket.id).map((c) => {
@@ -9279,7 +9281,7 @@ export default function Orders({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ fontWeight: 950, fontSize: 18 }}>📱 Vyfotit z telefonu</div>
+            <SectionHeading icon={<DeviceIcon size={18} />}>Vyfotit z telefonu</SectionHeading>
             <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
               {draftCaptureTokenRef.current
                 ? "Naskenujte QR kód mobilem. Vyfocené fotky se po zavření tohoto okna načtou do rozpracované zakázky."
