@@ -41,7 +41,11 @@ async function etag(data: unknown): Promise<string> {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "GET") return json({ error: "Podporováno je jen GET" }, 405);
+  // HEAD posílají CDN i nástroje na kontrolu dostupnosti; runtime u něj tělo
+  // sám zahodí, takže stačí ho pustit dál jako GET.
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return json({ error: "Podporováno je jen GET" }, 405);
+  }
 
   const slug = new URL(req.url).searchParams.get("service")?.trim().toLowerCase() ?? "";
   if (!slug) return json({ error: "Chybí parametr service" }, 400);
