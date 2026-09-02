@@ -2218,18 +2218,36 @@ export default function Orders({
     };
   }, [smsActivatedForService, activeServiceId]);
 
+  /**
+   * Klíč z obsahu, ne z identity pole.
+   *
+   * ticketsForSmsUnread je nové pole při každém renderu, takže efekt níž se
+   * spouštěl při každém úhozu ve vyhledávání – naměřeno 6 úhozů = 15 dotazů
+   * do Supabase, i když se seznam zakázek vůbec nezměnil.
+   */
+  const smsUnreadKey = useMemo(
+    () => ticketsForSmsUnread.map((t) => `${t.id}|${normalizePhone(t.customerPhone) ?? ""}`).join(","),
+    [ticketsForSmsUnread]
+  );
+  const ticketsForSmsUnreadRef = useRef(ticketsForSmsUnread);
+  ticketsForSmsUnreadRef.current = ticketsForSmsUnread;
+
   // SMS unread per řádek: konverzace podle ticket_id nebo stejného telefonu jako u detailu
   useEffect(() => {
     const client = getTypedSupabaseClient();
-    if (!smsActivatedForService || !activeServiceId || !client || ticketsForSmsUnread.length === 0) {
-      setSmsUnreadByTicketId({});
+    const ticketRowsAll = ticketsForSmsUnreadRef.current;
+    if (!smsActivatedForService || !activeServiceId || !client || ticketRowsAll.length === 0) {
+      // Nový prázdný objekt by byl pokaždé jiná reference a vynutil další render.
+      setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       return;
     }
-    const ticketRows = ticketsForSmsUnread;
+    const ticketRows = ticketRowsAll;
     const ticketIds = ticketRows.map((t) => t.id);
     const idSet = new Set(ticketIds);
     const chunk = 180;
     let cancelled = false;
+    // Rychlé psaní jinak spustí dotaz na každý mezistav.
+    const timer = setTimeout(() => {
     (async () => {
       const convsByTicket: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
       for (let i = 0; i < ticketIds.length; i += chunk) {
@@ -2260,7 +2278,7 @@ export default function Orders({
       }
       const convIds = [...convMap.keys()];
       if (convIds.length === 0) {
-        if (!cancelled) setSmsUnreadByTicketId({});
+        if (!cancelled) setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
         return;
       }
       const countByConv: Record<string, number> = {};
@@ -2301,10 +2319,12 @@ export default function Orders({
       }
       if (!cancelled) setSmsUnreadByTicketId(byTicket);
     })();
+    }, 250);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [smsActivatedForService, activeServiceId, ticketsForSmsUnread, smsUnreadListBump]);
+  }, [smsActivatedForService, activeServiceId, smsUnreadKey, smsUnreadListBump]);
 
   useEffect(() => {
     setOrdersPage(0);
