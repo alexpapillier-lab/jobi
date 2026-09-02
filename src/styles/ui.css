@@ -228,10 +228,25 @@
 }
 
 .ui-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Neplatné pole. Dřív se řešilo inline podmínkou na border; teď je to
+   třída svázaná s aria-invalid, takže stav zná i odečítač obrazovky. */
+.ui-input--invalid {
+  border-color: var(--danger);
+}
+.ui-input--invalid:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
 .ui-input::placeholder { color: var(--muted); }
 
+/*
+ * Samotný popisek je bez odsazení, aby šel použít i těsně nad polem.
+ * FieldLabel ze settingsUi (42 použití) měl paddingTop: 10 – ten si drží
+ * modifikátorem, aby se u něj nic neposunulo.
+ */
 .ui-label {
   color: var(--muted);
   font-size: var(--text-sm);
-  padding-top: 10px;
 }
+.ui-label--spaced { padding-top: 10px; }

@@ -1245,6 +1245,11 @@ export default function Orders({
     if (closeDetailWhen) {
       setDetailId(null);
       setDetailClaimId(null);
+      // Modaly historie se vykreslují portálem nezávisle na detailId, takže
+      // je zavření detailu samo nezavře – zůstávaly viset nad další
+      // stránkou (ověřeno: detail → Historie → Sklad).
+      setTicketHistoryModalOpen(false);
+      setClaimHistoryModalOpen(false);
     }
   }, [closeDetailWhen]);
 

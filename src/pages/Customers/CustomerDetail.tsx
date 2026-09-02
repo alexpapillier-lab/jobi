@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { Input, Label } from "../../components/ui";
 import { ChatIcon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useStatuses } from "../../state/StatusesStore";
@@ -174,7 +175,6 @@ export function CustomerDetail({
   const canSave = Object.keys(errors).length === 0;
 
   const border = "1px solid var(--border)";
-  const borderError = "1px solid rgba(239,68,68,0.9)";
 
   const saveEdit = async () => {
     if (!customer) return;
@@ -553,192 +553,85 @@ export function CustomerDetail({
 
         {/* --- form (beze změn, jen zkráceno v komentáři) --- */}
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>Jméno a příjmení *</div>
-          <input
+          <Label>Jméno a příjmení *</Label>
+          <Input
             value={editDraft.name}
             onChange={(e) => setEditDraft((p) => ({ ...p, name: e.target.value }))}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 12,
-              outline: "none",
-              border: submitAttempted && !!errors.name ? borderError : border,
-              background: "var(--panel)",
-              backdropFilter: "var(--blur)",
-              WebkitBackdropFilter: "var(--blur)",
-              color: "var(--text)",
-              transition: "var(--transition-smooth)",
-              boxShadow: "var(--shadow-soft)",
-            }}
-          />
+              invalid={submitAttempted && !!errors.name} />
           {submitAttempted && errors.name && (
-            <div style={{ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }}>{errors.name}</div>
+            <div style={{ fontSize: 12, marginTop: 6, color: "var(--danger-text)" }}>{errors.name}</div>
           )}
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Telefon</div>
-            <input
+            <Label>Telefon</Label>
+            <Input
               value={editDraft.phone}
               onChange={(e) => setEditDraft((p) => ({ ...p, phone: e.target.value }))}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                outline: "none",
-                border: submitAttempted && !!errors.phone ? borderError : border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            />
+              invalid={submitAttempted && !!errors.phone} />
             {submitAttempted && errors.phone && (
-              <div style={{ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }}>{errors.phone}</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "var(--danger-text)" }}>{errors.phone}</div>
             )}
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>E-mail</div>
-            <input
+            <Label>E-mail</Label>
+            <Input
               type="email"
               value={editDraft.email}
               onChange={(e) => setEditDraft((p) => ({ ...p, email: e.target.value }))}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                outline: "none",
-                border: submitAttempted && !!errors.email ? borderError : border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            />
+              invalid={submitAttempted && !!errors.email} />
             {submitAttempted && errors.email && (
-              <div style={{ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }}>{errors.email}</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "var(--danger-text)" }}>{errors.email}</div>
             )}
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Firma</div>
-            <input
+            <Label>Firma</Label>
+            <Input
               value={editDraft.company}
-              onChange={(e) => setEditDraft((p) => ({ ...p, company: e.target.value }))}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                outline: "none",
-                border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            />
+              onChange={(e) => setEditDraft((p) => ({ ...p, company: e.target.value }))} />
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>IČO</div>
-            <input
+            <Label>IČO</Label>
+            <Input
               value={editDraft.ico}
               onChange={(e) => setEditDraft((p) => ({ ...p, ico: e.target.value }))}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                outline: "none",
-                border: submitAttempted && !!errors.ico ? borderError : border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            />
+              invalid={submitAttempted && !!errors.ico} />
             {submitAttempted && errors.ico && (
-              <div style={{ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }}>{errors.ico}</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "var(--danger-text)" }}>{errors.ico}</div>
             )}
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Adresa – ulice</div>
-            <input
+            <Label>Adresa – ulice</Label>
+            <Input
               value={editDraft.addressStreet}
-              onChange={(e) => setEditDraft((p) => ({ ...p, addressStreet: e.target.value }))}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                outline: "none",
-                border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            />
+              onChange={(e) => setEditDraft((p) => ({ ...p, addressStreet: e.target.value }))} />
           </div>
 
           <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Město</div>
-              <input
+              <Label>Město</Label>
+              <Input
                 value={editDraft.addressCity}
-                onChange={(e) => setEditDraft((p) => ({ ...p, addressCity: e.target.value }))}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  outline: "none",
-                  border,
-                  background: "var(--panel)",
-                  backdropFilter: "var(--blur)",
-                  WebkitBackdropFilter: "var(--blur)",
-                  color: "var(--text)",
-                  transition: "var(--transition-smooth)",
-                  boxShadow: "var(--shadow-soft)",
-                }}
-              />
+                onChange={(e) => setEditDraft((p) => ({ ...p, addressCity: e.target.value }))} />
             </div>
 
             <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>PSČ</div>
-              <input
+              <Label>PSČ</Label>
+              <Input
                 value={editDraft.addressZip}
                 onChange={(e) => setEditDraft((p) => ({ ...p, addressZip: e.target.value }))}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  outline: "none",
-                  border: submitAttempted && !!errors.zip ? borderError : border,
-                  background: "var(--panel)",
-                  backdropFilter: "var(--blur)",
-                  WebkitBackdropFilter: "var(--blur)",
-                  color: "var(--text)",
-                  transition: "var(--transition-smooth)",
-                  boxShadow: "var(--shadow-soft)",
-                }}
-              />
+                invalid={submitAttempted && !!errors.zip} />
               {submitAttempted && errors.zip && (
-                <div style={{ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }}>{errors.zip}</div>
+                <div style={{ fontSize: 12, marginTop: 6, color: "var(--danger-text)" }}>{errors.zip}</div>
               )}
             </div>
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Informace</div>
+            <Label>Informace</Label>
             <textarea
               value={editDraft.info}
               onChange={(e) => setEditDraft((p) => ({ ...p, info: e.target.value }))}

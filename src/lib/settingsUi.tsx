@@ -16,7 +16,7 @@ import { Input, Label } from "../components/ui";
  * kvůli 42 stávajícím použitím.
  */
 export function FieldLabel({ children }: { children: string }) {
-  return <Label>{children}</Label>;
+  return <Label spaced>{children}</Label>;
 }
 
 /**
