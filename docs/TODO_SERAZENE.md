@@ -4,6 +4,16 @@
 
 ## 🟠 Vysoká priorita – relativně snadné
 
+- **SMS nefungují – Twilio číslo už není platné** (2. 9. 2026)
+  - Zařídit nové číslo přes `sms-provision`, nebo obnovit stávající u Twilia.
+  - **Pozor na nesoulad dat:** `service_phone_numbers.active` je nejspíš
+    pořád `true`, i když číslo u Twilia neexistuje. Aplikace tak SMS modul
+    ukazuje jako funkční a chyba se projeví až při odeslání. Při řešení
+    ověřit, že stav v DB odpovídá skutečnosti.
+  - Do té doby nejde ověřit, že edge funkce dosáhne na `has_entitlement()`
+    pod `service_role`. Stejnou cestou jde ale **odeslání faktury e-mailem**
+    (`invoice-send-email`), které používá tutéž kontrolu.
+
 - v Tým a přístupy zobrazit fotku a nick uživatelů (teď jen email)
 - pridat dropdown pod status zakazky „print“, ktery rovnou vytiskne nejaky z vybranych dokumentu – je potreba dodelat u reklamaci, a jeste reklamace at maji v tech ruznych stylech zobrazenich stejne velikosti jak klasicke zakazky
 - debug v nastaveni – zobrazovat serviceId, ticketId atd. – castecne myslim
