@@ -3231,8 +3231,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Šablony dokumentů</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
               Vzhled dokumentů (layout, sekce, logo, razítko, design a vlastní texty) se upravuje v aplikaci <strong>JobiDocs</strong>.
-              Zde v Nastavení lze nastavit pouze automatický tisk.
+              {isDesktop()
+                ? " Zde v Nastavení lze nastavit pouze automatický tisk."
+                : " Ve webové verzi se tiskne přímo z prohlížeče a nastavený vzhled se použije; upravit ho jde v JobiDocs na počítači."}
             </div>
+            {/* Spuštění JobiDocs má smysl jen na desktopu – ve webu tam není co spouštět. */}
+            {isDesktop() && (
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -3282,6 +3286,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 {jobiDocsConnected === true ? "Připojeno" : jobiDocsConnected === false ? "Nepřipojeno" : "Kontroluji…"}
               </span>
             </div>
+            )}
           </Card>
           <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Automatický tisk</div>

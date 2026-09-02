@@ -3,6 +3,7 @@ import { Sidebar, type NavKey, type SidebarProps } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
 import { JobiDocsGuideModal } from "../components/JobiDocsGuideModal";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
 type SidebarPosition = "left" | "right" | "bottom";
@@ -47,6 +48,7 @@ export function AppLayout({
     await onSignOut();
   };
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const isNarrow = useIsNarrow();
   const [showJobiDocsGuide, setShowJobiDocsGuide] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -139,13 +141,15 @@ export function AppLayout({
           ...sidebarStyle,
           ...asidePositionStyle,
         }}
-        onMouseEnter={() => setSidebarExpanded(true)}
-        onMouseLeave={() => setSidebarExpanded(false)}
+        // Na úzké obrazovce se rozbaluje klepnutím – najetí myší tam nedává smysl.
+        onClick={isNarrow ? () => setSidebarExpanded((v) => !v) : undefined}
+        onMouseEnter={isNarrow ? undefined : () => setSidebarExpanded(true)}
+        onMouseLeave={isNarrow ? undefined : () => setSidebarExpanded(false)}
         onFocusCapture={() => setSidebarExpanded(true)}
         onBlurCapture={(e) => {
           const next = e.relatedTarget as Node | null;
           if (next && e.currentTarget.contains(next)) return;
-          setSidebarExpanded(false);
+          if (!isNarrow) setSidebarExpanded(false);
         }}
       >
         <Sidebar 

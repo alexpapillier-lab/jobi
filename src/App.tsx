@@ -27,6 +27,7 @@ import { useAuth } from "./auth/AuthProvider";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { clearOnServiceChange } from "./lib/storageInvalidation";
 import { pushContextToJobiDocs, openJobiDocsDownload, isJobiDocsRunning, launchJobiDocsApp } from "./lib/jobidocs";
+import { isWeb } from "./lib/platform";
 import { loadDocumentsConfigRawFromDB } from "./lib/documentSettings";
 import { useActiveRole } from "./hooks/useActiveRole";
 import { getLogoColors, LOGO_PRESETS } from "./lib/logoPresets";
@@ -486,6 +487,9 @@ export default function App() {
   }, [TOUR_STEPS]);
 
   const onTourEnded = useCallback(() => {
+    // Ve webové verzi se tiskne přímo z prohlížeče, takže nabízet instalaci
+    // JobiDocs nedává smysl – uživatel by si stahoval něco, co nepotřebuje.
+    if (isWeb()) return;
     try {
       if (!localStorage.getItem(STORAGE_KEYS.JOBIDOCS_DOWNLOAD_PROMPT_SEEN)) {
         setShowJobiDocsDownloadPrompt(true);
