@@ -61,3 +61,26 @@ export function computeFinalPrice(t: TicketCardData): number {
   else if (discountType === "amount") discountAmount = discountValue;
   return Math.max(0, totalPrice - discountAmount);
 }
+
+export type TicketComment = {
+  id: string;
+  ticketId: string;
+  author: string;
+  text: string;
+  createdAt: string;
+  pinned?: boolean;
+  author_id?: string | null;
+  author_nickname?: string | null;
+  author_avatar_url?: string | null;
+};
+
+export function formatCZ(dtIso: string) {
+  const d = new Date(dtIso);
+  return d.toLocaleString("cs-CZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

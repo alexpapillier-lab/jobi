@@ -9,4 +9,6 @@ export { ClaimStatusGrouped } from "./ClaimStatusGrouped";
 export { CombinedStatusGrouped, type ClaimLike as CombinedClaimLike } from "./CombinedStatusGrouped";
 export { StatusBadge } from "./StatusBadge";
 export { ClaimCard } from "./ClaimCard";
-export type { TicketCardData, TicketCardActions, StatusHelpers } from "./types";
+export { TicketComments } from "./TicketComments";
+export type { TicketCardData, TicketCardActions, StatusHelpers, TicketComment } from "./types";
+export { formatCZ } from "./types";

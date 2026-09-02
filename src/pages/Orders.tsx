@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
-import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
+import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
 import { reportSilent } from "../lib/reportError";
@@ -29,7 +29,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
 import { SectionHeading } from "../components/SectionHeading";
-import { UserIcon, DeviceIcon, WrenchIcon, StatusIcon, SearchIcon, ChatIcon, PrintIcon } from "../components/icons";
+import { UserIcon, DeviceIcon, WrenchIcon, StatusIcon, SearchIcon, PrintIcon } from "../components/icons";
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
@@ -307,18 +307,6 @@ type NewOrderDraft = {
   diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
 };
 
-type TicketComment = {
-  id: string;
-  ticketId: string;
-  author: string;
-  text: string;
-  createdAt: string;
-  pinned?: boolean;
-  author_id?: string | null;
-  author_nickname?: string | null;
-  author_avatar_url?: string | null;
-};
-
 // ========================
 // Utils: storage
 // ========================
@@ -468,17 +456,6 @@ function safeSaveCommentsMap(map: Record<string, TicketComment[]>) {
 // ========================
 // Utils: formatting
 // ========================
-function formatCZ(dtIso: string) {
-  const d = new Date(dtIso);
-  return d.toLocaleString("cs-CZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 
 function defaultDeviceRow(): DeviceRow {
   const handoffOpts = getHandoffOptions();
@@ -5327,6 +5304,10 @@ export default function Orders({
     setCommentDraftByTicket((p) => ({ ...p }));
   };
 
+  const handleCommentDraftChange = useCallback((ticketId: string, value: string) => {
+    setCommentDraftByTicket((p) => ({ ...p, [ticketId]: value }));
+  }, []);
+
   const toCardData = useCallback((t: (typeof filtered)[number]): TicketCardData => ({
     id: t.id,
     code: t.code,
@@ -7452,103 +7433,17 @@ export default function Orders({
                 </div>
               </div>
 
-              <div style={{ ...card, marginTop: 16 }}>
-                <SectionHeading icon={<ChatIcon size={16} />} size="sm">Interní komentáře (chat)</SectionHeading>
-                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                  {commentsFor(sourceTicket.id).map((c) => {
-                    const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
-                    const commentAvatarUrl = c.author_avatar_url?.trim() || null;
-                    return (
-                      <div
-                        key={c.id}
-                        style={{
-                          border,
-                          borderRadius: 14,
-                          background: "var(--panel)",
-                          padding: 12,
-                          boxShadow: c.pinned ? "0 14px 30px rgba(0,0,0,0.16)" : "none",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                            {commentAvatarUrl ? (
-                              <img
-                                src={commentAvatarUrl}
-                                alt=""
-                                style={{ width: 28, height: 28, borderRadius: 10, objectFit: "cover", border: "1px solid var(--border)" }}
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                              />
-                            ) : (
-                              <div
-                                style={{
-                                  width: 28,
-                                  height: 28,
-                                  borderRadius: 10,
-                                  background: "var(--accent-soft)",
-                                  color: "var(--accent)",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {(commentAuthorName || "?").charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div style={{ fontWeight: 950 }}>{commentAuthorName}</div>
-                            {c.pinned && (
-                              <div style={{ fontSize: 11, fontWeight: 950, padding: "4px 8px", borderRadius: 999, background: "var(--panel-2)", border, color: "var(--muted)" }}>
-                                PINNED
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                            <div style={{ color: "var(--muted)", fontSize: 12 }}>{formatCZ(c.createdAt)}</div>
-                            <button
-                              onClick={() => togglePin(sourceTicket.id, c.id)}
-                              style={{
-                                padding: "8px 10px",
-                                borderRadius: 12,
-                                border,
-                                background: c.pinned ? "var(--panel-2)" : "var(--panel)",
-                                color: "var(--text)",
-                                fontWeight: 950,
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                              }}
-                              title={c.pinned ? "Odepnout" : "Připnout"}
-                            >
-                              {c.pinned ? "Unpin" : "Pin"}
-                            </button>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
-                      </div>
-                    );
-                  })}
-                  {commentsFor(sourceTicket.id).length === 0 && <div style={{ color: "var(--muted)" }}>Zatím žádné komentáře.</div>}
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <textarea
-                      value={commentDraftByTicket[sourceTicket.id] ?? ""}
-                      onChange={(e) => setCommentDraftByTicket((p) => ({ ...p, [sourceTicket.id]: e.target.value }))}
-                      style={{ ...baseFieldTextArea, minHeight: 90 }}
-                      placeholder="Napiš interní komentář k zakázce…"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                          e.preventDefault();
-                          addComment(sourceTicket.id);
-                        }
-                      }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                      <div style={{ color: "var(--muted)", fontSize: 12 }}>Tip: <b>Ctrl+Enter</b> pro odeslání.</div>
-                      <button style={{ ...primaryBtn, padding: "10px 14px" }} onClick={() => addComment(sourceTicket.id)}>
-                        Přidat komentář
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <TicketComments
+                ticketId={sourceTicket.id}
+                comments={commentsFor(sourceTicket.id)}
+                draft={commentDraftByTicket[sourceTicket.id] ?? ""}
+                onDraftChange={handleCommentDraftChange}
+                onAdd={addComment}
+                onTogglePin={togglePin}
+                card={card}
+                primaryBtn={primaryBtn}
+                baseFieldTextArea={baseFieldTextArea}
+              />
             </>
           ) : (
             <div style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
@@ -8730,127 +8625,17 @@ export default function Orders({
             )}
 
             {/* Komentáře - vždy viditelné */}
-            <div style={{ ...card, marginTop: 16 }}>
-              <SectionHeading icon={<ChatIcon size={16} />} size="sm">Interní komentáře (chat)</SectionHeading>
-
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {commentsFor(detailedTicket.id).map((c) => {
-                  const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
-                  const commentAvatarUrl = c.author_avatar_url?.trim() || null;
-                  return (
-                  <div
-                    key={c.id}
-                    style={{
-                      border,
-                      borderRadius: 14,
-                      background: "var(--panel)",
-                      padding: 12,
-                      boxShadow: c.pinned ? "0 14px 30px rgba(0,0,0,0.16)" : "none",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        {commentAvatarUrl ? (
-                          <img
-                            src={commentAvatarUrl}
-                            alt=""
-                            style={{
-                              width: 28,
-                              height: 28,
-                              borderRadius: 10,
-                              objectFit: "cover",
-                              border: "1px solid var(--border)",
-                            }}
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: 28,
-                              height: 28,
-                              borderRadius: 10,
-                              background: "var(--accent-soft)",
-                              color: "var(--accent)",
-                              display: "grid",
-                              placeItems: "center",
-                              fontSize: 12,
-                              fontWeight: 800,
-                            }}
-                          >
-                            {(commentAuthorName || "?").charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div style={{ fontWeight: 950 }}>{commentAuthorName}</div>
-                        {c.pinned && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 950,
-                              padding: "4px 8px",
-                              borderRadius: 999,
-                              background: "var(--panel-2)",
-                              border,
-                              color: "var(--muted)",
-                            }}
-                          >
-                            PINNED
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <div style={{ color: "var(--muted)", fontSize: 12 }}>{formatCZ(c.createdAt)}</div>
-                        <button
-                          onClick={() => togglePin(detailedTicket.id, c.id)}
-                          style={{
-                            padding: "8px 10px",
-                            borderRadius: 12,
-                            border,
-                            background: c.pinned ? "var(--panel-2)" : "var(--panel)",
-                            color: "var(--text)",
-                            fontWeight: 950,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                          }}
-                          title={c.pinned ? "Odepnout" : "Připnout"}
-                        >
-                          {c.pinned ? "Unpin" : "Pin"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
-                  </div>
-                  );
-                })}
-
-                {commentsFor(detailedTicket.id).length === 0 && <div style={{ color: "var(--muted)" }}>Zatím žádné komentáře.</div>}
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <textarea
-                    value={commentDraftByTicket[detailedTicket.id] ?? ""}
-                    onChange={(e) => setCommentDraftByTicket((p) => ({ ...p, [detailedTicket.id]: e.target.value }))}
-                    style={{ ...baseFieldTextArea, minHeight: 90 }}
-                    placeholder="Napiš interní komentář k zakázce…"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        addComment(detailedTicket.id);
-                      }
-                    }}
-                  />
-
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                    <div style={{ color: "var(--muted)", fontSize: 12 }}>
-                      Tip: <b>Ctrl+Enter</b> pro odeslání.
-                    </div>
-                    <button style={{ ...primaryBtn, padding: "10px 14px" }} onClick={() => addComment(detailedTicket.id)}>
-                      Přidat komentář
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <TicketComments
+              ticketId={detailedTicket.id}
+              comments={commentsFor(detailedTicket.id)}
+              draft={commentDraftByTicket[detailedTicket.id] ?? ""}
+              onDraftChange={handleCommentDraftChange}
+              onAdd={addComment}
+              onTogglePin={togglePin}
+              card={card}
+              primaryBtn={primaryBtn}
+              baseFieldTextArea={baseFieldTextArea}
+            />
           </>
         )}
         </div>
