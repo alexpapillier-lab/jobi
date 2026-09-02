@@ -20,7 +20,10 @@ export function useIsNarrow(): boolean {
     const mq = window.matchMedia(QUERY);
     const onChange = (e: MediaQueryListEvent) => setNarrow(e.matches);
     mq.addEventListener("change", onChange);
-    setNarrow(mq.matches);
+    // useState výš už mq.matches přečetl; tohle je jen pojistka pro případ,
+    // že se šířka změnila mezi prvním renderem a spuštěním efektu. Bez
+    // porovnání by to byl render navíc při každém mountu.
+    setNarrow((prev) => (prev === mq.matches ? prev : mq.matches));
     return () => mq.removeEventListener("change", onChange);
   }, []);
 

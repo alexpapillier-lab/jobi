@@ -32,7 +32,8 @@ export function useEntitlements(activeServiceId: string | null): State & {
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
-      setModules(new Set());
+      // Nový Set je pokaždé jiná reference – viz useActiveRole.
+      setModules((prev) => (prev.size === 0 ? prev : new Set()));
       setLoading(false);
       return;
     }

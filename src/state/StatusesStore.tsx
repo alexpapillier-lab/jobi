@@ -39,7 +39,8 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
   useEffect(() => {
     // If activeServiceId is null, don't load statuses
     if (!activeServiceId) {
-      setStatuses([]);
+      // Nové [] je pokaždé jiná reference, takže by React nebailoutnul.
+      setStatuses((prev) => (prev.length === 0 ? prev : []));
       setLoading(false);
       setError(null);
       return;

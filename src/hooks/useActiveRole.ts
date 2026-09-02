@@ -22,7 +22,9 @@ export function useActiveRole(activeServiceId: string | null): UseActiveRoleRetu
   useEffect(() => {
     if (!activeServiceId || !session?.user?.id || !supabase) {
       setRole(null);
-      setCapabilities({});
+      // Nový {} je pokaždé jiná reference, takže by React nebailoutnul
+      // a vynutil render, i když capabilities už prázdné jsou.
+      setCapabilities((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       return;
     }
 
