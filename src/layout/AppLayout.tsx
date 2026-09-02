@@ -49,6 +49,8 @@ export function AppLayout({
     await onSignOut();
   };
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  /** Otevřená nabídka servisů drží lištu rozbalenou – viz Sidebar. */
+  const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const isNarrow = useIsNarrow();
   const [showJobiDocsGuide, setShowJobiDocsGuide] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -148,12 +150,12 @@ export function AppLayout({
         // Na úzké obrazovce se rozbaluje klepnutím – najetí myší tam nedává smysl.
         onClick={isNarrow ? () => setSidebarExpanded((v) => !v) : undefined}
         onMouseEnter={isNarrow ? undefined : () => setSidebarExpanded(true)}
-        onMouseLeave={isNarrow ? undefined : () => setSidebarExpanded(false)}
+        onMouseLeave={isNarrow || serviceMenuOpen ? undefined : () => setSidebarExpanded(false)}
         onFocusCapture={() => setSidebarExpanded(true)}
         onBlurCapture={(e) => {
           const next = e.relatedTarget as Node | null;
           if (next && e.currentTarget.contains(next)) return;
-          if (!isNarrow) setSidebarExpanded(false);
+          if (!isNarrow && !serviceMenuOpen) setSidebarExpanded(false);
         }}
       >
         <Sidebar 
@@ -167,6 +169,7 @@ export function AppLayout({
             services,
             activeServiceId,
             setActiveServiceId,
+            onServiceMenuOpenChange: setServiceMenuOpen,
             invoicingEnabled,
             onJobiDocsFirstConnect: () => setShowJobiDocsGuide(true),
             horizontal: isBottom,

@@ -118,6 +118,12 @@ export type SidebarProps = {
   services: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId: string | null;
   setActiveServiceId: (serviceId: string | null) => void;
+  /**
+   * Hlásí ven, že je otevřená nabídka servisů. Nabídka se vykresluje
+   * portálem mimo lištu, takže by ji najetí myší jinak zavřelo dřív,
+   * než se na ni dá kliknout.
+   */
+  onServiceMenuOpenChange?: (open: boolean) => void;
   invoicingEnabled?: boolean;
   smsUnreadCount?: number;
   /** When false, "SMS chaty" is hidden from the nav. */
@@ -155,6 +161,7 @@ export function Sidebar({
   services,
   activeServiceId,
   setActiveServiceId,
+  onServiceMenuOpenChange,
   invoicingEnabled = true,
   smsUnreadCount = 0,
   smsEnabled = false,
@@ -268,13 +275,11 @@ export function Sidebar({
     };
   }, [userMenuOpen]);
 
-  // Close service menu when sidebar collapses
+  // Dokud je nabídka otevřená, lišta se nesmí sbalit – jinak se nabídka
+  // zavře cestou myši k ní.
   useEffect(() => {
-    if (!expanded && serviceMenuOpen) {
-      setServiceMenuOpen(false);
-      setServiceMenuPosition(null);
-    }
-  }, [expanded, serviceMenuOpen]);
+    onServiceMenuOpenChange?.(serviceMenuOpen);
+  }, [serviceMenuOpen, onServiceMenuOpenChange]);
 
   // Update service menu position on scroll/resize
   useEffect(() => {
