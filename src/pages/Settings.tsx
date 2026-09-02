@@ -17,6 +17,8 @@ import { useUserProfile } from "../hooks/useUserProfile";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { isDesktop } from "../lib/platform";
 import { showToast } from "../components/Toast";
+import { getSessionId } from "../lib/errorLog";
+import { reportError } from "../lib/reportError";
 import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
 import {
   getShortcut,
@@ -529,8 +531,13 @@ function ProfileSettingsSection() {
     try {
       await setProfile({ nickname: nickname.trim() || null, avatarUrl: avatarUrl.trim() || null });
       showToast("Profil uložen", "success");
-    } catch {
-      showToast("Nepodařilo se uložit profil", "error");
+    } catch (e) {
+      reportError({
+        code: "settings.save_profile_failed",
+        error: e,
+        userMessage: "Nepodařilo se uložit profil",
+        source: "Settings.saveProfile",
+      });
     } finally {
       setSaving(false);
     }
@@ -860,7 +867,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
     } catch (err) {
       console.error("[Settings] saveOrdersShowClaimsInList", err);
-      showToast("Chyba při ukládání", "error");
+      reportError({
+        code: "settings.save_failed",
+        error: err,
+        userMessage: "Chyba při ukládání",
+        source: "Settings.save",
+      });
     }
   }, [activeServiceId]);
 
@@ -1625,7 +1637,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       setSmsForwardingValue(normalized ?? "");
                       showToast("Uloženo", "success");
                     } catch (e) {
-                      showToast(e instanceof Error ? e.message : "Chyba ukládání", "error");
+                      reportError({
+                        code: "settings.sms_number_save_failed",
+                        error: e,
+                        userMessage: e instanceof Error ? e.message : "Chyba ukládání",
+                        source: "Settings.saveSmsNumber",
+                      });
                     } finally {
                       setSmsForwardingSaving(false);
                     }
@@ -1672,7 +1689,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           setSmsForwardingValue("");
                           showToast("SMS odpojena. Můžete znovu aktivovat.", "success");
                         } catch (e) {
-                          showToast(e instanceof Error ? e.message : "Nepodařilo se odpojit SMS", "error");
+                          reportError({
+                            code: "settings.sms_disconnect_failed",
+                            error: e,
+                            userMessage: e instanceof Error ? e.message : "Nepodařilo se odpojit SMS",
+                            source: "Settings.disconnectSms",
+                          });
                         } finally {
                           setSmsDisconnectLoading(false);
                         }
@@ -1879,7 +1901,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         await refreshServices();
                       }
                     } catch (err) {
-                      showToast(err instanceof Error ? err.message : "Neznámá chyba", "error");
+                      reportError({
+                        code: "settings.invite_accept_failed",
+                        error: err,
+                        userMessage: err instanceof Error ? err.message : "Neznámá chyba",
+                        source: "Settings.acceptInvite",
+                      });
                     } finally {
                       setInviteAcceptLoading(false);
                     }
@@ -3380,6 +3407,28 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               >
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>verze:</span>
                 {appVersion}
+              </div>
+
+              {/*
+                ID běhu aplikace. Uživatel ho nadiktuje při hlášení problému
+                a v chybových logech se podle něj najdou všechny chyby
+                z téhož spuštění – včetně těch, které se staly předtím
+                a mohly být příčinou.
+              */}
+              <div
+                title="Kliknutím zkopírovat. Uveďte při hlášení problému."
+                onClick={() => navigator.clipboard.writeText(getSessionId())}
+                style={{
+                  marginTop: "var(--space-2)",
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: "var(--text-xs)",
+                  cursor: "pointer",
+                  userSelect: "text",
+                  color: "var(--muted)",
+                }}
+              >
+                <span style={{ marginRight: 8 }}>ID relace:</span>
+                {getSessionId()}
               </div>
             </div>
           </Card>

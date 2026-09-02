@@ -5,6 +5,7 @@ import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, type TicketCardData } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
+import { reportSilent } from "../lib/reportError";
 import { isJobiDocsRunning, printDocumentViaJobiDocs, exportDocumentViaJobiDocs, exportViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
@@ -7242,7 +7243,14 @@ export default function Orders({
                                 (async () => {
                                   const url = (sourceTicket.diagnosticPhotosBefore || [])[idx];
                                   if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
-                                    try { await deleteDiagnosticPhotoFromStorage(supabase, url); } catch (_) {}
+                                    try {
+                                      await deleteDiagnosticPhotoFromStorage(supabase, url);
+                                    } catch (e) {
+                                      // Fotka zůstane v úložišti jako sirotek – uživateli
+                                      // to nevadí, ale hromadí se to a nikdo by si toho
+                                      // nevšiml. Proto se to aspoň zaloguje.
+                                      reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
+                                    }
                                   }
                                   setCloudTickets((prev) =>
                                     prev.map((t) =>
@@ -7288,7 +7296,9 @@ export default function Orders({
                               if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
                                 try {
                                   await deleteDiagnosticPhotoFromStorage(supabase, url);
-                                } catch (_) {}
+                                } catch (e) {
+                                  reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
+                                }
                               }
                               setCloudTickets((prev) =>
                                 prev.map((t) =>
@@ -8395,7 +8405,9 @@ export default function Orders({
                                   if (url && isDiagnosticPhotoStorageUrl(url)) {
                                     try {
                                       await deleteDiagnosticPhotoFromStorage(supabase, url);
-                                    } catch (_) {}
+                                    } catch (e) {
+                                      reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
+                                    }
                                   }
                                   setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
                                   setCloudTickets((prev) =>

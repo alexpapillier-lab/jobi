@@ -14,6 +14,31 @@
 
 import { getSupabaseClient } from "./supabaseClient";
 
+/**
+ * ID běhu aplikace. Vzniká jednou při načtení a drží se do zavření okna.
+ *
+ * K čemu: uživatel napíše „kolem druhé mi nešlo uložit zakázku". Bez
+ * společného ID se v logu hledá podle času a odhadu. S ním stačí najít
+ * jeden záznam a všechny chyby z téhož běhu jsou pohromadě – včetně těch,
+ * které se staly předtím a mohly být příčinou.
+ *
+ * Není to identifikátor uživatele; při každém spuštění je jiné.
+ */
+const SESSION_ID = (() => {
+  try {
+    const buf = new Uint8Array(8);
+    crypto.getRandomValues(buf);
+    return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return Math.random().toString(16).slice(2, 18);
+  }
+})();
+
+/** Pro zobrazení uživateli, ať ho může nadiktovat do hlášení. */
+export function getSessionId(): string {
+  return SESSION_ID;
+}
+
 /** Maximální délka hlášky a stacku, aby tabulka nebobtnala. */
 const MAX_MESSAGE = 500;
 const MAX_STACK = 2000;
@@ -120,7 +145,7 @@ export async function logError({ code, error, source, serviceId, context }: LogE
       message,
       stack,
       source: source ?? null,
-      context: context ?? {},
+      context: { ...(context ?? {}), session_id: SESSION_ID },
       app_version: import.meta.env.VITE_APP_VERSION ?? null,
       platform: detectPlatform(),
     });

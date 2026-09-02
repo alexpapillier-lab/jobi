@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
+import { reportError } from "../lib/reportError";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
@@ -490,7 +491,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           const now = Date.now();
           if (now - saveErrorToastRef.current > 5000) {
             saveErrorToastRef.current = now;
-            showToast("Chyba uložení skladu: " + r.error, "error");
+            reportError({
+              code: "inventory.save_failed",
+              error: r.error,
+              userMessage: "Chyba uložení skladu: " + r.error,
+              source: "Inventory.saveInventory",
+            });
           }
         }
       });
@@ -646,7 +652,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   const addProductCategory = () => {
     if (!newProductCategoryName.trim()) {
-      showToast("Zadejte název kategorie", "error");
+      reportError({
+        code: "inventory.add_product_category_failed",
+        error: undefined,
+        userMessage: "Zadejte název kategorie",
+        source: "Inventory.addProductCategory",
+      });
       return;
     }
     const category: ProductCategory = {
@@ -808,7 +819,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     if (!file) return;
     
     if (!file.type.startsWith('image/')) {
-      showToast('Prosím vyberte obrázek', "error");
+      reportError({
+        code: "inventory.file_failed",
+        error: undefined,
+        userMessage: 'Prosím vyberte obrázek',
+        source: "Inventory.file",
+      });
       return;
     }
     

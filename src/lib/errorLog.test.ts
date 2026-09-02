@@ -47,3 +47,16 @@ describe("scrubPII", () => {
     expect(out).not.toContain("777123456");
   });
 });
+
+describe("ID relace", () => {
+  it("je stabilní po celý běh aplikace", async () => {
+    const { getSessionId } = await import("./errorLog");
+    expect(getSessionId()).toBe(getSessionId());
+  });
+
+  it("má tvar, který jde nadiktovat do hlášení", async () => {
+    const { getSessionId } = await import("./errorLog");
+    // 16 hex znaků – dost na rozlišení, ještě se dá přečíst do telefonu
+    expect(getSessionId()).toMatch(/^[0-9a-f]{16}$/);
+  });
+});

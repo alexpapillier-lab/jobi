@@ -3,6 +3,7 @@ import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
+import { reportError, reportSilent } from "../lib/reportError";
 import { FieldLabel, TextInput } from "../lib/settingsUi";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { computeTotals, formatCurrency, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
@@ -138,7 +139,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           .update({ status: "overdue" })
           .in("id", overdueIds);
         loadInvoices();
-      } catch {}
+      } catch (e) {
+        // Automatické označení faktur po splatnosti. Když selže, uživatel
+        // uvidí zastaralý stav a nepozná proč – proto se to zaloguje.
+        reportSilent({ code: "invoices.mark_overdue_failed", error: e, source: "Invoices.markOverdue" });
+      }
     })();
   }, [invoices, activeServiceId]);
 
@@ -251,7 +256,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
     const validationErrors = validateInvoiceForSave(editorInvoice as any, editorItems);
     if (validationErrors.length > 0) {
-      showToast(validationErrors[0].message, "error");
+      reportError({
+        code: "invoices.validation_errors_failed",
+        error: undefined,
+        userMessage: validationErrors[0].message,
+        source: "Invoices.validationErrors",
+      });
       return;
     }
 
@@ -313,7 +323,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       setView("list");
       loadInvoices();
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.items_payload_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.itemsPayload",
+      });
     } finally {
       setSaving(false);
     }
@@ -327,7 +342,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         payload: payload as any,
         created_by: session?.user?.id || null,
       });
-    } catch {}
+    } catch (e) {
+      // Zápis do historie faktury. Selhání nebrání práci, ale bez logu
+      // by chyběl záznam a nikdo by nevěděl, že se nezapisuje.
+      reportSilent({ code: "invoices.log_event_failed", error: e, source: "Invoices.logEvent" });
+    }
   }, [session]);
 
   const updateStatus = useCallback(async (inv: Invoice, newStatus: InvoiceStatus) => {
@@ -343,7 +362,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         openDetail({ ...inv, ...updates });
       }
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.update_status_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.updateStatus",
+      });
     }
   }, [logEvent, loadInvoices, showDetail, detailInvoice, openDetail]);
 
@@ -355,7 +379,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       loadInvoices();
       if (showDetail && detailInvoice?.id === inv.id) setShowDetail(false);
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.delete_invoice_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.deleteInvoice",
+      });
     }
   }, [logEvent, loadInvoices, showDetail, detailInvoice]);
 
@@ -428,7 +457,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       showToast(`Faktura duplikována jako ${number}`, "success");
       loadInvoices();
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.new_items_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.newItems",
+      });
     }
   }, [activeServiceId, logEvent, loadInvoices]);
 
@@ -441,13 +475,23 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
         });
       } catch (err) {
-        showToast("Chyba tisku: " + (err instanceof Error ? err.message : String(err)), "error");
+        reportError({
+          code: "invoices.handle_print_failed",
+          error: err,
+          userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.handlePrint",
+        });
       }
       return;
     }
     const running = await isJobiDocsRunning();
     if (!running) {
-      showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro tisk.", "error");
+      reportError({
+        code: "invoices.running_failed",
+        error: undefined,
+        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro tisk.",
+        source: "Invoices.running",
+      });
       return;
     }
     try {
@@ -458,10 +502,20 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       if (result.ok) {
         showToast("Tisk odeslán", "success");
       } else {
-        showToast("Chyba tisku: " + formatJobiDocsErrorForUser(result.error), "error");
+        reportError({
+          code: "invoices.print_failed",
+          error: result.error,
+          userMessage: "Chyba tisku: " + formatJobiDocsErrorForUser(result.error),
+          source: "Invoices.printOrExport",
+        });
       }
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.result_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.printOrExport",
+      });
     }
   }, [activeServiceId]);
 
@@ -474,13 +528,23 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
         });
       } catch (err) {
-        showToast("Chyba exportu: " + (err instanceof Error ? err.message : String(err)), "error");
+        reportError({
+          code: "invoices.handle_export_failed",
+          error: err,
+          userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.handleExport",
+        });
       }
       return;
     }
     const running = await isJobiDocsRunning();
     if (!running) {
-      showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro export PDF.", "error");
+      reportError({
+        code: "invoices.running_failed",
+        error: undefined,
+        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro export PDF.",
+        source: "Invoices.running",
+      });
       return;
     }
     try {
@@ -500,10 +564,20 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       if (result.ok) {
         showToast(`PDF uložen: ${filename}`, "success");
       } else {
-        showToast("Chyba exportu: " + formatJobiDocsErrorForUser(result.error), "error");
+        reportError({
+          code: "invoices.export_failed",
+          error: result.error,
+          userMessage: "Chyba exportu: " + formatJobiDocsErrorForUser(result.error),
+          source: "Invoices.printOrExport",
+        });
       }
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.result_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.printOrExport",
+      });
     }
   }, [activeServiceId]);
 
@@ -518,13 +592,23 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         setPreviewUrl(url);
       } catch (err) {
-        showToast("Chyba náhledu: " + (err instanceof Error ? err.message : String(err)), "error");
+        reportError({
+          code: "invoices.url_failed",
+          error: err,
+          userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.previewInvoice",
+        });
       }
       return;
     }
     const running = await isJobiDocsRunning();
     if (!running) {
-      showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro náhled.", "error");
+      reportError({
+        code: "invoices.running_failed",
+        error: undefined,
+        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro náhled.",
+        source: "Invoices.running",
+      });
       return;
     }
     try {
@@ -538,10 +622,20 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         setPreviewUrl(url);
       } else {
-        showToast("Chyba náhledu: " + formatJobiDocsErrorForUser(result.error), "error");
+        reportError({
+          code: "invoices.preview_failed",
+          error: result.error,
+          userMessage: "Chyba náhledu: " + formatJobiDocsErrorForUser(result.error),
+          source: "Invoices.previewInvoice",
+        });
       }
     } catch (err: any) {
-      showToast("Chyba: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.url_failed",
+        error: err,
+        userMessage: "Chyba: " + (err?.message || err),
+        source: "Invoices.previewInvoice",
+      });
     }
   }, [activeServiceId, previewUrl]);
 
@@ -577,7 +671,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       await updateStatus(detailInvoice, "sent");
       loadInvoices();
     } catch (err: any) {
-      showToast("Chyba odesílání: " + (err?.message || err), "error");
+      reportError({
+        code: "invoices.access_token_failed",
+        error: err,
+        userMessage: "Chyba odesílání: " + (err?.message || err),
+        source: "Invoices.accessToken",
+      });
     } finally {
       setSending(false);
     }
@@ -938,7 +1037,10 @@ function CustomerPicker({
           .limit(8);
         setResults(data || []);
         setOpen(true);
-      } catch {}
+      } catch (e) {
+        // Našeptávač zákazníků. Uživatel jen nevidí návrhy a neví proč.
+        reportSilent({ code: "invoices.customer_search_failed", error: e, source: "Invoices.searchCustomers" });
+      }
     }, 300);
     return () => clearTimeout(timeout);
   }, [query, serviceId]);

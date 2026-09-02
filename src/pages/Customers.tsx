@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { showToast } from "../components/Toast";
+import { reportError } from "../lib/reportError";
 import { supabase } from "../lib/supabaseClient";
 import { devLog } from "../lib/devLog";
 import { typedSupabase } from "../lib/typedSupabase";
@@ -486,7 +487,12 @@ export default function Customers({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
       console.error("[Customers] Error deleting customer:", err);
-      showToast(`Chyba při mazání zákazníka: ${errorMessage}`, "error");
+      reportError({
+        code: "customers.error_message_failed",
+        error: err,
+        userMessage: `Chyba při mazání zákazníka: ${errorMessage}`,
+        source: "Customers.errorMessage",
+      });
       throw err;
     }
   }, [activeServiceId, openId]);

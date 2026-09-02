@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { showToast } from "../../components/Toast";
+import { reportError } from "../../lib/reportError";
 import { Card } from "../../lib/settingsUi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TeamSettings } from "./TeamSettings";
@@ -115,7 +116,12 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
       await refreshServices();
       showToast("Název servisu byl změněn", "success");
     } catch (e: any) {
-      showToast(e?.message || "Nepodařilo se změnit název", "error");
+      reportError({
+        code: "owner.rename_service_failed",
+        error: e,
+        userMessage: e?.message || "Nepodařilo se změnit název",
+        source: "OwnerSettings.renameService",
+      });
     } finally {
       setRenameSubmitting(false);
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { showToast } from "../components/Toast";
+import { reportError } from "../lib/reportError";
 import { SmsChat } from "../components/SmsChat";
 import { normalizePhone } from "../lib/phone";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
@@ -265,7 +266,12 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
     if (!client) return;
     const { error } = await client.from("sms_conversations").update({ archived: archive }).eq("id", id);
     if (error) {
-      showToast("Nepodařilo archivovat", "error");
+      reportError({
+        code: "smschatspage.client_failed",
+        error: undefined,
+        userMessage: "Nepodařilo archivovat",
+        source: "SmsChatsPage.client",
+      });
       return;
     }
     setConversations((prev) => prev.filter((c) => c.id !== id));
