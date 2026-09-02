@@ -140,6 +140,43 @@ Na funkční test (zadávání zakázek, tisk, JobiDocs) to stačí. Emulace ale
 totéž co nativní x64 – **než to pošleš zákazníkovi, ať to někdo zkusí na
 opravdovém x64 PC.**
 
+### Nejdřív: stávající VM je zaseklá v iCloudu
+
+V Parallels je zaregistrovaná VM „Windows 11“ ve stavu **invalid**. Není smazaná –
+leží v `~/Documents/Dokumenty – MacBook Pro/VŠECHNO/Windows 11.pvm`, jenže
+`~/Documents` je synchronizovaný přes iCloud (Desktop & Documents) a ten balíček
+se nedá zpřístupnit.
+
+Změřeno:
+
+| Cesta | Chování |
+|---|---|
+| `Dokumenty – MacBook Pro/` | vylistuje se normálně |
+| `VŠECHNO/` | vylistuje se normálně |
+| `VŠECHNO/Windows 11.pvm` | `stat` projde (Directory, 480 B), ale **čtení i přesun vyprší** |
+
+Konkrétně `ls: fts_read: Operation timed out` a
+`mv: rename ...: Operation timed out`. Okolní složky jsou v pořádku, zaseklá je
+**přesně jedna položka**. `bird` i `fileproviderd` běží, iCloud má ~985 GB volných,
+takže to není nedostatkem místa.
+
+**Co zkusit v tomhle pořadí:**
+
+1. **Finder** – otevřít tu složku a podívat se na ikonu `.pvm`. Mráček se šipkou
+   znamená nestažené. Pravým → *Stáhnout hned* a sledovat průběh.
+2. Když i Finder stojí, restartovat iCloud démona: `killall bird`
+   (spustí se sám znovu). Standardní postup u zaseklé položky.
+3. System Settings → Apple Account → iCloud – jestli sync nehlásí chybu.
+
+**Počítej i s tím, že data nemusí být kompletní.** Balíček VM může přesáhnout
+limit iCloudu na jeden soubor; pokud se upload nikdy nedokončil a lokální kopie
+byla mezitím uvolněna, část disku VM může chybět. Vzhledem k tomu, že tu VM
+potřebuješ jen na testování, může být rychlejší **nainstalovat Windows 11
+v Parallels znovu** než tohle rozplétat.
+
+**Do budoucna:** VM nikdy nedávat do iCloudu. Složka `~/Parallels` (kterou
+Parallels očekává) synchronizovaná není – už jsem ji vytvořil.
+
 ### Postup
 
 1. Parallels Desktop → **Install Windows 11** (nabídne stažení ARM verze sám).
