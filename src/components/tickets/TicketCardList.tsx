@@ -56,7 +56,14 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         když se nevejde, zkrátí se třemi tečkami. Na velké obrazovce se
         tím vejde zhruba dvakrát tolik zakázek.
       */}
-      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24 }}>
+      {/*
+        flexWrap kvůli úzkým obrazovkám: řádek má kvůli nesmrštitelným
+        prvkům minimum kolem 586 px, takže se na telefonu neveešel a ořízl
+        se – přetečení je skryté, takže se k obsahu nedalo ani doscrollovat.
+        Na širokém displeji se nic nemění, zalomí se to teprve když to jinak
+        nejde.
+      */}
+      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24, flexWrap: "wrap" }}>
         <TicketCode code={t.code} />
         <TicketDate value={t.createdAt} />
         <MetaSeparator />
@@ -79,7 +86,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
             {finalPrice.toLocaleString("cs-CZ")} Kč
           </span>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}
         </div>

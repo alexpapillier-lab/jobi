@@ -4601,7 +4601,11 @@ export default function Orders({
 
   const inputStyle: React.CSSProperties = useMemo(
     () => ({
+      // 360 px byla pevná šířka – na 375px displeji přetékala ven.
+      // Takhle zůstává na desktopu stejná a na mobilu se smrští.
       width: 360,
+      maxWidth: "100%",
+      minWidth: 0,
       padding: "10px 12px",
       borderRadius: 12,
       border,
@@ -5469,8 +5473,8 @@ export default function Orders({
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0 }}>
           <input ref={searchInputRef} data-tour="orders-search" placeholder="Vyhledávání…" value={query} onChange={(e) => setQuery(e.target.value)} style={inputStyle} />
           <button data-tour="orders-new-btn" style={primaryBtn} onClick={openNewOrder}>
             + Nová zakázka
