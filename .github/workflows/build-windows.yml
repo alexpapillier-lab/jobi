@@ -28,9 +28,9 @@ jobs:
     name: Jobi (Tauri, NSIS installer)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -58,7 +58,7 @@ jobs:
           npx tauri build --bundles nsis
 
       - name: Uložit installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jobi-windows
           path: |
@@ -70,9 +70,9 @@ jobs:
     name: JobiDocs (Electron, NSIS + portable)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
@@ -97,7 +97,7 @@ jobs:
           npx electron-builder --win --publish never
 
       - name: Uložit installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jobidocs-windows
           path: |
@@ -118,9 +118,9 @@ jobs:
     if: inputs.include_arm64
     runs-on: windows-11-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -147,7 +147,7 @@ jobs:
           npx tauri build --bundles nsis
 
       - name: Uložit installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jobi-windows-arm64
           path: |
