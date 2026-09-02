@@ -53,8 +53,16 @@ curl -sL https://github.com/alexpapillier-lab/jobi/releases/latest/download/late
 ```
 
 **Do release aplikace patří zaškrtávátko „Pre-release (netlačit uživatelům)“**,
-které do `gh release create` přidá `--prerelease`. Je to jednořádková změna
-v `src-tauri/src/lib.rs` u sestavování `draft_flag`.
+které do `gh release create` přidá `--prerelease`.
+
+> **Hotovo (2. 9. 2026), commit `6980a05` v repozitáři jobi-release-app.**
+> Zároveň oprava mého dřívějšího tvrzení výš, že se `--prerelease` ve zdrojáku
+> nevyskytuje – to platilo v době psaní, dnes už neplatí.
+>
+> **Pozor: postavená `.app` byla z 19. 2. a tu funkci neobsahovala.** Zdroj se
+> změnil, binárka ne. Než release aplikaci použiješ, přesvědč se, že je
+> přeložená z aktuálního zdroje – jinak ti zaškrtávátko chybí a release jde
+> rovnou všem.
 
 ### Pozor na past
 

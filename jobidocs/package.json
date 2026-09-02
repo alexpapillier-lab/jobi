@@ -41,5 +41,5 @@
     "electron:dev:fresh": "rm -rf dist-electron && npm run electron:dev",
     "preview": "vite preview"
   },
-  "version": "0.2.3"
+  "version": "0.2.4"
 }
