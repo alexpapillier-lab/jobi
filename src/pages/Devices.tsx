@@ -946,6 +946,44 @@ DETALY: Výměna opotřebované baterie
    * Ukládá se hned, ne přes debounce – jinak by uživatel mohl odejít
    * dřív, než se změna zapíše, a myslel si, že něco skryl.
    */
+  /* Značky, kategorie a modely jsou v úzkých sloupcích – vejde se sem jen
+     krátký štítek, ne celé tlačítko jako u oprav. Skrytí se v API dědí dolů
+     (skrytá značka schová i kategorie, modely a jejich opravy). */
+  const stitekViditelnosti = (
+    druh: "brands" | "categories" | "models",
+    polozka: { id: string; publicVisible?: boolean },
+  ) => {
+    if (!ukazatViditelnost) return null;
+    const skryto = polozka.publicVisible === false;
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          prepnoutViditelnost(druh, polozka.id);
+        }}
+        title={
+          skryto
+            ? "Neposílá se do veřejného ceníku, včetně všeho pod tím. Kliknutím zveřejníš."
+            : "Je ve veřejném ceníku. Kliknutím skryješ i všechno pod tím."
+        }
+        style={{
+          flexShrink: 0,
+          border: `1px solid ${skryto ? "var(--warn, #e5a94a)" : "var(--border)"}`,
+          background: "none",
+          borderRadius: 999,
+          padding: "1px 7px",
+          fontSize: 10,
+          fontWeight: 700,
+          lineHeight: 1.6,
+          cursor: "pointer",
+          color: skryto ? "var(--warn, #e5a94a)" : "var(--muted)",
+        }}
+      >
+        {skryto ? "skryto" : "v ceníku"}
+      </button>
+    );
+  };
+
   const prepnoutViditelnost = (
     druh: "brands" | "categories" | "models" | "repairs",
     id: string,
@@ -1269,7 +1307,10 @@ DETALY: Výměna opotřebované baterie
                     }}
                     style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   >
-                    <span>{b.name}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+                          {stitekViditelnosti("brands", b)}
+                        </span>
                     <div style={{ display: "flex", gap: 4 }}>
                       <button
                         onClick={(e) => {
@@ -1423,7 +1464,10 @@ DETALY: Výměna opotřebované baterie
                         }}
                         style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                       >
-                        <span>{c.name}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                          {stitekViditelnosti("categories", c)}
+                        </span>
                         <div style={{ display: "flex", gap: 4 }}>
                           <button onClick={(e) => { e.stopPropagation(); moveCategoryUp(idx); }} disabled={idx === 0} style={arrowBtn(idx === 0)} title="Posunout nahoru">↑</button>
                           <button onClick={(e) => { e.stopPropagation(); moveCategoryDown(idx); }} disabled={idx === filteredCategories.length - 1} style={arrowBtn(idx === filteredCategories.length - 1)} title="Posunout dolů">↓</button>
@@ -1543,7 +1587,10 @@ DETALY: Výměna opotřebované baterie
                         }}
                         style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                       >
-                        <span>{m.name}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                          {stitekViditelnosti("models", m)}
+                        </span>
                         <div style={{ display: "flex", gap: 4 }}>
                           <button onClick={(e) => { e.stopPropagation(); moveModelUp(idx); }} disabled={idx === 0} style={arrowBtn(idx === 0)} title="Posunout nahoru">↑</button>
                           <button onClick={(e) => { e.stopPropagation(); moveModelDown(idx); }} disabled={idx === filteredModels.length - 1} style={arrowBtn(idx === filteredModels.length - 1)} title="Posunout dolů">↓</button>

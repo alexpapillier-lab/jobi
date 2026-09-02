@@ -104,7 +104,13 @@ serve(async (req) => {
     brands: znacky.data ?? [],
     categories: viditelneKategorie,
     models: viditelneModely,
-    repairs: (opravy.data ?? []).map((r) => {
+    // Oprava vázaná jen na skryté modely ven nepatří – jinak by u schované
+    // větve zůstal veřejně viditelný název i cena, jen bez modelů. Opravy,
+    // které model nemají od začátku (obecné úkony), se nechávají být.
+    repairs: (opravy.data ?? []).filter((r) => {
+      const modelIds = Array.isArray(r.model_ids) ? r.model_ids : [];
+      return modelIds.length === 0 || modelIds.some((id: string) => idModelu.has(id));
+    }).map((r) => {
       const modelIds = Array.isArray(r.model_ids) ? r.model_ids : [];
       return {
         id: r.id,
