@@ -1,5 +1,5 @@
 import type React from "react";
-import { Segmented } from "../components/ui";
+import { Button, Segmented } from "../components/ui";
 import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
@@ -701,24 +701,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               new Date(drillDown.year, drillDown.month).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
             {drillDown.type === "repair" && `Oprava: ${drillDown.value}`}
             {drillDown.type === "device" && `Zařízení: ${drillDown.value}`}
-            <button
-              type="button"
-              onClick={() => setDrillDown(null)}
-              style={{
-                padding: 0,
-                margin: 0,
-                border: "none",
-                background: "none",
-                cursor: "pointer",
-                color: "var(--accent)",
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-              title="Zrušit filtr"
-              aria-label="Zrušit filtr"
-            >
-              ×
-            </button>
+            <Button variant="ghost" size="sm" iconOnly onClick={() => setDrillDown(null)} title="Zrušit filtr" aria-label="Zrušit filtr">×</Button>
           </span>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>
             {filteredTickets.length} zakázek

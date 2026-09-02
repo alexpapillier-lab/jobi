@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Input, Label } from "../../components/ui";
+import { Button, Input, Label } from "../../components/ui";
 import { ChatIcon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useStatuses } from "../../state/StatusesStore";
@@ -243,82 +243,33 @@ export function CustomerDetail({
                   </div>
 
                   <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      onClick={openEdit}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: border,
-                        background: "var(--panel)",
-                        backdropFilter: "var(--blur)",
-                        WebkitBackdropFilter: "var(--blur)",
-                        color: "var(--text)",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                        boxShadow: "var(--shadow-soft)",
-                        transition: "var(--transition-smooth)",
-                      }}
-                    >
+                    <Button variant="soft"
+                      onClick={openEdit}>
                       Upravit
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button variant="danger"
                       onClick={() => {
                         setDeleteCustomerId(customer.id);
                         setDeleteDialogOpen(true);
-                      }}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(239,68,68,0.3)",
-                        background: "rgba(239,68,68,0.1)",
-                        color: "rgba(239,68,68,0.9)",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                        boxShadow: "var(--shadow-soft)",
-                        transition: "var(--transition-smooth)",
-                      }}
-                    >
+                      }}>
                       Smazat
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button variant="primary"
                       onClick={() =>
                         window.dispatchEvent(
                           new CustomEvent("jobsheet:request-new-order", { detail: { customerId: customer.id } })
                         )
-                      }
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: border,
-                        background: "var(--accent)",
-                        color: "white",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                        boxShadow: "var(--shadow-soft)",
-                      }}
-                    >
+                      }>
                       + Vytvořit zakázku
-                    </button>
+                    </Button>
                     {smsEnabled && onOpenSmsChat && (customer.phone?.trim() ?? "") !== "" && (
-                      <button
-                        type="button"
+                      <Button variant="soft"
                         onClick={() => onOpenSmsChat(customer.phone!.trim(), (customer.name ?? "").trim())}
-                        style={{
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          border: border,
-                          background: "var(--panel)",
-                          color: "var(--text)",
-                          fontWeight: 900,
-                          cursor: "pointer",
-                          boxShadow: "var(--shadow-soft)",
-                        }}
-                        title="Otevřít SMS chaty s tímto číslem"
-                      >
+                        title="Otevřít SMS chaty s tímto číslem">
                         <ChatIcon size={14} /> SMS
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -535,20 +486,10 @@ export function CustomerDetail({
             <div style={{ fontWeight: 900, fontSize: 16 }}>Upravit zákazníka</div>
             <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Ukládá se do localStorage.</div>
           </div>
-          <button
-            onClick={() => setEditOpen(false)}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: border,
-              background: "var(--panel)",
-              color: "var(--text)",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="soft"
+            onClick={() => setEditOpen(false)}>
             Zavřít
-          </button>
+          </Button>
         </div>
 
         {/* --- form (beze změn, jen zkráceno v komentáři) --- */}
@@ -655,42 +596,15 @@ export function CustomerDetail({
           </div>
 
           <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-            <button
-              onClick={() => setEditOpen(false)}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: border,
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                fontWeight: 900,
-                cursor: "pointer",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            >
+            <Button variant="soft"
+              onClick={() => setEditOpen(false)}>
               Zrušit
-            </button>
+            </Button>
 
-            <button
-              onClick={saveEdit}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "none",
-                background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
-                color: "white",
-                fontWeight: 900,
-                cursor: canSave ? "pointer" : "not-allowed",
-                opacity: canSave ? 1 : 0.55,
-                boxShadow: canSave ? `0 4px 12px var(--accent-glow)` : "none",
-                transition: "var(--transition-smooth)",
-              }}
-            >
+            <Button variant="primary" disabled={!canSave}
+              onClick={saveEdit}>
               Uložit
-            </button>
+            </Button>
           </div>
         </div>
       </div>

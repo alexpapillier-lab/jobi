@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Button } from "../components/ui";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabaseClient";
@@ -912,10 +913,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
               }}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-              <button onClick={() => setSendModalOpen(false)} style={btnSecondary}>Zrušit</button>
-              <button onClick={handleSendEmail} disabled={sending || !sendEmail.includes("@")} style={{ ...btnPrimary, opacity: sending ? 0.6 : 1 }}>
+              <Button onClick={() => setSendModalOpen(false)}>Zrušit</Button>
+              <Button variant="primary" onClick={handleSendEmail} disabled={sending || !sendEmail.includes("@")}>
                 {sending ? "Odesílám..." : "Odeslat"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1490,10 +1491,10 @@ function InvoiceEditor({
           </h2>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onCancel} style={btnSecondary}>Zrušit</button>
-          <button onClick={onSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
+          <Button onClick={onCancel}>Zrušit</Button>
+          <Button variant="primary" onClick={onSave} disabled={saving}>
             {saving ? "Ukládám..." : "Uložit"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1705,9 +1706,9 @@ function InvoiceEditor({
               })}
             </tbody>
           </table>
-          <button onClick={addItem} style={{ ...btnSecondary, marginTop: 8 }}>
+          <Button onClick={addItem} style={{ marginTop: 8 }}>
             + Přidat položku
-          </button>
+          </Button>
         </EditorSection>
 
         {/* Totals */}
@@ -1821,27 +1822,7 @@ function TotalRow({ label, value }: { label: string; value: string }) {
 
 // ─── Shared styles ──────────────────────────────────────────
 
-const btnPrimary: React.CSSProperties = {
-  padding: "8px 18px",
-  borderRadius: 10,
-  border: "none",
-  background: "var(--accent)",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: 13,
-  cursor: "pointer",
-};
 
-const btnSecondary: React.CSSProperties = {
-  padding: "8px 18px",
-  borderRadius: 10,
-  border: "1px solid var(--border)",
-  background: "transparent",
-  color: "var(--text)",
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: "pointer",
-};
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",

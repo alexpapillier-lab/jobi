@@ -1240,16 +1240,27 @@ export default function Orders({
     return () => document.removeEventListener("keydown", onKey);
   }, [photoLightbox]);
 
-  // When navigating away (e.g. to Faktury), close detail so the preview is not left open on top
+  /**
+   * Při odchodu na jinou stránku zavřít všechno, co Orders vykresluje portálem.
+   *
+   * App drží Orders namountované a jen skryté (App.tsx: display: none podle
+   * activePage). Potomci uvnitř se skryjí s ním, ale co jde přes createPortal
+   * do document.body, tomu skrytí unikne a zůstane viset nad další stránkou.
+   * Ověřeno: detail → Historie → Sklad, i tisková nabídka na řádku seznamu.
+   *
+   * Modaly vykreslené vevnitř (např. CreateWarrantyClaimModal) se schovají
+   * samy a rozepsaná data v nich zůstanou – ty tu proto schválně nejsou.
+   */
   useEffect(() => {
     if (closeDetailWhen) {
       setDetailId(null);
       setDetailClaimId(null);
-      // Modaly historie se vykreslují portálem nezávisle na detailId, takže
-      // je zavření detailu samo nezavře – zůstávaly viset nad další
-      // stránkou (ověřeno: detail → Historie → Sklad).
       setTicketHistoryModalOpen(false);
       setClaimHistoryModalOpen(false);
+      setOpenQuickPrintTicket(null);
+      setQuickPrintDropdownRect(null);
+      setCaptureQRItems(null);
+      setPhotoLightbox(null);
     }
   }, [closeDetailWhen]);
 
