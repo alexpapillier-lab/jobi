@@ -4,3 +4,4 @@ export { Pill } from "./Pill";
 export { PageHeader } from "./PageHeader";
 export { Toolbar, ToolbarSpacer } from "./Toolbar";
 export { Segmented, type SegmentedOption } from "./Segmented";
+export { Input, Label } from "./Input";

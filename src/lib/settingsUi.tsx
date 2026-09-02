@@ -1,49 +1,30 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 
-export function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        background: "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: 16,
-        boxShadow: "var(--shadow-soft)",
-        color: "var(--text)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
+/**
+ * Karta.
+ *
+ * Přesunuta do src/components/ui/Card.tsx, aby v aplikaci nebyly dvě
+ * konkurenční definice téhož. Re-export tu zůstává, protože ji dnes
+ * importuje 13 souborů; nová místa ať berou rovnou z components/ui.
+ */
+export { Card } from "../components/ui";
+import { Input, Label } from "../components/ui";
 
+/**
+ * Popisek pole. Přesunut do components/ui jako Label; re-export tu zůstává
+ * kvůli 42 stávajícím použitím.
+ */
 export function FieldLabel({ children }: { children: string }) {
-  return <div style={{ color: "var(--muted)", fontSize: 12, paddingTop: 10 }}>{children}</div>;
+  return <Label>{children}</Label>;
 }
 
+/**
+ * Textové pole. Přesunuto do components/ui jako Input; re-export tu zůstává
+ * kvůli 34 stávajícím použitím.
+ */
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: "100%",
-        padding: "10px 12px",
-        borderRadius: 12,
-        border: "1px solid var(--border)",
-        background: "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
-        color: "var(--text)",
-        outline: "none",
-        transition: "var(--transition-smooth)",
-        boxShadow: "var(--shadow-soft)",
-        ...props.style,
-      }}
-    />
-  );
+  return <Input {...props} />;
 }
 
 export function LanguagePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {

@@ -89,11 +89,20 @@
 
 /* ---------- Karta ---------- */
 
+/*
+ * Hodnoty odpovídají Card ze src/lib/settingsUi.tsx, kterou dnes používá
+ * 40 míst ve 13 souborech – aby sjednocení nic vizuálně neposunulo.
+ * settingsUi.Card je teď tenký re-export odsud.
+ */
 .ui-card {
   background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--pad-16);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
 }
 .ui-card--flush { padding: 0; }
 
@@ -188,4 +197,41 @@
 .ui-segmented--sm .ui-segmented__option {
   padding: 6px var(--space-3);
   font-size: var(--text-sm);
+}
+
+/* ---------- Formulářové pole ---------- */
+
+/*
+ * Hodnoty odpovídají TextInput ze settingsUi (76 míst), aby se sjednocením
+ * nic neposunulo. Jediná změna je fokus: původní styl měl outline: none
+ * bez náhrady, takže při ovládání klávesnicí nebylo vidět, kde uživatel je.
+ */
+.ui-input {
+  width: 100%;
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  outline: none;
+  box-shadow: var(--shadow-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ui-input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.ui-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.ui-input::placeholder { color: var(--muted); }
+
+.ui-label {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding-top: 10px;
 }
