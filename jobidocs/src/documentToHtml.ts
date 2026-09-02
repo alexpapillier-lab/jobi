@@ -377,10 +377,18 @@ function invoiceSummaryHtml(vars: Record<string, string>, styles: { contentColor
   const subtotal = n("inv_subtotal") || (useSample ? "4 299,00" : null);
   const vatAmount = n("inv_vat_amount") || (useSample ? "904,79" : null);
   const total = n("inv_total") || (useSample ? "5 203,79" : null);
+  // "0" = servis není plátce DPH. Pak se netiskne ani základ, ani řádek
+  // s daní – cena je prostě cena – a přidá se povinná poznámka.
+  const jePlatce = (vars.inv_vat_payer ?? "").trim() !== "0";
+  const sazby = n("inv_vat_rates") || (useSample ? "21%" : null);
+
   const rows: string[] = [];
-  if (subtotal) rows.push(`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>Základ</span><span style="font-variant-numeric:tabular-nums">${escapeHtml(subtotal)} Kč</span></div>`);
-  if (vatAmount) rows.push(`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>DPH 21%</span><span style="font-variant-numeric:tabular-nums">${escapeHtml(vatAmount)} Kč</span></div>`);
+  if (jePlatce && subtotal) rows.push(`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>Základ</span><span style="font-variant-numeric:tabular-nums">${escapeHtml(subtotal)} Kč</span></div>`);
+  // Sazba se bere z faktury; dřív tu bylo "DPH 21%" napevno, takže
+  // u položky s jinou sazbou tiskla špatné číslo.
+  if (jePlatce && vatAmount) rows.push(`<div style="display:flex;justify-content:space-between;padding:4px 0"><span>DPH${sazby ? " " + escapeHtml(sazby) : ""}</span><span style="font-variant-numeric:tabular-nums">${escapeHtml(vatAmount)} Kč</span></div>`);
   if (total) rows.push(`<div style="display:flex;justify-content:space-between;padding:8px 0;margin-top:4px;border-top:2px solid ${styles.contentColor};font-weight:800;font-size:13px"><span>Celkem k úhradě</span><span style="font-variant-numeric:tabular-nums">${escapeHtml(total)} Kč</span></div>`);
+  if (!jePlatce) rows.push(`<div style="padding:6px 0 0;font-size:9px;color:rgba(0,0,0,0.5)">Nejsme plátci DPH.</div>`);
   return rows.join("");
 }
 

@@ -3,6 +3,7 @@ import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
+import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
@@ -976,6 +977,7 @@ export default function Orders({
   smsEnabled = false,
 }: OrdersProps) {
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
+  const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
   const { hasCapability } = useActiveRole(activeServiceId);
@@ -4713,7 +4715,8 @@ export default function Orders({
                             qty: 1,
                             unit: "ks",
                             unit_price: r.price ?? 0,
-                            vat_rate: 21,
+                            // Neplátce DPH má 0; dřív tu bylo napevno 21 %.
+                            vat_rate: sazbaProNovouPolozku(dph),
                           })) : undefined,
                         });
                       }}

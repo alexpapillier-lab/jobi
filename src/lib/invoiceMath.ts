@@ -64,6 +64,12 @@ export function formatCurrency(amount: number, currency = "CZK"): string {
   }).format(amount);
 }
 
-export function emptyLineItem(): InvoiceLineItem {
-  return { name: "", qty: 1, unit: "ks", unit_price: 0, vat_rate: 21 };
+/**
+ * Prázdná položka faktury.
+ *
+ * Sazbu předává volající podle nastavení servisu – neplátce DPH má 0.
+ * Výchozích 21 % zůstává jen jako záloha pro volání bez argumentu.
+ */
+export function emptyLineItem(vatRate = 21): InvoiceLineItem {
+  return { name: "", qty: 1, unit: "ks", unit_price: 0, vat_rate: vatRate };
 }

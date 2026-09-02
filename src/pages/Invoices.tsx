@@ -8,6 +8,7 @@ import { reportError, reportSilent } from "../lib/reportError";
 import { FieldLabel, TextInput } from "../lib/settingsUi";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { computeTotals, formatCurrency, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
+import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
 import { invoiceToJobiDocsVariables, companyDataToJobiDocsPayload } from "../lib/invoiceToJobiDocs";
 import { printDocumentViaJobiDocs, exportDocumentViaJobiDocs, isJobiDocsRunning, renderPdfViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
@@ -65,6 +66,9 @@ type Props = {
 };
 
 export default function Invoices({ activeServiceId, prefillFromTicket, onPrefillConsumed, openInvoiceId, onOpenInvoiceIdConsumed, onOpenTicket }: Props) {
+  const dph = useServiceVat(activeServiceId);
+  /** Sazba pro nové položky – neplátce DPH má 0. */
+  const sazbaNoveVPolozky = sazbaProNovouPolozku(dph);
   const { session } = useAuth();
   const [view, setView] = useState<View>("list");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -77,7 +81,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // Editor state
   const [editorInvoice, setEditorInvoice] = useState<Partial<Invoice>>({});
-  const [editorItems, setEditorItems] = useState<(InvoiceLineItem & { id?: string })[]>([emptyLineItem()]);
+  const [editorItems, setEditorItems] = useState<(InvoiceLineItem & { id?: string })[]>([emptyLineItem(sazbaNoveVPolozky)]);
   const [saving, setSaving] = useState(false);
 
   // Detail/events
@@ -212,7 +216,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       customer_id: prefill?.customerId || null,
     };
     setEditorInvoice(inv);
-    setEditorItems(prefill?.items?.length ? prefill.items.map(i => ({ ...i })) : [emptyLineItem()]);
+    setEditorItems(prefill?.items?.length ? prefill.items.map(i => ({ ...i })) : [emptyLineItem(sazbaNoveVPolozky)]);
     setEditingId(null);
     setView("editor");
   }, [activeServiceId]);
@@ -234,7 +238,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
             unit_price: it.unit_price,
             vat_rate: it.vat_rate,
           }))
-        : [emptyLineItem()],
+        : [emptyLineItem(sazbaNoveVPolozky)],
     );
     setEditingId(inv.id);
     setView("editor");
@@ -745,6 +749,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   if (view === "editor") {
     return (
       <InvoiceEditor
+        vatRate={sazbaNoveVPolozky}
         invoice={editorInvoice}
         setInvoice={setEditorInvoice}
         items={editorItems}
@@ -1430,6 +1435,7 @@ function InvoiceEditor({
   onSave,
   onCancel,
   serviceId,
+  vatRate,
 }: {
   invoice: Partial<Invoice>;
   setInvoice: (i: Partial<Invoice>) => void;
@@ -1441,6 +1447,8 @@ function InvoiceEditor({
   onSave: () => void;
   onCancel: () => void;
   serviceId: string;
+  /** Sazba pro nové položky podle nastavení servisu (neplátce 0). */
+  vatRate: number;
 }) {
   const updateField = (field: string, value: any) => {
     setInvoice({ ...invoice, [field]: value });
@@ -1453,7 +1461,7 @@ function InvoiceEditor({
   };
 
   const addItem = () => {
-    setItems([...items, emptyLineItem()]);
+    setItems([...items, emptyLineItem(vatRate)]);
   };
 
   const removeItem = (index: number) => {

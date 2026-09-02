@@ -8,6 +8,8 @@ type InvoiceItem = Database["public"]["Tables"]["invoice_items"]["Row"];
 export function invoiceToJobiDocsVariables(
   inv: Invoice,
   items: InvoiceItem[],
+  /** Je servis plátce DPH? Neplátci se rekapitulace DPH na dokument netiskne. */
+  vatPayer = true,
 ): Record<string, string> {
   const fmtDate = (d: string | null) => {
     if (!d) return "";
@@ -57,6 +59,18 @@ export function invoiceToJobiDocsVariables(
     inv_items_json: itemsJson,
     inv_subtotal: formatCurrency(inv.subtotal, inv.currency),
     inv_vat: formatCurrency(inv.vat_amount, inv.currency),
+    // Šablona čte inv_vat_amount, aplikace posílala jen inv_vat – na skutečné
+    // faktuře tak řádek s DPH vůbec nevyšel a zobrazil se jen v ukázce.
+    // Posíláme obě jména, ať se nerozbijí starší šablony.
+    inv_vat_amount: formatCurrency(inv.vat_amount, inv.currency),
+    // Sazby, které se na faktuře skutečně vyskytly – šablona měla "DPH 21%"
+    // napevno, takže u 12% položky tiskla špatné číslo.
+    inv_vat_rates: [...new Set(items.map((i) => i.vat_rate))]
+      .filter((r) => Number.isFinite(r))
+      .sort((a, b) => a - b)
+      .map((r) => `${r}%`)
+      .join(", "),
+    inv_vat_payer: vatPayer ? "1" : "0",
     inv_total: formatCurrency(inv.total, inv.currency),
     inv_rounding: formatCurrency(inv.rounding, inv.currency),
     inv_currency: inv.currency,
