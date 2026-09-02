@@ -151,9 +151,51 @@ rozhodnutí**, ne součást ceníku.
 
 ---
 
-## 7. Co je potřeba rozhodnout
+## 7. Rozhodnuto
 
-- [ ] Zveřejňovat ceny včetně DPH, bez DPH, nebo obojí?
-- [ ] Má být čtení opravdu bez tokenu, nebo i na čtení token (kvůli měření)?
-- [ ] Vlastní doména `api.appjobi.com`, nebo přímo Supabase URL?
-- [ ] Limit dotazů – kolik za minutu na servis?
+### DPH – nejdřív je potřeba říct, co cena znamená
+
+Zjištění při návrhu: **`repairs.price` má dnes nedefinovaný význam.**
+V nastavení je jen DIČ jako text (navíc v localStorage, ne v DB), faktury
+mají `vat_rate` po položkách, ale u ceníku o DPH není nikde nic. Nikdo
+tedy neví, jestli uložené číslo je s daní nebo bez.
+
+Než půjde posílat obojí, musí to servis deklarovat:
+
+```sql
+ALTER TABLE public.services
+  ADD COLUMN prices_include_vat boolean NOT NULL DEFAULT true,
+  ADD COLUMN default_vat_rate numeric(5,2) NOT NULL DEFAULT 21;
+```
+
+API pak u každé ceny pošle obě varianty a nechá web vybrat:
+
+```json
+{ "price": 2500, "price_incl_vat": 2500, "price_excl_vat": 2066.12,
+  "vat_rate": 21, "prices_include_vat": true }
+```
+
+### Čtení bez tokenu
+
+**Token v JavaScriptu na webu není tajemství** – kdokoli si otevře zdroj
+stránky a má ho. Nekoupí se tím bezpečnost, jen komplikace pro webaře
+a rozbité cachování na CDN. Data mají být veřejná; identifikace jde přes
+slug, měření přes log dotazů.
+
+Kdyby někdo chtěl ceník polosoukromý, přidá se později přepínač
+„vyžadovat token i na čtení". Dopředu to nestavíme.
+
+### Doména
+
+`api.appjobi.com` (proxy na Supabase edge funkce).
+
+### Limity
+
+| co | limit |
+|---|---:|
+| čtení, na IP | 60/min |
+| čtení, na servis | 600/min |
+| zápis, na token | 30/min |
+
+K tomu `Cache-Control: max-age=300` a ETag. Většina opakovaných dotazů se
+pak k funkci vůbec nedostane a limity zůstanou rezervou pro skutečný provoz.
