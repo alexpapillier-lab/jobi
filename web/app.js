@@ -133,6 +133,27 @@
     document.body.removeChild(a);
   }
 
+  /* Vybraný systém: "mac" nebo "win". Předvyplní se podle prohlížeče. */
+  var selectedOS = detectOS();
+
+  function detectOS() {
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    var ua = navigator.userAgent || "";
+    if (/win/i.test(p) || /Windows/i.test(ua)) return "win";
+    return "mac";
+  }
+
+  /* Najde v assetech release ten správný soubor podle systému a aplikace. */
+  function findAsset(assets, which, os) {
+    var ext = os === "win" ? ".exe" : ".dmg";
+    return assets.find(function (a) {
+      var n = (a.name || "").toLowerCase();
+      if (!n.endsWith(ext)) return false;
+      var isDocs = n.indexOf("jobidocs") !== -1;
+      return which === "jobidocs" ? isDocs : (n.indexOf("jobi") === 0 && !isDocs);
+    });
+  }
+
   function fetchReleaseAndDownload(which, btn) {
     if (!btn) return;
     btn.disabled = true;
@@ -140,21 +161,10 @@
     fetch(GITHUB_RELEASE)
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var assets = (data.assets || []).filter(function (a) {
-          var n = (a.name || "").toLowerCase();
-          return n.endsWith(".dmg");
-        });
-        var jobiDmg = assets.find(function (a) {
-          var n = (a.name || "").toLowerCase();
-          return n.startsWith("jobi") && n.endsWith(".dmg") && n.indexOf("jobidocs") === -1;
-        });
-        var jobidocsDmg = assets.find(function (a) {
-          var n = (a.name || "").toLowerCase();
-          return n.indexOf("jobidocs") !== -1 && n.endsWith(".dmg");
-        });
-        var dmg = which === "jobi" ? jobiDmg : jobidocsDmg;
-        if (dmg && dmg.browser_download_url) {
-          triggerDownload(dmg.browser_download_url, dmg.name);
+        var assets = data.assets || [];
+        var file = findAsset(assets, which, selectedOS);
+        if (file && file.browser_download_url) {
+          triggerDownload(file.browser_download_url, file.name);
         } else {
           window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
         }
@@ -176,4 +186,33 @@
   if (jobidocsBtn) {
     jobidocsBtn.addEventListener("click", function () { fetchReleaseAndDownload("jobidocs", jobidocsBtn); });
   }
+
+  /* Přepínač macOS / Windows */
+  var osMacBtn = document.getElementById("os-mac");
+  var osWinBtn = document.getElementById("os-win");
+  var formatNote = document.getElementById("download-format-note");
+  var heroLabel = document.getElementById("hero-download-label");
+
+  var OS_TEXT = {
+    mac: { note: "macOS · DMG · Apple Silicon i Intel", hero: "Stáhnout pro macOS" },
+    win: { note: "Windows · instalátor .exe · 64bit", hero: "Stáhnout pro Windows" }
+  };
+
+  function applyOS(os) {
+    selectedOS = os;
+    if (osMacBtn) {
+      osMacBtn.classList.toggle("is-active", os === "mac");
+      osMacBtn.setAttribute("aria-pressed", os === "mac" ? "true" : "false");
+    }
+    if (osWinBtn) {
+      osWinBtn.classList.toggle("is-active", os === "win");
+      osWinBtn.setAttribute("aria-pressed", os === "win" ? "true" : "false");
+    }
+    if (formatNote) formatNote.textContent = OS_TEXT[os].note;
+    if (heroLabel) heroLabel.textContent = OS_TEXT[os].hero;
+  }
+
+  if (osMacBtn) osMacBtn.addEventListener("click", function () { applyOS("mac"); });
+  if (osWinBtn) osWinBtn.addEventListener("click", function () { applyOS("win"); });
+  applyOS(selectedOS);
 })();

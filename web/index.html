@@ -54,7 +54,7 @@
       </div>
       <div class="hero-inner">
         <div class="hero-content">
-          <div class="hero-badge">Pro macOS · Servisní střediska</div>
+          <div class="hero-badge">Pro macOS a Windows · Servisní střediska</div>
           <h1 class="hero-title">
             <span class="hero-title-line">Servisní evidence,</span>
             <span class="hero-title-line">která dává smysl</span>
@@ -65,11 +65,11 @@
           <div class="hero-actions">
             <a href="#stazeni" class="btn btn-primary btn-download-hero">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Stáhnout pro macOS
+              <span id="hero-download-label">Stáhnout pro macOS</span>
             </a>
             <a href="#vyhody" class="btn btn-ghost">Co umí Jobi</a>
           </div>
-          <p class="hero-sub">Jobi + JobiDocs · DMG · zdarma</p>
+          <p class="hero-sub">Jobi + JobiDocs · macOS a Windows · zdarma</p>
         </div>
 
         <!-- App mockup -->
@@ -361,8 +361,18 @@
           <img src="logo.svg" class="download-logo" alt="" width="64" height="64" />
           <h2 id="stazeni-heading" class="download-title">Stáhnout</h2>
           <p class="download-desc">
-            DMG pro macOS z nejnovějšího vydání na GitHubu. Stáhněte Jobi (hlavní aplikace) nebo JobiDocs (tisk a PDF) zvlášť.
+            Nejnovější vydání z GitHubu. Stáhněte Jobi (hlavní aplikace) nebo JobiDocs (tisk a PDF) zvlášť.
           </p>
+          <div class="download-os-switch" role="group" aria-label="Vyberte systém">
+            <button type="button" class="download-os-btn is-active" id="os-mac" aria-pressed="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.8c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-2.9-.8-1.5 0-2.9.9-3.6 2.2-1.6 2.7-.4 6.7 1.1 8.9.7 1.1 1.6 2.3 2.7 2.2 1.1 0 1.5-.7 2.8-.7s1.7.7 2.9.7c1.2 0 1.9-1.1 2.6-2.1.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.1-.8-2.1-3.7zM14.2 5.8c.6-.7 1-1.7.9-2.8-.9 0-2 .6-2.6 1.3-.6.6-1.1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2z"/></svg>
+              macOS
+            </button>
+            <button type="button" class="download-os-btn" id="os-win" aria-pressed="false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.6l7.3-1v7.1H3V5.6zm0 12.8l7.3 1v-7H3v6zM11.4 4.4L21 3v8.7h-9.6V4.4zm0 15.2L21 21v-8.6h-9.6v7.2z"/></svg>
+              Windows
+            </button>
+          </div>
           <div class="download-buttons">
             <div class="download-option">
               <button type="button" class="btn-download-main" id="download-jobi-btn">
@@ -380,7 +390,7 @@
             </div>
           </div>
           <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
-          <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs · DMG<br>Verze pro Windows se připravuje.</p>
+          <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs<br><span id="download-format-note">macOS · DMG · Apple Silicon i Intel</span></p>
         </div>
       </div>
     </section>

@@ -901,6 +901,44 @@ section#stazeni {
   line-height: 1.6;
 }
 
+/* Přepínač systému (macOS / Windows) */
+.download-os-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 26px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.download-os-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+.download-os-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.07); }
+.download-os-btn.is-active {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0c0e18;
+}
+.download-os-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+@media (max-width: 420px) {
+  .download-os-switch { width: 100%; }
+  .download-os-btn { flex: 1; justify-content: center; }
+}
+
 .download-buttons {
   display: flex;
   flex-wrap: wrap;
