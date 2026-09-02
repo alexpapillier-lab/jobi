@@ -30,6 +30,16 @@ export class ErrorBoundary extends Component<Props, State> {
       error,
       errorInfo,
     });
+    // Odeslat do centrálních logů, ať majitel aplikace vidí pády u zákazníků.
+    // logError nikdy nevyhazuje výjimku, takže tady není co ošetřovat.
+    void import("../lib/errorLog").then(({ logError }) =>
+      logError({
+        code: "react.render_crash",
+        error,
+        source: "ErrorBoundary",
+        context: { componentStack: errorInfo.componentStack ? "ano" : "ne" },
+      })
+    );
   }
 
   handleReload = () => {
