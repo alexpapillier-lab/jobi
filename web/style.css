@@ -81,6 +81,9 @@ body {
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
+  /* Bez tohohle se "Co umí" na úzkém displeji lámalo na dva řádky
+     a rozhodilo výšku celé lišty. */
+  white-space: nowrap;
   transition: color 0.2s, background 0.2s;
 }
 .nav-links a:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
@@ -107,13 +110,18 @@ body {
 .nav-web-short { display: none; }
 
 @media (max-width: 560px) {
-  /* Na úzkém displeji se dlouhý popisek nevejde. Odkaz ale NESKRÝVÁME –
-     webové rozhraní je záložní cesta, po které se sáhne právě z telefonu,
-     když desktopová aplikace zlobí. Jen se zkrátí na "Web". */
+  /* Na úzkém displeji se do lišty nevejdou čtyři položky. Kotvy na sekce
+     ("Co umí", "Ceník") schováváme – ty jsou dosažitelné scrollem.
+     Zůstávají obě akce: webové rozhraní a stažení.
+
+     Webové rozhraní NESKRÝVÁME – je to záložní cesta, po které se sáhne
+     právě z telefonu, když desktopová aplikace zlobí. Jen se popisek
+     zkrátí na "Web". */
+  .nav-links a[href^="#"]:not(.nav-cta) { display: none; }
   .nav-web-full { display: none; }
   .nav-web-short { display: inline; }
-  .nav-links { gap: 2px; }
-  .nav-links a { padding: 8px 10px; font-size: 13px; }
+  .nav-links { gap: 4px; }
+  .nav-links a { padding: 8px 12px; font-size: 13px; }
 }
 
 /* ========== Hero ========== */
