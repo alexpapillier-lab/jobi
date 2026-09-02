@@ -302,7 +302,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
           width: "100%",
           maxWidth: 440,
           background: "rgba(255, 255, 255, 0.95)",
-          backdropFilter: "blur(20px)",
+          backdropFilter: "var(--blur)",
           WebkitBackdropFilter: "blur(20px)",
           borderRadius: 28,
           padding: "48px 40px",

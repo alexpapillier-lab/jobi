@@ -77,7 +77,7 @@ const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-
 const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
 type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number };
+  app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean };
   sidebar: { position: SidebarPosition };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: DisplayMode; pageSize: number };
@@ -87,7 +87,7 @@ type UIConfig = {
 
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1 },
+    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: false },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
@@ -117,6 +117,10 @@ function safeLoadUIConfig(): UIConfig {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
+        reducedEffects:
+          typeof parsed?.app?.reducedEffects === "boolean"
+            ? parsed.app.reducedEffects
+            : d.app.reducedEffects,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -651,6 +655,20 @@ export default function App() {
     const s = uiCfg.app.uiScale ?? 1;
     document.documentElement.style.setProperty("zoom", String(s));
   }, [uiCfg.app.uiScale]);
+
+  // Omezené efekty: vypne backdrop-filter napříč aplikací jedinou proměnnou.
+  // Rozostření za průhlednými panely je pro GPU drahé – ve virtuálech
+  // (Parallels) a na slabších strojích je to hlavní příčina sekání.
+  // Respektuje i systémové "omezit průhlednost".
+  useEffect(() => {
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-transparency: reduce)").matches;
+    const off = uiCfg.app.reducedEffects === true || prefersReduced;
+    document.documentElement.style.setProperty("--blur", off ? "none" : "");
+    document.documentElement.classList.toggle("reduced-effects", off);
+  }, [uiCfg.app.reducedEffects]);
 
   // Při otevření Jobi automaticky spustit JobiDocs do tray, pokud neběží (pro tisk/export)
   useEffect(() => {
@@ -1278,7 +1296,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                   justifyContent: "center",
                   padding: 24,
                   background: "rgba(0,0,0,0.5)",
-                  backdropFilter: "blur(4px)",
+                  backdropFilter: "var(--blur)",
                 }}
                 onClick={() => setShortcutsHelpOpen(false)}
               >

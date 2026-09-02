@@ -118,6 +118,7 @@ type UIConfig = {
   app: {
     fabNewOrderEnabled: boolean;
     uiScale: number;
+    reducedEffects?: boolean;
   };
   sidebar: {
     position: SidebarPosition;
@@ -142,7 +143,7 @@ const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1 },
+    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: false },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
@@ -173,6 +174,10 @@ function safeLoadUIConfig(): UIConfig {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
+        reducedEffects:
+          typeof parsed?.app?.reducedEffects === "boolean"
+            ? parsed.app.reducedEffects
+            : d.app.reducedEffects,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -1962,7 +1967,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           width: "80%",
                           height: "60%",
                           background: info.panel,
-                          backdropFilter: info.lineStyle ? "none" : "blur(20px)",
+                          backdropFilter: info.lineStyle ? "none" : "var(--blur)",
                           WebkitBackdropFilter: info.lineStyle ? "none" : "blur(20px)",
                           border: info.lineStyle ? `2px solid ${info.accent}` : `1px solid ${info.accent}40`,
                           borderRadius: 12,
@@ -2333,6 +2338,40 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* VZHLED A CHOVÁNÍ - UI */}
       {section.subsection === "appearance_ui" && (
         <>
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Výkon</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+              Rozostření za průhlednými panely vypadá dobře, ale je náročné na grafiku.
+              Pokud aplikace sekne při posouvání – typicky ve virtuálním stroji nebo na
+              starším počítači – tímhle se vypne a chod se znatelně zrychlí.
+            </div>
+            <label
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: 12,
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "var(--panel)",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
+                Omezit efekty (rychlejší chod)
+              </span>
+              <input
+                type="checkbox"
+                checked={uiCfg.app.reducedEffects === true}
+                onChange={(e) => {
+                  const newCfg = { ...uiCfg, app: { ...uiCfg.app, reducedEffects: e.target.checked } };
+                  setUiCfg(newCfg);
+                  saveUIConfig(newCfg);
+                }}
+              />
+            </label>
+          </Card>
+
           <Card>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Velikost UI</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
