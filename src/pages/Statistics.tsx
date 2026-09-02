@@ -1,9 +1,16 @@
 import type React from "react";
-import { useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
+import { useStatuses } from "../state/StatusesStore";
+import { formatCurrency } from "../lib/invoiceMath";
+
+/** Desetinné číslo česky (čárka místo tečky). */
+function cislo(n: number, desetinnych = 1): string {
+  return n.toLocaleString("cs-CZ", { minimumFractionDigits: desetinnych, maximumFractionDigits: desetinnych });
+}
 
 const TICKETS_SELECT =
   "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
@@ -214,6 +221,16 @@ type StatisticsProps = {
 };
 
 export default function Statistics({ activeServiceId, onOpenTicket }: StatisticsProps) {
+  const { getByKey } = useStatuses();
+  /**
+   * Stav v databázi je anglický klíč ("received", "ready"). Zbytek aplikace
+   * ho překládá přes getByKey, statistiky ho ale vypisovaly surový – uživatel
+   * viděl "received" tam, kde v seznamu zakázek stojí "Přijato".
+   */
+  const nazevStavu = useCallback(
+    (key: string) => (key === "unknown" ? "Neznámý" : getByKey(key)?.label ?? key),
+    [getByKey]
+  );
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
@@ -687,7 +704,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               fontSize: 13,
             }}
           >
-            {drillDown.type === "status" && `Status: ${drillDown.value}`}
+            {drillDown.type === "status" && `Stav: ${nazevStavu(drillDown.value)}`}
             {drillDown.type === "month" &&
               new Date(drillDown.year, drillDown.month).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
             {drillDown.type === "repair" && `Oprava: ${drillDown.value}`}
@@ -741,7 +758,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkový příjem"
-          value={`${stats.totalRevenue.toFixed(2)} Kč`}
+          value={formatCurrency(stats.totalRevenue)}
           icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalRevenue > 0 ? ((stats.totalRevenue - prevStats.totalRevenue) / prevStats.totalRevenue) * 100 : undefined}
           deltaPercent
@@ -749,7 +766,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkové náklady"
-          value={`${stats.totalCosts.toFixed(2)} Kč`}
+          value={formatCurrency(stats.totalCosts)}
           icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalCosts > 0 ? ((stats.totalCosts - prevStats.totalCosts) / prevStats.totalCosts) * 100 : undefined}
           deltaPercent
@@ -757,7 +774,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Zisk"
-          value={`${stats.profit.toFixed(2)} Kč`}
+          value={formatCurrency(stats.profit)}
           icon={<TrendIcon size={22} />}
           color={stats.profit >= 0 ? "var(--accent)" : "rgba(239,68,68,0.9)"}
           delta={compareWithPrevious ? stats.profit - prevStats.profit : undefined}
@@ -766,7 +783,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Průměrná cena"
-          value={`${stats.averageTicketPrice.toFixed(2)} Kč`}
+          value={formatCurrency(stats.averageTicketPrice)}
           icon={<StatusIcon size={22} />}
           delta={compareWithPrevious && prevStats.averageTicketPrice > 0 ? ((stats.averageTicketPrice - prevStats.averageTicketPrice) / prevStats.averageTicketPrice) * 100 : undefined}
           deltaPercent
@@ -774,7 +791,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkové slevy"
-          value={`${stats.totalDiscounts.toFixed(2)} Kč`}
+          value={formatCurrency(stats.totalDiscounts)}
           icon={<GiftIcon size={22} />}
         />
         <StatCard
@@ -784,8 +801,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               ? (() => {
                   const d = stats.averageTicketDurationDays;
                   if (d < 1) return `${Math.round(d * 24)} h`;
-                  if (d < 7) return `${d.toFixed(1)} dní`;
-                  return `${(d / 7).toFixed(1)} týdnů`;
+                  if (d < 7) return `${cislo(d)} dní`;
+                  return `${cislo(d / 7)} týdnů`;
                 })()
               : "—"
           }
@@ -847,7 +864,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "—"}</td>
                     <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.customerName || "—"}</td>
                     <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.deviceLabel || "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.status || "—"}</td>
+                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.status ? nazevStavu(t.status) : "—"}</td>
                     <td style={{ padding: "10px 12px", color: "var(--accent)", fontWeight: 600 }}>{finalPrice > 0 ? `${finalPrice.toLocaleString("cs-CZ")} Kč` : "—"}</td>
                   </tr>
                 );
@@ -864,8 +881,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       {viewMode === "charts" && (
         <>
           <div style={{ background: "var(--panel)", border, borderRadius: "var(--radius-lg)", padding: "var(--pad-24)", boxShadow: "var(--shadow-soft)" }}>
-            <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>Zakázky podle statusu</h2>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na řádek pro zobrazení pouze zakázek v daném statusu.</p>
+            <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>Zakázky podle stavu</h2>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na řádek pro zobrazení pouze zakázek v daném stavu.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {Object.entries(stats.byStatus).length === 0 ? (
                 <div style={{ color: "var(--muted)", fontSize: 14 }}>Žádná data</div>
@@ -889,9 +906,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                         cursor: "pointer",
                         textAlign: "left",
                       }}
-                      title={`Filtrovat: ${status} (${count} zakázek)`}
+                      title={`Filtrovat: ${nazevStavu(status)} (${count} zakázek)`}
                     >
-                      <span style={{ minWidth: 120, fontSize: 13, color: "var(--text)" }}>{status}</span>
+                      <span style={{ minWidth: 120, fontSize: 13, color: "var(--text)" }}>{nazevStavu(status)}</span>
                       <div style={{ flex: 1, height: 28, background: "var(--panel-2)", borderRadius: 8, overflow: "hidden", display: "flex" }}>
                         <div
                           style={{
@@ -982,9 +999,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         }}
       >
         <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
-          Zakázky podle statusu
+          Zakázky podle stavu
         </h2>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na kartu pro zobrazení pouze zakázek v daném statusu.</p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na kartu pro zobrazení pouze zakázek v daném stavu.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
           {Object.entries(stats.byStatus).map(([status, count]) => {
             const isActive = drillDown?.type === "status" && drillDown.value === status;
@@ -1001,9 +1018,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                   cursor: "pointer",
                   textAlign: "left",
                 }}
-                title={`Filtrovat: ${status}`}
+                title={`Filtrovat: ${nazevStavu(status)}`}
               >
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{status}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{nazevStavu(status)}</div>
                 <div style={{ fontWeight: 700, fontSize: 20, color: "var(--text)" }}>{count}</div>
               </button>
             );
@@ -1166,7 +1183,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               >
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{month.month}</div>
                 <div style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 4 }}>{month.count} zakázek</div>
-                <div style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>{month.revenue.toFixed(2)} Kč</div>
+                <div style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>{formatCurrency(month.revenue)}</div>
               </button>
             );
           })}
@@ -1207,10 +1224,10 @@ function StatCard({
   const deltaStr =
     delta !== undefined && delta !== null
       ? deltaPercent
-        ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} %`
+        ? `${delta >= 0 ? "+" : ""}${cislo(delta)} %`
         : deltaIsCurrency
-          ? `${delta >= 0 ? "+" : ""}${delta.toFixed(2)} Kč`
-          : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}${deltaSuffix ?? ""}`
+          ? `${delta >= 0 ? "+" : ""}${formatCurrency(delta)}`
+          : `${delta >= 0 ? "+" : ""}${cislo(delta)}${deltaSuffix ?? ""}`
       : null;
   const deltaUp = delta !== undefined && delta > 0;
   const deltaDown = delta !== undefined && delta < 0;
