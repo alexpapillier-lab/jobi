@@ -26,7 +26,8 @@ export type WebPrintDocType =
   | "zarucni_list"
   | "diagnosticky_protokol"
   | "prijemka_reklamace"
-  | "vydejka_reklamace";
+  | "vydejka_reklamace"
+  | "faktura";
 
 /** Doc typy, pro které Jobi umí načíst konfiguraci i s profilem. */
 type ConfigDocType = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
@@ -143,4 +144,23 @@ export async function printDocumentInBrowser(
 ): Promise<void> {
   const html = await buildDocumentHtmlForWeb(docType, serviceId, options);
   await printHtmlInBrowser(html);
+}
+
+/**
+ * Náhled dokumentu ve webu.
+ *
+ * Desktop si nechá od JobiDocs vyrobit PDF a ukáže ho jako blob. V prohlížeči
+ * PDF nevyrábíme, takže se do stejného iframu vloží rovnou HTML – vypadá to
+ * stejně a je to rychlejší.
+ *
+ * Volající je zodpovědný za URL.revokeObjectURL() po zavření náhledu,
+ * stejně jako u PDF blobu.
+ */
+export async function buildDocumentPreviewUrlForWeb(
+  docType: WebPrintDocType,
+  serviceId: string | null,
+  options?: { repairDate?: string; variables?: Record<string, string> }
+): Promise<string> {
+  const html = await buildDocumentHtmlForWeb(docType, serviceId, options);
+  return URL.createObjectURL(new Blob([html], { type: "text/html" }));
 }
