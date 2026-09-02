@@ -31,6 +31,65 @@
 
   --topbar-h: 64px;
 
+  /* ------------------------------------------------------------------
+     ŠKÁLY – doplněno 2026-09 podle docs/AUDIT_UI_2026-09.md
+
+     Audit napočítal 19 velikostí písma, 17 poloměrů a 15 mezer, protože
+     tokeny žádnou škálu neobsahovaly a nebylo kam sáhnout. Následující
+     hodnoty jsou POUZE PŘIDANÉ – nic existujícího se nemění, takže se
+     vzhled nemůže hnout. Migrace inline stylů probíhá postupně.
+
+     Pravidlo: v novém kódu se píše var(--text-*), var(--space-*)
+     a var(--danger) místo čísel a hexů.
+     ------------------------------------------------------------------ */
+
+  /* Typografie – 6 stupňů místo devatenácti.
+     Základ je 13px, protože to je reálná tělová velikost aplikace
+     (357 výskytů). Spodní hranice je 11px: audit našel 50 míst
+     s písmem 9px a menším, což je za hranicí čitelnosti. */
+  --text-xs: 11px;    /* odznaky, popisky, meta údaje */
+  --text-sm: 12px;    /* sekundární text */
+  --text-base: 13px;  /* tělový text – výchozí volba */
+  --text-lg: 16px;    /* podnadpisy */
+  --text-xl: 20px;    /* nadpisy sekcí */
+  --text-2xl: 24px;   /* nadpisy stránek */
+
+  /* Rozestupy – násobky čtyř. Používat pro gap, padding i margin. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Zaoblení – doplňuje stávající --radius-sm/md/lg (12/18/24),
+     které nepokrývaly menší hodnoty používané v praxi. */
+  --radius-2xs: 4px;
+  --radius-xs: 8px;
+  --radius-pill: 999px;
+
+  /* Stavové barvy – jedna od každé, ne čtyři červené.
+     Audit našel #ef4444, #dc2626, #ff3b30 i #dd2200 vedle sebe.
+     Varianty -soft jsou na podbarvení, ne na text. */
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --warning: #f97316;
+  --warning-soft: rgba(249, 115, 22, 0.14);
+  --success: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --info: #0ea5e9;
+  --info-soft: rgba(14, 165, 233, 0.14);
+
+  /* Textové varianty stavových barev.
+     Základní odstíny výš jsou syté a na světlém pozadí mají kontrast
+     jen kolem 2,1–3,5:1 – stačí na tečky, odznaky a ikony, ale NE na text.
+     Pro text se používají tyhle tmavší, které projdou WCAG AA (min. 4,5:1). */
+  --danger-text: #b91c1c;   /* 6,04:1 */
+  --warning-text: #c2410c;  /* 4,83:1 */
+  --success-text: #15803d;  /* 4,68:1 */
+  --info-text: #0369a1;     /* 5,54:1 */
+
   /* Accent */
   --accent: #2563eb;
   --accent-soft: rgba(37, 99, 235, 0.15);
@@ -46,6 +105,23 @@
 }
 
 [data-theme="dark"] {
+  /* Stavové barvy pro tmavé pozadí – světlejší odstíny kvůli kontrastu.
+     Škály písma a rozestupů se nemění, ty jsou na motivu nezávislé. */
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.18);
+  --warning: #fb923c;
+  --warning-soft: rgba(251, 146, 60, 0.18);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.18);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.18);
+  /* Na tmavém pozadí mají základní odstíny 7–11:1, takže text může
+     používat rovnou je a zvláštní varianta není potřeba. */
+  --danger-text: #f87171;
+  --warning-text: #fb923c;
+  --success-text: #4ade80;
+  --info-text: #38bdf8;
+
   --bg: linear-gradient(135deg, #0a0c10 0%, #141720 100%);
   --panel: rgba(30, 32, 40, 0.92);
   --panel-2: rgba(35, 38, 48, 0.88);
