@@ -70,6 +70,22 @@ serve(async (req) => {
       );
     }
 
+    // Nárok na modul Faktury. Členství nestačí – schování modulu v UI
+    // obejde každý, kdo tuhle funkci zavolá přímo.
+    const { data: hasInvoices, error: entErr } = await svc.rpc("has_entitlement", {
+      p_service_id: service_id,
+      p_module: "invoices",
+    });
+    if (entErr || hasInvoices !== true) {
+      return new Response(
+        JSON.stringify({
+          error: "Modul Faktury není pro tento servis aktivní.",
+          detail: entErr?.message ?? "Chybí platný nárok na modul invoices.",
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Load invoice
     const { data: invoice, error: invError } = await svc
       .from("invoices")

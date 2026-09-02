@@ -99,6 +99,23 @@ serve(async (req) => {
       );
     }
 
+    // Nárok na modul SMS. Zřízení čísla stojí peníze u Twilia, takže tady
+    // je kontrola dvojnásob na místě – bez ní by si vlastník kteréhokoli
+    // servisu mohl nechat zřídit číslo, aniž by modul měl zaplacený.
+    const { data: hasSms, error: entErr } = await svc.rpc("has_entitlement", {
+      p_service_id: serviceId,
+      p_module: "sms",
+    });
+    if (entErr || hasSms !== true) {
+      return new Response(
+        JSON.stringify({
+          error: "Modul SMS není pro tento servis aktivní.",
+          detail: entErr?.message ?? "Chybí platný nárok na modul sms.",
+        }),
+        { status: 403, headers: jsonHeaders }
+      );
+    }
+
     // Already provisioned?
     const { data: existing, error: existingErr } = await svc
       .from("service_phone_numbers")

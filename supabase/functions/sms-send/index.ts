@@ -127,6 +127,23 @@ serve(async (req) => {
 
     const svc = createClient(supabaseUrl, serviceKey);
 
+    // Nárok na modul SMS. Kontrola členství výš nestačí – schování modulu
+    // v UI obejde každý, kdo si otevře vývojářské nástroje a zavolá tuhle
+    // funkci přímo. Placený modul se proto ověřuje tady, na serveru.
+    const { data: hasSms, error: entErr } = await svc.rpc("has_entitlement", {
+      p_service_id: serviceId,
+      p_module: "sms",
+    });
+    if (entErr || hasSms !== true) {
+      return new Response(
+        JSON.stringify({
+          error: "Modul SMS není pro tento servis aktivní.",
+          detail: entErr?.message ?? "Chybí platný nárok na modul sms.",
+        }),
+        { status: 403, headers: jsonHeaders }
+      );
+    }
+
     // Find or create conversation
     let conversationId: string;
     const { data: existingConv } = await svc

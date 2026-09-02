@@ -42,6 +42,7 @@ import {
   type InboundSmsNavigatePayload,
 } from "./hooks/useGlobalSmsUnreadCount";
 import { useSmsEnabled } from "./hooks/useSmsEnabled";
+import { useEntitlements } from "./hooks/useEntitlements";
 import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import {
@@ -208,7 +209,14 @@ export default function App() {
     }, [])
   );
 
-  const smsEnabled = useSmsEnabled(activeServiceId);
+  const smsProvisioned = useSmsEnabled(activeServiceId);
+  const { has: hasModule } = useEntitlements(activeServiceId);
+
+  // Modul je dostupný, jen když ho má servis ZAPLACENÝ.
+  // U SMS navíc musí být zřízené telefonní číslo – nárok sám o sobě nestačí.
+  // Faktury si uživatel může navíc skrýt v Nastavení, když má vlastní
+  // fakturační systém; to je předvolba, ne nárok.
+  const smsEnabled = smsProvisioned && hasModule("sms");
   const globalSmsUnreadCount = useGlobalSmsUnreadCount(activeServiceId, {
     onInboundSmsNavigate: useCallback((p: InboundSmsNavigatePayload) => {
       setOpenSmsIntent({
@@ -232,6 +240,10 @@ export default function App() {
 
   // UI config
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
+
+  // Faktury: nárok servisu A zároveň to, že si je uživatel neskryl.
+  // Musí být až za uiCfg, ze kterého čte předvolbu.
+  const invoicesAvailable = hasModule("invoices") && uiCfg.invoicingEnabled !== false;
 
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
@@ -704,10 +716,10 @@ export default function App() {
 
   // Když je fakturační modul vypnutý a uživatel je na Fakturách, přesměruj na Zakázky
   useEffect(() => {
-    if (uiCfg.invoicingEnabled === false && activePage === "invoices") {
+    if (!invoicesAvailable && activePage === "invoices") {
       setActivePage("orders");
     }
-  }, [uiCfg.invoicingEnabled, activePage]);
+  }, [invoicesAvailable, activePage]);
 
   useEffect(() => {
     if (smsEnabled === false && activePage === "sms") {
@@ -756,7 +768,7 @@ export default function App() {
       };
       for (const [id, page] of Object.entries(navMap)) {
         if (comboMatchesEvent(e, getShortcut(id as ShortcutId))) {
-          if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
+          if (page === "invoices" && !invoicesAvailable) return;
           e.preventDefault();
           e.stopPropagation();
           setActivePage(page);
@@ -775,7 +787,7 @@ export default function App() {
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [session, shortcutsHelpOpen, uiCfg.invoicingEnabled]);
+  }, [session, shortcutsHelpOpen, invoicesAvailable]);
 
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {
@@ -783,7 +795,7 @@ export default function App() {
       const ev = e as CustomEvent<{ page: NavKey }>;
       const page = ev.detail?.page;
       if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings"].includes(page)) {
-        if (page === "invoices" && uiCfg.invoicingEnabled === false) return;
+        if (page === "invoices" && !invoicesAvailable) return;
         setActivePage(page);
       }
     };
@@ -793,7 +805,7 @@ export default function App() {
 window.removeEventListener("jobsheet:navigate" as any, onNav);
     document.removeEventListener("jobsheet:navigate" as any, onNav);
     };
-  }, [uiCfg.invoicingEnabled]);
+  }, [invoicesAvailable]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -1061,7 +1073,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
-          invoicingEnabled={uiCfg.invoicingEnabled !== false}
+          invoicingEnabled={invoicesAvailable}
           sidebarPosition={uiCfg.sidebar?.position || "left"}
           smsUnreadCount={globalSmsUnreadCount}
           smsEnabled={smsEnabled}
@@ -1087,12 +1099,12 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                       setOpenCustomerIntent({ customerId });
                     }
                   }}
-                  onCreateInvoice={uiCfg.invoicingEnabled !== false ? (prefill) => {
+                  onCreateInvoice={invoicesAvailable ? (prefill) => {
                     setInvoicePrefill(prefill);
                     setOpenInvoiceId(null);
                     setActivePage("invoices");
                   } : undefined}
-                  onOpenInvoice={uiCfg.invoicingEnabled !== false ? (id) => {
+                  onOpenInvoice={invoicesAvailable ? (id) => {
                     setOpenInvoiceId(id);
                     setInvoicePrefill(null);
                     setActivePage("invoices");
@@ -1183,7 +1195,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
-          {uiCfg.invoicingEnabled !== false && visitedPages.has("invoices") && (
+          {invoicesAvailable && visitedPages.has("invoices") && (
             <div style={{ display: activePage === "invoices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "invoices"}>
               <Invoices
                 activeServiceId={activeServiceId}
