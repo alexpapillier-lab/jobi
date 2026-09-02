@@ -62,3 +62,4 @@ supabase/.temp/linked-project.json
 
 # Web build
 dist-web
+dist-site

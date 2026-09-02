@@ -25,7 +25,8 @@
     "db:migrate:local": "npx supabase migration up",
     "dev:web": "vite --config vite.config.web.ts",
     "build:web": "npm run typecheck && vite build --config vite.config.web.ts",
-    "preview:web": "vite preview --config vite.config.web.ts"
+    "preview:web": "vite preview --config vite.config.web.ts",
+    "build:site": "bash scripts/build-site.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

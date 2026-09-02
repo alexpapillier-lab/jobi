@@ -18,6 +18,50 @@ Stav: **hotová k nasazení, zatím nenasazená.**
 Desktopový build se nezměnil: `vite.config.ts` je nedotčený a
 `npm run build` i testy procházejí dál.
 
+## Nasazení – dvě varianty
+
+### A) Vedle marketingového webu (doporučeno, jeden projekt)
+
+Aplikace se pověsí na `appjobi.com/servis/`, marketingový web zůstane
+v kořeni. Jeden Pages projekt, jedna doména, žádné nové DNS.
+
+Sestavení dělá `scripts/build-site.sh`:
+
+```bash
+npm run build:site        # -> dist-site/
+```
+
+Výstup obsahuje `/` (marketingový web) i `/servis/` (aplikace),
+složené `_headers` a `robots.txt` v kořeni s `Disallow: /servis/`.
+
+**Ve stávajícím Pages projektu přenastavit:**
+
+| Pole | Hodnota |
+|---|---|
+| Build command | `npm ci && npm run build:site` |
+| Build output directory | `dist-site` |
+
+A doplnit proměnné prostředí `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`VITE_ROOT_OWNER_ID`.
+
+**Co to změní k horšímu – zvaž předem:**
+
+Marketingový web se dnes nasazuje jako statické soubory, bez buildu.
+Po téhle změně bude každé nasazení spouštět `npm ci` a Vite build.
+Znamená to, že **chyba v aplikaci zablokuje i nasazení marketingového
+webu** – dosud na sobě nezávisely. Nasazení taky potrvá déle
+(z vteřin na jednotky minut).
+
+Lokální kontrola před nasazením:
+
+```bash
+npm run build:site
+python3 -m http.server 8080 --directory dist-site
+# http://localhost:8080/  a  http://localhost:8080/servis/
+```
+
+### B) Samostatný Pages projekt
+
 ## Nasazení na Cloudflare Pages
 
 Marketingový web (`web/`) tam už běží, tohle je **druhý projekt**.
