@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { cenoveVarianty } from "./ceny.ts";
+import { popisCasu } from "./cas.ts";
 
 /**
  * Veřejný ceník servisu. Bez přihlášení, ke čtení z webu.
@@ -110,6 +111,9 @@ serve(async (req) => {
         name: r.name,
         ...cenoveVarianty(Number(r.price ?? 0), sazba, vcetne, platce),
         estimated_time: r.estimated_time,
+        // Syrové minuty (10080) se na web napsat nedají – posíláme i podobu
+        // pro člověka, ať to nemusí řešit každý web zvlášť.
+        estimated_time_label: popisCasu(r.estimated_time),
         details: r.details ?? "",
         // opravu nabízíme jen u modelů, které jsou samy viditelné
         model_ids: modelIds.filter((id: string) => idModelu.has(id)),
