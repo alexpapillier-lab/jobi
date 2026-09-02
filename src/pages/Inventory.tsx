@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { Button } from "../components/ui";
+import { Button, Input } from "../components/ui";
 import { BoxIcon, WarningIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
@@ -1424,27 +1424,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         <div style={{ display: "grid", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Vyhledat produkt</div>
-            <input
+            <Input
               type="text"
               placeholder="Začněte psát název produktu..."
               value={productSearchQuery}
-              onChange={(e) => setProductSearchQuery(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-                background: "var(--panel)",
-                backdropFilter: "var(--blur)",
-                WebkitBackdropFilter: "var(--blur)",
-                color: "var(--text)",
-                outline: "none",
-                transition: "var(--transition-smooth)",
-                boxShadow: "var(--shadow-soft)",
-                fontFamily: "system-ui",
-                fontSize: 13,
-              }}
-            />
+              onChange={(e) => setProductSearchQuery(e.target.value)} />
           </div>
 
           {(() => {

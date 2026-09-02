@@ -1,4 +1,5 @@
 import type React from "react";
+import { Segmented } from "../components/ui";
 import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
@@ -590,26 +591,17 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-end" }}>
           {/* Režim zobrazení */}
           <div style={{ display: "flex", gap: 6 }}>
-            {(["cards", "table", "charts"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                data-tour={mode === "charts" ? "statistics-view-charts" : undefined}
-                onClick={() => setViewMode(mode)}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 10,
-                  border,
-                  background: viewMode === mode ? "var(--accent-soft)" : "var(--panel)",
-                  color: viewMode === mode ? "var(--accent)" : "var(--text)",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                {mode === "cards" ? "Karty" : mode === "table" ? "Tabulka" : "Grafy"}
-              </button>
-            ))}
+              <Segmented<"cards" | "table" | "charts">
+                ariaLabel="Režim zobrazení statistik"
+                size="sm"
+                value={viewMode}
+                onChange={setViewMode}
+                options={[
+                  { value: "cards", label: "Karty" },
+                  { value: "table", label: "Tabulka" },
+                  { value: "charts", label: "Grafy", dataTour: "statistics-view-charts" },
+                ]}
+              />
           </div>
 
           {/* Porovnat s předchozím obdobím */}

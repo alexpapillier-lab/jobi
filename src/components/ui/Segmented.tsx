@@ -15,6 +15,8 @@ export type SegmentedOption<T> = {
   label: ReactNode;
   disabled?: boolean;
   title?: string;
+  /** Kotva pro průvodce aplikací (AppTourOverlay). */
+  dataTour?: string;
 };
 
 export function Segmented<T extends string | number>({
@@ -46,6 +48,7 @@ export function Segmented<T extends string | number>({
           aria-pressed={o.value === value}
           disabled={o.disabled}
           title={o.title}
+          data-tour={o.dataTour}
           onClick={() => onChange(o.value)}
         >
           {o.label}
