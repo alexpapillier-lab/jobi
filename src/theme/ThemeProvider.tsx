@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "halloween" | "christmas" | "tron-red" | "tron-cyan" | "synthwave" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
+export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
 
 type ThemeContextValue = {
   theme: ThemeMode;
@@ -12,7 +12,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = "jobsheet_theme";
-const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink", "halloween", "christmas", "tron-red", "tron-cyan", "synthwave"];
+const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink"];
 
 function applyThemeToDom(theme: ThemeMode) {
   document.documentElement.setAttribute("data-theme", theme);
@@ -32,15 +32,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyThemeToDom(theme);
   }, [theme]);
 
-  const setTheme = (t: ThemeMode) => {
+  // useCallback, ne obyčejné funkce: useMemo níž je uvádí v hodnotě kontextu,
+  // ale bez toho by je v závislostech neměl. Taková memoizace lže a React
+  // Compiler kvůli ní přeskočil optimalizaci celé komponenty.
+  const setTheme = useCallback((t: ThemeMode) => {
     setThemeState(t);
     localStorage.setItem(STORAGE_KEY, t);
     applyThemeToDom(t);
-  };
+  }, []);
 
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+  const toggleTheme = useCallback(
+    () => setTheme(theme === "dark" ? "light" : "dark"),
+    [setTheme, theme]
+  );
 
-  const value = useMemo(() => ({ theme, setTheme, toggleTheme, availableThemes: AVAILABLE_THEMES }), [theme]);
+  const value = useMemo(
+    () => ({ theme, setTheme, toggleTheme, availableThemes: AVAILABLE_THEMES }),
+    [theme, setTheme, toggleTheme]
+  );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

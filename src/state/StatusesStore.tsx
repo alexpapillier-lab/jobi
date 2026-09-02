@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
 import { normalizeError } from "../utils/errorNormalizer";
@@ -191,11 +191,18 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
     };
   }, [activeServiceId]);
 
-  const getByKey = (key: StatusKey) => statuses.find((s) => s.key === key);
+  /**
+   * Funkce v hodnotě kontextu musí být v useCallback.
+   *
+   * useMemo dole je dává do value, ale neuvádělo je v závislostech – taková
+   * memoizace lže (držela staré uzávěry) a React Compiler kvůli ní přeskočil
+   * optimalizaci celého souboru. Tenhle kontext čte skoro celá aplikace.
+   */
+  const getByKey = useCallback((key: StatusKey) => statuses.find((s) => s.key === key), [statuses]);
 
-  const isFinal = (key: StatusKey) => getByKey(key)?.isFinal ?? false;
+  const isFinal = useCallback((key: StatusKey) => getByKey(key)?.isFinal ?? false, [getByKey]);
 
-  const upsertStatus = async (s: StatusMeta) => {
+  const upsertStatus = useCallback(async (s: StatusMeta) => {
     const key = s.key.trim();
     const label = s.label.trim();
     if (!key || !label) return;
@@ -271,18 +278,18 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
     });
 
     showToast("Status uložen", "success");
-  };
+  }, [activeServiceId, statuses]);
 
-  const removeStatus = (key: StatusKey) => {
+  const removeStatus = useCallback((key: StatusKey) => {
     // nedovol smaž fallback
     if (key === FALLBACK_KEY) return;
-        setStatuses((prev) => prev.filter((s) => s.key !== key));
-  };
+    setStatuses((prev) => prev.filter((s) => s.key !== key));
+  }, []);
 
-  const resetToDefaults = () => {
+  const resetToDefaults = useCallback(() => {
     // Reset clears statuses - they must be reloaded from DB
     setStatuses([]);
-  };
+  }, []);
 
   const value = useMemo<StatusesContextValue>(
     () => ({
@@ -296,7 +303,7 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       isFinal,
       fallbackKey: FALLBACK_KEY,
     }),
-    [statuses, loading, error]
+    [statuses, loading, error, upsertStatus, removeStatus, resetToDefaults, getByKey, isFinal]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
