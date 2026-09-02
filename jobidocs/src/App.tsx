@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { qrDataUrl } from "./qr";
 import packageJson from "../package.json";
 import { generateDocumentHtml } from "./documentToHtml";
 import { AppLogo } from "./components/AppLogo";
@@ -2077,7 +2078,7 @@ function DocumentPreview({
               }}
             >
               <div style={{ textAlign: "right", fontSize: 10, color: styles.secondaryColor, maxWidth: 140, lineHeight: 1.3 }}>{reviewText}</div>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}`} alt="QR" style={{ width: qrCodeSize, height: qrCodeSize, display: "block", flexShrink: 0, pointerEvents: "none" }} draggable={false} />
+              <img src={qrDataUrl(reviewUrl, qrCodeSize, "L")} alt="QR" style={{ width: qrCodeSize, height: qrCodeSize, display: "block", flexShrink: 0, pointerEvents: "none" }} draggable={false} />
             </div>
           )}
           {signatureBlockIds.map((blockId, idx) => {

@@ -5,6 +5,7 @@
  */
 
 import { getDesignStyles, type DocumentDesign, type SectionStyle } from "./documentDesign";
+import { qrDataUrl } from "./qr";
 import { sanitizeRichText } from "./richText";
 
 type DocTypeKey = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
@@ -398,7 +399,7 @@ function invoicePaymentHtml(vars: Record<string, string>, companyData: Record<st
   if (vs) rows.push(`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:rgba(0,0,0,0.5)">VS</span><span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(vs)}</span></div>`);
 
   if (spayd) {
-    rows.push(`<div style="margin-top:10px;text-align:center"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&ecc=M&data=${encodeURIComponent(spayd)}" alt="QR Platba" style="width:120px;height:120px;display:inline-block" /><div style="font-size:8px;color:rgba(0,0,0,0.4);margin-top:4px">QR Platba</div></div>`);
+    rows.push(`<div style="margin-top:10px;text-align:center"><img src="${qrDataUrl(spayd, 120, "M")}" alt="QR Platba" style="width:120px;height:120px;display:inline-block" /><div style="font-size:8px;color:rgba(0,0,0,0.4);margin-top:4px">QR Platba</div></div>`);
   }
 
   return rows.join("");
@@ -718,7 +719,7 @@ export function generateDocumentHtml(
     showQr && reviewUrl
       ? `<div data-element="qr" style="position:absolute;left:${qrX}px;top:${qrY}px;display:flex;align-items:center;gap:12px;">
           <div style="text-align:right;font-size:10px;color:${styles.secondaryColor};max-width:140px;line-height:1.3">${escapeHtml(reviewText)}</div>
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=${qrCodeSize}x${qrCodeSize}&ecc=L&data=${encodeURIComponent(reviewUrl)}" alt="QR" style="width:${qrCodeSize}px;height:${qrCodeSize}px;display:block;flex-shrink:0" />
+          <img src="${qrDataUrl(reviewUrl, qrCodeSize, "L")}" alt="QR" style="width:${qrCodeSize}px;height:${qrCodeSize}px;display:block;flex-shrink:0" />
         </div>`
       : "";
   const ticketCode =

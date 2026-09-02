@@ -8,6 +8,7 @@
     "electron-updater": "^6.3.9",
     "fastify": "^5.1.0",
     "pdf-lib": "^1.17.1",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
