@@ -12,7 +12,7 @@ type Props = {
 
 const smsBadge = (n: number) =>
   n > 0 ? (
-    <span style={{ marginLeft: 6, minWidth: 18, height: 18, borderRadius: 9, background: "#FF3B30", color: "#fff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+    <span style={{ marginLeft: 6, minWidth: 18, height: 18, borderRadius: 9, background: "#FF3B30", color: "#fff", fontSize: "var(--text-xs)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
       {n > 99 ? "99+" : n}
     </span>
   ) : null;

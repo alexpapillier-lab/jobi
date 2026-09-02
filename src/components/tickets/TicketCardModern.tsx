@@ -65,10 +65,10 @@ export function TicketCardModern({ ticket: t, meta, onClick, statusPicker, print
         {/* Header: code + date */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
           {meta?.label && (
             <span style={{
-              fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
+              fontSize: "var(--text-xs)", fontWeight: 700, padding: "1px 5px", borderRadius: 4,
               background: `${bg}18`, color: bg, whiteSpace: "nowrap",
             }}>
               {meta.isFinal ? "✓ " : ""}{meta.label}
@@ -105,7 +105,7 @@ export function TicketCardModern({ ticket: t, meta, onClick, statusPicker, print
               <div style={{ width: 32, height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
                 <div style={{ height: "100%", borderRadius: 2, background: bg, width: meta?.isFinal ? "100%" : `${Math.min(100, repairs.length * 25)}%` }} />
               </div>
-              <span style={{ fontSize: 9, color: "var(--muted)" }}>{repairs.length}</span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>{repairs.length}</span>
             </div>
           )}
           {finalPrice > 0 && (

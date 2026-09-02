@@ -791,7 +791,7 @@ export default function Calendar({
                     {item.isClaim && (
                       <span
                         style={{
-                          fontSize: 9,
+                          fontSize: "var(--text-xs)",
                           fontWeight: 900,
                           padding: "1px 4px",
                           borderRadius: 4,
@@ -886,7 +886,7 @@ export default function Calendar({
             <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6, color: "var(--text)" }}>
               {hoveredItem.item.code}
               {hoveredItem.item.isClaim && (
-                <span style={{ marginLeft: 6, fontSize: 9, background: "rgba(13,148,136,0.2)", color: "#0f766e", padding: "1px 4px", borderRadius: 4 }}>
+                <span style={{ marginLeft: 6, fontSize: "var(--text-xs)", background: "rgba(13,148,136,0.2)", color: "#0f766e", padding: "1px 4px", borderRadius: 4 }}>
                   Reklamace
                 </span>
               )}

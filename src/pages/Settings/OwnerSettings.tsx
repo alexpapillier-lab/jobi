@@ -328,7 +328,7 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                           display: "inline-block",
                           padding: "2px 8px",
                           borderRadius: 6,
-                          fontSize: 10,
+                          fontSize: "var(--text-xs)",
                           fontWeight: 700,
                           textTransform: "uppercase",
                           letterSpacing: "0.03em",

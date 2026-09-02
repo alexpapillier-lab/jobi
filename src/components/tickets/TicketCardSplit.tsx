@@ -47,7 +47,7 @@ export function TicketCardSplit({ ticket: t, meta, onClick, statusPicker, printB
       <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 3 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <DeviceIcon size={12} color="var(--accent)" />

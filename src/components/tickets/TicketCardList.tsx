@@ -48,7 +48,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         {/* Row 1: code, date, device, customer */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
           <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>
           <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
             <DeviceIcon size={12} color="var(--accent)" />

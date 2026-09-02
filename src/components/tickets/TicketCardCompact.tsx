@@ -47,10 +47,10 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
         {/* Header: code + date left, status + print right */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
           {meta?.label && (
             <span style={{
-              fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
+              fontSize: "var(--text-xs)", fontWeight: 700, padding: "1px 5px", borderRadius: 4,
               background: `${bg}18`, color: bg, whiteSpace: "nowrap", flexShrink: 0,
             }}>
               {meta.isFinal ? "✓ " : ""}{meta.label}

@@ -51,7 +51,7 @@ function KanbanCard({
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
         <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)" }}>{t.code}</span>
-        <span style={{ fontSize: 10, color: "var(--muted)" }}>{formatCZDate(t.createdAt)}</span>
+        <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>{formatCZDate(t.createdAt)}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
         <DeviceIcon size={12} color={statusColor} />

@@ -6496,7 +6496,7 @@ export default function Orders({
                     left: 4,
                     right: 4,
                     bottom: 4,
-                    fontSize: 10,
+                    fontSize: "var(--text-xs)",
                     fontWeight: 700,
                     borderRadius: 6,
                     background: "rgba(0,0,0,0.55)",

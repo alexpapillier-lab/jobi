@@ -50,7 +50,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
         minWidth: 0,
       }}>
         <span style={{ fontWeight: 800, fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>{t.code}</span>
-        <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
+        <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZDate(t.createdAt)}</span>
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
@@ -66,7 +66,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</div>
-            <div style={{ fontWeight: 500, fontSize: 10, color: "var(--muted)" }}>{t.customerName}</div>
+            <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)" }}>{t.customerName}</div>
           </div>
         </div>
 

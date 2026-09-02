@@ -90,7 +90,7 @@ export function OrderRow({
             {meta?.isFinal && (
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 900,
                   padding: "2px 5px",
                   borderRadius: 4,
@@ -191,7 +191,7 @@ export function OrderRow({
                     display: "flex", 
                     alignItems: "center", 
                     gap: 6,
-                    fontSize: 10,
+                    fontSize: "var(--text-xs)",
                     color: "var(--muted)",
                     whiteSpace: "nowrap",
                   }}>

@@ -76,11 +76,11 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         <div style={{ width: 8, height: 8, borderRadius: 4, background: CLAIM_ACCENT, flexShrink: 0, marginLeft: 10 }} />
         <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 60 }}>{c.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, minWidth: 70 }}>{dateStr}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, minWidth: 70 }}>{dateStr}</span>
           <span style={{ minWidth: 0, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)", flexShrink: 1 }}>{c.device_label || "—"}</span>
           <span style={{ fontSize: 11, color: "var(--muted)", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>{c.customer_name ?? "—"}</span>
           {c.notes && (
-            <span style={{ flex: 1, minWidth: 0, fontSize: 10, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {c.notes.slice(0, 60)}
             </span>
           )}
@@ -107,7 +107,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         <div style={{ width: 6, background: CLAIM_ACCENT, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 65 }}>{c.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
           <span style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 80, maxWidth: 180, flexShrink: 1 }}>{c.device_label || "—"}</span>
           <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{c.customer_name ?? "—"}</span>
           {c.notes && (
@@ -140,7 +140,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
             <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-            <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
             <ClaimBadge />
             <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>
             <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
@@ -185,7 +185,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
           display: "flex", alignItems: "center", gap: 6, minWidth: 0,
         }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
           <ClaimBadge size="small" />
           <div style={{ flex: 1 }} />
           <Controls statusPicker={statusPicker} printButton={printButton} />
@@ -197,7 +197,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</div>
-              <div style={{ fontWeight: 500, fontSize: 10, color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
+              <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
             </div>
           </div>
           {c.notes && (
@@ -229,10 +229,10 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, flexShrink: 0 }}>{c.code}</span>
-            <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>{dateStr}</span>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", flexShrink: 0 }}>{dateStr}</span>
             <ClaimBadge />
             {statusLabel && (
-              <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: `${statusColor}18`, color: statusColor, whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: `${statusColor}18`, color: statusColor, whiteSpace: "nowrap" }}>
                 {statusLabel}
               </span>
             )}
@@ -283,7 +283,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-            <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
             <ClaimBadge size="small" />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -326,10 +326,10 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
       <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-          <span style={{ fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
           <ClaimBadge />
           {statusLabel && (
-            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 4, background: `${statusColor}15`, color: statusColor, border: `1px solid ${statusColor}25`, whiteSpace: "nowrap", flexShrink: 0 }}>
+            <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, padding: "2px 5px", borderRadius: 4, background: `${statusColor}15`, color: statusColor, border: `1px solid ${statusColor}25`, whiteSpace: "nowrap", flexShrink: 0 }}>
               {statusLabel}
             </span>
           )}

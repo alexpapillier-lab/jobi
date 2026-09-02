@@ -388,7 +388,7 @@ export function Sidebar({
                         borderRadius: "50%",
                         background: "#FF3B30",
                         color: "#fff",
-                        fontSize: 10,
+                        fontSize: "var(--text-xs)",
                         fontWeight: 700,
                         display: "flex",
                         alignItems: "center",
@@ -456,7 +456,7 @@ export function Sidebar({
 
               {showServiceDropdown && (
                 <div style={{ borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ padding: "6px 14px", fontSize: 10, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <div style={{ padding: "6px 14px", fontSize: "var(--text-xs)", color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     Servis
                   </div>
                   {services.length === 0 ? (
@@ -722,7 +722,7 @@ export function Sidebar({
                       borderRadius: "50%",
                       background: "#FF3B30",
                       color: "#fff",
-                      fontSize: 10,
+                      fontSize: "var(--text-xs)",
                       fontWeight: 700,
                       display: "flex",
                       alignItems: "center",

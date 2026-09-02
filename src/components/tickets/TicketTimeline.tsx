@@ -12,7 +12,7 @@ type Props = {
 
 const smsBadge = (n: number) =>
   n > 0 ? (
-    <span style={{ marginLeft: 6, minWidth: 18, height: 18, borderRadius: 9, background: "#FF3B30", color: "#fff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+    <span style={{ marginLeft: 6, minWidth: 18, height: 18, borderRadius: 9, background: "#FF3B30", color: "#fff", fontSize: "var(--text-xs)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
       {n > 99 ? "99+" : n}
     </span>
   ) : null;
@@ -140,12 +140,12 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
                   {(t.requestedRepair || t.issueShort) && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
                       <WrenchIcon size={10} color="var(--muted)" />
-                      <span style={{ fontSize: 10, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(t.requestedRepair || t.issueShort || "").slice(0, 60)}</span>
+                      <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(t.requestedRepair || t.issueShort || "").slice(0, 60)}</span>
                     </div>
                   )}
 
                   {meta?.label && (
-                    <span style={{ fontSize: 10, fontWeight: 700, color: statusColor, padding: "2px 7px", borderRadius: 5, background: `${statusColor}18`, border: `1px solid ${statusColor}30`, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: statusColor, padding: "2px 7px", borderRadius: 5, background: `${statusColor}18`, border: `1px solid ${statusColor}30`, whiteSpace: "nowrap", flexShrink: 0 }}>
                       {meta.isFinal ? "✓ " : ""}{meta.label}
                     </span>
                   )}

@@ -903,11 +903,11 @@ function MonthlyChart({ data }: { data: { label: string; total: number; paid: nu
                 />
               </div>
             </div>
-            <div style={{ fontSize: 9, color: "var(--muted)", whiteSpace: "nowrap" }}>{m.label}</div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap" }}>{m.label}</div>
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 10, color: "var(--muted)" }}>
+      <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: "var(--text-xs)", color: "var(--muted)" }}>
         <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "rgba(37,99,235,0.3)", marginRight: 4 }} />Celkem</span>
         <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#22c55e", opacity: 0.7, marginRight: 4 }} />Zaplaceno</span>
       </div>

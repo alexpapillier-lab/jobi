@@ -2534,7 +2534,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                   padding: "2px 6px",
                                   background: "var(--accent-soft)",
                                   borderRadius: 4,
-                                  fontSize: 9,
+                                  fontSize: "var(--text-xs)",
                                   fontWeight: 700,
                                   color: "var(--muted)",
                                 }}>
@@ -2606,7 +2606,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               padding: "2px 6px",
                               background: "var(--accent-soft)",
                               borderRadius: 4,
-                              fontSize: 9,
+                              fontSize: "var(--text-xs)",
                               fontWeight: 700,
                               color: "var(--muted)",
                             }}>

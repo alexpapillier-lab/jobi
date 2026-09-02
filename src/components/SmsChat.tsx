@@ -338,7 +338,7 @@ export function SmsChat({
                 {msg.body}
               </div>
               {showTime && (
-                <span style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, marginLeft: 2 }}>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginTop: 2, marginLeft: 2 }}>
                   {formatMessageTime(msg.sent_at)}
                 </span>
               )}
