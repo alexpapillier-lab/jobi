@@ -10,7 +10,7 @@
   <title>Jobi – Servisní evidence pro servisy</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="logo.svg" />
-  <link rel="stylesheet" href="style.css?v=202609021020" />
+  <link rel="stylesheet" href="style.css?v=202609021345" />
 </head>
 <body>
   <!-- Loading screen -->
@@ -39,6 +39,9 @@
       <nav class="nav-links" aria-label="Hlavní navigace">
         <a href="#vyhody">Co umí</a>
         <a href="#cenik">Ceník</a>
+        <!-- Webové rozhraní: záložní cesta, když desktopová appka zlobí.
+             rel="nofollow" + robots.txt Disallow: /servis/ – nemá se indexovat. -->
+        <a href="/servis/" class="nav-web" rel="nofollow" title="Otevřít Jobi v prohlížeči"><span class="nav-web-full">Webové rozhraní</span><span class="nav-web-short">Web</span></a>
         <a href="#stazeni" class="nav-cta">Stáhnout</a>
       </nav>
     </div>

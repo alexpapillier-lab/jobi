@@ -92,6 +92,30 @@ body {
 }
 .nav-links .nav-cta:hover { background: var(--accent-hover); color: #fff; }
 
+/* Odkaz na webové rozhraní – odlišený rámečkem, ale ne tak výrazný
+   jako hlavní CTA "Stáhnout". Je to záložní cesta, ne hlavní produkt. */
+.nav-links .nav-web {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.82);
+}
+.nav-links .nav-web:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.nav-web-short { display: none; }
+
+@media (max-width: 560px) {
+  /* Na úzkém displeji se dlouhý popisek nevejde. Odkaz ale NESKRÝVÁME –
+     webové rozhraní je záložní cesta, po které se sáhne právě z telefonu,
+     když desktopová aplikace zlobí. Jen se zkrátí na "Web". */
+  .nav-web-full { display: none; }
+  .nav-web-short { display: inline; }
+  .nav-links { gap: 2px; }
+  .nav-links a { padding: 8px 10px; font-size: 13px; }
+}
+
 /* ========== Hero ========== */
 .hero {
   position: relative;
