@@ -3,7 +3,6 @@ import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
 import { AppLogo } from "./AppLogo";
-import { getLogoColors } from "../lib/logoPresets";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const { signIn, signUp, configError } = useAuth();
@@ -228,11 +227,13 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
       >
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <div style={{ margin: "0 auto 20px", display: "flex", justifyContent: "center" }}>
-            <AppLogo
-              size={72}
-              colors={getLogoColors("dark", "purple")}
-              modern
-            />
+            {/*
+              Bez colors= si AppLogo načte motiv i uložený preset loga sám,
+              stejně jako v Sidebaru. Dřív tu bylo natvrdo
+              getLogoColors("dark", "purple"), takže přihlašovací obrazovka
+              ukazovala jinou variantu loga než zbytek aplikace.
+            */}
+            <AppLogo size={72} modern />
           </div>
           <h1
             style={{
