@@ -3,7 +3,7 @@ import { useTheme } from "../theme/ThemeProvider";
 import { getLogoColors } from "../lib/logoPresets";
 import type { LogoPresetId } from "../lib/logoPresets";
 import { STORAGE_KEYS } from "../constants/storageKeys";
-import { assetUrl } from "../lib/assetUrl";
+import { assetUrl, looksLikeSvg } from "../lib/assetUrl";
 
 const LOGO_SVG_URL = assetUrl("logos/logopic.svg");
 /** JobiDocs logo – PNG ze složky logos (logos png/jdlogo.png), servírováno na /logos/jdlogo.png */
@@ -42,10 +42,8 @@ export function AppLogo({ size = 40, style, colors: colorsOverride, minimal: min
       .then((r) => r.text())
       .then((text) => {
         // Odpověď se vkládá přes dangerouslySetInnerHTML, takže musí být
-        // opravdu SVG. Cloudflare Pages vrací na chybějící cestu index.html
-        // se stavem 200 – bez téhle kontroly by se do aplikace vložila
-        // celá HTML stránka.
-        if (!cancelled && text.trimStart().startsWith("<svg")) setRawSvg(text);
+        // opravdu SVG – viz looksLikeSvg().
+        if (!cancelled && looksLikeSvg(text)) setRawSvg(text);
       })
       .catch(() => {});
     return () => { cancelled = true; };
