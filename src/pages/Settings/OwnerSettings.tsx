@@ -4,6 +4,7 @@ import { showToast } from "../../components/Toast";
 import { Card } from "../../lib/settingsUi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TeamSettings } from "./TeamSettings";
+import { ErrorLogsPanel } from "./ErrorLogsPanel";
 import { formatInviteEmailReason } from "../../utils/errorNormalizer";
 
 type ServiceItem = { service_id: string; service_name: string; role: string; active?: boolean; member_count?: number };
@@ -225,6 +226,8 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
 
   return (
     <>
+      <ErrorLogsPanel />
+
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
           <div>
