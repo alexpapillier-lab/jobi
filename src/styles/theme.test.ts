@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -125,5 +125,44 @@ describe("designové tokeny", () => {
     for (const [name, px] of spaces) {
       expect(px % 4, `${name} = ${px}px není násobek čtyř`).toBe(0);
     }
+  });
+});
+
+/**
+ * Hlídá, že se JobiDocs a Jobi nerozejdou v designu.
+ *
+ * Obě aplikace mají vlastní theme.css a sdílejí část tokenů. Dokud mají
+ * shodné hodnoty, působí jako jeden produkt; jakmile se rozejdou, začne
+ * být vidět, že jsou to dvě aplikace (jiná červená, jiné odstupňování písma).
+ *
+ * JobiDocs nemá vlastní testy, takže se to hlídá odsud – drift zachytí
+ * kterákoli strana.
+ */
+describe("shoda tokenů s JobiDocs", () => {
+  const jobiDocsPath = join(__dirname, "..", "..", "jobidocs", "src", "styles", "theme.css");
+  const exists = existsSync(jobiDocsPath);
+
+  it.runIf(exists)("sdílené tokeny mají v obou aplikacích stejnou hodnotu", () => {
+    const jobiDocsCss = readFileSync(jobiDocsPath, "utf-8");
+
+    function rootVars(source: string): Record<string, string> {
+      const m = source.match(/:root\s*\{([\s\S]*?)\n\}/);
+      if (!m) return {};
+      const out: Record<string, string> = {};
+      for (const [, k, v] of m[1].matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) out[k] = v.trim();
+      return out;
+    }
+
+    const jobi = rootVars(css);
+    const docs = rootVars(jobiDocsCss);
+    const shared = Object.keys(jobi).filter((k) => k in docs);
+
+    expect(shared.length, "aplikace nesdílejí žádné tokeny – načetl se správný soubor?").toBeGreaterThan(15);
+
+    const rozdily = shared
+      .filter((k) => jobi[k] !== docs[k])
+      .map((k) => `${k}: Jobi="${jobi[k]}" vs JobiDocs="${docs[k]}"`);
+
+    expect(rozdily, `Tokeny se rozešly:\n  ${rozdily.join("\n  ")}`).toEqual([]);
   });
 });
