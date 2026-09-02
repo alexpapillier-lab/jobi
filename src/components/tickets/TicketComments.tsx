@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "../ui";
 import { SectionHeading } from "../SectionHeading";
 import { ChatIcon } from "../icons";
 import { formatCZ, type TicketComment } from "./types";
@@ -13,7 +14,6 @@ type Props = {
   onAdd: (ticketId: string) => void;
   onTogglePin: (ticketId: string, commentId: string) => void;
   card: React.CSSProperties;
-  primaryBtn: React.CSSProperties;
   baseFieldTextArea: React.CSSProperties;
 };
 
@@ -25,7 +25,6 @@ export function TicketComments({
   onAdd,
   onTogglePin,
   card,
-  primaryBtn,
   baseFieldTextArea,
 }: Props) {
   return (
@@ -147,9 +146,9 @@ export function TicketComments({
             <div style={{ color: "var(--muted)", fontSize: 12 }}>
               Tip: <b>Ctrl+Enter</b> pro odeslání.
             </div>
-            <button style={{ ...primaryBtn, padding: "10px 14px" }} onClick={() => onAdd(ticketId)}>
+            <Button variant="primary" onClick={() => onAdd(ticketId)}>
               Přidat komentář
-            </button>
+            </Button>
           </div>
         </div>
       </div>

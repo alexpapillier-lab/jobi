@@ -49,3 +49,19 @@ describe("ui.css stojí na tokenech", () => {
     expect(css).toContain(".ui-btn:focus-visible");
   });
 });
+
+describe("validační tlačítka zůstávají klikatelná", () => {
+  // Regrese: formuláře s `submitAttempted` odhalují chyby polí až po kliknutí
+  // na odesílací tlačítko. Kdyby bylo `disabled`, uživatel se nikdy nedozví,
+  // co je špatně – proto smí být jen `aria-disabled`.
+  const forms = [
+    ["pages/Orders.tsx", "canCreate"],
+    ["pages/Customers/CustomerDetail.tsx", "canSave"],
+  ] as const;
+
+  it.each(forms)("%s nezakazuje tlačítko přes %s", (file, flag) => {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf-8");
+    expect(src).toContain(`aria-disabled={!${flag}}`);
+    expect(src).not.toMatch(new RegExp(`(?<!aria-)disabled=\\{!${flag}\\}`));
+  });
+});

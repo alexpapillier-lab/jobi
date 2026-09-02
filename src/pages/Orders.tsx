@@ -2580,39 +2580,7 @@ export default function Orders({
     [border]
   );
 
-  const primaryBtn: React.CSSProperties = useMemo(
-    () => ({
-      padding: "12px 16px",
-      borderRadius: 16,
-      border: "none",
-      background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
-      color: "white",
-      fontWeight: 600,
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      boxShadow: `0 4px 16px var(--accent-glow)`,
-      transition: "var(--transition-smooth)",
-    }),
-    []
-  );
 
-  const softBtn: React.CSSProperties = useMemo(
-    () => ({
-      padding: "12px 16px",
-      borderRadius: 16,
-      border,
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-      color: "var(--text)",
-      fontWeight: 600,
-      cursor: "pointer",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      transition: "var(--transition-smooth)",
-      boxShadow: "var(--shadow-soft)",
-    }),
-    [border]
-  );
 
 
   const smallPillBase: React.CSSProperties = useMemo(
@@ -3422,17 +3390,15 @@ export default function Orders({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0 }}>
           <input ref={searchInputRef} data-tour="orders-search" placeholder="Vyhledávání…" value={query} onChange={(e) => setQuery(e.target.value)} style={inputStyle} />
-          <button data-tour="orders-new-btn" style={primaryBtn} onClick={openNewOrder}>
+          <Button variant="primary" data-tour="orders-new-btn" onClick={openNewOrder}>
             + Nová zakázka
-          </button>
-          <button
+          </Button>
+          <Button variant="primary"
             data-tour="orders-new-claim-btn"
-            type="button"
-            style={primaryBtn}
             onClick={() => setCreateClaimModalOpen(true)}
           >
             + Nová reklamace
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -3824,7 +3790,7 @@ export default function Orders({
               Stav se automaticky nastaví na <b>Přijato</b>. Rozpracované údaje se ukládají automaticky.
             </div>
           </div>
-          <button
+          <Button variant="soft"
             onClick={() => {
               setIsNewOpen(false);
               setCustomerMatchDecision("undecided");
@@ -3835,10 +3801,9 @@ export default function Orders({
                 phoneLookupDebounceTimerRef.current = null;
               }
             }}
-            style={softBtn}
           >
             Zavřít
-          </button>
+          </Button>
         </div>
 
         <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -4118,13 +4083,11 @@ export default function Orders({
                 {idx > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Zařízení {idx + 1}</span>
-                    <button
-                      type="button"
-                      onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))}
-                      style={{ ...softBtn, padding: "4px 10px", fontSize: 12 }}
+                    <Button variant="soft"
+                      onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))} style={{ fontSize: 12 }}
                     >
                       Odebrat
-                    </button>
+                    </Button>
                   </div>
                 )}
                 <div style={fieldLabel}>Zařízení *</div>
@@ -4306,8 +4269,7 @@ export default function Orders({
                 />
               </div>
             ))}
-            <button
-              type="button"
+            <Button variant="soft"
               disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
               onClick={() =>
                 setNewDraft((p) => ({
@@ -4318,11 +4280,9 @@ export default function Orders({
                   ],
                 }))
               }
-              style={{ ...softBtn, marginTop: 16, width: "100%", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: !newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? 0.6 : 1, cursor: !newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "not-allowed" : "pointer" }}
-              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Vyplňte nejdřív název zařízení v tomto řádku" : "Přidat další zařízení"}
-            >
+              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Vyplňte nejdřív název zařízení v tomto řádku" : "Přidat další zařízení"}>
               + Přidat další zařízení
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -4436,7 +4396,7 @@ export default function Orders({
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-          <button
+          <Button variant="soft"
             onClick={() => {
               draftCaptureTokenRef.current = null;
               setDraftCapturePreviewUrls([]);
@@ -4453,12 +4413,10 @@ export default function Orders({
                 phoneLookupDebounceTimerRef.current = null;
               }
             }}
-            style={softBtn}
           >
             Zrušit
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button variant="soft"
             onClick={async () => {
               if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId) {
                 showToast("Chybí připojení nebo aktivní služba.", "error");
@@ -4491,25 +4449,13 @@ export default function Orders({
               }
             }}
             disabled={captureQRLoading}
-            style={{
-              ...softBtn,
-              opacity: captureQRLoading ? 0.55 : 1,
-              cursor: captureQRLoading ? "not-allowed" : "pointer",
-            }}
-            title="Zobrazit QR kód pro nafocení přijímacích fotek z telefonu. Zakázka se nevytvoří – fotky se připojí po kliknutí na „Vytvořit zakázku“."
-          >
+            title="Zobrazit QR kód pro nafocení přijímacích fotek z telefonu. Zakázka se nevytvoří – fotky se připojí po kliknutí na „Vytvořit zakázku“.">
             {captureQRLoading ? "Vytvářím…" : "Udělat přijímací fotky"}
-          </button>
-          <button
-            onClick={createTicket}
-            style={{
-              ...primaryBtn,
-              opacity: canCreate ? 1 : 0.55,
-              cursor: canCreate ? "pointer" : "not-allowed",
-            }}
-          >
+          </Button>
+          <Button variant="primary" aria-disabled={!canCreate}
+            onClick={createTicket}>
             Vytvořit zakázku
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -4604,14 +4550,12 @@ export default function Orders({
             {detailedClaim ? (
               <>
                 {detailedClaim.source_ticket_id && (
-                  <button
-                    type="button"
-                    onClick={() => { setDetailId(detailedClaim.source_ticket_id!); setDetailClaimId(null); }}
-                    style={{ ...primaryBtn, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--panel-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+                  <Button variant="primary"
+                    onClick={() => { setDetailId(detailedClaim.source_ticket_id!); setDetailClaimId(null); }} style={{ display: "flex", alignItems: "center", gap: 8,  background: "var(--panel-2)", color: "var(--text)", border: "1px solid var(--border)" }}
                     title="Otevřít původní zakázku"
                   >
                     Otevřít zakázku
-                  </button>
+                  </Button>
                 )}
                 {!isEditingClaim ? (
                   <>
@@ -4778,7 +4722,7 @@ export default function Orders({
                       Přejít na fakturu
                     </Button>
                   ) : onCreateInvoice ? (
-                    <button
+                    <Button variant="soft"
                       key="create-invoice"
                       onClick={() => {
                         const t = detailedTicket;
@@ -4800,21 +4744,18 @@ export default function Orders({
                           })) : undefined,
                         });
                       }}
-                      style={softBtn}
                       title="Vytvořit fakturu z této zakázky"
                     >
                       <CoinsIcon size={14} /> Vystavit fakturu
-                    </button>
+                    </Button>
                   ) : null;
                 })()}
               </div>
             )}
 
             {detailedTicket && !detailedClaim && smsActivatedForService && (
-              <button
-                type="button"
-                onClick={() => { setSmsPanelOpen(true); }}
-                style={{ ...softBtn, position: "relative" }}
+              <Button variant="soft"
+                onClick={() => { setSmsPanelOpen(true); }} style={{ position: "relative" }}
                 title="SMS chat se zákazníkem"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4843,28 +4784,26 @@ export default function Orders({
                     {smsUnreadCount > 99 ? "99+" : smsUnreadCount}
                   </span>
                 )}
-              </button>
+              </Button>
             )}
             {detailedTicket && !detailedClaim && (
-              <button
+              <Button variant="soft"
                 onClick={() => setTicketHistoryModalOpen(true)}
-                style={softBtn}
                 title="Historie změn zakázky"
               >
                 Historie
-              </button>
+              </Button>
             )}
 
           </div>
 
           {/* Close button - uvnitř náhledu, s odsazením aby nezasahoval mimo */}
-          <button
-            onClick={handleCloseDetail}
-            style={{ ...softBtn, position: "absolute", top: 10, right: 10, zIndex: 2 }}
+          <Button variant="soft"
+            onClick={handleCloseDetail} style={{ position: "absolute", top: 10, right: 10, zIndex: 2 }}
             aria-label="Zavřít"
           >
             ×
-          </button>
+          </Button>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 18 }}>
@@ -5017,33 +4956,20 @@ export default function Orders({
                       ))
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
+                      <Button variant="primary"
                         disabled={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim()}
                         onClick={() => setResolutionItems([...resolutionItems, { id: (crypto as any).randomUUID?.() ?? `z-${Date.now()}`, name: "" }])}
-                        style={{
-                          ...primaryBtn,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "10px 14px",
-                          opacity: resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? 0.6 : 1,
-                          cursor: resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "not-allowed" : "pointer",
-                        }}
-                        title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}
-                      >
+                        title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}>
                         <span>+</span> Přidat zákrok
-                      </button>
+                      </Button>
                       {claimResolutionDraft !== null && (
-                        <button
-                          type="button"
+                        <Button variant="primary"
                           onClick={() => {
                             saveClaimResolutionItems(detailedClaim!.id, claimResolutionDraft!).then((ok) => ok && showToast("Zákroky uloženy", "success"));
-                          }}
-                          style={{ ...primaryBtn, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--accent)", color: "var(--accent-fg)" }}
+                          }} style={{ display: "inline-flex", alignItems: "center", gap: 8,  background: "var(--accent)", color: "var(--accent-fg)" }}
                         >
                           Uložit zákroky
-                        </button>
+                        </Button>
                       )}
                     </div>
                     {resolutionItems.length > 0 && (() => {
@@ -5204,8 +5130,7 @@ export default function Orders({
                       ))}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                      <button
-                        type="button"
+                      <Button variant="soft"
                         onClick={async () => {
                           if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !sourceTicket?.id) return;
                           const client = supabase!;
@@ -5259,11 +5184,10 @@ export default function Orders({
                             setCaptureQRLoading(false);
                           }
                         }}
-                        disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading}
-                        style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
                       >
                         {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                      </button>
+                      </Button>
                       <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                         <input
                           type="file"
@@ -5333,7 +5257,6 @@ export default function Orders({
                 onAdd={addComment}
                 onTogglePin={togglePin}
                 card={card}
-                primaryBtn={primaryBtn}
                 baseFieldTextArea={baseFieldTextArea}
               />
             </>
@@ -6232,8 +6155,7 @@ export default function Orders({
                           ))}
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                        <button
-                          type="button"
+                        <Button variant="soft"
                           onClick={async () => {
                             if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
                             setCaptureQRLoading(true);
@@ -6270,11 +6192,10 @@ export default function Orders({
                               setCaptureQRLoading(false);
                             }
                           }}
-                          disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
-                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                          disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
                         >
                           {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                        </button>
+                        </Button>
                         <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                           <input
                             type="file"
@@ -6379,8 +6300,7 @@ export default function Orders({
                         ))}
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                        <button
-                          type="button"
+                        <Button variant="soft"
                           onClick={async () => {
                             if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
                             const client = supabase!;
@@ -6434,11 +6354,10 @@ export default function Orders({
                             setCaptureQRLoading(false);
                           }
                         }}
-                        disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
-                          style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
+                        disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
                         >
                           {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                        </button>
+                        </Button>
                         <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                           <input
                             type="file"
@@ -6525,7 +6444,6 @@ export default function Orders({
               onAdd={addComment}
               onTogglePin={togglePin}
               card={card}
-              primaryBtn={primaryBtn}
               baseFieldTextArea={baseFieldTextArea}
             />
           </>
@@ -6575,7 +6493,7 @@ export default function Orders({
                   {detailedTicket.customerPhone?.trim() && <span>{detailedTicket.customerPhone.trim()}</span>}
                 </div>
               </div>
-              <button type="button" onClick={() => setSmsPanelOpen(false)} style={{ ...softBtn, width: 36, height: 36 }} aria-label="Zavřít">×</button>
+              <Button variant="soft" onClick={() => setSmsPanelOpen(false)} style={{ width: 36, height: 36 }} aria-label="Zavřít">×</Button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
               <SmsChat
@@ -6716,7 +6634,7 @@ export default function Orders({
           >
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Historie zakázky</div>
-              <button type="button" onClick={() => setTicketHistoryModalOpen(false)} style={{ ...softBtn, padding: "6px 12px" }}>Zavřít</button>
+              <Button variant="soft" size="sm" onClick={() => setTicketHistoryModalOpen(false)}>Zavřít</Button>
             </div>
             <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
               {ticketHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
@@ -6904,7 +6822,7 @@ export default function Orders({
           >
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Historie reklamace</div>
-              <button type="button" onClick={() => setClaimHistoryModalOpen(false)} style={{ ...softBtn, padding: "6px 12px" }}>Zavřít</button>
+              <Button variant="soft" size="sm" onClick={() => setClaimHistoryModalOpen(false)}>Zavřít</Button>
             </div>
             <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
               {claimHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
@@ -6997,15 +6915,13 @@ export default function Orders({
                       style={{ display: "block", width: 220, height: 220 }}
                     />
                   </div>
-                  <button
-                    type="button"
+                  <Button variant="soft"
                     onClick={() => {
                       navigator.clipboard?.writeText(item.url).then(() => showToast("Odkaz zkopírován", "success"));
-                    }}
-                    style={{ ...softBtn, padding: "8px 12px", fontSize: 12 }}
+                    }} style={{ fontSize: 12 }}
                   >
                     Kopírovat odkaz
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -7014,11 +6930,11 @@ export default function Orders({
                 Aktuálně nafoceno: <b style={{ color: "var(--text)" }}>{draftCaptureLiveCount}</b>. Zavřete až po nafocení všech fotek.
               </div>
             )}
-            <button type="button" onClick={closeCaptureQrModal} style={{ ...softBtn, padding: "10px 14px", marginTop: 8 }}>
+            <Button variant="soft" onClick={closeCaptureQrModal} style={{ marginTop: 8 }}>
               {draftCaptureTokenRef.current
                 ? `Zavřít (${draftCaptureLiveCount} ${draftCaptureLiveCount === 1 ? "fotka" : draftCaptureLiveCount >= 2 && draftCaptureLiveCount <= 4 ? "fotky" : "fotek"})`
                 : "Zavřít"}
-            </button>
+            </Button>
           </div>
         </div>,
         document.body

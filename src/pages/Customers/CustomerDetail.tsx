@@ -601,7 +601,7 @@ export function CustomerDetail({
               Zrušit
             </Button>
 
-            <Button variant="primary" disabled={!canSave}
+            <Button variant="primary" aria-disabled={!canSave}
               onClick={saveEdit}>
               Uložit
             </Button>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { Button } from "../../components/ui";
 import { useStatuses, type StatusMeta } from "../../state/StatusesStore";
 import { STATUS_COLOR_PALETTE, getContrastText } from "../../utils/statusColors";
 import { StatusRow } from "./components/StatusRow";
@@ -100,29 +101,7 @@ export function StatusesSettings({ uiCfg, setUiCfg, onCreateStatus, onDeleteStat
   }, [statuses]);
 
   const border = "1px solid var(--border)";
-  const primaryBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--accent)",
-    color: "white",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
-  const softBtn: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border,
-    background: "var(--panel)",
-    color: "var(--text)",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontFamily: "system-ui",
-    fontSize: 13,
-  };
 
   return (
     <>
@@ -303,7 +282,8 @@ export function StatusesSettings({ uiCfg, setUiCfg, onCreateStatus, onDeleteStat
               {draft.label || "Náhled"}
             </div>
 
-            <button
+            <Button
+              variant="primary"
               type="button"
               disabled={!canSave}
               onClick={async () => {
@@ -318,14 +298,9 @@ export function StatusesSettings({ uiCfg, setUiCfg, onCreateStatus, onDeleteStat
                 setDraft({ key: "", label: "", bg: STATUS_COLOR_PALETTE[0].bg, fg: STATUS_COLOR_PALETTE[0].fg, isFinal: false });
                 setShowCustomColor(false);
               }}
-              style={{
-                ...primaryBtn,
-                opacity: canSave ? 1 : 0.4,
-                cursor: canSave ? "pointer" : "not-allowed",
-              }}
             >
               {keyExists ? "Aktualizovat" : "Přidat"}
-            </button>
+            </Button>
           </div>
         </div>
       </Card>
@@ -343,7 +318,6 @@ export function StatusesSettings({ uiCfg, setUiCfg, onCreateStatus, onDeleteStat
               status={s}
               fallbackKey={fallbackKey}
               border={border}
-              softBtn={softBtn}
               onEdit={(status) => setDraft({ ...status })}
               onDelete={onDeleteStatus}
             />

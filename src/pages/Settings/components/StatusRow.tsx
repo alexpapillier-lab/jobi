@@ -1,15 +1,15 @@
 import type { StatusMeta } from "../../../state/StatusesStore";
+import { Button } from "../../../components/ui";
 
 type StatusRowProps = {
   status: StatusMeta;
   fallbackKey: string;
   border: string;
-  softBtn: React.CSSProperties;
   onEdit: (status: StatusMeta) => void;
   onDelete: (key: string) => void;
 };
 
-export function StatusRow({ status: s, fallbackKey, border, softBtn, onEdit, onDelete }: StatusRowProps) {
+export function StatusRow({ status: s, fallbackKey, border, onEdit, onDelete }: StatusRowProps) {
   return (
     <div
       key={s.key}
@@ -44,21 +44,17 @@ export function StatusRow({ status: s, fallbackKey, border, softBtn, onEdit, onD
       </div>
 
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={() => onEdit(s)} style={softBtn}>
+        <Button variant="soft" size="sm" onClick={() => onEdit(s)}>
           Upravit
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
           onClick={() => onDelete(s.key)}
           disabled={s.key === fallbackKey}
-          style={{
-            ...softBtn,
-            opacity: s.key === fallbackKey ? 0.4 : 1,
-            cursor: s.key === fallbackKey ? "not-allowed" : "pointer",
-            color: s.key === fallbackKey ? "var(--muted)" : "rgba(239,68,68,0.9)",
-          }}
         >
           Smazat
-        </button>
+        </Button>
       </div>
     </div>
   );
