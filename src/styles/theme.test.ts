@@ -82,6 +82,26 @@ describe("designové tokeny", () => {
     });
   }
 
+  it("tmavší varianty stavových barev unesou bílý text (toasty)", () => {
+    // Toast má bílý text na barevném pozadí. Syté --danger a --success mají
+    // pod bílým písmem jen 3,8:1 a 2,3:1, proto existují varianty -strong.
+    // Ty musí být tmavé v OBOU motivech – na rozdíl od -text.
+    const white: [number, number, number] = [255, 255, 255];
+    for (const [name, selector] of THEMES) {
+      const vars = block(selector);
+      for (const token of ["--danger-strong", "--success-strong", "--warning-strong", "--info-strong"]) {
+        const bgColor = toRgb(vars[token] ?? "");
+        expect(bgColor, `${token} v ${name} motivu chybí`).not.toBeNull();
+        const ratio = contrast(white, bgColor!);
+        expect(
+          ratio,
+          `bílý text na ${token} (${vars[token]}) má v ${name} motivu kontrast ` +
+            `${ratio.toFixed(2)}:1, potřeba ≥ 4,5`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it("typografická škála nejde pod 11px – menší písmo je nečitelné", () => {
     const root = block(":root");
     const sizes = Object.entries(root)

@@ -700,7 +700,7 @@ export default function Calendar({
                 top: 0,
                 width: 2,
                 height: headerHeight + visibleItems.length * rowHeight,
-                background: "#ef4444",
+                background: "var(--danger)",
                 zIndex: 3,
                 boxShadow: "0 0 8px rgba(239,68,68,0.6)",
                 pointerEvents: "none",

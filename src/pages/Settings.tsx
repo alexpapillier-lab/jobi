@@ -1188,7 +1188,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       minWidth: 18,
                       height: 18,
                       borderRadius: 9,
-                      background: "#dc2626",
+                      background: "var(--danger)",
                       color: "white",
                       fontSize: 11,
                       fontWeight: 800,
@@ -3212,7 +3212,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  background: jobiDocsConnected === true ? "#22c55e" : jobiDocsConnected === false ? "#9ca3af" : "#fbbf24",
+                  background: jobiDocsConnected === true ? "var(--success)" : jobiDocsConnected === false ? "var(--muted)" : "var(--warning)",
                   display: "inline-block",
                 }} />
                 {jobiDocsConnected === true ? "Připojeno" : jobiDocsConnected === false ? "Nepřipojeno" : "Kontroluji…"}
@@ -3415,7 +3415,7 @@ function AppUpdateCard() {
         </div>
       )}
       {checking && <div style={{ fontSize: 13, color: "var(--muted)" }}>Kontroluji aktualizace…</div>}
-      {error && <div style={{ fontSize: 13, color: "#dc2626" }}>Chyba: {error}</div>}
+      {error && <div style={{ fontSize: 13, color: "var(--danger-text)" }}>Chyba: {error}</div>}
       {updateInfo && !downloaded && (
         <>
           <div style={{ fontSize: 13, color: "var(--text)" }}>

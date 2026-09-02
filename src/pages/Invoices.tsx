@@ -34,9 +34,9 @@ const STATUS_COLORS: Record<InvoiceStatus, { bg: string; fg: string }> = {
   draft: { bg: "rgba(107,114,128,0.15)", fg: "var(--muted)" },
   issued: { bg: "rgba(37,99,235,0.15)", fg: "#2563eb" },
   sent: { bg: "rgba(139,92,246,0.15)", fg: "#8b5cf6" },
-  paid: { bg: "rgba(34,197,94,0.15)", fg: "#22c55e" },
-  overdue: { bg: "rgba(239,68,68,0.15)", fg: "#ef4444" },
-  cancelled: { bg: "rgba(107,114,128,0.10)", fg: "#9ca3af" },
+  paid: { bg: "var(--success-soft)", fg: "var(--success-text)" },
+  overdue: { bg: "var(--danger-soft)", fg: "var(--danger-text)" },
+  cancelled: { bg: "var(--panel-2)", fg: "var(--muted)" },
 };
 
 type View = "list" | "editor";
@@ -689,10 +689,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
           <StatCard label="Celkem" value={formatCurrency(stats.total)} />
-          <StatCard label="Zaplaceno" value={formatCurrency(stats.paid)} color="#22c55e" />
-          <StatCard label="Nezaplaceno" value={formatCurrency(stats.unpaid)} color="#ef4444" />
+          <StatCard label="Zaplaceno" value={formatCurrency(stats.paid)} color="var(--success)" />
+          <StatCard label="Nezaplaceno" value={formatCurrency(stats.unpaid)} color="var(--danger)" />
           <StatCard label="Počet faktur" value={String(stats.count)} />
-          {stats.overdue > 0 && <StatCard label="Po splatnosti" value={String(stats.overdue)} color="#ef4444" />}
+          {stats.overdue > 0 && <StatCard label="Po splatnosti" value={String(stats.overdue)} color="var(--danger)" />}
         </div>
 
         {/* Monthly revenue chart */}
@@ -893,7 +893,7 @@ function MonthlyChart({ data }: { data: { label: string; total: number; paid: nu
                   style={{
                     width: "100%",
                     borderRadius: "4px 4px 0 0",
-                    background: "#22c55e",
+                    background: "var(--success)",
                     height: `${m.total > 0 ? Math.max((m.paid / m.total) * 100, 0) : 0}%`,
                     position: "absolute",
                     bottom: 0,
@@ -909,7 +909,7 @@ function MonthlyChart({ data }: { data: { label: string; total: number; paid: nu
       </div>
       <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: "var(--text-xs)", color: "var(--muted)" }}>
         <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "rgba(37,99,235,0.3)", marginRight: 4 }} />Celkem</span>
-        <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#22c55e", opacity: 0.7, marginRight: 4 }} />Zaplaceno</span>
+        <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--success)", opacity: 0.7, marginRight: 4 }} />Zaplaceno</span>
       </div>
     </div>
   );
@@ -1158,7 +1158,7 @@ function MenuBtn({ onClick, children, danger }: { onClick: () => void; children:
         padding: "9px 14px",
         border: "none",
         background: "transparent",
-        color: danger ? "#ef4444" : "var(--text)",
+        color: danger ? "var(--danger-text)" : "var(--text)",
         fontSize: 13,
         textAlign: "left",
         cursor: "pointer",
@@ -1589,7 +1589,7 @@ function InvoiceEditor({
                         style={{
                           background: "none",
                           border: "none",
-                          color: items.length <= 1 ? "var(--border)" : "#ef4444",
+                          color: items.length <= 1 ? "var(--border)" : "var(--danger-text)",
                           cursor: items.length <= 1 ? "default" : "pointer",
                           fontSize: 16,
                           padding: "2px 4px",

@@ -136,7 +136,16 @@ function ToastItem({ toast }: { toast: Toast }) {
   const isSuccess = toast.type === "success";
   const isError = toast.type === "error";
   const isPersistent = toast.persistent === true;
-  const bg = isSuccess ? "#10b981" : isError ? "#ef4444" : "var(--accent)";
+  // Pozadí toastu. Text je bílý, takže se používají TMAVŠÍ varianty stavových
+  // barev – syté odstíny mají pod bílým textem kontrast jen 2,5:1 (zelená)
+  // a 3,8:1 (červená), tedy pod hranicí čitelnosti. Tmavší dávají 5,0:1 a 6,5:1.
+  // Používají se -strong (ne -text): -text se přizpůsobuje pozadí motivu
+  // a v tmavém režimu je světlý, což by pod bílým písmem propadlo.
+  const bg = isSuccess
+    ? "var(--success-strong)"
+    : isError
+      ? "var(--danger-strong)"
+      : "var(--accent)";
 
   const [hovered, setHovered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

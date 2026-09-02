@@ -742,7 +742,7 @@ export function Sidebar({
                       minWidth: 18,
                       height: 18,
                       borderRadius: 9,
-                      background: "#dc2626",
+                      background: "var(--danger)",
                       color: "white",
                       fontSize: 11,
                       fontWeight: 800,
