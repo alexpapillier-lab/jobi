@@ -1,6 +1,8 @@
 # Windows verze – co udělat krok za krokem
 
-Stav: kód je připravený, build ještě nikdy neproběhl.
+> **Stav k 2. 9. 2026: build FUNGUJE.** Části A–C jsou hotové, secrets nastavené,
+> workflow doběhl zeleně a vyrobil oba installery. Zbývá **část D – test ve Windows**.
+
 Tenhle soubor je checklist, ne teorie. Postupuj shora dolů.
 
 ---
@@ -91,9 +93,38 @@ gh run download --name jobidocs-windows --dir ~/Downloads/jobi-win
 
 Čekej `.exe` (NSIS installer) pro Jobi a `.exe` pro JobiDocs.
 
-**Až tenhle běh doběhne, budeme chytřejší.** Je to první build vůbec, takže
-počítej s tím, že něco spadne – typicky chybějící secret nebo drobnost
-v electron-builderu. Log z `gh run view --log-failed` mi můžeš poslat.
+### Hotovo – co build vyrobil
+
+Běh [33611869906](https://github.com/alexpapillier-lab/jobi/actions/runs/33611869906)
+skončil zeleně v obou jobech:
+
+| Artefakt | Obsah |
+|---|---|
+| `jobi-windows` (5,4 MB) | `jobi_0.2.3_x64-setup.exe` + `.sig` |
+| `jobidocs-windows` (166 MB) | NSIS installer a portable verze JobiDocs |
+
+Installer ověřen: `PE32 executable (GUI) Intel 80386, for MS Windows,
+Nullsoft Installer self-extracting archive`, NSIS 3.11.
+
+**Podpisový klíč funguje.** Vygeneroval se `.sig` a jeho key ID
+`4e35598888cfd69b` souhlasí s `pubkey` v `tauri.conf.json` – OTA klienti
+takový podpis přijmou.
+
+### Cesta k tomu (kdyby se to opakovalo)
+
+Build napoprvé neprošel; tři pády a jejich příčiny:
+
+1. **`npm ci`** – `package.json` měl sharp 0.33.5, lock 0.35.4. `npm install`
+   si nesoulad tiše srovná, `npm ci` ho odmítne.
+2. **typecheck** – chyběl `@types/node`. Kód používá `process.env`
+   a `NodeJS.Timeout`, balíček se ale jen náhodou vyskytoval jako tranzitivní
+   závislost. Doplněn natvrdo do devDependencies.
+3. **JobiDocs `The syntax of the command is incorrect`** – hláška cmd.exe.
+   `shell: bash` v kroku nestačí, protože **npm si package skripty spouští
+   vlastním shellem**, a tím je na Windows cmd. Skripty `copy-app-icon`
+   a `copy-tray-icon` používají `mkdir -p` a `cp`. Řešeno
+   `npm config set script-shell` na Git Bash, takže skripty zůstaly beze změny
+   a odladěný macOS build se jich nedotkl.
 
 ---
 
