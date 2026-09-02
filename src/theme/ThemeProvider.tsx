@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "halloween" | "christmas" | "tron-red" | "tron-cyan" | "synthwave" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
+export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
 
 type ThemeContextValue = {
   theme: ThemeMode;
@@ -12,7 +12,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = "jobsheet_theme";
-const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink", "halloween", "christmas", "tron-red", "tron-cyan", "synthwave"];
+const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink"];
 
 function applyThemeToDom(theme: ThemeMode) {
   document.documentElement.setAttribute("data-theme", theme);
