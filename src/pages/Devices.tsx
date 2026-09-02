@@ -46,6 +46,8 @@ type Repair = {
   createdAt: string;
   /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
   publicVisible?: boolean;
+  /** Modely, u kterých se tahle oprava do ceníku neposílá. */
+  publicHiddenModelIds?: string[];
 };
 
 type DevicesData = {
@@ -100,7 +102,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
   const [editBrandName, setEditBrandName] = useState("");
   const [editCategoryName, setEditCategoryName] = useState("");
   const [editModelName, setEditModelName] = useState("");
-  const [editRepairData, setEditRepairData] = useState({ name: "", price: "", time: "", details: "", costs: "", productIds: [] as string[], modelIds: [] as string[], productSearch: "", modelSearch: "" });
+  const [editRepairData, setEditRepairData] = useState({ name: "", price: "", time: "", details: "", costs: "", productIds: [] as string[], modelIds: [] as string[], hiddenModelIds: [] as string[], productSearch: "", modelSearch: "" });
 
   const [newBrandName, setNewBrandName] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -500,7 +502,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     showToast("Model upraven", "success");
   };
 
-  const updateRepair = (id: string, repairData: { name: string; price: string; time: string; details: string; costs: string; productIds: string[]; modelIds: string[] }) => {
+  const updateRepair = (id: string, repairData: { name: string; price: string; time: string; details: string; costs: string; productIds: string[]; modelIds: string[]; hiddenModelIds: string[] }) => {
     const next: DevicesData = {
       ...data,
       repairs: data.repairs.map((r) =>
@@ -514,6 +516,10 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
               details: repairData.details.trim(),
               costs: parseFloat(repairData.costs) || undefined,
               productIds: repairData.productIds.length > 0 ? repairData.productIds : undefined,
+              // výjimka nemá smysl u modelu, který k opravě už nepatří
+              publicHiddenModelIds: repairData.hiddenModelIds.filter((mid) =>
+                repairData.modelIds.includes(mid),
+              ),
             }
           : r
       ),
@@ -2046,17 +2052,25 @@ DETALY: Výměna opotřebované baterie
                             </div>
                           )}
                         </div>
+                        {editRepairData.modelIds.length > 0 && ukazatViditelnost && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+                            Štítkem u modelu určíš, jestli se tahle oprava posílá do veřejného
+                            ceníku právě u něj. Uvnitř aplikace se nabízí u všech.
+                          </div>
+                        )}
                         {editRepairData.modelIds.length > 0 && (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                             {editRepairData.modelIds.map((mid) => {
                               const model = data.models.find((m) => m.id === mid);
                               if (!model) return null;
+                              const skrytyUModelu = editRepairData.hiddenModelIds.includes(mid);
                               return (
                                 <div
                                   key={mid}
                     style={{
                                     padding: "4px 10px",
-                                    background: "var(--accent-soft)",
+                                    background: skrytyUModelu ? "var(--panel)" : "var(--accent-soft)",
+                                    border: skrytyUModelu ? "1px solid var(--warn, #e5a94a)" : "1px solid transparent",
                                     borderRadius: 6,
                                     fontSize: 12,
                                     display: "flex",
@@ -2064,7 +2078,34 @@ DETALY: Výměna opotřebované baterie
                                     gap: 6,
                                   }}
                                 >
-                                  <span>{model.name}</span>
+                                  <span style={{ color: skrytyUModelu ? "var(--muted)" : undefined }}>{model.name}</span>
+                                  {ukazatViditelnost && (
+                                    <button
+                                      onClick={() => {
+                                        setEditRepairData((prev) => ({
+                                          ...prev,
+                                          hiddenModelIds: prev.hiddenModelIds.includes(mid)
+                                            ? prev.hiddenModelIds.filter((id) => id !== mid)
+                                            : [...prev.hiddenModelIds, mid],
+                                        }));
+                                      }}
+                                      title={skrytyUModelu
+                                        ? `Tahle oprava se u modelu ${model.name} do veřejného ceníku neposílá. Kliknutím ji tam vrátíš.`
+                                        : `Tahle oprava je u modelu ${model.name} ve veřejném ceníku. Kliknutím ji tam skryješ.`}
+                                      style={{
+                                        border: `1px solid ${skrytyUModelu ? "var(--warn, #e5a94a)" : "var(--border)"}`,
+                                        background: "none",
+                                        borderRadius: 999,
+                                        padding: "0 6px",
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                        color: skrytyUModelu ? "var(--warn, #e5a94a)" : "var(--muted)",
+                                      }}
+                                    >
+                                      {skrytyUModelu ? "skryto" : "v ceníku"}
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => {
                                       setEditRepairData((prev) => ({
@@ -2328,6 +2369,7 @@ DETALY: Výměna opotřebované baterie
                                 costs: r.costs ? String(r.costs) : "", 
                                 productIds: r.productIds || [], 
                                 modelIds: r.modelIds || [],
+                                hiddenModelIds: r.publicHiddenModelIds || [],
                                 productSearch: "",
                                 modelSearch: "",
                               });

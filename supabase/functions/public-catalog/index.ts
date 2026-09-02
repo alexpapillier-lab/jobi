@@ -83,7 +83,7 @@ serve(async (req) => {
     svc.from("device_categories").select("id, brand_id, name").eq("service_id", servis.id).eq("public_visible", true),
     svc.from("device_models").select("id, category_id, name").eq("service_id", servis.id).eq("public_visible", true),
     // costs se nevybírá záměrně
-    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids").eq("service_id", servis.id).eq("public_visible", true),
+    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids, public_hidden_model_ids").eq("service_id", servis.id).eq("public_visible", true),
   ]);
 
   // Skrytá značka skryje i kategorie a modely pod sebou – jinak by ven
@@ -93,6 +93,18 @@ serve(async (req) => {
   const idKategorii = new Set(viditelneKategorie.map((c) => c.id));
   const viditelneModely = (modely.data ?? []).filter((m) => idKategorii.has(m.category_id));
   const idModelu = new Set(viditelneModely.map((m) => m.id));
+
+  // Modely, u kterých se oprava zveřejní: musí být samy viditelné a nesmí být
+  // vyjmenované ve výjimkách té opravy. Výjimky řeší případ „reinstalaci
+  // nabízíme u všech iPhonů kromě 6s“ – model_ids se kvůli tomu nesahá,
+  // uvnitř aplikace se oprava na zakázce vybírá dál.
+  const modelyOpravy = (r: { model_ids: unknown; public_hidden_model_ids?: unknown }) => {
+    const vsechny = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
+    const vyjimky = new Set(
+      Array.isArray(r.public_hidden_model_ids) ? (r.public_hidden_model_ids as string[]) : [],
+    );
+    return vsechny.filter((id) => idModelu.has(id) && !vyjimky.has(id));
+  };
 
   const platce = servis.vat_payer !== false;
   const sazba = Number(servis.default_vat_rate ?? 21);
@@ -109,9 +121,9 @@ serve(async (req) => {
     // které model nemají od začátku (obecné úkony), se nechávají být.
     repairs: (opravy.data ?? []).filter((r) => {
       const modelIds = Array.isArray(r.model_ids) ? r.model_ids : [];
-      return modelIds.length === 0 || modelIds.some((id: string) => idModelu.has(id));
+      return modelIds.length === 0 || modelyOpravy(r).length > 0;
     }).map((r) => {
-      const modelIds = Array.isArray(r.model_ids) ? r.model_ids : [];
+      const modelIds = modelyOpravy(r);
       return {
         id: r.id,
         name: r.name,
@@ -121,8 +133,7 @@ serve(async (req) => {
         // pro člověka, ať to nemusí řešit každý web zvlášť.
         estimated_time_label: popisCasu(r.estimated_time),
         details: r.details ?? "",
-        // opravu nabízíme jen u modelů, které jsou samy viditelné
-        model_ids: modelIds.filter((id: string) => idModelu.has(id)),
+        model_ids: modelIds,
       };
     }),
     generated_at: new Date().toISOString(),

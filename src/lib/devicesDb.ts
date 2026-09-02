@@ -42,6 +42,8 @@ export type Repair = {
   createdAt: string;
   /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
   publicVisible?: boolean;
+  /** Modely, u kterých se tahle oprava do ceníku neposílá. Uvnitř appky se nabízí dál. */
+  publicHiddenModelIds?: string[];
 };
 
 export type DevicesData = {
@@ -74,6 +76,7 @@ function mapRepairRow(r: {
   product_ids: unknown;
   created_at: string;
   public_visible?: boolean;
+  public_hidden_model_ids?: unknown;
 }): Repair {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const productIds = Array.isArray(r.product_ids) ? (r.product_ids as string[]) : undefined;
@@ -88,6 +91,9 @@ function mapRepairRow(r: {
     productIds: productIds && productIds.length > 0 ? productIds : undefined,
     createdAt: r.created_at,
     publicVisible: r.public_visible !== false,
+    publicHiddenModelIds: Array.isArray(r.public_hidden_model_ids)
+      ? (r.public_hidden_model_ids as string[])
+      : [],
   };
 }
 
@@ -104,7 +110,7 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadD
   const brandsRes = await (supabase.from("device_brands") as any).select("id, name, created_at, public_visible").eq("service_id", serviceId).order("created_at");
   const categoriesRes = await (supabase.from("device_categories") as any).select("id, brand_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
   const modelsRes = await (supabase.from("device_models") as any).select("id, category_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
-  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible, public_hidden_model_ids").eq("service_id", serviceId).order("order_index").order("created_at");
 
   const err = brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error;
   if (err) {
@@ -232,6 +238,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       model_ids: r.modelIds ?? [],
       product_ids: r.productIds ?? [],
       public_visible: r.publicVisible !== false,
+      public_hidden_model_ids: r.publicHiddenModelIds ?? [],
       order_index: i,
       created_at: r.createdAt,
     }));
