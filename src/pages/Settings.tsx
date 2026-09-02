@@ -12,6 +12,7 @@ import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
+import { DphNastaveni } from "./Settings/DphNastaveni";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
@@ -869,6 +870,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   />
                 </div>
               </div>
+
+              <DphNastaveni activeServiceId={activeServiceId} />
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div>
