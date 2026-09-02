@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useEntitlements } from "../hooks/useEntitlements";
 import { Button } from "../components/ui";
 import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
 import { showToast } from "../components/Toast";
@@ -11,6 +12,8 @@ type Brand = {
   id: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
+  publicVisible?: boolean;
 };
 
 type Category = {
@@ -18,6 +21,8 @@ type Category = {
   brandId: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
+  publicVisible?: boolean;
 };
 
 type DeviceModel = {
@@ -25,6 +30,8 @@ type DeviceModel = {
   categoryId: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
+  publicVisible?: boolean;
 };
 
 type Repair = {
@@ -37,6 +44,8 @@ type Repair = {
   costs?: number; // náklady
   productIds?: string[]; // produkty používané u této opravy
   createdAt: string;
+  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
+  publicVisible?: boolean;
 };
 
 type DevicesData = {
@@ -76,6 +85,9 @@ const EMPTY_DEVICES: DevicesData = { brands: [], categories: [], models: [], rep
 
 export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
   const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
+  /** Přepínače viditelnosti mají smysl, jen když servis ceník ven posílá. */
+  const { has: maModul } = useEntitlements(activeServiceId);
+  const ukazatViditelnost = maModul("api_catalog");
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -926,6 +938,29 @@ DETALY: Výměna opotřebované baterie
     showToast("Import dokončen", "success");
     setShowImport(false);
     setImportPreview(null);
+  };
+
+  /**
+   * Přepne, jestli položka jde do veřejného API.
+   *
+   * Ukládá se hned, ne přes debounce – jinak by uživatel mohl odejít
+   * dřív, než se změna zapíše, a myslel si, že něco skryl.
+   */
+  const prepnoutViditelnost = (
+    druh: "brands" | "categories" | "models" | "repairs",
+    id: string,
+  ) => {
+    if (!activeServiceId) return;
+    const nova = {
+      ...data,
+      [druh]: (data[druh] as Array<{ id: string; publicVisible?: boolean }>).map((x) =>
+        x.id === id ? { ...x, publicVisible: x.publicVisible === false } : x,
+      ),
+    } as DevicesData;
+    setData(nova);
+    saveDevicesToDb(activeServiceId, nova).then((r) => {
+      if (r.error) showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error, "error");
+    });
   };
 
   if (showImport) {
@@ -2162,8 +2197,24 @@ DETALY: Výměna opotřebované baterie
                     ) : (
                       <>
                       <div>
-                        <div style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", marginBottom: 4 }}>
-                          {r.name}
+                        <div style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ flex: 1, minWidth: 0 }}>{r.name}</span>
+                          {ukazatViditelnost && (
+                            <button
+                              type="button"
+                              onClick={() => prepnoutViditelnost("repairs", r.id)}
+                              title={r.publicVisible === false
+                                ? "Skryto ve veřejném API – kliknutím zveřejníš"
+                                : "Zveřejněno ve veřejném API – kliknutím skryješ"}
+                              style={{
+                                border: "none", background: "transparent", cursor: "pointer",
+                                padding: 2, lineHeight: 1, fontSize: 15,
+                                opacity: r.publicVisible === false ? 0.45 : 1,
+                              }}
+                            >
+                              {r.publicVisible === false ? "🚫" : "👁"}
+                            </button>
+                          )}
                           </div>
                         {repairModels.length > 0 && (
                           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>

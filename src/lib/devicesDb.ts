@@ -8,6 +8,8 @@ export type Brand = {
   id: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type Category = {
@@ -15,6 +17,8 @@ export type Category = {
   brandId: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type DeviceModel = {
@@ -22,6 +26,8 @@ export type DeviceModel = {
   categoryId: string;
   name: string;
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type Repair = {
@@ -34,6 +40,8 @@ export type Repair = {
   costs?: number;
   productIds?: string[];
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type DevicesData = {
@@ -43,16 +51,16 @@ export type DevicesData = {
   repairs: Repair[];
 };
 
-function mapBrandRow(r: { id: string; name: string; created_at: string }): Brand {
-  return { id: r.id, name: r.name, createdAt: r.created_at };
+function mapBrandRow(r: { id: string; name: string; created_at: string; public_visible?: boolean }): Brand {
+  return { id: r.id, name: r.name, createdAt: r.created_at, publicVisible: r.public_visible !== false };
 }
 
-function mapCategoryRow(r: { id: string; brand_id: string; name: string; created_at: string }): Category {
-  return { id: r.id, brandId: r.brand_id, name: r.name, createdAt: r.created_at };
+function mapCategoryRow(r: { id: string; brand_id: string; name: string; created_at: string; public_visible?: boolean }): Category {
+  return { id: r.id, brandId: r.brand_id, name: r.name, createdAt: r.created_at, publicVisible: r.public_visible !== false };
 }
 
-function mapModelRow(r: { id: string; category_id: string; name: string; created_at: string }): DeviceModel {
-  return { id: r.id, categoryId: r.category_id, name: r.name, createdAt: r.created_at };
+function mapModelRow(r: { id: string; category_id: string; name: string; created_at: string; public_visible?: boolean }): DeviceModel {
+  return { id: r.id, categoryId: r.category_id, name: r.name, createdAt: r.created_at, publicVisible: r.public_visible !== false };
 }
 
 function mapRepairRow(r: {
@@ -65,6 +73,7 @@ function mapRepairRow(r: {
   model_ids: unknown;
   product_ids: unknown;
   created_at: string;
+  public_visible?: boolean;
 }): Repair {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const productIds = Array.isArray(r.product_ids) ? (r.product_ids as string[]) : undefined;
@@ -78,6 +87,7 @@ function mapRepairRow(r: {
     modelIds,
     productIds: productIds && productIds.length > 0 ? productIds : undefined,
     createdAt: r.created_at,
+    publicVisible: r.public_visible !== false,
   };
 }
 
@@ -91,10 +101,10 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadD
   }
 
   // Sekvenčně místo paralelně – méně tlak na connection pool (PGRST683)
-  const brandsRes = await (supabase.from("device_brands") as any).select("id, name, created_at").eq("service_id", serviceId).order("created_at");
-  const categoriesRes = await (supabase.from("device_categories") as any).select("id, brand_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
-  const modelsRes = await (supabase.from("device_models") as any).select("id, category_id, name, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
-  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const brandsRes = await (supabase.from("device_brands") as any).select("id, name, created_at, public_visible").eq("service_id", serviceId).order("created_at");
+  const categoriesRes = await (supabase.from("device_categories") as any).select("id, brand_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const modelsRes = await (supabase.from("device_models") as any).select("id, category_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
 
   const err = brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error;
   if (err) {
@@ -163,6 +173,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       id: b.id,
       service_id: serviceId,
       name: b.name,
+      public_visible: b.publicVisible !== false,
       created_at: b.createdAt,
     }));
     const { error } = await (supabase.from("device_brands") as any).upsert(rows, { onConflict: "id" });
@@ -179,6 +190,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       service_id: serviceId,
       brand_id: c.brandId,
       name: c.name,
+      public_visible: c.publicVisible !== false,
       order_index: i,
       created_at: c.createdAt,
     }));
@@ -196,6 +208,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       service_id: serviceId,
       category_id: m.categoryId,
       name: m.name,
+      public_visible: m.publicVisible !== false,
       order_index: i,
       created_at: m.createdAt,
     }));
@@ -218,6 +231,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       costs: r.costs ?? null,
       model_ids: r.modelIds ?? [],
       product_ids: r.productIds ?? [],
+      public_visible: r.publicVisible !== false,
       order_index: i,
       created_at: r.createdAt,
     }));
