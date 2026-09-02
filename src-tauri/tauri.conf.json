@@ -37,10 +37,7 @@
       "minimumSystemVersion": "10.15",
       "signingIdentity": "Developer ID Application: Alex Papillier (8ZC264M873)"
     },
-    "targets": [
-      "app",
-      "nsis"
-    ]
+    "targets": "app"
   },
   "identifier": "com.jobsheet.online",
   "plugins": {

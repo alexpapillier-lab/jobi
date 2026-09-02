@@ -46,7 +46,11 @@ jobs:
           VITE_ROOT_OWNER_ID: ${{ secrets.VITE_ROOT_OWNER_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri:build
+        # --bundles nsis explicitně: tauri.conf.json má targets "app" (macOS),
+        # takže Windows target se říká tady a konfigurace zůstává nedotčená.
+        run: |
+          npm run build:prod
+          npx tauri build --bundles nsis
 
       - name: Uložit installer
         uses: actions/upload-artifact@v4
@@ -71,14 +75,19 @@ jobs:
         working-directory: jobidocs
         run: npm ci
 
-      # shell: bash kvůli skriptům copy-app-icon / copy-tray-icon, které
-      # používají unixové mkdir -p a cp (na windows-latest je Git Bash).
+      # Skripty copy-app-icon / copy-tray-icon používají unixové mkdir -p a cp.
+      # shell: bash na ně nestačí – npm si package skripty spouští VLASTNÍM
+      # shellem, kterým je na Windows cmd.exe ("The syntax of the command is
+      # incorrect"). Proto npm přesměrujeme na Git Bash, který na runneru je.
+      # Skripty tím zůstávají beze změny a odladěný macOS build se nedotkne.
+      #
       # build:electron (ne build) – jen ten kompiluje electron/main.ts přes
       # tsconfig.electron.json do dist-electron, které electron-builder potřebuje.
       - name: Build
         working-directory: jobidocs
         shell: bash
         run: |
+          npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
           npm run build:electron
           npx electron-builder --win --publish never
 
