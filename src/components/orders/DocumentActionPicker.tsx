@@ -1,11 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { PrintIcon, DownloadIcon } from "../icons";
 import { createPortal } from "react-dom";
 
 export function DocumentActionPicker({
   label,
   onSelect,
 }: {
-  label: string;
+  label: ReactNode;
   onSelect: (action: "print" | "export") => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,8 +47,8 @@ export function DocumentActionPicker({
   }, [open]);
 
   const actions = [
-    { value: "print" as const, label: "🖨️ Tisk" },
-    { value: "export" as const, label: "💾 Export" },
+    { value: "print" as const, label: <><PrintIcon size={14} /> Tisk</> },
+    { value: "export" as const, label: <><DownloadIcon size={14} /> Export</> },
   ];
 
   const menu = open ? (

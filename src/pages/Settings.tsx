@@ -1532,11 +1532,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   "sand-ink": { title: "Sand & Ink", desc: "Světlé téma s jantarovým akcentem. Teplé písečné tóny.", bg: "#FBF7F1", panel: "#FFFFFF", accent: "#F59E0B", text: "#111827" },
                   "sky-blueprint": { title: "Sky Blueprint", desc: "Světlé téma s modrým akcentem. Tech, blueprint styl.", bg: "#F5FAFF", panel: "#FFFFFF", accent: "#2563EB", text: "#0B1220" },
                   "lilac-frost": { title: "Lilac Frost", desc: "Světlé téma s fialovým akcentem. Jemně creative.", bg: "#FAF8FF", panel: "#FFFFFF", accent: "#7C3AED", text: "#111827" },
-                  halloween: { title: "🎃 Halloween", desc: "Speciální téma. Oranžovo-fialové, halloween.", bg: "linear-gradient(135deg, #0a0505 0%, #1a0f0f 100%)", panel: "rgba(124, 58, 237, 0.35)", accent: "#f97316", text: "#fef3c7" },
-                  christmas: { title: "🎄 Vánoce", desc: "Speciální téma. Zelené a zlaté, vánoční.", bg: "linear-gradient(135deg, #0d1b1f 0%, #1a2e35 100%)", panel: "rgba(34, 197, 94, 0.35)", accent: "#22c55e", text: "#f0fdf4" },
-                  "tron-red": { title: "Tron Red", desc: "Tmavé téma. Tenké červené neonové linie.", bg: "linear-gradient(135deg, #040405 0%, #0a0809 100%)", panel: "rgba(18, 18, 20, 0.95)", accent: "#DD2200", text: "#e5e5e5", lineStyle: true },
-                  "tron-cyan": { title: "Tron Cyan", desc: "Tmavé téma. Tenké cyan neonové linie.", bg: "linear-gradient(135deg, #040506 0%, #070b0e 100%)", panel: "rgba(14, 18, 20, 0.95)", accent: "#04BFBF", text: "#e5e7eb", lineStyle: true },
-                  synthwave: { title: "Synthwave Neon", desc: "Speciální téma. 80s outrun, magenta, cyan a fialová.", bg: "linear-gradient(135deg, #070812 0%, #0d0e1e 100%)", panel: "rgba(15, 16, 38, 0.95)", accent: "#FF2BD6", text: "#EDEBFF", lineStyle: true, previewLineColors: ["#FF2BD6", "#00E5FF", "#7C3AED"] },
                 };
 
                 const info = themePreviews[t];
@@ -2164,10 +2159,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div style={{ fontSize: 10, fontWeight: 700 }}>#ORD-001</div>
-                          <div style={{ fontSize: 8, color: "var(--muted)" }}>12.12</div>
+                          <div style={{ fontSize: 9, color: "var(--muted)" }}>12.12</div>
                         </div>
                         <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text)" }}>Zařízení</div>
-                        <div style={{ fontSize: 8, color: "var(--muted)" }}>Zákazník</div>
+                        <div style={{ fontSize: 9, color: "var(--muted)" }}>Zákazník</div>
                       </div>
                       <div style={{ 
                         padding: "8px 10px", 
@@ -2180,10 +2175,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div style={{ fontSize: 10, fontWeight: 700 }}>#ORD-002</div>
-                          <div style={{ fontSize: 8, color: "var(--muted)" }}>13.12</div>
+                          <div style={{ fontSize: 9, color: "var(--muted)" }}>13.12</div>
                         </div>
                         <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text)" }}>Samsung Galaxy</div>
-                        <div style={{ fontSize: 8, color: "var(--muted)" }}>Marie Svobodová</div>
+                        <div style={{ fontSize: 9, color: "var(--muted)" }}>Marie Svobodová</div>
                       </div>
                     </div>
                   )
@@ -2206,7 +2201,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       }}>
                         <div style={{ fontWeight: 700, minWidth: 60 }}>#ORD-001</div>
                         <div style={{ fontWeight: 600, flex: 1 }}>Zařízení</div>
-                        <div style={{ color: "var(--muted)", fontSize: 8 }}>Zákazník</div>
+                        <div style={{ color: "var(--muted)", fontSize: 9 }}>Zákazník</div>
                       </div>
                       <div style={{ 
                         padding: "6px 8px", 
@@ -2220,7 +2215,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       }}>
                         <div style={{ fontWeight: 700, minWidth: 60 }}>#ORD-002</div>
                         <div style={{ fontWeight: 600, flex: 1 }}>Samsung Galaxy S23</div>
-                        <div style={{ color: "var(--muted)", fontSize: 8 }}>Marie Svobodová</div>
+                        <div style={{ color: "var(--muted)", fontSize: 9 }}>Marie Svobodová</div>
                       </div>
                     </div>
                   )
@@ -2239,7 +2234,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        fontSize: 8,
+                        fontSize: 9,
                       }}>
                         <span style={{ fontWeight: 700, minWidth: 52 }}>#ORD-001</span>
                         <span style={{ color: "var(--muted)", minWidth: 36 }}>12.12.</span>
@@ -2254,7 +2249,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        fontSize: 8,
+                        fontSize: 9,
                       }}>
                         <span style={{ fontWeight: 700, minWidth: 52 }}>#ORD-002</span>
                         <span style={{ color: "var(--muted)", minWidth: 36 }}>13.12.</span>
@@ -2276,7 +2271,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       ].map(({ code, color }) => (
                         <div key={code} style={{ display: "flex", alignItems: "center", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
                           <div style={{ width: 6, background: color, alignSelf: "stretch" }} />
-                          <div style={{ flex: 1, padding: "4px 8px", display: "flex", alignItems: "center", gap: 8, fontSize: 7 }}>
+                          <div style={{ flex: 1, padding: "4px 8px", display: "flex", alignItems: "center", gap: 8, fontSize: 9 }}>
                             <span style={{ fontWeight: 700 }}>{code}</span>
                             <span style={{ color: "var(--muted)" }}>iPhone 15 Pro</span>
                             <span style={{ marginLeft: "auto", fontWeight: 700, color }}>1 200 Kč</span>
@@ -2299,11 +2294,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         <div key={label}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, background: `${color}15`, marginBottom: 3 }}>
                             <div style={{ width: 6, height: 6, borderRadius: 3, background: color }} />
-                            <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
-                            <span style={{ fontSize: 7, color, fontWeight: 700 }}>{count}</span>
+                            <span style={{ fontSize: 9, fontWeight: 700 }}>{label}</span>
+                            <span style={{ fontSize: 9, color, fontWeight: 700 }}>{count}</span>
                           </div>
                           <div style={{ paddingLeft: 4, borderLeft: `2px solid ${color}30`, display: "flex", flexDirection: "column", gap: 2 }}>
-                            <div style={{ padding: "2px 6px", borderRadius: 3, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 7, display: "flex", gap: 4 }}>
+                            <div style={{ padding: "2px 6px", borderRadius: 3, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 9, display: "flex", gap: 4 }}>
                               <span style={{ fontWeight: 700 }}>#ORD-001</span>
                               <span style={{ color: "var(--muted)" }}>iPhone</span>
                             </div>
@@ -2324,9 +2319,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         <div key={d} style={{ marginBottom: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, position: "relative" }}>
                             <div style={{ position: "absolute", left: -12 + 4 - 3, width: 7, height: 7, borderRadius: 4, background: d === "Dnes" ? "var(--accent)" : "var(--panel-2)", border: "1px solid var(--border)" }} />
-                            <span style={{ fontSize: 8, fontWeight: 700, color: d === "Dnes" ? "var(--accent)" : "var(--text)" }}>{d}</span>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: d === "Dnes" ? "var(--accent)" : "var(--text)" }}>{d}</span>
                           </div>
-                          <div style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 7, display: "flex", gap: 4, alignItems: "center" }}>
+                          <div style={{ padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--panel)", fontSize: 9, display: "flex", gap: 4, alignItems: "center" }}>
                             <div style={{ width: 4, height: 4, borderRadius: 2, background: "var(--accent)" }} />
                             <span style={{ fontWeight: 600 }}>#ORD-001</span><span style={{ color: "var(--muted)" }}>iPhone 15 Pro</span>
                           </div>

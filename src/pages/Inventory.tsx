@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { BoxIcon, WarningIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
 import { reportError } from "../lib/reportError";
@@ -1323,9 +1324,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     border: needsReview ? "1px solid rgba(255, 193, 7, 0.3)" : isDuplicate ? "1px solid rgba(239, 68, 68, 0.3)" : border
                   }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", marginBottom: 8 }}>
-                      📦 {product.name}
-                      {isDuplicate && <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(239, 68, 68, 0.9)" }}>⚠️ Duplicitní</span>}
-                      {needsReview && <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(255, 193, 7, 0.9)" }}>⚠️ Vyžaduje kontrolu</span>}
+                      <BoxIcon size={14} /> {product.name}
+                      {isDuplicate && <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(239, 68, 68, 0.9)" }}><WarningIcon size={12} /> Duplicitní</span>}
+                      {needsReview && <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(255, 193, 7, 0.9)" }}><WarningIcon size={12} /> Vyžaduje kontrolu</span>}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
                       <div>SKU: {product.sku || "—"}</div>
@@ -1361,7 +1362,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: "rgba(255, 140, 0, 0.9)", marginTop: 8, padding: "8px", background: "rgba(255, 140, 0, 0.1)", borderRadius: 4 }}>
-                        ⚠️ Nenalezen žádný odpovídající model - produkt bude importován bez přiřazení k modelu
+                        <WarningIcon size={13} /> Nenalezen žádný odpovídající model - produkt bude importován bez přiřazení k modelu
                       </div>
                     )}
                   </div>
@@ -1372,7 +1373,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             {importPreview.needsReview.length > 0 && (
               <div style={{ marginBottom: 16, padding: 12, background: "rgba(255, 193, 7, 0.1)", borderRadius: 8, border: "1px solid rgba(255, 193, 7, 0.3)" }}>
                 <div style={{ fontWeight: 700, color: "rgba(255, 193, 7, 0.9)", marginBottom: 8 }}>
-                  ⚠️ Produkty vyžadující kontrolu ({importPreview.needsReview.length}):
+                  <WarningIcon size={13} /> Produkty vyžadující kontrolu ({importPreview.needsReview.length}):
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {importPreview.needsReview.map((nr, idx) => (
@@ -1401,7 +1402,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             {importPreview.duplicates.length > 0 && (
               <div style={{ marginBottom: 16, padding: 12, background: "rgba(239, 68, 68, 0.1)", borderRadius: 8, border: "1px solid rgba(239, 68, 68, 0.3)" }}>
                 <div style={{ fontWeight: 700, color: "rgba(239, 68, 68, 0.9)", marginBottom: 8 }}>
-                  ⚠️ Nalezené duplicity ({importPreview.duplicates.length}):
+                  <WarningIcon size={13} /> Nalezené duplicity ({importPreview.duplicates.length}):
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {importPreview.duplicates.map((dup, idx) => (

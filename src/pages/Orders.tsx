@@ -29,7 +29,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
 import { SectionHeading } from "../components/SectionHeading";
-import { UserIcon, DeviceIcon, WrenchIcon, StatusIcon, SearchIcon, PrintIcon } from "../components/icons";
+import { BoltIcon, CameraIcon, CheckIcon, CoinsIcon, DeviceIcon, DocumentIcon, HashIcon, InboxIcon, LinkIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PrintIcon, SearchIcon, StatusIcon, UserIcon, WrenchIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import {
   type DevicesData,
@@ -75,7 +75,7 @@ type GroupKey = "all" | "active" | "final" | "reklamace";
 type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
-type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "table" | "timeline" | "cards-modern" | "split" | "stripe" | "status-grouped";
+type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number };
   sidebar: { position: "left" | "right" | "bottom" };
@@ -223,7 +223,7 @@ type NewOrderDraft = {
 // ========================
 // Utils: storage
 // ========================
-const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
+const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
 
 function defaultUIConfig(): UIConfig {
   return {
@@ -3582,12 +3582,12 @@ export default function Orders({
       {statusesReady && (activeGroup === "reklamace" ? !claimsLoading && !claimsError : !ticketsLoading && !ticketsError) && (
       <div data-tour="orders-list" style={{ 
         marginTop: 16, 
-        ...(uiCfg.orders.displayMode === "table" || uiCfg.orders.displayMode === "timeline" || uiCfg.orders.displayMode === "status-grouped"
+        ...(uiCfg.orders.displayMode === "timeline" || uiCfg.orders.displayMode === "status-grouped"
           ? { minWidth: 0 }
           : {
               display: "grid",
-              gridTemplateColumns: uiCfg.orders.displayMode === "grid" || uiCfg.orders.displayMode === "cards-modern" ? "repeat(auto-fill, minmax(280px, 1fr))" : uiCfg.orders.displayMode === "split" ? "repeat(auto-fill, minmax(400px, 1fr))" : "minmax(260px, 1fr)",
-              gap: uiCfg.orders.displayMode === "grid" || uiCfg.orders.displayMode === "cards-modern" ? 12 : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" ? 2 : 6,
+              gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(280px, 1fr))" : "minmax(260px, 1fr)",
+              gap: uiCfg.orders.displayMode === "grid" ? 12 : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" ? 2 : 6,
               minWidth: 0,
             }),
       }}>
@@ -3642,15 +3642,15 @@ export default function Orders({
           />
         )}
         {/* Card-based modes: render individual cards (skip if table/timeline/status-grouped already rendered above) */}
-        {activeGroup === "reklamace" && uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
+        {activeGroup === "reklamace" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
           ? paginatedClaims.map((c) => renderClaimCard(c))
-          : uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped" && showClaimsInOrdersList
+          : uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped" && showClaimsInOrdersList
             ? paginatedCombined.map((row) =>
                 row.type === "claim"
                   ? renderClaimCard(row.data, "claim-")
                   : renderTicketCard(row.data)
               )
-          : uiCfg.orders.displayMode !== "table" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
+          : uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
             ? paginatedTickets.map((t) => renderTicketCard(t))
             : null
         }
@@ -3799,7 +3799,7 @@ export default function Orders({
               gap: 12,
             }}
           >
-            <div style={{ fontSize: 48, opacity: 0.5 }}>{activeGroup === "reklamace" ? "—" : "📋"}</div>
+            <div style={{ fontSize: 48, opacity: 0.5 }}>{activeGroup === "reklamace" ? "—" : <DocumentIcon size={48} />}</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
               {activeGroup === "reklamace" ? "Žádné reklamace neodpovídají filtru" : "Žádné zakázky neodpovídají filtru"}
             </div>
@@ -4369,7 +4369,7 @@ export default function Orders({
 
         {/* Fotky při příjmu – nahrají se po vytvoření zakázky */}
         <div id="new-order-photos-before" style={{ marginTop: 16, ...card, gridColumn: "1 / -1" }}>
-          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 4 }}>📷 Fotky při příjmu</div>
+          <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)", marginBottom: 4 }}><CameraIcon size={14} /> Fotky při příjmu</div>
           <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>Fotky se po vytvoření zakázky automaticky nahrají a připojí k zakázce.</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
@@ -4539,7 +4539,7 @@ export default function Orders({
             }}
             title="Zobrazit QR kód pro nafocení přijímacích fotek z telefonu. Zakázka se nevytvoří – fotky se připojí po kliknutí na „Vytvořit zakázku“."
           >
-            {captureQRLoading ? "⏳ Vytvářím…" : "📱 Udělat přijímací fotky"}
+            {captureQRLoading ? "Vytvářím…" : "Udělat přijímací fotky"}
           </button>
           <button
             onClick={createTicket}
@@ -4816,7 +4816,7 @@ export default function Orders({
             {detailedTicket && !detailedClaim && canPrintExport && (
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <DocumentActionPicker
-                  label="📄 Zakázkový list"
+                  label={<><DocumentIcon size={14} /> Zakázkový list</>}
                   onSelect={(action) => {
                     if (action === "export") exportTicketToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printTicket(detailedTicket, activeServiceId);
@@ -4824,7 +4824,7 @@ export default function Orders({
                 />
                 {(detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0)) && (
                   <DocumentActionPicker
-                    label="🔍 Diagnostický protokol"
+                    label={<><SearchIcon size={14} /> Diagnostický protokol</>}
                     onSelect={(action) => {
                       if (action === "export") exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId);
                       else if (action === "print") printDiagnosticProtocol(detailedTicket, activeServiceId);
@@ -4832,7 +4832,7 @@ export default function Orders({
                   />
                 )}
                 <DocumentActionPicker
-                  label="📋 Záruční list"
+                  label={<><DocumentIcon size={14} /> Záruční list</>}
                   onSelect={(action) => {
                     if (action === "export") exportWarrantyToPDF(detailedTicket, activeServiceId);
                     else if (action === "print") printWarranty(detailedTicket, activeServiceId);
@@ -4847,7 +4847,7 @@ export default function Orders({
                       style={softBtn}
                       title="Otevřít fakturu k této zakázce"
                     >
-                      📄 Přejít na fakturu
+                      <DocumentIcon size={14} /> Přejít na fakturu
                     </button>
                   ) : onCreateInvoice ? (
                     <button
@@ -4875,7 +4875,7 @@ export default function Orders({
                       style={softBtn}
                       title="Vytvořit fakturu z této zakázky"
                     >
-                      💰 Vystavit fakturu
+                      <CoinsIcon size={14} /> Vystavit fakturu
                     </button>
                   ) : null;
                 })()}
@@ -4953,7 +4953,7 @@ export default function Orders({
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.customer_name ?? "—"}</div>
                   {c.customer_phone && (
                     <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>📞</span>
+                      <PhoneIcon size={14} />
                       <span>{formatPhoneNumber(c.customer_phone)}</span>
                     </div>
                   )}
@@ -4965,7 +4965,7 @@ export default function Orders({
                   )}
                   {[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).length > 0 && (
                     <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                      <span>📍</span>
+                      <PinIcon size={14} />
                       <span>{[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).join(", ")}</span>
                     </div>
                   )}
@@ -4995,7 +4995,7 @@ export default function Orders({
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.device_label || c.device_serial || "—"}</div>
                   {c.device_serial && (
                     <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>🔢</span>
+                      <HashIcon size={14} />
                       <span>SN: {c.device_serial}</span>
                     </div>
                   )}
@@ -5028,7 +5028,7 @@ export default function Orders({
               )}
             </div>
             <div style={{ ...card, gridColumn: "1 / -1" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>📝 Poznámka / důvod reklamace</div>
+              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Poznámka / důvod reklamace</div>
               {!isEditingClaim ? (
                 <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
               ) : (
@@ -5334,7 +5334,7 @@ export default function Orders({
                         disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading}
                         style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
                       >
-                        {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                        {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                       </button>
                       <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                         <input
@@ -5452,7 +5452,7 @@ export default function Orders({
                       </div>
                       {detailedTicket.customerPhone && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <span>📞</span>
+                          <PhoneIcon size={14} />
                           <span>{formatPhoneNumber(detailedTicket.customerPhone)}</span>
                         </div>
                       )}
@@ -5465,7 +5465,7 @@ export default function Orders({
                       {[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip].filter(Boolean).length >
                         0 && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                          <span>📍</span>
+                          <PinIcon size={14} />
                           <span>
                             {[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip]
                               .filter(Boolean)
@@ -5506,7 +5506,7 @@ export default function Orders({
                       <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{detailedTicket.deviceLabel}</div>
                       {detailedTicket.serialOrImei && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <span>🔢</span>
+                          <HashIcon size={14} />
                           <span>SN: {detailedTicket.serialOrImei}</span>
                         </div>
                       )}
@@ -5522,7 +5522,7 @@ export default function Orders({
                           border: "1px solid var(--border)",
                         }}
                       >
-                        🔧 {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
+                        <WrenchIcon size={14} /> {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
                       </div>
                     </div>
                   </div>
@@ -5958,7 +5958,7 @@ export default function Orders({
                         fontWeight: 700,
                       }}
                     >
-                          {isFinal(detailStatus) ? "✓ Finální" : "⚡ Aktivní"}
+                          {isFinal(detailStatus) ? <><CheckIcon size={12} /> Finální</> : <><BoltIcon size={12} /> Aktivní</>}
                     </div>
                       );
                     })()}
@@ -6054,17 +6054,17 @@ export default function Orders({
                       <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {detailedTicket.handoffMethod && (
                           <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <span>📥</span> Převzetí: {detailedTicket.handoffMethod}
+                            <InboxIcon size={14} /> Převzetí: {detailedTicket.handoffMethod}
                           </div>
                         )}
                         {detailedTicket.handbackMethod && (
                           <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <span>📤</span> Předání: {detailedTicket.handbackMethod}
+                            <OutboxIcon size={14} /> Předání: {detailedTicket.handbackMethod}
                           </div>
                         )}
                         {detailedTicket.externalId && (
                           <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <span>🔗</span> Ext: {detailedTicket.externalId}
+                            <LinkIcon size={14} /> Ext: {detailedTicket.externalId}
                           </div>
                         )}
                       </div>
@@ -6345,7 +6345,7 @@ export default function Orders({
                           disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
                           style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
                         >
-                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                          {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                         </button>
                         <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                           <input
@@ -6509,7 +6509,7 @@ export default function Orders({
                         disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading}
                           style={{ ...softBtn, padding: "8px 14px", fontSize: 13 }}
                         >
-                          {captureQRLoading ? "⏳ Vytvářím…" : "📱 Vyfotit z telefonu"}
+                          {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                         </button>
                         <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
                           <input

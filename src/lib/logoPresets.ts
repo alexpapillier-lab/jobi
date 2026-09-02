@@ -31,11 +31,6 @@ const THEME_LOGO_COLORS: Record<ThemeMode, LogoColors> = {
   "sand-ink": { background: "#FBF7F1", jInner: "#F59E0B", foreground: "#111827" },
   "sky-blueprint": { background: "#F5FAFF", jInner: "#2563EB", foreground: "#0B1220" },
   "lilac-frost": { background: "#FAF8FF", jInner: "#7C3AED", foreground: "#111827" },
-  halloween: { background: "#1a0f0f", jInner: "#f97316", foreground: "#fef3c7" },
-  christmas: { background: "#1a2e35", jInner: "#22c55e", foreground: "#f0fdf4" },
-  "tron-red": { background: "#0a0809", jInner: "#DD2200", foreground: "#e5e5e5" },
-  "tron-cyan": { background: "#070b0e", jInner: "#04BFBF", foreground: "#e5e7eb" },
-  synthwave: { background: "#0d0e1e", jInner: "#FF2BD6", foreground: "#EDEBFF" },
 };
 
 /** Předvolby barev loga – výběr v Nastavení → Barevné téma → Logo */
@@ -56,11 +51,6 @@ export const LOGO_PRESETS: LogoPreset[] = [
   { id: "sand-ink", label: "Sand & Ink", background: "#FBF7F1", jInner: "#F59E0B", foreground: "#111827" },
   { id: "sky-blueprint", label: "Sky Blueprint", background: "#F5FAFF", jInner: "#2563EB", foreground: "#0B1220" },
   { id: "lilac-frost", label: "Lilac Frost", background: "#FAF8FF", jInner: "#7C3AED", foreground: "#111827" },
-  { id: "halloween", label: "Halloween", background: "#1a0f0f", jInner: "#f97316", foreground: "#fef3c7" },
-  { id: "christmas", label: "Vánoce", background: "#1a2e35", jInner: "#22c55e", foreground: "#f0fdf4" },
-  { id: "tron-red", label: "Tron Red", background: "#0a0809", jInner: "#DD2200", foreground: "#e5e5e5" },
-  { id: "tron-cyan", label: "Tron Cyan", background: "#070b0e", jInner: "#04BFBF", foreground: "#e5e7eb" },
-  { id: "synthwave", label: "Synthwave", background: "#0d0e1e", jInner: "#FF2BD6", foreground: "#EDEBFF" },
 ];
 
 export function getLogoColors(theme: ThemeMode, presetId: LogoPresetId | null): LogoColors {

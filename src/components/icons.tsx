@@ -165,3 +165,62 @@ export function DragIcon({ size = 16, color = "currentColor" }: IconProps) {
     </svg>
   );
 }
+
+/* --- Doplněno při dokončení migrace emoji → ikony (docs/AUDIT_UI_2026-09.md, 7.2). --- */
+
+/** Telefon – nahrazuje 📞 */
+export function PhoneIcon(p: IconProps) {
+  return <Svg {...p}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7A2 2 0 0 1 22 16.9z" /></Svg>;
+}
+/** Adresa / místo – nahrazuje 📍 */
+export function PinIcon(p: IconProps) {
+  return <Svg {...p}><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></Svg>;
+}
+/** Číslo / IČO – nahrazuje 🔢 */
+export function HashIcon(p: IconProps) {
+  return <Svg {...p}><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18" /></Svg>;
+}
+/** Poznámka – nahrazuje 📝 */
+export function NoteIcon(p: IconProps) {
+  return <Svg {...p}><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
+}
+/** Fotografie – nahrazuje 📷 */
+export function CameraIcon(p: IconProps) {
+  return <Svg {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></Svg>;
+}
+/** Převzetí (dovnitř) – nahrazuje 📥 */
+export function InboxIcon(p: IconProps) {
+  return <Svg {...p}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z" /></Svg>;
+}
+/** Předání (ven) – nahrazuje 📤 */
+export function OutboxIcon(p: IconProps) {
+  return <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></Svg>;
+}
+/** Externí odkaz / vazba – nahrazuje 🔗 */
+export function LinkIcon(p: IconProps) {
+  return <Svg {...p}><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></Svg>;
+}
+/** Varování – nahrazuje ⚠️ */
+export function WarningIcon(p: IconProps) {
+  return <Svg {...p}><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></Svg>;
+}
+/** Složka / kategorie – nahrazuje 📂 */
+export function FolderIcon(p: IconProps) {
+  return <Svg {...p}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></Svg>;
+}
+/** Produkt / sklad – nahrazuje 📦 (stejná kresba jako v Sidebaru) */
+export function BoxIcon(p: IconProps) {
+  return <Svg {...p}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" /></Svg>;
+}
+/** Aktivní stav – nahrazuje ⚡ */
+export function BoltIcon(p: IconProps) {
+  return <Svg {...p}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></Svg>;
+}
+/** Hotovo / finální – nahrazuje textové ✓ vedle stavu */
+export function CheckIcon(p: IconProps) {
+  return <Svg {...p}><path d="M20 6L9 17l-5-5" /></Svg>;
+}
+/** Export / stažení – nahrazuje 💾 */
+export function DownloadIcon(p: IconProps) {
+  return <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></Svg>;
+}

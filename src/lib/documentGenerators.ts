@@ -426,7 +426,7 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
       <body>
         ${!forPrint ? `
           <div class="actions">
-            <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
+            <button class="action-btn" onclick="window.print()">Tisknout</button>
           </div>
         ` : ""}
         <div class="doc-page">
@@ -1024,7 +1024,7 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
       <body>
         ${!forPrint ? `
           <div class="actions">
-            <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
+            <button class="action-btn" onclick="window.print()">Tisknout</button>
           </div>
         ` : ""}
         <div class="doc-page">
@@ -1545,7 +1545,7 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
       <body>
         ${!forPrint ? `
           <div class="actions">
-            <button class="action-btn" onclick="window.print()">🖨️ Tisknout</button>
+            <button class="action-btn" onclick="window.print()">Tisknout</button>
           </div>
         ` : ""}
         <div class="doc-page">

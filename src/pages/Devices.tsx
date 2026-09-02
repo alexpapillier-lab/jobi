@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
 import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
@@ -1052,21 +1053,21 @@ DETALY: Výměna opotřebované baterie
                 return (
                   <div key={brandIdx} style={{ marginBottom: 16, padding: 12, background: "var(--panel-2)", borderRadius: 8 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", marginBottom: 8 }}>
-                      📱 {brand}
+                      <DeviceIcon size={14} /> {brand}
                     </div>
                     {brandCategories.map((cat, catIdx) => {
                       const catModels = importPreview.models.filter(m => m.brand === brand && m.category === cat.name);
                       return (
                         <div key={catIdx} style={{ marginLeft: 16, marginBottom: 12 }}>
                           <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", marginBottom: 6 }}>
-                            📂 {cat.name}
+                            <FolderIcon size={14} /> {cat.name}
                           </div>
                           {catModels.map((model, modelIdx) => {
                             const modelRepairs = importPreview.repairs.filter(r => r.brand === brand && r.category === cat.name && r.model === model.name);
                             return (
                               <div key={modelIdx} style={{ marginLeft: 16, marginBottom: 8 }}>
                                 <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text)", marginBottom: 4 }}>
-                                  🔧 {model.name}
+                                  <WrenchIcon size={14} /> {model.name}
                                 </div>
                                 {modelRepairs.length > 0 && (
                                   <div style={{ marginLeft: 16 }}>
@@ -1091,7 +1092,7 @@ DETALY: Výměna opotřebované baterie
             {importPreview.duplicates.length > 0 && (
               <div style={{ marginBottom: 16, padding: 12, background: "rgba(239, 68, 68, 0.1)", borderRadius: 8, border: "1px solid rgba(239, 68, 68, 0.3)" }}>
                 <div style={{ fontWeight: 700, color: "rgba(239, 68, 68, 0.9)", marginBottom: 8 }}>
-                  ⚠️ Nalezené duplicity ({importPreview.duplicates.length}):
+                  <WarningIcon size={13} /> Nalezené duplicity ({importPreview.duplicates.length}):
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 150, overflowY: "auto" }}>
                   {importPreview.duplicates.map((dup, idx) => (

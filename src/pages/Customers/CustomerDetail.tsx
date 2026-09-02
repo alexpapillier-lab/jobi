@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { ChatIcon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useStatuses } from "../../state/StatusesStore";
 import { CustomerRecord } from "./CustomerList";
@@ -316,7 +317,7 @@ export function CustomerDetail({
                         }}
                         title="Otevřít SMS chaty s tímto číslem"
                       >
-                        💬 SMS
+                        <ChatIcon size={14} /> SMS
                       </button>
                     )}
                   </div>

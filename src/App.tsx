@@ -17,7 +17,6 @@ import { StatusesProvider } from "./state/StatusesStore";
 import { ToastContainer } from "./components/Toast";
 import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
-import { ThemeAnimations } from "./components/ThemeAnimations";
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
@@ -1025,7 +1024,6 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
   // App shell - only rendered when session exists and invite (if any) was resolved
   return (
     <ThemeProvider>
-      <ThemeAnimations />
       <OnlineGate>
         <StatusesProvider activeServiceId={activeServiceId}>
         <AppTourOverlay
