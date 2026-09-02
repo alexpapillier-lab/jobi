@@ -131,6 +131,16 @@ serve(async (req) => {
       );
     }
 
+    // Nad ownerem smí konat jen owner nebo root owner. Bez toho mohl admin
+    // ownera degradovat na člena a pak ho team-remove-member odebrat – dvěma
+    // kroky by tak obešel pravidlo, že ownera odebrat nelze.
+    if (targetMembership.role === "owner" && !isRootOwner && callerRole !== "owner") {
+      return new Response(
+        JSON.stringify({ error: "Only owner can change another owner's role" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Prevent downgrading last owner
     if (targetMembership.role === "owner" && roleNorm !== "owner") {
       // Count owners
