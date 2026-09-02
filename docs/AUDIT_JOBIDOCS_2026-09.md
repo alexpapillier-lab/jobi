@@ -74,16 +74,25 @@ Důsledky:
 
 ## 4. 🔴 Celá aplikace v jedné komponentě
 
+> **Oprava (2. 9. 2026):** první verze téhle kapitoly tvrdila, že velká
+> komponenta se jmenuje `SidebarNav` a že „neobsahuje postranní navigaci".
+> To bylo špatně. `SidebarNav` má **28 řádků** a vykresluje přesně to, co
+> slibuje – projde `SIDEBAR_TABS` a udělá z nich tlačítka. Číslo 2 840
+> patřilo komponentě `App`; přiřadil jsem ho sousednímu jménu kvůli chybě
+> ve skriptu, který velikosti měřil. Závěr kapitoly se tím nemění, jen
+> viník má jiné jméno.
+
 | | řádků |
 |---|---:|
 | `App.tsx` | **5 166** |
-| z toho `SidebarNav` | **2 840** |
+| z toho `App` | **2 813** |
 | z toho `DocumentPreview` | 813 |
+| z toho `SidebarNav` | 28 |
 | celý zdroják aplikace | 6 943 |
 
-`App.tsx` je **74 % celé aplikace**. A komponenta pojmenovaná `SidebarNav`
-neobsahuje postranní navigaci – jsou v ní Aktivity, Aktualizace, Design,
-Nastavení loga i razítka, Náhled dokumentu a O aplikaci. Tedy skoro všechno.
+`App.tsx` je **74 % celé aplikace** a samotná komponenta `App` je víc než
+polovina toho souboru. Jsou v ní Aktivity, Aktualizace, Design, Nastavení
+loga i razítka, Náhled dokumentu a O aplikaci – tedy skoro všechno.
 
 V jednom souboru je **59× useState, 20× useEffect a 39× useMemo/useCallback**.
 
@@ -152,8 +161,9 @@ Kanál na to existuje: Jobi už do JobiDocs posílá kontext přes
    i odesílání odkazu třetí straně.
 3. **Sloučit ty dva přepínače náhledu** do jednoho se třemi stavy.
 4. **Přidat kliknutí do palety sekcí** vedle tažení.
-5. **Rozdělit `App.tsx`** – hlavně vytáhnout ze `SidebarNav` to, co tam
-   nepatří. Velký zásah, dělat samostatně a s klidem.
+5. **Rozdělit `App.tsx`** – vytáhnout z komponenty `App` jednotlivé
+   obrazovky (Design, Razítko, Náhled, Aktivity, O aplikaci). Velký zásah,
+   dělat samostatně a s klidem.
 6. **Přebírat motiv z Jobi** přes existující kanál kontextu.
 
 Body 1 až 4 jsou malé a nezávislé. Bod 5 je práce na několik hodin a neměl
