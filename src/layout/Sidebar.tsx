@@ -8,6 +8,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAppUpdate } from "../context/AppUpdateContext";
 import { devLog } from "../lib/devLog";
 import { JobiDocsStatus } from "../components/JobiDocsStatus";
+import { isDesktop } from "../lib/platform";
 
 export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "settings";
 
@@ -781,9 +782,12 @@ export function Sidebar({
         })}
       </nav>
 
-      <div style={{ marginTop: 6, flexShrink: 0 }}>
-        <JobiDocsStatus onFirstConnect={onJobiDocsFirstConnect} compact={!expanded} />
-      </div>
+      {/* JobiDocs je desktopový doplněk – ve webu se tiskne přímo z prohlížeče. */}
+      {isDesktop() && (
+        <div style={{ marginTop: 6, flexShrink: 0 }}>
+          <JobiDocsStatus onFirstConnect={onJobiDocsFirstConnect} compact={!expanded} />
+        </div>
+      )}
       </div>
 
       <div style={{ flex: "0 0 auto" }} />

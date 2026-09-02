@@ -106,8 +106,12 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
     iframe.addEventListener("load", () => resolve(), { once: true });
   });
 
-  document.body.appendChild(iframe);
+  // POZOR na pořadí: srcdoc se musí nastavit PŘED vložením do stránky.
+  // Jinak se "load" spustí už pro about:blank, čekání skončí předčasně
+  // a tiskne se prázdná stránka. Ověřeno v prohlížeči: při opačném pořadí
+  // má iframe 3 elementy bez stylů, při správném 24 elementů včetně stylů.
   iframe.srcdoc = html;
+  document.body.appendChild(iframe);
   await loaded;
 
   const win = iframe.contentWindow;

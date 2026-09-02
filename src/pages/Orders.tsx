@@ -27,7 +27,7 @@ import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
-import { printDocumentInBrowser } from "../lib/webPrint";
+import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
@@ -662,15 +662,74 @@ function uuid() {
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
 
 // generateTicketHTML was moved to ../lib/documentGenerators.ts
-async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro export do PDF.", "error");
-    return;
+/**
+ * Tisk a export dokumentu ve webové verzi.
+ *
+ * V prohlížeči neběží JobiDocs, takže HTML vyrobíme rovnou tady a předáme
+ * ho tiskovému dialogu. "Export" je tentýž dialog – uživatel v něm zvolí
+ * cíl "Uložit jako PDF", protože prohlížeč jinou cestu k PDF nenabízí.
+ *
+ * Jeden pomocník pro všechny typy dokumentů, ať nevzniká šest kopií téhož.
+ */
+async function handleWebDocumentWithVariables(
+  mode: "print" | "export",
+  docType: WebPrintDocType,
+  sid: string,
+  variables: Record<string, string>,
+  options?: { repairDate?: string }
+) {
+  const start = performance.now();
+  try {
+    const validation = validateDocumentVariables(variables);
+    if (!validation.valid) devLog("[DocGuardrail]", validation.warnings);
+
+    if (mode === "export") {
+      showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
+    }
+    await printDocumentInBrowser(docType, sid, { variables, repairDate: options?.repairDate });
+    trackDocumentAction({
+      action: mode,
+      docType,
+      result: "success",
+      durationMs: Math.round(performance.now() - start),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    trackDocumentAction({
+      action: mode,
+      docType,
+      result: "error",
+      durationMs: Math.round(performance.now() - start),
+      errorMessage: msg,
+    });
+    showToast(`${mode === "print" ? "Tisk" : "Export"} se nezdařil: ${msg}`, "error");
   }
+}
+
+/** Varianta pro zakázky – proměnné si sestaví sama z ticketu. */
+async function handleWebDocument(
+  mode: "print" | "export",
+  docType: WebPrintDocType,
+  sid: string,
+  ticket: TicketEx,
+  options?: { repairDate?: string }
+) {
+  const companyData = safeLoadCompanyData();
+  const variables = buildTicketVariablesForJobiDocs(ticket, companyData as Record<string, unknown>);
+  return handleWebDocumentWithVariables(mode, docType, sid, variables, options);
+}
+
+async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro export.", "error");
+    return;
+  }
+
+  if (isWeb()) return handleWebDocument("export", "zakazkovy_list", sid, ticket);
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
   const start = performance.now();
@@ -743,32 +802,7 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
     return;
   }
 
-  // Webová verze tiskne přes prohlížeč – JobiDocs tam není a není potřeba.
-  if (isWeb()) {
-    const startWeb = performance.now();
-    try {
-      const companyDataWeb = safeLoadCompanyData();
-      const variablesWeb = buildTicketVariablesForJobiDocs(ticket, companyDataWeb as Record<string, unknown>);
-      await printDocumentInBrowser("zakazkovy_list", sid, { variables: variablesWeb });
-      trackDocumentAction({
-        action: "print",
-        docType: "zakazkovy_list",
-        result: "success",
-        durationMs: Math.round(performance.now() - startWeb),
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      trackDocumentAction({
-        action: "print",
-        docType: "zakazkovy_list",
-        result: "error",
-        durationMs: Math.round(performance.now() - startWeb),
-        errorMessage: msg,
-      });
-      showToast(`Tisk se nezdařil: ${msg}`, "error");
-    }
-    return;
-  }
+  if (isWeb()) return handleWebDocument("print", "zakazkovy_list", sid, ticket);
 
   const running = await isJobiDocsRunning();
   if (!running) {
@@ -800,14 +834,16 @@ async function printTicket(ticket: TicketEx, serviceId?: string | null) {
 
 
 async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro export do PDF.", "error");
-    return;
-  }
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro export.", "error");
+    return;
+  }
+
+  if (isWeb()) return handleWebDocument("export", "diagnosticky_protokol", sid, ticket);
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
   const start = performance.now();
@@ -854,14 +890,16 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
 }
 
 async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro tisk.", "error");
-    return;
-  }
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+
+  if (isWeb()) return handleWebDocument("print", "diagnosticky_protokol", sid, ticket);
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
     return;
   }
   const start = performance.now();
@@ -890,14 +928,16 @@ async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | nu
 
 
 async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro export do PDF.", "error");
-    return;
-  }
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro export.", "error");
+    return;
+  }
+
+  if (isWeb()) return handleWebDocument("export", "zarucni_list", sid, ticket);
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro export do PDF.", "error");
     return;
   }
   const start = performance.now();
@@ -947,14 +987,16 @@ async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) 
 }
 
 async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
-  const running = await isJobiDocsRunning();
-  if (!running) {
-    showToast("Spusťte JobiDocs pro tisk.", "error");
-    return;
-  }
   const sid = serviceId ?? undefined;
   if (!sid) {
     showToast("Vyberte servis pro tisk.", "error");
+    return;
+  }
+
+  if (isWeb()) return handleWebDocument("print", "zarucni_list", sid, ticket);
+  const running = await isJobiDocsRunning();
+  if (!running) {
+    showToast("Spusťte JobiDocs pro tisk.", "error");
     return;
   }
   const start = performance.now();
@@ -6705,6 +6747,19 @@ export default function Orders({
                         ? (paginatedTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx)?.code ?? ""
                         : "";
                       const variables = buildClaimVariablesForJobiDocs(detailedClaim, originalCode);
+                      if (isWeb()) {
+                        if (!sid) {
+                          showToast("Vyberte servis pro tisk.", "error");
+                          return;
+                        }
+                        await handleWebDocumentWithVariables(
+                          action === "print" ? "print" : "export",
+                          "prijemka_reklamace",
+                          sid,
+                          variables
+                        );
+                        return;
+                      }
                       if (running && sid) {
                         if (action === "print") {
                           const res = await printDocumentViaJobiDocs("prijemka_reklamace", sid, companyData, {}, { variables });

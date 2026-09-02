@@ -8,6 +8,8 @@
 
 const JOBIDOCS_API = "http://127.0.0.1:3847";
 
+import { isWeb } from "./platform";
+
 /** URL pro stažení JobiDocs – stránka appjobi s sekcí Stáhnout (Jobi + JobiDocs zvlášť). */
 export const JOBIDOCS_DOWNLOAD_URL = "https://appjobi.com/#stazeni";
 
@@ -46,6 +48,9 @@ async function getJobiDocsFetch(): Promise<typeof fetch> {
 }
 
 export async function isJobiDocsRunning(): Promise<boolean> {
+  // Ve webové verzi JobiDocs neběží a dotaz na localhost:3847 by jen čekal
+  // na timeout. Zároveň to umlčí opakované dotazy z JobiDocsStatus.
+  if (isWeb()) return false;
   try {
     const f = await getJobiDocsFetch();
     const r = await f(`${JOBIDOCS_API}/v1/context`, {
@@ -98,6 +103,7 @@ export async function getProfileFromJobiDocs(
   serviceId: string,
   docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
 ): Promise<Record<string, unknown> | null> {
+  if (isWeb()) return null;
   try {
     const f = await getJobiDocsFetch();
     const r = await f(
@@ -135,6 +141,7 @@ export async function pushContextToJobiDocs(
     supabaseAuth?: JobiDocsSupabaseAuth | null;
   }
 ): Promise<void> {
+  if (isWeb()) return;
   try {
     const f = await getJobiDocsFetch();
     const body: Record<string, unknown> = {

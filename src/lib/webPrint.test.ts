@@ -50,3 +50,23 @@ describe("generateDocumentHtml – použitelnost mimo JobiDocs", () => {
     }
   });
 });
+
+/**
+ * Regrese: iframe se musí naplnit PŘED vložením do stránky.
+ *
+ * Při opačném pořadí se "load" spustí už pro about:blank, čekání skončí
+ * předčasně a vytiskne se prázdná stránka. Ověřeno v prohlížeči – proto
+ * to hlídá i test na zdrojáku, aby to nikdo omylem nepřehodil zpátky.
+ */
+describe("printHtmlInBrowser – pořadí naplnění iframu", () => {
+  it("nastavuje srcdoc před appendChild", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("./webPrint.ts", import.meta.url), "utf-8")
+    );
+    const srcdocAt = src.indexOf("iframe.srcdoc = html");
+    const appendAt = src.indexOf("document.body.appendChild(iframe)");
+    expect(srcdocAt).toBeGreaterThan(-1);
+    expect(appendAt).toBeGreaterThan(-1);
+    expect(srcdocAt).toBeLessThan(appendAt);
+  });
+});
