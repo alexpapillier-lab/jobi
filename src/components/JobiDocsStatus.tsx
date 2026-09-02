@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { assetUrl } from "../lib/assetUrl";
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
@@ -88,7 +89,7 @@ export function JobiDocsStatus({ onFirstConnect, compact = false }: JobiDocsStat
       style={baseStyle}
     >
       <img
-        src="/logos/jdlogo.png"
+        src={assetUrl("logos/jdlogo.png")}
         alt=""
         style={{
           width: 18,

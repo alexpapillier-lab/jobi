@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback, type ChangeEvent } from "react";
+import { assetUrl } from "../lib/assetUrl";
 import { createPortal } from "react-dom";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
@@ -3273,7 +3274,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   cursor: "pointer",
                 }}
               >
-                <img src="/logos/jdlogo.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                <img src={assetUrl("logos/jdlogo.png")} alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
                 {jobiDocsConnected ? "Otevřít JobiDocs" : "Spustit JobiDocs"}
               </button>
               <span style={{
