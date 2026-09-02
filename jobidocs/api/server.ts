@@ -60,7 +60,18 @@ function pushActivity(action: "print" | "export", status: "ok" | "error" | "pend
   if (activityLog.length > MAX_ACTIVITY) activityLog.pop();
 }
 
-type StartOptions = { htmlToPdf?: (html: string) => Promise<Buffer> };
+type PrinterInfo = { name: string; status: string; available: boolean };
+
+type StartOptions = {
+  htmlToPdf?: (html: string) => Promise<Buffer>;
+  /**
+   * Nativní tisk pro platformy bez CUPS (Windows). Když není předaný,
+   * použije se původní lp cesta z print.ts – tak to zůstává na macOS.
+   */
+  printPdfNative?: (pdf: Buffer, printerName?: string) => Promise<string>;
+  /** Seznam tiskáren pro platformy bez lpstat (Windows). */
+  listPrintersNative?: () => Promise<PrinterInfo[]>;
+};
 
 export async function startApiServer(
   port: number = PORT,
@@ -68,6 +79,9 @@ export async function startApiServer(
   options?: StartOptions
 ) {
   const htmlToPdf = options?.htmlToPdf;
+  // Na macOS jsou obě undefined -> zůstává lp / lpstat.
+  const printPdfFn = options?.printPdfNative ?? printPdf;
+  const listPrintersFn = options?.listPrintersNative ?? listPrinters;
   const fastify = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
 
   fastify.addHook("onRequest", async (request, _reply) => {
@@ -144,7 +158,7 @@ export async function startApiServer(
 
   // List printers (macOS: lpstat -p)
   fastify.get("/v1/printers", async () => {
-    const printers = await listPrinters();
+    const printers = await listPrintersFn();
     return { printers };
   });
 
@@ -419,8 +433,8 @@ export async function startApiServer(
       ]);
       pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
       let printer = (await getSettings(service_id)).preferred_printer_name;
-      fastify.log.info("[print-document] calling lp, printer=%s", printer ?? "default");
-      const jobId = await printPdf(pdfBuffer, printer);
+      fastify.log.info("[print-document] tisk, printer=%s", printer ?? "default");
+      const jobId = await printPdfFn(pdfBuffer, printer);
       pushActivity("print", "ok", [printer ?? "default", jobId ? `(${jobId})` : ""].filter(Boolean).join(" "));
       return { ok: true, status: "queued", job_id: jobId || undefined };
     } catch (err: unknown) {
@@ -557,7 +571,7 @@ export async function startApiServer(
         printer = settings.preferred_printer_name;
       }
       fastify.log.info("[print] calling lp, printer=%s", printer ?? "default");
-      const jobId = await printPdf(pdfBuffer, printer);
+      const jobId = await printPdfFn(pdfBuffer, printer);
       fastify.log.info("[print] lp ok, jobId=%s", jobId);
       const detail = [printer ? printer : "default", jobId ? `(${jobId})` : ""].filter(Boolean).join(" ");
       pushActivity("print", "ok", detail.trim());

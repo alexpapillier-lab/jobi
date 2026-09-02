@@ -1,0 +1,91 @@
+name: Build Windows
+
+# Windows build nejde udělat z macOS – ring (krypto v updateru) potřebuje
+# Windows C hlavičky. Proto se staví tady, na windows-latest runneru.
+#
+# Potřebné secrets v nastavení repozitáře:
+#   VITE_SUPABASE_URL          – Vite ho zapéká do buildu
+#   VITE_SUPABASE_ANON_KEY     – veřejný klíč, v hotové aplikaci je stejně
+#   VITE_ROOT_OWNER_ID         – volitelné
+#   TAURI_SIGNING_PRIVATE_KEY  – minisign klíč pro OTA (stejný jako u macOS)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#
+# Aplikace NENÍ podepsaná Authenticode certifikátem, takže SmartScreen
+# při instalaci ohlásí neznámého vydavatele. To je zatím záměr.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  jobi:
+    name: Jobi (Tauri, NSIS installer)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalace závislostí
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ROOT_OWNER_ID: ${{ secrets.VITE_ROOT_OWNER_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri:build
+
+      - name: Uložit installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobi-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+          if-no-files-found: error
+
+  jobidocs:
+    name: JobiDocs (Electron, NSIS + portable)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalace závislostí
+        working-directory: jobidocs
+        run: npm ci
+
+      # shell: bash kvůli skriptům copy-app-icon / copy-tray-icon, které
+      # používají unixové mkdir -p a cp (na windows-latest je Git Bash).
+      # build:electron (ne build) – jen ten kompiluje electron/main.ts přes
+      # tsconfig.electron.json do dist-electron, které electron-builder potřebuje.
+      - name: Build
+        working-directory: jobidocs
+        shell: bash
+        run: |
+          npm run build:electron
+          npx electron-builder --win --publish never
+
+      - name: Uložit installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobidocs-windows
+          path: |
+            jobidocs/release/*.exe
+          if-no-files-found: error

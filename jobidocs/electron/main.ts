@@ -15,6 +15,77 @@ let tray: Tray | null = null;
 let isQuitting = false;
 
 /**
+ * Tisk PDF na Windows přes Chromium v Electronu.
+ *
+ * POZOR: Používá se VÝHRADNĚ na Windows. macOS tiskne dál přes /usr/bin/lp
+ * (api/print.ts) – ta cesta je odladěná a nesmí se měnit.
+ *
+ * Windows nemá CUPS, takže `lp` tam neexistuje. PDF načteme do skrytého okna
+ * (Chromium PDF viewer) a vytiskneme přes webContents.print().
+ */
+async function printPdfElectronWindows(
+  pdfBuffer: Buffer,
+  printerName?: string
+): Promise<string> {
+  if (pdfBuffer.length === 0) throw new Error("PDF je prázdný");
+
+  const tmpPath = path.join(os.tmpdir(), `jobidocs-print-${Date.now()}.pdf`);
+  await fs.writeFile(tmpPath, pdfBuffer);
+
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { plugins: true, nodeIntegration: false, contextIsolation: true },
+  });
+
+  try {
+    await win.loadURL(`file://${tmpPath.replace(/\\/g, "/")}`);
+    // PDF viewer se vykresluje až po načtení; bez krátké prodlevy vyjede prázdná stránka.
+    await new Promise((r) => setTimeout(r, 700));
+
+    await new Promise<void>((resolve, reject) => {
+      win.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          ...(printerName ? { deviceName: printerName } : {}),
+        },
+        (success, failureReason) => {
+          if (success) resolve();
+          else reject(new Error(failureReason || "Tisk se nezdařil"));
+        }
+      );
+    });
+
+    // Windows nevrací job ID jako lp; vracíme prázdný řetězec (volající to snese).
+    return "";
+  } finally {
+    if (!win.isDestroyed()) win.close();
+    setTimeout(() => { void fs.unlink(tmpPath).catch(() => {}); }, 5000);
+  }
+}
+
+/**
+ * Seznam tiskáren na Windows (lpstat tam není). Na macOS se nepoužívá.
+ */
+async function listPrintersElectronWindows(): Promise<
+  Array<{ name: string; status: string; available: boolean }>
+> {
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+  try {
+    const printers = await win.webContents.getPrintersAsync();
+    return printers.map((pr) => ({
+      name: pr.name,
+      status: pr.status === 0 ? "idle" : String(pr.status),
+      available: pr.status === 0,
+    }));
+  } catch {
+    return [];
+  } finally {
+    if (!win.isDestroyed()) win.close();
+  }
+}
+
+/**
  * Render HTML to PDF using Electron's bundled Chromium (no Puppeteer/Chrome needed).
  * Uses temp file instead of data URL to avoid size limits for large documents.
  */
@@ -286,7 +357,13 @@ ipcMain.handle("jobidocs:get-update-error", () => updateError);
 
 app.whenReady().then(async () => {
   const userDataPath = app.getPath("userData");
-  await startApiServer(API_PORT, userDataPath, { htmlToPdf: htmlToPdfElectron });
+  const isWindows = process.platform === "win32";
+  await startApiServer(API_PORT, userDataPath, {
+    htmlToPdf: htmlToPdfElectron,
+    // Na macOS zůstávají undefined -> api/server.ts použije původní lp/lpstat cestu.
+    printPdfNative: isWindows ? printPdfElectronWindows : undefined,
+    listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
+  });
   await createWindow();
   setupTray();
   setupAutoUpdate();

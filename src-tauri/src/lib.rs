@@ -10,7 +10,9 @@ async fn close_window(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Spustí aplikaci JobiDocs (macOS: open -a JobiDocs). Na ostatních OS nic nedělá.
+/// Spustí aplikaci JobiDocs.
+/// macOS: `open -a JobiDocs`. Windows: hledá exe v obvyklých cestách NSIS instalace.
+/// Ostatní OS: nic nedělá.
 #[tauri::command]
 fn launch_jobidocs() -> Result<bool, String> {
     #[cfg(target_os = "macos")]
@@ -22,7 +24,30 @@ fn launch_jobidocs() -> Result<bool, String> {
         return Ok(status.success());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        // NSIS instaluje per-user do %LOCALAPPDATA%\Programs, per-machine do Program Files.
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        for var in ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"] {
+            if let Ok(base) = std::env::var(var) {
+                let root = std::path::PathBuf::from(base);
+                candidates.push(root.join("Programs").join("JobiDocs").join("JobiDocs.exe"));
+                candidates.push(root.join("JobiDocs").join("JobiDocs.exe"));
+            }
+        }
+
+        for exe in candidates {
+            if exe.is_file() {
+                return std::process::Command::new(&exe)
+                    .spawn()
+                    .map(|_| true)
+                    .map_err(|e| e.to_string());
+            }
+        }
+        return Ok(false);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = ();
         Ok(false)

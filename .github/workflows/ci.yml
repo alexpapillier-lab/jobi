@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  kontrola:
+    name: Typecheck, lint a testy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalace závislostí
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Lint má --max-warnings=9999, takže tady hlídáme jen errors.
+      - name: Lint
+        run: npm run lint
+
+      - name: Testy
+        run: npm run test:run
+
+      - name: Audit produkčních závislostí
+        run: npm audit --omit=dev
