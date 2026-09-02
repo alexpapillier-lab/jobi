@@ -44,8 +44,42 @@ Marketingový web (`web/`) tam už běží, tohle je **druhý projekt**.
    Hodnoty jsou stejné jako v `.env`. Anon klíč je veřejný z principu –
    je zabudovaný i v desktopové aplikaci.
 
-4. Doména: podle uvážení, např. `app.appjobi.com`. **Ne** stejná jako
-   marketingový web, ať se to neplete.
+4. Doména: vlastní, oddělená od marketingového webu – např.
+   `servis.appjobi.com`. Z `appjobi.com` na ni **nedávat odkaz**.
+
+## Neveřejný přístup
+
+Rozhodnuto: web je **záložní nástroj pro servisy, ne veřejný produkt**.
+
+### Co je hotové v buildu
+
+- `robots.txt` s `Disallow: /`
+- hlavička `X-Robots-Tag: noindex, nofollow, noarchive`
+
+Obojí se generuje automaticky při `npm run build:web`.
+
+### Čemu to ale NEZABRÁNÍ
+
+**Tohle jsou opatření proti indexaci, ne proti přístupu.** Kdo adresu zná,
+otevře si přihlašovací stránku. Skutečnou ochranou zůstává přihlášení
+do Supabase a RLS – stejně jako u desktopové aplikace, kde je anon klíč
+zabudovaný v binárce.
+
+Když chceš skutečnou závoru **před** přihlašovací obrazovkou, je na to
+**Cloudflare Access** (Zero Trust), který je pro malý počet uživatelů
+zdarma:
+
+1. Zero Trust → Access → Applications → **Add an application** → Self-hosted
+2. Doména: `servis.appjobi.com`
+3. Policy: **Allow**, podmínka např. *Emails ending in* `@tvojedomena.cz`,
+   nebo výčet konkrétních e-mailů servisů
+4. Metoda přihlášení: One-time PIN na e-mail (nepotřebuje žádný účet navíc)
+
+Uživatel pak nejdřív projde Access a teprve potom uvidí přihlášení do Jobi.
+Nevýhoda: dvojí přihlašování. Pro záložní nástroj, který se používá
+výjimečně, to dává smysl; kdyby to mělo být hlavní cesta, spíš ne.
+
+**Sám jsem to nenastavoval** – zasahovalo by to do tvého Cloudflare účtu.
 
 ## Než to pustíš k zákazníkům
 
@@ -55,8 +89,8 @@ Marketingový web (`web/`) tam už běží, tohle je **druhý projekt**.
 - [ ] Ověřit přihlášení, založení zakázky a tisk na nasazené verzi.
 - [ ] Zkusit i na tabletu – sidebar se na úzké obrazovce rozbaluje
       klepnutím, ne najetím myší.
-- [ ] Rozhodnout, jestli web zveřejnit, nebo nechat na neveřejné adrese
-      jako záložní cestu pro servisy.
+- [x] ~~Rozhodnout o veřejnosti~~ – neveřejná adresa, viz výš.
+- [ ] Zvážit Cloudflare Access, pokud má být závora i před přihlášením.
 
 ## Co ve webu není
 

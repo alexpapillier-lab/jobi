@@ -43,10 +43,21 @@ const cloudflareHeaders = () => ({
       "  X-Frame-Options: SAMEORIGIN",
       "  X-Content-Type-Options: nosniff",
       "  Referrer-Policy: strict-origin-when-cross-origin",
+      // Webová verze je záložní nástroj pro servisy, ne veřejný produkt.
+      // Vyhledávače ji nemají indexovat ani chodit po odkazech z ní.
+      "  X-Robots-Tag: noindex, nofollow, noarchive",
       "",
     ].join("\n");
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, "_headers"), content, "utf-8");
+
+    // robots.txt jako druhá vrstva – hlavičku některé roboty ignorují,
+    // ale tohle je standard, na který se dívají všichni.
+    fs.writeFileSync(
+      path.join(outDir, "robots.txt"),
+      ["# Webová verze Jobi – neveřejná, jen pro servisy.", "User-agent: *", "Disallow: /", ""].join("\n"),
+      "utf-8"
+    );
   },
 });
 
