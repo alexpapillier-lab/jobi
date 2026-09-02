@@ -658,7 +658,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         ...(isDesktop() ? [{ key: "about_updates" as const, label: "Aktualizace" }] : []),
       ],
     },
-  ], [isRootOwner, isAdmin, canManageDocuments]);
+  ], [isRootOwner, isAdmin, canManageDocuments, maApi]);
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
