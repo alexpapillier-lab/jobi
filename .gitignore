@@ -52,3 +52,7 @@ jobi-test-release/
 jobi-test-release.zip
 jobi-jobidocs-instalace.zip
 Releases/
+src-tauri/jobi-universal.zip
+
+# Claude Code – worktrees / cache (celé duplicitní repo; nebuildí se z nich)
+web/.claude/

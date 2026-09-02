@@ -1,7 +1,7 @@
 #!/bin/bash
 # Přepíše číslo verze všude v repozitáři (Jobi + JobiDocs).
 # Použití: ./scripts/set-version.sh 0.1.2
-# Aktualizuje: src-tauri/tauri.conf.json, src-tauri/Cargo.toml, jobidocs/package.json
+# Aktualizuje: package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, jobidocs/package.json
 
 set -e
 
@@ -23,6 +23,18 @@ if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
 fi
 
 echo "Nastavuji verzi na $VERSION..."
+
+# Jobi – kořenový package.json
+ROOT_PKG="$ROOT/package.json"
+node -e "
+const fs = require('fs');
+const p = process.argv[1];
+const v = process.argv[2];
+const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+j.version = v;
+fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+console.log('  ' + p + ' -> ' + v);
+" "$ROOT_PKG" "$VERSION"
 
 # Jobi – Tauri config
 TAURI_CONF="$ROOT/src-tauri/tauri.conf.json"
@@ -54,4 +66,4 @@ fs.writeFileSync(p, JSON.stringify(j, null, 2));
 console.log('  ' + p + ' -> ' + v);
 " "$JOBIDOCS_PKG" "$VERSION"
 
-echo "Hotovo. Verze $VERSION je nastavena v tauri.conf.json, Cargo.toml a jobidocs/package.json."
+echo "Hotovo. Verze $VERSION je nastavena v package.json, tauri.conf.json, Cargo.toml a jobidocs/package.json."
