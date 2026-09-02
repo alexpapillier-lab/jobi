@@ -33,3 +33,33 @@ jobs:
 
       - name: Audit produkčních závislostí
         run: npm audit --omit=dev
+
+  # Kontrola, že s anon klíčem není zvenčí vidět nic, co vidět nemá.
+  # Dívá se na SKUTEČNOU databázi, ne na migrace – ty můžou být v pořádku
+  # a produkce přesto ne, když se nenasadily.
+  #
+  # Vzniklo po nálezu z 2. 9. 2026, kdy capture_tokens a draft_capture_photos
+  # neměly zapnuté RLS a půl roku si toho nikdo nevšiml.
+  #
+  # Běží jen na main a jen když jsou k dispozici secrets (na forku nejsou),
+  # aby to neblokovalo běžné PR.
+  rls:
+    name: RLS – anonymní přístup
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalace závislostí
+        run: npm ci
+
+      - name: Kontrola anonymního přístupu k tabulkám
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run test:integration

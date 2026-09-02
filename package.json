@@ -21,6 +21,7 @@
     "build:all": "bash scripts/build-jobi-and-jobidocs.sh",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "db:migrate": "npx supabase db push",
     "db:migrate:local": "npx supabase migration up",
     "dev:web": "vite --config vite.config.web.ts",
