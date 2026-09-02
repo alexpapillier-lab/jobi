@@ -8,6 +8,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const stub = (name: string) => path.resolve(__dirname, "web-stubs", name);
 
 /**
+ * Podcesta, na které aplikace poběží.
+ *
+ * Prázdné = běží v kořeni domény (samostatný Pages projekt, dev server).
+ * "/servis/" = pověšená do podsložky vedle marketingového webu.
+ * Nastavuje se přes JOBI_WEB_BASE, viz scripts/build-site.sh.
+ */
+// @ts-expect-error process je nodejs global
+const WEB_BASE: string = process.env.JOBI_WEB_BASE || "/";
+
+/**
  * Build webové verze Jobi.
  *
  * Dědí ze základního vite.config.ts (kvůli pluginu na loga a nastavení Reactu)
@@ -30,16 +40,17 @@ const cloudflareHeaders = () => ({
   name: "cloudflare-headers",
   writeBundle() {
     const outDir = path.resolve(__dirname, "dist-web");
+    const prefix = WEB_BASE === "/" ? "" : WEB_BASE.replace(/\/$/, "");
     const content = [
       "# Cloudflare Pages – webová verze Jobi",
       "",
-      "/assets/*",
+      `${prefix}/assets/*`,
       "  Cache-Control: public, max-age=31536000, immutable",
       "",
-      "/index.html",
+      `${prefix}/index.html`,
       "  Cache-Control: public, max-age=0, must-revalidate",
       "",
-      "/*",
+      `${prefix}/*`,
       "  X-Frame-Options: SAMEORIGIN",
       "  X-Content-Type-Options: nosniff",
       "  Referrer-Policy: strict-origin-when-cross-origin",
@@ -51,8 +62,10 @@ const cloudflareHeaders = () => ({
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, "_headers"), content, "utf-8");
 
-    // robots.txt jako druhá vrstva – hlavičku některé roboty ignorují,
-    // ale tohle je standard, na který se dívají všichni.
+    // robots.txt platí JEN v kořeni domény – v podsložce by ho roboti
+    // ignorovali. Při nasazení vedle marketingového webu ho proto skládá
+    // scripts/build-site.sh do kořene společného výstupu.
+    if (WEB_BASE !== "/") return;
     fs.writeFileSync(
       path.join(outDir, "robots.txt"),
       ["# Webová verze Jobi – neveřejná, jen pro servisy.", "User-agent: *", "Disallow: /", ""].join("\n"),
@@ -77,6 +90,7 @@ export default mergeConfig(
         "@tauri-apps/plugin-process": stub("tauri-process.ts"),
       },
     },
+    base: WEB_BASE,
     build: {
       outDir: "dist-web",
       emptyOutDir: true,
