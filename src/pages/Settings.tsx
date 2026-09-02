@@ -140,9 +140,16 @@ type UIConfig = {
 const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "table", "timeline", "cards-modern", "split", "stripe", "status-grouped"];
 const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
+/** Windows startují s vypnutými efekty – rozostření tam prokazatelně trhá.
+ *  Musí odpovídat stejnojmenné funkci v App.tsx. */
+function defaultReducedEffects(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Windows|Win64|Win32/i.test(navigator.userAgent || "");
+}
+
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: false },
+    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects() },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
@@ -2340,8 +2347,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Výkon</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
               Rozostření za průhlednými panely vypadá dobře, ale je náročné na grafiku.
-              Pokud aplikace sekne při posouvání – typicky ve virtuálním stroji nebo na
-              starším počítači – tímhle se vypne a chod se znatelně zrychlí.
+              Pokud aplikace sekne při posouvání, tímhle se vypne a chod se znatelně zrychlí.
+              Na Windows je to zapnuté od začátku, protože se tam trhání projevovalo;
+              na výkonném počítači to můžete vypnout a efekty si vrátit.
             </div>
             <label
               style={{

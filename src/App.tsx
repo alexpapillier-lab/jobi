@@ -85,9 +85,24 @@ type UIConfig = {
   invoicingEnabled?: boolean;
 };
 
+/**
+ * Výchozí stav omezených efektů podle platformy.
+ *
+ * Na Windows je rozostření za panely (backdrop-filter) prokazatelně drahé –
+ * aplikace kvůli němu trhala i v nativním ARM64 buildu, takže to nezpůsobila
+ * emulace, ale vykreslování. Windows proto startují s efekty vypnutými;
+ * kdo má výkonný stroj, zapne si je v Nastavení → Vzhled → Rozhraní.
+ *
+ * Na macOS zůstávají zapnuté – tam žádné trhání pozorované nebylo.
+ */
+function defaultReducedEffects(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Windows|Win64|Win32/i.test(navigator.userAgent || "");
+}
+
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: false },
+    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects() },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50 },
