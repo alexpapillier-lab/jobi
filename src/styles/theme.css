@@ -700,3 +700,37 @@ button:active:not(:disabled), a:active, [role="button"]:active {
     opacity: 0;
   }
 }
+
+/* ---------------------------------------------------------------
+   Omezené efekty (Nastavení → Vzhled → Rozhraní)
+
+   Rozostření za průhlednými panely (backdrop-filter) nutí prohlížeč
+   držet zvlášť kompozitní vrstvu a přepočítávat ji při každém posunu.
+   Na slabší grafice a hlavně ve virtuálních strojích je to hlavní
+   příčina trhaného posouvání.
+
+   Samotné --blur: none nastavuje App.tsx; tady se doplní zbytek,
+   co stojí výkon: měkké stíny a přechody.
+   --------------------------------------------------------------- */
+.reduced-effects,
+.reduced-effects * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.reduced-effects {
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-soft: 0 1px 4px rgba(0, 0, 0, 0.18);
+  --transition-smooth: none;
+}
+
+/* Uživatel, který si v systému vypnul animace, je nechce ani tady. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
