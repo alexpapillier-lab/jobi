@@ -85,7 +85,13 @@ export function TicketDevice({ label, dense }: { label?: string | null } & Dense
   );
 }
 
-/** Jméno zákazníka. */
+/**
+ * Jméno zákazníka.
+ *
+ * flexShrink: 1 a minWidth: 0 jsou tu schválně – bez nich se jméno odmítá
+ * zkrátit a v úzkém okně vytlačí celý řádek přes okraj. Takhle se místo
+ * toho ořízne třemi tečkami. Ověřeno až do šířky 440 px.
+ */
 export function TicketCustomer({ name }: { name?: string | null }) {
   return (
     <span
@@ -94,7 +100,8 @@ export function TicketCustomer({ name }: { name?: string | null }) {
         fontSize: "var(--text-xs)",
         color: "var(--muted)",
         whiteSpace: "nowrap",
-        flexShrink: 0,
+        flexShrink: 1,
+        minWidth: 0,
         overflow: "hidden",
         textOverflow: "ellipsis",
       }}
