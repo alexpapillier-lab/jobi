@@ -1566,7 +1566,9 @@ DETALY: Výměna opotřebované baterie
         </div>
 
           {/* REPAIRS - Add Form Only */}
-          <div style={{ ...card, maxHeight: "400px" }}>
+          {/* Taky bez stropu – formulář nemá vnitřní scroll a našeptávače v něm
+              jsou position:absolute, scrollující obal by je ořezal. */}
+          <div style={{ ...card, maxHeight: "none" }}>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>
               Přidání opravy {selectedModel && `· ${selectedModel.name}`}
           </div>
@@ -1829,7 +1831,9 @@ DETALY: Výměna opotřebované baterie
       </div>
 
       {/* Repair List - Full Width */}
-      <div style={{ ...card, marginTop: 16 }}>
+      {/* Bez stropu z `card`: panely vedle sebe mají uvnitř vlastní scroll
+          (flex:1 + overflowY), tenhle ne, takže by seznam vytekl ven z pozadí. */}
+      <div style={{ ...card, marginTop: 16, maxHeight: "none" }}>
         <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
           Seznam oprav
         </div>
@@ -1924,8 +1928,9 @@ DETALY: Výměna opotřebované baterie
             </div>
         )}
 
-        {/* Repairs Grid */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+        {/* Seznam oprav – řádky, ne dlaždice. U dlaždic dělal dlouhý výčet
+            modelů karty různě vysoké a přebíjel cenu i čas. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filteredRepairs.map((r) => {
               const repairModels = data.models.filter((m) => r.modelIds && r.modelIds.includes(m.id));
               const isEditing = editingRepair === r.id;
@@ -1934,14 +1939,13 @@ DETALY: Výměna opotřebované baterie
                   <div
                     key={r.id}
                   style={{
-                    padding: 16,
-                    borderRadius: 12,
+                    padding: isEditing ? 16 : "10px 14px",
+                    borderRadius: 10,
                     border,
                     background: "var(--panel)",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 12,
-                    flex: "1 1 300px",
+                    gap: isEditing ? 12 : 6,
                     minWidth: 0,
                   }}
                 >
@@ -2196,40 +2200,74 @@ DETALY: Výměna opotřebované baterie
                       </div>
                     ) : (
                       <>
-                      <div>
-                        <div style={{ fontWeight: 950, fontSize: 15, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ flex: 1, minWidth: 0 }}>{r.name}</span>
+                      {/* Řádek: vlevo popis, vpravo cena a akce. */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
                           {ukazatViditelnost && (
-                            <button
-                              type="button"
+                            /* Text, ne ikona: „jde tahle oprava na web?“ nevystihne
+                               žádný piktogram a aplikace emoji jinde nepoužívá. */
+                            <Button
+                              variant={r.publicVisible === false ? "soft" : "ghost"}
+                              size="sm"
                               onClick={() => prepnoutViditelnost("repairs", r.id)}
                               title={r.publicVisible === false
-                                ? "Skryto ve veřejném API – kliknutím zveřejníš"
-                                : "Zveřejněno ve veřejném API – kliknutím skryješ"}
+                                ? "Tahle oprava se do veřejného ceníku neposílá. Kliknutím ji zveřejníš."
+                                : "Tahle oprava je ve veřejném ceníku. Kliknutím ji skryješ."}
                               style={{
-                                border: "none", background: "transparent", cursor: "pointer",
-                                padding: 2, lineHeight: 1, fontSize: 15,
-                                opacity: r.publicVisible === false ? 0.45 : 1,
+                                flexShrink: 0,
+                                fontWeight: 600,
+                                color: r.publicVisible === false ? "var(--warn, #e5a94a)" : "var(--muted)",
                               }}
                             >
-                              {r.publicVisible === false ? "🚫" : "👁"}
-                            </button>
+                              {r.publicVisible === false ? "Skryto z ceníku" : "Ve veřejném ceníku"}
+                            </Button>
                           )}
                           </div>
                         {repairModels.length > 0 && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
-                            Modely: {repairModels.map((m) => m.name).join(", ")}
-                        </div>
+                          /* Výčet zkrácený – u opravy platné pro 40 modelů
+                             přebíjel všechno ostatní. Celý je v titulku. */
+                          <div
+                            style={{ fontSize: 11, color: "var(--muted)" }}
+                            title={repairModels.map((m) => m.name).join(", ")}
+                          >
+                            {repairModels.slice(0, 3).map((m) => m.name).join(", ")}
+                            {repairModels.length > 3 && ` a ${repairModels.length - 3} dalších`}
+                          </div>
+                        )}
+                        {r.productIds && r.productIds.length > 0 && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                            Produkty: {r.productIds.map((pid) => {
+                              const product = inventoryData.products.find((p) => p.id === pid);
+                              return product?.name;
+                            }).filter(Boolean).join(", ")}
+                          </div>
+                        )}
+                        {r.details && (
+                          /* Dvě řádky stačí na přehled, celý text je v úpravě. */
+                          <div style={{
+                            fontSize: 12,
+                            color: "var(--muted)",
+                            lineHeight: 1.4,
+                            marginTop: 4,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}>
+                            {r.details}
+                          </div>
                         )}
                         </div>
 
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: border }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
                             {r.price} Kč
                           </div>
-                          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                            {r.estimatedTime} min{r.costs ? ` · Náklady: ${r.costs} Kč` : ""}
+                          <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                            {r.estimatedTime} min{r.costs ? ` · náklady ${r.costs} Kč` : ""}
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
@@ -2258,20 +2296,7 @@ DETALY: Výměna opotřebované baterie
                           </Button>
                         </div>
                       </div>
-
-                      {r.productIds && r.productIds.length > 0 && (
-                        <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                          Produkty: {r.productIds.map((pid) => {
-                            const product = inventoryData.products.find((p) => p.id === pid);
-                            return product?.name;
-                          }).filter(Boolean).join(", ")}
-                        </div>
-                      )}
-                        {r.details && (
-                        <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
-                          {r.details}
-                        </div>
-                        )}
+                      </div>
                       </>
                     )}
                   </div>
