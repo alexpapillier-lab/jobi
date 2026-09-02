@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { MenuItem } from "../components/ui";
 import { createPortal } from "react-dom";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { AppLogo } from "../components/AppLogo";
@@ -468,45 +469,26 @@ export function Sidebar({
                     <div style={{ padding: "6px 14px", color: "var(--muted)", fontSize: 12 }}>Zatím žádné servisy</div>
                   ) : (
                     services.map((service) => (
-                      <button
+                      <MenuItem
+                        layout="row"
+                        selected={service.service_id === activeServiceId}
                         key={service.service_id}
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveServiceId(service.service_id);
                           setUserMenuOpen(false);
                         }}
-                        style={{
-                          width: "100%",
-                          padding: "8px 14px",
-                          background: service.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
-                          border: "none",
-                          color: service.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
-                          fontSize: 13,
-                          fontWeight: service.service_id === activeServiceId ? 600 : 400,
-                          textAlign: "left",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (service.service_id !== activeServiceId) e.currentTarget.style.background = "var(--bg)";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (service.service_id !== activeServiceId) e.currentTarget.style.background = "transparent";
-                        }}
                       >
                         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{service.service_name}</span>
                         {service.service_id === activeServiceId && <span style={{ fontSize: 12 }}>✓</span>}
-                      </button>
+                      </MenuItem>
                     ))
                   )}
                 </div>
               )}
 
-              <button
-                type="button"
+              <MenuItem
+                size="md"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -515,23 +497,9 @@ export function Sidebar({
                     console.error("[Sidebar] Error signing out:", error);
                   });
                 }}
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--text)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  textAlign: "left",
-                  cursor: "pointer",
-                  transition: "var(--transition-smooth)",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--panel-2)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
                 Odhlásit se
-              </button>
+              </MenuItem>
             </div>,
             document.body
           )}
@@ -923,8 +891,8 @@ export function Sidebar({
                 zIndex: 1000,
               }}
             >
-              <button
-                type="button"
+              <MenuItem
+                size="md"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -942,27 +910,9 @@ export function Sidebar({
                       console.error("[Sidebar] Error signing out:", error);
                     });
                 }}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--text)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  textAlign: "left",
-                  cursor: "pointer",
-                  transition: "var(--transition-smooth)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--panel-2)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                }}
               >
                 Odhlásit se
-              </button>
+              </MenuItem>
             </div>
           )}
         </div>
@@ -1057,7 +1007,9 @@ export function Sidebar({
                 </div>
               ) : (
               services.map((service) => (
-                <button
+                <MenuItem
+                  layout="row"
+                  selected={service.service_id === activeServiceId}
                   key={service.service_id}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1066,31 +1018,6 @@ export function Sidebar({
                     setServiceMenuOpen(false);
                     setServiceMenuPosition(null);
                   }}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    background: service.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
-                    border: "none",
-                    color: service.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
-                    fontSize: 13,
-                    fontWeight: service.service_id === activeServiceId ? 600 : 400,
-                    textAlign: "left",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8
-                  }}
-                  onMouseEnter={(e) => {
-                    if (service.service_id !== activeServiceId) {
-                      e.currentTarget.style.background = "var(--bg)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (service.service_id !== activeServiceId) {
-                      e.currentTarget.style.background = "transparent";
-                    }
-                  }}
                 >
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
                     {service.service_name}
@@ -1098,7 +1025,7 @@ export function Sidebar({
                   {service.service_id === activeServiceId && (
                     <span style={{ fontSize: 12 }}>✓</span>
                   )}
-                </button>
+                </MenuItem>
               ))
               )}
             </div>,

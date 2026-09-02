@@ -317,3 +317,78 @@
 
 .ui-selectable--sm { padding: var(--space-2) var(--space-3); }
 .ui-selectable--lg { padding: var(--space-4); }
+
+/* --------------------------------------------------------------------------
+   Položka rozbalovací nabídky
+
+   Řádek na celou šířku, zarovnaný vlevo – volba servisu, výběr stavu,
+   opravy, slevy, akcí nad dokladem. V aplikaci se tenhle vzor opakoval
+   pětadvacetkrát ve čtrnácti souborech, pokaždé o kousek jinak.
+
+   Hover se dřív dělal dvojicí onMouseEnter/onMouseLeave, která přebarvovala
+   prvek přímo přes style. Pro klávesnici tedy nefungoval vůbec a při odchodu
+   myši přepsal i vybraný stav. Tady to dělá CSS včetně :focus-visible.
+   -------------------------------------------------------------------------- */
+.ui-menu-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+/* --panel-2 se od --panel liší o čtyři odstíny z 255, takže hover ani kurzor
+   klávesnice nebyly prakticky vidět. Nádech akcentu funguje ve všech motivech. */
+.ui-menu-item:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ui-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ui-menu-item[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.ui-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Kurzor procházení klávesnicí – jiný stav než „vybráno“. Kromě podbarvení
+   ho značí i proužek u levé hrany, aby šel od výběru rozeznat. */
+.ui-menu-item[data-highlighted="true"]:not([aria-pressed="true"]) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.ui-menu-item--danger {
+  color: var(--danger-text);
+}
+
+/* Oddělovač mezi položkami seznamu. */
+.ui-menu-item--divider {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.ui-menu-item--md { padding: var(--space-3) var(--space-4); }
+
+/* Rozvržení obsahu: ikona vlevo, nebo popisek vlevo a hodnota vpravo. */
+.ui-menu-item--row,
+.ui-menu-item--between {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ui-menu-item--between {
+  justify-content: space-between;
+}

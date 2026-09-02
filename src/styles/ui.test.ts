@@ -45,12 +45,30 @@ describe("ui.css stojí na tokenech", () => {
     expect(missing).toEqual([]);
   });
 
-  it.each([".ui-btn", ".ui-segmented__option", ".ui-selectable"])(
+  it.each([".ui-btn", ".ui-segmented__option", ".ui-selectable", ".ui-menu-item"])(
     "%s má stav pro klávesnici",
     (cls) => {
       expect(css).toContain(`${cls}:focus-visible`);
     },
   );
+
+  it("položka nabídky rozlišuje výběr od kurzoru klávesnice", () => {
+    // Dva různé stavy: `aria-pressed` je zvolená hodnota, `data-highlighted`
+    // jen kurzor při procházení šipkami. Kdyby splynuly, uživatel u klávesnice
+    // nepozná, na čem stojí a co je vybráno.
+    expect(css).toContain('.ui-menu-item[aria-pressed="true"]');
+    expect(css).toContain('.ui-menu-item[data-highlighted="true"]');
+    const pressed = css.match(/\.ui-menu-item\[aria-pressed="true"\]\s*\{([^}]*)\}/)![1];
+    const cursor = css.match(/\.ui-menu-item\[data-highlighted="true"\][^{]*\{([^}]*)\}/)![1];
+    expect(pressed.trim()).not.toEqual(cursor.trim());
+  });
+
+  it("hover položky nabídky je vidět", () => {
+    // --panel-2 se od --panel liší o čtyři odstíny z 255; na tom hover zanikl.
+    const hover = css.match(/\.ui-menu-item:hover[^{]*\{([^}]*)\}/)![1];
+    expect(hover).not.toContain("var(--panel-2)");
+    expect(hover).toContain("var(--accent)");
+  });
 
   it("vybraný stav nemění šířku rámečku", () => {
     // Karty ve Statistikách dřív při výběru přepínaly rámeček z 1px na 2px,

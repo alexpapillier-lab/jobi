@@ -6,3 +6,4 @@ export { Toolbar, ToolbarSpacer } from "./Toolbar";
 export { Segmented, type SegmentedOption } from "./Segmented";
 export { Input, Label } from "./Input";
 export { Selectable } from "./Selectable";
+export { MenuItem } from "./MenuItem";

@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
  * importuje 13 souborů; nová místa ať berou rovnou z components/ui.
  */
 export { Card } from "../components/ui";
-import { Input, Label } from "../components/ui";
+import { Input, Label, MenuItem } from "../components/ui";
 
 /**
  * Popisek pole. Přesunut do components/ui jako Label; re-export tu zůstává
@@ -109,41 +109,19 @@ export function LanguagePicker({ value, onChange }: { value: string; onChange: (
       {options.map((opt) => {
         const active = opt.value === value;
         return (
-          <button
+          <MenuItem
+            layout="between"
+            size="md"
+            selected={active}
             key={opt.value}
-            type="button"
             onClick={() => {
               onChange(opt.value);
               setOpen(false);
             }}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "none",
-              background: active ? "var(--accent-soft)" : "transparent",
-              cursor: "pointer",
-              color: active ? "var(--accent)" : "var(--text)",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-              fontWeight: active ? 700 : 500,
-              fontSize: 14,
-              transition: "var(--transition-smooth)",
-            }}
-            onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.background = "var(--panel-2)";
-            }}
-            onMouseLeave={(e) => {
-              if (!active) e.currentTarget.style.background = "transparent";
-            }}
           >
             <span>{opt.label}</span>
             {active && <span style={{ marginLeft: "auto", fontSize: 16, opacity: 0.8 }}>✓</span>}
-          </button>
+          </MenuItem>
         );
       })}
     </div>

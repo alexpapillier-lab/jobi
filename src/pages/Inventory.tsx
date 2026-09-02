@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { Button, Input } from "../components/ui";
+import { Button, Input, MenuItem } from "../components/ui";
 import { BoxIcon, WarningIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { showToast } from "../components/Toast";
@@ -163,42 +163,18 @@ function ProductFilterPicker({ value, onChange }: { value: "all" | "inStock" | "
       }}
     >
       {options.map((opt) => (
-        <button
+        <MenuItem
+          layout="between"
+          selected={value === opt.value}
           key={opt.value}
-          type="button"
           onClick={() => {
             onChange(opt.value as any);
             setOpen(false);
           }}
-          style={{
-            width: "100%",
-            padding: "10px 14px",
-            background: value === opt.value ? "var(--accent-soft)" : "transparent",
-            border: "none",
-            color: value === opt.value ? "var(--accent)" : "var(--text)",
-            fontWeight: value === opt.value ? 900 : 500,
-            fontSize: 13,
-            textAlign: "left",
-            cursor: "pointer",
-            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-          onMouseEnter={(e) => {
-            if (value !== opt.value) {
-              e.currentTarget.style.background = "var(--panel-2)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (value !== opt.value) {
-              e.currentTarget.style.background = "transparent";
-            }
-          }}
         >
           <span>{opt.label}</span>
           {value === opt.value && <span style={{ fontSize: 12, opacity: 0.8 }}>✓</span>}
-        </button>
+        </MenuItem>
       ))}
     </div>
   ) : null;
@@ -302,38 +278,13 @@ function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" 
       }}
     >
       {options.map((opt) => (
-        <button
+        <MenuItem
+          layout="between"
+          selected={value === opt.value}
           key={opt.value}
-          type="button"
           onClick={() => {
             onChange(opt.value as any);
             setOpen(false);
-          }}
-          style={{
-            width: "100%",
-            padding: "10px 14px",
-            background: value === opt.value ? "var(--accent-soft)" : "transparent",
-            border: "none",
-            color: value === opt.value ? "var(--accent)" : "var(--text)",
-            fontWeight: value === opt.value ? 900 : 500,
-            fontSize: 13,
-            textAlign: "left",
-            cursor: "pointer",
-            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-          onMouseEnter={(e) => {
-            if (value !== opt.value) {
-              e.currentTarget.style.background = "var(--panel-2)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (value !== opt.value) {
-              e.currentTarget.style.background = "transparent";
-            }
           }}
         >
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -341,7 +292,7 @@ function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" 
             <span>{opt.label}</span>
           </span>
           {value === opt.value && <span style={{ fontSize: 12, opacity: 0.8 }}>✓</span>}
-        </button>
+        </MenuItem>
       ))}
     </div>
   ) : null;

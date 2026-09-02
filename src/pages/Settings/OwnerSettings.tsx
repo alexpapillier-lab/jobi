@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { MenuItem } from "../../components/ui";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { showToast } from "../../components/Toast";
 import { reportError } from "../../lib/reportError";
@@ -298,28 +299,12 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                 {filteredServices.map((s) => {
                   const isSelected = s.service_id === ownerSelectedServiceId;
                   return (
-                    <button
+                    <MenuItem
+                      size="md"
+                      divider
+                      selected={isSelected}
                       key={s.service_id}
-                      type="button"
                       onClick={() => setOwnerSelectedServiceId(s.service_id)}
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px",
-                        border: "none",
-                        borderBottom: border,
-                        background: isSelected ? "var(--accent-soft)" : "transparent",
-                        color: isSelected ? "var(--accent)" : "var(--text)",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        transition: "background 0.15s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = "var(--panel)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = "transparent";
-                      }}
                     >
                       <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.service_name || "Bez názvu"}
@@ -347,7 +332,7 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                       >
                         {s.active !== false ? "Aktivní" : "Deaktivovaný"}
                       </span>
-                    </button>
+                    </MenuItem>
                   );
                 })}
               </div>

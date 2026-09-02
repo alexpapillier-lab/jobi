@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
 
 type HandoffMethodSelectProps = {
@@ -82,54 +83,24 @@ export function HandoffMethodSelect({ options, value, onChange, placeholder = "â
         overflowY: "auto",
       }}
     >
-      <button
-        type="button"
+      <MenuItem
+        size="md"
+        selected={!value}
         onClick={() => { onChange(""); setOpen(false); }}
-        style={{
-          width: "100%",
-          textAlign: "left",
-          padding: "12px 14px",
-          borderRadius: 10,
-          border: "none",
-          background: !value ? "var(--accent-soft)" : "transparent",
-          color: !value ? "var(--accent)" : "var(--text)",
-          fontWeight: !value ? 600 : 500,
-          fontSize: 13,
-          cursor: "pointer",
-          fontFamily: "inherit",
-          transition: "var(--transition-smooth)",
-        }}
-        onMouseEnter={(e) => { if (value) e.currentTarget.style.background = "var(--panel-2)"; }}
-        onMouseLeave={(e) => { if (value) e.currentTarget.style.background = "transparent"; }}
       >
         {placeholder}
-      </button>
+      </MenuItem>
       {listOptions.map((opt, i) => {
         const active = opt === value;
         return (
-          <button
+          <MenuItem
+            size="md"
+            selected={active}
             key={i}
-            type="button"
             onClick={() => { onChange(opt); setOpen(false); }}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "none",
-              background: active ? "var(--accent-soft)" : "transparent",
-              color: active ? "var(--accent)" : "var(--text)",
-              fontWeight: active ? 600 : 500,
-              fontSize: 13,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              transition: "var(--transition-smooth)",
-            }}
-            onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--panel-2)"; }}
-            onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
           >
             {opt}
-          </button>
+          </MenuItem>
         );
       })}
     </div>

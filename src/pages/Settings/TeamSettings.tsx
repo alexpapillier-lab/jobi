@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { MenuItem } from "../../components/ui";
 import { createPortal } from "react-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { devLog, devWarn } from "../../lib/devLog";
@@ -662,39 +663,18 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                 onClick={(e) => e.stopPropagation()}
               >
                 {services.map((s) => (
-                  <button
+                  <MenuItem
+                    layout="between"
+                    selected={s.service_id === activeServiceId}
                     key={s.service_id}
-                    type="button"
                     onClick={() => {
                       setActiveServiceId(s.service_id);
                       setServiceDropdownOpen(false);
                     }}
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      background: s.service_id === activeServiceId ? "var(--accent-soft)" : "transparent",
-                      border: "none",
-                      color: s.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
-                      fontSize: 13,
-                      fontWeight: s.service_id === activeServiceId ? 600 : 400,
-                      textAlign: "left",
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (s.service_id !== activeServiceId) e.currentTarget.style.background = "var(--bg)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (s.service_id !== activeServiceId) e.currentTarget.style.background = "transparent";
-                    }}
                   >
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.service_name || "Bez názvu"}</span>
                     {s.service_id === activeServiceId && <span style={{ fontSize: 12 }}>✓</span>}
-                  </button>
+                  </MenuItem>
                 ))}
               </div>,
               document.body
@@ -1132,48 +1112,26 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                         overflowY: "auto",
                       }}
                     >
-                      <button
-                        type="button"
+                      <MenuItem
+                        size="md"
+                        selected={inviteRole === "member"}
                         onClick={() => {
                           setInviteRole("member");
                           setInviteRolePickerOpen(false);
                         }}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "12px 14px",
-                          borderRadius: 12,
-                          border: "none",
-                          background: inviteRole === "member" ? "var(--accent-soft)" : "transparent",
-                          cursor: "pointer",
-                          color: inviteRole === "member" ? "var(--accent)" : "var(--text)",
-                          fontWeight: inviteRole === "member" ? 700 : 500,
-                          fontSize: 14,
-                        }}
                       >
                         Člen
-                      </button>
-                      <button
-                        type="button"
+                      </MenuItem>
+                      <MenuItem
+                        size="md"
+                        selected={inviteRole === "admin"}
                         onClick={() => {
                           setInviteRole("admin");
                           setInviteRolePickerOpen(false);
                         }}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "12px 14px",
-                          borderRadius: 12,
-                          border: "none",
-                          background: inviteRole === "admin" ? "var(--accent-soft)" : "transparent",
-                          cursor: "pointer",
-                          color: inviteRole === "admin" ? "var(--accent)" : "var(--text)",
-                          fontWeight: inviteRole === "admin" ? 700 : 500,
-                          fontSize: 14,
-                        }}
                       >
                         Administrátor
-                      </button>
+                      </MenuItem>
                     </div>,
                     document.body
                   )}

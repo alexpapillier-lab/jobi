@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
 
 type DiscountPickerProps = {
@@ -108,38 +109,16 @@ export function DiscountPicker({ discountType, discountValue, onChange }: Discou
       {options.map((opt) => {
         const active = opt.value === discountType;
         return (
-          <button
+          <MenuItem
+            layout="between"
+            size="md"
+            selected={active}
             key={opt.value ?? "none"}
-            type="button"
             onClick={() => handleOptionSelect(opt.value)}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: "none",
-              background: active ? "var(--accent-soft)" : "transparent",
-              cursor: "pointer",
-              color: active ? "var(--accent)" : "var(--text)",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-              fontWeight: active ? 700 : 500,
-              fontSize: 14,
-              transition: "var(--transition-smooth)",
-            }}
-            onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.background = "var(--panel-2)";
-            }}
-            onMouseLeave={(e) => {
-              if (!active) e.currentTarget.style.background = "transparent";
-            }}
           >
             <span>{opt.label}</span>
             {active && <span style={{ marginLeft: "auto", fontSize: 16, opacity: 0.8 }}>✓</span>}
-          </button>
+          </MenuItem>
         );
       })}
     </div>

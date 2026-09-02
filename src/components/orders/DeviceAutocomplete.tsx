@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
 
 type DeviceAutocompleteProps = {
@@ -148,30 +149,18 @@ export function DeviceAutocomplete({ value, onChange, models, error }: DeviceAut
               const isSelected = value === model.fullName;
 
               return (
-                <button
+                <MenuItem
+                  highlighted={isFocused || isSelected}
                   key={model.id}
-                  type="button"
                   onClick={() => {
                     onChange(model.fullName);
                     setOpen(false);
                     inputRef.current?.blur();
                   }}
                   onMouseEnter={() => setFocusedIndex(idx)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "none",
-                    background: isFocused || isSelected ? "var(--panel-2)" : "transparent",
-                    cursor: "pointer",
-                    color: "var(--text)",
-                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                    fontSize: 13,
-                  }}
                 >
                   <div style={{ fontWeight: isSelected ? 700 : 500 }}>{model.fullName}</div>
-                </button>
+                </MenuItem>
               );
             })}
           </div>,

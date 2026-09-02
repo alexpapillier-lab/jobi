@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { MenuItem } from "../ui";
 import { PrintIcon, DownloadIcon } from "../icons";
 import { createPortal } from "react-dom";
 
@@ -71,35 +72,15 @@ export function DocumentActionPicker({
       }}
     >
       {actions.map((action) => (
-        <button
+        <MenuItem
           key={action.value}
-          type="button"
           onClick={() => {
             onSelect(action.value);
             setOpen(false);
           }}
-          style={{
-            width: "100%",
-            padding: "10px 14px",
-            textAlign: "left",
-            background: "transparent",
-            border: "none",
-            color: "var(--text)",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-            borderRadius: 8,
-            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--panel-2)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-          }}
         >
           {action.label}
-        </button>
+        </MenuItem>
       ))}
     </div>
   ) : null;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
 import { type StatusMeta } from "../../state/StatusesStore";
 
@@ -125,29 +126,14 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
     >
       {statuses.map((s) => {
         const active = s.key === value;
-        const rowBg = active ? "var(--panel-2)" : "transparent";
 
         return (
-          <button
+          <MenuItem
+            layout="row"
             key={s.key}
-            type="button"
             onClick={() => {
               onChange(s.key);
               setOpen(false);
-            }}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 10px",
-              borderRadius: 12,
-              border: "none",
-              background: rowBg,
-              cursor: "pointer",
-              color: "var(--text)",
-              fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
             }}
           >
             <span
@@ -177,7 +163,7 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
             </div>
 
             {active && <div style={{ fontSize: 12, fontWeight: 950, opacity: 0.8 }}>✓</div>}
-          </button>
+          </MenuItem>
         );
       })}
     </div>

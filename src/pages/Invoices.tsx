@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button } from "../components/ui";
+import { Button, MenuItem } from "../components/ui";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabaseClient";
@@ -1083,7 +1083,8 @@ function CustomerPicker({
           zIndex: 50,
         }}>
           {results.map((c) => (
-            <button
+            <MenuItem
+              divider
               key={c.id}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -1099,22 +1100,12 @@ function CustomerPicker({
                 setQuery("");
                 setOpen(false);
               }}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 14px",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                cursor: "pointer",
-                borderBottom: "1px solid var(--border)",
-              }}
             >
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{c.name}</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                 {[c.email, c.ico ? `IČO: ${c.ico}` : null, c.phone].filter(Boolean).join(" · ")}
               </div>
-            </button>
+            </MenuItem>
           ))}
         </div>
       )}
@@ -1253,22 +1244,12 @@ function InvoiceRow({
 
 function MenuBtn({ onClick, children, danger }: { onClick: () => void; children: React.ReactNode; danger?: boolean }) {
   return (
-    <button
+    <MenuItem
+      variant={danger ? "danger" : "default"}
       onClick={onClick}
-      style={{
-        display: "block",
-        width: "100%",
-        padding: "9px 14px",
-        border: "none",
-        background: "transparent",
-        color: danger ? "var(--danger-text)" : "var(--text)",
-        fontSize: 13,
-        textAlign: "left",
-        cursor: "pointer",
-      }}
     >
       {children}
-    </button>
+    </MenuItem>
   );
 }
 
@@ -1751,30 +1732,17 @@ function EditorCollapsibleSection({
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
     <div style={{ marginBottom: 20, border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--panel-2)" }}>
-      <button
-        type="button"
+      <MenuItem
+        layout="between"
+        size="md"
         onClick={() => setOpen((o) => !o)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "12px 16px",
-          border: "none",
-          background: "transparent",
-          color: "var(--text)",
-          cursor: "pointer",
-          textAlign: "left",
-          fontSize: 13,
-        }}
       >
         <span style={{ fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</span>
         {summary && !open && (
           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--muted)", fontSize: 12 }}>{summary}</span>
         )}
         <span style={{ flexShrink: 0, color: "var(--muted)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
-      </button>
+      </MenuItem>
       {open && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)" }}>
           {children}
