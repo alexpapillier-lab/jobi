@@ -9,6 +9,8 @@ import { computeTotals, formatCurrency, emptyLineItem, type InvoiceLineItem } fr
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
 import { invoiceToJobiDocsVariables, companyDataToJobiDocsPayload } from "../lib/invoiceToJobiDocs";
 import { printDocumentViaJobiDocs, exportDocumentViaJobiDocs, isJobiDocsRunning, renderPdfViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
+import { isWeb } from "../lib/platform";
+import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
 import type { Database } from "../types/supabase";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForSave } from "../lib/invoiceValidation";
@@ -432,6 +434,17 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // PDF actions
   const handlePrint = useCallback(async (inv: Invoice) => {
+    if (isWeb()) {
+      try {
+        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+        await printDocumentInBrowser("faktura", activeServiceId, {
+          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+        });
+      } catch (err) {
+        showToast("Chyba tisku: " + (err instanceof Error ? err.message : String(err)), "error");
+      }
+      return;
+    }
     const running = await isJobiDocsRunning();
     if (!running) {
       showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro tisk.", "error");
@@ -453,6 +466,18 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   }, [activeServiceId]);
 
   const handleExport = useCallback(async (inv: Invoice) => {
+    if (isWeb()) {
+      try {
+        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+        showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
+        await printDocumentInBrowser("faktura", activeServiceId, {
+          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+        });
+      } catch (err) {
+        showToast("Chyba exportu: " + (err instanceof Error ? err.message : String(err)), "error");
+      }
+      return;
+    }
     const running = await isJobiDocsRunning();
     if (!running) {
       showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro export PDF.", "error");
@@ -484,6 +509,19 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // PDF preview
   const handlePreview = useCallback(async (inv: Invoice) => {
+    if (isWeb()) {
+      try {
+        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+        const url = await buildDocumentPreviewUrlForWeb("faktura", activeServiceId, {
+          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+        });
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(url);
+      } catch (err) {
+        showToast("Chyba náhledu: " + (err instanceof Error ? err.message : String(err)), "error");
+      }
+      return;
+    }
     const running = await isJobiDocsRunning();
     if (!running) {
       showToast("JobiDocs není spuštěn. Spusťte JobiDocs pro náhled.", "error");

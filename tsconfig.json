@@ -20,6 +20,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
+  "include": ["src", "jobidocs/src/documentToHtml.ts", "jobidocs/src/documentDesign.ts", "jobidocs/src/richText.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

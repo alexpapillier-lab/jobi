@@ -22,7 +22,10 @@
     "test": "vitest",
     "test:run": "vitest run",
     "db:migrate": "npx supabase db push",
-    "db:migrate:local": "npx supabase migration up"
+    "db:migrate:local": "npx supabase migration up",
+    "dev:web": "vite --config vite.config.web.ts",
+    "build:web": "npm run typecheck && vite build --config vite.config.web.ts",
+    "preview:web": "vite preview --config vite.config.web.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
