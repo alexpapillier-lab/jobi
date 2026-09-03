@@ -14,43 +14,112 @@ zapisovat webhook od platební brány.
 
 ---
 
-## 0. Rozhodnutí, která musí padnout před psaním kódu
+## 0. Co je potřeba rozhodnout
 
-Bez tohohle nemá smysl začínat, protože to určuje schéma databáze.
+Seznam všeho, co musí rozhodnout majitel, ne kód. U každého bodu je
+doporučení – když se ztotožníš, stačí napsat „beru doporučení" a jede se
+podle něj. Rozhodnutí **A1–A6 blokují první migraci**, bez nich nemá
+smysl psát schéma.
 
-- [ ] **Co se prodává:** celý servis v plánech (Start/Profi/Max), nebo
-      dál po modulech, jak to má `service_entitlements` dnes?
-      *Doporučení: plány.* Zákazník nechce skládat moduly, chce jednu
-      cenu. Moduly zůstanou technickou vrstvou pod tím – plán jen
-      určuje, které nároky se udělí.
-- [ ] **Ceník:** kolik plánů, jaké ceny, co v nich je.
-- [ ] **Měsíčně i ročně?** *Doporučení: obojí, roční se slevou ~2 měsíce.*
-      Roční platba není jen cashflow – u brány ušetří 11 fixních
-      poplatků za transakci (viz sekce Kolik ti zůstane).
-- [ ] **Co je „member"** pro účel limitu: každý řádek v
-      `service_memberships`, nebo jen aktivní? Počítá se owner do limitu?
-      *Doporučení: počítat všechny včetně ownera i nepřijaté pozvánky* –
-      jinak jde limit obejít tím, že se pozvánky nechají viset.
-- [ ] **Zkušební doba:** trial bez karty (14 dní), trial s kartou, nebo
-      žádný? *Doporučení: 14 dní bez karty* – u B2B nástroje, který si
-      musí nejdřív naplnit daty, je karta předem zbytečná brzda.
-- [ ] **Co se stane po vypršení předplatného.** *Doporučení: read-only
-      režim* – zákazník vidí a exportuje svoje zakázky, ale nezakládá
-      nové. Tvrdé zamčení dat je u evidence zakázek na hraně a zbytečně
-      dělá ze zapomenuté karty katastrofu.
-- [ ] **Vratky a výpovědi:** ke konci období, nebo poměrná část? Pro
-      neplátce DPH je nejjednodušší varianta „běží do konce zaplaceného
-      období, pak se neobnoví".
-- [ ] **Budou plány společné pro všechny obory** (viz sekce 11 – verze
-      pro zubaře, mechaniky…), nebo jiný ceník na obor?
-      *Doporučení: společné plány, `plans.vertical` NULL.* Sloupec si
-      přidej hned, ať se dá později rozdělit bez migrace tisícovky řádků.
-- [ ] **Brána: Stripe, nebo česká (Comgate/GoPay)?** *Doporučení: Stripe
-      Billing.* Umí opakované platby, trial, proraci při změně plánu,
-      retry po odmítnuté kartě, slevové kódy i zákaznický portál. České
-      brány jsou na kartách levnější, ale opakované platby si tam musíš
-      plánovat sám (uložený token + vlastní cron) – to je práce navíc a
-      zdroj tichých výpadků. Zbytek dokumentu předpokládá Stripe.
+### A. Blokuje první migraci
+
+- [ ] **A1 – Co se vlastně prodává:** celý servis v plánech
+      (Start/Profi/Max), nebo dál po modulech, jak to má
+      `service_entitlements` dnes?
+      *Doporučení: **plány**.* Zákazník nechce skládat moduly, chce jednu
+      cenu. Moduly zůstanou technickou vrstvou pod tím – plán jen určuje,
+      které nároky se udělí.
+- [ ] **A2 – Ceník:** kolik plánů, jaké ceny, co v kterém je.
+      **Tohle za tebe nikdo nerozhodne** – je to jediný bod na seznamu,
+      kde nemám co doporučit, protože závisí na tom, komu a za co
+      prodáváš. Orientačně: u ceny pod ~300 Kč měsíčně sežerou fixní
+      poplatky brány nepříjemný podíl (viz *Kolik ti zůstane*).
+- [ ] **A3 – Limity členů:** kolik lidí smí mít který plán?
+      A počítá se do limitu owner a nepřijaté pozvánky?
+      *Doporučení: **počítat všechny** včetně ownera i visících pozvánek*
+      – jinak jde limit obejít tím, že se pozvánky nechají nepřijaté.
+      Root owner se nepočítá.
+- [ ] **A4 – Měsíčně, ročně, nebo obojí?**
+      *Doporučení: **obojí**, roční za cenu 10 měsíců.* Není to jen
+      cashflow – u roční platby ušetříš 11 fixních poplatků za transakci
+      a odpadne 11 příležitostí, kdy může selhat karta.
+- [ ] **A5 – Co se stávajícími servisy, které dnes používají Jobi
+      zdarma?** Dostanou nějaký plán natvrdo, nebo `plan_key = 'legacy'`
+      bez limitů? *Doporučení: **legacy bez limitů**, a řešit
+      individuálně.* Je jich zatím málo a naštvat první uživatele kvůli
+      pár stovkám se nevyplatí.
+- [ ] **A6 – Plány společné pro všechny obory, nebo ceník na obor?**
+      (viz sekce 11) *Doporučení: **společné**, `plans.vertical` NULL.*
+      Sloupec přidat hned – rozdělit se to pak dá bez migrace všech řádků.
+
+### B. Blokuje spuštění prodeje
+
+- [ ] **B1 – Brána: Stripe, nebo česká (Comgate/GoPay)?**
+      *Doporučení: **Stripe Billing**.* Umí opakované platby, trial,
+      proraci při změně plánu, retry po odmítnuté kartě, slevové kódy i
+      zákaznický portál. České brány jsou na kartách levnější, ale
+      opakované platby si tam musíš plánovat sám (uložený token + vlastní
+      cron) – práce navíc a zdroj tichých výpadků. Zbytek dokumentu
+      předpokládá Stripe.
+- [ ] **B2 – Zkušební doba:** 14 dní bez karty, trial s kartou, nebo
+      žádný? *Doporučení: **14 dní bez karty**.* U nástroje, který si
+      zákazník musí nejdřív naplnit daty, je karta předem zbytečná brzda.
+- [ ] **B3 – Co se stane po vypršení předplatného.**
+      *Doporučení: **read-only režim*** – zákazník vidí a exportuje svoje
+      zakázky, ale nezakládá nové. Tvrdé zamčení dat je u evidence
+      zakázek na hraně a dělá ze zapomenuté karty katastrofu.
+- [ ] **B4 – Vratky a výpovědi:** do konce zaplaceného období, nebo
+      poměrná část zpátky? *Doporučení: **do konce období, pak se
+      neobnoví**.* Nejjednodušší na účtování i na podmínky.
+- [ ] **B5 – Slevové kódy: jaké typy chceš mít na startu?**
+      *Doporučení: **procentuální sleva na první rok** (kampaně) plus
+      **partnerské kódy s poznámkou**.* Doživotní 100% slevy raději
+      řešit ručním nárokem, ne kódem – viz sekce 5.
+- [ ] **B6 – Fakturace: Fakturoid, nebo generovat doklady sám?**
+      *Doporučení: **Fakturoid**.* Stripe český daňový doklad nevystaví
+      a psát si to sám je práce, která nikam nevede.
+
+### C. Mimo kód, ale musí být hotové před první platbou
+
+- [ ] **C1 – Živnost, nebo s.r.o.?** Ovlivní to smlouvy, ručení i to,
+      komu patří kód. *Doporučení: začít na živnost, s.r.o. až
+      s příjmem, který to unese.*
+- [ ] **C2 – Psal na Jobi kód někdo kromě tebe?** Pokud ano a nebyl to
+      zaměstnanec, **práva zůstávají jemu**, dokud nemáš licenční
+      smlouvu. Rozhodnout, jestli je potřeba dořešit – viz sekce 9.
+- [ ] **C3 – Ochranná známka „Jobi"** u ÚPV: ano, nebo ne?
+      *Doporučení: **ano**, ale až po rešerši, jestli je název volný.*
+- [ ] **C4 – Potvrdit, že se na iOS neprodává.** Žádné ceny, žádné
+      tlačítko koupit, appka jen přihlašuje – jinak Apple in-app
+      purchase a podíl z každé platby (sekce 10).
+- [ ] **C5 – Prověřit identifikovanou osobu k DPH.** Ne rozhodnutí,
+      ale úkol: povinnost pravděpodobně máš už dneska kvůli Supabase,
+      Twiliu a Resendu, nezávisle na předplatném (sekce *Když to budeš
+      mít na živnost*).
+
+### D. Obory – teď rozhodni jen dvě věci
+
+- [ ] **D1 – Který obor je druhý?**
+      *Doporučení: **autoservis**.* Je z ~95 % sdílený s tím, co Jobi
+      umí dneska, takže na něm ověříš celý koncept oborů za zlomek
+      práce – a teprve pak budeš vědět, jestli slovníková vrstva drží.
+- [ ] **D2 – Jedna značka Jobi, nebo Jobi Auto / Jobi Dent?**
+      *Doporučení: **jedna značka**.* Levnější na známky i na App Store
+      (jedna aplikace místo tří listingů). Rozlišovat se dá landing
+      pagí, ne názvem produktu.
+
+**Zubaři počkají.** Rozhodnutí „obor, nebo samostatný produkt?" nedává
+smysl dělat teď – padne až po autoservisu, podle měřítka v sekci 11
+(nad ~70 % sdílených obrazovek obor, pod ~50 % druhý produkt).
+
+### Když to nechceš řešit po jednom
+
+Doporučená sada v kostce: **plány místo modulů, měsíčně i ročně,
+Stripe, 14denní trial bez karty, po vypršení read-only, vratky do konce
+období, stávající servisy jako `legacy`, plány společné pro obory,
+fakturace přes Fakturoid, druhý obor autoservis, jedna značka.**
+
+Zbývá pak jediné, co musíš vymyslet sám: **A2, ceník.**
 
 ---
 
