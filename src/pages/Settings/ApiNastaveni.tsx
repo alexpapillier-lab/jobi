@@ -40,6 +40,14 @@ async function volejSpravu(telo: Record<string, unknown>) {
   return { stav: r.status, data: await r.json().catch(() => ({})) };
 }
 
+/** 1 dotaz / 2–4 dotazy / 5+ dotazů. */
+function dotazy(n: number) {
+  const s = n.toLocaleString("cs-CZ");
+  if (n === 1) return `${s} dotaz`;
+  if (n >= 2 && n <= 4) return `${s} dotazy`;
+  return `${s} dotazů`;
+}
+
 function kdy(x: string | null) {
   if (!x) return "nikdy";
   return new Date(x).toLocaleString("cs-CZ", { dateStyle: "short", timeStyle: "short" });
@@ -73,6 +81,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   const [webhookUlozeny, setWebhookUlozeny] = useState("");
   const [webhookVysledek, setWebhookVysledek] = useState<string | null>(null);
   const [pinguji, setPinguji] = useState(false);
+  const [vyuziti, setVyuziti] = useState<{ dnes: number; tyden: number; podleEndpointu: Record<string, number> } | null>(null);
 
   const maCenik = has("api_catalog");
   const maSklad = has("api_inventory");
@@ -200,6 +209,33 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
     } finally {
       setPinguji(false);
     }
+  }, [activeServiceId]);
+
+  /* Přehled využití. Počítá se jen to, co se ke funkci opravdu dostalo –
+     odpovědi mají ETag a pětiminutovou cache, takže většina opakovaných
+     dotazů z jedné stránky se sem nedopočítá. Není to návštěvnost webu. */
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    let zruseno = false;
+    (async () => {
+      const tyden = new Date(Date.now() - 7 * 86400_000).toISOString();
+      const { data } = await (supabase!.from("api_read_hits") as any)
+        .select("minuta, endpoint, pocet")
+        .eq("service_id", activeServiceId)
+        .eq("klic", "")            // prázdný klíč = souhrn za servis, ne po IP
+        .gte("minuta", tyden);
+      if (zruseno || !Array.isArray(data)) return;
+      const zacatekDne = new Date(); zacatekDne.setHours(0, 0, 0, 0);
+      let dnes = 0, celkem = 0;
+      const podleEndpointu: Record<string, number> = {};
+      for (const r of data as { minuta: string; endpoint: string; pocet: number }[]) {
+        celkem += r.pocet;
+        podleEndpointu[r.endpoint] = (podleEndpointu[r.endpoint] ?? 0) + r.pocet;
+        if (new Date(r.minuta) >= zacatekDne) dnes += r.pocet;
+      }
+      setVyuziti({ dnes, tyden: celkem, podleEndpointu });
+    })();
+    return () => { zruseno = true; };
   }, [activeServiceId]);
 
   const zkopiruj = async (text: string) => {
@@ -382,6 +418,29 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           </p>
         </>
       )}
+
+      <div style={nadpis}>Kolik se toho načítá</div>
+      {vyuziti && (vyuziti.tyden > 0 ? (
+        <>
+          <p style={popis}>
+            Za posledních 7 dní <strong style={{ color: "var(--text)" }}>{dotazy(vyuziti.tyden)}</strong>,
+            z toho dnes <strong style={{ color: "var(--text)" }}>{vyuziti.dnes.toLocaleString("cs-CZ")}</strong>.
+            {" "}({Object.entries(vyuziti.podleEndpointu)
+              .map(([e, n]) => `${e === "catalog" ? "ceník" : "sklad"} ${n.toLocaleString("cs-CZ")}`)
+              .join(", ")})
+          </p>
+          <p style={popis}>
+            Počítá se jen to, co se k nám opravdu dostane. Odpovědi se cachují na
+            5 minut, takže opakované načtení té samé stránky se sem nezapočítá –
+            není to návštěvnost webu. Limit je 60 dotazů za minutu z jedné adresy
+            a 600 za minutu na servis; při překročení přijde 429.
+          </p>
+        </>
+      ) : (
+        <p style={popis}>
+          Zatím se nikdo neptal. Až web ceník načte, objeví se tu počty.
+        </p>
+      ))}
 
       <div style={nadpis}>Upozornění na změnu</div>
       <p style={popis}>

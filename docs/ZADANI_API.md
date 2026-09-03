@@ -199,3 +199,47 @@ Kdyby někdo chtěl ceník polosoukromý, přidá se později přepínač
 
 K tomu `Cache-Control: max-age=300` a ETag. Většina opakovaných dotazů se
 pak k funkci vůbec nedostane a limity zůstanou rezervou pro skutečný provoz.
+
+---
+
+## 8. Stav k 3. 9. 2026
+
+Hotovo a nasazené na produkci:
+
+| co | kde |
+|---|---|
+| Ceník | `public-catalog`, modul `api_catalog` |
+| Sklad | `public-inventory`, modul `api_inventory` |
+| Viditelnost po položkách | značka, kategorie, model, oprava, kategorie produktů, produkt |
+| Výjimky po modelech u opravy | `repairs.public_hidden_model_ids` |
+| Hromadné skrytí/zveřejnění | Zařízení a Sklad, působí na zobrazený výběr |
+| DPH ve třech variantách | `price`, `price_incl_vat`, `price_excl_vat` |
+| Čas v lidské podobě | `estimated_time_label` |
+| ETag + `max-age=300` | obě čtecí funkce |
+| Režimy dostupnosti | `hidden` / `boolean` / `exact`, přepínatelné v Nastavení → API |
+| Tokeny | `api-tokens-manage`, jen owner/admin, hash-only |
+| Zápis | `api-write`, rozsahy, `Idempotency-Key`, 30/min na token |
+| Limity čtení | 60/min na IP, 600/min na servis, v `api_read_hits` |
+| Přehled využití | Nastavení → API, za 7 dní a za dnešek |
+| Webhook | `public-webhook-ping`, jen https a veřejné adresy |
+| Snippet na web | `public-embed` |
+| OpenAPI | `docs/api/openapi.yaml` |
+
+### Co ještě zbývá
+
+**Doména `api.appjobi.com`.** Adresy dnes ukazují přímo na
+`…supabase.co/functions/v1/…`. Přestěhovat je po tom, co je servisy
+rozdají webařům, je nepříjemné – vlastní doména má přijít dřív než první
+zákazník. Potřebuje zásah v Cloudflare (DNS + Worker nebo pravidlo, které
+přemapuje `/v1/catalog` na `/functions/v1/public-catalog`).
+
+**Cache Rule na Cloudflare.** Funkce už posílají `Cache-Control` i ETag,
+ale bez CDN před nimi se každý dotaz počítá do limitu. S cachováním se
+většina opakovaných dotazů k funkci vůbec nedostane.
+
+**Úklid starých záznamů.** Funkce `api_uklid_starych_zaznamu()` existuje,
+ale nikdo ji nevolá – chce to naplánovat (pg_cron nebo scheduled function).
+Bez toho `api_read_hits` roste donekonečna.
+
+**Veřejné sledování zakázky.** Samostatný modul a samostatné rozhodnutí,
+je to osobní údaj. Zatím se nedělalo.

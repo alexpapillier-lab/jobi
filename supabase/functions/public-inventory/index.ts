@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { cenoveVarianty } from "../_shared/ceny.ts";
 import { dostupnost, rezimDostupnosti } from "../_shared/dostupnost.ts";
 import { viditelneVetve } from "../_shared/viditelnost.ts";
+import { otiskKlienta, vyhodnotLimit } from "../_shared/limity.ts";
 
 /**
  * Veřejný sklad servisu. Bez přihlášení, ke čtení z webu.
@@ -81,6 +82,19 @@ serve(async (req) => {
   const platny = modul?.active === true &&
     (!modul.valid_until || new Date(modul.valid_until).getTime() > Date.now());
   if (!platny) return nenalezeno();
+
+  // Limit se počítá až tady – neexistující slug nesmí jít použít k tomu,
+  // aby někomu vyčerpal jeho limit.
+  const { data: pocty } = await svc.rpc("api_zapocitej_cteni", {
+    p_service_id: servis.id,
+    p_klic: await otiskKlienta(req),
+    p_endpoint: "inventory",
+  });
+  const radek = Array.isArray(pocty) ? pocty[0] : pocty;
+  const limit = vyhodnotLimit(Number(radek?.za_servis ?? 0), Number(radek?.za_klic ?? 0));
+  if (limit.prekroceno) {
+    return json({ error: limit.duvod }, 429, { "Retry-After": "60" });
+  }
 
   const [kategorie, produkty, znacky, katZarizeni, modely] = await Promise.all([
     svc.from("inventory_product_categories").select("id, name").eq("service_id", servis.id).eq("public_visible", true),
