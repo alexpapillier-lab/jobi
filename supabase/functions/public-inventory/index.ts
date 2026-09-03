@@ -21,6 +21,10 @@ import { otiskKlienta, vyhodnotLimit } from "../_shared/limity.ts";
  * `exact`, dále interní service_id, order_index, created_at a vazba
  * repair_ids. Sloupce se vypisují jmenovitě – žádné select *.
  *
+ * Nákupní cena (purchase_price) se posílá JEN když si servis zapne
+ * `public_inventory_show_purchase_price`. Výchozí je false, protože
+ * prozrazuje marži.
+ *
  * Zadání: docs/ZADANI_API.md
  */
 
@@ -63,7 +67,7 @@ serve(async (req) => {
 
   const { data: servis } = await svc
     .from("services")
-    .select("id, name, vat_payer, default_vat_rate, prices_include_vat, inventory_availability_mode")
+    .select("id, name, vat_payer, default_vat_rate, prices_include_vat, inventory_availability_mode, public_inventory_show_purchase_price")
     .eq("public_slug", slug)
     .maybeSingle();
 
@@ -99,7 +103,7 @@ serve(async (req) => {
   const [kategorie, produkty, znacky, katZarizeni, modely] = await Promise.all([
     svc.from("inventory_product_categories").select("id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     svc.from("inventory_products")
-      .select("id, category_id, name, price, sku, description, image_url, model_ids, stock")
+      .select("id, category_id, name, price, purchase_price, sku, description, image_url, model_ids, stock")
       .eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     // Zařízení jen kvůli tomu, ať produkt neukazuje na model, který servis
     // z ceníku schoval. Když má vypnutý ceník, nic tím neomezíme – sloupce
@@ -127,6 +131,9 @@ serve(async (req) => {
   const sazba = Number(servis.default_vat_rate ?? 21);
   const vcetne = servis.prices_include_vat !== false;
   const rezim = rezimDostupnosti(servis.inventory_availability_mode);
+  // Nákupní cena prozrazuje marži, takže se posílá jen na výslovné přání
+  // servisu. Výchozí hodnota sloupce je false.
+  const posilatNakupni = servis.public_inventory_show_purchase_price === true;
 
   const vystup = {
     service: { name: servis.name, slug },
@@ -149,6 +156,11 @@ serve(async (req) => {
         // v režimu `hidden` se pole neposílá vůbec, ne jako null – ať web
         // nemusí řešit rozdíl mezi „nevíme“ a „není skladem“
         ...(stav === undefined ? {} : { availability: stav }),
+        // Nákupní cena jen když si to servis zapnul. Když ne, pole ve
+        // výstupu vůbec není – stejný princip jako u availability.
+        ...(posilatNakupni && p.purchase_price !== null
+          ? { purchase_price: Number(p.purchase_price) }
+          : {}),
       };
     }),
     generated_at: new Date().toISOString(),

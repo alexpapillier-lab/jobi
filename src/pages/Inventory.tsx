@@ -48,6 +48,8 @@ type Product = {
   categoryId?: string; // category of the product (not model category)
   stock: number;
   price: number;
+  /** Nákupní cena. Nepovinná; do veřejného API jde jen když si to servis zapne. */
+  purchasePrice?: number | null;
   sku?: string;
   description?: string;
   imageUrl?: string; // base64 or URL
@@ -368,7 +370,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false);
   const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
 
-  const [newProduct, setNewProduct] = useState({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [] as string[], imageUrl: "", repairIds: [] as string[], categoryId: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [] as string[], imageUrl: "", repairIds: [] as string[], categoryId: "" });
   const [newProductUnassigned, setNewProductUnassigned] = useState(false);
   const [newProductCategoryName, setNewProductCategoryName] = useState("");
 
@@ -648,6 +650,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           modelIds,
           stock,
           price: parseFloat(newProduct.price) || 0,
+          purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
           sku: newProduct.sku.trim() || undefined,
           description: newProduct.description.trim() || undefined,
           imageUrl: newProduct.imageUrl || undefined,
@@ -655,7 +658,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           createdAt: new Date().toISOString(),
         };
         setData((d) => ({ ...d, products: [...d.products, product] }));
-        setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
+        setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
         showToast("Produkt přidán", "success");
       });
       setLowStockDialogOpen(true);
@@ -668,6 +671,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       modelIds,
       stock,
       price: parseFloat(newProduct.price) || 0,
+          purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
       sku: newProduct.sku.trim() || undefined,
       description: newProduct.description.trim() || undefined,
       imageUrl: newProduct.imageUrl || undefined,
@@ -675,7 +679,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       createdAt: new Date().toISOString(),
     };
     setData((d) => ({ ...d, products: [...d.products, product] }));
-    setNewProduct({ name: "", stock: "", price: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
+    setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
     showToast("Produkt přidán", "success");
   };
 
@@ -2053,6 +2057,16 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
                     style={inputStyle}
                   />
+                  {/* Nepovinná. Do veřejného API se neposílá, dokud si to
+                      servis nezapne – prozrazuje marži. */}
+                  <input
+                    placeholder="Nákupní cena (Kč)"
+                    title="Za kolik díl nakupujete. Nepovinné. Do veřejného API se neposílá, dokud si to nezapnete."
+                    type="number"
+                    value={newProduct.purchasePrice}
+                    onChange={(e) => setNewProduct((p) => ({ ...p, purchasePrice: e.target.value }))}
+                    style={inputStyle}
+                  />
                 </div>
                 <input
                   placeholder="SKU (volitelné)"
@@ -2556,6 +2570,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           </div>
                           <div style={{ fontSize: 13, color: "var(--text)" }}>
                             {p.price} Kč
+                            {p.purchasePrice != null && (
+                              <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginLeft: 6 }}>
+                                nákup {p.purchasePrice} Kč
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: 11, color: "var(--muted)" }}>
                             {productCategory?.name || "—"}

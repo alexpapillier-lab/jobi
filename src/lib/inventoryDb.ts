@@ -20,6 +20,8 @@ export type Product = {
   categoryId?: string;
   stock: number;
   price: number;
+  /** Nákupní cena. Nepovinná – do veřejného API jde jen když si to servis zapne. */
+  purchasePrice?: number | null;
   sku?: string;
   description?: string;
   imageUrl?: string;
@@ -56,6 +58,7 @@ function mapProductRow(r: {
   name: string;
   stock: number;
   price: number;
+  purchase_price?: number | string | null;
   sku: string | null;
   description: string | null;
   image_url: string | null;
@@ -74,6 +77,7 @@ function mapProductRow(r: {
     categoryId: r.category_id ?? undefined,
     stock: Number(r.stock),
     price: Number(r.price),
+    purchasePrice: r.purchase_price === null || r.purchase_price === undefined ? null : Number(r.purchase_price),
     sku: r.sku ?? undefined,
     description: r.description ?? undefined,
     imageUrl: r.image_url ?? undefined,
@@ -93,7 +97,7 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
   }
 
   const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
-  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, purchase_price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
 
   if (categoriesRes.error || productsRes.error) {
     const err = categoriesRes.error || productsRes.error;
@@ -161,6 +165,7 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
       name: p.name,
       stock: p.stock,
       price: p.price,
+      purchase_price: p.purchasePrice ?? null,
       sku: p.sku ?? null,
       description: p.description ?? null,
       image_url: p.imageUrl ?? null,
