@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
 import { Button, Segmented } from "../components/ui";
 import { assetUrl } from "../lib/assetUrl";
+import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
 import { useTheme } from "../theme/ThemeProvider";
 import { STATUS_COLOR_PALETTE, getContrastText } from "../utils/statusColors";
@@ -83,6 +84,7 @@ type UIConfig = {
     pageSize: number;
     customerPhoneRequired: boolean;
     statusGroupedOrder?: string[];
+    zvyrazneniStavu?: ZvyrazneniStavu;
   };
   /** Zapnutý modul Faktury. Vypnout, pokud používáte vlastní fakturační systém. */
   invoicingEnabled?: boolean;
@@ -149,6 +151,9 @@ function safeLoadUIConfig(): UIConfig {
       orders: {
         displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
+        zvyrazneniStavu: jeZvyrazneni(parsed?.orders?.zvyrazneniStavu)
+          ? parsed.orders.zvyrazneniStavu
+          : VYCHOZI_ZVYRAZNENI,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
         statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
       },
@@ -2387,6 +2392,52 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       </div>
                     </div>
                     {mode.preview}
+                  </label>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Jak výrazně se ve výpisu propíše barva stavu */}
+          <Card>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 6, color: "var(--text)" }}>Zvýraznění stavu</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+              Jak silně se barva stavu propíše do řádku zakázky. Samotné barvy si
+              nastavuješ u jednotlivých stavů; tohle určuje, kolik z nich je ve výpisu
+              vidět. Hotové zakázky jsou vždy ztlumené, ať vyskočí ty, které na někoho čekají.
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {([
+                ["jemne", "Jemné", "Řádek je lehce podbarvený barvou stavu. Doporučeno."],
+                ["vyrazne", "Výrazné", "Řádek se vyplní barvou stavu. Barva písma se dopočítá, ať zůstane čitelné."],
+                ["zadne", "Žádné", "Jen tenký proužek vlevo a odznak vpravo, jako dřív."],
+              ] as [ZvyrazneniStavu, string, string][]).map(([hodnota, nazev, popis]) => {
+                const vybrano = (uiCfg.orders?.zvyrazneniStavu ?? VYCHOZI_ZVYRAZNENI) === hodnota;
+                return (
+                  <label
+                    key={hodnota}
+                    style={{
+                      display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer",
+                      padding: "10px 12px", borderRadius: 8,
+                      border: vybrano ? "2px solid var(--accent)" : border,
+                      background: vybrano ? "var(--accent-soft)" : "var(--panel)",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="zvyrazneni-stavu"
+                      checked={vybrano}
+                      onChange={() => {
+                        const nove = { ...uiCfg, orders: { ...uiCfg.orders, zvyrazneniStavu: hodnota } };
+                        setUiCfg(nove);
+                        saveUIConfig(nove);
+                      }}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{nazev}</span>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{popis}</span>
+                    </span>
                   </label>
                 );
               })}

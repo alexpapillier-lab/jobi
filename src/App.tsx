@@ -21,6 +21,7 @@ import { OnlineGate } from "./components/OnlineGate";
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
+import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "./lib/zvyrazneniStavu";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
 import { showToast, showPersistentToast } from "./components/Toast";
 import { useAuth } from "./auth/AuthProvider";
@@ -82,7 +83,7 @@ type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean };
   sidebar: { position: SidebarPosition };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: DisplayMode; pageSize: number };
+  orders: { displayMode: DisplayMode; pageSize: number; zvyrazneniStavu: ZvyrazneniStavu };
   /** Zapnutý modul Faktury (stránka, tlačítka u zakázek). Vypnout, pokud používáte vlastní fakturační systém. */
   invoicingEnabled?: boolean;
 };
@@ -107,7 +108,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects() },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list", pageSize: 50 },
+    orders: { displayMode: "list", pageSize: 50, zvyrazneniStavu: VYCHOZI_ZVYRAZNENI },
     invoicingEnabled: true,
   };
 }
@@ -152,6 +153,9 @@ function safeLoadUIConfig(): UIConfig {
       orders: {
         displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
         pageSize: validPageSize,
+        zvyrazneniStavu: jeZvyrazneni(parsed?.orders?.zvyrazneniStavu)
+          ? parsed.orders.zvyrazneniStavu
+          : d.orders.zvyrazneniStavu,
       },
       invoicingEnabled: typeof invoicingEnabled === "boolean" ? invoicingEnabled : true,
     };

@@ -1,6 +1,7 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
 import { TicketCode, TicketDate, TicketDevice, TicketCustomer, TicketRepair, MetaSeparator } from "./fields";
+import { stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -8,11 +9,16 @@ type Props = {
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
-export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printButton }: Props) {
+export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printButton, zvyrazneni = "jemne" }: Props) {
   const bg = meta?.bg || "var(--border)";
   const finalPrice = computeFinalPrice(t);
+  /* Barva stavu se dřív propsala jen do 4px proužku a orámování na 19 %,
+     takže se stav dal přečíst až z odznaku na pravém okraji. */
+  const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
 
   return (
     <div
@@ -21,12 +27,12 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         textAlign: "left",
         padding: 0,
         borderRadius: 10,
-        border: `1px solid ${bg}30`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
         cursor: "pointer",
         boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
         transition: "transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease",
-        color: "var(--text)",
+        color: stav.barvaPisma,
         position: "relative",
         overflow: "hidden",
         display: "flex",
@@ -34,15 +40,15 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-1px)";
         e.currentTarget.style.boxShadow = `0 4px 14px ${bg}14`;
-        e.currentTarget.style.borderColor = `${bg}50`;
+        e.currentTarget.style.borderColor = stav.ramecek;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "translateY(0)";
         e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.03)";
-        e.currentTarget.style.borderColor = `${bg}30`;
+        e.currentTarget.style.borderColor = stav.ramecek;
       }}
     >
-      <div style={{ width: 4, background: bg, flexShrink: 0, borderRadius: "10px 0 0 10px" }} />
+      <div style={{ width: stav.sirkaProuzku, background: bg, flexShrink: 0, borderRadius: "10px 0 0 10px" }} />
 
       {/*
         Jeden řádek na zakázku.
