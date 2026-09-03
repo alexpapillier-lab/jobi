@@ -8,6 +8,7 @@ import { getLogoColors, type LogoPresetId } from "../lib/logoPresets";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useAppUpdate } from "../context/AppUpdateContext";
 import { devLog } from "../lib/devLog";
+import { assetUrl } from "../lib/assetUrl";
 import { JobiDocsStatus } from "../components/JobiDocsStatus";
 import { isDesktop } from "../lib/platform";
 
@@ -232,7 +233,12 @@ export function Sidebar({
     return logoPresetId === "auto" || !logoPresetId ? theme : logoPresetId;
   }, [theme, logoPresetId]);
 
-  const logoPngUrl = useMemo(() => `/logos/${effectiveLogoId}.png`, [effectiveLogoId]);
+  /* Natvrdo "/logos/…" mířilo mimo aplikaci, když web běží v podsložce
+     (appjobi.com/servis/) – Cloudflare Pages na takovou cestu vrací
+     index.html se stavem 200, prohlížeč to zkusí vykreslit jako obrázek
+     a spadne na náhradní ikonu. assetUrl() stejný problém řeší všude
+     jinde (AppLogo, Settings), tady na to jen zbylo natvrdo psané "/". */
+  const logoPngUrl = useMemo(() => assetUrl(`logos/${effectiveLogoId}.png`), [effectiveLogoId]);
 
   useEffect(() => {
     setPngLoadFailed(false);

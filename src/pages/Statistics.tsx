@@ -1161,6 +1161,13 @@ function StatCard({
     ? (deltaUp ? "rgba(239,68,68,0.9)" : deltaDown ? "var(--accent)" : "var(--muted)")
     : (deltaUp ? "var(--accent)" : deltaDown ? "rgba(239,68,68,0.9)" : "var(--muted)");
 
+  // Delší částky (s "Kč" a mezerami mezi tisíci) se do karty na jeden
+  // řádek při fontSize 28 nevejdou – zmenšit podle délky textu, ať se
+  // nelámou (i po zaokrouhlení na celé koruny v jiných měnách/velkých
+  // částkách to pořád může být dlouhé).
+  const valueLength = String(value).length;
+  const valueFontSize = valueLength > 10 ? 20 : valueLength > 6 ? 24 : 28;
+
   return (
     <div
       style={{
@@ -1182,7 +1189,7 @@ function StatCard({
       <div
         style={{
           fontWeight: 800,
-          fontSize: 28,
+          fontSize: valueFontSize,
           color: color || "var(--text)",
           lineHeight: 1.2,
           overflowWrap: "anywhere",

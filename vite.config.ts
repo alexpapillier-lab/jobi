@@ -44,8 +44,13 @@ export default defineConfig({
           });
         });
       },
-      writeBundle(_outputOptions, _bundle) {
-        const outDir = path.join(__dirname, "dist");
+      writeBundle(outputOptions, _bundle) {
+        // outputOptions.dir je skutečný výstup TÉHLE konkrétní buildy –
+        // desktop staví do dist/, web (vite.config.web.ts) do dist-web/.
+        // Natvrdo "dist" tu dřív znamenalo, že webový build tahle loga
+        // do svého výstupu vůbec nedostal (logos/ v dist-web zůstala
+        // jen se dvěma SVG z public/, žádné PNG).
+        const outDir = outputOptions.dir ? path.resolve(outputOptions.dir) : path.join(__dirname, "dist");
         const destDir = path.join(outDir, "logos");
         if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
         if (fs.existsSync(logosPngDir)) {
