@@ -2,8 +2,24 @@
 <html lang="cs">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/tauri.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logos/logopic.svg" />
+    <link rel="alternate icon" type="image/png" href="/icons/jobi-192.png" />
+    <link rel="apple-touch-icon" href="/icons/jobi-apple-touch.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Jobi – zadávání a sledování servisních zakázek." />
+
+    <!-- Přidání na plochu telefonu. Webová verze je záložní nástroj, po kterém
+         se sahá z mobilu v dílně, takže se má chovat jako aplikace. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Jobi" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Barva lišty prohlížeče podle motivu; hodnoty odpovídají --bg v theme.css. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10" />
+
     <title>Jobi</title>
   </head>
 

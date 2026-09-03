@@ -31,6 +31,11 @@ jobs:
       - name: Testy
         run: npm run test:run
 
+      # Webová verze má vlastní vite config a stuby místo Tauri API. Bez tohohle
+      # kroku se její rozbití pozná až po nasazení na appjobi.com/servis/.
+      - name: Build webové verze
+        run: npm run build:web
+
       - name: Audit produkčních závislostí
         run: npm audit --omit=dev
 

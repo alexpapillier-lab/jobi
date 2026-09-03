@@ -6,6 +6,24 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:web", "--", "--port", "5178"],
       "port": 5178
+    },
+    {
+      "name": "jobi-desktop-vite",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 1420
+    },
+    {
+      "name": "jobi-marketing",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "web", "-p", "5179", "-c-1", "--silent"],
+      "port": 5179
+    },
+    {
+      "name": "jobi-web-dist",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "dist-web", "-p", "4319", "-c-1", "--silent"],
+      "port": 4319
     }
   ]
 }
