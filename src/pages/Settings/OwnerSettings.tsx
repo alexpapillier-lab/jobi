@@ -5,13 +5,33 @@ import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib
 import { showToast } from "../../components/Toast";
 import { reportError } from "../../lib/reportError";
 import { Card } from "../../lib/settingsUi";
+import { obsazenostText, jeLimitPlny } from "../../lib/obsazenostMist";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TeamSettings } from "./TeamSettings";
 import { ErrorLogsPanel } from "./ErrorLogsPanel";
 import { EntitlementsPanel } from "./EntitlementsPanel";
 import { formatInviteEmailReason } from "../../utils/errorNormalizer";
 
-type ServiceItem = { service_id: string; service_name: string; role: string; active?: boolean; member_count?: number };
+type ServiceItem = {
+  service_id: string;
+  service_name: string;
+  role: string;
+  active?: boolean;
+  member_count?: number;
+  /** null = plán bez omezení počtu členů (Enterprise, legacy). */
+  seat_limit?: number | null;
+  plan_name?: string;
+  billing_status?: string;
+  current_period_end?: string;
+};
+
+const BILLING_STAV_POPIS: Record<string, string> = {
+  trialing: "zkušební doba",
+  active: "platí",
+  past_due: "neproběhla platba",
+  canceled: "zrušeno",
+  legacy: "zdarma",
+};
 
 type OwnerSettingsProps = {
   services: ServiceItem[];
@@ -313,9 +333,17 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, fontFamily: "monospace" }}>
                         ID: {shortId(s.service_id)}
                       </div>
-                      {typeof s.member_count === "number" && (
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
-                          {s.member_count === 1 ? "1 člen" : `${s.member_count} členové`}
+                      {obsazenostText(s) && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            // Plný limit zvýraznit – servis už nikoho nepozve.
+                            color: jeLimitPlny(s) ? "var(--danger, #dc2626)" : "var(--muted)",
+                            marginBottom: 6,
+                          }}
+                        >
+                          {obsazenostText(s)}
+                          {s.plan_name ? ` · ${s.plan_name}` : ""}
                         </div>
                       )}
                       <span
@@ -381,9 +409,24 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                         {renameSubmitting ? "Ukládám…" : "Uložit název"}
                       </button>
                     </div>
-                    {typeof selectedService.member_count === "number" && (
+                    {obsazenostText(selectedService) && (
                       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
-                        Počet členů: {selectedService.member_count === 1 ? "1 člen" : `${selectedService.member_count} členové`}
+                        Počet členů:{" "}
+                        <span style={{ color: jeLimitPlny(selectedService) ? "var(--danger, #dc2626)" : undefined }}>
+                          {obsazenostText(selectedService)}
+                          {jeLimitPlny(selectedService) ? " – limit vyčerpán" : ""}
+                        </span>
+                      </div>
+                    )}
+                    {selectedService.plan_name && (
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+                        Předplatné: {selectedService.plan_name}
+                        {selectedService.billing_status
+                          ? ` – ${BILLING_STAV_POPIS[selectedService.billing_status] ?? selectedService.billing_status}`
+                          : ""}
+                        {selectedService.current_period_end
+                          ? `, do ${new Date(selectedService.current_period_end).toLocaleDateString("cs-CZ")}`
+                          : ""}
                       </div>
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
