@@ -170,7 +170,11 @@ export function Sidebar({
 }: SidebarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
-  const [serviceMenuPosition, setServiceMenuPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [serviceMenuPosition, setServiceMenuPosition] = useState<
+    | { anchor: "top"; top: number; left: number; maxHeight: number }
+    | { anchor: "bottom"; bottom: number; left: number; maxHeight: number }
+    | null
+  >(null);
 
   const PREFERRED_DROPDOWN_MAX = 280;
   const MIN_HEIGHT_BELOW_TO_OPEN_DOWN = 120; // otevřít nahoru jen když dole není aspoň tolik místa
@@ -181,17 +185,21 @@ export function Sidebar({
     // Preferovat otevření dolů – těsně pod tlačítkem (max výška podle místa)
     if (availableBelow >= MIN_HEIGHT_BELOW_TO_OPEN_DOWN) {
       return {
+        anchor: "top" as const,
         top: rect.bottom + 4,
         left: rect.left,
         maxHeight: Math.min(PREFERRED_DROPDOWN_MAX, Math.max(120, availableBelow)),
       };
     }
-    // Dole skoro žádné místo – otevřít nahoru, těsně nad tlačítkem
-    const h = Math.min(PREFERRED_DROPDOWN_MAX, availableAbove);
+    // Dole skoro žádné místo – otevřít nahoru. Kotvíme zespodu (`bottom`),
+    // ne odhadem shora: box nese jen maxHeight, ne pevnou výšku, takže
+    // s odhadem místa pro nejvyšší možný obsah zůstávala u kratších
+    // seznamů mezera mezi tlačítkem a nabídkou.
     return {
-      top: rect.top - 4 - h,
+      anchor: "bottom" as const,
+      bottom: window.innerHeight - rect.top + 4,
       left: rect.left,
-      maxHeight: Math.max(120, h),
+      maxHeight: Math.max(120, Math.min(PREFERRED_DROPDOWN_MAX, availableAbove)),
     };
   };
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -985,7 +993,9 @@ export function Sidebar({
               ref={serviceMenuDropdownRef}
               style={{
                 position: "fixed",
-                top: serviceMenuPosition.top,
+                ...(serviceMenuPosition.anchor === "top"
+                  ? { top: serviceMenuPosition.top }
+                  : { bottom: serviceMenuPosition.bottom }),
                 left: serviceMenuPosition.left,
                 background: "var(--panel)",
                 border: "1px solid var(--border)",
