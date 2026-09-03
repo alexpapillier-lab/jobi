@@ -252,6 +252,124 @@ nevztahují. Dvě věci, o které to při zprovoznění zakoplo a stojí za zapa
 Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS`. Bez ní se to
 ladilo naslepo, `cf-cache-status` o téhle vrstvě nic neříká.
 
+**Úklid starých záznamů.** Hotovo, ověřeno 3. 9. 2026. Migrace
+`20260903180000_api_uklid_plan.sql` naplánovala `api_uklid_starych_zaznamu()`
+přes pg_cron na 3:20 denně. Úloha `jobi-uklid-api` je aktivní – bez ní by
+`api_read_hits` rostla donekonečna. Zkontrolovat jde takhle:
+
+```sql
+select jobname, schedule, active from cron.job where jobname = 'jobi-uklid-api';
+```
+
+**Veřejné sledování zakázky.** Zákazník zadá kód a telefon a vidí stav.
+Pro servis užitečné, ale je to osobní údaj – **samostatný modul a samostatné
+rozhodnutí**, ne součást ceníku.
+
+**Popis OpenAPI.** Aby integrátor (nebo tvůj webař) věděl, co čekat.
+
+---
+
+## 7. Rozhodnuto
+
+### DPH – nejdřív je potřeba říct, co cena znamená
+
+Zjištění při návrhu: **`repairs.price` má dnes nedefinovaný význam.**
+V nastavení je jen DIČ jako text (navíc v localStorage, ne v DB), faktury
+mají `vat_rate` po položkách, ale u ceníku o DPH není nikde nic. Nikdo
+tedy neví, jestli uložené číslo je s daní nebo bez.
+
+Než půjde posílat obojí, musí to servis deklarovat:
+
+```sql
+ALTER TABLE public.services
+  ADD COLUMN prices_include_vat boolean NOT NULL DEFAULT true,
+  ADD COLUMN default_vat_rate numeric(5,2) NOT NULL DEFAULT 21;
+```
+
+API pak u každé ceny pošle obě varianty a nechá web vybrat:
+
+```json
+{ "price": 2500, "price_incl_vat": 2500, "price_excl_vat": 2066.12,
+  "vat_rate": 21, "prices_include_vat": true }
+```
+
+### Čtení bez tokenu
+
+**Token v JavaScriptu na webu není tajemství** – kdokoli si otevře zdroj
+stránky a má ho. Nekoupí se tím bezpečnost, jen komplikace pro webaře
+a rozbité cachování na CDN. Data mají být veřejná; identifikace jde přes
+slug, měření přes log dotazů.
+
+Kdyby někdo chtěl ceník polosoukromý, přidá se později přepínač
+„vyžadovat token i na čtení". Dopředu to nestavíme.
+
+### Doména
+
+`api.appjobi.com` (proxy na Supabase edge funkce).
+
+### Limity
+
+| co | limit |
+|---|---:|
+| čtení, na IP | 60/min |
+| čtení, na servis | 600/min |
+| zápis, na token | 30/min |
+
+K tomu `Cache-Control: max-age=300` a ETag. Většina opakovaných dotazů se
+pak k funkci vůbec nedostane a limity zůstanou rezervou pro skutečný provoz.
+
+---
+
+## 8. Stav k 3. 9. 2026
+
+Hotovo a nasazené na produkci:
+
+| co | kde |
+|---|---|
+| Ceník | `public-catalog`, modul `api_catalog` |
+| Sklad | `public-inventory`, modul `api_inventory` |
+| Viditelnost po položkách | značka, kategorie, model, oprava, kategorie produktů, produkt |
+| Výjimky po modelech u opravy | `repairs.public_hidden_model_ids` |
+| Hromadné skrytí/zveřejnění | Zařízení a Sklad, působí na zobrazený výběr |
+| DPH ve třech variantách | `price`, `price_incl_vat`, `price_excl_vat` |
+| Čas v lidské podobě | `estimated_time_label` |
+| ETag + `max-age=300` | obě čtecí funkce |
+| Režimy dostupnosti | `hidden` / `boolean` / `exact`, přepínatelné v Nastavení → API |
+| Tokeny | `api-tokens-manage`, jen owner/admin, hash-only |
+| Zápis | `api-write`, rozsahy, `Idempotency-Key`, 30/min na token |
+| Limity čtení | 60/min na IP, 600/min na servis, v `api_read_hits` |
+| Přehled využití | Nastavení → API, za 7 dní a za dnešek |
+| Webhook | `public-webhook-ping`, jen https a veřejné adresy |
+| Snippet na web | `public-embed` |
+| OpenAPI | `docs/api/openapi.yaml` |
+
+### Co ještě zbývá
+
+**Doména `api.appjobi.com`.** Hotovo (3. 9. 2026). Před edge funkcemi stojí
+Cloudflare Worker `jobi-api` (`infra/cloudflare/jobi-api-worker.js`), připojený
+přes Route `api.appjobi.com/*` v zóně `appjobi.com`. Překládá cesty:
+
+| veřejně | funkce |
+|---|---|
+| `/v1/catalog` | `public-catalog` |
+| `/v1/inventory` | `public-inventory` |
+| `/v1/embed.js` | `public-embed` |
+| `/v1/write` | `api-write` |
+
+Adresy `…supabase.co/functions/v1/…` fungují dál, ale ven se rozdává jen ta nová.
+
+**Cachování.** Řeší si Worker sám přes Cache API, ne Cache Rule z panelu –
+poddotaz míří na `supabase.co`, tedy na cizí zónu, na kterou se pravidla téhle
+nevztahují. Dvě věci, o které to při zprovoznění zakoplo a stojí za zapamatování:
+
+- klíč musí být adresa z **vlastní** zóny (`api.appjobi.com/…`), ne ta cílová;
+  s cizí doménou `put` projde bez chyby, ale `match` nikdy nic nenajde
+- Supabase sám běží za Cloudflare, takže jeho odpovědi nesou cookie `__cf_bm`,
+  a odpověď se `Set-Cookie` Cache API mlčky neuloží – hlavička se proto zahazuje
+
+Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS`. Bez ní se to
+ladilo naslepo, `cf-cache-status` o téhle vrstvě nic neříká.
+
 **Úklid starých záznamů.** Migrace `20260903180000_api_uklid_plan.sql` plánuje
 `api_uklid_starych_zaznamu()` na 3:20 denně, ale sama se přeskočí, když projekt
 nemá `pg_cron`. Ověřit dotazem:
