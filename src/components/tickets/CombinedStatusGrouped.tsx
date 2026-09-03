@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice } from "./types";
 import { WrenchIcon } from "./icons";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
+import { ClaimBadge, TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
 
 export type ClaimLike = {
   id: string;
@@ -35,16 +35,6 @@ const smsBadge = (n: number) =>
       {n > 99 ? "99+" : n}
     </span>
   ) : null;
-
-function formatCZ(dt: string | null | undefined): string {
-  if (!dt) return "—";
-  try {
-    const d = new Date(dt);
-    return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-  } catch {
-    return "—";
-  }
-}
 
 function TicketRow({
   ticket: t,
@@ -146,10 +136,20 @@ function ClaimRow({
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 12, color: "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
-      <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZ(claim.created_at ?? null)}</span>
-      <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{claim.device_label || "—"}</span>
-      <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.customer_name || "—"}</span>
+      {/* Stejné pořadí i prvky jako TicketRow výš – reklamaci odliší jen odznak. */}
+      <TicketCode code={claim.code} dense />
+      <ClaimBadge dense />
+      <TicketDate value={claim.created_at} />
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
+        <TicketDevice label={claim.device_label} dense iconColor={statusColor} />
+      </div>
+      <TicketCustomer name={claim.customer_name || "—"} />
+      {claim.notes && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <WrenchIcon size={10} color="var(--muted)" />
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.notes}</span>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}

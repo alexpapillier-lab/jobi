@@ -48,8 +48,11 @@ export function TicketCode({
   );
 }
 
-/** Datum přijetí. */
+/** Datum přijetí. Bez data se vypíše pomlčka, ne "NaN.NaN.NaN". */
 export function TicketDate({ value }: { value: string | number | Date | null | undefined }) {
+  if (value === null || value === undefined || value === "") {
+    return <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>—</span>;
+  }
   return (
     <span
       style={{
@@ -146,4 +149,52 @@ export function TicketRepair({ text }: { text?: string | null }) {
 /** Tečka mezi údaji. */
 export function MetaSeparator() {
   return <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>;
+}
+
+/**
+ * Akcent reklamací.
+ *
+ * Tmavší odstín tyrkysové než dřívějších #0d9488: odznak je plný a text na
+ * něm bílý, a #0d9488 dává s bílou kontrast jen 3,7:1 – na drobné písmo je
+ * to podle měření v docs/AUDIT_UI_2026-09.md málo. Tenhle odstín má 5,5:1.
+ */
+const CLAIM_ACCENT = "#0f766e";
+
+/**
+ * Odznak "Reklamace".
+ *
+ * Reklamace se dřív kreslily úplně jinak než zakázky: čárkovaný rámeček,
+ * zelenkavé pozadí, kód tyrkysově místo barvou textu, jiné velikosti písma
+ * a v režimech compact a list dokonce dva řádky místo jednoho. Ve smíšeném
+ * seznamu se pak sloupce nepotkávaly a každý druhý řádek byl jinak vysoký.
+ *
+ * Teď má reklamace stejné rozvržení, rámeček i velikosti písma jako zakázka
+ * a liší se jen tímhle odznakem. Aby přesto byla poznat na první pohled,
+ * je odznak plný (bílá na tyrkysové, ne bledá výplň) a sedí hned za kódem,
+ * tedy na začátku řádku, kde oko čte první. Vpravo u ovládacích prvků se
+ * ztrácel.
+ *
+ * Odznak nemění výšku řádku: písmo je stejné jako u data a svislé odsazení
+ * 2 px se vejde do minHeight řádku.
+ */
+export function ClaimBadge({ dense }: Dense) {
+  return (
+    <span
+      style={{
+        fontSize: "var(--text-xs)",
+        fontWeight: 800,
+        lineHeight: 1.2,
+        padding: dense ? "2px 5px" : "2px 7px",
+        borderRadius: "var(--radius-2xs)",
+        background: CLAIM_ACCENT,
+        color: "#fff",
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      Reklamace
+    </span>
+  );
 }
