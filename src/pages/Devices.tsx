@@ -973,7 +973,7 @@ DETALY: Výměna opotřebované baterie
     saveDevicesToDb(activeServiceId, nova).then((r) => {
       if (r.error) showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error, "error");
       else showToast(
-        `${zverejnit ? "Zveřejněno" : "Skryto"}: ${dotcene.size} ${dotcene.size === 1 ? "oprava" : dotcene.size < 5 ? "opravy" : "oprav"}`,
+        `${zverejnit ? "Posílá se do API" : "Vyřazeno z API"}: ${dotcene.size} ${dotcene.size === 1 ? "oprava" : dotcene.size < 5 ? "opravy" : "oprav"}`,
         "success",
       );
     });
@@ -993,8 +993,8 @@ DETALY: Výměna opotřebované baterie
         }}
         title={
           skryto
-            ? "Neposílá se do veřejného ceníku, včetně všeho pod tím. Kliknutím zveřejníš."
-            : "Je ve veřejném ceníku. Kliknutím skryješ i všechno pod tím."
+            ? "Neposílá se do veřejného API ceníku, včetně všeho pod tím. Kliknutím zařadíš."
+            : "Posílá se do veřejného API ceníku. Kliknutím vyřadíš i všechno pod tím."
         }
         style={{
           flexShrink: 0,
@@ -1009,7 +1009,7 @@ DETALY: Výměna opotřebované baterie
           color: skryto ? "var(--warn, #e5a94a)" : "var(--muted)",
         }}
       >
-        {skryto ? "skryto" : "v ceníku"}
+        {skryto ? "mimo API" : "v API"}
       </button>
     );
   };
@@ -1918,7 +1918,7 @@ DETALY: Výměna opotřebované baterie
           {ukazatViditelnost && filteredRepairs.length > 0 && (
             <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                Ve veřejném ceníku ({filteredRepairs.length} zobrazených):
+                Posílat do veřejného API ({filteredRepairs.length} zobrazených):
               </span>
               <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
                 Zveřejnit vše
@@ -2142,7 +2142,7 @@ DETALY: Výměna opotřebované baterie
                                         color: skrytyUModelu ? "var(--warn, #e5a94a)" : "var(--muted)",
                                       }}
                                     >
-                                      {skrytyUModelu ? "skryto" : "v ceníku"}
+                                      {skrytyUModelu ? "mimo API" : "v API"}
                                     </button>
                                   )}
                                   <button
@@ -2340,15 +2340,15 @@ DETALY: Výměna opotřebované baterie
                               size="sm"
                               onClick={() => prepnoutViditelnost("repairs", r.id)}
                               title={r.publicVisible === false
-                                ? "Tahle oprava se do veřejného ceníku neposílá. Kliknutím ji zveřejníš."
-                                : "Tahle oprava je ve veřejném ceníku. Kliknutím ji skryješ."}
+                                ? "Tahle oprava se do veřejného API neposílá. Kliknutím ji zařadíš."
+                                : "Tahle oprava se posílá do veřejného API. Kliknutím ji vyřadíš."}
                               style={{
                                 flexShrink: 0,
                                 fontWeight: 600,
                                 color: r.publicVisible === false ? "var(--warn, #e5a94a)" : "var(--muted)",
                               }}
                             >
-                              {r.publicVisible === false ? "Skryto z ceníku" : "Ve veřejném ceníku"}
+                              {r.publicVisible === false ? "Mimo API" : "Posílá se do API"}
                             </Button>
                           )}
                           </div>

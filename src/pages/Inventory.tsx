@@ -344,6 +344,73 @@ function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" 
   );
 }
 
+/**
+ * Rychlá změna počtu kusů přímo v náhledu produktu.
+ * Vlastní <button>, ne Button z ui – potřebujeme čtvercové tlačítko
+ * bez vnitřního odsazení, aby stepper zabral stejnou výšku jako cena.
+ */
+function StockStepper({
+  stock,
+  dense,
+  onAdjust,
+}: {
+  stock: number;
+  dense?: boolean;
+  onAdjust: (delta: number) => void;
+}) {
+  const size = dense ? 22 : 26;
+  const barva = stock === 0 ? "var(--danger-text)" : stock < 5 ? "var(--warning-text)" : "var(--text)";
+  const krok = (delta: number) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAdjust(delta);
+  };
+  const tlacitko = (disabled: boolean): React.CSSProperties => ({
+    width: size,
+    height: size,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-2xs, 6px)",
+    background: "var(--panel-2)",
+    color: disabled ? "var(--muted)" : "var(--text)",
+    fontSize: dense ? 13 : 14,
+    fontWeight: 800,
+    lineHeight: 1,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.45 : 1,
+    padding: 0,
+  });
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }} title="Rychlá změna počtu kusů">
+      <button
+        type="button"
+        aria-label="Odebrat kus"
+        disabled={stock <= 0}
+        onClick={krok(-1)}
+        style={tlacitko(stock <= 0)}
+      >
+        −
+      </button>
+      <div
+        style={{
+          minWidth: dense ? 44 : 52,
+          textAlign: "center",
+          fontSize: dense ? 12 : 13,
+          fontWeight: 800,
+          color: barva,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {stock} ks
+      </div>
+      <button type="button" aria-label="Přidat kus" onClick={krok(1)} style={tlacitko(false)}>
+        +
+      </button>
+    </div>
+  );
+}
+
 type InventoryProps = { activeServiceId: string | null };
 
 const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [] };
@@ -384,7 +451,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [productStockFilter, setProductStockFilter] = useState<"all" | "inStock" | "lowStock" | "outOfStock" | "noModels">("all");
   const [productDisplayMode, setProductDisplayMode] = useState<"grid" | "list" | "compact">(() => {
     const saved = localStorage.getItem(PRODUCT_DISPLAY_MODE_KEY);
-    return (saved as "grid" | "list" | "compact") || "grid";
+    // Výchozí je řádkový seznam – stejné rozvržení jako u oprav v Zařízeních.
+    return (saved as "grid" | "list" | "compact") || "list";
   });
   const [stockChanges, setStockChanges] = useState<Record<string, string>>({});
   const [editingStock, setEditingStock] = useState<string | null>(null);
@@ -690,6 +758,20 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     showToast("Produkt smazán", "success");
   };
 
+  /**
+   * Přidání/odebrání kusu přímo v seznamu. Bez potvrzovacího dialogu –
+   * varování u nulového skladu má smysl při ruční editaci, ne u klikání
+   * na „−“. Zápis do DB obstará stejný debounce jako u ostatních změn.
+   */
+  const adjustStock = (id: string, delta: number) => {
+    setData((d) => ({
+      ...d,
+      products: d.products.map((p) =>
+        p.id === id ? { ...p, stock: Math.max(0, p.stock + delta) } : p
+      ),
+    }));
+  };
+
   // Brands, categories and models are managed in Devices page - no update functions needed
 
   const updateProduct = (id: string, productData: { name: string; stock: string; price: string; sku: string; description: string; imageUrl: string; repairIds: string[]; categoryId: string; modelIds: string[] }) => {
@@ -814,7 +896,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       ),
     }));
     showToast(
-      `${zverejnit ? "Zveřejněno" : "Skryto"}: ${dotcene.size} ${dotcene.size === 1 ? "produkt" : dotcene.size < 5 ? "produkty" : "produktů"}`,
+      `${zverejnit ? "Posílá se do API" : "Vyřazeno z API"}: ${dotcene.size} ${dotcene.size === 1 ? "produkt" : dotcene.size < 5 ? "produkty" : "produktů"}`,
       "success",
     );
   };
@@ -833,8 +915,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         }}
         title={
           skryto
-            ? "Neposílá se do veřejného skladu, včetně všeho pod tím. Kliknutím zveřejníš."
-            : "Je ve veřejném skladu. Kliknutím skryješ i všechno pod tím."
+            ? "Neposílá se do veřejného API skladu, včetně všeho pod tím. Kliknutím zařadíš."
+            : "Posílá se do veřejného API skladu. Kliknutím vyřadíš i všechno pod tím."
         }
         style={{
           flexShrink: 0,
@@ -849,7 +931,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           color: skryto ? "var(--warn, #e5a94a)" : "var(--muted)",
         }}
       >
-        {skryto ? "skryto" : "ve skladu"}
+        {skryto ? "mimo API" : "v API"}
       </button>
     );
   };
@@ -1449,7 +1531,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Vyhledat produkt</div>
             <Input
               type="text"
-              placeholder="Začněte psát název produktu..."
+              placeholder="Začněte psát název nebo SKU produktu..."
               value={productSearchQuery}
               onChange={(e) => setProductSearchQuery(e.target.value)} />
           </div>
@@ -1457,7 +1539,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           {(() => {
             const searchLower = productSearchQuery.trim().toLowerCase();
             const matchingProducts = searchLower
-              ? data.products.filter((p) => p.name.toLowerCase().includes(searchLower))
+              ? data.products.filter(
+                  (p) =>
+                    p.name.toLowerCase().includes(searchLower) ||
+                    (p.sku || "").toLowerCase().includes(searchLower)
+                )
               : [];
 
             if (matchingProducts.length === 0 && productSearchQuery.trim()) {
@@ -1471,7 +1557,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             if (matchingProducts.length === 0) {
               return (
                 <div style={{ padding: 20, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                  Začněte psát název produktu pro vyhledání
+                  Začněte psát název nebo SKU produktu pro vyhledání
                 </div>
               );
             }
@@ -1512,6 +1598,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{product.name}</div>
+                          {product.sku && (
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>SKU: {product.sku}</div>
+                          )}
                           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                             Aktuální sklad: <span style={{ fontWeight: 600, color: product.stock > 0 ? "var(--accent)" : "rgba(239,68,68,0.9)" }}>{product.stock} ks</span>
                           </div>
@@ -2166,7 +2255,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             {ukazatViditelnost && filteredProducts.length > 0 && (
               <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
                 <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                  Ve veřejném skladu ({filteredProducts.length} zobrazených):
+                  Posílat do veřejného API ({filteredProducts.length} zobrazených):
                 </span>
                 <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
                   Zveřejnit vše
@@ -2313,16 +2402,15 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     borderRadius: 12,
                     border: hasNoModels ? "1px solid var(--border)" : border,
                       background: "var(--panel)",
-                    display: productDisplayMode === "list" ? "grid" : "flex",
-                    gridTemplateColumns: productDisplayMode === "list" ? "2fr 1fr 1fr 1fr auto" : undefined,
-                    flexDirection: productDisplayMode === "list" ? "row" : "column",
+                    display: "flex",
+                    flexDirection: "column",
                     gap: productDisplayMode === "compact" ? 8 : 12,
                     flex: productDisplayMode === "grid" ? "1 1 auto" : productDisplayMode === "list" ? "0 0 auto" : "1 1 250px",
                     minWidth: productDisplayMode === "list" ? "100%" : 0,
                     height: productDisplayMode === "grid" ? "100%" : productDisplayMode === "compact" ? "auto" : "auto",
                     minHeight: productDisplayMode === "grid" ? 320 : productDisplayMode === "compact" ? 220 : "auto",
                     position: "relative",
-                    alignItems: productDisplayMode === "list" ? "center" : "stretch",
+                    alignItems: "stretch",
                   }}
                 >
                   {isEditing ? (
@@ -2538,47 +2626,67 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                     ) : productDisplayMode === "list" ? (
                       <>
-                        <div style={{ display: "contents" }}>
-                          <div>
-                            <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              <span>{p.name}</span>
-                              {stitekViditelnosti("products", p)}
-                              {hasNoModels && (
-                                <span style={{
-                                  padding: "2px 6px",
-                                  background: "var(--accent-soft)",
-                                  borderRadius: 4,
-                                  fontSize: "var(--text-xs)",
-                                  fontWeight: 700,
-                                  color: "var(--muted)",
-                                }}>
-                                  Nezávislý produkt
-                                </span>
-                              )}
-                          </div>
-                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                              {productModels.length > 0 ? productModels.map((m) => m.name).join(", ") : "—"}
-                            </div>
-                        {p.sku && (
-                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            SKU: {p.sku}
-                          </div>
-                        )}
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: p.stock === 0 ? "rgba(239,68,68,0.9)" : p.stock < 5 ? "rgba(251,191,36,0.9)" : "var(--text)" }}>
-                            {p.stock} ks
-                          </div>
-                          <div style={{ fontSize: 13, color: "var(--text)" }}>
-                            {p.price} Kč
-                            {p.purchasePrice != null && (
-                              <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginLeft: 6 }}>
-                                nákup {p.purchasePrice} Kč
+                      {/* Řádek jako u oprav: vlevo popis, vpravo cena, sklad a akce. */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                            {stitekViditelnosti("products", p)}
+                            {hasNoModels && (
+                              <span style={{
+                                padding: "2px 6px",
+                                background: "var(--accent-soft)",
+                                borderRadius: 4,
+                                fontSize: "var(--text-xs)",
+                                fontWeight: 700,
+                                color: "var(--muted)",
+                                whiteSpace: "nowrap",
+                              }}>
+                                Nezávislý produkt
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                            {productCategory?.name || "—"}
+                          {productModels.length > 0 && (
+                            /* Zkrácený výčet, celý je v titulku – stejně jako u oprav. */
+                            <div
+                              style={{ fontSize: 11, color: "var(--muted)" }}
+                              title={productModels.map((m) => m.name).join(", ")}
+                            >
+                              {productModels.slice(0, 3).map((m) => m.name).join(", ")}
+                              {productModels.length > 3 && ` a ${productModels.length - 3} dalších`}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                            {[productCategory?.name, p.sku ? `SKU: ${p.sku}` : null].filter(Boolean).join(" · ") || "—"}
                           </div>
+                          {p.description && (
+                            <div style={{
+                              fontSize: 12,
+                              color: "var(--muted)",
+                              lineHeight: 1.4,
+                              marginTop: 4,
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }}>
+                              {p.description}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
+                              {p.price} Kč
+                            </div>
+                            {p.purchasePrice != null && (
+                              <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                                nákup {p.purchasePrice} Kč
+                              </div>
+                            )}
+                          </div>
+                          <StockStepper stock={p.stock} onAdjust={(delta) => adjustStock(p.id, delta)} />
                           <div style={{ display: "flex", gap: 6 }}>
                             <Button variant="soft" size="sm"
                               onClick={() => {
@@ -2606,6 +2714,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                             </Button>
                           </div>
                         </div>
+                      </div>
                       </>
                     ) : (
                       <>
@@ -2644,13 +2753,22 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                         )}
                       </div>
 
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: border, marginTop: "auto" }}>
-                        <div>
-                          <div style={{ fontSize: productDisplayMode === "compact" ? 12 : 13, fontWeight: 700, color: p.stock === 0 ? "rgba(239,68,68,0.9)" : p.stock < 5 ? "rgba(251,191,36,0.9)" : "var(--text)" }}>
-                            Sklad: {p.stock} ks
-                          </div>
-                          <div style={{ fontSize: productDisplayMode === "compact" ? 12 : 13, color: "var(--muted)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8, flexWrap: "wrap", paddingTop: 8, borderTop: border, marginTop: "auto" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: productDisplayMode === "compact" ? 13 : 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
                             {p.price} Kč
+                          </div>
+                          {p.purchasePrice != null && (
+                            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                              nákup {p.purchasePrice} Kč
+                            </div>
+                          )}
+                          <div style={{ marginTop: 6 }}>
+                            <StockStepper
+                              stock={p.stock}
+                              dense={productDisplayMode === "compact"}
+                              onAdjust={(delta) => adjustStock(p.id, delta)}
+                            />
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
