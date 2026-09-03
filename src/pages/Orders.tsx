@@ -17,6 +17,7 @@ import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
 import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
+import { fetchAllPages } from "../lib/fetchAllPages";
 import {
   uploadDiagnosticPhotoWithWatermark,
   deleteDiagnosticPhotoFromStorage,
@@ -134,7 +135,6 @@ type OrdersProps = {
 };
 
 const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
-const COMMENTS_STORAGE_KEY = "jobsheet_ticket_comments_v1";
 
 /** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
 type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
@@ -356,24 +356,30 @@ function safeSaveDraft(draft: NewOrderDraft | null) {
 
 // Removed: safeLoadCustomers and safeSaveCustomers - no longer used in cloud-first mode
 
-function safeLoadCommentsMap(): Record<string, TicketComment[]> {
-  try {
-    const raw = localStorage.getItem(COMMENTS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as Record<string, TicketComment[]>;
-  } catch {
-    return {};
-  }
-}
+type SupabaseTicketCommentRow = {
+  id: string;
+  ticket_id: string;
+  author: string;
+  author_id: string | null;
+  author_nickname: string | null;
+  author_avatar_url: string | null;
+  content: string;
+  pinned: boolean;
+  created_at: string;
+};
 
-function safeSaveCommentsMap(map: Record<string, TicketComment[]>) {
-  try {
-    localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    // ignore
-  }
+function mapSupabaseCommentRow(row: SupabaseTicketCommentRow): TicketComment {
+  return {
+    id: row.id,
+    ticketId: row.ticket_id,
+    author: row.author,
+    text: row.content,
+    createdAt: row.created_at,
+    pinned: row.pinned,
+    author_id: row.author_id,
+    author_nickname: row.author_nickname,
+    author_avatar_url: row.author_avatar_url,
+  };
 }
 
 // ========================
@@ -556,10 +562,6 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
   (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
   (ticket as any).completed_at = supabaseTicket.completed_at ?? null;
   return ticket;
-}
-
-function uuid() {
-  return (crypto as any)?.randomUUID ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847). Bez JobiDocs se zobrazí chybová hláška.
@@ -992,12 +994,14 @@ export default function Orders({
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
-  
+  const [commentsByTicket, setCommentsByTicket] = useState<Record<string, TicketComment[]>>({});
+
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
-  
+
   // Refs for race condition protection
   const ticketsReqIdRef = useRef(0);
   const claimsReqIdRef = useRef(0);
+  const commentsReqIdRef = useRef(0);
   const docsReqIdRef = useRef(0);
   const activeServiceIdRef = useRef<string | null>(activeServiceId);
   
@@ -1126,12 +1130,16 @@ export default function Orders({
 
     const loadTickets = async () => {
       try {
-        const { data, error } = await (supabase!
-          .from("tickets") as any)
-          .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
-          .eq("service_id", activeServiceId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
+        const { data, error } = await fetchAllPages((from, to) =>
+          (supabase!
+            .from("tickets") as any)
+            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+            .eq("service_id", activeServiceId)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
 
         // Check if this request is still valid
         if (myReqId !== ticketsReqIdRef.current) {
@@ -1183,11 +1191,15 @@ export default function Orders({
     const loadClaims = async () => {
       if (!client) return;
       try {
-        const { data, error } = await (client
-          .from("warranty_claims") as any)
-          .select("*")
-          .eq("service_id", activeServiceId)
-          .order("created_at", { ascending: false });
+        const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
+          (client
+            .from("warranty_claims") as any)
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
         if (myReqId !== claimsReqIdRef.current) return;
         if (error) throw error;
         setCloudClaims(data ?? []);
@@ -1203,12 +1215,69 @@ export default function Orders({
     return () => { claimsReqIdRef.current++; };
   }, [activeServiceId, supabase]);
 
+  // Interní komentáře (chat) k zakázkám – dřív jen v localStorage, teď sdílená
+  // tabulka ticket_comments. Načtou se všechny najednou pro aktivní servis a
+  // seskupí podle ticket_id, stejně jako u tickets/claims výše.
+  const refetchComments = useCallback(async () => {
+    if (!activeServiceId || !supabase) {
+      setCommentsByTicket({});
+      return;
+    }
+    const myReqId = ++commentsReqIdRef.current;
+    const { data, error } = await fetchAllPages<SupabaseTicketCommentRow>((from, to) =>
+      (supabase!.from("ticket_comments") as any)
+        .select("id,ticket_id,author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
+        .eq("service_id", activeServiceId)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    );
+    if (myReqId !== commentsReqIdRef.current) return;
+    if (error) {
+      console.error("[Orders] Error loading ticket comments:", error);
+      return;
+    }
+    const grouped: Record<string, TicketComment[]> = {};
+    for (const row of data) {
+      const c = mapSupabaseCommentRow(row);
+      (grouped[c.ticketId] ??= []).push(c);
+    }
+    setCommentsByTicket(grouped);
+  }, [activeServiceId, supabase]);
+
+  useEffect(() => {
+    void refetchComments();
+    return () => { commentsReqIdRef.current++; };
+  }, [refetchComments]);
+
+  // Realtime subscription for ticket_comments – ať se nové/připnuté komentáře
+  // objeví u všech kolegů na všech zařízeních, ne jen tam, kde vznikly.
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const topic = `ticket_comments:${activeServiceId}`;
+    const client = supabase;
+    const channel = client
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ticket_comments", filter: `service_id=eq.${activeServiceId}` },
+        () => void refetchComments()
+      )
+      .subscribe();
+    return () => {
+      if (client) client.removeChannel(channel);
+    };
+  }, [activeServiceId, supabase, refetchComments]);
+
   const refetchClaims = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
-    const { data, error } = await (supabase.from("warranty_claims") as any)
-      .select("*")
-      .eq("service_id", activeServiceId)
-      .order("created_at", { ascending: false });
+    const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
+      (supabase!.from("warranty_claims") as any)
+        .select("*")
+        .eq("service_id", activeServiceId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to)
+    );
     if (!error && data) setCloudClaims(data);
   }, [activeServiceId, supabase]);
 
@@ -3190,8 +3259,7 @@ export default function Orders({
   }, [captureQRItems, loadDraftCapturePreviews]);
 
   const commentsFor = (ticketId: string): TicketComment[] => {
-    const map = safeLoadCommentsMap();
-    const all = (map[ticketId] ?? []).slice();
+    const all = (commentsByTicket[ticketId] ?? []).slice();
 
     all.sort((a, b) => {
       const ap = !!a.pinned;
@@ -3203,38 +3271,58 @@ export default function Orders({
     return all;
   };
 
-  const addComment = (ticketId: string) => {
+  const addComment = async (ticketId: string) => {
     const text = (commentDraftByTicket[ticketId] ?? "").trim();
-    if (!text) return;
-
-    const map = safeLoadCommentsMap();
-    const list = map[ticketId] ?? [];
+    if (!text || !supabase || !activeServiceId) return;
 
     const displayName = userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Servis";
-    const c: TicketComment = {
-      id: uuid(),
-      ticketId,
+    const payload = {
+      ticket_id: ticketId,
+      service_id: activeServiceId,
       author: displayName,
-      text,
-      createdAt: new Date().toISOString(),
-      pinned: false,
       author_id: session?.user?.id ?? null,
       author_nickname: userProfile?.nickname?.trim() || null,
       author_avatar_url: userProfile?.avatarUrl?.trim() || null,
+      content: text,
+      pinned: false,
     };
 
-    map[ticketId] = [...list, c];
-    safeSaveCommentsMap(map);
-
     setCommentDraftByTicket((p) => ({ ...p, [ticketId]: "" }));
+
+    const { data, error } = await (supabase.from("ticket_comments") as any)
+      .insert(payload)
+      .select("id,ticket_id,author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
+      .single();
+
+    if (error || !data) {
+      console.error("[Orders] Error adding comment:", error);
+      showToast("Nepodařilo se uložit komentář.", "error");
+      setCommentDraftByTicket((p) => ({ ...p, [ticketId]: text }));
+      return;
+    }
+
+    const c = mapSupabaseCommentRow(data as SupabaseTicketCommentRow);
+    setCommentsByTicket((p) => ({ ...p, [ticketId]: [...(p[ticketId] ?? []), c] }));
   };
 
-  const togglePin = (ticketId: string, commentId: string) => {
-    const map = safeLoadCommentsMap();
-    const list = map[ticketId] ?? [];
-    map[ticketId] = list.map((c) => (c.id === commentId ? { ...c, pinned: !c.pinned } : c));
-    safeSaveCommentsMap(map);
-    setCommentDraftByTicket((p) => ({ ...p }));
+  const togglePin = async (ticketId: string, commentId: string) => {
+    if (!supabase) return;
+    const current = commentsByTicket[ticketId]?.find((c) => c.id === commentId);
+    const nextPinned = !current?.pinned;
+
+    setCommentsByTicket((p) => ({
+      ...p,
+      [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, pinned: nextPinned } : c)),
+    }));
+
+    const { error } = await (supabase.from("ticket_comments") as any).update({ pinned: nextPinned }).eq("id", commentId);
+    if (error) {
+      console.error("[Orders] Error toggling comment pin:", error);
+      setCommentsByTicket((p) => ({
+        ...p,
+        [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, pinned: !nextPinned } : c)),
+      }));
+    }
   };
 
   const handleCommentDraftChange = useCallback((ticketId: string, value: string) => {

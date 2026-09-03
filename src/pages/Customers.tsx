@@ -4,6 +4,7 @@ import { reportError } from "../lib/reportError";
 import { supabase } from "../lib/supabaseClient";
 import { devLog } from "../lib/devLog";
 import { typedSupabase } from "../lib/typedSupabase";
+import { fetchAllPages } from "../lib/fetchAllPages";
 import { CustomerList, type CustomerRecord } from "./Customers/CustomerList";
 import { CustomerDetail } from "./Customers/CustomerDetail";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -91,11 +92,15 @@ export default function Customers({
 
       try {
         // ✅ Použití typovaného Supabase clientu - bez 'as any'!
-        const { data, error } = await typedSupabase
-          .from("customers")
-          .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
-          .eq("service_id", activeServiceId)
-          .order("created_at", { ascending: false });
+        const { data, error } = await fetchAllPages((from, to) =>
+          typedSupabase
+            .from("customers")
+            .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
+            .eq("service_id", activeServiceId)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
 
         if (error) {
           throw error;
