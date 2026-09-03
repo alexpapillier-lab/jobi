@@ -12,8 +12,9 @@ import { ClaimBadge, MetaSeparator, TicketCode, TicketCustomer, TicketDate, Tick
  * a list dva řádky místo jednoho), takže ve smíšeném seznamu měla jinou
  * výšku i jinak posazené sloupce.
  *
- * Jediný rozdíl proti zakázce je teď odznak "Reklamace" na místě, kde má
- * zakázka cenu. Ta reklamace nemá, takže se sloupce nikam neposunou.
+ * Jediný rozdíl proti zakázce je odznak "Reklamace" hned za kódem – na
+ * začátku řádku, aby byl vidět na první pohled. Zbytek karty (písmo,
+ * velikosti, rámeček, barva podle stavu) je shodný se zakázkou.
  */
 
 type ClaimData = {
@@ -87,13 +88,13 @@ export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusP
 
         <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
           <TicketCode code={c.code} dense />
+          <ClaimBadge dense />
           <TicketDate value={c.created_at} />
           <TicketDevice label={c.device_label} dense />
           <TicketCustomer name={customerName} />
           <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
             <TicketRepair text={c.notes} />
           </div>
-          <ClaimBadge dense />
           <Controls statusPicker={statusPicker} printButton={printButton} gap={5} />
         </div>
       </div>
@@ -130,13 +131,13 @@ export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusP
 
         <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
           <TicketCode code={c.code} dense />
+          <ClaimBadge dense />
           <TicketDate value={c.created_at} />
           <TicketDevice label={c.device_label} dense />
           <TicketCustomer name={customerName} />
           <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
             <TicketRepair text={c.notes} />
           </div>
-          <ClaimBadge dense />
           <Controls statusPicker={statusPicker} printButton={printButton} gap={4} marginLeftAuto />
         </div>
       </div>
@@ -180,9 +181,9 @@ export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusP
           minWidth: 0,
         }}>
           <TicketCode code={c.code} dense />
+          <ClaimBadge dense />
           <TicketDate value={c.created_at} />
           <div style={{ flex: 1 }} />
-          <ClaimBadge dense />
           <Controls statusPicker={statusPicker} printButton={printButton} gap={4} />
         </div>
 
@@ -245,6 +246,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusP
 
         <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24, flexWrap: "wrap" }}>
           <TicketCode code={c.code} />
+          <ClaimBadge />
           <TicketDate value={c.created_at} />
           <MetaSeparator />
           <TicketDevice label={c.device_label} />
@@ -254,7 +256,6 @@ export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusP
             <TicketRepair text={c.notes} />
           </div>
 
-          <ClaimBadge />
           <Controls statusPicker={statusPicker} printButton={printButton} gap="var(--space-1)" marginLeftAuto />
         </div>
       </div>

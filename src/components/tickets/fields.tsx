@@ -151,8 +151,14 @@ export function MetaSeparator() {
   return <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>;
 }
 
-/** Akcent reklamací – jediné, čím se reklamace v seznamu liší od zakázky. */
-const CLAIM_ACCENT = "#0d9488";
+/**
+ * Akcent reklamací.
+ *
+ * Tmavší odstín tyrkysové než dřívějších #0d9488: odznak je plný a text na
+ * něm bílý, a #0d9488 dává s bílou kontrast jen 3,7:1 – na drobné písmo je
+ * to podle měření v docs/AUDIT_UI_2026-09.md málo. Tenhle odstín má 5,5:1.
+ */
+const CLAIM_ACCENT = "#0f766e";
 
 /**
  * Odznak "Reklamace".
@@ -162,10 +168,14 @@ const CLAIM_ACCENT = "#0d9488";
  * a v režimech compact a list dokonce dva řádky místo jednoho. Ve smíšeném
  * seznamu se pak sloupce nepotkávaly a každý druhý řádek byl jinak vysoký.
  *
- * Teď má reklamace stejné rozvržení jako zakázka a odlišuje ji jen tenhle
- * odznak. Sedí vždycky hned nalevo od ovládacích prvků, tedy tam, kde má
- * zakázka cenu – levé sloupce (kód, datum, zařízení, zákazník) tím zůstanou
- * napříč řádky zarovnané.
+ * Teď má reklamace stejné rozvržení, rámeček i velikosti písma jako zakázka
+ * a liší se jen tímhle odznakem. Aby přesto byla poznat na první pohled,
+ * je odznak plný (bílá na tyrkysové, ne bledá výplň) a sedí hned za kódem,
+ * tedy na začátku řádku, kde oko čte první. Vpravo u ovládacích prvků se
+ * ztrácel.
+ *
+ * Odznak nemění výšku řádku: písmo je stejné jako u data a svislé odsazení
+ * 2 px se vejde do minHeight řádku.
  */
 export function ClaimBadge({ dense }: Dense) {
   return (
@@ -173,18 +183,18 @@ export function ClaimBadge({ dense }: Dense) {
       style={{
         fontSize: "var(--text-xs)",
         fontWeight: 800,
-        padding: "2px 6px",
+        lineHeight: 1.2,
+        padding: dense ? "2px 5px" : "2px 7px",
         borderRadius: "var(--radius-2xs)",
-        background: `${CLAIM_ACCENT}12`,
-        color: CLAIM_ACCENT,
-        border: `1px solid ${CLAIM_ACCENT}25`,
+        background: CLAIM_ACCENT,
+        color: "#fff",
         textTransform: "uppercase",
         letterSpacing: "0.5px",
         whiteSpace: "nowrap",
         flexShrink: 0,
       }}
     >
-      {dense ? "R" : "Reklamace"}
+      Reklamace
     </span>
   );
 }

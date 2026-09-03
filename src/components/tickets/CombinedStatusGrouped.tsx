@@ -138,6 +138,7 @@ function ClaimRow({
     >
       {/* Stejné pořadí i prvky jako TicketRow výš – reklamaci odliší jen odznak. */}
       <TicketCode code={claim.code} dense />
+      <ClaimBadge dense />
       <TicketDate value={claim.created_at} />
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
         <TicketDevice label={claim.device_label} dense iconColor={statusColor} />
@@ -149,7 +150,6 @@ function ClaimRow({
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.notes}</span>
         </div>
       )}
-      <ClaimBadge dense />
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}

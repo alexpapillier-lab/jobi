@@ -61,6 +61,7 @@ function GroupedClaimRow({
     >
       {/* Stejné rozvržení jako řádek zakázky v TicketStatusGrouped / CombinedStatusGrouped. */}
       <TicketCode code={claim.code} dense />
+      <ClaimBadge dense />
       <TicketDate value={claim.created_at} />
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
         <TicketDevice label={claim.device_label} dense iconColor={statusColor} />
@@ -72,7 +73,6 @@ function GroupedClaimRow({
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.notes}</span>
         </div>
       )}
-      <ClaimBadge dense />
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}
