@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
+import { fetchAllPages } from "../lib/fetchAllPages";
 import { useStatuses } from "../state/StatusesStore";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
@@ -98,20 +99,28 @@ export default function Calendar({
     const load = async () => {
       if (!supabase) return;
       try {
-        const { data: tData, error: tErr } = await (supabase
-          .from("tickets") as any)
-          .select("*")
-          .eq("service_id", activeServiceId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
+        const { data: tData, error: tErr } = await fetchAllPages((from, to) =>
+          (supabase!
+            .from("tickets") as any)
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
 
         if (tErr) throw tErr;
 
-        const { data: cData, error: cErr } = await (supabase
-          .from("warranty_claims") as any)
-          .select("*")
-          .eq("service_id", activeServiceId)
-          .order("created_at", { ascending: false });
+        const { data: cData, error: cErr } = await fetchAllPages((from, to) =>
+          (supabase!
+            .from("warranty_claims") as any)
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
 
         if (cErr) throw cErr;
 

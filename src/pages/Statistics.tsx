@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } fr
 import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
+import { fetchAllPages } from "../lib/fetchAllPages";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
 import { formatCurrency } from "../lib/invoiceMath";
@@ -231,12 +232,16 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     setTicketsError(null);
     (async () => {
       try {
-        const { data, error } = await (supabase as any)
-          .from("tickets")
-          .select(TICKETS_SELECT)
-          .eq("service_id", activeServiceId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
+        const { data, error } = await fetchAllPages((from, to) =>
+          (supabase as any)
+            .from("tickets")
+            .select(TICKETS_SELECT)
+            .eq("service_id", activeServiceId)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+        );
         if (error) throw error;
         setAllTickets((data || []).map((row: any) => mapSupabaseTicketToTicketEx(row)));
       } catch (err) {
