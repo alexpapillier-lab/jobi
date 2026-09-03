@@ -18,11 +18,13 @@ info:
     Je to schválně: přes API nemá jít zjišťovat, které servisy existují.
 security: []   # čtení nevyžaduje nic; zápis si security předepisuje sám
 servers:
-  - url: https://ijtvcgolsdsrquqbvjrz.supabase.co/functions/v1
+  - url: https://api.appjobi.com/v1
     description: Produkce
+  - url: https://ijtvcgolsdsrquqbvjrz.supabase.co/functions/v1
+    description: Přímo edge funkce, bez cache a limitů. Pro ladění.
 
 paths:
-  /public-catalog:
+  /catalog:
     get:
       summary: Ceník oprav
       parameters:
@@ -41,7 +43,7 @@ paths:
         "400": { $ref: "#/components/responses/ChybiService" }
         "404": { $ref: "#/components/responses/Nedostupne" }
 
-  /public-inventory:
+  /inventory:
     get:
       summary: Sklad
       parameters:
@@ -60,7 +62,7 @@ paths:
         "400": { $ref: "#/components/responses/ChybiService" }
         "404": { $ref: "#/components/responses/Nedostupne" }
 
-  /public-embed:
+  /embed.js:
     get:
       summary: Hotový skript, který ceník vykreslí na stránku
       description: |
@@ -68,7 +70,7 @@ paths:
 
         ```html
         <div id="jobi-cenik"></div>
-        <script src="…/public-embed?service=nazev-servisu"></script>
+        <script src="https://api.appjobi.com/v1/embed.js?service=nazev-servisu"></script>
         ```
       parameters:
         - $ref: "#/components/parameters/Service"
@@ -79,7 +81,7 @@ paths:
             application/javascript:
               schema: { type: string }
 
-  /api-write:
+  /write:
     post:
       summary: Zápis cen, časů a počtu kusů
       description: |

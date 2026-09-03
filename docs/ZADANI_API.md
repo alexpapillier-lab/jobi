@@ -227,16 +227,30 @@ Hotovo a nasazené na produkci:
 
 ### Co ještě zbývá
 
-**Doména `api.appjobi.com`.** Postup krok za krokem je v `docs/NASAZENI_API_DOMENA.md`,
-Worker v `infra/cloudflare/jobi-api-worker.js`. Adresy dnes ukazují přímo na
-`…supabase.co/functions/v1/…`. Přestěhovat je po tom, co je servisy
-rozdají webařům, je nepříjemné – vlastní doména má přijít dřív než první
-zákazník. Potřebuje zásah v Cloudflare (DNS + Worker nebo pravidlo, které
-přemapuje `/v1/catalog` na `/functions/v1/public-catalog`).
+**Doména `api.appjobi.com`.** Hotovo (3. 9. 2026). Před edge funkcemi stojí
+Cloudflare Worker `jobi-api` (`infra/cloudflare/jobi-api-worker.js`), připojený
+přes Route `api.appjobi.com/*` v zóně `appjobi.com`. Překládá cesty:
 
-**Cache Rule na Cloudflare.** Funkce už posílají `Cache-Control` i ETag,
-ale bez CDN před nimi se každý dotaz počítá do limitu. S cachováním se
-většina opakovaných dotazů k funkci vůbec nedostane.
+| veřejně | funkce |
+|---|---|
+| `/v1/catalog` | `public-catalog` |
+| `/v1/inventory` | `public-inventory` |
+| `/v1/embed.js` | `public-embed` |
+| `/v1/write` | `api-write` |
+
+Adresy `…supabase.co/functions/v1/…` fungují dál, ale ven se rozdává jen ta nová.
+
+**Cachování.** Řeší si Worker sám přes Cache API, ne Cache Rule z panelu –
+poddotaz míří na `supabase.co`, tedy na cizí zónu, na kterou se pravidla téhle
+nevztahují. Dvě věci, o které to při zprovoznění zakoplo a stojí za zapamatování:
+
+- klíč musí být adresa z **vlastní** zóny (`api.appjobi.com/…`), ne ta cílová;
+  s cizí doménou `put` projde bez chyby, ale `match` nikdy nic nenajde
+- Supabase sám běží za Cloudflare, takže jeho odpovědi nesou cookie `__cf_bm`,
+  a odpověď se `Set-Cookie` Cache API mlčky neuloží – hlavička se proto zahazuje
+
+Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS`. Bez ní se to
+ladilo naslepo, `cf-cache-status` o téhle vrstvě nic neříká.
 
 **Úklid starých záznamů.** Migrace `20260903180000_api_uklid_plan.sql` plánuje
 `api_uklid_starych_zaznamu()` na 3:20 denně, ale sama se přeskočí, když projekt

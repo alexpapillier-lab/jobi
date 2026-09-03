@@ -4,7 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
  * Hotový kousek JavaScriptu, který vykreslí ceník na cizí web.
  *
  *   <div id="jobi-cenik"></div>
- *   <script src="…/functions/v1/public-embed?service=<slug>"></script>
+ *   <script src="https://api.appjobi.com/v1/embed.js?service=<slug>"></script>
  *
  * Smysl celého API je ceník na stránce. Bez tohohle by si každý servis
  * musel na to psát vlastní frontend, případně za to platit webaři.
@@ -26,7 +26,10 @@ serve((req) => {
 
   const url = new URL(req.url);
   const slug = url.searchParams.get("service")?.trim().toLowerCase() ?? "";
-  const zaklad = `${url.protocol}//${url.host}/functions/v1`;
+  // Schválně napevno vlastní doména, ne adresa, na které dorazil požadavek:
+  // skript se vkládá na cizí weby a má chodit přes Cloudflare Worker, kde je
+  // cache a limity. Přes supabase.co by šel mimo ně.
+  const zaklad = "https://api.appjobi.com/v1";
 
   // Slug jde do JS řetězce – přes JSON.stringify, ať se z něj nedá vylomit.
   const skript = `(function () {
@@ -59,7 +62,7 @@ serve((req) => {
   cil.className = (cil.className ? cil.className + " " : "") + "jobi-cenik";
   text(cil, "Načítám ceník…");
 
-  fetch(API + "/public-catalog?service=" + encodeURIComponent(SLUG))
+  fetch(API + "/catalog?service=" + encodeURIComponent(SLUG))
     .then(function (r) {
       if (!r.ok) { throw new Error("Ceník se nepodařilo načíst (" + r.status + ")."); }
       return r.json();

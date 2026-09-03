@@ -8,7 +8,8 @@ import { otiskKlienta, vyhodnotLimit } from "../_shared/limity.ts";
 /**
  * Veřejný ceník servisu. Bez přihlášení, ke čtení z webu.
  *
- *   GET /functions/v1/public-catalog?service=<slug>
+ *   GET https://api.appjobi.com/v1/catalog?service=<slug>
+ *   (přímo: /functions/v1/public-catalog?service=<slug>)
  *
  * Podmínky, aby něco vrátil:
  *   - servis má vyplněný public_slug

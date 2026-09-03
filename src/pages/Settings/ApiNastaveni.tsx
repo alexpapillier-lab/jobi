@@ -5,6 +5,11 @@ import { showToast } from "../../components/Toast";
 
 type Rezim = "hidden" | "boolean" | "exact";
 
+/* Vlastní doména před edge funkcemi (Cloudflare Worker jobi-api).
+   Adresy na …supabase.co/functions/v1/… fungují dál, ale ven se rozdává
+   tahle – jde přes cache a dá se v budoucnu přesměrovat jinam. */
+const VEREJNE_API = "https://api.appjobi.com/v1";
+
 type TokenRadek = {
   id: string;
   name: string;
@@ -109,8 +114,8 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
     return () => { zruseno = true; };
   }, [activeServiceId]);
 
-  const adresaCenik = slug ? `${supabaseUrl}/functions/v1/public-catalog?service=${slug}` : null;
-  const adresaSklad = slug ? `${supabaseUrl}/functions/v1/public-inventory?service=${slug}` : null;
+  const adresaCenik = slug ? `${VEREJNE_API}/catalog?service=${slug}` : null;
+  const adresaSklad = slug ? `${VEREJNE_API}/inventory?service=${slug}` : null;
 
   const vyzkousej = useCallback(async (adresa: string, kde: "cenik" | "sklad") => {
     setTestuji(kde);
@@ -567,7 +572,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
       )}
 
       <div style={nadpis}>Jak zapisovat</div>
-      <pre style={kod}>{`curl -X POST ${supabaseUrl}/functions/v1/api-write \\
+      <pre style={kod}>{`curl -X POST ${VEREJNE_API}/write \\
   -H "Authorization: Bearer jobi_…" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: $(uuidgen)" \\

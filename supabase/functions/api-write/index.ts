@@ -6,7 +6,7 @@ import { zmenyProduktu, zmenyOprav, otiskTela } from "../_shared/zapis.ts";
 /**
  * Zápis přes veřejné API. Na rozdíl od čtení vyžaduje token.
  *
- *   POST /functions/v1/api-write
+ *   POST https://api.appjobi.com/v1/write
  *   Authorization: Bearer jobi_…
  *   Idempotency-Key: <libovolný řetězec>      (volitelné, ale doporučené)
  *
