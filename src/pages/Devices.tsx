@@ -1806,9 +1806,12 @@ DETALY: Výměna opotřebované baterie
                           {inventoryData.products
                             .filter((p) => 
                               p.name.toLowerCase().includes(newRepair.productSearch.toLowerCase()) &&
-                              !newRepair.productIds.includes(p.id) &&
-                              (p.modelIds.includes(selectedModelId!) || !selectedModelId)
+                              !newRepair.productIds.includes(p.id)
                             )
+                            /* Produkt bez vazby na vybraný model se dřív vůbec nenabídl, takže
+                               nově založený díl nešlo k opravě připojit a nikde nebylo vidět proč.
+                               Nabízíme všechny; přiřazené k modelu jdou první. */
+                            .sort((a, b) => Number(b.modelIds.includes(selectedModelId!)) - Number(a.modelIds.includes(selectedModelId!)))
                             .slice(0, 10)
                             .map((p) => (
                               <div
@@ -1835,6 +1838,11 @@ DETALY: Výměna opotřebované baterie
                               >
                                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                                   <div style={{ fontWeight: 600 }}>{p.name} {p.sku && `(${p.sku})`}</div>
+                                  {selectedModelId && !p.modelIds.includes(selectedModelId) && (
+                                    <div style={{ fontSize: 11, color: "var(--warning-text, var(--muted))" }}>
+                                      Není přiřazen k vybranému modelu
+                                    </div>
+                                  )}
                                   {p.modelIds.length > 0 && (
                                     <div style={{ fontSize: 11, color: "var(--muted)" }}>
                                       Modely: {p.modelIds.map((mid) => {
@@ -2231,9 +2239,11 @@ DETALY: Výměna opotřebované baterie
                               {inventoryData.products
                                 .filter((p) => 
                                   p.name.toLowerCase().includes(editRepairData.productSearch.toLowerCase()) &&
-                                  !editRepairData.productIds.includes(p.id) &&
-                                  (p.modelIds.some((mid) => editRepairData.modelIds.includes(mid)) || editRepairData.modelIds.length === 0)
+                                  !editRepairData.productIds.includes(p.id)
                                 )
+                                /* Viz výše – nabízíme i díly, které k modelu zatím přiřazené nejsou. */
+                                .sort((a, b) => Number(b.modelIds.some((m) => editRepairData.modelIds.includes(m)))
+                                  - Number(a.modelIds.some((m) => editRepairData.modelIds.includes(m))))
                                 .slice(0, 10)
                                 .map((p) => (
                                   <div
@@ -2260,6 +2270,11 @@ DETALY: Výměna opotřebované baterie
                                   >
                                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                                       <div style={{ fontWeight: 600 }}>{p.name} {p.sku && `(${p.sku})`}</div>
+                                      {editRepairData.modelIds.length > 0 && !p.modelIds.some((m) => editRepairData.modelIds.includes(m)) && (
+                                        <div style={{ fontSize: 11, color: "var(--warning-text, var(--muted))" }}>
+                                          Není přiřazen k vybranému modelu
+                                        </div>
+                                      )}
                                       {p.modelIds.length > 0 && (
                                         <div style={{ fontSize: 11, color: "var(--muted)" }}>
                                           Modely: {p.modelIds.map((mid) => {
