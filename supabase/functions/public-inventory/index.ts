@@ -104,7 +104,9 @@ serve(async (req) => {
   const [kategorie, produkty, znacky, katZarizeni, modely] = await Promise.all([
     svc.from("inventory_product_categories").select("id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     svc.from("inventory_products")
-      .select("id, category_id, name, price, purchase_price, sku, description, image_url, model_ids, stock")
+      // public_stock, ne stock: do veřejné dostupnosti se počítají jen sklady,
+      // které si servis označil. Dodavatelský sklad zákazníkům neslibujeme.
+      .select("id, category_id, name, price, purchase_price, sku, description, image_url, model_ids, public_stock")
       .eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     // Zařízení jen kvůli tomu, ať produkt neukazuje na model, který servis
     // z ceníku schoval. Když má vypnutý ceník, nic tím neomezíme – sloupce
@@ -142,7 +144,7 @@ serve(async (req) => {
     availability_mode: rezim,
     categories: kategorie.data ?? [],
     products: viditelneProdukty.map((p) => {
-      const stav = dostupnost(p.stock, rezim);
+      const stav = dostupnost(p.public_stock, rezim);
       const modelIds = Array.isArray(p.model_ids) ? p.model_ids : [];
       return {
         id: p.id,

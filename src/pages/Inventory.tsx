@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Button, Input, MenuItem } from "../components/ui";
 import { BoxIcon, WarningIcon } from "../components/icons";
 import { createPortal } from "react-dom";
@@ -10,10 +10,29 @@ import { useEntitlements } from "../hooks/useEntitlements";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
-import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import {
+  loadInventoryFromDb, saveInventoryToDb, celkemKusu, vychoziSklad, stavyZeStarehoTvaru,
+  type Warehouse,
+} from "../lib/inventoryDb";
+import { nahrajObrazekProduktu, smazObrazekProduktu } from "../lib/productImages";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { supabase } from "../lib/supabaseClient";
 const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
+
+/**
+ * Stav skladu, který tenhle klient naposledy viděl uložený. Od něj se počítá,
+ * co se má poslat do databáze – bez toho by starší kopie přepsala cizí úpravy.
+ *
+ * Schválně mimo komponentu: snímek se nastavuje uvnitř efektu (po načtení)
+ * i mimo něj (po úspěšném uložení) a React Compiler takový ref odmítá
+ * („This value cannot be modified“). Klíčuje se servisem, takže po přepnutí
+ * neplatí a přežije i přemontování stránky.
+ */
+let posledniUlozeno: { sid: string; data: InventoryData } | null = null;
+
+function snimekProServis(sid: string): InventoryData | undefined {
+  return posledniUlozeno && posledniUlozeno.sid === sid ? posledniUlozeno.data : undefined;
+}
 
 type Brand = {
   id: string;
@@ -47,7 +66,10 @@ type Product = {
   name: string;
   modelIds: string[]; // can be for multiple models
   categoryId?: string; // category of the product (not model category)
+  /** Součet přes sklady. Odvozený – měň `stockByWarehouse`. */
   stock: number;
+  /** Kolik kusů leží ve kterém skladu. Klíč je id skladu. */
+  stockByWarehouse: Record<string, number>;
   price: number;
   /** Nákupní cena. Nepovinná; do veřejného API jde jen když si to servis zapne. */
   purchasePrice?: number | null;
@@ -61,6 +83,7 @@ type Product = {
 type InventoryData = {
   productCategories: ProductCategory[];
   products: Product[];
+  warehouses: Warehouse[];
 };
 
 type Repair = {
@@ -84,27 +107,51 @@ function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
+/* Data z localStorage můžou být z verze před sklady – tam měl produkt jen
+   `stock`. Sklady se dopočítají až v `sladitSeSklady`, kdy je známe. */
 function parseInventoryRaw(parsed: InventoryData & Record<string, unknown>): InventoryData {
+  const produkty = (parsed.products || []).map((p: any) => ({ ...p, stockByWarehouse: p.stockByWarehouse ?? {} }));
+  const sklady = Array.isArray(parsed.warehouses) ? parsed.warehouses : [];
   if ("brands" in parsed || "categories" in parsed || "models" in parsed) {
-    return { productCategories: (parsed.productCategories || []).map((c: any) => ({ ...c, modelIds: c.modelIds || [] })), products: parsed.products || [] };
+    return { productCategories: (parsed.productCategories || []).map((c: any) => ({ ...c, modelIds: c.modelIds || [] })), products: produkty, warehouses: sklady };
   }
   if (!parsed.productCategories) {
-    return { productCategories: [], products: parsed.products || [] };
+    return { productCategories: [], products: produkty, warehouses: sklady };
   }
   return {
     ...parsed,
     productCategories: parsed.productCategories.map((c: any) => ({ ...c, modelIds: c.modelIds || [] })),
+    products: produkty,
+    warehouses: sklady,
   };
 }
 
 function loadInventoryFromKey(key: string): InventoryData {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return { productCategories: [], products: [] };
+    if (!raw) return EMPTY_INVENTORY;
     return parseInventoryRaw(JSON.parse(raw) as InventoryData & Record<string, unknown>);
   } catch {
-    return { productCategories: [], products: [] };
+    return EMPTY_INVENTORY;
   }
+}
+
+/**
+ * Doplní produktům stavy po skladech a převezme seznam skladů z databáze.
+ *
+ * Produkt ze starších dat má jen `stock`; ten se přiřadí výchozímu skladu.
+ * Kdyby se to nedělalo, zásoba by se při prvním uložení ztratila.
+ */
+function sladitSeSklady(data: InventoryData, sklady: Warehouse[]): InventoryData {
+  const vychozi = vychoziSklad(sklady);
+  return {
+    ...data,
+    warehouses: sklady,
+    products: data.products.map((p) => {
+      const stavy = stavyZeStarehoTvaru(p, vychozi);
+      return { ...p, stockByWarehouse: stavy, stock: celkemKusu(stavy) };
+    }),
+  };
 }
 
 // Product Filter Picker Component
@@ -412,9 +459,64 @@ function StockStepper({
   );
 }
 
+/**
+ * Zásoba produktu v náhledu. Se dvěma a víc sklady musí být vidět, kterého
+ * skladu se „+“ týká – jinak by uživatel přidával kusy naslepo. Filtr skladu
+ * proto rovnou zužuje, co se ukazuje.
+ */
+function StockCell({
+  product,
+  warehouses,
+  filterId,
+  dense,
+  onAdjust,
+}: {
+  product: { stock: number; stockByWarehouse: Record<string, number> };
+  warehouses: Warehouse[];
+  filterId: string;
+  dense?: boolean;
+  onAdjust: (warehouseId: string, delta: number) => void;
+}) {
+  const viditelne = filterId === "all" ? warehouses : warehouses.filter((w) => w.id === filterId);
+  if (viditelne.length === 0) return null;
+  // Jediný sklad: vypadá to přesně jako předtím, bez popisků navíc.
+  if (viditelne.length === 1) {
+    const w = viditelne[0];
+    return (
+      <StockStepper
+        stock={product.stockByWarehouse[w.id] ?? 0}
+        dense={dense}
+        onAdjust={(delta) => onAdjust(w.id, delta)}
+      />
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+      <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+        {product.stock} ks celkem
+      </div>
+      {viditelne.map((w) => (
+        <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span
+            title={w.name}
+            style={{ fontSize: 11, color: "var(--muted)", maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            {w.name}
+          </span>
+          <StockStepper
+            stock={product.stockByWarehouse[w.id] ?? 0}
+            dense
+            onAdjust={(delta) => onAdjust(w.id, delta)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type InventoryProps = { activeServiceId: string | null };
 
-const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [] };
+const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [], warehouses: [] };
 
 export default function Inventory({ activeServiceId }: InventoryProps) {
   const isNarrow = useIsNarrow();
@@ -440,6 +542,15 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
 
   const [newProduct, setNewProduct] = useState({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [] as string[], imageUrl: "", repairIds: [] as string[], categoryId: "" });
+  /* Do kterého skladu se ukládá nový produkt a import. Prázdné = výchozí sklad. */
+  const [newProductWarehouseId, setNewProductWarehouseId] = useState<string>("");
+  /* Který sklad je vidět v seznamu. "all" = všechny, se součtem. */
+  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
+  const [newWarehouseName, setNewWarehouseName] = useState("");
+  const [editingWarehouse, setEditingWarehouse] = useState<string | null>(null);
+  const [editWarehouseName, setEditWarehouseName] = useState("");
+  /* Mazání skladu, ve kterém ještě něco leží – kusy by zmizely, tak se ptáme. */
+  const [deleteWarehouseInfo, setDeleteWarehouseInfo] = useState<{ id: string; kusy: number; onConfirm: () => void } | null>(null);
   const [newProductUnassigned, setNewProductUnassigned] = useState(false);
   const [newProductCategoryName, setNewProductCategoryName] = useState("");
 
@@ -457,7 +568,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     return (saved as "grid" | "list" | "compact") || "list";
   });
   const [stockChanges, setStockChanges] = useState<Record<string, string>>({});
+  /* Do kterého skladu se naskladňuje. Prázdné = výchozí sklad. */
+  const [restockWarehouseId, setRestockWarehouseId] = useState<string>("");
   const [editingStock, setEditingStock] = useState<string | null>(null);
+  const [nahravamObrazek, setNahravamObrazek] = useState(false);
 
   const [devicesData, setDevicesData] = useState<DevicesData>({ brands: [], categories: [], models: [], repairs: [] });
 
@@ -478,6 +592,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       return;
     }
     let cancelled = false;
+    // Jiný servis = jiná data; starý snímek by dal nesmyslný rozdíl.
+    posledniUlozeno = null;
     (async () => {
       const devicesRes = await loadDevicesFromDb(activeServiceId);
       if (cancelled) return;
@@ -496,11 +612,16 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
             : legacy;
         const hasStorage = merged.productCategories.length > 0 || merged.products.length > 0;
         if (hasStorage) {
-          await saveInventoryToDb(activeServiceId, merged);
-          invData = merged;
+          /* Sklady bere z databáze – ta je zakládá sama a localStorage o nich
+             nemusí vědět. Bez toho by zásoba ze starých dat neměla kam jít. */
+          const sladeno = sladitSeSklady(merged, invData.warehouses);
+          await saveInventoryToDb(activeServiceId, sladeno);
+          invData = sladeno;
         }
       }
       if (cancelled) return;
+      // Snímek toho, co je v databázi – od něj se počítá rozdíl při ukládání.
+      posledniUlozeno = { sid: activeServiceId, data: invData };
       setData(invData);
     })();
     return () => {
@@ -512,27 +633,85 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const lastSaveAtRef = useRef<number>(0);
   // Save inventory to DB when data changes – debounced, max jeden toast za chybu
   const saveErrorToastRef = useRef<number>(0);
+  /* Stav, který tenhle klient naposledy viděl uložený. Posílá se do
+     saveInventoryToDb, aby zapsalo jen rozdíl – jinak by starší kopie
+     přepsala cizí úpravy (typicky obrázky na null). */
+
+  const dataRef = useRef(data);
+  const sluzbaRef = useRef(activeServiceId);
+  /* Zápis do refů patří do efektu, ne do renderu (React Compiler:
+     „Cannot access refs during render“). Efekt běží po každém renderu,
+     takže než se stihne spustit jakákoli událost, jsou hodnoty aktuální. */
+  useEffect(() => {
+    dataRef.current = data;
+    sluzbaRef.current = activeServiceId;
+  });
+
+  /* Hláška o uložení se drží tady a vypíše se, až databáze potvrdí zápis.
+     Dřív se volala hned po setData, takže hlásila jen změnu v paměti –
+     a když zápis neprošel, uživatel se to nedozvěděl. */
+  const cekaHlaska = useRef<string | null>(null);
+
+  const ulozSklad = useCallback(async (kdo: string) => {
+    const sid = sluzbaRef.current;
+    if (!sid) return;
+    /* Dokud nevíme, co je v databázi, nesmíme zapisovat vůbec. Bez snímku
+       jde saveInventoryToDb do režimu „zapiš všechno a smaž, co v datech
+       není“ – a data jsou při odchodu před dokončením načtení prázdná.
+       Přesně tímhle jsem smazal sklad: odchod ze Skladu do 300 ms od
+       otevření uložil prázdno. */
+    const drive = snimekProServis(sid);
+    if (!drive) return;
+    const k = dataRef.current;
+    const r = await saveInventoryToDb(sid, k, drive);
+    if (!r.error) {
+      posledniUlozeno = { sid, data: k };
+      lastSaveAtRef.current = Date.now();
+      if (cekaHlaska.current) {
+        showToast(cekaHlaska.current, "success");
+        cekaHlaska.current = null;
+      }
+      oznamZmenuKatalogu(sid);
+      return;
+    }
+    cekaHlaska.current = null;
+    const now = Date.now();
+    if (now - saveErrorToastRef.current > 5000) {
+      saveErrorToastRef.current = now;
+      reportError({
+        code: "inventory.save_failed",
+        error: r.error,
+        userMessage: "Sklad se nepodařilo uložit: " + r.error,
+        source: kdo,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!activeServiceId) return;
-    const t = setTimeout(() => {
-      saveInventoryToDb(activeServiceId, data).then((r) => {
-        if (!r.error) { lastSaveAtRef.current = Date.now(); oznamZmenuKatalogu(activeServiceId); }
-        else {
-          const now = Date.now();
-          if (now - saveErrorToastRef.current > 5000) {
-            saveErrorToastRef.current = now;
-            reportError({
-              code: "inventory.save_failed",
-              error: r.error,
-              userMessage: "Chyba uložení skladu: " + r.error,
-              source: "Inventory.saveInventory",
-            });
-          }
-        }
-      });
-    }, 1200);
-    return () => clearTimeout(t);
-  }, [activeServiceId, data]);
+    // Po vědomé akci (uložení produktu) krátce, ať potvrzení přijde hned;
+    // u průběžných změn se drží delší prodleva.
+    const t = setTimeout(() => { ulozSklad("Inventory.saveInventory"); }, cekaHlaska.current ? 150 : 1200);
+    /* Odchod ze Skladu nebo zavření okna rozdělané uložení dřív jen zrušil
+       – uživatel přitom už viděl hlášku „uloženo“. Teď se dopíše. */
+    return () => {
+      clearTimeout(t);
+      ulozSklad("Inventory.saveOnLeave");
+    };
+  }, [activeServiceId, data, ulozSklad]);
+
+  /* Zavření panelu ani celého okna neproběhne přes odmontování komponenty,
+     proto ještě tohle. `pagehide` chytí i Safari, kde se `beforeunload`
+     někdy nespustí. */
+  useEffect(() => {
+    const dopis = () => { ulozSklad("Inventory.savePageHide"); };
+    window.addEventListener("pagehide", dopis);
+    window.addEventListener("beforeunload", dopis);
+    return () => {
+      window.removeEventListener("pagehide", dopis);
+      window.removeEventListener("beforeunload", dopis);
+    };
+  }, [ulozSklad]);
 
   useEffect(() => {
     if (!canAdjustInventoryQuantity && editingStock) setEditingStock(null);
@@ -546,7 +725,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   useEffect(() => {
     if (!showImport && activeServiceId) {
       loadInventoryFromDb(activeServiceId).then((res) => {
-        if (!res.error) setData(res.data);
+        if (!res.error) { posledniUlozeno = { sid: activeServiceId, data: res.data }; setData(res.data); }
       });
     }
   }, [showImport, activeServiceId]);
@@ -562,7 +741,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         reloadTimer = null;
         if (Date.now() - lastSaveAtRef.current < 4000) return; // vlastní save – nepřenačítat
         loadInventoryFromDb(activeServiceId).then((res) => {
-          if (!res.error) setData(res.data);
+          if (!res.error) { posledniUlozeno = { sid: activeServiceId, data: res.data }; setData(res.data); }
         });
       }, 800);
     };
@@ -669,7 +848,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
     setData((d) => ({ ...d, productCategories: [...d.productCategories, category] }));
     setNewProductCategoryName("");
-    showToast("Kategorie produktů přidána", "success");
+    cekaHlaska.current = "Kategorie produktů přidána";
   };
 
   const deleteProductCategory = (id: string) => {
@@ -679,7 +858,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       products: d.products.map((p) => (p.categoryId === id ? { ...p, categoryId: undefined } : p)),
     }));
     if (selectedProductCategoryId === id) setSelectedProductCategoryId(null);
-    showToast("Kategorie produktů smazána", "success");
+    cekaHlaska.current = "Kategorie produktů smazána";
   };
 
   const updateProductCategory = (id: string, name: string) => {
@@ -688,7 +867,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       productCategories: d.productCategories.map((c) => (c.id === id ? { ...c, name } : c)),
     }));
     setEditingProductCategory(null);
-    showToast("Kategorie produktů upravena", "success");
+    cekaHlaska.current = "Kategorie produktů upravena";
   };
 
   const toggleProductCategoryForModel = (categoryId: string, modelId: string) => {
@@ -711,6 +890,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     if (!newProduct.name.trim()) return;
     const modelIds = newProductUnassigned ? [] : (selectedModelId ? [selectedModelId] : []);
     const stock = parseInt(newProduct.stock) || 0;
+    const cilovySklad = newProductWarehouseId || vychoziSklad(data.warehouses);
+    const stavy = stock > 0 && cilovySklad ? { [cilovySklad]: stock } : {};
 
     if (stock < 1) {
       setLowStockCallback(() => () => {
@@ -718,7 +899,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           id: uuid(),
           name: newProduct.name.trim(),
           modelIds,
-          stock,
+          stock: celkemKusu(stavy),
+          stockByWarehouse: stavy,
           price: parseFloat(newProduct.price) || 0,
           purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
           sku: newProduct.sku.trim() || undefined,
@@ -729,7 +911,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         };
         setData((d) => ({ ...d, products: [...d.products, product] }));
         setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-        showToast("Produkt přidán", "success");
+        cekaHlaska.current = "Produkt přidán";
       });
       setLowStockDialogOpen(true);
       return;
@@ -739,7 +921,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       id: uuid(),
       name: newProduct.name.trim(),
       modelIds,
-      stock,
+      stock: celkemKusu(stavy),
+      stockByWarehouse: stavy,
       price: parseFloat(newProduct.price) || 0,
           purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
       sku: newProduct.sku.trim() || undefined,
@@ -750,7 +933,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
     setData((d) => ({ ...d, products: [...d.products, product] }));
     setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
-    showToast("Produkt přidán", "success");
+    cekaHlaska.current = "Produkt přidán";
   };
 
   // Brands, categories and models are managed in Devices page - no delete functions needed
@@ -761,17 +944,101 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   };
 
   /**
-   * Přidání/odebrání kusu přímo v seznamu. Bez potvrzovacího dialogu –
-   * varování u nulového skladu má smysl při ruční editaci, ne u klikání
-   * na „−“. Zápis do DB obstará stejný debounce jako u ostatních změn.
+   * Přidání/odebrání kusu v konkrétním skladu, přímo v seznamu. Bez
+   * potvrzovacího dialogu – varování u nulového skladu má smysl při ruční
+   * editaci, ne u klikání na „−“. Zápis do DB obstará stejný debounce jako
+   * u ostatních změn.
    */
-  const adjustStock = (id: string, delta: number) => {
+  const adjustStock = (id: string, warehouseId: string, delta: number) => {
     setData((d) => ({
       ...d,
-      products: d.products.map((p) =>
-        p.id === id ? { ...p, stock: Math.max(0, p.stock + delta) } : p
-      ),
+      products: d.products.map((p) => {
+        if (p.id !== id) return p;
+        const stavy = { ...p.stockByWarehouse };
+        const novy = Math.max(0, (stavy[warehouseId] ?? 0) + delta);
+        // Nula se nedrží jako řádek – ať se „odepsáno“ nepletlo s „nikdy tu nebylo“.
+        if (novy === 0) delete stavy[warehouseId];
+        else stavy[warehouseId] = novy;
+        return { ...p, stockByWarehouse: stavy, stock: celkemKusu(stavy) };
+      }),
     }));
+  };
+
+  /** Naskladnění o `zmena` kusů do vybraného skladu. */
+  const naskladnit = (productId: string, zmena: number) => {
+    const cil = restockWarehouseId || vychoziSklad(data.warehouses);
+    if (!cil) {
+      showToast("Servis nemá žádný sklad", "error");
+      return;
+    }
+    adjustStock(productId, cil, zmena);
+    const kam = data.warehouses.length > 1
+      ? ` (${data.warehouses.find((w) => w.id === cil)?.name ?? "sklad"})`
+      : "";
+    showToast(zmena > 0 ? `Přidáno ${zmena} ks${kam}` : `Odebráno ${Math.abs(zmena)} ks${kam}`, "success");
+  };
+
+  const addWarehouse = (name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    if (data.warehouses.some((w) => w.name.toLowerCase() === n.toLowerCase())) {
+      showToast("Sklad s tímhle názvem už existuje", "error");
+      return;
+    }
+    const w: Warehouse = {
+      id: uuid(),
+      name: n,
+      // Výchozí je jen ten první; databáze víc než jeden stejně nepustí.
+      isDefault: data.warehouses.length === 0,
+      publicVisible: true,
+      createdAt: new Date().toISOString(),
+    };
+    setData((d) => ({ ...d, warehouses: [...d.warehouses, w] }));
+    showToast("Sklad přidán", "success");
+  };
+
+  const updateWarehouse = (id: string, zmena: Partial<Warehouse>) => {
+    setData((d) => ({
+      ...d,
+      warehouses: d.warehouses.map((w) => {
+        if (w.id === id) return { ...w, ...zmena };
+        // Výchozí sklad je právě jeden – nastavením nového se ten starý zruší.
+        if (zmena.isDefault === true) return { ...w, isDefault: false };
+        return w;
+      }),
+    }));
+  };
+
+  const deleteWarehouse = (id: string) => {
+    if (data.warehouses.length <= 1) {
+      showToast("Poslední sklad nejde smazat", "error");
+      return;
+    }
+    const kusy = data.products.reduce((a, p) => a + (p.stockByWarehouse[id] ?? 0), 0);
+    const smazat = () => {
+      setData((d) => {
+        const zbytek = d.warehouses.filter((w) => w.id !== id);
+        // Kdyby se mazal výchozí, musí ho někdo převzít.
+        if (!zbytek.some((w) => w.isDefault) && zbytek[0]) zbytek[0] = { ...zbytek[0], isDefault: true };
+        return {
+          ...d,
+          warehouses: zbytek,
+          products: d.products.map((p) => {
+            if (p.stockByWarehouse[id] === undefined) return p;
+            const stavy = { ...p.stockByWarehouse };
+            delete stavy[id];
+            return { ...p, stockByWarehouse: stavy, stock: celkemKusu(stavy) };
+          }),
+        };
+      });
+      if (warehouseFilter === id) setWarehouseFilter("all");
+      showToast("Sklad smazán", "success");
+    };
+    if (kusy > 0) {
+      setDeleteWarehouseInfo({ id, kusy, onConfirm: smazat });
+      return;
+    }
+    smazat();
   };
 
   // Brands, categories and models are managed in Devices page - no update functions needed
@@ -802,7 +1069,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           ),
         }));
         setEditingProduct(null);
-        showToast("Produkt upraven", "success");
+        cekaHlaska.current = "Produkt upraven";
       });
       setLowStockDialogOpen(true);
       return;
@@ -828,7 +1095,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       ),
     }));
     setEditingProduct(null);
-    showToast("Produkt upraven", "success");
+    cekaHlaska.current = "Produkt upraven";
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
@@ -845,16 +1112,35 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       return;
     }
     
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (isEdit) {
-        setEditProductData((p) => ({ ...p, imageUrl: result }));
-      } else {
-        setNewProduct((p) => ({ ...p, imageUrl: result }));
-      }
-    };
-    reader.readAsDataURL(file);
+    /* Obrázek jde do úložiště, do sloupce se ukládá jen adresa. Dřív se
+       tady četl jako base64 přímo do dat skladu – každé uložení pak
+       posílalo všechny fotky všech produktů znovu. Starší base64 hodnoty
+       zůstávají funkční, `<img src>` i veřejné API berou obojí. */
+    const sid = activeServiceId;
+    if (!sid) return;
+
+    setNahravamObrazek(true);
+    const stary = isEdit ? editProductData.imageUrl : newProduct.imageUrl;
+    // Nový produkt ještě nemá id; složka „nove“ nevadí, práva se řídí
+    // podle prvního dílu cesty, tedy podle servisu.
+    const kam = isEdit ? (editingProduct ?? "nove") : "nove";
+
+    nahrajObrazekProduktu(supabase, sid, kam, file)
+      .then((adresa) => {
+        if (isEdit) setEditProductData((p) => ({ ...p, imageUrl: adresa }));
+        else setNewProduct((p) => ({ ...p, imageUrl: adresa }));
+        // Nahrazený obrázek v úložišti nenecháváme ležet.
+        void smazObrazekProduktu(supabase, stary);
+      })
+      .catch((err) => {
+        reportError({
+          code: "inventory.image_upload_failed",
+          error: err,
+          userMessage: "Obrázek se nepodařilo nahrát: " + (err?.message ?? String(err)),
+          source: "Inventory.handleImageUpload",
+        });
+      })
+      .finally(() => setNahravamObrazek(false));
   };
 
   const availableRepairs = useMemo(() => {
@@ -1286,12 +1572,15 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             .map(m => m.modelId);
         }
 
+        const skladProImport = newProductWarehouseId || vychoziSklad(data.warehouses);
+        const stavyImportu = product.stock > 0 && skladProImport ? { [skladProImport]: product.stock } : {};
         const newProduct: Product = {
           id: uuid(),
           name: product.name,
           sku: product.sku,
           price: product.price,
-          stock: product.stock,
+          stock: celkemKusu(stavyImportu),
+          stockByWarehouse: stavyImportu,
           description: product.description,
           modelIds,
           createdAt: new Date().toISOString()
@@ -1530,6 +1819,23 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
 
         <div style={{ display: "grid", gap: 12 }}>
           <div>
+            {data.warehouses.length > 1 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Do kterého skladu</div>
+                <select
+                  value={restockWarehouseId}
+                  onChange={(e) => setRestockWarehouseId(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">
+                    Výchozí ({data.warehouses.find((w) => w.isDefault)?.name ?? data.warehouses[0]?.name})
+                  </option>
+                  {data.warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Vyhledat produkt</div>
             <Input
               type="text"
@@ -1658,15 +1964,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       onKeyDown={(e) => {
                                 if (e.key === "Enter") {
                                   const change = parseInt(stockChangeValue) || 0;
-                                  if (change !== 0) {
-                                    setData((d) => ({
-                                      ...d,
-                                      products: d.products.map((p) =>
-                                        p.id === product.id ? { ...p, stock: Math.max(0, p.stock + change) } : p
-                                      ),
-                                    }));
-                                    showToast(change > 0 ? `Přidáno ${change} ks` : `Odebráno ${Math.abs(change)} ks`, "success");
-                                  }
+                                  if (change !== 0) naskladnit(product.id, change);
                                   setEditingStock(null);
                                   setStockChanges((prev) => {
                                     const next = { ...prev };
@@ -1685,15 +1983,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               }}
                               onBlur={() => {
                                 const change = parseInt(stockChangeValue) || 0;
-                                if (change !== 0) {
-                                  setData((d) => ({
-                                    ...d,
-                                    products: d.products.map((p) =>
-                                      p.id === product.id ? { ...p, stock: Math.max(0, p.stock + change) } : p
-                                    ),
-                                  }));
-                                  showToast(change > 0 ? `Přidáno ${change} ks` : `Odebráno ${Math.abs(change)} ks`, "success");
-                                }
+                                if (change !== 0) naskladnit(product.id, change);
                                 setEditingStock(null);
                                 setStockChanges((prev) => {
                                   const next = { ...prev };
@@ -1728,15 +2018,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       <button
                               onClick={() => {
                                 const change = parseInt(stockChangeValue) || 0;
-                                if (change !== 0) {
-                                  setData((d) => ({
-                                    ...d,
-                                    products: d.products.map((p) =>
-                                      p.id === product.id ? { ...p, stock: Math.max(0, p.stock + change) } : p
-                                    ),
-                                  }));
-                                  showToast(change > 0 ? `Přidáno ${change} ks` : `Odebráno ${Math.abs(change)} ks`, "success");
-                                }
+                                if (change !== 0) naskladnit(product.id, change);
                                 setEditingStock(null);
                                 setStockChanges((prev) => {
                                   const next = { ...prev };
@@ -1961,6 +2243,146 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                 Vyberte kategorii
               </div>
             )}
+          </div>
+
+          {/* SKLADY */}
+          <div style={{ ...card, maxHeight: "400px", overflowY: "auto" }}>
+            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>Sklady</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+              Stejný díl může ležet ve víc skladech. Součet je pak zásoba produktu.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input
+                placeholder="Nový sklad…"
+                value={newWarehouseName}
+                onChange={(e) => setNewWarehouseName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newWarehouseName.trim()) {
+                    addWarehouse(newWarehouseName);
+                    setNewWarehouseName("");
+                  }
+                }}
+                style={inputStyle}
+              />
+              <Button
+                variant="primary"
+                disabled={!newWarehouseName.trim()}
+                onClick={() => { addWarehouse(newWarehouseName); setNewWarehouseName(""); }}
+                style={{
+                  opacity: !newWarehouseName.trim() ? 0.6 : 1,
+                  cursor: !newWarehouseName.trim() ? "not-allowed" : "pointer",
+                }}
+                title={!newWarehouseName.trim() ? "Zadejte název skladu" : "Přidat sklad"}
+              >
+                +
+              </Button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {data.warehouses.map((w) => {
+                const kusy = data.products.reduce((a, pr) => a + (pr.stockByWarehouse[w.id] ?? 0), 0);
+                const upravovan = editingWarehouse === w.id;
+                return (
+                  <div
+                    key={w.id}
+                    style={{
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: "var(--panel-2)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    {upravovan ? (
+                      <>
+                        <input
+                          value={editWarehouseName}
+                          onChange={(e) => setEditWarehouseName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && editWarehouseName.trim()) {
+                              updateWarehouse(w.id, { name: editWarehouseName.trim() });
+                              setEditingWarehouse(null);
+                            }
+                            if (e.key === "Escape") setEditingWarehouse(null);
+                          }}
+                          autoFocus
+                          style={{ ...inputStyle, fontSize: 13, padding: "6px 8px" }}
+                        />
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            if (editWarehouseName.trim()) updateWarehouse(w.id, { name: editWarehouseName.trim() });
+                            setEditingWarehouse(null);
+                          }}
+                        >
+                          Uložit
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                            {w.isDefault && (
+                              <span style={{ padding: "1px 5px", borderRadius: 4, background: "var(--accent-soft)", fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)" }}>
+                                výchozí
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                            {kusy} ks{ukazatViditelnost ? (w.publicVisible ? " · ve veřejné dostupnosti" : " · mimo veřejnou dostupnost") : ""}
+                          </div>
+                        </div>
+                        {!w.isDefault && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Sem půjde automatický odpis a zápis přes API"
+                            onClick={() => updateWarehouse(w.id, { isDefault: true })}
+                            style={{ fontSize: 11 }}
+                          >
+                            Výchozí
+                          </Button>
+                        )}
+                        {ukazatViditelnost && (
+                          <Button
+                            variant={w.publicVisible ? "ghost" : "soft"}
+                            size="sm"
+                            title="Počítat kusy z tohohle skladu do veřejné dostupnosti?"
+                            onClick={() => updateWarehouse(w.id, { publicVisible: !w.publicVisible })}
+                            style={{ fontSize: 11, color: w.publicVisible ? "var(--muted)" : "var(--warning-text)" }}
+                          >
+                            {w.publicVisible ? "Veřejný" : "Neveřejný"}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => { setEditingWarehouse(w.id); setEditWarehouseName(w.name); }}
+                          style={{ fontSize: 11 }}
+                        >
+                          ✎
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          disabled={data.warehouses.length <= 1}
+                          title={data.warehouses.length <= 1 ? "Poslední sklad nejde smazat" : "Smazat sklad"}
+                          onClick={() => deleteWarehouse(w.id)}
+                          style={{ fontSize: 11, opacity: data.warehouses.length <= 1 ? 0.4 : 1 }}
+                        >
+                          ×
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* PRODUCT CATEGORIES */}
@@ -2194,9 +2616,28 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                         ))}
                     </select>
                   </div>
+                  {data.warehouses.length > 1 && (
+                    <div>
+                      <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                        Do kterého skladu
+                      </label>
+                      <select
+                        value={newProductWarehouseId}
+                        onChange={(e) => setNewProductWarehouseId(e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="">
+                          Výchozí ({data.warehouses.find((w) => w.isDefault)?.name ?? data.warehouses[0]?.name})
+                        </option>
+                        {data.warehouses.map((w) => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                      Obrázek produktu (volitelné)
+                      Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
                     </label>
                     <input
                       type="file"
@@ -2208,7 +2649,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       <div style={{ marginTop: 8 }}>
                         <img src={newProduct.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
                         <Button variant="danger" size="sm"
-                          onClick={() => setNewProduct((p) => ({ ...p, imageUrl: "" }))} style={{ marginTop: 8,  fontSize: 12 }}
+                          onClick={() => { void smazObrazekProduktu(supabase, newProduct.imageUrl); setNewProduct((p) => ({ ...p, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
                         >
                           Odstranit obrázek
                         </Button>
@@ -2281,6 +2722,19 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
               onChange={(e) => setProductSearchQuery(e.target.value)}
               style={{ ...inputStyle, flex: "1 1 300px" }}
             />
+            {data.warehouses.length > 1 && (
+              <select
+                value={warehouseFilter}
+                onChange={(e) => setWarehouseFilter(e.target.value)}
+                title="Který sklad ukazovat v seznamu"
+                style={{ ...inputStyle, flex: "0 0 auto", width: "auto" }}
+              >
+                <option value="all">Všechny sklady</option>
+                {data.warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            )}
             <ProductFilterPicker value={productStockFilter} onChange={setProductStockFilter} />
             <ProductDisplayModePicker value={productDisplayMode} onChange={setProductDisplayMode} />
           </div>
@@ -2577,7 +3031,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       </div>
                       <div>
                         <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Obrázek produktu (volitelné)
+                          Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
                         </label>
                         <input
                           type="file"
@@ -2589,7 +3043,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           <div style={{ marginTop: 8 }}>
                             <img src={editProductData.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
                             <Button variant="danger" size="sm"
-                              onClick={() => setEditProductData((d) => ({ ...d, imageUrl: "" }))} style={{ marginTop: 8,  fontSize: 12 }}
+                              onClick={() => { void smazObrazekProduktu(supabase, editProductData.imageUrl); setEditProductData((d) => ({ ...d, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
                             >
                               Odstranit obrázek
                             </Button>
@@ -2692,7 +3146,12 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               </div>
                             )}
                           </div>
-                          <StockStepper stock={p.stock} onAdjust={(delta) => adjustStock(p.id, delta)} />
+                          <StockCell
+                            product={p}
+                            warehouses={data.warehouses}
+                            filterId={warehouseFilter}
+                            onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
+                          />
                           <div style={{ display: "flex", gap: 6 }}>
                             <Button variant="soft" size="sm"
                               onClick={() => {
@@ -2770,10 +3229,12 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                             </div>
                           )}
                           <div style={{ marginTop: 6 }}>
-                            <StockStepper
-                              stock={p.stock}
+                            <StockCell
+                              product={p}
+                              warehouses={data.warehouses}
+                              filterId={warehouseFilter}
                               dense={productDisplayMode === "compact"}
-                              onAdjust={(delta) => adjustStock(p.id, delta)}
+                              onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
                             />
                           </div>
                         </div>
@@ -2836,6 +3297,25 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           )}
         </div>
       </div>
+
+      {/* Smazání skladu, ve kterém ještě něco leží – kusy by se ztratily. */}
+      <ConfirmDialog
+        open={deleteWarehouseInfo !== null}
+        title="Smazat sklad?"
+        message={
+          deleteWarehouseInfo
+            ? `Ve skladu „${data.warehouses.find((w) => w.id === deleteWarehouseInfo.id)?.name ?? ""}“ je ${deleteWarehouseInfo.kusy} ks. Smazáním se tyhle kusy ze zásoby odečtou. Jinam se nepřesunou.`
+            : ""
+        }
+        confirmLabel="Smazat sklad"
+        cancelLabel="Zrušit"
+        variant="danger"
+        onConfirm={() => {
+          deleteWarehouseInfo?.onConfirm();
+          setDeleteWarehouseInfo(null);
+        }}
+        onCancel={() => setDeleteWarehouseInfo(null)}
+      />
 
       {/* ConfirmDialog for low stock warning */}
       <ConfirmDialog

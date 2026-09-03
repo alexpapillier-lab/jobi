@@ -12,6 +12,12 @@ export type Zmena = {
   id?: string;
   sku?: string;
   hodnoty: Record<string, number>;
+  /**
+   * Do kterého skladu má jít `stock` – id nebo název. Když chybí, použije se
+   * výchozí sklad servisu. Existující integrace o skladech nevědí, a proto
+   * musí dál fungovat beze změny těla.
+   */
+  sklad?: string;
 };
 
 export type Vysledek = { zmeny: Zmena[]; chyby: string[] };
@@ -55,11 +61,16 @@ export function zmenyProduktu(vstup: unknown[]): Vysledek {
       if (v === null) chyby.push(`products[${i}]: price musí být nezáporné číslo`);
       else hodnoty.price = v;
     }
+    const sklad = typeof r?.warehouse === "string" && r.warehouse.trim() ? r.warehouse.trim() : undefined;
+    if (sklad && !("stock" in r)) {
+      chyby.push(`products[${i}]: warehouse dává smysl jen se stock`);
+      return;
+    }
     if (Object.keys(hodnoty).length === 0) {
       chyby.push(`products[${i}]: není co měnit (povolené: stock, price)`);
       return;
     }
-    zmeny.push({ id, sku, hodnoty });
+    zmeny.push({ id, sku, hodnoty, sklad });
   });
 
   return { zmeny, chyby };

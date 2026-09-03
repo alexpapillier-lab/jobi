@@ -113,14 +113,65 @@ serve(async (req) => {
     chyby.push(...ch);
     let upraveno = 0;
     const nenalezeno: string[] = [];
+
+    // Sklady servisu se načtou jednou, ne u každé položky.
+    const { data: sklady } = await svc
+      .from("inventory_warehouses")
+      .select("id, name, is_default")
+      .eq("service_id", zaznam.service_id)
+      .order("order_index");
+    const seznamSkladu = (sklady ?? []) as { id: string; name: string; is_default: boolean }[];
+    const vychoziSkladId = seznamSkladu.find((w) => w.is_default)?.id ?? seznamSkladu[0]?.id ?? null;
+
     for (const z of zmeny) {
-      const dotaz = svc.from("inventory_products").update(z.hodnoty).eq("service_id", zaznam.service_id);
-      const { data, error } = z.id
-        ? await dotaz.eq("id", z.id).select("id")
-        : await dotaz.eq("sku", z.sku!).select("id");
-      if (error) chyby.push(`${z.id ?? z.sku}: ${error.message}`);
-      else if (!data || data.length === 0) nenalezeno.push(z.id ?? z.sku!);
-      else upraveno += data.length;
+      // `stock` už není sloupec produktu, ale množství v konkrétním skladu.
+      const { stock, ...sloupceProduktu } = z.hodnoty;
+
+      // Nejdřív najít produkt – u zápisu podle SKU jinak neznáme jeho id.
+      const hledani = svc.from("inventory_products").select("id").eq("service_id", zaznam.service_id);
+      const { data: nalezene, error: chybaHledani } = z.id
+        ? await hledani.eq("id", z.id)
+        : await hledani.eq("sku", z.sku!);
+      if (chybaHledani) {
+        chyby.push(`${z.id ?? z.sku}: ${chybaHledani.message}`);
+        continue;
+      }
+      if (!nalezene || nalezene.length === 0) {
+        nenalezeno.push(z.id ?? z.sku!);
+        continue;
+      }
+
+      let selhalo = false;
+      if (Object.keys(sloupceProduktu).length > 0) {
+        const { error } = await svc
+          .from("inventory_products")
+          .update(sloupceProduktu)
+          .in("id", nalezene.map((p: { id: string }) => p.id));
+        if (error) { chyby.push(`${z.id ?? z.sku}: ${error.message}`); selhalo = true; }
+      }
+
+      if (!selhalo && stock !== undefined) {
+        const cil = z.sklad
+          ? seznamSkladu.find((w) => w.id === z.sklad || w.name === z.sklad)?.id ?? null
+          : vychoziSkladId;
+        if (!cil) {
+          chyby.push(`${z.id ?? z.sku}: sklad „${z.sklad ?? "výchozí"}“ neexistuje`);
+          selhalo = true;
+        } else {
+          for (const p of nalezene as { id: string }[]) {
+            // Nula znamená smazat řádek, ne uložit nulu – stejně jako v aplikaci.
+            const { error } = stock === 0
+              ? await svc.from("inventory_stock").delete().eq("product_id", p.id).eq("warehouse_id", cil)
+              : await svc.from("inventory_stock").upsert(
+                  { product_id: p.id, warehouse_id: cil, service_id: zaznam.service_id, quantity: stock },
+                  { onConflict: "product_id,warehouse_id" },
+                );
+            if (error) { chyby.push(`${z.id ?? z.sku}: ${error.message}`); selhalo = true; break; }
+          }
+        }
+      }
+
+      if (!selhalo) upraveno += nalezene.length;
     }
     vysledek.products = { updated: upraveno, not_found: nenalezeno };
   }

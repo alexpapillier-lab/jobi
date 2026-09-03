@@ -6,7 +6,7 @@ import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
-import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import { loadInventoryFromDb, saveInventoryToDb, celkemKusu, vychoziSklad, stavyZeStarehoTvaru } from "../lib/inventoryDb";
 import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 
@@ -256,8 +256,14 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
             ...c,
             modelIds: c.modelIds ?? [],
           }));
-          const products = merged.products ?? [];
-          await saveInventoryToDb(activeServiceId, { productCategories, products });
+          /* Data z localStorage znají jen jedno číslo `stock`. Sklady přijdou
+             z databáze a zásoba padne do výchozího – jinak by se ztratila. */
+          const vychozi = vychoziSklad(invDb.warehouses);
+          const products = (merged.products ?? []).map((p) => {
+            const stavy = stavyZeStarehoTvaru(p, vychozi);
+            return { ...p, stockByWarehouse: stavy, stock: celkemKusu(stavy) };
+          });
+          await saveInventoryToDb(activeServiceId, { productCategories, products, warehouses: invDb.warehouses });
           invProducts = products;
         }
       }

@@ -82,6 +82,27 @@ describe("zmenyOprav", () => {
   });
 });
 
+describe("zmenyProduktu – sklad", () => {
+  it("bez warehouse projde jako dřív (existující integrace nesmí přestat)", () => {
+    const v = zmenyProduktu([{ sku: "BAT-V8", stock: 4 }]);
+    expect(v.chyby).toEqual([]);
+    expect(v.zmeny[0].sklad).toBeUndefined();
+    expect(v.zmeny[0].hodnoty.stock).toBe(4);
+  });
+
+  it("warehouse se propíše", () => {
+    const v = zmenyProduktu([{ sku: "BAT-V8", stock: 4, warehouse: "Dodavatel" }]);
+    expect(v.chyby).toEqual([]);
+    expect(v.zmeny[0].sklad).toBe("Dodavatel");
+  });
+
+  it("warehouse bez stock je chyba, ne tichý souhlas", () => {
+    const v = zmenyProduktu([{ sku: "BAT-V8", price: 100, warehouse: "Dodavatel" }]);
+    expect(v.zmeny).toEqual([]);
+    expect(v.chyby[0]).toMatch(/warehouse/);
+  });
+});
+
 describe("otiskTela", () => {
   it("stejné tělo dá stejný otisk, jiné jiný", async () => {
     const a = await otiskTela({ products: [{ sku: "A", stock: 1 }] });
