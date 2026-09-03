@@ -58,7 +58,13 @@ src-tauri/jobi-universal.zip
 web/.claude/
 
 # Supabase CLI cache (vzniká při práci s CLI, nepatří do repa)
-supabase/.temp/linked-project.json
+supabase/.temp/
+
+# Deno lock. Vzniká sám při `deno check` nad edge funkcemi, ale nikdo ho
+# nečte: v repu není deno.json a Supabase CLI si závislosti při nasazení
+# bundluje po svém. Jen by se měnil pod rukama. Kdybychom verze opravdu
+# chtěli pinovat, chce to vědomě přidat deno.json a kontrolu v CI.
+deno.lock
 
 # Web build
 dist-web
