@@ -10,6 +10,7 @@ import { useEntitlements } from "../hooks/useEntitlements";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
+import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { supabase } from "../lib/supabaseClient";
 const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
 
@@ -443,7 +444,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     if (!activeServiceId) return;
     const t = setTimeout(() => {
       saveInventoryToDb(activeServiceId, data).then((r) => {
-        if (!r.error) lastSaveAtRef.current = Date.now();
+        if (!r.error) { lastSaveAtRef.current = Date.now(); oznamZmenuKatalogu(activeServiceId); }
         else {
           const now = Date.now();
           if (now - saveErrorToastRef.current > 5000) {
@@ -796,6 +797,22 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         x.id === id ? { ...x, publicVisible: x.publicVisible === false } : x,
       ),
     }) as InventoryData);
+  };
+
+  /* Odklikat stovku produktů po jedné nikdo nebude. Působí jen na to, co je
+     zrovna vidět podle filtrů. */
+  const hromadnaViditelnost = (zverejnit: boolean) => {
+    const dotcene = new Set(filteredProducts.map((p) => p.id));
+    setData((d) => ({
+      ...d,
+      products: d.products.map((p) =>
+        dotcene.has(p.id) ? { ...p, publicVisible: zverejnit } : p,
+      ),
+    }));
+    showToast(
+      `${zverejnit ? "Zveřejněno" : "Skryto"}: ${dotcene.size} ${dotcene.size === 1 ? "produkt" : dotcene.size < 5 ? "produkty" : "produktů"}`,
+      "success",
+    );
   };
 
   const stitekViditelnosti = (
@@ -2128,8 +2145,23 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
 
         {/* Product List - Full Width */}
         <div style={{ ...card, marginTop: 32 }}>
-          <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
-            Seznam produktů
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>
+              Seznam produktů
+            </div>
+            {ukazatViditelnost && filteredProducts.length > 0 && (
+              <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                  Ve veřejném skladu ({filteredProducts.length} zobrazených):
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
+                  Zveřejnit vše
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(false)}>
+                  Skrýt vše
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Filters */}

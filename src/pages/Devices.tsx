@@ -5,6 +5,7 @@ import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/i
 import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
+import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
 import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 
@@ -290,6 +291,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       }
       saveDevicesToDb(activeServiceId, data).then((r) => {
         if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
+        else oznamZmenuKatalogu(activeServiceId);
       });
     }, 500);
     return () => clearTimeout(t);
@@ -955,6 +957,28 @@ DETALY: Výměna opotřebované baterie
   /* Značky, kategorie a modely jsou v úzkých sloupcích – vejde se sem jen
      krátký štítek, ne celé tlačítko jako u oprav. Skrytí se v API dědí dolů
      (skrytá značka schová i kategorie, modely a jejich opravy). */
+  /* Odklikat stovku oprav po jedné nikdo nebude. Působí jen na to, co je
+     zrovna vidět podle filtrů – „zveřejnit vše“ napříč celým servisem by
+     byl moc velký kanón na omylem stisknuté tlačítko. */
+  const hromadnaViditelnost = (zverejnit: boolean) => {
+    if (!activeServiceId) return;
+    const dotcene = new Set(filteredRepairs.map((r) => r.id));
+    const nova: DevicesData = {
+      ...data,
+      repairs: data.repairs.map((r) =>
+        dotcene.has(r.id) ? { ...r, publicVisible: zverejnit } : r,
+      ),
+    };
+    setData(nova);
+    saveDevicesToDb(activeServiceId, nova).then((r) => {
+      if (r.error) showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error, "error");
+      else showToast(
+        `${zverejnit ? "Zveřejněno" : "Skryto"}: ${dotcene.size} ${dotcene.size === 1 ? "oprava" : dotcene.size < 5 ? "opravy" : "oprav"}`,
+        "success",
+      );
+    });
+  };
+
   const stitekViditelnosti = (
     druh: "brands" | "categories" | "models",
     polozka: { id: string; publicVisible?: boolean },
@@ -1887,8 +1911,23 @@ DETALY: Výměna opotřebované baterie
       {/* Bez stropu z `card`: panely vedle sebe mají uvnitř vlastní scroll
           (flex:1 + overflowY), tenhle ne, takže by seznam vytekl ven z pozadí. */}
       <div style={{ ...card, marginTop: 16, maxHeight: "none" }}>
-        <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
-          Seznam oprav
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>
+            Seznam oprav
+          </div>
+          {ukazatViditelnost && filteredRepairs.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                Ve veřejném ceníku ({filteredRepairs.length} zobrazených):
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
+                Zveřejnit vše
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(false)}>
+                Skrýt vše
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Filters */}

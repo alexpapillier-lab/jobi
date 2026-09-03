@@ -435,3 +435,9 @@ verify_jwt = false
 # ne přihlášením do aplikace, takže JWT kontrola by ho jen odmítla.
 [functions.api-write]
 verify_jwt = false
+
+[functions.public-embed]
+verify_jwt = false
+
+[functions.public-webhook-ping]
+verify_jwt = false

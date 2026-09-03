@@ -69,6 +69,10 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   /* Token se ukáže jen tady a jen jednou – v databázi je od té chvíle
      už jen jeho otisk, takže znovu ho zobrazit nejde. */
   const [cerstvyToken, setCerstvyToken] = useState<string | null>(null);
+  const [webhook, setWebhook] = useState("");
+  const [webhookUlozeny, setWebhookUlozeny] = useState("");
+  const [webhookVysledek, setWebhookVysledek] = useState<string | null>(null);
+  const [pinguji, setPinguji] = useState(false);
 
   const maCenik = has("api_catalog");
   const maSklad = has("api_inventory");
@@ -82,13 +86,15 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
     (async () => {
       const { data } = await supabase
         .from("services")
-        .select("public_slug, inventory_availability_mode")
+        .select("public_slug, inventory_availability_mode, public_webhook_url")
         .eq("id", activeServiceId)
         .maybeSingle();
       if (zruseno) return;
-      const d = data as { public_slug?: string | null; inventory_availability_mode?: Rezim } | null;
+      const d = data as { public_slug?: string | null; inventory_availability_mode?: Rezim; public_webhook_url?: string | null } | null;
       setSlug(d?.public_slug ?? null);
       setRezim(d?.inventory_availability_mode ?? "boolean");
+      setWebhook(d?.public_webhook_url ?? "");
+      setWebhookUlozeny(d?.public_webhook_url ?? "");
       setNacitam(false);
     })();
     return () => { zruseno = true; };
@@ -159,6 +165,42 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
     showToast("Token odvolán", "success");
     nactiTokeny();
   }, [activeServiceId, nactiTokeny]);
+
+  const ulozWebhook = useCallback(async () => {
+    if (!activeServiceId || !supabase) return;
+    const hodnota = webhook.trim();
+    const { error } = await (supabase.from("services") as any)
+      .update({ public_webhook_url: hodnota || null })
+      .eq("id", activeServiceId);
+    if (error) { showToast("Uložení se nepodařilo: " + error.message, "error"); return; }
+    setWebhookUlozeny(hodnota);
+    showToast("Uloženo", "success");
+  }, [activeServiceId, webhook]);
+
+  const pingni = useCallback(async () => {
+    if (!activeServiceId || !supabase || !supabaseAnonKey) return;
+    setPinguji(true);
+    setWebhookVysledek(null);
+    try {
+      const { data: obnovena } = await supabase.auth.refreshSession();
+      const jwt = obnovena?.session?.access_token
+        ?? (await supabase.auth.getSession()).data?.session?.access_token;
+      const r = await supabaseFetch(`${supabaseUrl}/functions/v1/public-webhook-ping`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}`, apikey: supabaseAnonKey },
+        body: JSON.stringify({ serviceId: activeServiceId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      setWebhookVysledek(
+        d.skipped ? `Neodesláno: ${d.reason}`
+        : d.ok ? `Server odpověděl ${d.status} – v pořádku.`
+        : d.error ? `Nepovedlo se: ${d.error}`
+        : `Server odpověděl ${d.status}.`,
+      );
+    } finally {
+      setPinguji(false);
+    }
+  }, [activeServiceId]);
 
   const zkopiruj = async (text: string) => {
     try {
@@ -340,6 +382,39 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           </p>
         </>
       )}
+
+      <div style={nadpis}>Upozornění na změnu</div>
+      <p style={popis}>
+        Statický web se sám nedozví, že jsi zdražil. Zadej sem adresu, na kterou
+        po úpravě ceníku nebo skladu pošleme POST – typicky „deploy hook“
+        z Cloudflare Pages nebo Vercelu, který spustí přegenerování stránek.
+        Nepovinné.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <input
+          placeholder="https://…"
+          value={webhook}
+          onChange={(e) => setWebhook(e.target.value)}
+          style={{
+            flex: "1 1 320px", padding: "10px 12px", borderRadius: 8,
+            border: "1px solid var(--border)", background: "var(--panel)",
+            color: "var(--text)", fontSize: 13,
+          }}
+        />
+        <Tlacitko onClick={ulozWebhook} disabled={webhook.trim() === webhookUlozeny}>Uložit</Tlacitko>
+        <Tlacitko onClick={pingni} disabled={pinguji || !webhookUlozeny}>
+          {pinguji ? "Zkouším…" : "Poslat zkušební"}
+        </Tlacitko>
+      </div>
+      {webhookVysledek && (
+        <p style={{ ...popis, color: /v pořádku/.test(webhookVysledek) ? "var(--accent)" : "rgba(239,68,68,0.95)" }}>
+          {webhookVysledek}
+        </p>
+      )}
+      <p style={popis}>
+        Jen <code>https</code> a jen veřejné adresy – na vnitřní síť nebo na
+        localhost se odsud posílat nedá.
+      </p>
 
       <div style={nadpis}>Zápis – tokeny</div>
       <p style={popis}>
