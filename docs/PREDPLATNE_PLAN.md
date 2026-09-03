@@ -349,6 +349,52 @@ Tři cesty, dvě z nich jsou slepé:
   šablony dokumentů + ceník. Nový obor = nový řádek v konfiguraci,
   ne nová větev v Gitu.
 
+### Co se podle oboru mění a co ne
+
+Tohle je to hlavní rozhodnutí. „Jedna appka, která se mění podle oboru"
+zní jednoduše, ale záleží na tom, **co přesně** se mění:
+
+| Mění se (data – levné) | Nemění se (kód – drahé) |
+|---|---|
+| Názvy (zakázka / návštěva) | Rozložení obrazovek |
+| Která pole se ukazují | Navigace a sidebar |
+| Statusy | Workflow – přijmu, udělám, vydám doklad |
+| Sady dokumentů | Komponenty |
+| Ceník a přednastavené úkony | Moduly a jejich chování |
+| Landing page a screenshoty | |
+
+**Rozložení se podle oboru měnit nemá.** Každý obor s vlastním layoutem
+znamená N× UI na údržbu a testování – a ty layouty by se stejně skoro
+nelišily. Formulář zakázky je formulář zakázky, ať do něj píšeš iPhone
+nebo Octavii. Liší se popisky a pole, ne uspořádání.
+
+**Funkce podle oboru nezapínat vůbec.** Tu osu už řeší
+`service_entitlements` – moduly zapíná *plán*. Kdyby je zapínal i obor,
+vznikne kombinatorika („co má dental + profi?"), která se nedá
+rozumně otestovat. Obor určuje jen to, co je při založení předvybrané.
+
+**Seedovat, ne odkazovat.** Statusy, dokumenty a ceník se při založení
+servisu **zkopírují** do jeho vlastních tabulek – přesně jak to dnes
+dělá `statuses-init-defaults`. Zákazník si je pak upraví po svém a ty
+můžeš předlohu později změnit, aniž bys komukoli přepsal nastavení.
+Slovník názvů se naopak čte živě z konfigurace, protože ten zákazník
+needituje a překlep chceš opravit všem naráz.
+**Pravidlo: co zákazník upravuje, se kopíruje. Co neupravuje, se čte živě.**
+
+**Sloupec recykluj jen tehdy, když sedí význam, ne tvar:**
+
+| Sloupec | Autoservis | Proč |
+|---|---|---|
+| `device_brand` | Značka (Škoda) | stejný význam ✅ |
+| `device_model` | Model (Octavia) | stejný význam ✅ |
+| `device_serial` | VIN | VIN *je* výrobní číslo ✅ |
+| `device_imei` | skrýt | IMEI je telekom, SPZ není sériové číslo ❌ |
+| `device_passcode` | skrýt | ❌ |
+| `custom_fields` | SPZ, stav tachometru | nová pole |
+
+SPZ se do `device_imei` vejde, ale mění se v čase a není to identifikátor
+vozu. Vrátí se to při prvním filtru nebo exportu přes veřejné API.
+
 ### Co tomu dnes stojí v cestě
 
 Prošel jsem repo, tohle jsou konkrétní místa, která je potřeba rozmotat:
@@ -392,7 +438,24 @@ Prošel jsem repo, tohle jsou konkrétní místa, která je potřeba rozmotat:
       oboru, slovník názvů, výchozí statusy, definice polí, sady
       dokumentů, výchozí ceník. *Doporučení: začít souborem v kódu*,
       dokud jsou obory dva tři. Databáze až ve chvíli, kdy budeš chtít
-      obor přidávat bez releasu.
+      obor přidávat bez releasu. Zhruba:
+
+      ```ts
+      // src/lib/verticals.ts
+      export type VerticalKey = "repair" | "auto" | "bike";
+
+      type Vertical = {
+        key: VerticalKey;
+        name: string;                    // "Autoservis"
+        terms: { ticket: string; device: string; /* … */ };
+        hiddenFields: string[];          // ["device_imei", "device_passcode"]
+        fieldLabels: Record<string, string>;  // { device_serial: "VIN" }
+        customFields: FieldDef[];        // SPZ, stav tachometru
+        defaultStatuses: StatusDef[];    // seed při založení
+        documents: DocTypeKey[];         // seed při založení
+        catalogPreset: CatalogItem[];    // seed při založení
+      };
+      ```
 - [ ] **`useTerms()` hook** a postupné nahrazování natvrdo psaných
       názvů. Nedělej to najednou – projdi obrazovku po obrazovce.
 - [ ] **Výběr oboru při registraci** → do `metadata.vertical` v
