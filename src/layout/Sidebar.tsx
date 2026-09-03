@@ -664,6 +664,12 @@ export function Sidebar({
           const isActive = item.key === active;
           const IconComponent = item.icon;
           const iconSize = expanded ? 20 : 16;
+          /* Ve sbalené liště je container na hraně použitelné šířky
+             (36px na 28px ikonu) – pro vnější glow tam není žádné místo,
+             žádné odsazení by ho neschovalo. Tam se proto použije prstenec
+             uvnitř vlastní hranice tlačítka, který nikdy nepotřebuje
+             přesahovat ven, a tedy ho nemá co oříznout. */
+          const glow = expanded ? "0 4px 16px var(--accent-glow)" : "inset 0 0 0 1.5px var(--accent-glow)";
 
           return (
             <button
@@ -686,14 +692,14 @@ export function Sidebar({
                 cursor: "pointer",
                 textAlign: "left",
                 outline: "none",
-                boxShadow: isActive ? `0 4px 16px var(--accent-glow)` : "none",
+                boxShadow: isActive ? glow : "none",
                 minWidth: 0,
                 overflow: "hidden",
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
                   e.currentTarget.style.background = "var(--panel-2)";
-                  e.currentTarget.style.boxShadow = `0 4px 16px var(--accent-glow)`;
+                  e.currentTarget.style.boxShadow = glow;
                 }
               }}
               onMouseLeave={(e) => {
