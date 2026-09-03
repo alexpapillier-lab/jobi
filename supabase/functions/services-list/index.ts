@@ -66,28 +66,49 @@ serve(async (req) => {
         );
       }
 
-      const ids = (allServices || []).map((s: { id: string }) => s.id);
-      let memberCounts: Record<string, number> = {};
-      if (ids.length > 0) {
-        const { data: counts } = await svc
-          .from("service_memberships")
-          .select("service_id")
-          .in("service_id", ids);
-        const byService: Record<string, number> = {};
-        for (const sid of ids) byService[sid] = 0;
-        for (const row of counts || []) {
-          byService[row.service_id] = (byService[row.service_id] || 0) + 1;
-        }
-        memberCounts = byService;
+      // Obsazenost a předplatné se NEPOČÍTAJÍ tady, ale funkcí
+      // service_seat_overview(). Dřív se tu členové sčítali ručně, což
+      // dávalo jiné číslo než kontrola při zvaní: nepočítaly se visící
+      // pozvánky a naopak se počítal root owner. Teď je zdroj pravdy
+      // jeden – stejné funkce, jaké hlídají limit v invite_create.
+      type SeatRow = {
+        service_id: string;
+        seats: number | null;
+        seat_limit: number | null;
+        plan_key: string | null;
+        plan_name: string | null;
+        status: string | null;
+        current_period_end: string | null;
+      };
+      const { data: seatRows, error: seatErr } = await svc.rpc("service_seat_overview", {
+        p_exclude_user: rootOwnerId,
+      });
+      if (seatErr) {
+        console.warn("[services-list] service_seat_overview selhalo:", seatErr.message);
+      }
+      const overview: Record<string, SeatRow> = {};
+      for (const row of (seatRows as SeatRow[] | null) || []) {
+        overview[row.service_id] = row;
       }
 
-      const servicesWithRole = (allServices || []).map((s: { id: string; name?: string; active?: boolean }) => ({
-        service_id: s.id,
-        service_name: s.name || "Unnamed service",
-        role: "owner",
-        active: s.active !== false,
-        member_count: memberCounts[s.id] ?? 0,
-      }));
+      const servicesWithRole = (allServices || []).map((s: { id: string; name?: string; active?: boolean }) => {
+        const o = overview[s.id];
+        return {
+          service_id: s.id,
+          service_name: s.name || "Unnamed service",
+          role: "owner",
+          active: s.active !== false,
+          // Když RPC selže, radši neposílat číslo než poslat špatné –
+          // UI počet členů schová, místo aby lhalo.
+          member_count: o ? Number(o.seats ?? 0) : undefined,
+          // null = bez omezení (Enterprise, legacy)
+          seat_limit: o ? o.seat_limit : undefined,
+          plan_key: o?.plan_key ?? undefined,
+          plan_name: o?.plan_name ?? undefined,
+          billing_status: o?.status ?? undefined,
+          current_period_end: o?.current_period_end ?? undefined,
+        };
+      });
 
       return new Response(
         JSON.stringify({ services: servicesWithRole }),

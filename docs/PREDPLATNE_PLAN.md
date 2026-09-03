@@ -322,31 +322,18 @@ Zbývá z týhle sekce: slevové kódy (sekce 5) a záchranný cron (sekce 4).
       místo chybové hlášky nabídnout upgrade.
 - [ ] **Admin obrazovka pro tebe** – přehled předplatných, tržeb a
       slevových kódů. Vedle stávající správy nároků.
-- [ ] **Owner – Správa servisů: ukázat obsazenost proti limitu.**
-      Počet členů tam **už je** (`services-list` počítá `member_count`,
-      `OwnerSettings.tsx` ho zobrazuje v seznamu i v detailu). Chybí
-      k němu ale to podstatné: **plán, stav placení a limit** – tedy
-      `3 / 6 členů · Business · platí do 14. 10.` místo holého
-      „3 členové".
+- [x] **✅ Owner – Správa servisů ukazuje obsazenost proti limitu.**
+      `3 / 6 členů · Business` v seznamu, v detailu k tomu stav
+      předplatného a datum konce období. Vyčerpaný limit je červeně,
+      takže je na první pohled vidět servis, který nikoho nepozve.
 
-      **⚠️ Pozor, `member_count` a `service_seat_count()` dnes počítají
-      každé něco jiného:**
-
-      | | `member_count` (Owner) | `service_seat_count()` (limit) |
-      |---|---|---|
-      | členové | ✓ | ✓ |
-      | nepřijaté pozvánky | ✗ | ✓ |
-      | root owner | ✓ | vynechán |
-
-      Kdyby to tak zůstalo, uvidíš v Owner obrazovce „3 členové", ale
-      servisu se při zvaní čtvrtého člověka ohlásí vyčerpaný limit –
-      protože visí pozvánka. To je přesně ten druh nesouladu, kvůli
-      kterému ti někdo napíše.
-      *Řešení: v `services-list` přestat počítat členy ručně a volat
-      `service_seat_count(service_id, ROOT_OWNER_ID)`.* Funkce má
-      EXECUTE pro `service_role`, pod kterým `services-list` běží, takže
-      stačí ji zavolat – jedno místo pravdy místo dvou.
-      K tomu přidat `service_seat_limit()` a plán ze `service_billing`.
+      Původní `member_count` se počítal v `services-list` ručně a dával
+      jiné číslo než kontrola při zvaní – nepočítal visící pozvánky a
+      naopak počítal root ownera. Teď obojí počítá `service_seat_count()`
+      přes novou `service_seat_overview()`
+      (`20260903210000_service_seat_overview.sql`), takže je jedno místo
+      pravdy. Ověřeno na Postgresu: servis s 1 členem a 1 visící
+      pozvánkou na Starteru hlásí `2 / 1` a limit vyčerpán.
 
 ---
 
@@ -436,9 +423,8 @@ kdo to smí spustit – dnes root owner, nově úspěšná platba.
       pracují, je nejjistější způsob, jak přijít o zákazníka.
 - [ ] Nezapomenout, že aplikaci používá i root owner napříč servisy –
       ten se do limitu počítat nesmí (v týmu se stejně nezobrazuje).
-- [ ] **Sjednotit počítání členů.** `services-list` si dnes počítá
-      `member_count` sám a jinak než `service_seat_count()` – detaily
-      a tabulka rozdílů v sekci 3.
+- [x] **✅ Sjednoceno počítání členů** – `services-list` už nepočítá
+      členy sám, viz sekce 3.
 - [ ] **Doplňková místa za +99 Kč/měs**, na Starteru se stropem (A3).
       Ve Stripu jako `quantity` u položky předplatného, ne jako další
       předplatné – změna počtu pak umí proraci sama.
