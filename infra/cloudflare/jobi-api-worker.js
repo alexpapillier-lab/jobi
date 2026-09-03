@@ -19,9 +19,48 @@ const MAPA = {
   "/v1/inventory": "/functions/v1/public-inventory",
   "/v1/embed.js": "/functions/v1/public-embed",
   "/v1/write": "/functions/v1/api-write",
-  "/v1/docs": "/functions/v1/public-docs/docs",
-  "/v1/openapi.json": "/functions/v1/public-docs/openapi.json",
+  "/v1/openapi.json": "/functions/v1/public-docs",
 };
+
+/**
+ * Vykreslená dokumentace. Servíruje ji Worker, ne edge funkce: Supabase
+ * přepisuje edge funkcím Content-Type text/html na text/plain, aby na
+ * *.supabase.co nešlo hostovat cizí stránky.
+ *
+ * Redoc, ne Swagger UI – Redoc nemá tlačítko „vyzkoušet“. U čtení by
+ * nevadilo, je veřejné, ale u zápisu by lidi vkládali svůj token do
+ * cizí stránky.
+ */
+const STRANKA_DOKUMENTACE = `<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Jobi</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #cekam { padding: 40px; color: #667; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div id="cekam">Načítám dokumentaci…</div>
+  <div id="redoc"></div>
+  <script src="https://cdn.redoc.ly/redoc/v2.5.0/bundles/redoc.standalone.js"></script>
+  <script>
+    Redoc.init(
+      "/v1/openapi.json",
+      {
+        expandResponses: "200",
+        nativeScrollbars: true,
+        theme: { colors: { primary: { main: "#0E7C6B" } } },
+      },
+      document.getElementById("redoc"),
+      function () { var c = document.getElementById("cekam"); if (c) { c.remove(); } }
+    );
+  </script>
+</body>
+</html>`;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +83,16 @@ export default {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
+    }
+
+    if (cesta === "/v1/docs") {
+      return new Response(STRANKA_DOKUMENTACE, {
+        headers: {
+          ...CORS,
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
     }
 
     const cil = MAPA[cesta];
@@ -130,7 +179,7 @@ export default {
     const hlavicky = new Headers(odpoved.headers);
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "5");
+    hlavicky.set("X-Jobi-Verze", "6");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {
