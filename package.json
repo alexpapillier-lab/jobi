@@ -61,7 +61,8 @@
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
-    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx"
+    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
+    "api:spec": "node scripts/openapi-json.mjs"
   },
   "type": "module",
   "version": "0.2.5"

@@ -441,3 +441,6 @@ verify_jwt = false
 
 [functions.public-webhook-ping]
 verify_jwt = false
+
+[functions.public-docs]
+verify_jwt = false

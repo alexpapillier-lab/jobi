@@ -19,6 +19,8 @@ const MAPA = {
   "/v1/inventory": "/functions/v1/public-inventory",
   "/v1/embed.js": "/functions/v1/public-embed",
   "/v1/write": "/functions/v1/api-write",
+  "/v1/docs": "/functions/v1/public-docs/docs",
+  "/v1/openapi.json": "/functions/v1/public-docs/openapi.json",
 };
 
 const CORS = {
@@ -128,7 +130,7 @@ export default {
     const hlavicky = new Headers(odpoved.headers);
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "4");
+    hlavicky.set("X-Jobi-Verze", "5");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {

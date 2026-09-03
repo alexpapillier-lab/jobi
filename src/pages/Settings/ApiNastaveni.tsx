@@ -424,6 +424,30 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         </>
       )}
 
+      <div style={nadpis}>Dokumentace pro webaře</div>
+      <p style={popis}>
+        Tohle pošli tomu, kdo ti bude API napojovat. Je tam popsaná každá adresa,
+        co v odpovědi přijde a co znamená.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <a
+          href={`${VEREJNE_API}/docs`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={odkazJakoTlacitko}
+        >
+          Otevřít dokumentaci
+        </a>
+        <Tlacitko onClick={() => zkopiruj(`${VEREJNE_API}/docs`)}>Kopírovat odkaz</Tlacitko>
+        <Tlacitko onClick={() => zkopiruj(`${VEREJNE_API}/openapi.json`)}>
+          Kopírovat strojový popis
+        </Tlacitko>
+      </div>
+      <p style={popis}>
+        Strojový popis (<code>openapi.json</code>) se dá naimportovat do Postmanu
+        nebo Insomnie a vygenerovat si z něj klienta – webař pak nemusí nic opisovat.
+      </p>
+
       <div style={nadpis}>Kolik se toho načítá</div>
       {vyuziti && (vyuziti.tyden > 0 ? (
         <>
@@ -591,6 +615,21 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
     </div>
   );
 }
+
+/* Odkaz, ne tlačítko – otevírá se v novém panelu, takže musí jít
+   otevřít i prostředním tlačítkem myši. Vzhled si bere z Tlacitko. */
+const odkazJakoTlacitko: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "8px 14px",
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--panel-2)",
+  color: "var(--text)",
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: "none",
+};
 
 function Znacka({ aktivni, popisek }: { aktivni: boolean; popisek: string }) {
   return (
