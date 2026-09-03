@@ -5,6 +5,7 @@ import { reportError } from "../lib/reportError";
 import { SmsChat } from "../components/SmsChat";
 import { normalizePhone } from "../lib/phone";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 
 type ConversationRow = {
   id: string;
@@ -96,6 +97,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const isNarrow = useIsNarrow();
   const [selected, setSelected] = useState<ConversationRow | null>(null);
   const [synthetic, setSynthetic] = useState<{ phone: string; displayName: string } | null>(null);
 
@@ -336,16 +338,26 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
   const panelTicketCode = selected?.ticket_code ?? null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, padding: "var(--pad-24)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, padding: isNarrow ? "var(--pad-12)" : "var(--pad-24)" }}>
       <div style={{ flexShrink: 0, marginBottom: 16 }}>
         <h1 style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", margin: 0 }}>SMS chaty</h1>
-        <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Vyberte konverzaci – chat se zobrazí zde. Archivované zůstávají u zakázky, jen se tu neschovávají.
-        </p>
+        {/* Na telefonu ukrajoval tenhle popisek tři řádky z obrazovky,
+            na které je jinak vidět jen pár zpráv. */}
+        {!isNarrow && (
+          <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
+            Vyberte konverzaci – chat se zobrazí zde. Archivované zůstávají u zakázky, jen se tu neschovávají.
+          </p>
+        )}
       </div>
 
-      <div style={{ display: "flex", gap: 24, flex: 1, minHeight: 0 }}>
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: "0 0 320px" }}>
+      {/*
+        Seznam (pevných 320 px) a chat vedle sebe se na telefon nevejdou –
+        seznam přetekl a na chat nezbylo nic. Stejně jako u Zákazníků se
+        proto ukazuje vždycky jen jedno.
+      */}
+      <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", gap: isNarrow ? 12 : 24, flex: 1, minHeight: 0 }}>
+        {(!isNarrow || !(selected || synthetic)) && (
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: isNarrow ? "1 1 auto" : "0 0 320px" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "var(--text)", cursor: "pointer" }}>
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
             Zobrazit archivované
@@ -466,7 +478,9 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
             </div>
           )}
         </div>
+        )}
 
+        {(!isNarrow || (selected || synthetic)) && (
         <div
           style={{
             flex: 1,
@@ -492,7 +506,26 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
                   borderBottom: "1px solid var(--border)",
                 }}
               >
-                <div style={{ minWidth: 0 }}>
+                {isNarrow && (
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    aria-label="Zpět na seznam konverzací"
+                    style={{
+                      flexShrink: 0,
+                      minWidth: "var(--touch-min)",
+                      minHeight: "var(--touch-min)",
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--text)",
+                      fontSize: 18,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ←
+                  </button>
+                )}
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{panelTitle}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                     {panelTicketCode && panelTicketId && (
@@ -570,6 +603,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

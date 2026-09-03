@@ -946,7 +946,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           Zakázky podle stavu
         </h2>
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na kartu pro zobrazení pouze zakázek v daném stavu.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 150px), 1fr))", gap: 12 }}>
           {Object.entries(stats.byStatus).map(([status, count]) => {
             const isActive = drillDown?.type === "status" && drillDown.value === status;
             return (
@@ -967,7 +967,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
 
       {/* Nejčastější opravy a zařízení */}
       {viewMode !== "table" && (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
         <div
           style={{
             background: "var(--panel)",
@@ -1075,7 +1075,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           Měsíční přehled
         </h2>
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na měsíc pro zobrazení pouze zakázek v daném měsíci.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 12 }}>
           {stats.monthlyStats.map((month) => {
             const isActive = drillDown?.type === "month" && drillDown.year === month.year && drillDown.month === month.monthIndex;
             return (

@@ -8,6 +8,7 @@ import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
 import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 
 type Brand = {
   id: string;
@@ -87,6 +88,7 @@ function loadDevicesFromKey(key: string): DevicesData {
 const EMPTY_DEVICES: DevicesData = { brands: [], categories: [], models: [], repairs: [] };
 
 export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
+  const isNarrow = useIsNarrow();
   const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
   /** Přepínače viditelnosti mají smysl, jen když servis ceník ven posílá. */
   const { has: maModul } = useEntitlements(activeServiceId);
@@ -1094,7 +1096,7 @@ DETALY: Výměna opotřebované baterie
             </div>
             
             {/* Summary */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 100px), 1fr))", gap: 12, marginBottom: 20 }}>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
                 <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.brands.length}
@@ -1261,17 +1263,21 @@ DETALY: Výměna opotřebované baterie
         <div>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zařízení a opravy</div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-            Spravujte značky, kategorie, modely a jejich opravy. Použijte ↑↓ pro změnu pořadí.
+            Použijte ↑↓ pro změnu pořadí.
           </div>
         </div>
-        <Button variant="primary" onClick={() => setShowImport(true)} style={{ marginRight: 120 }}>
+        {/* Viz Sklad: 120 px uhýbá plovoucímu "+", které na telefonu
+            sedí jinde. */}
+        <Button variant="primary" onClick={() => setShowImport(true)} style={isNarrow ? undefined : { marginRight: 120 }}>
           Import
         </Button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* First row: Brands and Categories */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+        {/* Na telefonu pod sebe – ve dvou sloupcích zbylo na panel 167 px
+            a do pole "Nová značka…" se vešlo "Nová zn". */}
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "repeat(2, 1fr)", gap: 16 }}>
         {/* BRANDS */}
         <div style={card}>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Značky</div>
@@ -1521,7 +1527,7 @@ DETALY: Výměna opotřebované baterie
         </div>
 
         {/* Second row: Models and Repairs */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 2fr", gap: 16 }}>
         {/* MODELS */}
           <div style={{ ...card, maxHeight: "400px" }}>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>
@@ -1755,7 +1761,7 @@ DETALY: Výměna opotřebované baterie
                   onChange={(e) => setNewRepair((p) => ({ ...p, name: e.target.value }))}
                   style={inputStyle}
                 />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
                   <input
                     placeholder="Cena (Kč)"
                     type="number"
@@ -2180,7 +2186,7 @@ DETALY: Výměna opotřebované baterie
                           onChange={(e) => setEditRepairData((p) => ({ ...p, name: e.target.value }))}
                           style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
                         />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
                           <input
                             placeholder="Cena (Kč)"
                             type="number"

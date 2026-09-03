@@ -44,7 +44,7 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
         flexShrink: 0, marginLeft: 10,
       }} />
 
-      <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <TicketCode code={t.code} dense />
         <TicketDate value={t.createdAt} />
         <TicketDevice label={t.deviceLabel} dense />
@@ -53,7 +53,7 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>
         {meta?.isFinal && <span style={{ fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 4px", borderRadius: 4, background: `${bg}18`, color: bg, flexShrink: 0 }}>✓</span>}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}
         </div>

@@ -1,0 +1,79 @@
+/*
+ * Mobilní vrstva.
+ *
+ * Webová verze Jobi se otevírá i na telefonu v dílně, takže musí být
+ * použitelná na 375 px (a přežít i 320 px na iPhonu SE). Tahle vrstva
+ * řeší jen to, co se nedá spravit v jednotlivých komponentách – zbytek
+ * je přímo u nich, protože aplikace stylu ve velkém používá inline
+ * styly a ty mají přednost před CSS třídou.
+ *
+ * Proto je tu !important častěji, než by bylo jinde zdrávo: bez něj
+ * by pravidlo prohrálo s inline stylem. Vždycky jde o pojistku proti
+ * přetečení, nikdy o vzhled.
+ *
+ * Hranice 900 px odpovídá useIsNarrow – ať se CSS a JS neliší.
+ */
+
+@media (max-width: 900px) {
+  /*
+   * iOS Safari přiblíží stránku pokaždé, když uživatel klepne do pole
+   * s písmem menším než 16 px. Po přiblížení je stránka širší než
+   * displej – a přesně odtud pochází „musím scrollovat do boku".
+   * Aplikace má pole na 13 px, takže se to dělo úplně všude.
+   *
+   * Řeší se to zvětšením písma, ne zákazem přibližování
+   * (maximum-scale=1 bere možnost zvětšit si text komukoli, kdo to
+   * potřebuje). 16 px je hranice, od které iOS nezoomuje.
+   */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Nic uvnitř stránky nesmí být širší než stránka sama. */
+  img,
+  svg:not([data-fixed-size]),
+  canvas,
+  video,
+  table {
+    max-width: 100%;
+  }
+
+  /* Dlouhý e-mail, IMEI nebo URL jinak roztáhne rodiče přes okraj.
+
+     Schválně break-word, ne anywhere: `anywhere` se počítá i do minimální
+     vnitřní šířky prvku, takže flexbox pak klidně zmáčkne tlačítko "Dnes"
+     na dva znaky na řádek. `break-word` zalomí jen když opravdu není zbytí. */
+  main {
+    overflow-wrap: break-word;
+  }
+
+  /*
+   * Pole si drží pevné šířky (360, 420…) z desktopového rozvržení.
+   * Na telefonu se musí smrštit, jinak vystrčí celý řádek ven.
+   */
+  input,
+  textarea,
+  select {
+    max-width: 100%;
+  }
+}
+
+/*
+ * Dotykové ovládání – nezávisle na šířce okna.
+ *
+ * Na dotyku není kurzor, takže :hover zůstane „zaseknutý" na naposledy
+ * klepnutém prvku, dokud uživatel neklepne jinam. Karta pak zůstane
+ * nadzvednutá a vypadá jako vybraná, i když není.
+ */
+@media (hover: none) {
+  .glass-panel:hover,
+  .card:hover,
+  button:hover:not(:disabled),
+  a:hover,
+  [role="button"]:hover {
+    transform: none;
+    box-shadow: inherit;
+  }
+}

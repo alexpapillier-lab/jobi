@@ -187,6 +187,12 @@ export function AppLayout({
           invoicingEnabled={invoicingEnabled}
           smsEnabled={smsEnabled}
           smsUnreadCount={smsUnreadCount}
+          services={services}
+          activeServiceId={activeServiceId}
+          setActiveServiceId={setActiveServiceId}
+          userEmail={userEmail}
+          userProfile={userProfile ?? null}
+          onSignOut={handleSignOut}
         />
       )}
 
@@ -208,7 +214,15 @@ export function AppLayout({
           ref={mainRef}
           style={{
             flex: 1,
-            padding: "var(--pad-24)",
+            /* Na telefonu ubírá 24 px po stranách 13 % šířky displeje.
+               Karty pak nemají kam růst a obsah se v nich mačká.
+
+               Dlouhé zápisy místo zkratky `padding`: React varuje, když se
+               v jednom stylu míchá zkratka s `paddingBottom` a jedna z nich
+               se mezi vykresleními mění. */
+            paddingTop: isNarrow ? "var(--pad-16)" : "var(--pad-24)",
+            paddingRight: isNarrow ? "var(--pad-12)" : "var(--pad-24)",
+            paddingLeft: isNarrow ? "var(--pad-12)" : "var(--pad-24)",
             paddingBottom: isNarrow
               ? "calc(var(--bottom-nav-h) + var(--safe-bottom) + 12px)"
               : "calc(var(--pad-24) + 8px)",

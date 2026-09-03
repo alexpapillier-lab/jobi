@@ -7,6 +7,7 @@ import { reportError } from "../lib/reportError";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useEntitlements } from "../hooks/useEntitlements";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
@@ -416,6 +417,7 @@ type InventoryProps = { activeServiceId: string | null };
 const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [] };
 
 export default function Inventory({ activeServiceId }: InventoryProps) {
+  const isNarrow = useIsNarrow();
   const { hasCapability } = useActiveRole(activeServiceId);
   const { has: maModul } = useEntitlements(activeServiceId);
   /* Přepínač viditelnosti dává smysl jen když servis sklad ven vůbec posílá. */
@@ -1365,7 +1367,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             </div>
             
             {/* Summary */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 100px), 1fr))", gap: 12, marginBottom: 20 }}>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
                 <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.products.length}
@@ -1511,7 +1513,10 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Sklad</div>
         </div>
-        <Button variant="primary" data-tour="inventory-import" onClick={() => setShowImport(true)} style={{ marginRight: 120 }}>
+        {/* Odsazení uhýbá plovoucímu "+" v pravém dolním rohu. Na telefonu
+            je "+" nad spodní lištou, ne vedle nadpisu, takže by 120 px jen
+            odstrčilo tlačítko doprostřed. */}
+        <Button variant="primary" data-tour="inventory-import" onClick={() => setShowImport(true)} style={isNarrow ? undefined : { marginRight: 120 }}>
           Import
         </Button>
       </div>
@@ -1806,7 +1811,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* First row: Brands and Categories */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+        {/* Na telefonu vedle sebe ne – na panel zbylo 167 px a seznamy
+            značek i kategorií se v něm zalomily na jedno písmeno na řádek. */}
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "repeat(2, 1fr)", gap: 16 }}>
         {/* BRANDS */}
         <div style={card}>
             <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
@@ -1905,7 +1912,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         </div>
 
         {/* Second row: Models, Categories and Products */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 2fr", gap: 16 }}>
         {/* MODELS */}
           <div style={{ ...card, maxHeight: "400px" }}>
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
@@ -2151,7 +2158,9 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                     type="number"
                     value={newProduct.purchasePrice}
                     onChange={(e) => setNewProduct((p) => ({ ...p, purchasePrice: e.target.value }))}
-                    style={inputStyle}
+                    /* Třetí pole v dvousloupci zůstávalo samo na druhém řádku
+                       a v půlce šířky se do něj nevešel ani popisek. */
+                    style={{ ...inputStyle, gridColumn: "1 / -1" }}
                   />
                 </div>
                 <input
@@ -2378,7 +2387,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           {/* Products Display */}
           <div style={{ 
             display: productDisplayMode === "grid" ? "grid" : "flex",
-            gridTemplateColumns: productDisplayMode === "grid" ? "repeat(auto-fill, minmax(300px, 1fr))" : undefined,
+            gridTemplateColumns: productDisplayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))" : undefined,
             flexWrap: productDisplayMode === "grid" ? undefined : productDisplayMode === "list" ? "nowrap" : "wrap",
             flexDirection: productDisplayMode === "list" ? "column" : "row",
             gap: productDisplayMode === "compact" ? 8 : 16,

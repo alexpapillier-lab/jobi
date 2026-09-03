@@ -50,7 +50,9 @@ function ClaimBadge({ size = "normal" }: { size?: "small" | "normal" }) {
 
 function Controls({ statusPicker, printButton }: { statusPicker: React.ReactNode; printButton?: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+    /* marginLeft: auto drží dvojici u pravého okraje i tehdy, když se
+       řádek na úzké obrazovce zalomí a zbylo na ni málo místa. */
+    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
       {statusPicker}
       {printButton}
     </div>
@@ -74,7 +76,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         onMouseLeave={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}04`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}40`; }}
       >
         <div style={{ width: 8, height: 8, borderRadius: 4, background: CLAIM_ACCENT, flexShrink: 0, marginLeft: 10 }} />
-        <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 60 }}>{c.code}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, minWidth: 70 }}>{dateStr}</span>
           <span style={{ minWidth: 0, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)", flexShrink: 1 }}>{c.device_label || "—"}</span>
@@ -105,7 +107,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
         onMouseLeave={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}03`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}30`; }}
       >
         <div style={{ width: 6, background: CLAIM_ACCENT, flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 65 }}>{c.code}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
           <span style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 80, maxWidth: 180, flexShrink: 1 }}>{c.device_label || "—"}</span>
@@ -138,7 +140,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
       >
         <div style={{ width: 4, background: CLAIM_ACCENT, flexShrink: 0, borderRadius: "10px 0 0 10px" }} />
         <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24, flexWrap: "wrap" }}>
             <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
             <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
             <ClaimBadge />
@@ -147,7 +149,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
               <DeviceIcon size={12} color={CLAIM_ACCENT} />
               <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</span>
             </div>
-            <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.customer_name ?? "—"}</span>
+            <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{c.customer_name ?? "—"}</span>
             <div style={{ flex: 1 }} />
             <Controls statusPicker={statusPicker} printButton={printButton} />
           </div>
@@ -182,7 +184,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
           padding: "8px 12px",
           background: `linear-gradient(135deg, ${CLAIM_ACCENT}15, ${CLAIM_ACCENT}06)`,
           borderBottom: `1px solid ${CLAIM_ACCENT}18`,
-          display: "flex", alignItems: "center", gap: 6, minWidth: 0,
+          display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap",
         }}>
           <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
@@ -229,7 +231,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
     >
       <div style={{ width: 4, background: CLAIM_ACCENT, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
           <ClaimBadge />
@@ -241,7 +243,7 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
           <div style={{ flex: 1 }} />
           <Controls statusPicker={statusPicker} printButton={printButton} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13, color: CLAIM_ACCENT, minWidth: 0, overflow: "hidden" }}>
             <DeviceIcon size={12} color={CLAIM_ACCENT} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</span>

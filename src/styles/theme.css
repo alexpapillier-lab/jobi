@@ -38,6 +38,21 @@
   --topbar-h: 64px;
 
   /* ------------------------------------------------------------------
+     Pásma z-indexů
+
+     Tokeny se v inline stylech nedají použít, takže je tohle jen soupis –
+     ale platný. Vzniklo poté, co na telefonu spodní navigace (1002)
+     překrývala okna, která si vystačila se stovkou, a plovoucí "+"
+     s hodnotou 12000 viselo úplně přes všechno.
+
+        0–999      obsah stránky, lepivé hlavičky
+       1000–1099   navigace (boční lišta, spodní lišta) a plovoucí "+"
+       1100–1999   okna a jejich zastínění
+       9990–10999  rozbalovací nabídky nad okny (stavy, výběry, kalendář)
+       12000+      celoobrazovkové vrstvy (nápověda zkratek, hlášky)
+     ------------------------------------------------------------------ */
+
+  /* ------------------------------------------------------------------
      ŠKÁLY – doplněno 2026-09 podle docs/AUDIT_UI_2026-09.md
 
      Audit napočítal 19 velikostí písma, 17 poloměrů a 15 mezer, protože

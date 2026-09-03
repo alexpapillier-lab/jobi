@@ -232,8 +232,11 @@ function ToastItem({ toast }: { toast: Toast }) {
         display: "flex",
         alignItems: "center",
         gap: 12,
-        minWidth: 280,
-        maxWidth: 400,
+        /* Pevných 280–400 px se na 320px displeji (iPhone SE) nevejde ani
+           bez odsazení hlášky od okrajů. Na širokém displeji zůstává beze
+           změny, min() se projeví až když je okno užší. */
+        minWidth: "min(280px, 100%)",
+        maxWidth: "min(400px, calc(100vw - 40px))",
         pointerEvents: "auto",
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
         fontSize: 14,

@@ -47,7 +47,7 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
         Jeden řádek místo dvou – stejně jako u režimu "list".
         Oprava sedí ve volném středu a roztahuje se podle místa.
       */}
-      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24, flexWrap: "wrap" }}>
         <TicketCode code={t.code} />
         <TicketDate value={t.createdAt} />
         <MetaSeparator />
@@ -76,7 +76,7 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
             {finalPrice.toLocaleString("cs-CZ")} Kč
           </span>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}
         </div>

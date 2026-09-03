@@ -43,10 +43,12 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
     if (!btn) return;
 
     const r = btn.getBoundingClientRect();
-    const w = 320;
 
     const margin = 10;
     const gap = 8;
+    /* Pevných 320 px se na iPhonu SE (displej 320 px) nevešlo ani s odsazením
+       – nabídka končila za okrajem obrazovky. */
+    const w = Math.min(320, window.innerWidth - margin * 2);
 
     let left = r.right - w;
     left = Math.max(margin, Math.min(left, window.innerWidth - w - margin));

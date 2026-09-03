@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useStatuses } from "../../../state/StatusesStore";
 import { useWarrantyClaims } from "../hooks/useWarrantyClaims";
 import type { TicketEx } from "../../Orders";
@@ -194,7 +195,10 @@ export function CreateWarrantyClaimModal({
 
   if (!open) return null;
 
-  return (
+  /* Portál do body: <main> má transform kvůli plynulému posouvání, což z něj
+     dělá vztažný rámec pro position: fixed – okno by jinak leželo uvnitř jeho
+     vrstvy a spodní navigace by se přes něj vykreslila. */
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -204,7 +208,9 @@ export function CreateWarrantyClaimModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 24,
+        /* 24 px po stranách je na 375px displeji zbytečně moc – okno pak
+           nemělo kam růst a formulář se v něm mačkal. */
+        padding: 12,
       }}
       onClick={handleClose}
     >
@@ -313,7 +319,7 @@ export function CreateWarrantyClaimModal({
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Zákazník</div>
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10 }}>
                     <div>
                       <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Jméno</label>
                       <input type="text" value={draft.customer_name} onChange={(e) => updateDraft("customer_name", e.target.value)} placeholder="Jméno zákazníka" style={inputStyle} />
@@ -323,7 +329,7 @@ export function CreateWarrantyClaimModal({
                       <input type="text" value={draft.customer_company} onChange={(e) => updateDraft("customer_company", e.target.value)} placeholder="Název firmy" style={inputStyle} />
                     </div>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10 }}>
                     <div>
                       <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Telefon</label>
                       <input type="tel" value={draft.customer_phone} onChange={(e) => updateDraft("customer_phone", e.target.value)} style={inputStyle} />
@@ -347,7 +353,7 @@ export function CreateWarrantyClaimModal({
                       <input type="text" value={draft.customer_address_zip} onChange={(e) => updateDraft("customer_address_zip", e.target.value)} style={inputStyle} />
                     </div>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10 }}>
                     <div>
                       <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>IČO</label>
                       <input type="text" value={draft.customer_ico} onChange={(e) => updateDraft("customer_ico", e.target.value)} style={inputStyle} />
@@ -368,7 +374,7 @@ export function CreateWarrantyClaimModal({
                     <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Zařízení / popis</label>
                     <input type="text" value={draft.device_label} onChange={(e) => updateDraft("device_label", e.target.value)} placeholder="např. iPhone 13, notebook" style={inputStyle} />
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10 }}>
                     <div>
                       <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Sériové číslo / IMEI</label>
                       <input type="text" value={draft.device_serial} onChange={(e) => updateDraft("device_serial", e.target.value)} style={inputStyle} />
@@ -421,6 +427,7 @@ export function CreateWarrantyClaimModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsNarrow } from "./hooks/useIsNarrow";
 import { createPortal } from "react-dom";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
@@ -160,6 +161,7 @@ function safeLoadUIConfig(): UIConfig {
 }
 
 export default function App() {
+  const isNarrowFab = useIsNarrow();
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
@@ -1242,7 +1244,9 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
-          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices"].includes(activePage) && (
+          {/* "sms" v seznamu chybělo, takže se pod SMS chaty vykresloval navíc
+              prázdný panel "Placeholder page." */}
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",
@@ -1260,7 +1264,10 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {/* Global FAB (all pages) – portál do body, aby position:fixed nebylo ovlivněno scroll kontejnerem */}
+          {/* Na telefonu ne v SMS chatu: kolečko sedí přesně na tlačítku
+              odeslat, takže se zpráva nedala odeslat vůbec. */}
           {uiCfg.app.fabNewOrderEnabled !== false &&
+            !(isNarrowFab && activePage === "sms") &&
             createPortal(
               <button
                 type="button"
@@ -1272,7 +1279,13 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                 style={{
                   position: "fixed",
                   right: uiCfg.sidebar.position === "right" ? 90 : 22,
-                  bottom: uiCfg.sidebar.position === "bottom" ? 62 : 22,
+                  /* Na úzké obrazovce je dole navigace – bez tohohle si na ni
+                     tlačítko sedne a zakryje poslední záložku. */
+                  bottom: isNarrowFab
+                    ? "calc(var(--bottom-nav-h) + var(--safe-bottom) + 16px)"
+                    : uiCfg.sidebar.position === "bottom"
+                      ? 62
+                      : 22,
                   width: 56,
                   height: 56,
                   borderRadius: 999,
@@ -1282,7 +1295,11 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                   fontWeight: 950,
                   cursor: "pointer",
                   boxShadow: `0 20px 50px var(--accent-glow)`,
-                  zIndex: 12000,
+                  /* Bylo 12000, tedy nad vším včetně otevřených oken. Na
+                     telefonu pak kolečko "+" viselo přes formulář a překrývalo
+                     tlačítka. Patří nad obsah, ale pod okna – viz pásma
+                     z-indexů v theme.css. */
+                  zIndex: 1050,
                   display: "grid",
                   placeItems: "center",
                   fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",

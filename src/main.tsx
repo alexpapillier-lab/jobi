@@ -6,6 +6,7 @@ import { AppUpdateProvider } from "./context/AppUpdateContext";
 
 import "./styles/theme.css";
 import "./styles/ui.css";
+import "./styles/mobile.css";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { MenuItem } from "../../components/ui";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { showToast } from "../../components/Toast";
@@ -493,7 +494,9 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
         )}
       </Card>
 
-      {createOpen && (
+      {/* Portál do body: <main> má transform, takže by okno vykreslené uvnitř
+          leželo v jeho vrstvě a spodní navigace by ho překryla. */}
+      {createOpen && createPortal(
         <div
           style={{
             position: "fixed",
@@ -610,7 +613,8 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ConfirmDialog

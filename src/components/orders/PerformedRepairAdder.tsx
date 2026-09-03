@@ -143,7 +143,7 @@ export function PerformedRepairAdder({
                 Přidat opravu k modelu "{matchingModel.name}"
               </div>
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
                   <input
                     type="number"
                     value={manualRepairPrice}

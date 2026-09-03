@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Button, MenuItem } from "../components/ui";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
@@ -792,7 +793,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         </div>
 
         {/* Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))", gap: 12, marginBottom: 16 }}>
           <StatCard label="Celkem" value={formatCurrency(stats.total)} />
           <StatCard label="Zaplaceno" value={formatCurrency(stats.paid)} color="var(--success)" />
           <StatCard label="Nezaplaceno" value={formatCurrency(stats.unpaid)} color="var(--danger)" />
@@ -891,8 +892,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       )}
 
       {/* Send email modal */}
-      {sendModalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+      {sendModalOpen && createPortal(
+        /* Portál do body: <main> má transform kvůli plynulému posouvání,
+           což z něj dělá vztažný rámec pro position: fixed – okno pak leží
+           uvnitř jeho vrstvy a spodní navigace se přes něj vykreslí. */
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 12 }}>
           <div style={{ background: "var(--panel)", borderRadius: 16, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
             <h3 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "var(--text)" }}>Odeslat fakturu e-mailem</h3>
             <FieldLabel>E-mail příjemce</FieldLabel>
@@ -924,20 +928,22 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* PDF Preview modal */}
-      {previewUrl && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-          <div style={{ background: "var(--panel)", borderRadius: 16, width: "80vw", height: "85vh", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+      {previewUrl && createPortal(
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 12 }}>
+          <div style={{ background: "var(--panel)", borderRadius: 16, width: "100%", height: "85dvh", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
             <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Náhled PDF</h3>
               <button onClick={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "var(--muted)", cursor: "pointer" }}>✕</button>
             </div>
             <iframe src={previewUrl} style={{ flex: 1, border: "none", width: "100%" }} title="PDF Preview" />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ConfirmDialog
@@ -1085,7 +1091,7 @@ function CustomerPicker({
           boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
           maxHeight: 240,
           overflow: "auto",
-          zIndex: 50,
+          zIndex: 1100,
         }}>
           {results.map((c) => (
             <MenuItem
@@ -1170,6 +1176,9 @@ function InvoiceRow({
         zIndex: menuOpen ? 200 : undefined,
         display: "flex",
         alignItems: "center",
+        /* Číslo faktury, odznak stavu, částka a nabídka se na 320px displeji
+           do jedné řady nevejdou – bez zalomení se číslo zmáčklo na 64 px. */
+        flexWrap: "wrap",
         gap: 12,
         padding: "12px 16px",
         background: "var(--panel)",
@@ -1180,9 +1189,9 @@ function InvoiceRow({
       }}
       onClick={onOpen}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{inv.number}</span>
+      <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap" }}>{inv.number}</span>
           <StatusBadge status={inv.status} />
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -1222,7 +1231,7 @@ function InvoiceRow({
               borderRadius: 12,
               boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
               minWidth: 170,
-              zIndex: 100,
+              zIndex: 1110,
               overflow: "hidden",
             }}
             onMouseLeave={() => setMenuOpen(false)}
@@ -1283,7 +1292,10 @@ function DetailPanel({
   onStatusChange: (s: InvoiceStatus) => void;
   onOpenTicket?: () => void;
 }) {
-  return (
+  /* Portál do body: <main> má transform kvůli plynulému posouvání, což z něj
+     dělá vztažný rámec pro position: fixed – panel by jinak ležel uvnitř jeho
+     vrstvy a spodní navigace by se přes něj vykreslila. */
+  return createPortal(
     <div style={{ position: "fixed", inset: 0, display: "flex", zIndex: 9990 }}>
       <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
       <div style={{
@@ -1379,7 +1391,8 @@ function DetailPanel({
           </DetailSection>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1489,7 +1502,7 @@ function InvoiceEditor({
 
       {/* Editor body */}
       <div style={{ flex: 1, overflow: "auto", padding: "20px 24px 40px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 24 }}>
           {/* Left: Supplier + meta */}
           <div>
             <EditorSection title="Faktura">
@@ -1761,7 +1774,7 @@ function EditorCollapsibleSection({
 }
 
 function EditorRow({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>{children}</div>;
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>{children}</div>;
 }
 
 function EditorField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {

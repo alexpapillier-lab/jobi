@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Button, Input, Label } from "../../components/ui";
 import { ChatIcon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -223,8 +224,13 @@ export function CustomerDetail({
             <div style={{ color: "var(--muted)" }}>Vyber zákazníka vlevo.</div>
           ) : (
             <>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                <div style={{ minWidth: 0 }}>
+              {/*
+                Hlavička se musí umět zalomit. Skupina tlačítek se nesmršťuje,
+                takže na telefonu vytlačila jméno do sloupce o šířce jednoho
+                písmene – a stejně přetekla ven z karty.
+              */}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0, flex: "1 1 220px" }}>
                   <div style={{ fontWeight: 900, fontSize: 16 }}>{customer.name}</div>
                   <div style={{ color: "var(--muted)", marginTop: 4, fontSize: 12 }}>
                     {[customer.phone, customer.email].filter(Boolean).join(" · ")}
@@ -237,12 +243,12 @@ export function CustomerDetail({
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+                <div style={{ display: "grid", gap: 8, justifyItems: "end", minWidth: 0, flex: "0 1 auto" }}>
                   <div style={{ color: "var(--muted)", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
                     Aktualizováno: {formatCZ(customer.updatedAt)}
                   </div>
 
-                  <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <Button variant="soft"
                       onClick={openEdit}>
                       Upravit
@@ -346,8 +352,10 @@ export function CustomerDetail({
                           boxShadow: meta?.bg ? `0 0 24px ${meta.bg}90, inset 0 0 12px ${meta.bg}60, 0 0 8px ${meta.bg}50` : "none",
                         }}
                       />
-                      <div style={{ flex: 1, padding: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      {/* minWidth: 0 – bez něj dlouhý název zařízení roztáhne
+                          kartu přes okraj místo toho, aby se zalomil. */}
+                      <div style={{ flex: 1, minWidth: 0, padding: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontWeight: 900 }}>{t.code}</div>
                           <div style={{ color: "var(--muted)", fontSize: 12 }}>{formatCZ(t.createdAt)}</div>
                         </div>
@@ -442,7 +450,14 @@ export function CustomerDetail({
             </>
           )}
         </div>
-      {/* ===== Edit customer modal ===== */}
+      {/* =====  Úprava zákazníka  =====
+
+           Přes portál do <body>: <main> má transform kvůli plynulému
+           posouvání, a ten dělá z prvku vztažný rámec pro position: fixed.
+           Okno vykreslené uvnitř by se tak posouvalo s obsahem a spodní
+           navigace by ho překryla, i když má nižší z-index. */}
+      {createPortal(
+        <>
       <div
         onClick={() => setEditOpen(false)}
         style={{
@@ -452,7 +467,7 @@ export function CustomerDetail({
           opacity: editOpen ? 1 : 0,
           pointerEvents: editOpen ? "auto" : "none",
           transition: "opacity 180ms ease",
-          zIndex: 200,
+          zIndex: 1200,
         }}
       />
 
@@ -467,7 +482,7 @@ export function CustomerDetail({
           transition: "transform 180ms ease, opacity 180ms ease",
           width: 820,
           maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100vh - 24px)",
+          maxHeight: "calc(100dvh - 24px)",
           overflow: "auto",
           background: "var(--panel)",
           backdropFilter: "var(--blur)",
@@ -476,7 +491,7 @@ export function CustomerDetail({
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow)",
           padding: 18,
-          zIndex: 210,
+          zIndex: 1210,
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -551,7 +566,7 @@ export function CustomerDetail({
               onChange={(e) => setEditDraft((p) => ({ ...p, addressStreet: e.target.value }))} />
           </div>
 
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
             <div>
               <Label>Město</Label>
               <Input
@@ -608,6 +623,9 @@ export function CustomerDetail({
           </div>
         </div>
       </div>
+        </>,
+        document.body
+      )}
       {/* Confirm Dialog for Delete Customer */}
       <ConfirmDialog
         open={deleteDialogOpen}

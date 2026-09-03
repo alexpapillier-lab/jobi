@@ -6,6 +6,7 @@ import { devLog } from "../lib/devLog";
 import { typedSupabase } from "../lib/typedSupabase";
 import { CustomerList, type CustomerRecord } from "./Customers/CustomerList";
 import { CustomerDetail } from "./Customers/CustomerDetail";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 
 type TicketLite = {
   id: string;
@@ -41,6 +42,7 @@ export default function Customers({
   onOpenTicket,
   onOpenSmsChat,
 }: CustomersProps) {
+  const isNarrow = useIsNarrow();
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -520,19 +522,19 @@ export default function Customers({
       {/* Header */}
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zákazníci</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Spravujte zákaznickou databázi a jejich zakázky
-        </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", minWidth: 0 }}>
         <input
           data-tour="customers-search"
           placeholder="Vyhledávání zákazníků…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{
+            /* Pevných 360 px přeteklo na 375px displeji ven i s odsazením. */
             width: 360,
+            maxWidth: "100%",
+            minWidth: 0,
             padding: "10px 12px",
             borderRadius: 12,
             border: border,
@@ -547,7 +549,41 @@ export default function Customers({
         />
       </div>
 
-      <div data-tour="customers-content" style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12 }}>
+      {/*
+        Na telefonu se dva sloupce vedle sebe nevejdou – seznam se ořízl
+        a detail vyčuhoval ven z obrazovky. Místo toho se ukazuje vždycky
+        jen jedno: seznam, dokud není nikdo vybraný, jinak detail.
+      */}
+      <div
+        data-tour="customers-content"
+        style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "420px 1fr", gap: 12, minWidth: 0 }}
+      >
+        {isNarrow && selectedCustomer && (
+          <button
+            type="button"
+            onClick={() => setOpenId(null)}
+            style={{
+              justifySelf: "start",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              minHeight: "var(--touch-min)",
+              padding: "8px 12px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border)",
+              background: "var(--panel)",
+              color: "var(--text)",
+              font: "inherit",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ← Zpět na seznam
+          </button>
+        )}
+
+        {(!isNarrow || !selectedCustomer) && (
         <CustomerList
           customers={filtered}
           selectedCustomerId={openId}
@@ -555,7 +591,9 @@ export default function Customers({
           loading={customersLoading}
           error={customersError}
         />
+        )}
 
+        {(!isNarrow || selectedCustomer) && (
         <CustomerDetail
           customer={selectedCustomer}
           tickets={customerTickets}
@@ -569,6 +607,7 @@ export default function Customers({
           onDelete={handleDeleteCustomer}
           onHistoryRefresh={handleHistoryRefresh}
         />
+        )}
           </div>
     </div>
   );

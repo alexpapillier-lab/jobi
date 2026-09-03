@@ -3,6 +3,7 @@ import { Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useStatuses } from "../state/StatusesStore";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import type { WarrantyClaimRow } from "./Orders/hooks/useWarrantyClaims";
 
@@ -234,24 +235,50 @@ export default function Calendar({
     return ganttItems.filter((item) => item.end.getTime() >= rangeStartMs && item.start.getTime() <= rangeEndMs);
   }, [ganttItems, rangeStart, rangeEnd]);
 
+  const isNarrow = useIsNarrow();
+
+  /*
+   * Kolik místa zbývá časové ose po odečtení sloupce se zakázkou.
+   * Měří se skutečný posuvný rám, ne okno – aplikace má na širokém displeji
+   * ještě boční lištu a odsazení obsahu, takže by okno lhalo.
+   */
+  const [ganttViewportW, setGanttViewportW] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setGanttViewportW(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const narrowTimelineSpace = Math.max(0, ganttViewportW - (isNarrow ? 96 : 180) - 1);
   const totalMs = rangeEnd.getTime() - rangeStart.getTime();
   const now = new Date();
 
+  /*
+   * Šířka časové osy.
+   *
+   * Na telefonu měl týden 7 × 120 px a se sloupcem zakázek 1020 px celkem,
+   * tedy 645 px doprava mimo displej. Týden se proto vejde přesně na šířku –
+   * je to nejčastější pohled a posouvat kvůli němu do strany nemá smysl.
+   *
+   * Den (24 hodin) a měsíc (31 dní) se na 250 px vtěsnat nedají, tam se
+   * posouvat musí; sloupce jsou aspoň užší, ať je cesta kratší.
+   */
   const { timelineWidth, columnWidth } = useMemo(() => {
     if (view === "day") {
       const cols = 24;
-      const cw = 60;
+      const cw = isNarrow ? 44 : 60;
       return { timelineWidth: cols * cw, columnWidth: cw };
     }
     if (view === "week") {
       const cols = 7;
-      const cw = 120;
+      const cw = isNarrow ? Math.max(34, Math.floor(narrowTimelineSpace / cols)) : 120;
       return { timelineWidth: cols * cw, columnWidth: cw };
     }
     const daysInMonth = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0).getDate();
-    const cw = 36;
+    const cw = isNarrow ? 26 : 36;
     return { timelineWidth: daysInMonth * cw, columnWidth: cw };
-  }, [view, baseDate]);
+  }, [view, baseDate, isNarrow, narrowTimelineSpace]);
 
   const nowPositionPx =
     now >= rangeStart && now <= rangeEnd
@@ -270,7 +297,10 @@ export default function Calendar({
         const d = new Date(rangeStart);
         d.setDate(d.getDate() + i);
         return {
-          label: d.toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric" }),
+          // Do úzkého sloupce se "po 31." nevejde – zbyde samotné číslo dne.
+          label: isNarrow
+            ? String(d.getDate())
+            : d.toLocaleDateString("cs-CZ", { weekday: "short", day: "numeric" }),
           left: i * columnWidth,
         };
       });
@@ -280,7 +310,7 @@ export default function Calendar({
       label: String(i + 1),
       left: i * columnWidth,
     }));
-  }, [view, rangeStart, baseDate, columnWidth]);
+  }, [view, rangeStart, baseDate, columnWidth, isNarrow]);
 
   const goPrev = useCallback(() => {
     setBaseDate((d) => {
@@ -361,7 +391,8 @@ export default function Calendar({
   const rowHeight = 36;
   const barHeight = 24;
   const headerHeight = 48;
-  const leftLabelWidth = 180;
+  // Na telefonu ukrajoval 180px sloupec polovinu displeje.
+  const leftLabelWidth = isNarrow ? 96 : 180;
 
   return (
     <div
@@ -384,12 +415,12 @@ export default function Calendar({
           justifyContent: "space-between",
           flexWrap: "wrap",
           gap: 12,
-          padding: "14px 20px",
+          padding: isNarrow ? "12px" : "14px 20px",
           borderBottom: "1px solid var(--border)",
           background: "var(--panel)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
           <button
             type="button"
             onClick={goPrev}
@@ -451,14 +482,17 @@ export default function Calendar({
               fontWeight: 800,
               fontSize: 16,
               color: "var(--text)",
-              minWidth: 220,
+              /* 220 px si popisek držel i na 375px displeji a vystrčil
+                 celou lištu ven. Na širokém displeji drží dál, aby při
+                 přepínání týdnů neposkakovala tlačítka vedle. */
+              minWidth: isNarrow ? 0 : 220,
             }}
           >
             {rangeLabel}
           </span>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
           <Segmented
               ariaLabel="Zobrazení kalendáře"
               value={view}

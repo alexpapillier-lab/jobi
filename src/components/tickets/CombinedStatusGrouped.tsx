@@ -74,6 +74,9 @@ function TicketRow({
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
         alignItems: "center",
+        /* Bez zalomení řádek nesmrštitelnými prvky (kód, datum, stav, tisk)
+           přeteče přes okraj – na telefonu o víc než sto pixelů. */
+        flexWrap: "wrap",
         gap: 10,
       }}
       onMouseEnter={(e) => {
@@ -135,6 +138,9 @@ function ClaimRow({
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
         alignItems: "center",
+        /* Bez zalomení řádek nesmrštitelnými prvky (kód, datum, stav, tisk)
+           přeteče přes okraj – na telefonu o víc než sto pixelů. */
+        flexWrap: "wrap",
         gap: 10,
       }}
       onMouseEnter={(e) => {

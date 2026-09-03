@@ -46,7 +46,7 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
       }} />
 
       {/* Content row */}
-      <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <TicketCode code={t.code} dense />
         <TicketDate value={t.createdAt} />
         <TicketDevice label={t.deviceLabel} dense />

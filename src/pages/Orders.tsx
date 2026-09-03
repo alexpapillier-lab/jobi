@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
@@ -976,6 +977,7 @@ export default function Orders({
   closeDetailWhen,
   smsEnabled = false,
 }: OrdersProps) {
+  const isNarrow = useIsNarrow();
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
@@ -3380,9 +3382,6 @@ export default function Orders({
       {/* Header */}
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zakázky</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Spravujte zakázky, sledujte stavy a komunikujte se zákazníky
-        </div>
       </div>
 
       {/* Toolbar */}
@@ -3486,7 +3485,7 @@ export default function Orders({
           ? { minWidth: 0 }
           : {
               display: "grid",
-              gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(280px, 1fr))" : "minmax(260px, 1fr)",
+              gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 280px), 1fr))" : "minmax(min(100%, 260px), 1fr)",
               gap: uiCfg.orders.displayMode === "grid" ? 12 : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" ? 2 : 6,
               minWidth: 0,
             }),
@@ -3711,7 +3710,11 @@ export default function Orders({
       </div>
       )}
 
-      {/* ===== New Order Modal ===== */}
+      {/* ===== Nová zakázka (portál do body, aby fixed byl vůči viewportu,
+             ne vůči <main> s transformem – jinak si okno nechá přes sebe
+             ležet spodní navigaci a plovoucí "+") ===== */}
+      {createPortal(
+        <>
       <div
         onClick={() => {
           setIsNewOpen(false);
@@ -3730,7 +3733,7 @@ export default function Orders({
           opacity: isNewOpen ? 1 : 0,
           pointerEvents: isNewOpen ? "auto" : "none",
           transition: "opacity 180ms ease",
-          zIndex: 90,
+          zIndex: 1140,
         }}
       />
       <div
@@ -3744,7 +3747,7 @@ export default function Orders({
           transition: "transform 180ms ease, opacity 180ms ease",
           width: 920,
           maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100vh - 24px)",
+          maxHeight: "calc(100dvh - 24px)",
           overflow: "auto",
           background: "var(--panel)",
           backdropFilter: "var(--blur)",
@@ -3753,17 +3756,22 @@ export default function Orders({
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow)",
           padding: 18,
-          zIndex: 100,
+          zIndex: 1150,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", position: "sticky", top: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginBottom: 0, padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>Nová zakázka</div>
-            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-              Stav se automaticky nastaví na <b>Přijato</b>. Rozpracované údaje se ukládají automaticky.
-            </div>
+            {/* Hlavička je lepivá, takže tenhle popisek na telefonu ukrajoval
+                tři řádky z každé obrazovky formuláře. Na širokém displeji
+                nevadí, tam zůstává. */}
+            {!isNarrow && (
+              <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+                Stav se automaticky nastaví na <b>Přijato</b>. Rozpracované údaje se ukládají automaticky.
+              </div>
+            )}
           </div>
           <Button variant="soft"
             onClick={() => {
@@ -3781,7 +3789,7 @@ export default function Orders({
           </Button>
         </div>
 
-        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
           {/* ZÁKAZNÍK */}
           <div style={card}>
             <div style={{ fontWeight: 950, fontSize: 13, color: "var(--text)" }}>Zákazník</div>
@@ -3810,7 +3818,7 @@ export default function Orders({
               <div style={fieldHint}>Doporučeno vyplnit. Pokud ne, uloží se jako „Anonymní zákazník".</div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10 }}>
               <div>
                 <div style={fieldLabel}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
                 <input
@@ -3977,7 +3985,10 @@ export default function Orders({
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px", gap: 10 }}>
+            {/* Třetí sloupec je na desktopu prázdná rezerva. Na telefonu ale
+                sebral 160 z 315 px a na Město s PSČ zbylo po 67 – nebylo v nich
+                vidět ani placeholder. */}
+            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "1fr 1fr 160px", gap: 10 }}>
               <div style={{ gridColumn: "1 / -1" }}>
                 <div style={fieldLabel}>Adresa – ulice</div>
                 <input
@@ -4014,7 +4025,7 @@ export default function Orders({
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 220px", gap: 10 }}>
               <div>
                 <div style={fieldLabel}>Firma</div>
                 <input
@@ -4079,7 +4090,7 @@ export default function Orders({
                 />
                 {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10, marginTop: 10 }}>
                   <div>
                     <div style={fieldLabel}>IMEI / SN</div>
                     <input
@@ -4170,7 +4181,7 @@ export default function Orders({
                   placeholder="Např. výměna displeje, výměna baterie, diagnostika…"
                 />
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 10, marginTop: 10 }}>
                   <div>
                     <div style={fieldLabel}>Způsob převzetí</div>
                     <HandoffMethodSelect
@@ -4370,7 +4381,10 @@ export default function Orders({
           </label>
         </div>
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+        {/* Na telefonu pod sebe: "Udělat přijímací fotky" je s nezalomitelným
+            popiskem širší než půlka displeje, takže se v řadě nevešlo a
+            vyčuhovalo za okraj okna. */}
+        <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
           <Button variant="soft"
             onClick={() => {
               draftCaptureTokenRef.current = null;
@@ -4433,6 +4447,9 @@ export default function Orders({
           </Button>
         </div>
       </div>
+        </>,
+        document.body
+      )}
 
       {/* ===== Full detail modal (portal do body, aby fixed byl vůči viewportu, ne main s transform) ===== */}
       {createPortal(
@@ -4446,7 +4463,7 @@ export default function Orders({
               opacity: (detailId || detailClaimId) ? 1 : 0,
               pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
               transition: "opacity 160ms ease",
-              zIndex: 300,
+              zIndex: 1200,
             }}
           />
 
@@ -4461,7 +4478,7 @@ export default function Orders({
           transition: "transform 160ms ease, opacity 160ms ease",
           width: 1080,
           maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100vh - 24px)",
+          maxHeight: "calc(100dvh - 24px)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -4472,14 +4489,14 @@ export default function Orders({
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow)",
           padding: 0,
-          zIndex: 310,
+          zIndex: 1210,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
           willChange: (detailId || detailClaimId) ? "transform" : "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", zIndex: 5, background: "var(--panel)", padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0, paddingRight: 70 }}>
+        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: isNarrow ? "column" : "row", justifyContent: "space-between", gap: isNarrow ? 10 : 12, alignItems: isNarrow ? "stretch" : "flex-start", zIndex: 5, background: "var(--panel)", padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
+          <div style={{ minWidth: 0, paddingRight: 44 }}>
             <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
               {detailedClaim ? detailedClaim.code : (detailedTicket ? detailedTicket.code : "—")}
               {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
@@ -4521,7 +4538,7 @@ export default function Orders({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", paddingRight: 70 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", /* Na mobilu se tlačítka nesmí lámat pod sebe – sloupec sežral šířku a název zakázky se zmáčkl na pár znaků. Radši jedna řada, kterou lze posunout. */ flexWrap: isNarrow ? "nowrap" : "wrap", overflowX: isNarrow ? "auto" : "visible", paddingRight: isNarrow ? 0 : 70, paddingBottom: isNarrow ? 2 : 0 }}>
             {detailedClaim ? (
               <>
                 {detailedClaim.source_ticket_id && (
@@ -4661,7 +4678,9 @@ export default function Orders({
             )}
 
             {detailedTicket && !detailedClaim && canPrintExport && (
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              /* Uvnitř posuvné řady se tahle skupina nesmí lámat, jinak si
+                 vynutí úzký sloupec a hlavička naroste do výšky. */
+              <div style={{ display: "flex", gap: 12, flexWrap: isNarrow ? "nowrap" : "wrap" }}>
                 <DocumentActionPicker
                   label={<><DocumentIcon size={14} /> Zakázkový list</>}
                   onSelect={(action) => {
@@ -4788,7 +4807,7 @@ export default function Orders({
           const sourceTicket = detailedClaim.source_ticket_id ? tickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
           return (
           <>
-          <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
             <div style={card}>
               <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
               {!isEditingClaim ? (
@@ -5248,7 +5267,7 @@ export default function Orders({
           <>
             {!isEditing ? (
               <>
-                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                   <div style={card}>
                     <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
@@ -5536,7 +5555,7 @@ export default function Orders({
                           placeholder="email@example.com"
                         />
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
                         <div>
                           <div style={fieldLabel}>Ulice</div>
                           <input
@@ -5568,7 +5587,7 @@ export default function Orders({
                           placeholder="123 45"
                         />
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
                         <div>
                           <div style={fieldLabel}>Firma</div>
                           <input
@@ -5792,7 +5811,7 @@ export default function Orders({
                   </div>
                 </div>
 
-                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                   <div style={{ ...card, opacity: 0.85 }}>
                     <div
                       style={{
@@ -6438,11 +6457,11 @@ export default function Orders({
           right: isSidebarRight ? "var(--sidebar-collapsed)" : 0,
           width: 380,
           maxWidth: "100vw",
-          height: isSidebarBottom ? "calc(100vh - var(--sidebar-bottom-collapsed))" : "100vh",
+          height: isSidebarBottom ? "calc(100dvh - var(--sidebar-bottom-collapsed))" : "100dvh",
           background: "var(--panel)",
           borderLeft: "1px solid var(--border)",
           boxShadow: "var(--shadow)",
-          zIndex: 321,
+          zIndex: 1321,
           display: "flex",
           flexDirection: "column",
           transform: "translateX(0)",
@@ -6453,7 +6472,7 @@ export default function Orders({
           <div
             role="presentation"
             onClick={() => setSmsPanelOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 320 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 1320 }}
           />
           <div
             style={panelStyle}

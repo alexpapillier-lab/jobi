@@ -15,6 +15,7 @@ import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
 import { ApiNastaveni } from "./Settings/ApiNastaveni";
 import { useEntitlements } from "../hooks/useEntitlements";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
@@ -202,6 +203,7 @@ type SettingsProps = {
 };
 
 export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
+  const isNarrow = useIsNarrow();
   const { session } = useAuth();
   const { statuses, fallbackKey } = useStatuses();
   const { theme, setTheme, availableThemes } = useTheme();
@@ -687,9 +689,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     <div data-tour="settings-content" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Nastavení</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Konfigurace statusů, UI a filtrů aplikace
-        </div>
       </div>
 
       {/* Main Navigation - Categories */}
@@ -698,9 +697,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         style={{
         display: "flex",
         gap: 8,
-        borderBottom: "2px solid var(--border)",
+        borderBottom: isNarrow ? "none" : "2px solid var(--border)",
         paddingBottom: 0,
-        overflow: "hidden",
+        /*
+         * Bylo overflow: hidden. Záložky mají whiteSpace: nowrap a flexShrink: 0,
+         * takže se na telefonu vešly jen dvě a "Vzhled a chování", "Můj profil"
+         * i "O aplikaci" zůstaly za okrajem – a nedalo se k nim vůbec dostat.
+         *
+         * Na telefonu se proto zalomí do víc řádků (stejně jako podsekce hned
+         * pod nimi) a spodní linka se schová – u zalomených řádků by vedla
+         * naprázdno. Na širokém displeji zůstává jedna řada s linkou.
+         */
+        flexWrap: isNarrow ? "wrap" : "nowrap",
+        overflowX: isNarrow ? "visible" : "auto",
+        overflowY: "hidden",
         width: "100%",
       }}
       >
@@ -855,7 +865,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                 <div>
                   <FieldLabel>IČO *</FieldLabel>
                   <TextInput
@@ -879,7 +889,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
               <DphNastaveni activeServiceId={activeServiceId} />
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                 <div>
                   <FieldLabel>Jazyk *</FieldLabel>
                   <LanguagePicker
@@ -1024,7 +1034,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                 <div>
                   <FieldLabel>IBAN</FieldLabel>
                   <TextInput
@@ -1510,7 +1520,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               Změna tématu se aplikuje plynule na celou aplikaci
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: 16 }}>
               {availableThemes.map((t) => {
                 const isActive = theme === t;
                 const themePreviews: Record<string, { title: string; desc: string; bg: string; panel: string; accent: string; text: string; lineStyle?: boolean; previewLineColors?: string[] }> = {
@@ -2134,7 +2144,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   label: "Mřížka", 
                   description: "Karty vedle sebe",
                   preview: (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 6, marginTop: 8 }}>
                       <div style={{ 
                         padding: "8px 10px", 
                         borderRadius: 8, 

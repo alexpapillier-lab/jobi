@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { NavKey } from "./Sidebar";
 
 /**
@@ -8,6 +8,10 @@ import type { NavKey } from "./Sidebar";
  * se pak nevejde a ořízne se. Vychází z BottomNav v iOS forku, ale Jobi má
  * víc sekcí (SMS, kalendář, faktury), a šest záložek se do spodní lišty
  * nevejde. Proto čtyři hlavní a zbytek pod "Více".
+ *
+ * Panel "Více" nese i účet, přepínač servisu a odhlášení. Ty totiž bydlí
+ * jenom v boční liště, a tu AppLayout na telefonu vůbec nevykresluje –
+ * bez tohohle se na mobilu nedalo přepnout servis ani se odhlásit.
  */
 
 type Tab = { key: NavKey; label: string; icon: React.ReactNode };
@@ -36,6 +40,12 @@ export type BottomNavProps = {
   invoicingEnabled?: boolean;
   smsEnabled?: boolean;
   smsUnreadCount?: number;
+  services?: Array<{ service_id: string; service_name: string; role: string }>;
+  activeServiceId?: string | null;
+  setActiveServiceId?: (serviceId: string | null) => void;
+  userEmail?: string | null;
+  userProfile?: { nickname: string | null; avatarUrl: string | null } | null;
+  onSignOut?: () => Promise<void> | void;
 };
 
 export function BottomNav({
@@ -44,8 +54,20 @@ export function BottomNav({
   invoicingEnabled = true,
   smsEnabled = false,
   smsUnreadCount = 0,
+  services = [],
+  activeServiceId = null,
+  setActiveServiceId,
+  userEmail = null,
+  userProfile = null,
+  onSignOut,
 }: BottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+
+  // Zavřený panel si nemá pamatovat, že v něm byl rozbalený seznam servisů.
+  useEffect(() => {
+    if (!moreOpen) setServicesOpen(false);
+  }, [moreOpen]);
 
   const secondary: Tab[] = [
     ...(smsEnabled ? [SMS] : []),
@@ -57,6 +79,13 @@ export function BottomNav({
 
   const moreActive = secondary.some((t) => t.key === active);
 
+  const activeService = services.find((s) => s.service_id === activeServiceId);
+  const serviceName = activeService?.service_name || "Servis";
+  const canSwitchService = services.length > 1 && !!setActiveServiceId;
+
+  const displayName = userProfile?.nickname || userEmail || "Účet";
+  const avatarUrl = userProfile?.avatarUrl;
+
   const tabButton = (tab: Tab, isActive: boolean, onClick: () => void, badge = 0) => (
     <button
       key={tab.key}
@@ -65,6 +94,7 @@ export function BottomNav({
       aria-current={isActive ? "page" : undefined}
       style={{
         flex: 1,
+        minWidth: 0,
         position: "relative",
         display: "flex",
         flexDirection: "column",
@@ -107,16 +137,38 @@ export function BottomNav({
           </span>
         )}
       </span>
-      <span style={{ whiteSpace: "nowrap" }}>{tab.label}</span>
+      {/* Delší popisky ("Zákazníci") se do pětiny šířky nevejdou – ať se
+          zkrátí tečkami místo toho, aby roztlačily sousední záložky. */}
+      <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {tab.label}
+      </span>
     </button>
   );
+
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    minHeight: "var(--touch-min)",
+    padding: "8px 10px",
+    borderRadius: 12,
+    border: "none",
+    background: "transparent",
+    color: "var(--text)",
+    font: "inherit",
+    fontSize: 13,
+    textAlign: "left",
+    cursor: "pointer",
+  };
 
   return (
     <>
       {moreOpen && (
         <div
           onClick={() => setMoreOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000 }}
+          /* Nad plovoucím "+" (1050), pod okny (1100+) – viz pásma v theme.css. */
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1060 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -126,19 +178,123 @@ export function BottomNav({
               right: 0,
               bottom: `calc(var(--bottom-nav-h) + var(--safe-bottom))`,
               background: "var(--panel)",
+              backdropFilter: "var(--blur)",
+              WebkitBackdropFilter: "var(--blur)",
               borderTop: "1px solid var(--border)",
               padding: "8px 8px 12px",
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))",
-              gap: 4,
-              zIndex: 1001,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              /* Se seznamem servisů panel vyroste; ať se dá dorolovat
+                 místo toho, aby zmizel za horním okrajem displeje. */
+              maxHeight: "calc(100dvh - var(--bottom-nav-h) - var(--safe-bottom) - 24px)",
+              overflowY: "auto",
+              zIndex: 1061,
             }}
           >
-            {secondary.map((t) =>
-              tabButton(t, active === t.key, () => {
-                onNavigate(t.key);
-                setMoreOpen(false);
-              }, t.key === "sms" ? smsUnreadCount : 0)
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(84px, 1fr))",
+                gap: 4,
+              }}
+            >
+              {secondary.map((t) =>
+                tabButton(t, active === t.key, () => {
+                  onNavigate(t.key);
+                  setMoreOpen(false);
+                }, t.key === "sms" ? smsUnreadCount : 0)
+              )}
+            </div>
+
+            <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
+
+            {/* Účet */}
+            <div style={{ ...rowStyle, cursor: "default" }}>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  style={{ width: 32, height: 32, borderRadius: 12, objectFit: "cover", border: "1px solid var(--border)", flex: "0 0 auto" }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 32, height: 32, borderRadius: 12, flex: "0 0 auto",
+                    background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+                    color: "#fff", display: "grid", placeItems: "center", fontWeight: 700,
+                  }}
+                >
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {displayName}
+                </div>
+                {userEmail && userEmail !== displayName && (
+                  <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {userEmail}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Servis */}
+            {services.length > 0 && (
+              <button
+                type="button"
+                disabled={!canSwitchService}
+                aria-expanded={canSwitchService ? servicesOpen : undefined}
+                onClick={() => canSwitchService && setServicesOpen((v) => !v)}
+                style={{ ...rowStyle, background: "var(--panel-2)", cursor: canSwitchService ? "pointer" : "default" }}
+              >
+                <span style={{ color: "var(--muted)", flex: "0 0 auto" }}>Servis</span>
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {serviceName}
+                </span>
+                {canSwitchService && <span style={{ fontSize: 10, color: "var(--muted)", flex: "0 0 auto" }}>{servicesOpen ? "▲" : "▼"}</span>}
+              </button>
+            )}
+
+            {servicesOpen && canSwitchService && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {services.map((s) => (
+                  <button
+                    key={s.service_id}
+                    type="button"
+                    onClick={() => {
+                      setActiveServiceId?.(s.service_id);
+                      setServicesOpen(false);
+                      setMoreOpen(false);
+                    }}
+                    style={{
+                      ...rowStyle,
+                      paddingLeft: 18,
+                      color: s.service_id === activeServiceId ? "var(--accent)" : "var(--text)",
+                      fontWeight: s.service_id === activeServiceId ? 700 : 500,
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.service_name}
+                    </span>
+                    {s.service_id === activeServiceId && <span style={{ flex: "0 0 auto" }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  void onSignOut();
+                }}
+                style={{ ...rowStyle, color: "var(--danger-text)", fontWeight: 600 }}
+              >
+                Odhlásit se
+              </button>
             )}
           </div>
         </div>
