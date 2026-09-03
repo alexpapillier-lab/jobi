@@ -20,10 +20,11 @@ Většina je rozhodnutá (✅). Zbývá:
 
 | # | Co | Stav |
 |---|---|---|
-| A3 | **Strop doplňkových míst na Starteru** – bez něj Business nedává smysl | návrh níž |
-| A5 | Servisy zdarma: ručně, nebo přes Stripe? | doporučení níž |
-| C3 | Ochranná známka – **potřebuje rešerši** | úkol |
-| D2 | Sub-značky – levnější varianta níž | k potvrzení |
+| C3 | Ochranná známka – **potřebuje rešerši** v ÚPV a EUIPO | úkol |
+| C5 | Ověřit u účetní registraci identifikované osoby | úkol |
+| — | **Do kterého plánu patří veřejné API?** Ceník na webu ho neuvádí, v migraci proto zatím není v žádném plánu | otevřené |
+
+Vše ostatní je rozhodnuté a první migrace podle toho stojí.
 
 ### A. Blokuje první migraci
 
@@ -63,11 +64,10 @@ Většina je rozhodnutá (✅). Zbývá:
       | 4 | 887 | 1 190 |
       | 6 | 1 085 | 1 190 |
 
-      *Doporučení: **na Starteru povolit max 2 místa navíc** (strop 3
-      lidi).* Čtvrtý člověk pak znamená přechod na Business – skok
-      788 → 1 190 Kč, což je ještě únosné. Nad Business ať jsou místa
-      za +99 bez stropu; Enterprise se stejně prodává funkcemi, ne
-      počtem lidí.
+      ✅ **Rozhodnuto: na Starteru max 2 místa navíc** (strop 3 lidi).
+      Čtvrtý člověk znamená přechod na Business – skok 788 → 1 190 Kč.
+      Nad Business jsou místa za +99 bez stropu; Enterprise se prodává
+      funkcemi, ne počtem lidí. V migraci jako `plans.max_extra_seats`.
 - [x] **A4 – ✅ Měsíčně i ročně**, roční levnější. Web už má −15 %,
       tím se to řídí.
 - [ ] **A5 – Servisy zdarma: nedávat je do Stripu.** Návrh byl vést je
@@ -175,6 +175,14 @@ obrazovek obor, pod ~50 % druhý produkt).
 ---
 
 ## 1. Databáze (migrace)
+
+**Hotovo:** `20260903200000_predplatne_plany_a_billing.sql` – `plans`,
+`plan_addons`, `service_billing`, `billing_events`, `services.vertical`,
+`service_entitlements.source`, funkce `service_seat_count()`,
+`service_seat_limit()` a `has_active_subscription()`, naplněný ceník
+a doplnění legacy plánu stávajícím servisům.
+Otestováno na čistém Postgresu proti všem migracím projektu.
+Zbývá z týhle sekce: slevové kódy (sekce 5) a záchranný cron (sekce 4).
 
 - [ ] **`plans`** – katalog plánů: `key` (`starter`/`business`/`enterprise`),
       `vertical` (**NOT NULL**, první sada `'repair'` – viz A6),
