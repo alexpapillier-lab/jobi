@@ -2,7 +2,8 @@
 
 Plán zavedení placeného předplatného: platební brána, automatické
 obnovování, slevové kódy, limity členů a samoobslužné založení servisu
-po zaplacení.
+po zaplacení. Na konci (sekce 11) navíc plán na verze Jobi pro další
+obory – autoservisy, zubaře a spol.
 
 **Výchozí stav:** půlka je hotová. `service_entitlements` už je jediné
 místo pravdy o tom, co má servis zaplacené, `valid_until` už se
@@ -40,6 +41,10 @@ Bez tohohle nemá smysl začínat, protože to určuje schéma databáze.
 - [ ] **Vratky a výpovědi:** ke konci období, nebo poměrná část? Pro
       neplátce DPH je nejjednodušší varianta „běží do konce zaplaceného
       období, pak se neobnoví".
+- [ ] **Budou plány společné pro všechny obory** (viz sekce 11 – verze
+      pro zubaře, mechaniky…), nebo jiný ceník na obor?
+      *Doporučení: společné plány, `plans.vertical` NULL.* Sloupec si
+      přidej hned, ať se dá později rozdělit bez migrace tisícovky řádků.
 - [ ] **Brána: Stripe, nebo česká (Comgate/GoPay)?** *Doporučení: Stripe
       Billing.* Umí opakované platby, trial, proraci při změně plánu,
       retry po odmítnuté kartě, slevové kódy i zákaznický portál. České
@@ -324,6 +329,125 @@ kdo to smí spustit – dnes root owner, nově úspěšná platba.
 
 ---
 
+## 11. Verze Jobi pro další obory (zubaři, mechanici, …)
+
+Záměr: prodávat Jobi i mimo servis elektroniky – autoservisům,
+zubařům, servisům kol, elektrikářům. Datový model je totiž pořád stejný:
+**přijmu zakázku od zákazníka, něco na ní udělám, vydám doklad.**
+
+### Jak to udělat
+
+Tři cesty, dvě z nich jsou slepé:
+
+- ❌ **Samostatná aplikace na každý obor.** Každá oprava se dělá
+  třikrát, každý obor se rozejde. Při jednom vývojáři neudržitelné.
+- ❌ **Úplně obecný stavitel vlastních polí.** Maximum flexibility,
+  maximum práce, a zákazník dostane prázdnou appku, kterou si musí sám
+  nastavit. Přesně to, čím se Jobi liší od konkurence, by zmizelo.
+- ✅ **Obor jako data, ne jako kód.** Jedna aplikace, jedna codebase.
+  Obor je profil: slovník názvů + přednastavená pole + statusy +
+  šablony dokumentů + ceník. Nový obor = nový řádek v konfiguraci,
+  ne nová větev v Gitu.
+
+### Co tomu dnes stojí v cestě
+
+Prošel jsem repo, tohle jsou konkrétní místa, která je potřeba rozmotat:
+
+- [ ] **~400 natvrdo napsaných českých názvů v `.tsx`** („Zakázka",
+      „Zařízení", „Servis"). Pro zubaře je to „Návštěva" a „Pacient",
+      pro autoservis „Zakázka" a „Vozidlo". Potřebuje to slovníkovou
+      vrstvu – hook `useTerms()` a slovník na obor. **Tohle je největší
+      kus práce z celé sekce.**
+- [ ] **`tickets.device_brand / device_model / device_serial /
+      device_imei / device_passcode`** jsou sloupce ušité na elektroniku.
+      Autoservis potřebuje SPZ, VIN a stav tachometru.
+      **⚠️ Nepoužívej `device_imei` na SPZ.** Je to lákavé a ušetří to
+      migraci, ale za rok nikdo nebude vědět, co v tom sloupci je, a
+      rozbije se to při prvním exportu, filtru nebo veřejném API.
+      Správně: nechat `device_*` pro elektroniku a přidat
+      `custom_fields jsonb` s definicí polí na obor.
+- [ ] **`document_profiles.doc_type` má CHECK jen na tři hodnoty**
+      (`zakazkovy_list`, `zarucni_list`, `diagnosticky_protokol`) – viz
+      `20260208100000_create_document_profiles.sql`. Stejný výčet je
+      podruhé v `DocTypeKey` v `jobidocs/src/documentToHtml.ts`. Každý
+      nový dokument znamená sáhnout na obě místa.
+- [ ] **Dokumenty samotné jsou oborové.** Záruční list a diagnostický
+      protokol zubař nepotřebuje – potřebuje informovaný souhlas.
+      Autoservis chce protokol o převzetí vozidla a zakázkový list s VIN.
+- [ ] **`DEFAULT_STATUSES` v `statuses-init-defaults`** („Diagnostika",
+      „Oprava", „Testování") – zubař má objednán / ošetření / kontrola.
+      Tohle je naštěstí ta snadná část: statusy už jsou data v databázi
+      per servis, stačí jiná výchozí sada.
+- [ ] **Ceník a `deviceOptions`** – přednastavené úkony a stavy zařízení
+      na obor.
+
+### Kroky
+
+- [ ] **Přidat `services.vertical`** (`repair` / `auto` / `dental` / …)
+      a `plans.vertical` (NULL = plán platí pro všechny obory).
+      **Tohle udělej hned v první migraci předplatného**, i když
+      slovníkovou vrstvu odložíš – přidat sloupec dopředu stojí nic,
+      doplňovat obor tisícovce servisů zpětně stojí odpoledne.
+- [ ] **Tabulka `verticals`** nebo konfigurační soubor v kódu: název
+      oboru, slovník názvů, výchozí statusy, definice polí, sady
+      dokumentů, výchozí ceník. *Doporučení: začít souborem v kódu*,
+      dokud jsou obory dva tři. Databáze až ve chvíli, kdy budeš chtít
+      obor přidávat bez releasu.
+- [ ] **`useTerms()` hook** a postupné nahrazování natvrdo psaných
+      názvů. Nedělej to najednou – projdi obrazovku po obrazovce.
+- [ ] **Výběr oboru při registraci** → do `metadata.vertical` v
+      checkoutu (sekce 6) → webhook podle něj nasype statusy, profily
+      dokumentů a ceník. Zákazník tak dostane appku, která jeho oboru
+      rozumí od první minuty.
+- [ ] **Rozšířit CHECK u `doc_type`** a `DocTypeKey` o dokumenty
+      nových oborů.
+- [ ] **Landing page na obor.** Prakticky nejdůležitější bod celé
+      sekce: autoservis nekliká na „software pro servisy", klikne na
+      „software pro autoservisy". Stejná aplikace, jiný nadpis a jiné
+      screenshoty. Tady se rozhoduje, jestli se to prodá.
+- [ ] **Rozmyslet názvy a známky** – jedna značka Jobi pro všechno, nebo
+      Jobi Auto / Jobi Dent? Jedna značka je levnější na známky
+      i na App Store (jedna aplikace, ne tři listingy).
+
+### ⚠️ Zubaři jsou jiná liga
+
+Tohle není detail, který se dořeší cestou:
+
+- **Zdravotní údaje jsou zvláštní kategorie osobních údajů** podle čl. 9
+  GDPR. Režim je výrazně přísnější než u jmen a telefonů, které v Jobi
+  jsou dnes – jiný právní titul, jiné zabezpečení, jiné dopady průšvihu.
+- **Zdravotnická dokumentace je regulovaná zákonem** (372/2011 Sb.):
+  povinný obsah, skartační lhůty, pravidla pro nahlížení a předávání.
+  Není to „zakázka s jiným názvem".
+- **Prakticky to znamená** zvážit, kde data leží (Supabase region),
+  šifrování, auditní log přístupů, smlouvy – a nejspíš právníka na
+  zdravotnické právo, ne jen na obchodní podmínky.
+
+**Doporučení: začni řemesly, ne zubaři.** Autoservis, servis kol,
+elektrikář, opravna spotřebičů – ty jsou strukturálně totožné s tím, co
+Jobi umí dneska, a ověříš na nich celý koncept oborů za zlomek práce.
+Zdravotnictví si nech až na dobu, kdy budeš mít z předplatného příjem,
+ze kterého zaplatíš právní část.
+
+### Kdy do toho jít
+
+**Ne teď.** Nejdřív předplatné, protože bez příjmu je jedno, kolik máš
+oborů. A hlavně: nestav abstrakci pro druhý obor, který zatím
+neexistuje – slovníková vrstva postavená bez skutečného druhého oboru
+bude skoro jistě špatně navržená.
+
+Co udělat hned, protože je to zadarmo:
+
+1. `services.vertical` a `plans.vertical` do první migrace předplatného.
+2. Přestat přidávat nové natvrdo psané názvy – u nového kódu rovnou
+   slovník.
+
+Zbytek až ve chvíli, kdy budeš mít prvního reálného zájemce z jiného
+oboru. Ten ti taky řekne, co doopravdy potřebuje – líp než jakýkoli
+odhad dopředu.
+
+---
+
 ## Kolik ti z předplatného zůstane
 
 Stripe v ČR, orientačně (**ceny ověř na aktuálním ceníku, mění se**):
@@ -398,7 +522,8 @@ Tohle si nech potvrdit od účetní, ale tady jsou body, které tě čekají:
 1. Rozhodnutí ze sekce 0 (ceník, limity, trial) – bez toho nemá smysl
    psát schéma.
 2. Migrace: `plans`, `service_billing`, `billing_events`, `source` u
-   nároků.
+   nároků – a rovnou `services.vertical` + `plans.vertical` (sekce 11),
+   i když se obory budou dělat až později.
 3. `stripe-webhook` + `billing-checkout` v test mode. Nejdřív jen
    upgrade existujícího servisu – jednodušší než zakládání nového.
 4. Sekce Předplatné v Nastavení a napojení `useEntitlements`.
@@ -411,3 +536,6 @@ Tohle si nech potvrdit od účetní, ale tady jsou body, které tě čekají:
 Body 1–4 jsou minimum, se kterým se dá začít prodávat. Zbytek se dá
 dodělávat za pochodu – kromě sekce 9, kterou je potřeba mít hotovou
 dřív, než přijde první platba.
+
+Sekce 11 (obory) je záměrně až za tím vším. Výjimkou jsou dva sloupce
+`vertical` z bodu 2 – ty stojí nic a ušetří pozdější migraci.
