@@ -47,6 +47,7 @@ OTA updaty: viz `docs/OTA_UPDATES.md`, `docs/OTA_SETUP_KROKY.md`.
 
 - `docs/OTA_UPDATES.md` – updaty přes vzduch (Jobi + JobiDocs)
 - `docs/OTA_SETUP_KROKY.md` – nastavení OTA a prvního releasu
+- `docs/PREDPLATNE_PLAN.md` – plán předplatného (platební brána, slevy, limity členů)
 - `docs/ZALOHY_DATABAZE.md` – zálohy Supabase
 - `docs/INSTALACE_KLIENTUM.md` – instalace a podepisování (macOS)
 - `docs/RELEASE_READY_AUDIT.md` – audit před releasem
