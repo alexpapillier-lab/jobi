@@ -227,7 +227,8 @@ Hotovo a nasazené na produkci:
 
 ### Co ještě zbývá
 
-**Doména `api.appjobi.com`.** Adresy dnes ukazují přímo na
+**Doména `api.appjobi.com`.** Postup krok za krokem je v `docs/NASAZENI_API_DOMENA.md`,
+Worker v `infra/cloudflare/jobi-api-worker.js`. Adresy dnes ukazují přímo na
 `…supabase.co/functions/v1/…`. Přestěhovat je po tom, co je servisy
 rozdají webařům, je nepříjemné – vlastní doména má přijít dřív než první
 zákazník. Potřebuje zásah v Cloudflare (DNS + Worker nebo pravidlo, které
@@ -237,9 +238,16 @@ přemapuje `/v1/catalog` na `/functions/v1/public-catalog`).
 ale bez CDN před nimi se každý dotaz počítá do limitu. S cachováním se
 většina opakovaných dotazů k funkci vůbec nedostane.
 
-**Úklid starých záznamů.** Funkce `api_uklid_starych_zaznamu()` existuje,
-ale nikdo ji nevolá – chce to naplánovat (pg_cron nebo scheduled function).
-Bez toho `api_read_hits` roste donekonečna.
+**Úklid starých záznamů.** Migrace `20260903180000_api_uklid_plan.sql` plánuje
+`api_uklid_starych_zaznamu()` na 3:20 denně, ale sama se přeskočí, když projekt
+nemá `pg_cron`. Ověřit dotazem:
+
+```sql
+select jobname, schedule, active from cron.job where jobname = 'jobi-uklid-api';
+```
+
+Prázdný výsledek = pg_cron není zapnutý (Database → Extensions) a migraci je
+potřeba pustit znovu. Bez toho `api_read_hits` roste donekonečna.
 
 **Veřejné sledování zakázky.** Samostatný modul a samostatné rozhodnutí,
 je to osobní údaj. Zatím se nedělalo.
