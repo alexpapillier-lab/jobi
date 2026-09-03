@@ -1,9 +1,49 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase, supabaseUrl } from "../../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { useEntitlements } from "../../hooks/useEntitlements";
 import { showToast } from "../../components/Toast";
 
 type Rezim = "hidden" | "boolean" | "exact";
+
+type TokenRadek = {
+  id: string;
+  name: string;
+  scopes: string[];
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+const POPIS_ROZSAHU: Record<string, string> = {
+  "catalog:write": "Měnit ceny a časy oprav",
+  "inventory:write": "Měnit počty kusů a ceny produktů",
+};
+
+async function volejSpravu(telo: Record<string, unknown>) {
+  if (!supabase || !supabaseAnonKey) return { stav: 0, data: { error: "Chybí konfigurace Supabase" } };
+  // refreshSession stejně jako v EntitlementsPanel – v desktopu getSession()
+  // často vrátí prošlý token a funkce pak odpoví 401.
+  const { data: obnovena } = await supabase.auth.refreshSession();
+  const jwt = obnovena?.session?.access_token
+    ?? (await supabase.auth.getSession()).data?.session?.access_token;
+  if (!jwt) return { stav: 401, data: { error: "Nejste přihlášeni" } };
+
+  const r = await supabaseFetch(`${supabaseUrl}/functions/v1/api-tokens-manage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+      apikey: supabaseAnonKey,
+    },
+    body: JSON.stringify(telo),
+  });
+  return { stav: r.status, data: await r.json().catch(() => ({})) };
+}
+
+function kdy(x: string | null) {
+  if (!x) return "nikdy";
+  return new Date(x).toLocaleString("cs-CZ", { dateStyle: "short", timeStyle: "short" });
+}
 
 /**
  * Přehled veřejného API pro servis.
@@ -22,6 +62,13 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   const [nacitam, setNacitam] = useState(true);
   const [test, setTest] = useState<{ kde: "cenik" | "sklad"; stav: number; telo: string } | null>(null);
   const [testuji, setTestuji] = useState<"cenik" | "sklad" | null>(null);
+  const [tokeny, setTokeny] = useState<TokenRadek[]>([]);
+  const [novyNazev, setNovyNazev] = useState("");
+  const [noveRozsahy, setNoveRozsahy] = useState<string[]>([]);
+  const [vytvarim, setVytvarim] = useState(false);
+  /* Token se ukáže jen tady a jen jednou – v databázi je od té chvíle
+     už jen jeho otisk, takže znovu ho zobrazit nejde. */
+  const [cerstvyToken, setCerstvyToken] = useState<string | null>(null);
 
   const maCenik = has("api_catalog");
   const maSklad = has("api_inventory");
@@ -80,6 +127,38 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
       showToast("Uloženo", "success");
     }
   }, [activeServiceId, rezim]);
+
+  const nactiTokeny = useCallback(async () => {
+    if (!activeServiceId) return;
+    const { stav, data } = await volejSpravu({ action: "list", serviceId: activeServiceId });
+    // 403 = přihlášený není owner ani admin; seznam prostě nebude
+    if (stav === 200) setTokeny(data.tokens ?? []);
+  }, [activeServiceId]);
+
+  useEffect(() => { nactiTokeny(); }, [nactiTokeny]);
+
+  const vytvorToken = useCallback(async () => {
+    if (!activeServiceId) return;
+    setVytvarim(true);
+    const { stav, data } = await volejSpravu({
+      action: "create", serviceId: activeServiceId,
+      name: novyNazev.trim(), scopes: noveRozsahy,
+    });
+    setVytvarim(false);
+    if (stav !== 200) { showToast(data.error ?? "Token se nepodařilo vytvořit", "error"); return; }
+    setCerstvyToken(data.token);
+    setNovyNazev("");
+    setNoveRozsahy([]);
+    nactiTokeny();
+  }, [activeServiceId, novyNazev, noveRozsahy, nactiTokeny]);
+
+  const odvolejToken = useCallback(async (tokenId: string) => {
+    if (!activeServiceId) return;
+    const { stav, data } = await volejSpravu({ action: "revoke", serviceId: activeServiceId, tokenId });
+    if (stav !== 200) { showToast(data.error ?? "Odvolání se nepodařilo", "error"); return; }
+    showToast("Token odvolán", "success");
+    nactiTokeny();
+  }, [activeServiceId, nactiTokeny]);
 
   const zkopiruj = async (text: string) => {
     try {
@@ -262,10 +341,113 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         </>
       )}
 
-      <div style={nadpis}>Zápis</div>
+      <div style={nadpis}>Zápis – tokeny</div>
       <p style={popis}>
-        Čtení je veřejné, zápis bude vyžadovat token. Ten se zatím nedá vytvořit –
-        připravuje se.
+        Čtení je veřejné, zápis vyžaduje token. Hodí se, když ceny nebo počty kusů
+        udržuje jiný systém – pokladna, e-shop. Token vydává jen majitel nebo admin
+        servisu.
+      </p>
+      <p style={popis}>
+        Měnit jde <strong style={{ color: "var(--text)" }}>počty kusů a ceny produktů</strong> a
+        {" "}<strong style={{ color: "var(--text)" }}>ceny a časy oprav</strong>. Nic jiného –
+        názvy, popisy ani vazby na modely se přes API přepsat nedají, to je úprava
+        katalogu a patří do aplikace.
+      </p>
+
+      {cerstvyToken && (
+        <div style={{
+          border: "1px solid var(--accent)", background: "var(--accent-soft)",
+          borderRadius: 8, padding: 12, marginBottom: 12,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6, color: "var(--text)" }}>
+            Token vytvořen. Ulož si ho teď.
+          </div>
+          <pre style={{ ...kod, background: "var(--panel)" }}>{cerstvyToken}</pre>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <Tlacitko onClick={() => zkopiruj(cerstvyToken)}>Kopírovat token</Tlacitko>
+            <Tlacitko onClick={() => setCerstvyToken(null)}>Mám ho uložený</Tlacitko>
+          </div>
+          <p style={{ ...popis, margin: "8px 0 0" }}>
+            Podruhé se už nezobrazí – v databázi je od téhle chvíle jen jeho otisk.
+            Kdyby se ztratil, vydej nový a starý odvolej.
+          </p>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+        <input
+          placeholder="K čemu token je (např. web, pokladna)…"
+          value={novyNazev}
+          onChange={(e) => setNovyNazev(e.target.value)}
+          maxLength={60}
+          style={{
+            padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)",
+            background: "var(--panel)", color: "var(--text)", fontSize: 13,
+          }}
+        />
+        <div style={{ display: "grid", gap: 6 }}>
+          {(maCenik ? ["catalog:write"] : []).concat(maSklad ? ["inventory:write"] : []).map((r) => (
+            <label key={r} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={noveRozsahy.includes(r)}
+                onChange={(e) => setNoveRozsahy((p) => e.target.checked ? [...p, r] : p.filter((x) => x !== r))}
+              />
+              <span style={{ color: "var(--text)" }}>{POPIS_ROZSAHU[r]}</span>
+              <code style={{ fontSize: 11, color: "var(--muted)" }}>{r}</code>
+            </label>
+          ))}
+        </div>
+        <div>
+          <Tlacitko
+            onClick={vytvorToken}
+            disabled={vytvarim || !novyNazev.trim() || noveRozsahy.length === 0}
+          >
+            {vytvarim ? "Vytvářím…" : "Vytvořit token"}
+          </Tlacitko>
+        </div>
+      </div>
+
+      {tokeny.length > 0 && (
+        <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+          {tokeny.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)",
+                background: "var(--panel)", opacity: t.revoked_at ? 0.55 : 1,
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{t.name}</span>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>{t.scopes.join(", ")}</span>
+              <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
+                {t.revoked_at ? `odvolán ${kdy(t.revoked_at)}` : `naposled použit: ${kdy(t.last_used_at)}`}
+              </span>
+              {!t.revoked_at && (
+                <Tlacitko onClick={() => odvolejToken(t.id)}>Odvolat</Tlacitko>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={nadpis}>Jak zapisovat</div>
+      <pre style={kod}>{`curl -X POST ${supabaseUrl}/functions/v1/api-write \\
+  -H "Authorization: Bearer jobi_…" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: $(uuidgen)" \\
+  -d '{"products":[{"sku":"BAT-6S","stock":4,"price":590}]}'`}</pre>
+      <p style={{ ...popis, marginTop: 10 }}>
+        Produkt se adresuje přes <code>id</code> nebo <code>sku</code>, oprava jen přes{" "}
+        <code>id</code> – název opravy není jedinečný. Hlavička <code>Idempotency-Key</code> je
+        volitelná, ale doporučená: když se požadavek při výpadku sítě odešle dvakrát,
+        podruhé se jen vrátí uložená odpověď a nic se neprovede znovu.
+      </p>
+      <p style={popis}>
+        Limit je 30 zápisů za minutu na token; při překročení přijde 429. Odvolání
+        platí okamžitě a nedá se vzít zpět – odvolané tokeny zůstávají v seznamu,
+        ať je dohledatelné, co se kdy dělo.
       </p>
     </div>
   );

@@ -430,3 +430,8 @@ verify_jwt = false
 
 [functions.public-inventory]
 verify_jwt = false
+
+# Zápis přes veřejné API – ověřuje se vlastním tokenem (Bearer jobi_…),
+# ne přihlášením do aplikace, takže JWT kontrola by ho jen odmítla.
+[functions.api-write]
+verify_jwt = false
