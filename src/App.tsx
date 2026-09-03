@@ -46,6 +46,7 @@ import { useSmsEnabled } from "./hooks/useSmsEnabled";
 import { useEntitlements } from "./hooks/useEntitlements";
 import { useAppUpdate } from "./context/AppUpdateContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
+import { startPersonalPreferencesSync } from "./lib/personalPreferencesSync";
 import {
   getShortcut,
   comboMatchesEvent,
@@ -245,6 +246,17 @@ export default function App() {
 
   // UI config
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
+
+  /* Osobní volby (zobrazení zakázek, zvýraznění stavu, barva loga...)
+     sdílené napříč zařízeními – ne přes tenhle state přímo, ale přes
+     localStorage a existující "jobsheet:ui-updated" / "…logo-preset-changed"
+     události, na které appka už reaguje. Sync jen po přihlášení stáhne
+     uložené volby a po každé změně je odešle zpátky; samotné čtení/zápis
+     UI configu se tímhle nemění. */
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    return startPersonalPreferencesSync();
+  }, [session?.user?.id]);
 
   // Faktury: nárok servisu A zároveň to, že si je uživatel neskryl.
   // Musí být až za uiCfg, ze kterého čte předvolbu.
