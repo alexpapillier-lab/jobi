@@ -23,6 +23,28 @@ const produkt = (o: Partial<Product> & { id: string }): Product => ({
 const sklad = (products: Product[], warehouses: Warehouse[] = [hlavni]): InventoryData =>
   ({ productCategories: [], products, warehouses });
 
+/**
+ * Návrat na Sklad: snímek už existuje (je mimo komponentu), ale data se
+ * teprve načítají. Rozdíl proti neprázdnému snímku by znamenal „smaž
+ * všechno“ – 3. 9. z toho byly chyby „Poslední sklad servisu nejde smazat“
+ * a porušený unikátní index na výchozí sklad. Volající to má utnout dřív,
+ * než se sem vůbec dostane; tenhle test ukazuje, proč.
+ */
+describe("prázdná data proti neprázdnému snímku", () => {
+  it("by chtěla smazat úplně všechno – proto se sem nesmí pustit", () => {
+    const driv: InventoryData = {
+      productCategories: [{ id: "k1", name: "Baterie", modelIds: [], createdAt: "2026-01-01T00:00:00Z" }],
+      products: [produkt({ id: "a" }), produkt({ id: "b" })],
+      warehouses: [{ id: "w1", name: "Hlavní sklad", isDefault: true, publicVisible: true, createdAt: "2026-01-01T00:00:00Z" }],
+    };
+    const prazdno: InventoryData = { productCategories: [], products: [], warehouses: [] };
+    const r = rozdilSkladu(prazdno, driv, SID);
+    expect(r.produktyKeSmazani).toEqual(["a", "b"]);
+    expect(r.kategorieKeSmazani).toEqual(["k1"]);
+    expect(r.skladyKeSmazani).toEqual(["w1"]);
+  });
+});
+
 describe("rozdilSkladu", () => {
   it("beze změny neposílá nic", () => {
     const s = sklad([produkt({ id: "a" }), produkt({ id: "b" })]);

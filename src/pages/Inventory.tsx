@@ -663,6 +663,17 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     const drive = snimekProServis(sid);
     if (!drive) return;
     const k = dataRef.current;
+
+    /* Snímek je mimo komponentu, takže po návratu na Sklad existuje dřív,
+       než se data stihnou načíst – a `data` jsou v tu chvíli prázdná.
+       Rozdíl proti neprázdnému snímku by pak znamenal „smaž všechno“.
+       3. 9. z toho byly chyby „Poslední sklad servisu nejde smazat“
+       a porušený unikátní index na výchozí sklad; nebýt těch dvou
+       pojistek v databázi, smazalo by to produkty. */
+    const prazdno = k.products.length === 0 && k.productCategories.length === 0 && k.warehouses.length === 0;
+    const drivNeco = drive.products.length > 0 || drive.productCategories.length > 0 || drive.warehouses.length > 0;
+    if (prazdno && drivNeco) return;
+
     const r = await saveInventoryToDb(sid, k, drive);
     if (!r.error) {
       posledniUlozeno = { sid, data: k };
@@ -692,13 +703,17 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     // Po vědomé akci (uložení produktu) krátce, ať potvrzení přijde hned;
     // u průběžných změn se drží delší prodleva.
     const t = setTimeout(() => { ulozSklad("Inventory.saveInventory"); }, cekaHlaska.current ? 150 : 1200);
-    /* Odchod ze Skladu nebo zavření okna rozdělané uložení dřív jen zrušil
-       – uživatel přitom už viděl hlášku „uloženo“. Teď se dopíše. */
-    return () => {
-      clearTimeout(t);
-      ulozSklad("Inventory.saveOnLeave");
-    };
+    return () => clearTimeout(t);
   }, [activeServiceId, data, ulozSklad]);
+
+  /* Dopsání při skutečném odchodu ze Skladu. Dřív viselo na úklidu efektu
+     výš, jenže ten běží po KAŽDÉ změně dat – a v tu chvíli má dataRef ještě
+     hodnotu z minulého renderu (úklidy běží před efekty). Ukládal se tak
+     předchozí stav a po návratu na Sklad i prázdná data. Prázdné pole
+     dependencies znamená, že tohle se spustí jen při odmontování. */
+  useEffect(() => {
+    return () => { ulozSklad("Inventory.saveOnLeave"); };
+  }, [ulozSklad]);
 
   /* Zavření panelu ani celého okna neproběhne přes odmontování komponenty,
      proto ještě tohle. `pagehide` chytí i Safari, kde se `beforeunload`
