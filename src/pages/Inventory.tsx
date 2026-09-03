@@ -674,6 +674,13 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     const drivNeco = drive.products.length > 0 || drive.productCategories.length > 0 || drive.warehouses.length > 0;
     if (prazdno && drivNeco) return;
 
+    /* Značka se staví PŘED zápisem, ne až po něm. Ukládání je několik
+       požadavků za sebou a hned ten první vyvolá realtime událost; její
+       přenačtení má 800ms prodlevu, takže dobíhalo ještě během zápisu.
+       setData(res.data) pak přepsalo rozdělaná data i snímek – množství
+       v inventory_stock se zapisuje až po produktech, takže reload viděl
+       produkt s nulou a další uložení to vyhodnotilo jako „ubyly kusy“. */
+    lastSaveAtRef.current = Date.now();
     const r = await saveInventoryToDb(sid, k, drive);
     if (!r.error) {
       posledniUlozeno = { sid, data: k };
@@ -922,6 +929,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           description: newProduct.description.trim() || undefined,
           imageUrl: newProduct.imageUrl || undefined,
           repairIds: newProduct.repairIds.length > 0 ? newProduct.repairIds : undefined,
+          categoryId: newProduct.categoryId || undefined,
           createdAt: new Date().toISOString(),
         };
         setData((d) => ({ ...d, products: [...d.products, product] }));
@@ -944,6 +952,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       description: newProduct.description.trim() || undefined,
       imageUrl: newProduct.imageUrl || undefined,
       repairIds: newProduct.repairIds.length > 0 ? newProduct.repairIds : undefined,
+      categoryId: newProduct.categoryId || undefined,
       createdAt: new Date().toISOString(),
     };
     setData((d) => ({ ...d, products: [...d.products, product] }));
