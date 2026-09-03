@@ -1091,8 +1091,25 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsUnreadCount={globalSmsUnreadCount}
           smsEnabled={smsEnabled}
         >
+            {/*
+              Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
+              Nastavení) mají minHeight, ne pevných 100 %. <main> je scroll
+              kontejner a stránky samy žádnou vlastní výšku nežádají – když
+              obal dostal height: "100%", byl napevno vysoký přesně jako
+              viditelná plocha <main> (bez jeho paddingu). Delší seznam
+              zakázek pak "přetekl" mimo vlastní obal (overflow: visible ho
+              nezastavil, jen ho to nenafouklo), takže spodní karty ležely
+              až u úplně dolního okraje <main> – přesně tam, kde na mobilu
+              sedí spodní lišta – a nešlo se k nim doscrollovat, protože to
+              přetečení <main>.scrollHeight nepočítal spolehlivě.
+
+              SMS, Kalendář a Faktury height: "100%" naopak POTŘEBUJÍ – řeší
+              si posouvání samy uvnitř (rozdělený pohled, vlastní hlavička),
+              a bez pevné výšky by jim to přestalo fungovat. Proto se jich
+              tahle oprava netýká.
+            */}
             {visitedPages.has("orders") && (
-              <div style={{ display: activePage === "orders" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "orders"}>
+              <div style={{ display: activePage === "orders" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "orders"}>
                 <Orders
                   activeServiceId={activeServiceId}
                   smsPanelTicketIdRef={smsPanelTicketIdRef}
@@ -1159,7 +1176,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("customers") && (
-              <div style={{ display: activePage === "customers" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "customers"}>
+              <div style={{ display: activePage === "customers" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "customers"}>
             <Customers
               activeServiceId={activeServiceId}
               openCustomerIntent={openCustomerIntent}
@@ -1186,19 +1203,19 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("inventory") && (
-            <div style={{ display: activePage === "inventory" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "inventory"}>
+            <div style={{ display: activePage === "inventory" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "inventory"}>
               <Inventory activeServiceId={activeServiceId} />
             </div>
           )}
 
           {visitedPages.has("devices") && (
-            <div style={{ display: activePage === "devices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "devices"}>
+            <div style={{ display: activePage === "devices" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "devices"}>
               <Devices activeServiceId={activeServiceId} />
             </div>
           )}
 
           {visitedPages.has("statistics") && (
-            <div style={{ display: activePage === "statistics" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "statistics"}>
+            <div style={{ display: activePage === "statistics" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "statistics"}>
               <Statistics
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
@@ -1226,7 +1243,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("settings") && (
-            <div style={{ display: activePage === "settings" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "settings"}>
+            <div style={{ display: activePage === "settings" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "settings"}>
             <Settings
               activeServiceId={activeServiceId}
               setActiveServiceId={setActiveServiceId}
