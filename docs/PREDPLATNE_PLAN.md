@@ -14,124 +14,169 @@ zapisovat webhook od platební brány.
 
 ---
 
-## 0. Co je potřeba rozhodnout
+## 0. Rozhodnutí – stav k 3. 9. 2026
 
-Seznam všeho, co musí rozhodnout majitel, ne kód. U každého bodu je
-doporučení – když se ztotožníš, stačí napsat „beru doporučení" a jede se
-podle něj. Rozhodnutí **A1–A6 blokují první migraci**, bez nich nemá
-smysl psát schéma.
+Většina je rozhodnutá (✅). Zbývá:
+
+| # | Co | Stav |
+|---|---|---|
+| A2 | Ceník – **ceny jsou na webu, chybí limity členů** | návrh níž |
+| A3 | Kolik členů má který plán | návrh níž |
+| A5 | Servisy zdarma: ručně, nebo přes Stripe? | doporučení níž |
+| B2 | Délka trialu – 7 dní je krátkých | k potvrzení |
+| C3 | Ochranná známka – **potřebuje rešerši** | úkol |
+| D2 | Sub-značky – levnější varianta níž | k potvrzení |
 
 ### A. Blokuje první migraci
 
-- [ ] **A1 – Co se vlastně prodává:** celý servis v plánech
-      (Start/Profi/Max), nebo dál po modulech, jak to má
-      `service_entitlements` dnes?
-      *Doporučení: **plány**.* Zákazník nechce skládat moduly, chce jednu
-      cenu. Moduly zůstanou technickou vrstvou pod tím – plán jen určuje,
-      které nároky se udělí.
-- [ ] **A2 – Ceník:** kolik plánů, jaké ceny, co v kterém je.
-      **Tohle za tebe nikdo nerozhodne** – je to jediný bod na seznamu,
-      kde nemám co doporučit, protože závisí na tom, komu a za co
-      prodáváš. Orientačně: u ceny pod ~300 Kč měsíčně sežerou fixní
-      poplatky brány nepříjemný podíl (viz *Kolik ti zůstane*).
-- [ ] **A3 – Limity členů:** kolik lidí smí mít který plán?
-      A počítá se do limitu owner a nepřijaté pozvánky?
-      *Doporučení: **počítat všechny** včetně ownera i visících pozvánek*
-      – jinak jde limit obejít tím, že se pozvánky nechají nepřijaté.
-      Root owner se nepočítá.
-- [ ] **A4 – Měsíčně, ročně, nebo obojí?**
-      *Doporučení: **obojí**, roční za cenu 10 měsíců.* Není to jen
-      cashflow – u roční platby ušetříš 11 fixních poplatků za transakci
-      a odpadne 11 příležitostí, kdy může selhat karta.
-- [ ] **A5 – Co se stávajícími servisy, které dnes používají Jobi
-      zdarma?** Dostanou nějaký plán natvrdo, nebo `plan_key = 'legacy'`
-      bez limitů? *Doporučení: **legacy bez limitů**, a řešit
-      individuálně.* Je jich zatím málo a naštvat první uživatele kvůli
-      pár stovkám se nevyplatí.
-- [ ] **A6 – Plány společné pro všechny obory, nebo ceník na obor?**
-      (viz sekce 11) *Doporučení: **společné**, `plans.vertical` NULL.*
-      Sloupec přidat hned – rozdělit se to pak dá bez migrace všech řádků.
+- [x] **A1 – ✅ Plány i moduly.** Základ v plánu, SMS jako placený
+      doplněk – přesně jak to už stojí na webu (SMS +199 Kč/měs
+      u Starteru, v ceně u Business a Enterprise).
+      **Omezení, které je potřeba držet:** doplňky ať zůstanou u jednoho,
+      maximálně dvou. Každý další násobí kombinace, které musíš
+      otestovat (plán × doplněk × obor). SMS je na doplněk ideální,
+      protože má skutečné variabilní náklady (Twilio). Faktury a zbytek
+      patří do plánu.
+- [ ] **A2 – Ceny jsou na webu, chybí limity.** `web/index.html`:
+      Starter 590, Business 1190, Enterprise 2490 Kč, ročně −15 %.
+      **Ceny samotné bych neměnil** – proti konkurenci sedí (RepairShopr
+      od ~1 260 Kč, RepairDesk od ~2 080 Kč za pobočku, oba dražší).
+      **Problém je jinde: chybí důvod k upgradu.** Dnes Starter od
+      Business dělí „sklad napříč pobočkami" a „konsolidované
+      statistiky" – věci, které malý servis nechce, takže z 590 Kč
+      nikdy neodejde. Řešení je A3.
+- [ ] **A3 – Limity členů jako motor upgradu.** Návrh:
+      **Starter 2 členy, Business 6, Enterprise bez limitu.**
+      Jednočlenný servis platí 590, dílna s techniky narazí na limit a
+      přejde na 1190 přirozeně, ne kvůli funkci, kterou nepotřebuje.
+      Přesně tak to dělá RepairShopr (Starter = 1 uživatel).
+      *Volitelně:* místo skoku 590 → 1190 nabídnout **místo navíc za
+      +99 Kč/měs**. Měkčí, ale je to další doplněk – viz varování u A1.
+      Do limitu **počítat všechny** včetně ownera i nepřijatých pozvánek
+      (jinak jde obejít visícími pozvánkami), root owner se nepočítá.
+- [x] **A4 – ✅ Měsíčně i ročně**, roční levnější. Web už má −15 %,
+      tím se to řídí.
+- [ ] **A5 – Servisy zdarma: nedávat je do Stripu.** Návrh byl vést je
+      pod Stripem zdarma, ať je všechno na jednom místě. **Nedoporučuju:**
+      Stripe má být zdroj pravdy o *platících*. Neplatiči tam udělají
+      duchy v MRR, 100% kupóny se chovají jinak než běžné předplatné a
+      nikdy nedostanou kartu, takže při zrušení slevy platba stejně
+      selže. *Doporučení: `plan_key = 'legacy'`, nárok `source = 'manual'`,
+      mimo Stripe.* „Jedno místo" ať je **tvoje admin obrazovka**, která
+      ukáže platící i legacy vedle sebe – ne Stripe dashboard.
+- [x] **A6 – ✅ Ceník na obor.** `plans.vertical` bude `NOT NULL`,
+      první sada plánů `vertical = 'repair'`. Začíná se **Apple servisy**.
+      Cena za to je duplikace sady plánů při každém novém oboru – u dvou
+      tří oborů je to v pořádku, jen o tom vědět.
 
 ### B. Blokuje spuštění prodeje
 
-- [ ] **B1 – Brána: Stripe, nebo česká (Comgate/GoPay)?**
-      *Doporučení: **Stripe Billing**.* Umí opakované platby, trial,
-      proraci při změně plánu, retry po odmítnuté kartě, slevové kódy i
-      zákaznický portál. České brány jsou na kartách levnější, ale
-      opakované platby si tam musíš plánovat sám (uložený token + vlastní
-      cron) – práce navíc a zdroj tichých výpadků. Zbytek dokumentu
-      předpokládá Stripe.
-- [ ] **B2 – Zkušební doba:** 14 dní bez karty, trial s kartou, nebo
-      žádný? *Doporučení: **14 dní bez karty**.* U nástroje, který si
-      zákazník musí nejdřív naplnit daty, je karta předem zbytečná brzda.
-- [ ] **B3 – Co se stane po vypršení předplatného.**
-      *Doporučení: **read-only režim*** – zákazník vidí a exportuje svoje
-      zakázky, ale nezakládá nové. Tvrdé zamčení dat je u evidence
-      zakázek na hraně a dělá ze zapomenuté karty katastrofu.
-- [ ] **B4 – Vratky a výpovědi:** do konce zaplaceného období, nebo
-      poměrná část zpátky? *Doporučení: **do konce období, pak se
-      neobnoví**.* Nejjednodušší na účtování i na podmínky.
-- [ ] **B5 – Slevové kódy: jaké typy chceš mít na startu?**
-      *Doporučení: **procentuální sleva na první rok** (kampaně) plus
-      **partnerské kódy s poznámkou**.* Doživotní 100% slevy raději
-      řešit ručním nárokem, ne kódem – viz sekce 5.
-- [ ] **B6 – Fakturace: Fakturoid, nebo generovat doklady sám?**
-      *Doporučení: **Fakturoid**.* Stripe český daňový doklad nevystaví
-      a psát si to sám je práce, která nikam nevede.
+- [x] **B1 – ✅ Stripe.**
+- [ ] **B2 – Týdenní trial: souhlas s výhradou.** 7 dní je u nástroje,
+      do kterého si zákazník musí nejdřív přenést zakázky a nastavit
+      dokumenty, dost málo – běžný standard je 14 dní a servis často
+      zkouší až o víkendu. Není to ale blokující rozhodnutí, dá se to
+      měřit a změnit. **Podmínka: `plans.trial_days` jako sloupec, ne
+      konstanta v kódu**, plus tlačítko „prodloužit trial o 7 dní"
+      v admin obrazovce. To budeš potřebovat hned u prvního zájemce,
+      který napíše „nestihl jsem to vyzkoušet".
+- [x] **B3 – ✅ Read-only po vypršení.**
+- [x] **B4 – ✅ Do konce zaplaceného období**, pak se neobnoví.
+- [x] **B5 – ✅ Slevové kódy ano** – procentuální na první rok
+      (kampaně) a partnerské s poznámkou. Doživotní 100% slevy řešit
+      ručním nárokem, ne kódem (sekce 5).
+- [x] **B6 – ✅ Vlastní fakturace** (revize původního doporučení).
+      Fakturoid jsem doporučoval dřív, než jsem věděl, že fakturační
+      modul už v repu je: `src/pages/Invoices.tsx`, `invoiceNumbering.ts`,
+      `invoiceMath.ts`, `invoiceVat.ts`, `invoice-send-email`. Použít ho
+      dává smysl – **jako neplátce DPH vystavuješ jednoduchý doklad bez
+      daně**, což je ta nejsnazší varianta.
+      **Ale:** ten modul je psaný pro fakturaci *tvých zákazníků jejich*
+      zákazníkům – má číslování a DPH nastavení per servis. Pro tvoje
+      vlastní faktury potřebuješ **samostatnou číselnou řadu a svoje
+      firemní údaje**, ne data servisu. Počítej ~den práce, ne hodinu.
+      **K revizi, až se staneš plátcem DPH** – tam začne přibývat
+      opravné doklady, zálohy a kontrolní hlášení a Fakturoid se vyplatí.
 
 ### C. Mimo kód, ale musí být hotové před první platbou
 
-- [ ] **C1 – Živnost, nebo s.r.o.?** Ovlivní to smlouvy, ručení i to,
-      komu patří kód. *Doporučení: začít na živnost, s.r.o. až
-      s příjmem, který to unese.*
-- [ ] **C2 – Psal na Jobi kód někdo kromě tebe?** Pokud ano a nebyl to
-      zaměstnanec, **práva zůstávají jemu**, dokud nemáš licenční
-      smlouvu. Rozhodnout, jestli je potřeba dořešit – viz sekce 9.
-- [ ] **C3 – Ochranná známka „Jobi"** u ÚPV: ano, nebo ne?
-      *Doporučení: **ano**, ale až po rešerši, jestli je název volný.*
-- [ ] **C4 – Potvrdit, že se na iOS neprodává.** Žádné ceny, žádné
-      tlačítko koupit, appka jen přihlašuje – jinak Apple in-app
-      purchase a podíl z každé platby (sekce 10).
-- [ ] **C5 – Prověřit identifikovanou osobu k DPH.** Ne rozhodnutí,
-      ale úkol: povinnost pravděpodobně máš už dneska kvůli Supabase,
-      Twiliu a Resendu, nezávisle na předplatném (sekce *Když to budeš
-      mít na živnost*).
+- [x] **C1 – ✅ Živnost.** S.r.o. až s příjmem, který to unese.
+- [x] **C2 – ✅ Kód psal jen majitel.** Autorská práva jsou tím čistá,
+      žádná licenční smlouva není potřeba. Kdyby na Jobi někdy dělal
+      externista, musí licenční smlouva vzniknout **předem** – zpětně
+      se to vyjednává mnohem hůř.
+- [ ] **C3 – Známka ano, ale nejdřív rešerše.** Ověřit v databázi
+      **ÚPV** (isdv.upv.cz) a **EUIPO** (eSearch), jestli je „Jobi"
+      volné ve třídách **9** (software) a **42** (SaaS). „Jobi" je
+      krátké slovo a existují značky toho jména v jiných oborech –
+      to samo o sobě nevadí, kolize se posuzuje v rámci tříd, ale bez
+      rešerše to nejde tvrdit. **Registruj „Jobi", ne sub-značky**
+      (viz D2): chráníš tím kmen, ze kterého ostatní názvy vycházejí.
+- [x] **C4 – ✅ Odpadá zatím.** iOS appka je mockup, není veřejná.
+      Pravidlo platí až ve chvíli, kdy půjde do App Store – sekce 10
+      je do té doby neaktuální.
+- [ ] **C5 – Identifikovaná osoba: vysvětlení.** Tohle není
+      rozhodnutí, ale povinnost, kterou nejspíš už máš. Stručně:
+      1. Stripe (Irsko), Supabase, Twilio i Resend ti fakturují
+         **ze zahraničí bez DPH**.
+      2. Jakmile jako neplátce přijmeš službu od firmy z jiného státu
+         EU, musíš se do **15 dnů registrovat jako identifikovaná
+         osoba** a odvést z té faktury 21 % DPH (bez nároku na odpočet).
+      3. **Nestáváš se plátcem DPH** – svým zákazníkům dál fakturuješ
+         bez daně. Odvádíš jen daň z těch přijatých zahraničních služeb.
 
-### D. Obory – teď rozhodni jen dvě věci
+      **Úkol: zeptat se účetní, jestli už registrovaný jsi.** Twilio a
+      Supabase používáš dávno, takže povinnost pravděpodobně běží
+      nezávisle na předplatném. Za pozdní registraci jsou pokuty.
 
-- [ ] **D1 – Který obor je druhý?**
-      *Doporučení: **autoservis**.* Je z ~95 % sdílený s tím, co Jobi
-      umí dneska, takže na něm ověříš celý koncept oborů za zlomek
-      práce – a teprve pak budeš vědět, jestli slovníková vrstva drží.
-- [ ] **D2 – Jedna značka Jobi, nebo Jobi Auto / Jobi Dent?**
-      *Doporučení: **jedna značka**.* Levnější na známky i na App Store
-      (jedna aplikace místo tří listingů). Rozlišovat se dá landing
-      pagí, ne názvem produktu.
+### D. Obory
 
-**Zubaři počkají.** Rozhodnutí „obor, nebo samostatný produkt?" nedává
-smysl dělat teď – padne až po autoservisu, podle měřítka v sekci 11
-(nad ~70 % sdílených obrazovek obor, pod ~50 % druhý produkt).
+- [x] **D1 – ✅ Cykloservisy jako druhý obor.** Dobrá volba na
+      *ověření konceptu*: cykloservis je s opravnou elektroniky skoro
+      totožný (přines, diagnostika, oprava, předání), pole vystačí
+      stejná – značka, model, výrobní číslo rámu. Prakticky jen slovník
+      a statusy.
+      **Dvě věci k tomu ale patří:** je to tak blízko, že to
+      slovníkovou vrstvu skoro neprověří – návrhové chyby se ukážou až
+      u vzdálenějšího oboru. A trh je menší a hodně sezónní (jaro),
+      takže od něj nečekej tržby jako od autoservisů. *Volba dává smysl
+      jako levný test, ne jako zdroj příjmu.*
+- [ ] **D2 – Sub-značky: ano, ale levnou cestou.** JobiAuto a JobiDent
+      se prodávají líp než jedno obecné Jobi, to je pravda – mechanik
+      hledá software pro autoservisy. **Nedělej z nich ale tři produkty.**
+      *Návrh: jeden produkt, jedna aplikace, sub-značky jako marketing.*
+      `jobiauto.cz` je landing page vedoucí do téže aplikace, která se
+      pro daný obor v hlavičce představí jako „Jobi Auto".
+      Co stojí plná varianta: **rešerše a registrace známky ke každému
+      názvu zvlášť** (~5 000 Kč za jednu, každá vlastní řízení), vlastní
+      doména a údržba každé landing page, a kdyby appky někdy šly do
+      obchodů, **tři listingy = trojnásobek releasů a schvalování**.
+      Registruj teď „Jobi", sub-značky až podle toho, jestli se obor
+      chytne.
 
-### Když to nechceš řešit po jednom
-
-Doporučená sada v kostce: **plány místo modulů, měsíčně i ročně,
-Stripe, 14denní trial bez karty, po vypršení read-only, vratky do konce
-období, stávající servisy jako `legacy`, plány společné pro obory,
-fakturace přes Fakturoid, druhý obor autoservis, jedna značka.**
-
-Zbývá pak jediné, co musíš vymyslet sám: **A2, ceník.**
+**Zubaři počkají.** Rozhodnutí „obor, nebo samostatný produkt?" padne
+až po cykloservisech, podle měřítka v sekci 11 (nad ~70 % sdílených
+obrazovek obor, pod ~50 % druhý produkt).
 
 ---
 
 ## 1. Databáze (migrace)
 
-- [ ] **`plans`** – katalog plánů: `key` (`start`/`profi`/`max`),
+- [ ] **`plans`** – katalog plánů: `key` (`starter`/`business`/`enterprise`),
+      `vertical` (**NOT NULL**, první sada `'repair'` – viz A6),
       `name`, `price_monthly`, `price_yearly`, `max_members`,
+      `trial_days` (viz B2 – ne konstanta v kódu),
       `modules jsonb` (které nároky plán uděluje), `stripe_price_id_monthly`,
       `stripe_price_id_yearly`, `active`, `sort_order`.
       Číst smí kdokoli přihlášený (potřebuje to ceník), zapisovat nikdo
       přes RLS – jen ty přes edge funkci.
       Ceny drž **v haléřích jako integer**, ne v korunách jako float.
+      Naplnit podle `web/index.html`: Starter 590 / Business 1190 /
+      Enterprise 2490 Kč, ročně −15 %, limity členů 2 / 6 / bez limitu.
+- [ ] **`plan_addons`** – placené doplňky nad rámec plánu (viz A1).
+      Zatím jediný: SMS za 199 Kč/měs pro Starter, u vyšších plánů
+      v ceně. Ve Stripu to jsou další položky téhož předplatného
+      (subscription items), ne druhé předplatné.
 - [ ] **`service_billing`** – jeden řádek na servis: `service_id` (unique),
       `plan_key`, `billing_period` (`monthly`/`yearly`),
       `stripe_customer_id`, `stripe_subscription_id`, `status`
@@ -365,8 +410,12 @@ kdo to smí spustit – dnes root owner, nově úspěšná platba.
       adresy zákazníků těch servisů. Vůči servisům jsi **zpracovatel**.
       Součástí musí být seznam subdodavatelů: Supabase, Twilio, Resend,
       nově Stripe.
-- [ ] **Fakturace.** Stripe nevystaví český doklad. Napojit **Fakturoid**
-      (API, umí opakované faktury), nebo generovat doklady sám.
+- [ ] **Fakturace vlastním modulem** (rozhodnuto v B6). Stripe český
+      doklad nevystaví. Použije se stávající fakturační modul – jako
+      neplátce DPH jde o jednoduchý doklad bez daně. **Pozor na
+      samostatnou číselnou řadu a vlastní firemní údaje**, ten modul je
+      psaný pro fakturaci servisu jeho zákazníkům. K revizi (Fakturoid),
+      až se staneš plátcem DPH.
 - [ ] **Autorská práva neregistruješ** – k softwaru vznikají automaticky
       okamžikem vytvoření, žádný rejstřík v ČR neexistuje. Co ale ohlídat:
       pokud ti na kódu dělal externista/OSVČ, práva zůstávají **jemu**,
@@ -383,7 +432,11 @@ kdo to smí spustit – dnes root owner, nově úspěšná platba.
 
 ---
 
-## 10. iOS – největší past
+## 10. iOS – zatím se neřeší
+
+**iOS appka je mockup a není veřejná (C4), takže tahle sekce je
+neaktuální.** Platí od chvíle, kdy by měla jít do App Store – a pak je
+to největší past celého předplatného, proto zůstává sepsaná.
 
 - [ ] **Apple u digitálního předplatného odemykaného v iOS aplikaci
       obecně vyžaduje in-app purchase** a bere si podíl (30 %, resp.
@@ -541,9 +594,10 @@ Prošel jsem repo, tohle jsou konkrétní místa, která je potřeba rozmotat:
       sekce: autoservis nekliká na „software pro servisy", klikne na
       „software pro autoservisy". Stejná aplikace, jiný nadpis a jiné
       screenshoty. Tady se rozhoduje, jestli se to prodá.
-- [ ] **Rozmyslet názvy a známky** – jedna značka Jobi pro všechno, nebo
-      Jobi Auto / Jobi Dent? Jedna značka je levnější na známky
-      i na App Store (jedna aplikace, ne tři listingy).
+- [ ] **Sub-značky JobiAuto / JobiDent** (D2) – jako marketingové
+      názvy nad jedním produktem, ne jako tři samostatné produkty.
+      Landing page na doméně oboru vede do téže aplikace, která se
+      v hlavičce představí podle `services.vertical`.
 
 ### Co když obor potřebuje velkou vlastní funkci (zubní kříž)
 
@@ -590,7 +644,10 @@ se vyplatí – a tady je jednoduché měřítko:
 - **pod ~50 %** → není to obor, ale **druhý produkt sdílející backend**;
   plánuj a oceňuj ho tak, místo aby ses ho snažil vecpat do jedné appky
 
-Autoservis vyjde kolem 95 % – proto je to správný první obor.
+**Cykloservis vyjde kolem 98 %, autoservis kolem 95 %** – proto padla
+volba na cykloservisy (D1). Zároveň platí, že tak blízký obor
+slovníkovou vrstvu skoro neprověří: je to levný test, že koncept
+funguje, ne test, že je navržený dobře.
 
 U zubařů to po započtení všeho vypadá spíš na to druhé:
 
@@ -712,8 +769,8 @@ Tohle si nech potvrdit od účetní, ale tady jsou body, které tě čekají:
 
 ## Doporučené pořadí prací
 
-1. Rozhodnutí ze sekce 0 (ceník, limity, trial) – bez toho nemá smysl
-   psát schéma.
+1. Dorozhodnout zbytek sekce 0 – hlavně **limity členů (A3)**, protože
+   bez nich nemá `plans` co obsahovat.
 2. Migrace: `plans`, `service_billing`, `billing_events`, `source` u
    nároků – a rovnou `services.vertical` + `plans.vertical` (sekce 11),
    i když se obory budou dělat až později.
