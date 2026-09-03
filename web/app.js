@@ -192,6 +192,7 @@
   var osWinBtn = document.getElementById("os-win");
   var formatNote = document.getElementById("download-format-note");
   var heroLabel = document.getElementById("hero-download-label");
+  var smartScreenNote = document.getElementById("download-smartscreen");
 
   var OS_TEXT = {
     mac: { note: "macOS · DMG · Apple Silicon i Intel", hero: "Stáhnout pro macOS" },
@@ -210,6 +211,8 @@
     }
     if (formatNote) formatNote.textContent = OS_TEXT[os].note;
     if (heroLabel) heroLabel.textContent = OS_TEXT[os].hero;
+    // Upozornění na SmartScreen dává smysl jen u Windows.
+    if (smartScreenNote) smartScreenNote.hidden = os !== "win";
   }
 
   if (osMacBtn) osMacBtn.addEventListener("click", function () { applyOS("mac"); });

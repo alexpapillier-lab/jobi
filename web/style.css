@@ -1045,6 +1045,46 @@ section#stazeni {
   line-height: 1.5;
 }
 
+/* Upozornění na SmartScreen u Windows. Záměrně klidné – není to chyba,
+   jen krok navíc, a poplašný tón by lidi od instalace spíš odradil. */
+.download-smartscreen {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  max-width: 480px;
+  margin: 18px auto 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.download-smartscreen[hidden] {
+  display: none;
+}
+.download-smartscreen svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.download-smartscreen p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.download-smartscreen strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.download-smartscreen em {
+  font-style: normal;
+  color: var(--text);
+  background: var(--panel-hi);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
 /* ========== Reveal ========== */
 .reveal {
   opacity: 0;

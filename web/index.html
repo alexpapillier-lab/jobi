@@ -393,6 +393,19 @@
             </div>
           </div>
           <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
+
+          <!-- Jobi zatím nemá Authenticode certifikát, takže Windows u instalace
+               ohlásí neznámého vydavatele. Bez vysvětlení to vypadá jako virus. -->
+          <div class="download-smartscreen" id="download-smartscreen" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <p>
+              <strong>Windows při instalaci ohlásí neznámého vydavatele.</strong>
+              Je to očekávané – klikněte na <em>Další informace</em> a pak
+              <em>Přesto spustit</em>. Instalátor je podepsaný naším klíčem pro
+              aktualizace, jen zatím nemáme placený certifikát, který by ho
+              Windows znaly předem.
+            </p>
+          </div>
           <p class="download-note"><span class="download-beta">Testovací verze</span> · Jobi + JobiDocs<br><span id="download-format-note">macOS · DMG · Apple Silicon i Intel</span></p>
         </div>
       </div>
@@ -412,6 +425,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=202609021020"></script>
+  <script src="app.js?v=202609030700"></script>
 </body>
 </html>
