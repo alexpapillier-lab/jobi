@@ -1173,6 +1173,7 @@ function StatCard({
           fontSize: 28,
           color: color || "var(--text)",
           lineHeight: 1.2,
+          overflowWrap: "anywhere",
         }}
       >
         {value}
