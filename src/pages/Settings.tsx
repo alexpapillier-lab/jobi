@@ -1660,7 +1660,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               <LogoPresetButton
                 isActive={logoPreset === "auto"}
                 label="Podle tématu"
-                logoUrl={`/logos/${theme}.png`}
+                logoUrl={assetUrl(`logos/${theme}.png`)}
                 fallbackColors={getLogoColors(theme, "auto")}
                 onClick={() => setLogoPreset("auto")}
               />
@@ -1669,7 +1669,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   key={p.id}
                   isActive={logoPreset === p.id}
                   label={p.label}
-                  logoUrl={`/logos/${p.id}.png`}
+                  logoUrl={assetUrl(`logos/${p.id}.png`)}
                   fallbackColors={{ background: p.background, jInner: p.jInner, foreground: p.foreground }}
                   onClick={() => setLogoPreset(p.id)}
                 />
