@@ -637,8 +637,18 @@ export function Sidebar({
 
       <div style={{ height: 1, background: "var(--border)", margin: "6px 0 2px", flexShrink: 0 }} />
 
-      {/* Nav – scroll when many items */}
-      <div style={{ flex: "1 1 0", minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", WebkitOverflowScrolling: "touch" }}>
+      {/* Nav – scroll when many items.
+          Aktivní/najetá položka má poloprůhledný glow (box-shadow), který
+          záměrně přesahuje mimo obdélník tlačítka. Element se svislým
+          posouváním ale nejde nastavit tak, aby vodorovně nestínoval –
+          overflow-x se podle specifikace CSS vždy odvodí od overflow-y
+          (visible zůstane jen když jsou visible obě osy), takže container
+          ořízne i to, co má zůstat vidět mimo řádek. Bez odsazení tak
+          glow mizel přesně na hraně tlačítka. Odsazení se přidává, jen
+          když je lišta rozbalená – ve sbalené je container na hraně
+          použitelné šířky (36px na 28px ikonu) a odsazení by ikony
+          zmáčklo. */}
+      <div style={{ flex: "1 1 0", minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "thin", WebkitOverflowScrolling: "touch", padding: expanded ? "6px 10px" : 0 }}>
       <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {[
           { key: "orders" as const, label: "Zakázky", icon: OrdersIcon },
