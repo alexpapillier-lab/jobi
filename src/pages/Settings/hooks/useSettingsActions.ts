@@ -219,7 +219,10 @@ export function useSettingsActions({ activeServiceId }: UseSettingsActionsParams
       // Save to localStorage (for backward compatibility)
       localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(companyData));
 
-      // Save abbreviation to service_settings in DB
+      // Uloží se do service_settings v DB – abbreviation zůstává i na
+      // vrcholu configu (čte ho useOrderActions.ts přímo odtud kvůli
+      // generování kódů zakázek), companyData je celý objekt navíc, ať
+      // mají všichni na servisu stejné fakturační údaje.
       if (activeServiceId && supabase) {
         try {
           const { error } = await (supabase as any).rpc("update_service_settings", {
@@ -227,6 +230,7 @@ export function useSettingsActions({ activeServiceId }: UseSettingsActionsParams
             p_patch: {
               config: {
                 abbreviation: companyData.abbreviation,
+                companyData,
               },
             },
           });

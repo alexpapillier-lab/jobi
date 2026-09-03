@@ -1,37 +1,64 @@
 import { Card } from "../../lib/settingsUi";
-import { getDeviceOptions, setDeviceOptions } from "../../lib/deviceOptions";
-import { useState } from "react";
+import { getDeviceOptions, setDeviceOptions, type DeviceOptions } from "../../lib/deviceOptions";
+import { useCallback, useEffect, useState } from "react";
+import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 
-export function DeviceOptionsSettingsSection() {
+/**
+ * Nabídka stavů zařízení/příslušenství sdílená mezi všemi na servisu,
+ * v reálném čase. Do teď byla jen v localStorage – a ani ne po servisech:
+ * jeden seznam pro všechny servisy na tom samém zařízení.
+ *
+ * localStorage (getDeviceOptions/setDeviceOptions) zůstává jako rychlá
+ * cache pro Orders.tsx, který ji čte synchronně při zakládání zakázky –
+ * DB je zdroj pravdy, cache se přepisuje při načtení i při realtime
+ * události.
+ */
+export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [options, setOptions] = useState(() => getDeviceOptions());
   const [newCondition, setNewCondition] = useState("");
   const [newAccessory, setNewAccessory] = useState("");
 
+  const applyRemote = useCallback((remote: DeviceOptions) => {
+    setDeviceOptions(remote);
+    setOptions(getDeviceOptions());
+  }, []);
+
+  useEffect(() => {
+    if (!activeServiceId) return;
+    let zruseno = false;
+    loadServiceConfig(activeServiceId).then((config) => {
+      if (zruseno || !config?.deviceOptions) return;
+      applyRemote(config.deviceOptions as DeviceOptions);
+    });
+    const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
+      if (config.deviceOptions) applyRemote(config.deviceOptions as DeviceOptions);
+    });
+    return () => { zruseno = true; unsubscribe(); };
+  }, [activeServiceId, applyRemote]);
+
+  const ulozit = useCallback((next: DeviceOptions) => {
+    setDeviceOptions(next);
+    setOptions(next);
+    if (activeServiceId) void mergeServiceConfig(activeServiceId, { deviceOptions: next });
+  }, [activeServiceId]);
+
   const addCondition = () => {
     const v = newCondition.trim();
     if (!v || options.deviceConditions.includes(v)) return;
-    const next = { ...options, deviceConditions: [...options.deviceConditions, v] };
-    setDeviceOptions(next);
-    setOptions(next);
+    ulozit({ ...options, deviceConditions: [...options.deviceConditions, v] });
     setNewCondition("");
   };
   const removeCondition = (idx: number) => {
-    const next = { ...options, deviceConditions: options.deviceConditions.filter((_, i) => i !== idx) };
-    setDeviceOptions(next);
-    setOptions(next);
+    ulozit({ ...options, deviceConditions: options.deviceConditions.filter((_, i) => i !== idx) });
   };
   const addAccessory = () => {
     const v = newAccessory.trim();
     if (!v || options.deviceAccessories.includes(v)) return;
-    const next = { ...options, deviceAccessories: [...options.deviceAccessories, v] };
-    setDeviceOptions(next);
-    setOptions(next);
+    ulozit({ ...options, deviceAccessories: [...options.deviceAccessories, v] });
     setNewAccessory("");
   };
   const removeAccessory = (idx: number) => {
-    const next = { ...options, deviceAccessories: options.deviceAccessories.filter((_, i) => i !== idx) };
-    setDeviceOptions(next);
-    setOptions(next);
+    ulozit({ ...options, deviceAccessories: options.deviceAccessories.filter((_, i) => i !== idx) });
   };
   const border = "1px solid var(--border)";
   const inputStyle = { padding: "8px 12px", borderRadius: 8, border, background: "var(--bg)", color: "var(--text)", fontSize: 13, width: "100%", maxWidth: 280 };

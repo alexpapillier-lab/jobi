@@ -1,37 +1,55 @@
 import { Card } from "../../lib/settingsUi";
-import { getHandoffOptions, setHandoffOptions } from "../../lib/handoffOptions";
-import { useState } from "react";
+import { getHandoffOptions, setHandoffOptions, type HandoffOptions } from "../../lib/handoffOptions";
+import { useCallback, useEffect, useState } from "react";
+import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 
-export function HandoffOptionsSettingsSection() {
+/** Sdílené mezi všemi na servisu v reálném čase – viz komentář u DeviceOptionsSettingsSection. */
+export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [options, setOptions] = useState(() => getHandoffOptions());
   const [newReceive, setNewReceive] = useState("");
   const [newReturn, setNewReturn] = useState("");
 
+  const applyRemote = useCallback((remote: HandoffOptions) => {
+    setHandoffOptions(remote);
+    setOptions(getHandoffOptions());
+  }, []);
+
+  useEffect(() => {
+    if (!activeServiceId) return;
+    let zruseno = false;
+    loadServiceConfig(activeServiceId).then((config) => {
+      if (zruseno || !config?.handoffOptions) return;
+      applyRemote(config.handoffOptions as HandoffOptions);
+    });
+    const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
+      if (config.handoffOptions) applyRemote(config.handoffOptions as HandoffOptions);
+    });
+    return () => { zruseno = true; unsubscribe(); };
+  }, [activeServiceId, applyRemote]);
+
+  const ulozit = useCallback((next: HandoffOptions) => {
+    setHandoffOptions(next);
+    setOptions(next);
+    if (activeServiceId) void mergeServiceConfig(activeServiceId, { handoffOptions: next });
+  }, [activeServiceId]);
+
   const addReceive = () => {
     const v = newReceive.trim();
     if (!v || options.receiveMethods.includes(v)) return;
-    const next = { ...options, receiveMethods: [...options.receiveMethods, v] };
-    setHandoffOptions(next);
-    setOptions(next);
+    ulozit({ ...options, receiveMethods: [...options.receiveMethods, v] });
     setNewReceive("");
   };
   const removeReceive = (idx: number) => {
-    const next = { ...options, receiveMethods: options.receiveMethods.filter((_, i) => i !== idx) };
-    setHandoffOptions(next);
-    setOptions(next);
+    ulozit({ ...options, receiveMethods: options.receiveMethods.filter((_, i) => i !== idx) });
   };
   const addReturn = () => {
     const v = newReturn.trim();
     if (!v || options.returnMethods.includes(v)) return;
-    const next = { ...options, returnMethods: [...options.returnMethods, v] };
-    setHandoffOptions(next);
-    setOptions(next);
+    ulozit({ ...options, returnMethods: [...options.returnMethods, v] });
     setNewReturn("");
   };
   const removeReturn = (idx: number) => {
-    const next = { ...options, returnMethods: options.returnMethods.filter((_, i) => i !== idx) };
-    setHandoffOptions(next);
-    setOptions(next);
+    ulozit({ ...options, returnMethods: options.returnMethods.filter((_, i) => i !== idx) });
   };
 
   const border = "1px solid var(--border)";

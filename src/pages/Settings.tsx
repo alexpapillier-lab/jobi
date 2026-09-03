@@ -33,6 +33,7 @@ import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
 import { loadDocumentsConfigRawFromDB, saveDocumentsConfigAutoPrint } from "../lib/documentSettings";
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { subscribeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
 import { LOGO_PRESETS, getLogoColors, type LogoPresetId } from "../lib/logoPresets";
 import { setAppIconFromPreset } from "../lib/setAppIcon";
 import { AppLogo } from "../components/AppLogo";
@@ -320,6 +321,30 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     getVersion().then(setAppVersion).catch(() => setAppVersion("?"));
   }, []);
   
+  /**
+   * Firemní údaje (IČO, DIČ, adresa, bankovní účet...) se čtou z
+   * service_settings.config.companyData a mirrorují do localStorage, kde
+   * je pořád čtou dokumenty a faktury (safeLoadCompanyData) synchronně –
+   * DB je zdroj pravdy, localStorage jen rychlá cache pro místa, která
+   * dnes nejdou přes async načtení. Bez týhle druhé zápisu by Nastavení
+   * ukazovalo čerstvá data, ale vygenerovaná faktura by pořád použila
+   * starou lokální kopii.
+   */
+  const applyServiceConfig = useCallback((config: ServiceConfig) => {
+    if (config.abbreviation || config.companyData) {
+      setCompanyData((prev) => {
+        const next = {
+          ...prev,
+          ...(config.companyData as Partial<CompanyData> | undefined),
+          abbreviation: config.abbreviation || prev.abbreviation,
+        };
+        localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(next));
+        return next;
+      });
+    }
+    setOrdersShowClaimsInList(!!config.orders_show_claims_in_list);
+  }, []);
+
   // Load service_settings from DB when activeServiceId changes
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -327,7 +352,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       setServiceSettingsError(null);
       return;
     }
-    
+
     setServiceSettingsLoading(true);
     setServiceSettingsError(null);
 
@@ -346,13 +371,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
         if (error) throw error;
 
-        if (data?.config?.abbreviation) {
-          setCompanyData((prev) => ({
-            ...prev,
-            abbreviation: data.config.abbreviation || prev.abbreviation,
-          }));
-        }
-        setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
+        if (data?.config) applyServiceConfig(data.config as ServiceConfig);
 
         setServiceSettingsLoading(false);
       } catch (err) {
@@ -363,7 +382,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     };
 
     loadServiceSettings();
-  }, [activeServiceId]);
+  }, [activeServiceId, applyServiceConfig]);
+
+  // Realtime: firemní údaje a nabídky změněné kolegou/jiným zařízením se
+  // propíšou i bez obnovení stránky.
+  useEffect(() => {
+    if (!activeServiceId) return;
+    return subscribeServiceConfig(activeServiceId, applyServiceConfig);
+  }, [activeServiceId, applyServiceConfig]);
 
   useEffect(() => {
     const client = getTypedSupabaseClient();
@@ -2661,10 +2687,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {section.subsection === "orders_device_options" && (
-        <DeviceOptionsSettingsSection />
+        <DeviceOptionsSettingsSection activeServiceId={activeServiceId} />
       )}
       {section.subsection === "orders_handoff_options" && (
-        <HandoffOptionsSettingsSection />
+        <HandoffOptionsSettingsSection activeServiceId={activeServiceId} />
       )}
 
       {section.subsection === "orders_filters" && (
