@@ -3,7 +3,7 @@
  * Hlídá hlavně české skloňování – 1 den / 2 dny / 5 dní.
  */
 import { describe, it, expect } from "vitest";
-import { popisCasu } from "../../supabase/functions/public-catalog/cas";
+import { popisCasu } from "../../supabase/functions/_shared/cas";
 
 describe("popisCasu", () => {
   it("minuty skloňuje", () => {

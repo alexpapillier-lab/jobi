@@ -421,3 +421,12 @@ verify_jwt = false
 
 [functions.sms-send]
 verify_jwt = false
+
+# Veřejné API – čte se z cizích webů bez přihlášení. Token v JavaScriptu
+# na stránce stejně není tajemství a rozbíjel by cachování na CDN.
+# Viz docs/ZADANI_API.md, kapitola „Čtení bez tokenu“.
+[functions.public-catalog]
+verify_jwt = false
+
+[functions.public-inventory]
+verify_jwt = false

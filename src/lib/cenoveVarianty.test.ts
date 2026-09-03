@@ -2,10 +2,10 @@
  * Přepočet cen s DPH ve veřejném API.
  *
  * Testuje se odsud, protože edge funkce běží v Denu a vlastní testy nemá.
- * Soubor ceny.ts je proto záměrně bez Deno API.
+ * Soubor _shared/ceny.ts je proto záměrně bez Deno API.
  */
 import { describe, it, expect } from "vitest";
-import { cenoveVarianty } from "../../supabase/functions/public-catalog/ceny";
+import { cenoveVarianty } from "../../supabase/functions/_shared/ceny";
 
 describe("cenoveVarianty", () => {
   it("ceny zadané včetně DPH rozpočítá dolů", () => {

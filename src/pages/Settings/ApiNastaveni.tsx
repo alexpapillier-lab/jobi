@@ -20,8 +20,8 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   const [slug, setSlug] = useState<string | null>(null);
   const [rezim, setRezim] = useState<Rezim>("boolean");
   const [nacitam, setNacitam] = useState(true);
-  const [test, setTest] = useState<{ stav: number; telo: string } | null>(null);
-  const [testuji, setTestuji] = useState(false);
+  const [test, setTest] = useState<{ kde: "cenik" | "sklad"; stav: number; telo: string } | null>(null);
+  const [testuji, setTestuji] = useState<"cenik" | "sklad" | null>(null);
 
   const maCenik = has("api_catalog");
   const maSklad = has("api_inventory");
@@ -48,20 +48,38 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   }, [activeServiceId]);
 
   const adresaCenik = slug ? `${supabaseUrl}/functions/v1/public-catalog?service=${slug}` : null;
+  const adresaSklad = slug ? `${supabaseUrl}/functions/v1/public-inventory?service=${slug}` : null;
 
-  const vyzkousej = useCallback(async () => {
-    if (!adresaCenik) return;
-    setTestuji(true);
+  const vyzkousej = useCallback(async (adresa: string, kde: "cenik" | "sklad") => {
+    setTestuji(kde);
     try {
-      const r = await fetch(adresaCenik);
+      const r = await fetch(adresa);
       const t = await r.text();
-      setTest({ stav: r.status, telo: t.slice(0, 1200) });
+      setTest({ kde, stav: r.status, telo: t.slice(0, 1200) });
     } catch (e) {
-      setTest({ stav: 0, telo: String(e) });
+      setTest({ kde, stav: 0, telo: String(e) });
     } finally {
-      setTestuji(false);
+      setTestuji(null);
     }
-  }, [adresaCenik]);
+  }, []);
+
+  /* Režim dostupnosti si mění servis sám – sloupcový GRANT na
+     inventory_availability_mode je v migraci 20260902250000. */
+  const ulozRezim = useCallback(async (novy: Rezim) => {
+    if (!activeServiceId || !supabase) return;
+    const puvodni = rezim;
+    setRezim(novy);
+    // `as any` stejně jako jinde – vygenerované typy tabulku services nemají
+    const { error } = await (supabase.from("services") as any)
+      .update({ inventory_availability_mode: novy })
+      .eq("id", activeServiceId);
+    if (error) {
+      setRezim(puvodni);
+      showToast("Režim se nepodařilo uložit: " + error.message, "error");
+    } else {
+      showToast("Uloženo", "success");
+    }
+  }, [activeServiceId, rezim]);
 
   const zkopiruj = async (text: string) => {
     try {
@@ -114,12 +132,12 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           <pre style={kod}>{adresaCenik}</pre>
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <Tlacitko onClick={() => zkopiruj(adresaCenik)}>Kopírovat adresu</Tlacitko>
-            <Tlacitko onClick={vyzkousej} disabled={testuji}>
-              {testuji ? "Zkouším…" : "Vyzkoušet"}
+            <Tlacitko onClick={() => vyzkousej(adresaCenik, "cenik")} disabled={testuji !== null}>
+              {testuji === "cenik" ? "Zkouším…" : "Vyzkoušet"}
             </Tlacitko>
           </div>
 
-          {test && (
+          {test?.kde === "cenik" && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, color: test.stav === 200 ? "var(--accent)" : "rgba(239,68,68,0.95)", marginBottom: 4 }}>
                 Odpověď {test.stav}
@@ -164,15 +182,82 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         </>
       )}
 
-      {maSklad && (
+      {maSklad && adresaSklad && (
         <>
-          <div style={nadpis}>Sklad</div>
+          <div style={nadpis}>Sklad – kam se ptát</div>
           <p style={popis}>
-            Modul je zapnutý. Dostupnost se posílá v režimu{" "}
-            <strong style={{ color: "var(--text)" }}>
-              {rezim === "hidden" ? "skrytá" : rezim === "exact" ? "přesná čísla" : "skladem / není skladem"}
-            </strong>.
-            Endpoint pro sklad se teprve dodělává.
+            Samostatná adresa, schválně oddělená od ceníku. Kdo má zapnutý jen ceník,
+            odsud nedostane nic – a naopak.
+          </p>
+          <pre style={kod}>{adresaSklad}</pre>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <Tlacitko onClick={() => zkopiruj(adresaSklad)}>Kopírovat adresu</Tlacitko>
+            <Tlacitko onClick={() => vyzkousej(adresaSklad, "sklad")} disabled={testuji !== null}>
+              {testuji === "sklad" ? "Zkouším…" : "Vyzkoušet"}
+            </Tlacitko>
+          </div>
+
+          {test?.kde === "sklad" && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: test.stav === 200 ? "var(--accent)" : "rgba(239,68,68,0.95)", marginBottom: 4 }}>
+                Odpověď {test.stav}
+                {test.stav === 404 && " – servis s touhle adresou nemá zapnutý modul skladu, nebo adresa nesedí"}
+              </div>
+              <pre style={{ ...kod, maxHeight: 220, overflowY: "auto" }}>{test.telo}</pre>
+            </div>
+          )}
+
+          <div style={nadpis}>Kolik toho o skladu prozradíš</div>
+          <p style={popis}>
+            Tohle je jediné nastavení, které se týká celého skladu, ne jednotlivých položek.
+          </p>
+          <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+            {([
+              ["boolean", "Skladem / není skladem", "Web se dozví jen to, jestli položku máte. Doporučeno."],
+              ["exact", "Přesná čísla", "Pošle se počet kusů. Konkurence uvidí, co a kolik máte."],
+              ["hidden", "Neposílat vůbec", "Dostupnost v odpovědi nebude. Ceny a popisy ano."],
+            ] as [Rezim, string, string][]).map(([hodnota, nazev, vysvetleni]) => (
+              <label
+                key={hodnota}
+                style={{
+                  display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer",
+                  padding: "10px 12px", borderRadius: 8,
+                  border: `1px solid ${rezim === hodnota ? "var(--accent)" : "var(--border)"}`,
+                  background: rezim === hodnota ? "var(--accent-soft)" : "transparent",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="rezim-dostupnosti"
+                  checked={rezim === hodnota}
+                  onChange={() => ulozRezim(hodnota)}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{nazev}</span>
+                  <span style={{ display: "block", fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{vysvetleni}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div style={nadpis}>Co odpověď obsahuje</div>
+          <p style={popis}>
+            Kategorie produktů a produkty – název, popis, katalogové číslo, obrázek
+            a cena ve stejných třech variantách jako u ceníku. Podle režimu výše
+            k tomu <code>availability</code>.
+          </p>
+
+          <div style={nadpis}>Co se ven nikdy nedostane</div>
+          <p style={popis}>
+            <strong style={{ color: "var(--text)" }}>Počty kusů</strong>, pokud si nezvolíš
+            režim s přesnými čísly. Dál interní identifikátory servisu, pořadí položek
+            a vazba produktů na opravy.
+          </p>
+          <p style={popis}>
+            Skryté položky taky ne – u kategorie i produktu jde zvlášť určit, jestli se
+            posílá ven. Skrytá kategorie skryje i produkty pod sebou. Přepínáš to přímo
+            ve Skladu, štítkem u položky.
           </p>
         </>
       )}

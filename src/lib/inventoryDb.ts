@@ -9,6 +9,8 @@ export type ProductCategory = {
   name: string;
   modelIds: string[];
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type Product = {
@@ -23,6 +25,8 @@ export type Product = {
   imageUrl?: string;
   repairIds?: string[];
   createdAt: string;
+  /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
+  publicVisible?: boolean;
 };
 
 export type InventoryData = {
@@ -35,9 +39,16 @@ function mapProductCategoryRow(r: {
   name: string;
   model_ids: unknown;
   created_at: string;
+  public_visible?: boolean;
 }): ProductCategory {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
-  return { id: r.id, name: r.name, modelIds, createdAt: r.created_at };
+  return {
+    id: r.id,
+    name: r.name,
+    modelIds,
+    createdAt: r.created_at,
+    publicVisible: r.public_visible !== false,
+  };
 }
 
 function mapProductRow(r: {
@@ -52,6 +63,7 @@ function mapProductRow(r: {
   model_ids: unknown;
   repair_ids: unknown;
   created_at: string;
+  public_visible?: boolean;
 }): Product {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const repairIds = Array.isArray(r.repair_ids) ? (r.repair_ids as string[]) : undefined;
@@ -67,6 +79,7 @@ function mapProductRow(r: {
     imageUrl: r.image_url ?? undefined,
     repairIds: repairIds && repairIds.length > 0 ? repairIds : undefined,
     createdAt: r.created_at,
+    publicVisible: r.public_visible !== false,
   };
 }
 
@@ -79,8 +92,8 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
     return { data: { productCategories: [], products: [] } };
   }
 
-  const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
-  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, stock, price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
 
   if (categoriesRes.error || productsRes.error) {
     const err = categoriesRes.error || productsRes.error;
@@ -129,6 +142,7 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
       service_id: serviceId,
       name: c.name,
       model_ids: c.modelIds ?? [],
+      public_visible: c.publicVisible !== false,
       order_index: i,
       created_at: c.createdAt,
     }));
@@ -153,6 +167,7 @@ export async function saveInventoryToDb(serviceId: string | null, data: Inventor
       category_id: p.categoryId ?? null,
       model_ids: p.modelIds ?? [],
       repair_ids: p.repairIds ?? [],
+      public_visible: p.publicVisible !== false,
       order_index: i,
       created_at: p.createdAt,
     }));

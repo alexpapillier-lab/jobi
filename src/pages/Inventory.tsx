@@ -6,6 +6,7 @@ import { showToast } from "../components/Toast";
 import { reportError } from "../lib/reportError";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
+import { useEntitlements } from "../hooks/useEntitlements";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import { loadInventoryFromDb, saveInventoryToDb } from "../lib/inventoryDb";
@@ -346,6 +347,9 @@ const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [] };
 
 export default function Inventory({ activeServiceId }: InventoryProps) {
   const { hasCapability } = useActiveRole(activeServiceId);
+  const { has: maModul } = useEntitlements(activeServiceId);
+  /* Přepínač viditelnosti dává smysl jen když servis sklad ven vůbec posílá. */
+  const ukazatViditelnost = maModul("api_inventory");
   const canAdjustInventoryQuantity = hasCapability("can_adjust_inventory_quantity");
 
   const [data, setData] = useState<InventoryData>(EMPTY_INVENTORY);
@@ -782,6 +786,53 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   }, [devicesData.models, selectedCategoryId]);
 
   // Smart filtered products list for display
+  /* Stejný štítek jako u zařízení – text, ne ikona: „jde tahle položka na
+     web?“ nevystihne žádný piktogram. Skrytá kategorie schová i produkty
+     pod sebou, stejně jako v API. Uloží se autosave efektem výš. */
+  const prepnoutViditelnost = (druh: "productCategories" | "products", id: string) => {
+    setData((d) => ({
+      ...d,
+      [druh]: (d[druh] as Array<{ id: string; publicVisible?: boolean }>).map((x) =>
+        x.id === id ? { ...x, publicVisible: x.publicVisible === false } : x,
+      ),
+    }) as InventoryData);
+  };
+
+  const stitekViditelnosti = (
+    druh: "productCategories" | "products",
+    polozka: { id: string; publicVisible?: boolean },
+  ) => {
+    if (!ukazatViditelnost) return null;
+    const skryto = polozka.publicVisible === false;
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          prepnoutViditelnost(druh, polozka.id);
+        }}
+        title={
+          skryto
+            ? "Neposílá se do veřejného skladu, včetně všeho pod tím. Kliknutím zveřejníš."
+            : "Je ve veřejném skladu. Kliknutím skryješ i všechno pod tím."
+        }
+        style={{
+          flexShrink: 0,
+          border: `1px solid ${skryto ? "var(--warn, #e5a94a)" : "var(--border)"}`,
+          background: "none",
+          borderRadius: 999,
+          padding: "1px 7px",
+          fontSize: 10,
+          fontWeight: 700,
+          lineHeight: 1.6,
+          cursor: "pointer",
+          color: skryto ? "var(--warn, #e5a94a)" : "var(--muted)",
+        }}
+      >
+        {skryto ? "skryto" : "ve skladu"}
+      </button>
+    );
+  };
+
   const filteredProducts = useMemo(() => {
     let products = [...data.products];
     
@@ -1861,7 +1912,10 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                         onClick={() => setSelectedProductCategoryId(selectedProductCategoryId === c.id ? null : c.id)}
                         style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}
                       >
-                        <span>{c.name}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                          {stitekViditelnosti("productCategories", c)}
+                        </span>
                         <div style={{ display: "flex", gap: 4 }}>
                           <button
                             onClick={(e) => {
@@ -2442,6 +2496,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           <div>
                             <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span>{p.name}</span>
+                              {stitekViditelnosti("products", p)}
                               {hasNoModels && (
                                 <span style={{
                                   padding: "2px 6px",
@@ -2512,6 +2567,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                       <div>
                         <div style={{ fontWeight: 950, fontSize: productDisplayMode === "compact" ? 13 : 15, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span>{p.name}</span>
+                              {stitekViditelnosti("products", p)}
                           {hasNoModels && (
                             <span style={{
                               padding: "2px 6px",
