@@ -20,10 +20,8 @@ Většina je rozhodnutá (✅). Zbývá:
 
 | # | Co | Stav |
 |---|---|---|
-| A2 | Ceník – **ceny jsou na webu, chybí limity členů** | návrh níž |
-| A3 | Kolik členů má který plán | návrh níž |
+| A3 | **Strop doplňkových míst na Starteru** – bez něj Business nedává smysl | návrh níž |
 | A5 | Servisy zdarma: ručně, nebo přes Stripe? | doporučení níž |
-| B2 | Délka trialu – 7 dní je krátkých | k potvrzení |
 | C3 | Ochranná známka – **potřebuje rešerši** | úkol |
 | D2 | Sub-značky – levnější varianta níž | k potvrzení |
 
@@ -37,7 +35,7 @@ Většina je rozhodnutá (✅). Zbývá:
       otestovat (plán × doplněk × obor). SMS je na doplněk ideální,
       protože má skutečné variabilní náklady (Twilio). Faktury a zbytek
       patří do plánu.
-- [ ] **A2 – Ceny jsou na webu, chybí limity.** `web/index.html`:
+- [x] **A2 – ✅ Ceny zůstávají podle webu.** `web/index.html`:
       Starter 590, Business 1190, Enterprise 2490 Kč, ročně −15 %.
       **Ceny samotné bych neměnil** – proti konkurenci sedí (RepairShopr
       od ~1 260 Kč, RepairDesk od ~2 080 Kč za pobočku, oba dražší).
@@ -45,15 +43,31 @@ Většina je rozhodnutá (✅). Zbývá:
       Business dělí „sklad napříč pobočkami" a „konsolidované
       statistiky" – věci, které malý servis nechce, takže z 590 Kč
       nikdy neodejde. Řešení je A3.
-- [ ] **A3 – Limity členů jako motor upgradu.** Návrh:
-      **Starter 2 členy, Business 6, Enterprise bez limitu.**
-      Jednočlenný servis platí 590, dílna s techniky narazí na limit a
-      přejde na 1190 přirozeně, ne kvůli funkci, kterou nepotřebuje.
-      Přesně tak to dělá RepairShopr (Starter = 1 uživatel).
-      *Volitelně:* místo skoku 590 → 1190 nabídnout **místo navíc za
-      +99 Kč/měs**. Měkčí, ale je to další doplněk – viz varování u A1.
-      Do limitu **počítat všechny** včetně ownera i nepřijatých pozvánek
-      (jinak jde obejít visícími pozvánkami), root owner se nepočítá.
+- [ ] **A3 – ✅ Starter 1 člen, Business 6, Enterprise bez limitu.
+      Místo navíc za +99 Kč/měs.** Do limitu se **počítají všichni**
+      včetně ownera i nepřijatých pozvánek (jinak jde obejít visícími
+      pozvánkami), root owner se nepočítá.
+
+      **⚠️ Zbývá dořešit strop doplňkových míst na Starteru, jinak
+      Business nikdo nekoupí.** Spočítáno:
+      Starter 590 + n × 99 přeroste Business (1190 Kč) až u **sedmého**
+      místa navíc. Servis se šesti lidmi by tedy zůstal na Starteru za
+      1 085 Kč a Business by neměl komu prodávat – přesně ten problém,
+      kvůli kterému limity zavádíme.
+
+      | Lidí | Starter s místy | Business |
+      |---|---|---|
+      | 1 | 590 | – |
+      | 2 | 689 | – |
+      | 3 | 788 | – |
+      | 4 | 887 | 1 190 |
+      | 6 | 1 085 | 1 190 |
+
+      *Doporučení: **na Starteru povolit max 2 místa navíc** (strop 3
+      lidi).* Čtvrtý člověk pak znamená přechod na Business – skok
+      788 → 1 190 Kč, což je ještě únosné. Nad Business ať jsou místa
+      za +99 bez stropu; Enterprise se stejně prodává funkcemi, ne
+      počtem lidí.
 - [x] **A4 – ✅ Měsíčně i ročně**, roční levnější. Web už má −15 %,
       tím se to řídí.
 - [ ] **A5 – Servisy zdarma: nedávat je do Stripu.** Návrh byl vést je
@@ -72,7 +86,7 @@ Většina je rozhodnutá (✅). Zbývá:
 ### B. Blokuje spuštění prodeje
 
 - [x] **B1 – ✅ Stripe.**
-- [ ] **B2 – Týdenní trial: souhlas s výhradou.** 7 dní je u nástroje,
+- [x] **B2 – ✅ Týdenní trial**, s výhradou níž. 7 dní je u nástroje,
       do kterého si zákazník musí nejdřív přenést zakázky a nastavit
       dokumenty, dost málo – běžný standard je 14 dní a servis často
       zkouší až o víkendu. Není to ale blokující rozhodnutí, dá se to
@@ -172,11 +186,17 @@ obrazovek obor, pod ~50 % druhý produkt).
       přes RLS – jen ty přes edge funkci.
       Ceny drž **v haléřích jako integer**, ne v korunách jako float.
       Naplnit podle `web/index.html`: Starter 590 / Business 1190 /
-      Enterprise 2490 Kč, ročně −15 %, limity členů 2 / 6 / bez limitu.
+      Enterprise 2490 Kč, ročně −15 %.
+      Limity členů **1 / 6 / bez limitu**, k tomu `max_extra_seats`
+      (Starter 2, výš bez omezení – viz A3).
 - [ ] **`plan_addons`** – placené doplňky nad rámec plánu (viz A1).
-      Zatím jediný: SMS za 199 Kč/měs pro Starter, u vyšších plánů
-      v ceně. Ve Stripu to jsou další položky téhož předplatného
-      (subscription items), ne druhé předplatné.
+      Dva: **SMS** 199 Kč/měs (Starter; výš v ceně) a **místo navíc**
+      99 Kč/měs. Ve Stripu jsou to další položky téhož předplatného
+      (subscription items), ne druhé předplatné – u míst se mění
+      `quantity`, proraci pak Stripe spočítá sám.
+- [ ] **Ceník na webu doplnit o počty členů.** `web/index.html` dnes
+      limity neuvádí vůbec. Až se zavedou, musí být v ceníku vidět –
+      jinak je zákazník potká až jako chybovou hlášku při zvaní.
 - [ ] **`service_billing`** – jeden řádek na servis: `service_id` (unique),
       `plan_key`, `billing_period` (`monthly`/`yearly`),
       `stripe_customer_id`, `stripe_subscription_id`, `status`
@@ -383,6 +403,46 @@ kdo to smí spustit – dnes root owner, nově úspěšná platba.
       pracují, je nejjistější způsob, jak přijít o zákazníka.
 - [ ] Nezapomenout, že aplikaci používá i root owner napříč servisy –
       ten se do limitu počítat nesmí (v týmu se stejně nezobrazuje).
+- [ ] **Doplňková místa za +99 Kč/měs**, na Starteru se stropem (A3).
+      Ve Stripu jako `quantity` u položky předplatného, ne jako další
+      předplatné – změna počtu pak umí proraci sama.
+
+### Sdílení jednoho účtu: neblokovat zařízení
+
+Nabízí se bránit sdílení tím, že uživatel smí být přihlášený jen na
+jednom zařízení. **Nedoporučuju**, ze tří důvodů:
+
+1. **Trestá to platící zákazníky.** Jobi běží na desktopu (Tauri), na
+   webu a časem na iOS. Technik má běžně appku na dílenském počítači i
+   na notebooku v kanceláři. Vzájemné odhlašování dvou zařízení je
+   nejotravnější druh chyby – uživatel neví, co se děje, a napíše ti.
+2. **Řeší to špatnou páku.** Cíl je, aby tříčlenná dílna nejela na
+   jednom účtu za 590 Kč. Na to jsou **místa**, která se od teď hlídají
+   na serveru (`invite_create`, `invite-accept`). Zamykání zařízení
+   proti tomu nic nezmůže – tři lidi se stejně vystřídají na jednom
+   počítači.
+3. **Sdílený účet škodí hlavně zákazníkovi, ne tobě.** V repu je
+   `ticket_history` s plným diffem, `customer_history` i evidence, kdo
+   zakázku smazal. Pod jedním sdíleným účtem je tenhle audit
+   bezcenný. To je argument *pro zákazníka*: „každý svůj účet, ať víš,
+   kdo co udělal" prodává líp než „zakázali jsme druhé zařízení".
+
+Pokud se sdílení účtů někdy ukáže jako reálný problém, jde to řešit
+mírněji a v tomhle pořadí:
+
+- [ ] **Vidět, ne blokovat** – v Nastavení ukázat aktivní relace
+      („Tomáš: 3 zařízení"). Majitel servisu si to pořeší sám.
+- [ ] **Měkký strop** – povolit 3 zařízení na uživatele, nejstarší
+      relace se odhlásí. Model, který používají streamovací služby.
+      Supabase Auth má na omezení relací vlastní nastavení – **ověřit,
+      jestli je v tvém plánu**, ať to nepíšeš ručně.
+- [ ] **Upozornit sebe, ne uživatele** – souběžná aktivita z různých
+      IP na jednom účtu jako signál do admin obrazovky.
+
+**Teď nedělat nic z toho.** Je to preventivní řešení problému, který
+jsi zatím neviděl. Až přijde první servis, kde na jednom účtu jede
+zjevně víc lidí, budeš vědět, jak často se to děje a jestli se to vůbec
+vyplatí řešit.
 
 ---
 
