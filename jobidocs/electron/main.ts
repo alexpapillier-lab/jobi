@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, autoUpdater as electronAutoUpdater } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs/promises";
@@ -11,7 +11,12 @@ const isDev = !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-/** Na macOS: při true necháme okno zavřít (quit), jinak close → hide (zůstane v trayi). */
+/**
+ * Na macOS: při true necháme okno zavřít (quit), jinak close → hide (zůstane v trayi).
+ *
+ * Zvedá se v setupQuitHandling() u každé cesty k ukončení. Nesmí se spoléhat
+ * na to, že ho nastaví jen položka v trayi – viz komentář tam.
+ */
 let isQuitting = false;
 
 /**
@@ -171,6 +176,40 @@ ipcMain.handle("open-print-dialog", async (_, html: string) => {
   }
 });
 
+/**
+ * Aby šlo aplikaci na macOS vůbec ukončit.
+ *
+ * Okno se na červené tlačítko jen schová (viz `close` v createWindow), aby
+ * JobiDocs běžel dál v menu baru. Ten strážce ale ruší ZAVŘENÍ OKNA, a to i
+ * tehdy, když se zavírá kvůli ukončení aplikace. Dokud se `isQuitting`
+ * nastavovalo jen v položce trayi „Ukončit JobiDocs“, každá jiná cesta
+ * k ukončení tiše selhala:
+ *
+ *   - „Restartovat a nainstalovat“ u aktualizace. autoUpdater.quitAndInstall()
+ *     nejdřív zavírá okna a app.quit() volá až potom, co se zavřou. `close` to
+ *     zavření zrušil, takže okno se jen schovalo, app.quit() nikdy nepřišel a
+ *     aktualizace se nenainstalovala. Navenek to vypadalo, že se okno zavřelo,
+ *     ale ikona zůstala v horní liště.
+ *   - ⌘Q i Ukončit v nabídce aplikace – totéž, jen se okno schovalo.
+ *
+ * Proč dvě události místo jedné: při quitAndInstall() se `before-quit` PŘED
+ * zavřením oken vůbec nepošle. Electron na to má zvlášť „before-quit-for-update“
+ * a sám v dokumentaci píše, že je potřeba poslouchat obojí. Ta událost visí na
+ * nativním autoUpdateru z Electronu, ne na tom z electron-updateru – ten na
+ * macOS nakonec volá právě jeho (MacUpdater.handleUpdateDownloaded).
+ */
+function setupQuitHandling() {
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+
+  if (process.platform === "darwin") {
+    electronAutoUpdater.on("before-quit-for-update", () => {
+      isQuitting = true;
+    });
+  }
+}
+
 async function createWindow() {
   const preloadPath = path.join(__dirname, "preload.js");
   mainWindow = new BrowserWindow({
@@ -248,6 +287,8 @@ function setupTray() {
         {
           label: "Ukončit JobiDocs",
           click: () => {
+            // isQuitting zvedne i before-quit; necháváme to tu, ať je ukončení
+            // z trayi čitelné na jednom místě a nezáviselo na pořadí událostí.
             isQuitting = true;
             app.quit();
           },
@@ -379,6 +420,7 @@ app.whenReady().then(async () => {
     printPdfNative: isWindows ? printPdfElectronWindows : undefined,
     listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
   });
+  setupQuitHandling();
   await createWindow();
   setupTray();
   setupAutoUpdate();
