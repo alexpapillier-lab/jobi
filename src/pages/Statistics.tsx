@@ -9,6 +9,18 @@ import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
 import { formatCurrency } from "../lib/invoiceMath";
 
+// Ve statistických kartách se haléře nehodí – jen zbytečně prodlužují
+// částku (a Kč navíc formátuje s nedělitelnou mezerou, takže se to
+// v užší kartě nemá kde zalomit). Zaokrouhlené číslo se vejde na řádek.
+function formatCurrencyRounded(amount: number): string {
+  return new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "CZK",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 /** Desetinné číslo česky (čárka místo tečky). */
 function cislo(n: number, desetinnych = 1): string {
   return n.toLocaleString("cs-CZ", { minimumFractionDigits: desetinnych, maximumFractionDigits: desetinnych });
@@ -716,7 +728,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkový příjem"
-          value={formatCurrency(stats.totalRevenue)}
+          value={formatCurrencyRounded(stats.totalRevenue)}
           icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalRevenue > 0 ? ((stats.totalRevenue - prevStats.totalRevenue) / prevStats.totalRevenue) * 100 : undefined}
           deltaPercent
@@ -724,7 +736,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkové náklady"
-          value={formatCurrency(stats.totalCosts)}
+          value={formatCurrencyRounded(stats.totalCosts)}
           icon={<CoinsIcon size={22} />}
           delta={compareWithPrevious && prevStats.totalCosts > 0 ? ((stats.totalCosts - prevStats.totalCosts) / prevStats.totalCosts) * 100 : undefined}
           deltaPercent
@@ -732,7 +744,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Zisk"
-          value={formatCurrency(stats.profit)}
+          value={formatCurrencyRounded(stats.profit)}
           icon={<TrendIcon size={22} />}
           color={stats.profit >= 0 ? "var(--accent)" : "rgba(239,68,68,0.9)"}
           delta={compareWithPrevious ? stats.profit - prevStats.profit : undefined}
@@ -741,7 +753,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Průměrná cena"
-          value={formatCurrency(stats.averageTicketPrice)}
+          value={formatCurrencyRounded(stats.averageTicketPrice)}
           icon={<StatusIcon size={22} />}
           delta={compareWithPrevious && prevStats.averageTicketPrice > 0 ? ((stats.averageTicketPrice - prevStats.averageTicketPrice) / prevStats.averageTicketPrice) * 100 : undefined}
           deltaPercent
@@ -749,7 +761,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         />
         <StatCard
           title="Celkové slevy"
-          value={formatCurrency(stats.totalDiscounts)}
+          value={formatCurrencyRounded(stats.totalDiscounts)}
           icon={<GiftIcon size={22} />}
         />
         <StatCard
