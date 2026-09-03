@@ -61,6 +61,7 @@ import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { trackDocumentAction, validateDocumentVariables } from "../lib/documentTelemetry";
+import { useTicketViewers } from "../lib/presence";
 import {
   buildTicketVariablesForJobiDocs,
   buildClaimVariablesForJobiDocs,
@@ -984,6 +985,7 @@ export default function Orders({
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
+  const myDisplayName = userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Kolega";
   const { hasCapability } = useActiveRole(activeServiceId);
   const canPrintExport = hasCapability("can_print_export");
 
@@ -1304,6 +1306,7 @@ export default function Orders({
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
+  const ticketViewers = useTicketViewers(detailId, session?.user?.id ?? null, myDisplayName);
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
   const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
@@ -4588,6 +4591,33 @@ export default function Orders({
             <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
               {detailedClaim ? detailedClaim.code : (detailedTicket ? detailedTicket.code : "—")}
               {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
+              {!detailedClaim && ticketViewers.length > 0 && (
+                <div
+                  title={`Právě tu je i: ${ticketViewers.map((v) => v.nickname).join(", ")}`}
+                  style={{ display: "flex", alignItems: "center", marginLeft: 4 }}
+                >
+                  {ticketViewers.slice(0, 3).map((v, i) => (
+                    <div
+                      key={v.userId}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+                        color: "white",
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 10,
+                        fontWeight: 800,
+                        border: "2px solid var(--panel)",
+                        marginLeft: i === 0 ? 0 : -8,
+                      }}
+                    >
+                      {v.nickname.charAt(0).toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ color: "var(--muted)", marginTop: 4 }}>
               {detailedClaim ? (

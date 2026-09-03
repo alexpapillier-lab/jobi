@@ -9,6 +9,7 @@ import { showToast } from "../../components/Toast";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
+import { useServiceOnlinePresence } from "../../lib/presence";
 
 const CAPABILITY_KEYS = [
   "can_manage_tickets_basic",
@@ -100,6 +101,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   const { session } = useAuth();
   const isRootOwner = useIsRootOwner();
   const rootOwnerId = getRootOwnerId();
+  const onlineUserIds = useServiceOnlinePresence(activeServiceId, session?.user?.id ?? null);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -730,6 +732,21 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     >
                       {(memberProfiles[member.user_id]?.nickname?.trim() || member.email || "?").charAt(0).toUpperCase()}
                     </div>
+                    {onlineUserIds.has(member.user_id) && (
+                      <div
+                        title="Právě online"
+                        style={{
+                          position: "absolute",
+                          bottom: -2,
+                          right: -2,
+                          width: 11,
+                          height: 11,
+                          borderRadius: "50%",
+                          background: "#22c55e",
+                          border: "2px solid var(--panel)",
+                        }}
+                      />
+                    )}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
