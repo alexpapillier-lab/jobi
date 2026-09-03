@@ -59,6 +59,7 @@ web/.claude/
 
 # Supabase CLI cache (vzniká při práci s CLI, nepatří do repa)
 supabase/.temp/
+supabase/.branches/
 
 # Deno lock. Vzniká sám při `deno check` nad edge funkcemi, ale nikdo ho
 # nečte: v repu není deno.json a Supabase CLI si závislosti při nasazení
