@@ -1,11 +1,18 @@
 import { Card } from "../../lib/settingsUi";
 import { showToast } from "../../components/Toast";
-import { type ShortcutId, isModifierOnlyKey, keyEventToCombo, setShortcut, formatShortcutForDisplay, resetShortcuts, ALL_SHORTCUT_IDS, getShortcut, DEFAULT_SHORTCUTS, SHORTCUT_LABELS } from "../../lib/keyboardShortcuts";
+import { type ShortcutId, isModifierOnlyKey, keyEventToCombo, setShortcut, formatShortcutForDisplay, resetShortcuts, ALL_SHORTCUT_IDS, getShortcut, DEFAULT_SHORTCUTS, SHORTCUT_LABELS, SHORTCUTS_CHANGED_EVENT } from "../../lib/keyboardShortcuts";
 import { useState, useEffect } from "react";
 
 export function ShortcutsSettingsSection() {
   const [recordingId, setRecordingId] = useState<ShortcutId | null>(null);
   const [, forceUpdate] = useState(0);
+
+  // Zkratka změněná na jiném zařízení se propíše i sem, pokud je stránka otevřená.
+  useEffect(() => {
+    const onChanged = () => forceUpdate((n) => n + 1);
+    window.addEventListener(SHORTCUTS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SHORTCUTS_CHANGED_EVENT, onChanged);
+  }, []);
 
   useEffect(() => {
     if (recordingId === null) return;

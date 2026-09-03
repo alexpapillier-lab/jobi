@@ -9,6 +9,8 @@ export const STORAGE_KEYS = {
   DEVICE_OPTIONS: "jobsheet_device_options_v1",
   HANDOFF_OPTIONS: "jobsheet_handoff_options_v1",
   LOGO_PRESET: "jobsheet_logo_preset_v1",
+  THEME: "jobsheet_theme",
+  INVENTORY_DISPLAY_MODE: "jobsheet_inventory_display_mode",
   LOGO_MINIMAL: "jobsheet_logo_minimal_v1",
   JOBIDOCS_LOGO_MINIMAL: "jobsheet_jobidocs_logo_minimal_v1",
   /** Po skončení průvodce (tutorial) se jednou zobrazí okno o stažení JobiDocs; po odkliknutí se nastaví. */

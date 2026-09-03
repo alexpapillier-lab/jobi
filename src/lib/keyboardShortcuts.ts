@@ -57,7 +57,18 @@ export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   order_print: "Tisk zakázkového listu",
 };
 
+export const SHORTCUTS_CHANGED_EVENT = "jobsheet:keyboard-shortcuts-changed";
+
 let cached: Partial<Record<ShortcutId, string>> | null = null;
+
+// Zkratky nastavené na jiném zařízení dorazí přes personalPreferencesSync
+// rovnou do localStorage, mimo setShortcut/resetShortcuts – bez tohohle by
+// getShortcut() dál vracela starou hodnotu z cache.
+if (typeof window !== "undefined") {
+  window.addEventListener(SHORTCUTS_CHANGED_EVENT, () => {
+    cached = null;
+  });
+}
 
 function loadRaw(): Record<string, string> {
   try {
@@ -92,11 +103,13 @@ export function setShortcut(id: ShortcutId, combo: string): void {
   }
   localStorage.setItem(STORAGE_KEYS.KEYBOARD_SHORTCUTS, JSON.stringify(overrides));
   cached = null;
+  window.dispatchEvent(new CustomEvent(SHORTCUTS_CHANGED_EVENT));
 }
 
 export function resetShortcuts(): void {
   localStorage.removeItem(STORAGE_KEYS.KEYBOARD_SHORTCUTS);
   cached = null;
+  window.dispatchEvent(new CustomEvent(SHORTCUTS_CHANGED_EVENT));
 }
 
 /** Klávesy, které jsou jen modifikátory – při zápisu zkratky na ně nereagovat, čekat na skutečnou klávesu. */

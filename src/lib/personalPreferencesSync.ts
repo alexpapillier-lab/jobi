@@ -20,15 +20,25 @@
  */
 import { supabase } from "./supabaseClient";
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { SHORTCUTS_CHANGED_EVENT } from "./keyboardShortcuts";
 
 /** Klíče v localStorage, které se sdílí. Přidat další stačí sem. */
-const SYNCED_KEYS = [STORAGE_KEYS.UI_SETTINGS, STORAGE_KEYS.LOGO_PRESET] as const;
+const SYNCED_KEYS = [
+  STORAGE_KEYS.UI_SETTINGS,
+  STORAGE_KEYS.LOGO_PRESET,
+  STORAGE_KEYS.THEME,
+  STORAGE_KEYS.INVENTORY_DISPLAY_MODE,
+  STORAGE_KEYS.KEYBOARD_SHORTCUTS,
+] as const;
 type SyncedKey = (typeof SYNCED_KEYS)[number];
 
 /** Kterou událost po zápisu daného klíče přeposlat, ať se UI překreslí. */
 const REFRESH_EVENT: Record<SyncedKey, string> = {
   [STORAGE_KEYS.UI_SETTINGS]: "jobsheet:ui-updated",
   [STORAGE_KEYS.LOGO_PRESET]: "jobsheet:logo-preset-changed",
+  [STORAGE_KEYS.THEME]: "jobsheet:theme-changed",
+  [STORAGE_KEYS.INVENTORY_DISPLAY_MODE]: "jobsheet:inventory-display-mode-changed",
+  [STORAGE_KEYS.KEYBOARD_SHORTCUTS]: SHORTCUTS_CHANGED_EVENT,
 };
 
 export function readSyncedKeys(): Record<string, unknown> {

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { STORAGE_KEYS } from "../constants/storageKeys";
 
 export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
 
@@ -11,7 +12,7 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = "jobsheet_theme";
+const STORAGE_KEY = STORAGE_KEYS.THEME;
 const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink"];
 
 function applyThemeToDom(theme: ThemeMode) {
@@ -31,6 +32,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyThemeToDom(theme);
   }, [theme]);
+
+  // Motiv nastavený na jiném zařízení dorazí přes personalPreferencesSync
+  // rovnou do localStorage, ne přes setTheme() – tenhle posluchač je jediné
+  // místo, kde se to promítne i do stavu právě otevřené appky.
+  useEffect(() => {
+    const onExternalChange = () => {
+      const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+      if (saved && AVAILABLE_THEMES.includes(saved)) {
+        setThemeState((prev) => (prev === saved ? prev : saved));
+      }
+    };
+    window.addEventListener("jobsheet:theme-changed", onExternalChange);
+    return () => window.removeEventListener("jobsheet:theme-changed", onExternalChange);
+  }, []);
 
   // useCallback, ne obyčejné funkce: useMemo níž je uvádí v hodnotě kontextu,
   // ale bez toho by je v závislostech neměl. Taková memoizace lže a React

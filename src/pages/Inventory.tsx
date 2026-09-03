@@ -17,7 +17,8 @@ import {
 import { nahrajObrazekProduktu, smazObrazekProduktu } from "../lib/productImages";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { supabase } from "../lib/supabaseClient";
-const PRODUCT_DISPLAY_MODE_KEY = "jobsheet_inventory_display_mode";
+const PRODUCT_DISPLAY_MODE_KEY = STORAGE_KEYS.INVENTORY_DISPLAY_MODE;
+const INVENTORY_DISPLAY_MODE_EVENT = "jobsheet:inventory-display-mode-changed";
 
 /**
  * Stav skladu, který tenhle klient naposledy viděl uložený. Od něj se počítá,
@@ -740,8 +741,22 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   }, [canAdjustInventoryQuantity, editingStock]);
 
   useEffect(() => {
+    if (localStorage.getItem(PRODUCT_DISPLAY_MODE_KEY) === productDisplayMode) return;
     localStorage.setItem(PRODUCT_DISPLAY_MODE_KEY, productDisplayMode);
+    window.dispatchEvent(new CustomEvent(INVENTORY_DISPLAY_MODE_EVENT));
   }, [productDisplayMode]);
+
+  // Zobrazení skladu nastavené na jiném zařízení dorazí přes
+  // personalPreferencesSync rovnou do localStorage – bez tohohle
+  // posluchače by se projevilo až po refreshi.
+  useEffect(() => {
+    const onExternalChange = () => {
+      const saved = localStorage.getItem(PRODUCT_DISPLAY_MODE_KEY) as "grid" | "list" | "compact" | null;
+      if (saved) setProductDisplayMode((prev) => (prev === saved ? prev : saved));
+    };
+    window.addEventListener(INVENTORY_DISPLAY_MODE_EVENT, onExternalChange);
+    return () => window.removeEventListener(INVENTORY_DISPLAY_MODE_EVENT, onExternalChange);
+  }, []);
 
   // Refresh inventory from DB when returning from import
   useEffect(() => {

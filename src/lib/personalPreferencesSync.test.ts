@@ -77,6 +77,27 @@ describe("readSyncedKeys / writeSyncedKeys", () => {
     expect(typy).toContain("jobsheet:logo-preset-changed");
   });
 
+  it("sdílí i motiv, zobrazení skladu a klávesové zkratky", async () => {
+    const { readSyncedKeys, writeSyncedKeys } = await nacti();
+    writeSyncedKeys({
+      jobsheet_theme: "dark",
+      jobsheet_inventory_display_mode: "grid",
+      jobsheet_keyboard_shortcuts_v1: { nav_orders: "x" },
+    });
+    expect(localStorage.getItem("jobsheet_theme")).toBe("dark");
+    expect(localStorage.getItem("jobsheet_inventory_display_mode")).toBe("grid");
+    expect(localStorage.getItem("jobsheet_keyboard_shortcuts_v1")).toBe(JSON.stringify({ nav_orders: "x" }));
+    expect(readSyncedKeys()).toEqual({
+      jobsheet_theme: "dark",
+      jobsheet_inventory_display_mode: "grid",
+      jobsheet_keyboard_shortcuts_v1: { nav_orders: "x" },
+    });
+    const typy = (window.dispatchEvent as any).mock.calls.map((c: any[]) => c[0].type);
+    expect(typy).toContain("jobsheet:theme-changed");
+    expect(typy).toContain("jobsheet:inventory-display-mode-changed");
+    expect(typy).toContain("jobsheet:keyboard-shortcuts-changed");
+  });
+
   // Tohle je to hlavní, kvůli čemu sync vůbec existuje: bez téhle pojistky
   // by pull po každém přihlášení překreslil UI, i když se na serveru nic
   // nezměnilo od posledního pullu na stejném zařízení.
