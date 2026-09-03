@@ -368,6 +368,10 @@ znamená N× UI na údržbu a testování – a ty layouty by se stejně skoro
 nelišily. Formulář zakázky je formulář zakázky, ať do něj píšeš iPhone
 nebo Octavii. Liší se popisky a pole, ne uspořádání.
 
+Pozor, tohle **neplatí pro velké oborové funkce**, které ostatní obory
+vůbec nemají (zubní kříž) – ty jsou samostatný modul a mají vlastní
+podsekci níž. Pravidlo se týká sdílených obrazovek: ty se neforkují.
+
 **Funkce podle oboru nezapínat vůbec.** Tu osu už řeší
 `service_entitlements` – moduly zapíná *plán*. Kdyby je zapínal i obor,
 vznikne kombinatorika („co má dental + profi?"), která se nedá
@@ -471,6 +475,63 @@ Prošel jsem repo, tohle jsou konkrétní místa, která je potřeba rozmotat:
 - [ ] **Rozmyslet názvy a známky** – jedna značka Jobi pro všechno, nebo
       Jobi Auto / Jobi Dent? Jedna značka je levnější na známky
       i na App Store (jedna aplikace, ne tři listingy).
+
+### Co když obor potřebuje velkou vlastní funkci (zubní kříž)
+
+Pravidlo „nemění se rozložení" výš neznamená, že obor nesmí mít vlastní
+funkci. **Zubní kříž není varianta existující obrazovky – je to nová
+funkce, kterou ostatní obory nemají.** To je jiná kategorie a je v
+pořádku. Rozdíl:
+
+- ✅ **Oborový modul** – samostatná obrazovka nebo sekce, vlastní složka,
+  vlastní data. Zubní kříž, parodontogram.
+- ❌ **Fork sdílené obrazovky** – `if (vertical === "dental")` rozeseté
+  po `Orders.tsx`. Tudy vede cesta ke třem aplikacím v jedné.
+
+**Mechanismus na to už existuje.** V `src/App.tsx` (řádky 731 a 783) se
+celá stránka Faktury schovává podle `invoicesAvailable`, což je nárok ze
+`service_entitlements`. Zubní kříž je přesně totéž: `module =
+'dental_chart'`, který uděluje jen dentální plán. Žádná nová vrstva.
+
+Na co si dát pozor:
+
+- [ ] **Zubní kříž patří k pacientovi, ne k zakázce.** Stav chrupu je
+      longitudinální – žije napříč návštěvami a každá návštěva do něj
+      zapíše změnu. Vlastní tabulka vázaná na zákazníka plus historie
+      zásahů, **ne `jsonb` sloupec v `tickets`**. Současný model věší
+      všechno na zakázku a přesně tady to přestává platit. Opravovat
+      se to bude draho.
+- [ ] **Lazy loading.** V `src` dnes není jediný `React.lazy`, všechno
+      je v jednom bundlu. U jedné oborové funkce navíc to nevadí, u tří
+      stahuje autoservis půl megabajtu zubařiny. První takový modul ať
+      je rovnou `React.lazy` + `Suspense`.
+- [ ] **Slot, ne podmínka.** Detail zakázky vystaví pojmenované
+      rozšiřující body, obor si do nich zaregistruje komponentu.
+      Hranice: `vertical` se smí objevit ve složce oboru a při montáži
+      slotů, **ne ve sdíleném kódu**.
+
+### Test, jestli je to ještě obor, nebo už druhý produkt
+
+Architektura velkou oborovou funkci unese. Důležitější otázka je, jestli
+se vyplatí – a tady je jednoduché měřítko:
+
+**Kolik obrazovek je sdílených?**
+
+- **nad ~70 %** → je to obor Jobi, udělej to jako modul
+- **pod ~50 %** → není to obor, ale **druhý produkt sdílející backend**;
+  plánuj a oceňuj ho tak, místo aby ses ho snažil vecpat do jedné appky
+
+Autoservis vyjde kolem 95 % – proto je to správný první obor.
+
+U zubařů to po započtení všeho vypadá spíš na to druhé:
+
+- zubní kříž a parodontogram = týdny práce, prodejné jednomu oboru,
+- **vyúčtování pojišťovnám** (VZP a spol.) = nejspíš větší subsystém
+  než ten kříž,
+- k tomu právní režim zdravotních dat (níž).
+
+Objednávkový kalendář naopak máš (`src/pages/Calendar.tsx`), ten je
+sdílený.
 
 ### ⚠️ Zubaři jsou jiná liga
 
