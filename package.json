@@ -37,6 +37,7 @@
   "name": "jobi",
   "private": true,
   "scripts": {
+    "api:spec": "node scripts/openapi-json.mjs",
     "build": "npm run typecheck && npm run lint && vite build",
     "build:all": "bash scripts/build-jobi-and-jobidocs.sh",
     "build:prod": "npm run typecheck && vite build",
@@ -61,8 +62,7 @@
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
-    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
-    "api:spec": "node scripts/openapi-json.mjs"
+    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx"
   },
   "type": "module",
   "version": "0.2.5"
