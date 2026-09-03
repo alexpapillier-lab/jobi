@@ -93,13 +93,26 @@ serve(async (req) => {
     return json({ error: limit.duvod }, 429, { "Retry-After": "60" });
   }
 
+  // Řazení je povinné, ne kosmetika: bez ORDER BY vrací Postgres řádky
+  // v proměnlivém pořadí, otisk pro ETag se pak mění mezi dvěma stejnými
+  // dotazy a cachování je k ničemu. Web by navíc dostával ceník pokaždé
+  // jinak seřazený. Pořadí odpovídá tomu, co uživatel vidí v aplikaci.
   const [znacky, kategorie, modely, opravy] = await Promise.all([
-    svc.from("device_brands").select("id, name").eq("service_id", servis.id).eq("public_visible", true),
-    svc.from("device_categories").select("id, brand_id, name").eq("service_id", servis.id).eq("public_visible", true),
-    svc.from("device_models").select("id, category_id, name").eq("service_id", servis.id).eq("public_visible", true),
+    // device_brands jako jediná z těchhle tabulek order_index nemá
+    svc.from("device_brands").select("id, name").eq("service_id", servis.id).eq("public_visible", true).order("name").order("id"),
+    svc.from("device_categories").select("id, brand_id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
+    svc.from("device_models").select("id, category_id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     // costs se nevybírá záměrně
-    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids, public_hidden_model_ids").eq("service_id", servis.id).eq("public_visible", true),
+    svc.from("repairs").select("id, name, price, estimated_time, details, model_ids, public_hidden_model_ids").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
   ]);
+
+  // Když dotaz selže, .data je null a bez tohohle by ven odešel prázdný,
+  // ale úspěšný ceník – tedy vyprázdněný web zákazníka. Radši chyba.
+  const selhalo = [znacky, kategorie, modely, opravy].find((r) => r.error);
+  if (selhalo) {
+    console.error("[public-catalog] dotaz selhal:", selhalo.error?.message);
+    return json({ error: "Ceník se teď nepodařilo načíst" }, 503, { "Retry-After": "30" });
+  }
 
   const { kategorie: viditelneKategorie, modely: viditelneModely, idModelu } =
     viditelneVetve(znacky.data ?? [], kategorie.data ?? [], modely.data ?? []);

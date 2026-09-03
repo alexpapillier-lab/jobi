@@ -97,17 +97,23 @@ serve(async (req) => {
   }
 
   const [kategorie, produkty, znacky, katZarizeni, modely] = await Promise.all([
-    svc.from("inventory_product_categories").select("id, name").eq("service_id", servis.id).eq("public_visible", true),
+    svc.from("inventory_product_categories").select("id, name").eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     svc.from("inventory_products")
       .select("id, category_id, name, price, sku, description, image_url, model_ids, stock")
-      .eq("service_id", servis.id).eq("public_visible", true),
+      .eq("service_id", servis.id).eq("public_visible", true).order("order_index").order("id"),
     // Zařízení jen kvůli tomu, ať produkt neukazuje na model, který servis
     // z ceníku schoval. Když má vypnutý ceník, nic tím neomezíme – sloupce
     // jsou ve výchozím stavu viditelné.
-    svc.from("device_brands").select("id").eq("service_id", servis.id).eq("public_visible", true),
-    svc.from("device_categories").select("id, brand_id").eq("service_id", servis.id).eq("public_visible", true),
-    svc.from("device_models").select("id, category_id").eq("service_id", servis.id).eq("public_visible", true),
+    svc.from("device_brands").select("id").eq("service_id", servis.id).eq("public_visible", true).order("id"),
+    svc.from("device_categories").select("id, brand_id").eq("service_id", servis.id).eq("public_visible", true).order("id"),
+    svc.from("device_models").select("id, category_id").eq("service_id", servis.id).eq("public_visible", true).order("id"),
   ]);
+
+  const selhalo = [kategorie, produkty, znacky, katZarizeni, modely].find((r) => r.error);
+  if (selhalo) {
+    console.error("[public-inventory] dotaz selhal:", selhalo.error?.message);
+    return json({ error: "Sklad se teď nepodařilo načíst" }, 503, { "Retry-After": "30" });
+  }
 
   const { idModelu } = viditelneVetve(znacky.data ?? [], katZarizeni.data ?? [], modely.data ?? []);
 
