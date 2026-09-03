@@ -1,7 +1,20 @@
 import React from "react";
 import { DeviceIcon, WrenchIcon } from "./icons";
+import { ClaimBadge, MetaSeparator, TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
 
-const CLAIM_ACCENT = "#0d9488";
+/**
+ * Karta reklamace v seznamu zakázek.
+ *
+ * Rozvržení je záměrně řádek po řádku stejné jako u zakázky – každý režim
+ * zobrazení kopíruje odpovídající TicketCard*, včetně rámečku, odsazení,
+ * pořadí údajů i sdílených prvků z fields.tsx. Reklamace se dřív kreslila
+ * po svém (čárkovaný rámeček, jiné velikosti písma, v režimech compact
+ * a list dva řádky místo jednoho), takže ve smíšeném seznamu měla jinou
+ * výšku i jinak posazené sloupce.
+ *
+ * Jediný rozdíl proti zakázce je teď odznak "Reklamace" na místě, kde má
+ * zakázka cenu. Ta reklamace nemá, takže se sloupce nikam neposunou.
+ */
 
 type ClaimData = {
   id: string;
@@ -18,74 +31,70 @@ type ClaimCardProps = {
   claim: ClaimData;
   displayMode: string;
   statusColor: string;
-  statusLabel?: string;
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
 };
 
-function formatCZ(dtIso: string): string {
-  try {
-    const d = new Date(dtIso);
-    return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-  } catch {
-    return dtIso;
-  }
-}
-
-function ClaimBadge({ size = "normal" }: { size?: "small" | "normal" }) {
-  const isSmall = size === "small";
+function Controls({ statusPicker, printButton, gap, marginLeftAuto }: { statusPicker: React.ReactNode; printButton?: React.ReactNode; gap: number | string; marginLeftAuto?: boolean }) {
   return (
-    <span style={{
-      fontSize: isSmall ? 8 : 9, fontWeight: 800, padding: isSmall ? "2px 5px" : "2px 6px", borderRadius: 4,
-      background: `${CLAIM_ACCENT}12`, color: CLAIM_ACCENT,
-      border: `1px solid ${CLAIM_ACCENT}25`,
-      textTransform: "uppercase", letterSpacing: "0.5px",
-      whiteSpace: "nowrap", flexShrink: 0,
-    }}>
-      {isSmall ? "R" : "Reklamace"}
-    </span>
-  );
-}
-
-function Controls({ statusPicker, printButton }: { statusPicker: React.ReactNode; printButton?: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap, flexShrink: 0, ...(marginLeftAuto ? { marginLeft: "auto" } : null) }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {statusPicker}
       {printButton}
     </div>
   );
 }
 
-export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onClick, statusPicker, printButton }: ClaimCardProps) {
-  const dateStr = c.created_at ? formatCZ(c.created_at) : "—";
+export function ClaimCard({ claim: c, displayMode, statusColor, onClick, statusPicker, printButton }: ClaimCardProps) {
+  const bg = statusColor || "var(--border)";
+  const customerName = c.customer_name ?? "—";
 
   if (displayMode === "compact-extra") {
     return (
       <div
         onClick={onClick}
         style={{
-          textAlign: "left", borderRadius: 6,
-          border: `1px dashed ${CLAIM_ACCENT}40`, background: `${CLAIM_ACCENT}04`,
-          cursor: "pointer", transition: "background 0.1s ease, border-color 0.1s ease",
-          color: "var(--text)", overflow: "hidden", display: "flex", alignItems: "center",
+          textAlign: "left",
+          padding: 0,
+          borderRadius: 6,
+          border: `1px solid ${bg}25`,
+          background: "var(--panel)",
+          cursor: "pointer",
+          transition: "background 0.1s ease, border-color 0.1s ease",
+          color: "var(--text)",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}10`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}55`; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}04`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}40`; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = `${bg}08`;
+          e.currentTarget.style.borderColor = `${bg}40`;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "var(--panel)";
+          e.currentTarget.style.borderColor = `${bg}25`;
+        }}
       >
-        <div style={{ width: 8, height: 8, borderRadius: 4, background: CLAIM_ACCENT, flexShrink: 0, marginLeft: 10 }} />
+        {/* Status dot */}
+        <div style={{
+          width: 8, height: 8, borderRadius: 4, background: bg,
+          flexShrink: 0, marginLeft: 10,
+        }} />
+
         <div style={{ flex: 1, minWidth: 0, padding: "5px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 60 }}>{c.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, minWidth: 70 }}>{dateStr}</span>
-          <span style={{ minWidth: 0, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, color: "var(--text)", flexShrink: 1 }}>{c.device_label || "—"}</span>
-          <span style={{ fontSize: 11, color: "var(--muted)", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>{c.customer_name ?? "—"}</span>
-          {c.notes && (
-            <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {c.notes.slice(0, 60)}
-            </span>
-          )}
-          <ClaimBadge size="small" />
-          <Controls statusPicker={statusPicker} printButton={printButton} />
+          <TicketCode code={c.code} dense />
+          <TicketDate value={c.created_at} />
+          <TicketDevice label={c.device_label} dense />
+          <TicketCustomer name={customerName} />
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+            <TicketRepair text={c.notes} />
+          </div>
+          <ClaimBadge dense />
+          <Controls statusPicker={statusPicker} printButton={printButton} gap={5} />
         </div>
       </div>
     );
@@ -96,69 +105,39 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
       <div
         onClick={onClick}
         style={{
-          textAlign: "left", borderRadius: 6,
-          border: `1px dashed ${CLAIM_ACCENT}30`, background: `${CLAIM_ACCENT}03`,
-          cursor: "pointer", transition: "background 0.1s ease, border-color 0.1s ease",
-          color: "var(--text)", overflow: "hidden", display: "flex", alignItems: "stretch",
+          textAlign: "left",
+          borderRadius: 6,
+          border: `1px solid ${bg}20`,
+          background: "var(--panel)",
+          cursor: "pointer",
+          transition: "background 0.1s ease, border-color 0.1s ease",
+          color: "var(--text)",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "stretch",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}08`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}50`; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = `${CLAIM_ACCENT}03`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}30`; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = `${bg}06`;
+          e.currentTarget.style.borderColor = `${bg}40`;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "var(--panel)";
+          e.currentTarget.style.borderColor = `${bg}20`;
+        }}
       >
-        <div style={{ width: 6, background: CLAIM_ACCENT, flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0, minWidth: 65 }}>{c.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
-          <span style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 80, maxWidth: 180, flexShrink: 1 }}>{c.device_label || "—"}</span>
-          <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>{c.customer_name ?? "—"}</span>
-          {c.notes && (
-            <span style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-              {c.notes.slice(0, 60)}
-            </span>
-          )}
-          <ClaimBadge size="small" />
-          <Controls statusPicker={statusPicker} printButton={printButton} />
-        </div>
-      </div>
-    );
-  }
+        {/* Status color bar */}
+        <div style={{ width: 6, background: bg, flexShrink: 0 }} />
 
-  if (displayMode === "list") {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          textAlign: "left", padding: 0, borderRadius: 10,
-          border: `1px dashed ${CLAIM_ACCENT}35`, background: `${CLAIM_ACCENT}03`,
-          cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-          transition: "transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease",
-          color: "var(--text)", position: "relative", overflow: "hidden", display: "flex",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 4px 14px ${CLAIM_ACCENT}14`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}50`; }}
-        onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.03)"; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}35`; }}
-      >
-        <div style={{ width: 4, background: CLAIM_ACCENT, flexShrink: 0, borderRadius: "10px 0 0 10px" }} />
-        <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
-            <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-            <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
-            <ClaimBadge />
-            <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
-              <DeviceIcon size={12} color={CLAIM_ACCENT} />
-              <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</span>
-            </div>
-            <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.customer_name ?? "—"}</span>
-            <div style={{ flex: 1 }} />
-            <Controls statusPicker={statusPicker} printButton={printButton} />
+        <div style={{ flex: 1, minWidth: 0, padding: "6px 10px", display: "flex", alignItems: "center", gap: 12 }}>
+          <TicketCode code={c.code} dense />
+          <TicketDate value={c.created_at} />
+          <TicketDevice label={c.device_label} dense />
+          <TicketCustomer name={customerName} />
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+            <TicketRepair text={c.notes} />
           </div>
-          {c.notes && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflow: "hidden" }}>
-              <WrenchIcon size={11} color="var(--muted)" />
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {c.notes.slice(0, 100)}
-              </span>
-            </div>
-          )}
+          <ClaimBadge dense />
+          <Controls statusPicker={statusPicker} printButton={printButton} gap={4} marginLeftAuto />
         </div>
       </div>
     );
@@ -169,94 +148,162 @@ export function ClaimCard({ claim: c, displayMode, statusColor, statusLabel, onC
       <div
         onClick={onClick}
         style={{
-          textAlign: "left", borderRadius: 14,
-          border: `1px dashed ${CLAIM_ACCENT}35`, background: `${CLAIM_ACCENT}03`,
-          cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+          textAlign: "left",
+          borderRadius: 14,
+          border: `1px solid ${bg}30`,
+          background: "var(--panel)",
+          cursor: "pointer",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
           transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          color: "var(--text)", overflow: "hidden", display: "flex", flexDirection: "column",
+          color: "var(--text)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${CLAIM_ACCENT}14`; }}
-        onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.04)"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-2px)";
+          e.currentTarget.style.boxShadow = `0 8px 24px ${bg}14`;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.04)";
+        }}
       >
+        {/* Status color header */}
         <div style={{
           padding: "8px 12px",
-          background: `linear-gradient(135deg, ${CLAIM_ACCENT}15, ${CLAIM_ACCENT}06)`,
-          borderBottom: `1px solid ${CLAIM_ACCENT}18`,
-          display: "flex", alignItems: "center", gap: 6, minWidth: 0,
+          background: `linear-gradient(135deg, ${bg}15, ${bg}06)`,
+          borderBottom: `1px solid ${bg}18`,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          minWidth: 0,
         }}>
-          <span style={{ fontWeight: 800, fontSize: 12, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
-          <ClaimBadge size="small" />
+          <TicketCode code={c.code} dense />
+          <TicketDate value={c.created_at} />
           <div style={{ flex: 1 }} />
-          <Controls statusPicker={statusPicker} printButton={printButton} />
+          <ClaimBadge dense />
+          <Controls statusPicker={statusPicker} printButton={printButton} gap={4} />
         </div>
+
         <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
+          {/* Device + customer */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, background: `${CLAIM_ACCENT}12`, color: CLAIM_ACCENT, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}>
               <DeviceIcon size={12} color="currentColor" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</div>
-              <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)" }}>{c.customer_name ?? "—"}</div>
+              <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)" }}>{customerName}</div>
             </div>
           </div>
+
+          {/* Notes */}
           {c.notes && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "var(--text)", minWidth: 0 }}>
               <WrenchIcon size={10} color="var(--muted)" />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.notes.slice(0, 80)}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.notes}</span>
             </div>
           )}
+
+          <div style={{ flex: 1 }} />
         </div>
       </div>
     );
   }
 
+  if (displayMode === "list") {
+    return (
+      <div
+        onClick={onClick}
+        style={{
+          textAlign: "left",
+          padding: 0,
+          borderRadius: 10,
+          border: `1px solid ${bg}30`,
+          background: "var(--panel)",
+          cursor: "pointer",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+          transition: "transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease",
+          color: "var(--text)",
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = `0 4px 14px ${bg}14`;
+          e.currentTarget.style.borderColor = `${bg}50`;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.03)";
+          e.currentTarget.style.borderColor = `${bg}30`;
+        }}
+      >
+        <div style={{ width: 4, background: bg, flexShrink: 0, borderRadius: "10px 0 0 10px" }} />
 
+        <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24, flexWrap: "wrap" }}>
+          <TicketCode code={c.code} />
+          <TicketDate value={c.created_at} />
+          <MetaSeparator />
+          <TicketDevice label={c.device_label} />
+          <TicketCustomer name={customerName} />
+
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+            <TicketRepair text={c.notes} />
+          </div>
+
+          <ClaimBadge />
+          <Controls statusPicker={statusPicker} printButton={printButton} gap="var(--space-1)" marginLeftAuto />
+        </div>
+      </div>
+    );
+  }
 
   // Default: compact mode
   return (
     <div
       onClick={onClick}
       style={{
-        textAlign: "left", padding: 0, borderRadius: 10,
-        border: `1px dashed ${CLAIM_ACCENT}35`, background: `${CLAIM_ACCENT}03`,
-        cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+        textAlign: "left",
+        padding: 0,
+        borderRadius: 10,
+        border: `1px solid ${bg}30`,
+        background: "var(--panel)",
+        cursor: "pointer",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         transition: "transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease",
-        color: "var(--text)", overflow: "hidden", display: "flex",
+        color: "var(--text)",
+        overflow: "hidden",
+        display: "flex",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 4px 14px ${CLAIM_ACCENT}12`; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}50`; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.03)"; e.currentTarget.style.borderColor = `${CLAIM_ACCENT}35`; }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = "translateY(-1px)";
+        e.currentTarget.style.boxShadow = `0 4px 12px ${bg}14`;
+        e.currentTarget.style.borderColor = `${bg}50`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.03)";
+        e.currentTarget.style.borderColor = `${bg}30`;
+      }}
     >
-      <div style={{ width: 4, background: CLAIM_ACCENT, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 24 }}>
-          <span style={{ fontWeight: 800, fontSize: 13, color: CLAIM_ACCENT, whiteSpace: "nowrap", flexShrink: 0 }}>{c.code}</span>
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{dateStr}</span>
-          <ClaimBadge />
-          {statusLabel && (
-            <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, padding: "2px 5px", borderRadius: 4, background: `${statusColor}15`, color: statusColor, border: `1px solid ${statusColor}25`, whiteSpace: "nowrap", flexShrink: 0 }}>
-              {statusLabel}
-            </span>
-          )}
-          <div style={{ flex: 1 }} />
-          <Controls statusPicker={statusPicker} printButton={printButton} />
+      <div style={{ width: 4, background: bg, flexShrink: 0 }} />
+
+      <div style={{ flex: 1, minWidth: 0, padding: "var(--space-2) var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 24 }}>
+        <TicketCode code={c.code} />
+        <TicketDate value={c.created_at} />
+        <MetaSeparator />
+        <TicketDevice label={c.device_label} />
+        <TicketCustomer name={customerName} />
+
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
+          <TicketRepair text={c.notes} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13, color: CLAIM_ACCENT, minWidth: 0, overflow: "hidden" }}>
-            <DeviceIcon size={12} color={CLAIM_ACCENT} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.device_label || "—"}</span>
-          </div>
-          <span style={{ color: "var(--border)" }}>·</span>
-          <span style={{ fontWeight: 500, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{c.customer_name ?? "—"}</span>
-          {c.notes && (
-            <>
-              <span style={{ color: "var(--border)" }}>·</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-                {c.notes.slice(0, 60)}
-              </span>
-            </>
-          )}
-        </div>
+
+        <ClaimBadge />
+        <Controls statusPicker={statusPicker} printButton={printButton} gap="var(--space-1)" />
       </div>
     </div>
   );

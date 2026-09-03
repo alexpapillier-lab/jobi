@@ -48,8 +48,11 @@ export function TicketCode({
   );
 }
 
-/** Datum přijetí. */
+/** Datum přijetí. Bez data se vypíše pomlčka, ne "NaN.NaN.NaN". */
 export function TicketDate({ value }: { value: string | number | Date | null | undefined }) {
+  if (value === null || value === undefined || value === "") {
+    return <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>—</span>;
+  }
   return (
     <span
       style={{
@@ -146,4 +149,42 @@ export function TicketRepair({ text }: { text?: string | null }) {
 /** Tečka mezi údaji. */
 export function MetaSeparator() {
   return <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>;
+}
+
+/** Akcent reklamací – jediné, čím se reklamace v seznamu liší od zakázky. */
+const CLAIM_ACCENT = "#0d9488";
+
+/**
+ * Odznak "Reklamace".
+ *
+ * Reklamace se dřív kreslily úplně jinak než zakázky: čárkovaný rámeček,
+ * zelenkavé pozadí, kód tyrkysově místo barvou textu, jiné velikosti písma
+ * a v režimech compact a list dokonce dva řádky místo jednoho. Ve smíšeném
+ * seznamu se pak sloupce nepotkávaly a každý druhý řádek byl jinak vysoký.
+ *
+ * Teď má reklamace stejné rozvržení jako zakázka a odlišuje ji jen tenhle
+ * odznak. Sedí vždycky hned nalevo od ovládacích prvků, tedy tam, kde má
+ * zakázka cenu – levé sloupce (kód, datum, zařízení, zákazník) tím zůstanou
+ * napříč řádky zarovnané.
+ */
+export function ClaimBadge({ dense }: Dense) {
+  return (
+    <span
+      style={{
+        fontSize: "var(--text-xs)",
+        fontWeight: 800,
+        padding: "2px 6px",
+        borderRadius: "var(--radius-2xs)",
+        background: `${CLAIM_ACCENT}12`,
+        color: CLAIM_ACCENT,
+        border: `1px solid ${CLAIM_ACCENT}25`,
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {dense ? "R" : "Reklamace"}
+    </span>
+  );
 }

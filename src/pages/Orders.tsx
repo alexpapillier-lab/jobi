@@ -3367,7 +3367,6 @@ export default function Orders({
         claim={c}
         displayMode={uiCfg.orders.displayMode}
         statusColor={statusColor}
-        statusLabel={claimMeta?.label}
         onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
         statusPicker={<StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
         printButton={renderPrintButton(claimAsCardData, isSmall)}

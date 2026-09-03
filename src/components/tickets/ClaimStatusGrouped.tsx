@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
+import { ClaimBadge, TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
+import { WrenchIcon } from "./icons";
 
 type ClaimLike = {
   id: string;
@@ -20,16 +22,6 @@ type Props = {
   printButtonFor: (claim: ClaimLike) => React.ReactNode;
   customOrder?: string[];
 };
-
-function formatCZ(dtIso: string | null | undefined): string {
-  if (!dtIso) return "—";
-  try {
-    const d = new Date(dtIso);
-    return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-  } catch {
-    return "—";
-  }
-}
 
 function GroupedClaimRow({
   claim,
@@ -67,10 +59,20 @@ function GroupedClaimRow({
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 12, color: "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
-      <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZ(claim.created_at ?? null)}</span>
-      <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{claim.device_label || "—"}</span>
-      <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.customer_name || "—"}</span>
+      {/* Stejné rozvržení jako řádek zakázky v TicketStatusGrouped / CombinedStatusGrouped. */}
+      <TicketCode code={claim.code} dense />
+      <TicketDate value={claim.created_at} />
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden" }}>
+        <TicketDevice label={claim.device_label} dense iconColor={statusColor} />
+      </div>
+      <TicketCustomer name={claim.customer_name || "—"} />
+      {claim.notes && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <WrenchIcon size={10} color="var(--muted)" />
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.notes}</span>
+        </div>
+      )}
+      <ClaimBadge dense />
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}
