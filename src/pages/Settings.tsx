@@ -393,8 +393,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [smsPhoneLoading, setSmsPhoneLoading] = useState(false);
   const [smsProvisionLoading, setSmsProvisionLoading] = useState(false);
   const [smsDisconnectLoading, setSmsDisconnectLoading] = useState(false);
-  const [smsForwardingValue, setSmsForwardingValue] = useState("");
-  const [smsForwardingSaving, setSmsForwardingSaving] = useState(false);
   const [smsAutomations, setSmsAutomations] = useState<Array<{ id: string; trigger_status_key: string; message_template: string; active: boolean; sort_order: number }>>([]);
   const [smsAutomationsLoading, setSmsAutomationsLoading] = useState(false);
 
@@ -516,7 +514,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           return;
         }
         setSmsPhoneRow(data ?? null);
-        setSmsForwardingValue(data?.forwarding_number ?? "");
       });
   }, [activeServiceId]);
 
@@ -1158,7 +1155,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       if (errMsg) throw new Error(errMsg);
                       if (data.twilio_number) {
                         setSmsPhoneRow({ twilio_number: data.twilio_number, forwarding_number: null });
-                        setSmsForwardingValue("");
                         showToast("SMS aktivována. Číslo: " + data.twilio_number, "success");
                       }
                     } catch (e) {
@@ -1190,65 +1186,12 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   </span>
                   <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--success)", background: "var(--success-muted)", padding: "4px 8px", borderRadius: 8 }}>Aktivní</span>
                 </div>
-                <div style={{ marginBottom: 12 }}>
-                  <FieldLabel>Přesměrování hovorů</FieldLabel>
-                  <TextInput
-                    type="tel"
-                    value={smsForwardingValue}
-                    onChange={(e) => setSmsForwardingValue(e.target.value)}
-                    placeholder="+420 xxx xxx xxx"
-                  />
+                {/* Přesměrování hovorů tu bylo, ale sdílené číslo má v Twiliu jen SMS
+                    (hlas ne), takže se hovor nikdy nespojí a nastavení nemělo účinek.
+                    Vrátit, až bude číslo s hlasem – logika v sms-voice zůstává. */}
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 12 }}>
+                  Číslo je jen pro SMS, hovory na něj se nespojí. Do zpráv zákazníkům proto přidávejte telefon servisu.
                 </div>
-                <button
-                  type="button"
-                  disabled={smsForwardingSaving}
-                  onClick={async () => {
-                    const raw = smsForwardingValue.trim();
-                    const normalized = /^\+[1-9]\d{6,14}$/.test(raw.replace(/\s/g, ""))
-                      ? raw.replace(/\s/g, "")
-                      : raw === ""
-                        ? null
-                        : undefined;
-                    if (normalized === undefined) {
-                      showToast("Zadejte číslo ve formátu E.164 (např. +420 123 456 789)", "error");
-                      return;
-                    }
-                    setSmsForwardingSaving(true);
-                    try {
-                      const client = getTypedSupabaseClient();
-                      if (!client) return;
-                      const { error } = await client
-                        .from("service_phone_numbers")
-                        .update({ forwarding_number: normalized })
-                        .eq("service_id", activeServiceId);
-                      if (error) throw error;
-                      setSmsPhoneRow((p) => (p ? { ...p, forwarding_number: normalized ?? null } : null));
-                      setSmsForwardingValue(normalized ?? "");
-                      showToast("Uloženo", "success");
-                    } catch (e) {
-                      reportError({
-                        code: "settings.sms_number_save_failed",
-                        error: e,
-                        userMessage: e instanceof Error ? e.message : "Chyba ukládání",
-                        source: "Settings.saveSmsNumber",
-                      });
-                    } finally {
-                      setSmsForwardingSaving(false);
-                    }
-                  }}
-                  style={{
-                    padding: "10px 20px",
-                    borderRadius: 12,
-                    border: "none",
-                    background: smsForwardingSaving ? "var(--panel-2)" : "var(--accent)",
-                    color: smsForwardingSaving ? "var(--muted)" : "var(--accent-fg)",
-                    fontWeight: 700,
-                    fontSize: "var(--text-base)",
-                    cursor: smsForwardingSaving ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {smsForwardingSaving ? "Ukládám…" : "Uložit"}
-                </button>
                 {isAdmin && (
                   <div
                     style={{
@@ -1275,7 +1218,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                           const { error } = await client.from("service_phone_numbers").delete().eq("service_id", activeServiceId);
                           if (error) throw error;
                           setSmsPhoneRow(null);
-                          setSmsForwardingValue("");
                           showToast("SMS odpojena. Můžete znovu aktivovat.", "success");
                         } catch (e) {
                           reportError({
