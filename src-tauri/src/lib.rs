@@ -108,6 +108,54 @@ fn set_macos_app_icon(path: &str) {
 }
 
 
+
+/// Kontext pro JobiDocs (servisy, údaje firmy, přihlášení k Supabase), který
+/// Rust posílá na 127.0.0.1:3847 každých 5 s nezávisle na webview.
+///
+/// Proč: macOS uspává JavaScript v okně na pozadí, takže `setInterval` v React
+/// části přestal posílat kontext a JobiDocs po vlastním restartu čekal, dokud
+/// uživatel nepřepnul do Jobi. Vlákno tady běží, i když je okno schované.
+struct JobiDocsContext(std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn set_jobidocs_context(state: tauri::State<'_, JobiDocsContext>, payload: String) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    *guard = if payload.trim().is_empty() { None } else { Some(payload) };
+    Ok(())
+}
+
+fn spawn_jobidocs_context_pusher(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let client = tauri_plugin_http::reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(4))
+            .build();
+        let client = match client {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            let payload = app
+                .state::<JobiDocsContext>()
+                .0
+                .lock()
+                .ok()
+                .and_then(|g| g.clone());
+            if let Some(body) = payload {
+                let req = client
+                    .put("http://127.0.0.1:3847/v1/context")
+                    .header("Content-Type", "application/json")
+                    .body(body)
+                    .send();
+                // JobiDocs nemusí běžet – chyba je normální stav, jen ji ignorujeme.
+                let _ = tauri::async_runtime::block_on(req);
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -118,7 +166,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![greet, close_window, set_app_icon, launch_jobidocs])
+        .manage(JobiDocsContext(std::sync::Mutex::new(None)))
+        .setup(|app| {
+            spawn_jobidocs_context_pusher(app.handle());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![greet, close_window, set_app_icon, launch_jobidocs, set_jobidocs_context])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

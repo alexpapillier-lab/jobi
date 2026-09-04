@@ -44,7 +44,10 @@ if [ ! -f "$SIG_FILE" ]; then
 fi
 
 # GitHub Releases URL for "latest" release (same repo as in tauri.conf endpoints)
-GITHUB_RELEASES_URL="https://github.com/alexpapillier-lab/jobi/releases/latest/download"
+# Základ URL pro stažení. Release app posílá adresu verzovaného release
+# (…/releases/download/jobi-vX.Y.Z), aby latest.json v kanálu ukazoval
+# na neměnné soubory. Bez proměnné zůstává původní chování.
+GITHUB_RELEASES_URL="${JOBI_DOWNLOAD_BASE:-https://github.com/alexpapillier-lab/jobi/releases/latest/download}"
 DOWNLOAD_URL="$GITHUB_RELEASES_URL/$PRODUCT_NAME.app.tar.gz"
 
 # Signature: entire content of .sig file (minisign format), must be valid JSON string

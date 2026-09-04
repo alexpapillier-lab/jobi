@@ -1,43 +1,56 @@
-import Fastify from "fastify";
+/**
+ * Lokální API JobiDocs (127.0.0.1:3847).
+ *
+ * Tisk, export a náhled jdou přes jádro (core/): šablona servisu + data
+ * → HTML → PDF v Chromiu → tiskárna / soubor. Editor i Jobi používají
+ * stejnou cestu, takže neexistuje „jiný“ tisk než ten, co je vidět v náhledu.
+ *
+ * v1 endpointy zůstávají kvůli starším verzím Jobi; jejich `variables` se
+ * převedou na DocumentData adaptérem.
+ */
+import Fastify, { type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import path from "path";
 import fs from "fs/promises";
 import { listPrinters } from "./printers.js";
 import { getSettings, putSettings, setSettingsPath } from "./settings.js";
-import { getProfile, putProfile, setProfilesPath } from "./profiles.js";
-import { getDocumentsConfig, putDocumentsConfig, setDocumentsConfigPath } from "./documentsConfig.js";
-import { saveDocumentsConfigToSupabase, loadDocumentsConfigFromSupabase, migrateConfigAssetsToStorage, loadProfileFromSupabase, saveProfileToSupabase } from "./supabaseSync.js";
+import { setProfilesPath } from "./profiles.js";
+import { setDocumentsConfigPath } from "./documentsConfig.js";
 import { printPdf } from "./print.js";
-import { generateDocumentHtml } from "../src/documentToHtml.js";
+import { loadDocuments, saveDocuments, type SupabaseAuth } from "./documentsStore.js";
+import { loadRecent } from "./recent.js";
+import {
+  DOC_TYPES,
+  renderDocument,
+  sampleData,
+  serviceFromCompanyData,
+  templateFor,
+  variablesToDocumentData,
+  normalizeDocuments,
+  type DocType,
+  type DocumentData,
+  type DocumentsV2,
+  type SampleKind,
+} from "../core/index.js";
 
 const PORT = 3847;
 const HOST = "127.0.0.1";
-
-async function getAppVersion(): Promise<string> {
-  try {
-    const pkgPath = path.join(process.cwd(), "package.json");
-    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf-8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+const PDF_TIMEOUT_MS = 60000;
 
 type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
 const activityLog: ActivityEntry[] = [];
-const MAX_ACTIVITY = 20;
+const MAX_ACTIVITY = 50;
 
 type ServiceEntry = { service_id: string; service_name: string; role: string };
-type CompanyData = Record<string, unknown>;
-type DocumentsConfig = Record<string, unknown>;
+type Rec = Record<string, unknown>;
 type JobiDocsLogoColors = { background: string; jInner: string; foreground: string };
-let jobiContext: {
+
+const jobiContext: {
   services: ServiceEntry[];
   activeServiceId: string | null;
-  documentsConfig?: DocumentsConfig | null;
-  companyData?: CompanyData | null;
+  documentsConfig?: Rec | null;
+  companyData?: Rec | null;
   jobidocsLogo?: JobiDocsLogoColors | null;
-  /** Má uživatel oprávnění měnit nastavení dokumentů (z Jobi). Když false, JobiDocs zobrazí customizaci jako read-only. */
   canManageDocuments?: boolean;
 } = {
   services: [],
@@ -48,12 +61,8 @@ let jobiContext: {
   canManageDocuments: true,
 };
 
-/** Supabase auth z Jobi – pro zápis document config do DB. Neposíláme do GET /v1/context. */
-let supabaseAuth: {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
-  supabaseAccessToken: string | null;
-} | null = null;
+/** Přihlášení z Jobi – jen pro zápis/čtení šablon v Supabase. Nikdy se nevrací v GET /v1/context. */
+let supabaseAuth: SupabaseAuth | null = null;
 
 function pushActivity(action: "print" | "export", status: "ok" | "error" | "pending", detail?: string) {
   activityLog.unshift({ ts: new Date().toISOString(), action, status, detail });
@@ -62,63 +71,175 @@ function pushActivity(action: "print" | "export", status: "ok" | "error" | "pend
 
 type PrinterInfo = { name: string; status: string; available: boolean };
 
-type StartOptions = {
+export type StartOptions = {
   htmlToPdf?: (html: string) => Promise<Buffer>;
-  /**
-   * Nativní tisk pro platformy bez CUPS (Windows). Když není předaný,
-   * použije se původní lp cesta z print.ts – tak to zůstává na macOS.
-   */
+  /** Nativní tisk pro platformy bez CUPS (Windows). Bez něj se použije lp. */
   printPdfNative?: (pdf: Buffer, printerName?: string) => Promise<string>;
-  /** Seznam tiskáren pro platformy bez lpstat (Windows). */
   listPrintersNative?: () => Promise<PrinterInfo[]>;
+  appVersion?: string;
 };
 
-export async function startApiServer(
-  port: number = PORT,
-  userDataPath?: string,
-  options?: StartOptions
-) {
+function isDocType(v: unknown): v is DocType {
+  return typeof v === "string" && (DOC_TYPES as string[]).includes(v);
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    p.finally(() => clearTimeout(t)),
+    new Promise<never>((_, reject) => {
+      t = setTimeout(() => reject(new Error(label)), ms);
+    }),
+  ]);
+}
+
+/** Hlavičkový papír pod každou stranu obsahu. */
+async function mergeLetterhead(content: Buffer, letterheadUrl: string | undefined): Promise<Buffer> {
+  if (!letterheadUrl || !letterheadUrl.trim()) return content;
+  let letterhead: Buffer | null = null;
+  if (letterheadUrl.startsWith("data:application/pdf;base64,")) {
+    letterhead = Buffer.from(letterheadUrl.replace(/^data:application\/pdf;base64,/, ""), "base64");
+  } else if (/^https?:\/\//.test(letterheadUrl)) {
+    const res = await fetch(letterheadUrl);
+    if (!res.ok) return content;
+    letterhead = Buffer.from(await res.arrayBuffer());
+  }
+  if (!letterhead) return content;
+  const { PDFDocument } = await import("pdf-lib");
+  const lh = await PDFDocument.load(letterhead);
+  const doc = await PDFDocument.load(content);
+  if (lh.getPageCount() === 0 || doc.getPageCount() === 0) return content;
+  const out = await PDFDocument.create();
+  const embedded = await out.embedPdf(doc, doc.getPageIndices());
+  for (let i = 0; i < doc.getPageCount(); i++) {
+    const [bg] = await out.copyPages(lh, [Math.min(i, lh.getPageCount() - 1)]);
+    const page = out.addPage(bg);
+    const emb = embedded[i];
+    if (emb) page.drawPage(emb, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+  }
+  return Buffer.from(await out.save());
+}
+
+function normalizeData(raw: unknown): DocumentData {
+  const d = (raw && typeof raw === "object" ? raw : {}) as Partial<DocumentData>;
+  return { ...d, service: { ...(d.service ?? {}) } };
+}
+
+export async function startApiServer(port: number = PORT, userDataPath?: string, options?: StartOptions) {
   const htmlToPdf = options?.htmlToPdf;
-  // Na macOS jsou obě undefined -> zůstává lp / lpstat.
   const printPdfFn = options?.printPdfNative ?? printPdf;
   const listPrintersFn = options?.listPrintersNative ?? listPrinters;
-  const fastify = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+  const appVersion = options?.appVersion ?? "dev";
+  const fastify = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
-  fastify.addHook("onRequest", async (request, _reply) => {
-    const p = request.url?.split("?")[0];
-    if (request.method === "POST" && p === "/v1/print") {
-      pushActivity("print", "pending", "zpracovává se…");
-    } else if (request.method === "POST" && (p === "/v1/export" || p === "/v1/export-document")) {
-      pushActivity("export", "pending", "zpracovává se…");
-    }
+  fastify.addHook("onRequest", async (request) => {
+    const p = request.url?.split("?")[0] ?? "";
+    if (request.method !== "POST") return;
+    if (p === "/v1/print" || p === "/v1/print-document" || p === "/v2/print") pushActivity("print", "pending", "zpracovává se…");
+    else if (p === "/v1/export" || p === "/v1/export-document" || p === "/v2/export") pushActivity("export", "pending", "zpracovává se…");
   });
 
-  await fastify.register(cors, {
-    origin: true, // allow Jobi (Tauri webview: tauri://localhost, asset://localhost) + dev
-  });
+  await fastify.register(cors, { origin: true });
 
-  // Init paths (Electron provides userData, fallback to cwd)
   const baseDir = userDataPath || path.join(process.cwd(), ".jobidocs-data");
   setSettingsPath(baseDir);
   setProfilesPath(baseDir);
   setDocumentsConfigPath(baseDir);
 
-  // Activity log (pro UI – co Jobi posílá)
-  fastify.get("/v1/activity", async () => {
-    return { entries: [...activityLog] };
-  });
+  // Poslední kontext z Jobi přežije restart JobiDocs. Jobi ho posílá z webview,
+  // které macOS na pozadí uspává, takže po restartu by JobiDocs mohl dlouho
+  // čekat na první PUT. Token má omezenou platnost; Jobi ho obnoví, jakmile běží.
+  const contextPath = path.join(baseDir, "last-context.json");
+  try {
+    const raw = JSON.parse(await fs.readFile(contextPath, "utf-8")) as { context?: typeof jobiContext; auth?: SupabaseAuth | null; savedAt?: string };
+    if (raw?.context && Array.isArray(raw.context.services)) {
+      Object.assign(jobiContext, raw.context);
+      supabaseAuth = raw.auth ?? null;
+      fastify.log.info("[context] obnoven z disku (%s)", raw.savedAt ?? "?");
+    }
+  } catch {
+    // první spuštění nebo poškozený soubor – počkáme na Jobi
+  }
+  let contextSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function persistContext() {
+    if (contextSaveTimer) clearTimeout(contextSaveTimer);
+    contextSaveTimer = setTimeout(() => {
+      fs.mkdir(baseDir, { recursive: true })
+        .then(() => fs.writeFile(contextPath, JSON.stringify({ context: jobiContext, auth: supabaseAuth, savedAt: new Date().toISOString() }), "utf-8"))
+        .catch((e) => fastify.log.warn({ err: e }, "[context] uložení selhalo"));
+    }, 1000);
+  }
 
-  // Context from Jobi (services + activeServiceId)
-  fastify.get("/v1/context", async () => {
-    return jobiContext;
-  });
+  // -------------------------------------------------------------------------
+  // Společná cesta: šablona + data → HTML → PDF
+  // -------------------------------------------------------------------------
+
+  type RenderRequest = {
+    serviceId: string;
+    docType: DocType;
+    data?: DocumentData;
+    sample?: SampleKind;
+    /** Neuložený návrh z editoru – náhled má odpovídat tomu, co uživatel právě vidí. */
+    documents?: DocumentsV2;
+    mode?: "print" | "editor";
+    showPlaceholders?: boolean;
+  };
+
+  async function resolveDocuments(serviceId: string, override?: DocumentsV2) {
+    if (override) return { documents: normalizeDocuments(override), source: "draft" as const };
+    const loaded = await loadDocuments(serviceId, supabaseAuth, jobiContext.documentsConfig);
+    return { documents: loaded.documents, source: loaded.source };
+  }
+
+  async function buildHtml(req: RenderRequest): Promise<string> {
+    const { documents } = await resolveDocuments(req.serviceId, req.documents);
+    const template = templateFor(documents, req.docType);
+    const contextService = serviceFromCompanyData(jobiContext.companyData);
+    let data: DocumentData;
+    if (req.sample) {
+      data = sampleData(req.docType, req.sample, contextService);
+    } else {
+      data = normalizeData(req.data);
+      data.service = { ...contextService, ...Object.fromEntries(Object.entries(data.service).filter(([, v]) => v != null && v !== "")) };
+    }
+    return renderDocument({ template, data, brand: documents.brand, theme: documents.theme, options: { mode: req.mode ?? "print", showPlaceholders: req.showPlaceholders } });
+  }
+
+  async function buildPdf(req: RenderRequest): Promise<Buffer> {
+    if (!htmlToPdf) throw Object.assign(new Error("PDF rendering requires JobiDocs (Electron)"), { statusCode: 503 });
+    const { documents } = await resolveDocuments(req.serviceId, req.documents);
+    const html = await buildHtml({ ...req, mode: "print", showPlaceholders: false });
+    const pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
+    return mergeLetterhead(pdf, documents.brand.letterheadPdfUrl);
+  }
+
+  async function printBuffer(serviceId: string, pdf: Buffer, explicitPrinter?: string): Promise<{ printer: string; jobId: string }> {
+    const printer = explicitPrinter || (await getSettings(serviceId)).preferred_printer_name;
+    const jobId = await printPdfFn(pdf, printer);
+    return { printer: printer ?? "default", jobId };
+  }
+
+  function sendError(reply: FastifyReply, err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = (err as { statusCode?: number })?.statusCode ?? (msg === "PDF render timeout" ? 504 : 500);
+    fastify.log.error(err);
+    return reply.status(status).send({ error: msg || "Failed" });
+  }
+
+  // -------------------------------------------------------------------------
+  // Základ
+  // -------------------------------------------------------------------------
+
+  fastify.get("/v1/health", async () => ({ ok: true, app: "jobidocs", version: appVersion, api: 2 }));
+  fastify.get("/v1/activity", async () => ({ entries: [...activityLog] }));
+  fastify.get("/v1/context", async () => jobiContext);
 
   fastify.put<{
     Body: {
       services?: ServiceEntry[];
       activeServiceId?: string | null;
-      documentsConfig?: DocumentsConfig | null;
-      companyData?: CompanyData | null;
+      documentsConfig?: Rec | null;
+      companyData?: Rec | null;
       jobidocsLogo?: JobiDocsLogoColors | null;
       canManageDocuments?: boolean;
       supabaseUrl?: string;
@@ -133,492 +254,265 @@ export async function startApiServer(
     if (body.companyData !== undefined) jobiContext.companyData = body.companyData ?? null;
     if (body.jobidocsLogo !== undefined) jobiContext.jobidocsLogo = body.jobidocsLogo ?? null;
     if (body.canManageDocuments !== undefined) jobiContext.canManageDocuments = body.canManageDocuments;
-    if (
-      body.supabaseUrl &&
-      body.supabaseAnonKey &&
-      typeof body.supabaseUrl === "string" &&
-      typeof body.supabaseAnonKey === "string"
-    ) {
-      supabaseAuth = {
-        supabaseUrl: body.supabaseUrl,
-        supabaseAnonKey: body.supabaseAnonKey,
-        supabaseAccessToken: body.supabaseAccessToken ?? null,
-      };
-    } else {
+    if (typeof body.supabaseUrl === "string" && typeof body.supabaseAnonKey === "string" && body.supabaseUrl && body.supabaseAnonKey) {
+      supabaseAuth = { supabaseUrl: body.supabaseUrl, supabaseAnonKey: body.supabaseAnonKey, supabaseAccessToken: body.supabaseAccessToken ?? null };
+    } else if (body.supabaseUrl !== undefined || body.supabaseAnonKey !== undefined) {
       supabaseAuth = null;
     }
+    persistContext();
     return jobiContext;
   });
 
-  // Health check
-  fastify.get("/v1/health", async () => {
-    const version = await getAppVersion();
-    return { ok: true, app: "jobidocs", version };
-  });
+  fastify.get("/v1/printers", async () => ({ printers: await listPrintersFn() }));
 
-  // List printers (macOS: lpstat -p)
-  fastify.get("/v1/printers", async () => {
-    const printers = await listPrintersFn();
-    return { printers };
-  });
-
-  // Get settings for service
-  fastify.get<{
-    Querystring: { service_id: string };
-  }>("/v1/settings", async (req, reply) => {
+  fastify.get<{ Querystring: { service_id: string } }>("/v1/settings", async (req, reply) => {
     const serviceId = req.query?.service_id;
-    if (!serviceId) {
-      return reply.status(400).send({ error: "service_id required" });
-    }
-    const settings = await getSettings(serviceId);
-    return settings;
+    if (!serviceId) return reply.status(400).send({ error: "service_id required" });
+    return getSettings(serviceId);
   });
 
-  // Put settings for service (preferred printer)
-  fastify.put<{
-    Querystring: { service_id: string };
-    Body: { preferred_printer_name?: string };
-  }>("/v1/settings", async (req, reply) => {
+  fastify.put<{ Querystring: { service_id: string }; Body: { preferred_printer_name?: string } }>("/v1/settings", async (req, reply) => {
     const serviceId = req.query?.service_id;
-    if (!serviceId) {
-      return reply.status(400).send({ error: "service_id required" });
-    }
-    const updates = req.body || {};
-    const settings = await putSettings(serviceId, {
-      preferred_printer_name: updates.preferred_printer_name,
-    });
-    return settings;
+    if (!serviceId) return reply.status(400).send({ error: "service_id required" });
+    return putSettings(serviceId, { preferred_printer_name: req.body?.preferred_printer_name });
   });
 
-  // Documents config (full config per service) – z DB když máme auth, jinak lokálně
-  fastify.get<{
-    Querystring: { service_id: string };
-  }>("/v1/documents-config", async (req, reply) => {
+  // Starší Jobi si přes /v1/profiles doplňovalo šablonu pro tisk z prohlížeče. Už není co doplňovat.
+  fastify.get("/v1/profiles", async () => ({ profile_json: null, version: 0 }));
+
+  // -------------------------------------------------------------------------
+  // v2: šablony
+  // -------------------------------------------------------------------------
+
+  fastify.get<{ Querystring: { service_id: string } }>("/v2/documents", async (req, reply) => {
     const serviceId = req.query?.service_id;
-    if (!serviceId) {
-      return reply.status(400).send({ error: "service_id required" });
-    }
-    if (supabaseAuth?.supabaseAccessToken) {
-      const fromDb = await loadDocumentsConfigFromSupabase(
-        serviceId,
-        supabaseAuth.supabaseUrl,
-        supabaseAuth.supabaseAnonKey,
-        supabaseAuth.supabaseAccessToken
-      );
-      if (fromDb) {
-        return { config: fromDb.config, version: fromDb.version, updated_at: fromDb.updated_at ?? null };
-      }
-    }
-    const result = await getDocumentsConfig(serviceId);
-    const out = result ?? { config: null, version: 0 };
-    return { config: out.config, version: out.version, updated_at: null };
+    if (!serviceId) return reply.status(400).send({ error: "service_id required" });
+    const loaded = await loadDocuments(serviceId, supabaseAuth, jobiContext.documentsConfig);
+    return { ...loaded, canManage: jobiContext.canManageDocuments !== false, online: !!supabaseAuth?.supabaseAccessToken };
   });
 
-  fastify.put<{
-    Querystring: { service_id: string };
-    Body: { config?: unknown };
-  }>("/v1/documents-config", async (req, reply) => {
-    if (jobiContext.canManageDocuments === false) {
-      return reply.status(403).send({ error: "Nemáte oprávnění měnit nastavení dokumentů." });
-    }
+  fastify.put<{ Querystring: { service_id: string }; Body: { documents: DocumentsV2; ifVersion?: number } }>("/v2/documents", async (req, reply) => {
     const serviceId = req.query?.service_id;
-    if (!serviceId) {
-      return reply.status(400).send({ error: "service_id required" });
-    }
-    let config = req.body?.config as unknown;
-    if (supabaseAuth?.supabaseAccessToken && config && typeof config === "object" && !Array.isArray(config)) {
-      try {
-        config = await migrateConfigAssetsToStorage(
-          serviceId,
-          config as Record<string, unknown>,
-          supabaseAuth.supabaseUrl,
-          supabaseAuth.supabaseAnonKey,
-          supabaseAuth.supabaseAccessToken
-        );
-      } catch (e) {
-        fastify.log.warn({ serviceId, err: e }, "Asset migration to storage failed, saving as-is");
-      }
-    }
-    const configToSave = config ?? {};
-    const result = await putDocumentsConfig(serviceId, configToSave);
-    let updated_at: string | null = null;
-    let version = result.version;
-    if (supabaseAuth?.supabaseAccessToken) {
-      const sync = await saveDocumentsConfigToSupabase(
-        serviceId,
-        configToSave,
-        supabaseAuth.supabaseUrl,
-        supabaseAuth.supabaseAnonKey,
-        supabaseAuth.supabaseAccessToken
-      );
-      if (!sync.ok && sync.error) {
-        fastify.log.warn({ serviceId, error: sync.error }, "Supabase sync failed");
-        return { ...result, updated_at, version, syncWarning: sync.error };
-      } else if (sync.updated_at) {
-        updated_at = sync.updated_at;
-        if (typeof sync.version === "number") version = sync.version;
-      }
-    }
-    return { ...result, updated_at, version };
-  });
-
-  // Profiles (per-service per-doc-type) – Supabase when auth available, local fallback
-  fastify.get<{
-    Querystring: { service_id: string; doc_type: string };
-  }>("/v1/profiles", async (req, reply) => {
-    const serviceId = req.query?.service_id;
-    const docType = req.query?.doc_type;
-    if (!serviceId || !docType) {
-      return reply.status(400).send({ error: "service_id and doc_type required" });
-    }
-    const validProfiles = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace", "faktura"];
-    if (!validProfiles.includes(docType)) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
-    }
-    if (supabaseAuth?.supabaseAccessToken) {
-      const remote = await loadProfileFromSupabase(
-        serviceId, docType,
-        supabaseAuth.supabaseUrl, supabaseAuth.supabaseAnonKey, supabaseAuth.supabaseAccessToken
-      );
-      if (remote) return remote;
-    }
-    const profile = await getProfile(serviceId, docType);
-    return profile ?? { profile_json: null, version: 0 };
-  });
-
-  fastify.put<{
-    Querystring: { service_id: string; doc_type: string };
-    Body: { profile_json?: unknown };
-  }>("/v1/profiles", async (req, reply) => {
-    const serviceId = req.query?.service_id;
-    const docType = req.query?.doc_type;
-    if (!serviceId || !docType) {
-      return reply.status(400).send({ error: "service_id and doc_type required" });
-    }
-    const validProfilesPut = ["zakazkovy_list", "zarucni_list", "diagnosticky_protokol", "prijemka_reklamace", "vydejka_reklamace", "faktura"];
-    if (!validProfilesPut.includes(docType)) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
-    }
-    const { profile_json } = req.body || {};
-    const result = await putProfile(serviceId, docType, profile_json);
-    if (supabaseAuth?.supabaseAccessToken) {
-      const sync = await saveProfileToSupabase(
-        serviceId, docType, profile_json,
-        supabaseAuth.supabaseUrl, supabaseAuth.supabaseAnonKey, supabaseAuth.supabaseAccessToken
-      );
-      if (!sync.ok && sync.error) {
-        fastify.log.warn({ serviceId, docType, error: sync.error }, "Profiles Supabase sync failed");
-        return { ...result, syncWarning: sync.error };
-      }
-      if (typeof sync.version === "number") {
-        return { ...result, version: sync.version };
-      }
-    }
+    if (!serviceId) return reply.status(400).send({ error: "service_id required" });
+    if (jobiContext.canManageDocuments === false) return reply.status(403).send({ error: "Nemáte oprávnění měnit nastavení dokumentů." });
+    const docs = req.body?.documents;
+    if (!docs || typeof docs !== "object") return reply.status(400).send({ error: "documents required" });
+    const result = await saveDocuments(serviceId, docs, req.body?.ifVersion, supabaseAuth);
+    if (!result.ok && "conflict" in result && result.conflict) return reply.status(409).send({ error: "Šablonu mezitím změnil někdo jiný.", version: result.version, updated_at: result.updated_at });
+    if (!result.ok) return reply.status(500).send({ error: (result as { error: string }).error });
     return result;
   });
 
-  async function mergeLetterheadIfNeeded(
-    contentBuffer: Buffer,
-    letterheadPdfUrl: string | undefined
-  ): Promise<Buffer> {
-    if (!letterheadPdfUrl || typeof letterheadPdfUrl !== "string" || !letterheadPdfUrl.trim())
-      return contentBuffer;
-    let letterheadBuffer: Buffer | null = null;
-    if (letterheadPdfUrl.startsWith("data:application/pdf;base64,")) {
-      const b64 = letterheadPdfUrl.replace(/^data:application\/pdf;base64,/, "");
-      letterheadBuffer = Buffer.from(b64, "base64");
-    } else if (letterheadPdfUrl.startsWith("http://") || letterheadPdfUrl.startsWith("https://")) {
-      const res = await fetch(letterheadPdfUrl);
-      if (!res.ok) return contentBuffer;
-      const ab = await res.arrayBuffer();
-      letterheadBuffer = Buffer.from(ab);
+  // Poslední skutečné zakázky / reklamace / faktury pro náhled v editoru.
+  fastify.get<{ Querystring: { service_id: string; doc_type: string } }>("/v2/recent", async (req, reply) => {
+    const serviceId = req.query?.service_id;
+    if (!serviceId) return reply.status(400).send({ error: "service_id required" });
+    if (!isDocType(req.query?.doc_type)) return reply.status(400).send({ error: "doc_type invalid" });
+    if (!supabaseAuth?.supabaseAccessToken) return { items: [], online: false };
+    const items = await loadRecent(serviceId, req.query.doc_type, serviceFromCompanyData(jobiContext.companyData), supabaseAuth);
+    return { items, online: true };
+  });
+
+  // -------------------------------------------------------------------------
+  // v2: náhled, PDF, tisk, export
+  // -------------------------------------------------------------------------
+
+  type V2Body = {
+    service_id?: string;
+    doc_type?: string;
+    data?: DocumentData;
+    sample?: SampleKind;
+    documents?: DocumentsV2;
+    mode?: "print" | "editor";
+    show_placeholders?: boolean;
+    printer?: string;
+    target_path?: string;
+  };
+
+  function parseV2(body: V2Body | undefined, reply: FastifyReply): RenderRequest | null {
+    const serviceId = body?.service_id || jobiContext.activeServiceId || "";
+    if (!serviceId) {
+      reply.status(400).send({ error: "service_id required" });
+      return null;
     }
-    if (!letterheadBuffer) return contentBuffer;
-    const { PDFDocument } = await import("pdf-lib");
-    const letterheadPdf = await PDFDocument.load(letterheadBuffer);
-    const contentPdf = await PDFDocument.load(contentBuffer);
-    if (letterheadPdf.getPageCount() === 0 || contentPdf.getPageCount() === 0) return contentBuffer;
-    const mergedPdf = await PDFDocument.create();
-    const [letterheadPage] = await mergedPdf.copyPages(letterheadPdf, [0]);
-    mergedPdf.addPage(letterheadPage);
-    const [contentPageRef] = await mergedPdf.embedPdf(contentPdf);
-    if (contentPageRef) mergedPdf.getPage(0).drawPage(contentPageRef, { x: 0, y: 0 });
-    return Buffer.from(await mergedPdf.save());
+    if (!isDocType(body?.doc_type)) {
+      reply.status(400).send({ error: `doc_type must be one of ${DOC_TYPES.join(", ")}` });
+      return null;
+    }
+    return {
+      serviceId,
+      docType: body!.doc_type as DocType,
+      data: body?.data,
+      sample: body?.sample,
+      documents: body?.documents,
+      mode: body?.mode,
+      showPlaceholders: body?.show_placeholders,
+    };
   }
 
-  // Render HTML to PDF (returns base64). Optional letterhead_pdf_url: merge content on top of first page.
-  fastify.post<{ Body: { html: string; letterhead_pdf_url?: string } }>("/v1/render", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { html, letterhead_pdf_url } = req.body || {};
-    if (!html || typeof html !== "string") {
-      return reply.status(400).send({ error: "html required" });
-    }
-    const PDF_TIMEOUT_MS = 60000;
+  fastify.post<{ Body: V2Body }>("/v2/html", async (req, reply) => {
+    const r = parseV2(req.body, reply);
+    if (!r) return;
     try {
-      let timeoutId: ReturnType<typeof setTimeout>;
-      const contentBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error("PDF render timeout")),
-            PDF_TIMEOUT_MS
-          );
-        }),
-      ]);
-      let pdfBuffer = contentBuffer;
-      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, letterhead_pdf_url);
-      return { pdf_base64: pdfBuffer.toString("base64") };
-    } catch (err: unknown) {
-      fastify.log.error(err);
-      const msg = err instanceof Error ? err.message : "Render failed";
-      const status = msg === "PDF render timeout" ? 504 : 500;
-      return reply.status(status).send({ error: msg });
+      return reply.type("text/html; charset=utf-8").send(await buildHtml(r));
+    } catch (err) {
+      return sendError(reply, err);
     }
   });
 
-  // Print using JobiDocs template + data from Jobi (so layout matches JobiDocs design)
+  fastify.post<{ Body: V2Body }>("/v2/pdf", async (req, reply) => {
+    const r = parseV2(req.body, reply);
+    if (!r) return;
+    try {
+      return reply.type("application/pdf").send(await buildPdf(r));
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  fastify.post<{ Body: V2Body }>("/v2/print", async (req, reply) => {
+    const r = parseV2(req.body, reply);
+    if (!r) return;
+    try {
+      const pdf = await buildPdf(r);
+      const { printer, jobId } = await printBuffer(r.serviceId, pdf, req.body?.printer);
+      pushActivity("print", "ok", [printer, jobId ? `(${jobId})` : ""].filter(Boolean).join(" "));
+      return { ok: true, status: "queued", job_id: jobId || undefined, printer };
+    } catch (err) {
+      pushActivity("print", "error", err instanceof Error ? err.message : String(err));
+      return sendError(reply, err);
+    }
+  });
+
+  fastify.post<{ Body: V2Body }>("/v2/export", async (req, reply) => {
+    const r = parseV2(req.body, reply);
+    if (!r) return;
+    const target = req.body?.target_path;
+    if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
+    try {
+      const pdf = await buildPdf(r);
+      await fs.writeFile(target, pdf);
+      pushActivity("export", "ok", target);
+      return { ok: true, path: target };
+    } catch (err) {
+      pushActivity("export", "error", err instanceof Error ? err.message : String(err));
+      return sendError(reply, err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // v1: kompatibilita se starším Jobi
+  // -------------------------------------------------------------------------
+
   type PrintDocumentBody = {
-    doc_type: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
+    doc_type: string;
     service_id: string;
-    company_data: Record<string, unknown>;
+    company_data: Rec;
     sections?: Partial<Record<string, string>>;
     repair_date?: string;
     variables?: Record<string, string>;
+    target_path?: string;
   };
-  const DOC_TYPE_TO_SECTION_KEY: Record<string, string> = {
-    zakazkovy_list: "ticketList",
-    zarucni_list: "warrantyCertificate",
-    diagnosticky_protokol: "diagnosticProtocol",
-    prijemka_reklamace: "prijemkaReklamace",
-    vydejka_reklamace: "vydejkaReklamace",
-    faktura: "faktura",
-  };
+
+  function parseV1(body: PrintDocumentBody | undefined, reply: FastifyReply): RenderRequest | null {
+    if (!body?.doc_type || !body.service_id) {
+      reply.status(400).send({ error: "doc_type and service_id required" });
+      return null;
+    }
+    if (!isDocType(body.doc_type)) {
+      reply.status(400).send({ error: `doc_type must be one of ${DOC_TYPES.join(", ")}` });
+      return null;
+    }
+    const data = variablesToDocumentData(body.variables, body.company_data, body.doc_type);
+    if (body.doc_type === "zarucni_list" && body.repair_date && !data.dates?.completed) {
+      data.dates = { ...(data.dates ?? {}), completed: body.repair_date };
+    }
+    return { serviceId: body.service_id, docType: body.doc_type, data };
+  }
+
   fastify.post<{ Body: PrintDocumentBody }>("/v1/print-document", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { doc_type, service_id, company_data, sections, repair_date, variables } = req.body || {};
-    if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
-      return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
-    }
-    const sectionKey = DOC_TYPE_TO_SECTION_KEY[doc_type];
-    if (!sectionKey) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
-    }
+    const r = parseV1(req.body, reply);
+    if (!r) return;
     try {
-      const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
-      const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
-      const profile = await getProfile(service_id, doc_type);
-      const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
-      const existing = (baseConfig[sectionKey] as Record<string, unknown>) || {};
-      const config = { ...baseConfig, [sectionKey]: { ...existing, ...profileJson } };
-      const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
-      const hasVariables = variables && typeof variables === "object" && !Array.isArray(variables) && Object.keys(variables).length > 0;
-      const hasSectionOverrides = sections && typeof sections === "object" && !Array.isArray(sections) && Object.keys(sections).length > 0;
-      const options: { repairDate?: string; variables?: Record<string, string>; useSampleFallbacks?: boolean } = {};
-      if (repair_date && typeof repair_date === "string") options.repairDate = repair_date;
-      if (hasVariables) options.variables = variables as Record<string, string>;
-      if (hasVariables && !hasSectionOverrides) options.useSampleFallbacks = false;
-      const html = generateDocumentHtml(config, doc_type, companyData, hasSectionOverrides ? (sections as Partial<Record<string, string>>) : undefined, Object.keys(options).length ? options : undefined);
-      fastify.log.info("[print-document] html length=%d", html.length);
-      const PDF_TIMEOUT_MS = 60000;
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let pdfBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
-        }),
-      ]);
-      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
-      let printer = (await getSettings(service_id)).preferred_printer_name;
-      fastify.log.info("[print-document] tisk, printer=%s", printer ?? "default");
-      const jobId = await printPdfFn(pdfBuffer, printer);
-      pushActivity("print", "ok", [printer ?? "default", jobId ? `(${jobId})` : ""].filter(Boolean).join(" "));
+      const pdf = await buildPdf(r);
+      const { printer, jobId } = await printBuffer(r.serviceId, pdf);
+      pushActivity("print", "ok", [printer, jobId ? `(${jobId})` : ""].filter(Boolean).join(" "));
       return { ok: true, status: "queued", job_id: jobId || undefined };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      pushActivity("print", "error", msg);
-      fastify.log.error(err);
-      return reply.status(500).send({ error: msg || "Print failed" });
+    } catch (err) {
+      pushActivity("print", "error", err instanceof Error ? err.message : String(err));
+      return sendError(reply, err);
     }
   });
 
-  // Export document to PDF file (same data as print-document, but save to target_path instead of printing)
-  type ExportDocumentBody = PrintDocumentBody & { target_path: string };
-  fastify.post<{ Body: ExportDocumentBody }>("/v1/export-document", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { doc_type, service_id, company_data, sections, repair_date, variables, target_path } = req.body || {};
-    if (!target_path || typeof target_path !== "string") {
-      return reply.status(400).send({ error: "target_path required" });
-    }
-    if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
-      return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
-    }
-    const sectionKeyExport = DOC_TYPE_TO_SECTION_KEY[doc_type];
-    if (!sectionKeyExport) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
-    }
+  fastify.post<{ Body: PrintDocumentBody }>("/v1/export-document", async (req, reply) => {
+    const r = parseV1(req.body, reply);
+    if (!r) return;
+    const target = req.body?.target_path;
+    if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
     try {
-      const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
-      const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
-      const profile = await getProfile(service_id, doc_type);
-      const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
-      const existing = (baseConfig[sectionKeyExport] as Record<string, unknown>) || {};
-      const config = { ...baseConfig, [sectionKeyExport]: { ...existing, ...profileJson } };
-      const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
-      const hasVariablesExport = variables && typeof variables === "object" && !Array.isArray(variables) && Object.keys(variables).length > 0;
-      const hasSectionOverridesExport = sections && typeof sections === "object" && !Array.isArray(sections) && Object.keys(sections).length > 0;
-      const optionsExport: { repairDate?: string; variables?: Record<string, string>; useSampleFallbacks?: boolean } = {};
-      if (repair_date && typeof repair_date === "string") optionsExport.repairDate = repair_date;
-      if (hasVariablesExport) optionsExport.variables = variables as Record<string, string>;
-      if (hasVariablesExport && !hasSectionOverridesExport) optionsExport.useSampleFallbacks = false;
-      const html = generateDocumentHtml(config, doc_type, companyData, hasSectionOverridesExport ? (sections as Partial<Record<string, string>>) : undefined, Object.keys(optionsExport).length ? optionsExport : undefined);
-      fastify.log.info("[export-document] html length=%d", html.length);
-      const PDF_TIMEOUT_MS = 60000;
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let pdfBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
-        }),
-      ]);
-      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
-      await fs.writeFile(target_path, pdfBuffer);
-      pushActivity("export", "ok", target_path);
-      return { ok: true, path: target_path };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      pushActivity("export", "error", msg);
-      fastify.log.error(err);
-      return reply.status(500).send({ error: msg || "Export failed" });
-    }
-  });
-
-  // Render PDF and return as binary (for email attachments, previews, etc.)
-  fastify.post<{ Body: PrintDocumentBody }>("/v1/render-pdf", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { doc_type, service_id, company_data, sections, repair_date, variables } = req.body || {};
-    if (!doc_type || !service_id || !company_data || typeof company_data !== "object") {
-      return reply.status(400).send({ error: "doc_type, service_id and company_data required" });
-    }
-    const sectionKeyRender = DOC_TYPE_TO_SECTION_KEY[doc_type];
-    if (!sectionKeyRender) {
-      return reply.status(400).send({ error: "doc_type must be zakazkovy_list, zarucni_list, diagnosticky_protokol, prijemka_reklamace, vydejka_reklamace or faktura" });
-    }
-    try {
-      const rawBase = (await getDocumentsConfig(service_id))?.config ?? jobiContext.documentsConfig ?? {};
-      const baseConfig = (typeof rawBase === "object" && rawBase !== null ? rawBase : {}) as Record<string, unknown>;
-      const profile = await getProfile(service_id, doc_type);
-      const profileJson = (profile?.profile_json as Record<string, unknown>) ?? {};
-      const existing = (baseConfig[sectionKeyRender] as Record<string, unknown>) || {};
-      const config = { ...baseConfig, [sectionKeyRender]: { ...existing, ...profileJson } };
-      const companyData = typeof company_data === "object" && company_data !== null ? company_data : {};
-      const hasVariablesRender = variables && typeof variables === "object" && !Array.isArray(variables) && Object.keys(variables).length > 0;
-      const hasSectionOverridesRender = sections && typeof sections === "object" && !Array.isArray(sections) && Object.keys(sections).length > 0;
-      const optionsRender: { repairDate?: string; variables?: Record<string, string>; useSampleFallbacks?: boolean } = {};
-      if (repair_date && typeof repair_date === "string") optionsRender.repairDate = repair_date;
-      if (hasVariablesRender) optionsRender.variables = variables as Record<string, string>;
-      if (hasVariablesRender && !hasSectionOverridesRender) optionsRender.useSampleFallbacks = false;
-      const html = generateDocumentHtml(config, doc_type, companyData, hasSectionOverridesRender ? (sections as Partial<Record<string, string>>) : undefined, Object.keys(optionsRender).length ? optionsRender : undefined);
-      const PDF_TIMEOUT_MS = 60000;
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let pdfBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
-        }),
-      ]);
-      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, config.letterheadPdfUrl as string | undefined);
-      return reply.type("application/pdf").send(pdfBuffer);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      fastify.log.error(err);
-      return reply.status(500).send({ error: msg || "Render failed" });
-    }
-  });
-
-  // Print: render HTML to PDF, send to printer (legacy – raw HTML from Jobi)
-  fastify.post<{
-    Body: { html: string; printer?: string; service_id?: string };
-  }>("/v1/print", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { html, printer: explicitPrinter, service_id } = req.body || {};
-    if (!html || typeof html !== "string") {
-      return reply.status(400).send({ error: "html required" });
-    }
-    fastify.log.info("[print] start, html length=%d", html.length);
-    const PDF_TIMEOUT_MS = 60000;
-    try {
-      let timeoutId: ReturnType<typeof setTimeout>;
-      const pdfBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
-        }),
-      ]);
-      fastify.log.info("[print] pdf done, size=%d", pdfBuffer.length);
-      let printer = explicitPrinter;
-      if (!printer && service_id) {
-        const settings = await getSettings(service_id);
-        printer = settings.preferred_printer_name;
-      }
-      fastify.log.info("[print] calling lp, printer=%s", printer ?? "default");
-      const jobId = await printPdfFn(pdfBuffer, printer);
-      fastify.log.info("[print] lp ok, jobId=%s", jobId);
-      const detail = [printer ? printer : "default", jobId ? `(${jobId})` : ""].filter(Boolean).join(" ");
-      pushActivity("print", "ok", detail.trim());
-      return { ok: true, status: "queued", job_id: jobId || undefined };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      pushActivity("print", "error", msg);
-      fastify.log.error(err);
-      return reply.status(500).send({
-        error: msg || "Print failed",
-      });
-    }
-  });
-
-  // Export: render HTML to PDF, save to path. Optional letterhead_pdf_url for merge.
-  fastify.post<{
-    Body: { html: string; target_path: string; letterhead_pdf_url?: string };
-  }>("/v1/export", async (req, reply) => {
-    if (!htmlToPdf) {
-      return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
-    }
-    const { html, target_path, letterhead_pdf_url } = req.body || {};
-    if (!html || typeof html !== "string") {
-      return reply.status(400).send({ error: "html required" });
-    }
-    if (!target_path || typeof target_path !== "string") {
-      return reply.status(400).send({ error: "target_path required" });
-    }
-    const PDF_TIMEOUT_MS = 60000;
-    try {
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let pdfBuffer = await Promise.race([
-        htmlToPdf(html).finally(() => clearTimeout(timeoutId!)),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("PDF render timeout")), PDF_TIMEOUT_MS);
-        }),
-      ]);
-      pdfBuffer = await mergeLetterheadIfNeeded(pdfBuffer, letterhead_pdf_url);
-      await fs.writeFile(target_path, pdfBuffer);
-      pushActivity("export", "ok", target_path);
-      return { ok: true, path: target_path };
-    } catch (err: unknown) {
+      const pdf = await buildPdf(r);
+      await fs.writeFile(target, pdf);
+      pushActivity("export", "ok", target);
+      return { ok: true, path: target };
+    } catch (err) {
       pushActivity("export", "error", err instanceof Error ? err.message : String(err));
-      fastify.log.error(err);
-      return reply.status(500).send({
-        error: err instanceof Error ? err.message : "Export failed",
-      });
+      return sendError(reply, err);
+    }
+  });
+
+  fastify.post<{ Body: PrintDocumentBody }>("/v1/render-pdf", async (req, reply) => {
+    const r = parseV1(req.body, reply);
+    if (!r) return;
+    try {
+      return reply.type("application/pdf").send(await buildPdf(r));
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Surové HTML → PDF (base64). Používá se pro věci mimo šablony.
+  fastify.post<{ Body: { html: string; letterhead_pdf_url?: string } }>("/v1/render", async (req, reply) => {
+    if (!htmlToPdf) return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
+    const { html, letterhead_pdf_url } = req.body || {};
+    if (!html || typeof html !== "string") return reply.status(400).send({ error: "html required" });
+    try {
+      let pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
+      pdf = await mergeLetterhead(pdf, letterhead_pdf_url);
+      return { pdf_base64: pdf.toString("base64") };
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  fastify.post<{ Body: { html: string; printer?: string; service_id?: string } }>("/v1/print", async (req, reply) => {
+    if (!htmlToPdf) return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
+    const { html, printer: explicitPrinter, service_id } = req.body || {};
+    if (!html || typeof html !== "string") return reply.status(400).send({ error: "html required" });
+    try {
+      const pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
+      const { printer, jobId } = await printBuffer(service_id ?? "", pdf, explicitPrinter);
+      pushActivity("print", "ok", [printer, jobId ? `(${jobId})` : ""].filter(Boolean).join(" "));
+      return { ok: true, status: "queued", job_id: jobId || undefined };
+    } catch (err) {
+      pushActivity("print", "error", err instanceof Error ? err.message : String(err));
+      return sendError(reply, err);
+    }
+  });
+
+  fastify.post<{ Body: { html: string; target_path: string; letterhead_pdf_url?: string } }>("/v1/export", async (req, reply) => {
+    if (!htmlToPdf) return reply.status(503).send({ error: "PDF rendering requires JobiDocs (Electron)" });
+    const { html, target_path, letterhead_pdf_url } = req.body || {};
+    if (!html || typeof html !== "string") return reply.status(400).send({ error: "html required" });
+    if (!target_path || typeof target_path !== "string") return reply.status(400).send({ error: "target_path required" });
+    try {
+      let pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
+      pdf = await mergeLetterhead(pdf, letterhead_pdf_url);
+      await fs.writeFile(target_path, pdf);
+      pushActivity("export", "ok", target_path);
+      return { ok: true, path: target_path };
+    } catch (err) {
+      pushActivity("export", "error", err instanceof Error ? err.message : String(err));
+      return sendError(reply, err);
     }
   });
 

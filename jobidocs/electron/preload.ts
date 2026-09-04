@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("electron", {
     getError: () => ipcRenderer.invoke("jobidocs:get-update-error"),
     download: () => ipcRenderer.invoke("jobidocs:download-update"),
     quitAndInstall: () => ipcRenderer.invoke("jobidocs:quit-and-install"),
+    getChannel: () => ipcRenderer.invoke("jobidocs:get-update-channel"),
+    setChannel: (channel: "stable" | "beta") => ipcRenderer.invoke("jobidocs:set-update-channel", channel),
     onState: (cb: (state: { version: string; downloaded: boolean; progress: number } | null) => void) => {
       const handler = (_: unknown, state: { version: string; downloaded: boolean; progress: number } | null) => cb(state);
       ipcRenderer.on("jobidocs:update-state", handler);

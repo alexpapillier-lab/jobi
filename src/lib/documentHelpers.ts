@@ -1,6 +1,5 @@
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
-import { getProfileFromJobiDocs } from "./jobidocs";
 import { supabase } from "./supabaseClient";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
@@ -274,20 +273,6 @@ export function safeLoadDocumentsConfig(): any {
   } catch {
     return { ...DEFAULT_DOCUMENTS_CONFIG };
   }
-}
-
-export async function getConfigWithProfile(
-  serviceId: string | null,
-  docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
-): Promise<any> {
-  const base = (await loadDocumentsConfigFromDB(serviceId)) || safeLoadDocumentsConfig();
-  const profile = await getProfileFromJobiDocs(serviceId ?? "", docType);
-  if (!profile) return base;
-  const section = docType === "zakazkovy_list" ? "ticketList" : docType === "zarucni_list" ? "warrantyCertificate" : "diagnosticProtocol";
-  return {
-    ...base,
-    [section]: { ...base[section], ...profile },
-  };
 }
 
 // ---------------------------------------------------------------------------

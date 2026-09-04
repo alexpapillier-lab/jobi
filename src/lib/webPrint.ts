@@ -5,85 +5,47 @@
  * ho na tiskárnu. V prohlížeči nic takového není, takže HTML vyrobíme rovnou
  * tady a předáme ho tiskovému dialogu prohlížeče.
  *
- * Vzhled zůstává stejný: používá se `generateDocumentHtml` z JobiDocs (tentýž
- * modul, ne kopie) a konfigurace ze Supabase – tedy to, co si servis nastavil
- * v JobiDocs. Modul je čisté TypeScript bez Node a Electronu, takže v prohlížeči
- * běží beze změny.
+ * Vzhled zůstává stejný: používá se jádro JobiDocs (`jobidocs/core`, tentýž
+ * modul, ne kopie) a šablony ze Supabase – tedy to, co si servis nastavil
+ * v JobiDocs. Jádro je čisté TypeScript bez Node a Electronu.
  *
  * Omezení oproti JobiDocs:
  * - Tiskový dialog se vždy zobrazí, tichý tisk v prohlížeči neexistuje.
- * - Hlavičkový papír jako PDF (`letterheadPdfUrl`) se nesloučí – JobiDocs to
- *   dělá přes pdf-lib nad hotovým PDF, což tudy nejde.
- * - "Uložit PDF" = v dialogu zvolit cíl "Uložit jako PDF".
+ * - Hlavičkový papír jako PDF (`letterheadPdfUrl`) se nesloučí.
+ * - „Uložit PDF“ = v dialogu zvolit cíl „Uložit jako PDF“.
  */
-import { generateDocumentHtml } from "../../jobidocs/src/documentToHtml";
-import { getConfigWithProfile } from "./documentHelpers";
-import { safeLoadCompanyData } from "./companyData";
+import { documentsFromConfig, normalizeDocuments, renderDocument, templateFor, type DocType, type DocumentsV2 } from "../../jobidocs/core/index";
+import { loadDocumentsConfigRawFromDB } from "./documentSettings";
+import type { DocumentData } from "./documentData";
 
-/** Typy dokumentů, které umí generátor JobiDocs. */
-export type WebPrintDocType =
-  | "zakazkovy_list"
-  | "zarucni_list"
-  | "diagnosticky_protokol"
-  | "prijemka_reklamace"
-  | "vydejka_reklamace"
-  | "faktura";
+export type WebPrintDocType = DocType;
 
-/** Doc typy, pro které Jobi umí načíst konfiguraci i s profilem. */
-type ConfigDocType = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol";
+const cache = new Map<string, { at: number; docs: DocumentsV2 }>();
 
-function configDocTypeFor(docType: WebPrintDocType): ConfigDocType {
-  // Reklamační dokumenty sdílejí nastavení se zakázkovým listem.
-  if (docType === "zakazkovy_list" || docType === "zarucni_list" || docType === "diagnosticky_protokol") {
-    return docType;
-  }
-  return "zakazkovy_list";
+/** Šablony servisu ze Supabase (krátká cache, ať se při tisku a náhledu nečte dvakrát). */
+export async function loadDocumentsForWeb(serviceId: string | null): Promise<DocumentsV2> {
+  const key = serviceId ?? "";
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < 15000) return hit.docs;
+  const raw = await loadDocumentsConfigRawFromDB(serviceId);
+  const docs = normalizeDocuments(documentsFromConfig(raw?.config ?? null));
+  cache.set(key, { at: Date.now(), docs });
+  return docs;
 }
 
-/**
- * Sestaví HTML dokumentu stejně, jako to dělá JobiDocs na serveru.
- */
-export async function buildDocumentHtmlForWeb(
-  docType: WebPrintDocType,
-  serviceId: string | null,
-  options?: { repairDate?: string; variables?: Record<string, string> }
-): Promise<string> {
-  const config = await getConfigWithProfile(serviceId, configDocTypeFor(docType));
-  const companyData = safeLoadCompanyData() as unknown as Record<string, unknown>;
-
-  const opts: { repairDate?: string; variables?: Record<string, string>; useSampleFallbacks?: boolean } = {};
-  if (options?.repairDate) opts.repairDate = options.repairDate;
-  if (options?.variables) {
-    opts.variables = options.variables;
-    // Stejně jako v JobiDocs: s reálnými hodnotami nechceme ukázkové výplně.
-    opts.useSampleFallbacks = false;
-  }
-
-  return generateDocumentHtml(
-    config as Record<string, unknown>,
-    docType,
-    companyData,
-    undefined,
-    Object.keys(opts).length ? opts : undefined
-  );
+/** Sestaví HTML dokumentu stejně, jako to dělá JobiDocs. */
+export async function buildDocumentHtmlForWeb(docType: WebPrintDocType, serviceId: string | null, data: DocumentData): Promise<string> {
+  const docs = await loadDocumentsForWeb(serviceId);
+  return renderDocument({ template: templateFor(docs, docType), data, brand: docs.brand, theme: docs.theme, options: { mode: "print" } });
 }
 
-/** Počká, až se v dokumentu načtou obrázky (logo, razítko, QR). */
-async function waitForImages(doc: Document, timeoutMs = 5000): Promise<void> {
-  const imgs = Array.from(doc.images || []);
-  if (imgs.length === 0) return;
-  const pending = imgs.map(
-    (img) =>
-      new Promise<void>((resolve) => {
-        if (img.complete) return resolve();
-        img.addEventListener("load", () => resolve(), { once: true });
-        img.addEventListener("error", () => resolve(), { once: true });
-      })
-  );
-  await Promise.race([
-    Promise.all(pending).then(() => undefined),
-    new Promise<void>((r) => setTimeout(r, timeoutMs)),
-  ]);
+/** Počká, až se v dokumentu načtou obrázky (logo, razítko, QR) a doběhne měření stránky. */
+async function waitForDocument(doc: Document, timeoutMs = 6000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (doc.documentElement.dataset.fit === "done") return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 /**
@@ -108,9 +70,7 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
   });
 
   // POZOR na pořadí: srcdoc se musí nastavit PŘED vložením do stránky.
-  // Jinak se "load" spustí už pro about:blank, čekání skončí předčasně
-  // a tiskne se prázdná stránka. Ověřeno v prohlížeči: při opačném pořadí
-  // má iframe 3 elementy bez stylů, při správném 24 elementů včetně stylů.
+  // Jinak se "load" spustí už pro about:blank a tiskne se prázdná stránka.
   iframe.srcdoc = html;
   document.body.appendChild(iframe);
   await loaded;
@@ -122,14 +82,12 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
     throw new Error("Nepodařilo se připravit tiskový náhled.");
   }
 
-  await waitForImages(doc);
+  await waitForDocument(doc);
 
   const cleanup = () => {
-    // Odklad, ať se stihne otevřít dialog i v prohlížečích, kde print() nečeká.
     setTimeout(() => iframe.remove(), 1000);
   };
   win.addEventListener("afterprint", cleanup, { once: true });
-  // Pojistka, kdyby afterprint nepřišel (Safari ho neposílá spolehlivě).
   setTimeout(cleanup, 60000);
 
   win.focus();
@@ -137,30 +95,16 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
 }
 
 /** Sestaví dokument a rovnou otevře tiskový dialog. */
-export async function printDocumentInBrowser(
-  docType: WebPrintDocType,
-  serviceId: string | null,
-  options?: { repairDate?: string; variables?: Record<string, string> }
-): Promise<void> {
-  const html = await buildDocumentHtmlForWeb(docType, serviceId, options);
+export async function printDocumentInBrowser(docType: WebPrintDocType, serviceId: string | null, data: DocumentData): Promise<void> {
+  const html = await buildDocumentHtmlForWeb(docType, serviceId, data);
   await printHtmlInBrowser(html);
 }
 
 /**
- * Náhled dokumentu ve webu.
- *
- * Desktop si nechá od JobiDocs vyrobit PDF a ukáže ho jako blob. V prohlížeči
- * PDF nevyrábíme, takže se do stejného iframu vloží rovnou HTML – vypadá to
- * stejně a je to rychlejší.
- *
- * Volající je zodpovědný za URL.revokeObjectURL() po zavření náhledu,
- * stejně jako u PDF blobu.
+ * Náhled dokumentu ve webu jako blob URL s HTML.
+ * Volající je zodpovědný za URL.revokeObjectURL() po zavření náhledu.
  */
-export async function buildDocumentPreviewUrlForWeb(
-  docType: WebPrintDocType,
-  serviceId: string | null,
-  options?: { repairDate?: string; variables?: Record<string, string> }
-): Promise<string> {
-  const html = await buildDocumentHtmlForWeb(docType, serviceId, options);
+export async function buildDocumentPreviewUrlForWeb(docType: WebPrintDocType, serviceId: string | null, data: DocumentData): Promise<string> {
+  const html = await buildDocumentHtmlForWeb(docType, serviceId, data);
   return URL.createObjectURL(new Blob([html], { type: "text/html" }));
 }

@@ -29,7 +29,7 @@
   "name": "jobidocs",
   "private": true,
   "scripts": {
-    "api:dev": "tsx watch api/server.ts",
+    "api:dev": "tsx scripts/dev-api.ts",
     "build": "tsc && vite build && electron-builder",
     "build:electron": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && vite build",
     "copy-app-icon": "mkdir -p public/logos && cp \"../logos/jdlogo.png\" electron/icon.png && cp \"../logos/jdlogo.png\" public/logos/jdlogo.png && cp \"../logos/trayicon-black.png\" electron/tray-icon-template.png",
@@ -39,7 +39,9 @@
     "electron:build:universal": "npm run build:electron && electron-builder --mac --universal",
     "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:dev:fresh": "rm -rf dist-electron && npm run electron:dev",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "test": "cd .. && npx vitest run jobidocs/core"
   },
-  "version": "0.2.7"
+  "version": "0.3.0"
 }

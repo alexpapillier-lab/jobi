@@ -1,9 +1,13 @@
+import dns from "node:dns";
 import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, autoUpdater as electronAutoUpdater } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { startApiServer } from "../api/server";
+
+// Některé sítě neroutují IPv6; Node by pak u Supabase a fontů skončil na „fetch failed“.
+dns.setDefaultResultOrder("ipv4first");
 
 const API_PORT = 3847;
 // V zabalené aplikaci vždy načítat zabudovaný dist; jinak by se načítal localhost → prázdné okno
@@ -105,6 +109,31 @@ async function listPrintersElectronWindows(): Promise<
 }
 
 /**
+ * Dokumenty z jádra si po načtení samy změří stránku a případně zmenší písmo,
+ * aby se vešly na jednu stranu (skript v HTML nastaví data-fit="done").
+ * Tady na to počkáme, jinak by PDF vzniklo před doměřením. Surové HTML bez
+ * skriptu prostě po krátké prodlevě projde dál.
+ */
+async function waitForFit(win: BrowserWindow, maxMs = 8000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const state = (await win.webContents.executeJavaScript(
+        "(function(){var r=document.documentElement;return r.dataset.fit==='done'?'done':(document.body&&document.body.querySelector('.page[data-main]')?'wait':'none')})()"
+      )) as string;
+      if (state === "done") return;
+      if (state === "none") {
+        await new Promise((r) => setTimeout(r, 250));
+        return;
+      }
+    } catch {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/**
  * Render HTML to PDF using Electron's bundled Chromium (no Puppeteer/Chrome needed).
  * Uses temp file instead of data URL to avoid size limits for large documents.
  */
@@ -124,6 +153,7 @@ async function htmlToPdfElectron(html: string): Promise<Buffer> {
 
     await win.loadFile(tmpPath);
     // loadFile už čeká na načtení – čekání na did-finish-load by viselo (událost už proběhla)
+    await waitForFit(win);
 
     const pdfBuffer = await win.webContents.printToPDF({
       printBackground: true,
@@ -303,6 +333,23 @@ function setupTray() {
   }
 }
 
+type UpdateChannel = "stable" | "beta";
+function channelPath(): string {
+  return path.join(app.getPath("userData"), "update-channel.json");
+}
+function readUpdateChannel(): UpdateChannel {
+  try {
+    const raw = JSON.parse(require("fs").readFileSync(channelPath(), "utf-8")) as { channel?: string };
+    return raw.channel === "beta" ? "beta" : "stable";
+  } catch {
+    return "stable";
+  }
+}
+async function writeUpdateChannel(channel: UpdateChannel): Promise<void> {
+  await fs.writeFile(channelPath(), JSON.stringify({ channel }), "utf-8");
+  autoUpdater.setFeedURL({ provider: "generic", url: `https://github.com/alexpapillier-lab/jobi/releases/download/jobidocs-${channel}` });
+}
+
 let updateState: { version: string; downloaded: boolean; progress: number } | null = null;
 let updateError: string | null = null;
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 min
@@ -325,11 +372,13 @@ function setupAutoUpdate() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
-  // Explicit feed: GitHub Releases (electron-updater expects latest-mac.yml + zip on the release)
+  // Kanál aktualizací: pevná adresa release `jobidocs-stable` / `jobidocs-beta`
+  // v repu (release app do něj nahrává latest-mac.yml + zip). Nezávisí na tom,
+  // co GitHub označí jako „Latest“, takže Jobi a JobiDocs mohou mít každý
+  // svou verzi a svůj kanál.
   autoUpdater.setFeedURL({
-    provider: "github",
-    owner: "alexpapillier-lab",
-    repo: "jobi",
+    provider: "generic",
+    url: `https://github.com/alexpapillier-lab/jobi/releases/download/jobidocs-${readUpdateChannel()}`,
   });
 
   autoUpdater.on("update-available", (info) => {
@@ -409,6 +458,13 @@ ipcMain.handle("jobidocs:quit-and-install", () => {
 });
 
 ipcMain.handle("jobidocs:get-update-state", () => updateState);
+ipcMain.handle("jobidocs:get-update-channel", () => readUpdateChannel());
+ipcMain.handle("jobidocs:set-update-channel", async (_e, channel: string) => {
+  await writeUpdateChannel(channel === "beta" ? "beta" : "stable");
+  updateState = null;
+  sendUpdateState();
+  return readUpdateChannel();
+});
 ipcMain.handle("jobidocs:get-update-error", () => updateError);
 
 app.whenReady().then(async () => {
@@ -419,6 +475,7 @@ app.whenReady().then(async () => {
     // Na macOS zůstávají undefined -> api/server.ts použije původní lp/lpstat cestu.
     printPdfNative: isWindows ? printPdfElectronWindows : undefined,
     listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
+    appVersion: app.getVersion(),
   });
   setupQuitHandling();
   await createWindow();

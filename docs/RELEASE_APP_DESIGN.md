@@ -1,73 +1,35 @@
-# Release aplikace – design a pravidla
+# Release aplikace – design a pravidla (v2, září 2026)
 
-Aplikace pro jedno-tlačítkové vydání Jobi + JobiDocs: build (universal), notarizace, DMG s pozadím, OTA artefakty, nahrání na GitHub.
+Aplikace `jobi-release-app` vydává **Jobi a JobiDocs nezávisle**, každou se svou verzí a svým kanálem.
 
----
+## Model vydání
 
-## Pořadí artefaktů na GitHub Release
+- **Verzované release** `jobi-vX.Y.Z` a `jobidocs-vX.Y.Z` – neměnné, obsahují instalátory i OTA soubory. Na GitHubu jsou označené jako pre-release, protože slouží jako úložiště; „Latest“ tím zůstává na posledním klasickém vydání `vX.Y.Z` (kvůli instalacím Jobi před 0.2.8, které ještě čtou `releases/latest`).
+- **Kanálové release** `jobi-stable`, `jobi-beta`, `jobidocs-stable`, `jobidocs-beta` – pevné adresy, ze kterých aplikace čtou aktualizace:
+  - Jobi: `releases/download/jobi-stable/latest.json` (v `tauri.conf.json`, jako záloha zůstává `releases/latest/download/latest.json`). `latest.json` ukazuje absolutními URL na verzovaný release.
+  - JobiDocs: electron-updater `generic` provider s adresou `releases/download/jobidocs-<kanál>/`; kanál si uživatel přepne v O aplikaci.
+  - V kanálu je i instalátor pod pevným jménem (`jobi.dmg`, `JobiDocs.dmg`) pro odkaz Stáhnout na webu.
+- **Beta → stable** = povýšení v záložce Kanály (soubory se přesunou, nic se nestaví znovu). **Rollback** = nastavit kanál na libovolný verzovaný release.
+- Volitelně jde u Jobi vytvořit i klasický společný release `vX.Y.Z` (přechod pro staré instalace).
 
-**OTA artefakty musí jít nahoru až jako poslední.** Důvod: aplikace (Jobi / JobiDocs) kontrolují dostupnost nové verze (latest.json resp. electron-updater). Pokud by byl `latest.json` na release dřív než DMG, uživatel by mohl dostat hlášku „Je nová verze“ a po potvrzení by stahoval z release, kde by DMG ještě nebylo.
+## Kroky (každý opakovatelný, stav se ukládá do `release-state.json`)
 
-**Správné pořadí uploadu:**
+Jobi: zvednout verzi → git commit + push → build universal (podepsaný) → notarizace (přeskočí se, když je .app už notarizovaná) → DMG → OTA balíček + `latest.json` → ověření (verze v bundlu, `stapler validate`, `spctl`) → verzovaný release → kanál → ověření kanálu (stáhne `latest.json` z GitHubu tak, jak to dělá aplikace, a HEADne soubor).
 
-1. **Nejprve DMG:** `jobi-<verze>.dmg`, `JobiDocs-<verze>.dmg` (nebo dle výstupu electron-builderu)
-2. **Potom OTA pro Jobi:** `latest.json`, `jobi.app.tar.gz`, `jobi.app.tar.gz.sig`
-3. **OTA pro JobiDocs (electron-updater):** z adresáře `jobidocs/release/` nahrát **`latest-mac.yml`** a **`JobiDocs-<verze>-mac.zip`**. Bez těchto souborů JobiDocs při „Zkontrolovat aktualizace“ nenajde novou verzi (kontroly selžou s chybou).
+JobiDocs: zvednout verzi → git → build universal → ověření (verze v bundlu, `codesign --verify`, `hdiutil verify`, `latest-mac.yml`) → verzovaný release → kanál → ověření kanálu.
 
-Tím je zajištěno, že když updater nabídne novou verzi, na release už jsou všechny soubory.
+Pořadí uploadu drží kód: instalátory první, OTA soubor (`latest.json` / `latest-mac.yml`) poslední. Po chybě jde „Pokračovat od chyby“, hotové kroky se neopakují.
 
----
+## Předletová kontrola
 
-## Formát pro OTA
+Před spuštěním: platnost a volnost verze/tagu, čistý strom, větev main, dosažitelný origin, aktuálnost proti originu, GitHub token, node/npm/git, volné místo, žádný běžící build, Apple údaje, podpisový certifikát v Keychain, OTA klíč, create-dmg, Rust target x86_64 (Jobi), node_modules (JobiDocs). Blokující položky nedovolí spuštění, varování jen upozorní.
 
-- **Jobi (Tauri):** Zůstává **.tar.gz** + **.sig**. Tauri updater stáhne, rozbalí a nahradí .app. DMG je jen pro ruční instalaci.
-- **JobiDocs (Electron):** electron-updater používá stejný release (DMG/zip z electron-builderu). DMG na release stačí pro OTA i pro ruční stažení.
+## Zkušební běh
 
-Od uživatele je u obou aplikací vyžadováno jen **potvrzení** („Ano, nainstalovat“); stahování a instalace dělá aplikace sama.
+„Zkušební běh“ udělá vše kromě `git push` a nahrání na GitHub – výstupy zůstanou v `Releases/` a `jobidocs/release/`.
 
----
+## Prostředí
 
-## Co posílat na GitHub
-
-- Vytvořit **release** s tagem `vX.Y.Z`
-- **Release notes** z UI aplikace
-- **Assets** v pořadí: nejdřív oba DMG, pak OTA soubory (viz výše)
-- „Latest“ release se na GitHubu určí automaticky, nic dalšího posílat není potřeba
-
----
-
-## Checklist (kroky) v aplikaci
-
-1. Aktualizovat verzi v `src-tauri/tauri.conf.json` a `jobidocs/package.json`
-2. Git commit + push („Release vX.Y.Z“)
-3. Build Jobi (universal signed) – `build-universal-signed.sh`
-4. Notarizace Jobi – `notarize-jobi.sh`
-5. DMG Jobi (s pozadím) – `create-jobi-dmg.sh`
-6. Build JobiDocs (universal) – `npm run electron:build:universal` v jobidocs/
-7. Zkopírovat JobiDocs DMG do Releases/
-8. OTA artefakty – `pack-notarized-ota.sh` → latest.json, jobi.app.tar.gz, jobi.app.tar.gz.sig
-9. GitHub: vytvořit release (tag vX.Y.Z), nahrát **nejdřív oba DMG**, pak **OTA soubory** (Jobi: latest.json, jobi.app.tar.gz, .sig; JobiDocs: **latest-mac.yml**, **JobiDocs-X.Y.Z-mac.zip** z `jobidocs/release/`)
-
----
-
-## Požadavky pro krok „GitHub release + upload“
-
-Krok **GitHub release + upload** v release aplikaci volá **GitHub CLI (`gh`)**. Bez něj dostaneš `bash: gh: command not found`.
-
-- **Instalace:** `brew install gh`
-- **Přihlášení:** `gh auth login` (vyber GitHub.com, HTTPS, přihlášení prohlížečem nebo tokenem)
-- Po přihlášení můžeš v release app spustit krok znovu. Pokud spouštíš aplikaci z Docku/Finderu, `gh` musí být v PATH (Homebrew obvykle přidá `/opt/homebrew/bin` nebo `/usr/local/bin` do shellu; u aplikací spuštěných z GUI může být PATH omezený – v tom případě spusť release app z terminálu: `open /path/to/jobi-release-app.app`, aby zdědila PATH).
-
-**Ruční upload:** Pokud `gh` nechceš používat, nahraj soubory na GitHub Release ručně: vytvoř release s tagem `v0.1.2`, pak přetáhni DMG a OTA soubory do Assets (nejdřív oba DMG, pak latest.json, jobi.app.tar.gz, jobi.app.tar.gz.sig).
-
----
-
-## Umístění release aplikace
-
-Aplikace žije na stejném disku jako projekt Jobi, např. `/Volumes/backup/jobi-release-app` (samostatná složka). Cestu k projektu Jobi lze v aplikaci nastavit (výchozí `/Volumes/backup/jobi`).
-
----
-
-## Verze
-
-Jobi a JobiDocs mají vždy **stejné číslo verze** v rámci jednoho release.
+- Tajemství (Apple ID, heslo, Team ID, GitHub token, OTA klíč) v Keychain, jedna položka.
+- Node procesy dostávají `NODE_OPTIONS=--dns-result-order=ipv4first` (sítě bez IPv6 routy jinak shazují stahování při buildu).
+- Cesta k projektu: `/Volumes/backup/backup/jobi` (nastavitelná).

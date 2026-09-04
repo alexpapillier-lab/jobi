@@ -4,14 +4,19 @@
  *
  * V Tauri webviewu blokuje CORS POST na localhost. Používáme @tauri-apps/plugin-http,
  * který volá z Rustu a CORS obejde.
+ *
+ * Od JobiDocs 2 posílá Jobi typovaná data dokumentu (DocumentData) na /v2/*.
+ * Šablonu, vzhled i formátování drží JobiDocs; Jobi jen dodá čísla a texty.
  */
+import type { DocumentData } from "./documentData";
+import { isWeb } from "./platform";
 
 const JOBIDOCS_API = "http://127.0.0.1:3847";
 
-import { isWeb } from "./platform";
-
 /** URL pro stažení JobiDocs – stránka appjobi s sekcí Stáhnout (Jobi + JobiDocs zvlášť). */
 export const JOBIDOCS_DOWNLOAD_URL = "https://appjobi.com/#stazeni";
+
+export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
 
 /** Otevře URL v prohlížeči (v Tauri přes plugin-opener, jinak window.open). */
 export async function openJobiDocsDownload(): Promise<void> {
@@ -47,19 +52,32 @@ async function getJobiDocsFetch(): Promise<typeof fetch> {
   return _jobidocsFetch;
 }
 
+type Req = RequestInit & { connectTimeout?: number };
+
 export async function isJobiDocsRunning(): Promise<boolean> {
   // Ve webové verzi JobiDocs neběží a dotaz na localhost:3847 by jen čekal
   // na timeout. Zároveň to umlčí opakované dotazy z JobiDocsStatus.
   if (isWeb()) return false;
   try {
     const f = await getJobiDocsFetch();
-    const r = await f(`${JOBIDOCS_API}/v1/context`, {
-      method: "GET",
-      connectTimeout: 2000,
-    } as RequestInit & { connectTimeout?: number });
+    const r = await f(`${JOBIDOCS_API}/v1/context`, { method: "GET", connectTimeout: 2000 } as Req);
     return r.ok;
   } catch {
     return false;
+  }
+}
+
+/** Verze API JobiDocs; 2 = umí /v2 (typovaná data). null = neběží. */
+export async function jobiDocsApiVersion(): Promise<number | null> {
+  if (isWeb()) return null;
+  try {
+    const f = await getJobiDocsFetch();
+    const r = await f(`${JOBIDOCS_API}/v1/health`, { method: "GET", connectTimeout: 2000 } as Req);
+    if (!r.ok) return null;
+    const d = (await r.json()) as { api?: number };
+    return typeof d.api === "number" ? d.api : 1;
+  } catch {
+    return null;
   }
 }
 
@@ -68,60 +86,17 @@ export function formatJobiDocsErrorForUser(error: string | undefined): string {
   if (!error || !error.trim()) return "Neznámá chyba JobiDocs.";
   const lower = error.toLowerCase();
   if (lower.includes("not found") || lower.includes("nenalezen") || lower.includes("not_found")) {
-    return `${error} — V aplikaci JobiDocs zkontrolujte, že je vybraný správný servis a že existuje šablona dokumentu. Případně restartujte JobiDocs a zkuste znovu.`;
+    return `${error} — V aplikaci JobiDocs zkontrolujte, že je vybraný správný servis a že je šablona dokumentu uložená. Případně restartujte JobiDocs a zkuste znovu.`;
   }
-  // Stará verze JobiDocs nezná doc_type "faktura" – běží starý zkompilovaný kód (dist-electron). Návod:
-  if (lower.includes("doc_type must be") && !lower.includes("faktura")) {
-    return "JobiDocs používá starý kód. Úplně ukončete JobiDocs (včetně ikony v tray), v terminálu přejděte do jobidocs/ a spusťte: npm run electron:dev:fresh (nebo smažte složku dist-electron a pak npm run electron:dev).";
+  if (lower.includes("requires jobidocs") || lower.includes("503")) {
+    return "JobiDocs neběží v plné verzi (chybí Electron). Spusťte nainstalovanou aplikaci JobiDocs.";
   }
   return error;
 }
 
-export async function printViaJobiDocs(
-  html: string,
-  serviceId?: string
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const f = await getJobiDocsFetch();
-    const r = await f(`${JOBIDOCS_API}/v1/print`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ html, service_id: serviceId }),
-      connectTimeout: 30000,
-    } as RequestInit & { connectTimeout?: number });
-    const d = await r.json();
-    if (!r.ok) {
-      return { ok: false, error: (d as { error?: string }).error || r.statusText };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-export async function getProfileFromJobiDocs(
-  serviceId: string,
-  docType: "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol"
-): Promise<Record<string, unknown> | null> {
-  if (isWeb()) return null;
-  try {
-    const f = await getJobiDocsFetch();
-    const r = await f(
-      `${JOBIDOCS_API}/v1/profiles?service_id=${encodeURIComponent(serviceId)}&doc_type=${encodeURIComponent(docType)}`,
-      { method: "GET", connectTimeout: 2000 } as RequestInit & { connectTimeout?: number }
-    );
-    if (!r.ok) return null;
-    const d = await r.json();
-    const p = (d as { profile_json?: unknown }).profile_json;
-    return p && typeof p === "object" && p !== null ? (p as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
 export type JobiDocsLogoColors = { background: string; jInner: string; foreground: string };
 
-/** Supabase credentials pro JobiDocs – umožní mu ukládat document config do DB. */
+/** Supabase credentials pro JobiDocs – umožní mu ukládat šablony do DB. */
 export type JobiDocsSupabaseAuth = {
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -135,9 +110,7 @@ export async function pushContextToJobiDocs(
     documentsConfig?: Record<string, unknown> | null;
     companyData?: Record<string, unknown> | null;
     jobidocsLogo?: JobiDocsLogoColors | null;
-    /** Má aktuální uživatel oprávnění měnit nastavení dokumentů? (owner/admin nebo can_manage_documents) */
     canManageDocuments?: boolean;
-    /** Pokud uvedeno, JobiDocs může ukládat document config do DB pod tímto uživatelským tokenem. */
     supabaseAuth?: JobiDocsSupabaseAuth | null;
   }
 ): Promise<void> {
@@ -157,145 +130,106 @@ export async function pushContextToJobiDocs(
       body.supabaseAnonKey = options.supabaseAuth.supabaseAnonKey;
       body.supabaseAccessToken = options.supabaseAuth.supabaseAccessToken ?? null;
     }
+    const json = JSON.stringify(body);
+    // Rust část Jobi posílá tentýž kontext každých 5 s i ve chvíli, kdy macOS
+    // uspí JavaScript v okně na pozadí (jinak by JobiDocs po restartu čekal
+    // na kontext, dokud uživatel nepřepne do Jobi).
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_jobidocs_context", { payload: json });
+    } catch {
+      // starší Jobi bez příkazu / web – posílá jen JS
+    }
     await f(`${JOBIDOCS_API}/v1/context`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: json,
       connectTimeout: 2000,
-    } as RequestInit & { connectTimeout?: number });
+    } as Req);
   } catch {
     // JobiDocs not running, ignore
   }
 }
 
-export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
+type Result = { ok: boolean; error?: string };
 
-/**
- * Tisk přes vzor v JobiDocs – data se vloží do šablony JobiDocs, takže vzhled odpovídá nastavení v JobiDocs.
- */
-export async function printDocumentViaJobiDocs(
-  docType: DocTypeForPrint,
-  serviceId: string,
-  companyData: Record<string, unknown>,
-  sections: Partial<Record<string, string>>,
-  options?: { repair_date?: string; variables?: Record<string, string> }
-): Promise<{ ok: boolean; error?: string }> {
+async function postJson(path: string, body: unknown, timeoutMs: number): Promise<Response> {
+  const f = await getJobiDocsFetch();
+  return f(`${JOBIDOCS_API}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    connectTimeout: timeoutMs,
+  } as Req);
+}
+
+async function toResult(r: Response): Promise<Result> {
+  const d = (await r.json().catch(() => ({}))) as { error?: string };
+  if (!r.ok) return { ok: false, error: d.error || r.statusText };
+  return { ok: true };
+}
+
+/** Tisk dokumentu: JobiDocs vloží data do šablony servisu a pošle na tiskárnu. */
+export async function printDocument(docType: DocTypeForPrint, serviceId: string, data: DocumentData): Promise<Result> {
   try {
-    const f = await getJobiDocsFetch();
-    const body: Record<string, unknown> = {
-      doc_type: docType,
-      service_id: serviceId,
-      company_data: companyData,
-      sections,
-    };
-    if (options?.repair_date != null) body.repair_date = options.repair_date;
-    if (options?.variables != null && typeof options.variables === "object") body.variables = options.variables;
-    const r = await f(`${JOBIDOCS_API}/v1/print-document`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      connectTimeout: 30000,
-    } as RequestInit & { connectTimeout?: number });
-    const d = await r.json();
-    if (!r.ok) {
-      return { ok: false, error: (d as { error?: string }).error || r.statusText };
-    }
-    return { ok: true };
+    return await toResult(await postJson("/v2/print", { doc_type: docType, service_id: serviceId, data }, 30000));
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/**
- * Export dokumentu do PDF souboru – stejná šablona a data jako u tisku (JobiDocs),
- * ale PDF se uloží do zvolené cesty místo odeslání na tiskárnu.
- */
-export async function exportDocumentViaJobiDocs(
-  docType: DocTypeForPrint,
-  serviceId: string,
-  companyData: Record<string, unknown>,
-  sections: Partial<Record<string, string>>,
-  targetPath: string,
-  options?: { repair_date?: string; variables?: Record<string, string> }
-): Promise<{ ok: boolean; error?: string }> {
+/** Export do PDF souboru na dané cestě (stejná šablona a data jako tisk). */
+export async function exportDocument(docType: DocTypeForPrint, serviceId: string, data: DocumentData, targetPath: string): Promise<Result> {
   try {
-    const f = await getJobiDocsFetch();
-    const body: Record<string, unknown> = {
-      doc_type: docType,
-      service_id: serviceId,
-      company_data: companyData,
-      sections,
-      target_path: targetPath,
-    };
-    if (options?.repair_date != null) body.repair_date = options.repair_date;
-    if (options?.variables != null && typeof options.variables === "object") body.variables = options.variables;
-    const r = await f(`${JOBIDOCS_API}/v1/export-document`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      connectTimeout: 60000,
-    } as RequestInit & { connectTimeout?: number });
-    const d = await r.json();
-    if (!r.ok) {
-      return { ok: false, error: (d as { error?: string }).error || r.statusText };
-    }
-    return { ok: true };
+    return await toResult(await postJson("/v2/export", { doc_type: docType, service_id: serviceId, data, target_path: targetPath }, 60000));
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function renderPdfViaJobiDocs(
-  docType: DocTypeForPrint,
-  serviceId: string,
-  companyData: Record<string, unknown>,
-  sections: Partial<Record<string, string>>,
-  options?: { repair_date?: string; variables?: Record<string, string> }
-): Promise<{ ok: boolean; data?: ArrayBuffer; error?: string }> {
+/** PDF jako data (náhled v Jobi, příloha e-mailu). */
+export async function renderPdf(docType: DocTypeForPrint, serviceId: string, data: DocumentData): Promise<{ ok: boolean; data?: ArrayBuffer; error?: string }> {
   try {
-    const f = await getJobiDocsFetch();
-    const body: Record<string, unknown> = {
-      doc_type: docType,
-      service_id: serviceId,
-      company_data: companyData,
-      sections,
-    };
-    if (options?.repair_date != null) body.repair_date = options.repair_date;
-    if (options?.variables != null) body.variables = options.variables;
-    const r = await f(`${JOBIDOCS_API}/v1/render-pdf`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      connectTimeout: 60000,
-    } as RequestInit & { connectTimeout?: number });
+    const r = await postJson("/v2/pdf", { doc_type: docType, service_id: serviceId, data }, 60000);
     if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      return { ok: false, error: (d as { error?: string }).error || r.statusText };
+      const d = (await r.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: d.error || r.statusText };
     }
-    const data = await r.arrayBuffer();
-    return { ok: true, data };
+    return { ok: true, data: await r.arrayBuffer() };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function exportViaJobiDocs(
-  html: string,
-  targetPath: string
-): Promise<{ ok: boolean; error?: string }> {
+/** HTML dokumentu (rychlý náhled v Jobi bez PDF). */
+export async function renderHtml(docType: DocTypeForPrint, serviceId: string, data: DocumentData): Promise<{ ok: boolean; html?: string; error?: string }> {
   try {
-    const f = await getJobiDocsFetch();
-    const r = await f(`${JOBIDOCS_API}/v1/export`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ html, target_path: targetPath }),
-      connectTimeout: 60000,
-    } as RequestInit & { connectTimeout?: number });
-    const d = await r.json();
+    const r = await postJson("/v2/html", { doc_type: docType, service_id: serviceId, data }, 15000);
     if (!r.ok) {
-      return { ok: false, error: (d as { error?: string }).error || r.statusText };
+      const d = (await r.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: d.error || r.statusText };
     }
-    return { ok: true };
+    return { ok: true, html: await r.text() };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Starší cesta (surové HTML). Ponecháno pro případ nouzového tisku.
+// ---------------------------------------------------------------------------
+
+export async function printViaJobiDocs(html: string, serviceId?: string): Promise<Result> {
+  try {
+    return await toResult(await postJson("/v1/print", { html, service_id: serviceId }, 30000));
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function exportViaJobiDocs(html: string, targetPath: string): Promise<Result> {
+  try {
+    return await toResult(await postJson("/v1/export", { html, target_path: targetPath }, 60000));
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
