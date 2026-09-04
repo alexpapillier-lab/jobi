@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type DateTimePickerProps = {
   /** ISO string nebo null */
@@ -70,6 +71,35 @@ export function DateTimePicker({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => (d ? new Date(d.getFullYear(), d.getMonth(), 1) : new Date()));
   const containerRef = useRef<HTMLDivElement>(null);
+  const dateBtnRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  /*
+   * Kalendář se vykresluje portálem do <body> s pevnou pozicí. Jako
+   * absolutně umístěný potomek ho překrývaly další karty formuláře
+   * (v nové zakázce sekce „Další údaje“), protože ty mají vlastní
+   * vrstvu vykreslování a z-index uvnitř karty proti nim nepomůže.
+   */
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number; openUp: boolean }>({ top: 0, left: 0, openUp: false });
+  const placePopup = useCallback(() => {
+    const el = dateBtnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const popupH = 340;
+    const openUp = window.innerHeight - r.bottom < popupH + 12 && r.top > popupH + 12;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 280));
+    setPopupPos({ top: openUp ? r.top - 4 : r.bottom + 4, left, openUp });
+  }, []);
+  useEffect(() => {
+    if (!calendarOpen) return;
+    placePopup();
+    const onMove = () => placePopup();
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    return () => {
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+    };
+  }, [calendarOpen, placePopup]);
 
   useEffect(() => {
     if (calendarOpen && d) setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
@@ -78,7 +108,9 @@ export function DateTimePicker({
   useEffect(() => {
     if (!calendarOpen) return;
     const onOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setCalendarOpen(false);
+      const t = e.target as Node;
+      if (containerRef.current?.contains(t) || popupRef.current?.contains(t)) return;
+      setCalendarOpen(false);
     };
     document.addEventListener("mousedown", onOutside);
     return () => document.removeEventListener("mousedown", onOutside);
@@ -173,6 +205,7 @@ export function DateTimePicker({
       <div style={{ display: "flex", gap: 8, alignItems: "stretch", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 160px", minWidth: 0, position: "relative" }}>
           <button
+            ref={dateBtnRef}
             type="button"
             onClick={() => !disabled && setCalendarOpen((o) => !o)}
             disabled={disabled}
@@ -186,15 +219,16 @@ export function DateTimePicker({
           >
             {displayDate}
           </button>
-          {calendarOpen && (
+          {calendarOpen && createPortal(
             <div
+              ref={popupRef}
               data-dt-cal
               style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                marginTop: 4,
-                zIndex: 1000,
+                position: "fixed",
+                top: popupPos.openUp ? undefined : popupPos.top,
+                bottom: popupPos.openUp ? window.innerHeight - popupPos.top : undefined,
+                left: popupPos.left,
+                zIndex: 1400,
                 minWidth: 260,
                 padding: 12,
                 background: "var(--panel)",
@@ -235,7 +269,8 @@ export function DateTimePicker({
                   )
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>

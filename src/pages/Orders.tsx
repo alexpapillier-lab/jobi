@@ -37,6 +37,8 @@ import { isWeb } from "../lib/platform";
 import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
+import { PortalCard } from "../components/orders/PortalCard";
+import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import {
   type DevicesData,
@@ -202,7 +204,7 @@ export type TicketEx = Ticket & {
   
   expectedDoneAt?: string; // předpokládané dokončení (ISO)
   version?: number; // optimistic locking version
-};
+} & PortalTicketFields; // zákaznický portál: portalToken, quoteAmount, quoteNote, quoteStatus, quoteSentAt, quoteDecidedAt, quoteDecisionMeta, intakeSignatureUrl, intakeSignedAt, portalLastOpenedAt
 
 type DeviceRow = {
   deviceLabel: string;
@@ -566,6 +568,8 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     discountType: supabaseTicket.discount_type ?? null,
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
+    // Portálové sloupce: v hlavních selectech nejsou (migrace může chybět), přijdou z realtime nebo z PortalCard.
+    ...mapPortalTicketFields(supabaseTicket),
   };
   (ticket as any).service_id = supabaseTicket.service_id;
   (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
@@ -1257,7 +1261,10 @@ export default function Orders({
   /** Sekce „Další údaje“ v nové zakázce – stav se pamatuje v localStorage. */
   const [newOrderMoreOpen, setNewOrderMoreOpen] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(NEW_ORDER_MORE_OPEN_KEY) === "1";
+      // Výchozí otevřené – servis při příjmu většinou vyplňuje i IMEI, heslo
+      // a stav zařízení; sbalení si pamatujeme, jen když ho uživatel zavře.
+      const v = localStorage.getItem(NEW_ORDER_MORE_OPEN_KEY);
+      return v === null ? true : v === "1";
     } catch {
       return false;
     }
@@ -2899,6 +2906,15 @@ export default function Orders({
             .eq("active", true);
           const statusLabel = statuses.find((s) => s.key === next)?.label ?? next;
           const totalPrice = computeFinalPrice(toCardData(ticketUpdated as (typeof filtered)[number]));
+          // {{portal_url}} – token se zakládá jen když ho některá šablona používá; bez portálu na serveru zůstane prázdný.
+          let portalUrlVar = "";
+          if (automations?.some((a) => (a.message_template || "").includes("{{portal_url}}"))) {
+            try {
+              portalUrlVar = portalUrl((ticketUpdated as TicketEx).portalToken || (await ensurePortalToken(ticketId)));
+            } catch (error) {
+              reportSilent({ code: "portal.automation_token_failed", error, source: "Orders.setTicketStatus", serviceId: activeServiceId, context: { ticketId } });
+            }
+          }
           const vars: Record<string, string> = {
             code: (ticketUpdated as TicketEx).code ?? "",
             customer_name: (ticketUpdated as TicketEx).customerName ?? "",
@@ -2906,6 +2922,7 @@ export default function Orders({
             total_price: String(totalPrice),
             status: statusLabel,
             notes: (ticketUpdated as TicketEx).issueShort ?? "",
+            portal_url: portalUrlVar,
           };
           const phoneNorm = normalizePhone((ticketUpdated as TicketEx).customerPhone!);
           if (automations?.length && phoneNorm) {
@@ -6311,6 +6328,19 @@ export default function Orders({
                     }}
                   />
                 </div>
+
+                {activeServiceId && (
+                  <PortalCard
+                    key={detailedTicket.id}
+                    ticket={detailedTicket}
+                    serviceId={activeServiceId}
+                    smsAvailable={smsAvailable}
+                    style={{ marginTop: 16 }}
+                    onFieldsChange={(ticketId, fields) =>
+                      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))
+                    }
+                  />
+                )}
 
                 <div style={{ ...card, marginTop: 16 }}>
                   <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>

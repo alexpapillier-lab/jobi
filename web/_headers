@@ -16,3 +16,12 @@
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
+
+# Zákaznický portál (/z/) – veřejná stránka s tokenem v URL.
+# Neindexovat, neposílat referrer (token by unikl do logů cizích serverů),
+# krátká keš, aby se změny projevily hned.
+/z/*
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  Cache-Control: public, max-age=300, must-revalidate
+  X-Content-Type-Options: nosniff

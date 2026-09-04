@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#3b82f6" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Stav zakázky</title>
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="portal.css?v=20260904" />
+  <script>
+    window.PORTAL_CONFIG = { supabaseUrl: 'https://ijtvcgolsdsrquqbvjrz.supabase.co' };
+  </script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script defer src="portal.js?v=20260904"></script>
+</head>
+<body>
+  <!-- Kompaktní lišta – zobrazí se po odscrollování hlavičky -->
+  <div class="topbar" id="topbar" aria-hidden="true">
+    <div class="wrap topbar-inner">
+      <span class="topbar-name" id="topbarName"></span>
+      <a class="topbar-phone" id="topbarPhone" hidden>Zavolat</a>
+    </div>
+  </div>
+
+  <header class="hdr" id="hdr">
+    <div class="wrap">
+      <p class="hdr-kicker">Stav zakázky</p>
+      <h1 class="hdr-name" id="svcName"><span class="sk sk-title"></span></h1>
+      <div class="hdr-contacts" id="svcContacts"></div>
+    </div>
+  </header>
+
+  <main class="wrap" id="main">
+    <!-- Načítání -->
+    <section id="viewLoading" class="card sk-card" aria-busy="true" aria-label="Načítání">
+      <div class="sk sk-line w40"></div>
+      <div class="sk sk-line w70"></div>
+      <div class="sk sk-line w55"></div>
+      <div class="sk sk-line w80"></div>
+    </section>
+
+    <!-- Chyba -->
+    <section id="viewError" class="card card-error" hidden role="alert">
+      <div class="error-icon" aria-hidden="true">!</div>
+      <h2 class="card-title" id="errorTitle">Odkaz není platný</h2>
+      <p class="error-text" id="errorText"></p>
+      <button type="button" class="btn btn-primary" id="retryBtn" hidden>Zkusit znovu</button>
+    </section>
+
+    <!-- Obsah -->
+    <div id="viewContent" hidden>
+      <div class="banner banner-offline" id="offlineBanner" hidden role="status">
+        Nepodařilo se obnovit data. Zobrazujeme poslední známý stav.
+      </div>
+      <section class="card" id="cardStatus" aria-labelledby="statusTitle"></section>
+      <section class="card" id="cardQuote" hidden aria-labelledby="quoteTitle"></section>
+      <section class="card" id="cardPrice" hidden aria-labelledby="priceTitle"></section>
+      <section class="card" id="cardPhotos" hidden aria-labelledby="photosTitle"></section>
+      <section class="card" id="cardSign" aria-labelledby="signTitle"></section>
+    </div>
+  </main>
+
+  <footer class="ftr">
+    <div class="wrap">
+      <p id="ftrText"></p>
+      <p class="ftr-jobi"><a href="https://appjobi.com" rel="noopener">Aplikace Jobi</a></p>
+    </div>
+  </footer>
+
+  <!-- Prohlížeč fotek -->
+  <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Prohlížení fotografie">
+    <button type="button" class="lb-btn lb-close" id="lbClose" aria-label="Zavřít">&times;</button>
+    <button type="button" class="lb-btn lb-prev" id="lbPrev" aria-label="Předchozí fotka">&#8249;</button>
+    <div class="lb-stage">
+      <img id="lbImg" alt="" />
+    </div>
+    <button type="button" class="lb-btn lb-next" id="lbNext" aria-label="Další fotka">&#8250;</button>
+    <div class="lb-counter" id="lbCounter" aria-live="polite"></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

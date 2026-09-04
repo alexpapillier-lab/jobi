@@ -1319,7 +1319,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{device_label}}`}</code>,{" "}
                 <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{total_price}}`}</code>,{" "}
                 <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{status}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{notes}}`}</code>.
+                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{notes}}`}</code>,{" "}
+                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{portal_url}}`}</code>{" "}
+                (odkaz na zákaznický portál).
               </div>
               {smsAutomationsLoading ? (
                 <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Načítám…</div>
