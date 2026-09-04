@@ -443,6 +443,19 @@ label.ui-setting-row { cursor: pointer; }
   flex-wrap: wrap;
   min-width: 0;
 }
+/* Telefon: široký ovládací prvek (Segmented, select) by popisku nechal
+   pár centimetrů – tam jde popisek nad něj. Řádky se zaškrtávátkem
+   (label.ui-setting-row) zůstávají vedle sebe. */
+@media (max-width: 640px) {
+  div.ui-setting-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  div.ui-setting-row > .ui-setting-row__control {
+    justify-content: flex-start;
+  }
+}
+
 .ui-setting-row__control input[type="checkbox"] {
   width: 18px;
   height: 18px;
