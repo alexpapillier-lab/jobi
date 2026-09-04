@@ -3,9 +3,6 @@ import { BoxIcon, CoinsIcon, WarningIcon, XIcon } from "../../components/icons";
 
 export type StockFilter = "all" | "inStock" | "lowStock" | "outOfStock" | "noModels";
 
-/** Hranice „pod minimem“ – stejná jako ve filtru seznamu (1–4 ks). */
-export const LOW_STOCK_LIMIT = 5;
-
 const formatKc = new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 });
 
 /**
@@ -50,7 +47,7 @@ export function KpiStrip({
         label="Pod minimem"
         value={String(podMinimem)}
         tone={podMinimem > 0 ? "warning" : undefined}
-        title={`Produkty s 1–${LOW_STOCK_LIMIT - 1} ks. Kliknutím vyfiltrujete seznam.`}
+        title="Produkty, kterých je skladem míň než jejich minimální zásoba (výchozí 5 ks). Kliknutím vyfiltrujete seznam."
         pressed={aktivniFiltr === "lowStock"}
         onClick={() => onFiltr(aktivniFiltr === "lowStock" ? "all" : "lowStock")}
       />

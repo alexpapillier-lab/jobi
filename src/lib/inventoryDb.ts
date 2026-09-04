@@ -39,6 +39,15 @@ export type Product = {
   price: number;
   /** Nákupní cena. Nepovinná – do veřejného API jde jen když si to servis zapne. */
   purchasePrice?: number | null;
+  /**
+   * Minimální zásoba – pod ní je produkt „pod minimem“ a navrhuje se
+   * k objednání. `null`/nevyplněno = výchozích {@link VYCHOZI_MIN_ZASOBA}.
+   */
+  minStock?: number | null;
+  /** Dodavatel (inventory_suppliers.id), od kterého se díl objednává. */
+  supplierId?: string | null;
+  /** Kód dílu u dodavatele – jde do textu objednávky. */
+  supplierSku?: string | null;
   sku?: string;
   description?: string;
   imageUrl?: string;
@@ -47,6 +56,61 @@ export type Product = {
   /** Posílat do veřejného API? Výchozí true; skrytí je výjimka. */
   publicVisible?: boolean;
 };
+
+/** Minimální zásoba, když produkt nemá vlastní. */
+export const VYCHOZI_MIN_ZASOBA = 5;
+
+/** Minimální zásoba produktu – vlastní, nebo výchozí. */
+export function minimalniZasoba(p: { minStock?: number | null }): number {
+  const m = p.minStock;
+  return m === null || m === undefined || !Number.isFinite(m) || m < 0 ? VYCHOZI_MIN_ZASOBA : Math.round(m);
+}
+
+/**
+ * Sloupce produktu, které starší server nemusí mít. Čtení i zápis se při
+ * chybě „column … does not exist“ zopakují bez nich.
+ */
+const NOVE_SLOUPCE_PRODUKTU = ["min_stock", "supplier_id", "supplier_sku"] as const;
+
+function jeChybaChybejicihoSloupce(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  if (err.code === "42703" || err.code === "PGRST204") return true;
+  const m = (err.message ?? "").toLowerCase();
+  return m.includes("does not exist") || m.includes("schema cache") || m.includes("could not find the");
+}
+
+/** Řádky produktu bez sloupců, které starý server nezná. */
+function bezNovychSloupcu<T extends Record<string, unknown>>(rows: T[]): Omit<T, (typeof NOVE_SLOUPCE_PRODUKTU)[number]>[] {
+  return rows.map((r) => {
+    const kopie: Record<string, unknown> = { ...r };
+    for (const s of NOVE_SLOUPCE_PRODUKTU) delete kopie[s];
+    return kopie as Omit<T, (typeof NOVE_SLOUPCE_PRODUKTU)[number]>;
+  });
+}
+
+/**
+ * Upsert produktů, který na starém serveru zopakuje zápis bez nových
+ * sloupců. Bez toho by po nasazení klienta před migrací přestal jít uložit
+ * celý sklad.
+ */
+async function upsertProduktu(supabase: any, rows: ReturnType<typeof radekProduktu>[]): Promise<{ message: string } | null> {
+  const prvni = await supabase.from("inventory_products").upsert(rows, { onConflict: "id" });
+  if (!prvni.error) return null;
+  if (!jeChybaChybejicihoSloupce(prvni.error)) return prvni.error;
+  const druhy = await supabase.from("inventory_products").upsert(bezNovychSloupcu(rows), { onConflict: "id" });
+  return druhy.error ?? null;
+}
+
+const ZAKLADNI_SLOUPCE_PRODUKTU = "id, name, price, purchase_price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible";
+
+/** Select produktů: nejdřív s novými sloupci, při jejich absenci bez nich. */
+async function vybratProdukty(supabase: any, serviceId: string) {
+  const dotaz = (sloupce: string) =>
+    supabase.from("inventory_products").select(sloupce).eq("service_id", serviceId).order("order_index").order("created_at");
+  const prvni = await dotaz(`${ZAKLADNI_SLOUPCE_PRODUKTU}, ${NOVE_SLOUPCE_PRODUKTU.join(", ")}`);
+  if (!prvni.error || !jeChybaChybejicihoSloupce(prvni.error)) return prvni;
+  return dotaz(ZAKLADNI_SLOUPCE_PRODUKTU);
+}
 
 export type InventoryData = {
   productCategories: ProductCategory[];
@@ -129,6 +193,9 @@ function mapProductRow(r: {
   repair_ids: unknown;
   created_at: string;
   public_visible?: boolean;
+  min_stock?: number | string | null;
+  supplier_id?: string | null;
+  supplier_sku?: string | null;
 }, stavy: Record<string, number>): Product {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const repairIds = Array.isArray(r.repair_ids) ? (r.repair_ids as string[]) : undefined;
@@ -141,6 +208,9 @@ function mapProductRow(r: {
     stockByWarehouse: stavy,
     price: Number(r.price),
     purchasePrice: r.purchase_price === null || r.purchase_price === undefined ? null : Number(r.purchase_price),
+    minStock: r.min_stock === null || r.min_stock === undefined ? null : Number(r.min_stock),
+    supplierId: r.supplier_id ?? null,
+    supplierSku: r.supplier_sku ?? null,
     sku: r.sku ?? undefined,
     description: r.description ?? undefined,
     imageUrl: r.image_url ?? undefined,
@@ -160,7 +230,7 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
   }
 
   const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
-  const productsRes = await (supabase.from("inventory_products") as any).select("id, name, price, purchase_price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
+  const productsRes = await vybratProdukty(supabase, serviceId);
   const warehousesRes = await (supabase.from("inventory_warehouses") as any).select("id, name, is_default, public_visible, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
   const stockRes = await (supabase.from("inventory_stock") as any).select("product_id, warehouse_id, quantity").eq("service_id", serviceId);
 
@@ -214,6 +284,9 @@ export function radekProduktu(p: Product, serviceId: string, i: number) {
     // a trigger by zápis stejně přepsal. Množství jde přes `radekStavu`.
     price: p.price,
     purchase_price: p.purchasePrice ?? null,
+    min_stock: p.minStock ?? null,
+    supplier_id: p.supplierId ?? null,
+    supplier_sku: p.supplierSku?.trim() || null,
     sku: p.sku ?? null,
     description: p.description ?? null,
     image_url: p.imageUrl ?? null,
@@ -380,7 +453,7 @@ export async function saveInventoryToDb(
       if (error) return { error: error.message };
     }
     if (produktyKeZmene.length > 0) {
-      const { error } = await (supabase.from("inventory_products") as any).upsert(produktyKeZmene, { onConflict: "id" });
+      const error = await upsertProduktu(supabase, produktyKeZmene);
       if (error) return { error: error.message };
     }
     const chyba = await ulozitStavy(supabase, stavyKeZmene, stavyKeSmazani);
@@ -440,23 +513,8 @@ export async function saveInventoryToDb(
 
   // Upsert products
   if (data.products.length > 0) {
-    const rows = data.products.map((p, i) => ({
-      id: p.id,
-      service_id: serviceId,
-      name: p.name,
-      price: p.price,
-      purchase_price: p.purchasePrice ?? null,
-      sku: p.sku ?? null,
-      description: p.description ?? null,
-      image_url: p.imageUrl ?? null,
-      category_id: p.categoryId ?? null,
-      model_ids: p.modelIds ?? [],
-      repair_ids: p.repairIds ?? [],
-      public_visible: p.publicVisible !== false,
-      order_index: i,
-      created_at: p.createdAt,
-    }));
-    const { error } = await (supabase.from("inventory_products") as any).upsert(rows, { onConflict: "id" });
+    const rows = data.products.map((p, i) => radekProduktu(p, serviceId, i));
+    const error = await upsertProduktu(supabase, rows);
     if (error) {
       if (typeof console !== "undefined" && console.warn) console.warn("[inventoryDb] Upsert products:", error.message);
       return { error: error.message };
