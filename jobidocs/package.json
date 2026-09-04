@@ -40,8 +40,8 @@
     "electron:dev": "npm run copy-app-icon && tsc -p tsconfig.electron.json && npm run copy-tray-icon && concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:dev:fresh": "rm -rf dist-electron && npm run electron:dev",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
-    "test": "cd .. && npx vitest run jobidocs/core"
+    "test": "cd .. && npx vitest run jobidocs/core",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json"
   },
-  "version": "0.3.0"
+  "version": "0.3.1"
 }
