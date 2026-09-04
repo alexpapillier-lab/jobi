@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
+import { CheckIcon } from "../icons";
 
 type DiscountPickerProps = {
   discountType: "percentage" | "amount" | null;
@@ -117,7 +118,7 @@ export function DiscountPicker({ discountType, discountValue, onChange }: Discou
             onClick={() => handleOptionSelect(opt.value)}
           >
             <span>{opt.label}</span>
-            {active && <span style={{ marginLeft: "auto", fontSize: 16, opacity: 0.8 }}>✓</span>}
+            {active && <span style={{ marginLeft: "auto", display: "inline-flex", opacity: 0.8 }}><CheckIcon size={14} /></span>}
           </MenuItem>
         );
       })}

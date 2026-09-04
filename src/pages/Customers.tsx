@@ -116,13 +116,22 @@ export default function Customers({
               setCustomersLoading(false);
               return;
             }
-            const customerIds = mapped.map((c: CustomerRecord) => c.id);
-            const { data: ticketsData, error: ticketsError } = await (supabase
-              .from("tickets") as any)
-              .select("id,customer_id")
-              .eq("service_id", activeServiceId)
-              .in("customer_id", customerIds)
-              .is("deleted_at", null);
+            // Dřív se posílal seznam všech ID zákazníků v URL (`in.(…)`):
+            // u pár tisíc zákazníků má URL desítky kB a prohlížeč požadavek
+            // odmítne (ERR_FAILED), takže se počty zakázek nenačetly vůbec.
+            // Dvě úzké kolony pro celý servis jsou levnější než ten seznam,
+            // a stránkuje se přes limit 1000 řádků.
+            const sb = supabase;
+            const { data: ticketsData, error: ticketsError } = await fetchAllPages<{ id: string; customer_id: string | null }>(
+              (from, to) =>
+                (sb.from("tickets") as any)
+                  .select("id,customer_id")
+                  .eq("service_id", activeServiceId)
+                  .not("customer_id", "is", null)
+                  .is("deleted_at", null)
+                  .order("id", { ascending: true })
+                  .range(from, to)
+            );
 
             if (!ticketsError && ticketsData) {
               // Group tickets by customer_id

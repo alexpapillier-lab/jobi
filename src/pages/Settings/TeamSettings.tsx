@@ -10,6 +10,16 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
 import { useServiceOnlinePresence } from "../../lib/presence";
+import { CheckIcon } from "../../components/icons";
+
+/** Šipka rozbalovací nabídky – nahrazuje textové ▼, které se v každém systému kreslilo jinak. */
+function ChevronDownIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.8 }}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
 
 const CAPABILITY_KEYS = [
   "can_manage_tickets_basic",
@@ -640,7 +650,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               }}
             >
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeServiceName}</span>
-              <span style={{ flexShrink: 0, fontSize: 10, opacity: 0.8 }}>▼</span>
+              <ChevronDownIcon />
             </button>
             {serviceDropdownOpen && createPortal(
               <div
@@ -675,7 +685,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     }}
                   >
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.service_name || "Bez názvu"}</span>
-                    {s.service_id === activeServiceId && <span style={{ fontSize: 12 }}>✓</span>}
+                    {s.service_id === activeServiceId && <CheckIcon size={14} />}
                   </MenuItem>
                 ))}
               </div>,
@@ -688,6 +698,11 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         {loading && <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Načítám...</div>}
         {error && <div style={{ color: "rgba(239,68,68,0.9)", fontSize: 13, marginBottom: 16 }}>{error}</div>}
 
+        {!loading && !error && teamMembers.length === 0 && (
+          <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>
+            Zatím tu jste jen vy. Kolegy přidáte tlačítkem „Pozvat člena“ – pozvánka se objeví níž, dokud ji nepřijmou.
+          </div>
+        )}
         {!loading && !error && teamMembers.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
             {teamMembers.map((member: any) => (
@@ -1110,7 +1125,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   }}
                 >
                   <span>{inviteRole === "admin" ? "Administrátor" : "Člen"}</span>
-                  <span style={{ fontSize: 10, color: "var(--muted)" }}>▼</span>
+                  <ChevronDownIcon />
                 </button>
 
                 {inviteRolePickerOpen &&
@@ -1392,7 +1407,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       <ConfirmDialog
         open={removeDialogOpen}
         title="Odebrat člena"
-        message="Opravdu chceš odebrat tohoto člena z týmu?"
+        message="Opravdu chcete odebrat tohoto člena z týmu?"
         confirmLabel="Odebrat"
         cancelLabel="Zrušit"
         variant="danger"
@@ -1407,7 +1422,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       <ConfirmDialog
         open={roleChangeDialogOpen}
         title="Změnit roli?"
-        message={`Opravdu chceš změnit roli na ${roleChangeNewRole === "admin" ? "admin" : "člen"}?`}
+        message={`Opravdu chcete změnit roli na ${roleChangeNewRole === "admin" ? "admin" : "člen"}?`}
         confirmLabel="Změnit"
         cancelLabel="Zrušit"
         variant="default"

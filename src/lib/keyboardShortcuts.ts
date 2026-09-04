@@ -8,6 +8,8 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 export type ShortcutId =
   | "help"
   | "nav_orders"
+  | "nav_calendar"
+  | "nav_invoices"
   | "nav_inventory"
   | "nav_devices"
   | "nav_customers"
@@ -21,13 +23,15 @@ export type ShortcutId =
   | "order_print";
 
 export const ALL_SHORTCUT_IDS: ShortcutId[] = [
-  "help", "nav_orders", "nav_inventory", "nav_devices", "nav_customers", "nav_statistics", "nav_settings",
+  "help", "nav_orders", "nav_calendar", "nav_customers", "nav_invoices", "nav_inventory", "nav_devices", "nav_statistics", "nav_settings",
   "orders_new", "orders_search", "order_detail_edit", "order_detail_save", "order_detail_save_close", "order_print",
 ];
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
   help: "Shift+?",
   nav_orders: "q",
+  nav_calendar: "k",
+  nav_invoices: "f",
   nav_inventory: "s",
   nav_devices: "d",
   nav_customers: "c",
@@ -44,6 +48,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
 export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   help: "Nápověda zkratek",
   nav_orders: "Přepnout na Zakázky",
+  nav_calendar: "Přepnout na Kalendář",
+  nav_invoices: "Přepnout na Faktury",
   nav_inventory: "Přepnout na Sklad",
   nav_devices: "Přepnout na Zařízení",
   nav_customers: "Přepnout na Zákazníky",
@@ -145,7 +151,11 @@ export function formatShortcutForDisplay(combo: string): string {
 }
 
 /** True, pokud událost odpovídá uložené kombinaci (case-insensitive pro písmena). */
-export function comboMatchesEvent(e: KeyboardEvent, combo: string): boolean {
+export function comboMatchesEvent(e: KeyboardEvent, combo: string | undefined | null): boolean {
+  // Zkratka bez nastavení (nový identifikátor, smazaná volba) nebo událost
+  // bez klávesy (syntetická) – nic nespárovat, ne spadnout v globálním
+  // posluchači, který pak přestane obsluhovat všechny zkratky.
+  if (!combo || typeof e.key !== "string") return false;
   const parts = combo.split("+").map((p) => p.trim());
   if (parts.length === 0) return false;
   const keyPart = parts[parts.length - 1];

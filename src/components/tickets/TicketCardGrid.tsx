@@ -52,11 +52,6 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
       }}>
         <TicketCode code={t.code} dense />
         <TicketDate value={t.createdAt} />
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-          {statusPicker}
-          {printButton}
-        </div>
       </div>
 
       <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
@@ -81,12 +76,26 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
 
         <div style={{ flex: 1 }} />
 
-        {/* Footer: price */}
-        {finalPrice > 0 && (
-          <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 6, borderTop: "1px solid var(--border)" }}>
-            <span style={{ fontWeight: 700, color: bg, fontSize: 12 }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
+        {/*
+          Patička: stav, tisk a cena. Stav s tiskem dřív seděly v hlavičce
+          vedle kódu a data – karta má 280 px a dlouhý název stavu („Napsat
+          zákazníkovi“) vytlačil tlačítko tisku za okraj, kde ho overflow
+          hidden uřízl. Tady mají celou šířku karty a ovládání je na jednom
+          místě ve všech režimech zobrazení.
+        */}
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 8, borderTop: "1px solid var(--border)", minWidth: 0, flexWrap: "wrap" }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+            {statusPicker}
+            {printButton}
           </div>
-        )}
+          {finalPrice > 0 && (
+            <span style={{ marginLeft: "auto", fontWeight: 700, color: "var(--text)", fontSize: 12, whiteSpace: "nowrap" }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
+          )}
+        </div>
       </div>
     </div>
   );

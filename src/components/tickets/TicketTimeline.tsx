@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
 import { TicketCode, TicketCustomer } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
+import { CheckIcon } from "../icons";
 
 type Props = {
   tickets: TicketCardData[];
@@ -146,8 +147,8 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
                   )}
 
                   {meta?.label && (
-                    <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: statusColor, padding: "2px 7px", borderRadius: 5, background: `${statusColor}18`, border: `1px solid ${statusColor}30`, whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {meta.isFinal ? "✓ " : ""}{meta.label}
+                    <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: statusColor, padding: "2px 7px", borderRadius: 5, background: `${statusColor}18`, border: `1px solid ${statusColor}30`, whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {meta.isFinal && <CheckIcon size={10} />}{meta.label}
                     </span>
                   )}
 

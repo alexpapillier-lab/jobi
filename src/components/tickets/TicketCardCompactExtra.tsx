@@ -1,6 +1,7 @@
 import React from "react";
 import { type TicketCardData } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
+import { CheckIcon } from "../icons";
 
 type Props = {
   ticket: TicketCardData;
@@ -52,7 +53,7 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>
-        {meta?.isFinal && <span style={{ fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 4px", borderRadius: 4, background: `${bg}18`, color: bg, flexShrink: 0 }}>✓</span>}
+        {meta?.isFinal && <span style={{ fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 4px", borderRadius: 4, background: `${bg}18`, color: bg, flexShrink: 0, display: "inline-flex", alignItems: "center" }}><CheckIcon size={10} /></span>}
         <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}

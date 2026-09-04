@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { useEntitlements } from "../../hooks/useEntitlements";
 import { showToast } from "../../components/Toast";
+import { CheckIcon } from "../../components/icons";
 
 type Rezim = "hidden" | "boolean" | "exact";
 
@@ -312,14 +313,14 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           <div style={nadpis}>Co odpověď obsahuje</div>
           <p style={popis}>
             Značky, kategorie, modely a opravy. U každé opravy název, popis, odhadovaný čas
-            a cena ve třech variantách – <code>price</code> tak, jak ji zadáváš,
+            a cena ve třech variantách – <code>price</code> tak, jak ji zadáváte,
             a k tomu <code>price_incl_vat</code> a <code>price_excl_vat</code>. Neplátce DPH
             má ve všech třech stejnou hodnotu.
           </p>
 
           <div style={nadpis}>Co se ven nikdy nedostane</div>
           <p style={popis}>
-            <strong style={{ color: "var(--text)" }}>Náklady na opravu</strong> (tvoje marže),
+            <strong style={{ color: "var(--text)" }}>Náklady na opravu</strong> (vaše marže),
             interní identifikátory servisu a pořadí položek. Do dotazu se ta data vůbec
             nenačítají.
           </p>
@@ -412,13 +413,13 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
           <div style={nadpis}>Co se ven nikdy nedostane</div>
           <p style={popis}>
-            <strong style={{ color: "var(--text)" }}>Počty kusů</strong>, pokud si nezvolíš
+            <strong style={{ color: "var(--text)" }}>Počty kusů</strong>, pokud si nezvolíte
             režim s přesnými čísly. Dál interní identifikátory servisu, pořadí položek
             a vazba produktů na opravy.
           </p>
           <p style={popis}>
             Skryté položky taky ne – u kategorie i produktu jde zvlášť určit, jestli se
-            posílá ven. Skrytá kategorie skryje i produkty pod sebou. Přepínáš to přímo
+            posílá ven. Skrytá kategorie skryje i produkty pod sebou. Přepínáte to přímo
             ve Skladu, štítkem u položky.
           </p>
         </>
@@ -426,7 +427,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
       <div style={nadpis}>Dokumentace pro webaře</div>
       <p style={popis}>
-        Tohle pošli tomu, kdo ti bude API napojovat. Je tam popsaná každá adresa,
+        Tohle pošlete tomu, kdo vám bude API napojovat. Je tam popsaná každá adresa,
         co v odpovědi přijde a co znamená.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -473,18 +474,18 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
       <div style={nadpis}>Upozornění na změnu</div>
       <p style={popis}>
-        Statický web se sám nedozví, že jsi zdražil. Zadej sem adresu, na kterou
+        Statický web se sám nedozví, že jste zdražili. Zadejte sem adresu, na kterou
         po úpravě ceníku nebo skladu pošleme POST – typicky „deploy hook“
         z Cloudflare Pages nebo Vercelu, který spustí přegenerování stránek.
         Nepovinné.
       </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <input
           placeholder="https://…"
           value={webhook}
           onChange={(e) => setWebhook(e.target.value)}
           style={{
-            flex: "1 1 320px", padding: "10px 12px", borderRadius: 8,
+            flex: "1 1 160px", minWidth: 0, padding: "10px 12px", borderRadius: 8,
             border: "1px solid var(--border)", background: "var(--panel)",
             color: "var(--text)", fontSize: 13,
           }}
@@ -523,7 +524,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           borderRadius: 8, padding: 12, marginBottom: 12,
         }}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6, color: "var(--text)" }}>
-            Token vytvořen. Ulož si ho teď.
+            Token vytvořen. Uložte si ho teď.
           </div>
           <pre style={{ ...kod, background: "var(--panel)" }}>{cerstvyToken}</pre>
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
@@ -642,7 +643,7 @@ function Znacka({ aktivni, popisek }: { aktivni: boolean; popisek: string }) {
         background: "var(--panel-2)",
       }}
     >
-      <span style={{ fontWeight: 700 }}>{aktivni ? "✓" : "○"}</span>
+      {aktivni ? <CheckIcon size={12} /> : <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid currentColor", display: "inline-block" }} />}
       {popisek}
     </span>
   );

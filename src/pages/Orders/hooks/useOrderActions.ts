@@ -340,7 +340,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           handoff_method: dev.handoffMethod || null,
           handback_method: (dev.handbackMethod || "").trim() || null,
           estimated_price: dev.estimatedPrice ?? null,
-          performed_repairs: (newDraft as any).performedRepairs ?? [],
+          // Opravy vybrané z ceníku už při příjmu (viz plannedRepairs v DeviceRow).
+          performed_repairs: Array.isArray(dev.plannedRepairs) && dev.plannedRepairs.length > 0
+            ? dev.plannedRepairs
+            : ((newDraft as any).performedRepairs ?? []),
           diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
           diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
           diagnostic_photos_before: [] as string[],

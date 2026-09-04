@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
 import { type StatusMeta } from "../../state/StatusesStore";
+import { CheckIcon, ChatIcon, PrintIcon } from "../icons";
 
 type StatusPickerProps = {
   value: string;
@@ -9,10 +10,17 @@ type StatusPickerProps = {
   getByKey: (k: string) => StatusMeta | undefined;
   onChange: (k: string) => void;
   size?: "sm" | "md";
+  /**
+   * Co se při přepnutí na daný stav stane automaticky (klíč stavu → popisky,
+   * např. „Vytiskne se záruční list“, „Odešle se SMS zákazníkovi“).
+   * U takových stavů se v nabídce ukáže malá ikona a po najetí i popisky.
+   */
+  actionsByStatus?: Record<string, string[]>;
 };
 
-export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" }: StatusPickerProps) {
+export function StatusPicker({ value, statuses, getByKey, onChange, size = "md", actionsByStatus }: StatusPickerProps) {
   const [open, setOpen] = useState(false);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -69,11 +77,14 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
   useLayoutEffect(() => {
     if (!open) return;
     recompute();
-     
+
   }, [open, value, size]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setHoverKey(null);
+      return;
+    }
 
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -104,8 +115,10 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
     };
-     
+
   }, [open]);
+
+  const actionsFor = (key: string): string[] => actionsByStatus?.[key] ?? [];
 
   const menu = open ? (
     <div
@@ -128,6 +141,10 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
     >
       {statuses.map((s) => {
         const active = s.key === value;
+        const actions = actionsFor(s.key);
+        const hasPrint = actions.some((a) => !/sms/i.test(a));
+        const hasSms = actions.some((a) => /sms/i.test(a));
+        const showActions = hoverKey === s.key && actions.length > 0;
 
         return (
           <MenuItem
@@ -137,6 +154,9 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
               onChange(s.key);
               setOpen(false);
             }}
+            onMouseEnter={() => setHoverKey(s.key)}
+            onFocus={() => setHoverKey(s.key)}
+            title={actions.length > 0 ? actions.join(" · ") : undefined}
           >
             <span
               style={{
@@ -162,9 +182,21 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
               <div style={{ fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {s.label}
               </div>
+              {showActions && (
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--muted)", marginTop: 2, whiteSpace: "normal", lineHeight: 1.3 }}>
+                  {actions.join(" · ")}
+                </div>
+              )}
             </div>
 
-            {active && <div style={{ fontSize: 12, fontWeight: 950, opacity: 0.8 }}>✓</div>}
+            {(hasPrint || hasSms) && (
+              <span style={{ display: "inline-flex", gap: 4, color: "var(--muted)", flex: "0 0 auto" }} aria-hidden="true">
+                {hasPrint && <PrintIcon size={13} />}
+                {hasSms && <ChatIcon size={13} />}
+              </span>
+            )}
+
+            {active && <CheckIcon size={14} />}
           </MenuItem>
         );
       })}
@@ -189,7 +221,6 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md" 
           fontWeight: 900,
           fontSize,
           cursor: "pointer",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
           boxShadow: "0 10px 25px rgba(0,0,0,0.06)",
           transition: "transform 120ms ease, box-shadow 160ms ease",
           userSelect: "none",

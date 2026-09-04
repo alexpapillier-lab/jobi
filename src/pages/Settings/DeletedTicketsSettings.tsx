@@ -116,7 +116,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
     } catch (err: any) {
       const errorMessage = err?.message || "Neznámá chyba";
       if (errorMessage.includes("Not authorized") || errorMessage.includes("permission")) {
-        showToast("Nemáš oprávnění obnovit zakázku", "error");
+        showToast("Nemáte oprávnění obnovit zakázku", "error");
       } else {
         showToast(`Chyba při obnovování zakázky: ${errorMessage}`, "error");
       }
@@ -199,7 +199,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
       <ConfirmDialog
         open={restoreDialogOpen}
         title="Obnovit zakázku"
-        message="Opravdu chceš tuto zakázku obnovit?"
+        message="Opravdu chcete tuto zakázku obnovit?"
         confirmLabel="Obnovit"
         cancelLabel="Zrušit"
         variant="default"

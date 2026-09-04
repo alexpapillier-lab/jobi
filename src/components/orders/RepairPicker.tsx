@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { MenuItem } from "../ui";
 import { createPortal } from "react-dom";
+import { CheckIcon } from "../icons";
 
 type RepairPickerProps = {
   value: string;
@@ -109,7 +110,7 @@ export function RepairPicker({ value, repairs, placeholder = "Vyberte opravu..."
                   {repair.price} Kč
                 </span>
               )}
-              {active && <span style={{ marginLeft: 8, fontSize: 16, opacity: 0.8 }}>✓</span>}
+              {active && <span style={{ marginLeft: 8, display: "inline-flex", opacity: 0.8 }}><CheckIcon size={14} /></span>}
             </MenuItem>
           );
         })

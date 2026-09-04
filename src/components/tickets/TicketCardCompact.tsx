@@ -1,6 +1,7 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator } from "./fields";
+import { CheckIcon } from "../icons";
 
 type Props = {
   ticket: TicketCardData;
@@ -66,9 +67,9 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
         {meta?.isFinal && (
           <span style={{
             fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 5px", borderRadius: "var(--radius-2xs)",
-            background: `${bg}18`, color: bg, whiteSpace: "nowrap", flexShrink: 0,
+            background: `${bg}18`, color: bg, whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center",
           }}>
-            ✓
+            <CheckIcon size={10} />
           </span>
         )}
         {finalPrice > 0 && (

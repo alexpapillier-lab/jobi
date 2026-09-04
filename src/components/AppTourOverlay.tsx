@@ -1,6 +1,18 @@
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { NavKey } from "../layout/Sidebar";
+import {
+  BoltIcon,
+  BoxIcon,
+  DeviceIcon,
+  DocumentIcon,
+  HashIcon,
+  PrintIcon,
+  TrendIcon,
+  UserIcon,
+  WarningIcon,
+  WrenchIcon,
+} from "./icons";
 
 export type TourStep = {
   page: NavKey;
@@ -27,20 +39,25 @@ type AppTourOverlayProps = {
 const SPOTLIGHT_PADDING = 10;
 const BACKDROP_COLOR = "rgba(15, 23, 42, 0.55)";
 
-const STEP_ICONS: Record<string, string> = {
-  welcome: "👋",
-  orders: "📋",
-  customers: "👥",
-  inventory: "📦",
-  devices: "📱",
-  statistics: "📊",
-  settings: "⚙️",
-  jobidocs: "🖨️",
-  doc: "📄",
-  team: "🤝",
-  profile: "👤",
-  keyboard: "⌨️",
-  reklamace: "🔄",
+/*
+ * Ikony kroků. Dřív emoji – ta ale každý systém vykreslí jinak (Windows
+ * vs. macOS), jsou barevná tam, kde má být jednobarevná ikona, a nedají
+ * se obarvit motivem. SVG ze sady v icons.tsx dědí barvu z --accent.
+ */
+const STEP_ICONS: Record<string, ReactNode> = {
+  welcome: <BoltIcon size={26} />,
+  orders: <DocumentIcon size={26} />,
+  customers: <UserIcon size={26} />,
+  inventory: <BoxIcon size={26} />,
+  devices: <DeviceIcon size={26} />,
+  statistics: <TrendIcon size={26} />,
+  settings: <WrenchIcon size={26} />,
+  jobidocs: <PrintIcon size={26} />,
+  doc: <DocumentIcon size={26} />,
+  team: <UserIcon size={26} />,
+  profile: <UserIcon size={26} />,
+  keyboard: <HashIcon size={26} />,
+  reklamace: <WarningIcon size={26} />,
 };
 
 function useTourTarget(active: boolean, page: NavKey, selector: string | undefined) {
@@ -97,7 +114,7 @@ export function AppTourOverlay({
   const isLast = stepIndex === steps.length - 1;
 
   const showSpotlight = !!step.selector && !!targetRect && targetRect.width > 0 && targetRect.height > 0;
-  const iconEmoji = step.icon ? STEP_ICONS[step.icon] ?? "◦" : "◦";
+  const stepIcon: ReactNode = (step.icon && STEP_ICONS[step.icon]) || <DocumentIcon size={26} />;
 
   const card = (
     <div
@@ -138,7 +155,7 @@ export function AppTourOverlay({
             flexShrink: 0,
           }}
         >
-          {iconEmoji}
+          {stepIcon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>

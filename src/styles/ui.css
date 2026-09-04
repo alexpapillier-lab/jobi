@@ -392,3 +392,135 @@
 .ui-menu-item--between {
   justify-content: space-between;
 }
+
+/* --------------------------------------------------------------------------
+   Řádek nastavení
+
+   Popisek vlevo, ovládací prvek vpravo, tenká linka mezi sourozenci.
+   Nahrazuje ručně psané <label> s vlastním rámečkem a pozadím, kvůli kterým
+   vypadala každá volba v Nastavení jako karta v kartě.
+   -------------------------------------------------------------------------- */
+.ui-setting-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 44px;
+  padding: var(--space-2) 0;
+  color: var(--text);
+}
+.ui-setting-rows > .ui-setting-row:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+label.ui-setting-row { cursor: pointer; }
+
+.ui-setting-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.ui-setting-row__label {
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ui-setting-row__desc {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: 1.45;
+}
+.ui-setting-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ui-setting-row__control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ui-setting-row__control select {
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Lišta „Neuložené změny“
+
+   Lepí se ke spodní hraně posuvné oblasti, aby byla vidět i u dlouhých
+   formulářů. Rozostřené pozadí, ať pod ní prosvítá obsah a je jasné,
+   že je to vrstva nad formulářem, ne jeho součást.
+   -------------------------------------------------------------------------- */
+.ui-unsaved-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+}
+.ui-unsaved-bar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+.ui-unsaved-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+}
+.ui-unsaved-bar__actions {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+/* --------------------------------------------------------------------------
+   „Uloženo“ u samoukládacích prvků
+   -------------------------------------------------------------------------- */
+.ui-saved-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--success-text);
+  animation: uiSavedHintIn 0.18s ease-out;
+}
+@keyframes uiSavedHintIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Rozbalovací <details> bez systémové šipky – šipku kreslí obsah sám. */
+.ui-summary { list-style: none; }
+.ui-summary::-webkit-details-marker { display: none; }

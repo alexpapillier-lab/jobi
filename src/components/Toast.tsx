@@ -11,6 +11,9 @@ type Toast = {
   persistent?: boolean;
   actionLabel?: string;
   onAction?: () => void;
+  /** Druhá, tišší akce (např. „Později“) – u trvalých toastů zároveň jediný způsob, jak je zavřít. */
+  secondaryLabel?: string;
+  onSecondaryAction?: () => void;
   /** Druhý řádek (např. náhled SMS) */
   subtitle?: string;
   /** Klik na toast (místo jen zavření) – např. otevřít SMS chat */
@@ -47,7 +50,10 @@ export function showToast(message: string, type: "success" | "error" | "info" = 
   }
 
   const id = `toast-${++toastId}`;
-  toasts.push({ id, message, type, createdAt: Date.now(), duration: 3000 });
+  // Chyba potřebuje víc času na přečtení než „Uloženo“ – a kdo ji chce
+  // vidět déle, najede myší (odpočet se zastaví).
+  const duration = type === "error" ? 7000 : type === "info" ? 4500 : 3000;
+  toasts.push({ id, message, type, createdAt: Date.now(), duration });
   notify();
 }
 
@@ -70,17 +76,20 @@ export function showIncomingSmsToast(title: string, bodyPreview: string, onOpenC
 export function showPersistentToast(
   message: string,
   type: "success" | "error" | "info",
-  options: { actionLabel: string; onAction: () => void }
+  options: { actionLabel: string; onAction: () => void; secondaryLabel?: string; onSecondaryAction?: () => void; subtitle?: string; silent?: boolean }
 ): string {
-  playToastSound(type);
+  if (!options.silent) playToastSound(type);
   const id = `toast-${++toastId}`;
   toasts.push({
     id,
     message,
+    subtitle: options.subtitle,
     type,
     persistent: true,
     actionLabel: options.actionLabel,
     onAction: options.onAction,
+    secondaryLabel: options.secondaryLabel,
+    onSecondaryAction: options.onSecondaryAction,
     createdAt: Date.now(),
     duration: 0,
   });
@@ -277,6 +286,30 @@ function ToastItem({ toast }: { toast: Toast }) {
           toast.message
         )}
       </span>
+      {isPersistent && toast.secondaryLabel && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toast.onSecondaryAction?.();
+            removeToast(toast.id);
+          }}
+          style={{
+            flexShrink: 0,
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.35)",
+            background: "transparent",
+            color: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            opacity: 0.9,
+          }}
+        >
+          {toast.secondaryLabel}
+        </button>
+      )}
       {isPersistent && toast.actionLabel && (
         <button
           type="button"

@@ -30,6 +30,7 @@ export function clearOnSignOut(): void {
   try {
     // Business data and service-scoped data
     localStorage.removeItem(STORAGE_KEYS.COMPANY);
+    clearKeysByPrefix(`${STORAGE_KEYS.COMPANY}__`);
     localStorage.removeItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
     // Per-service devices and inventory (keys like jobsheet_devices_v1_<id>, jobsheet_inventory_v1_<id>)
@@ -70,8 +71,17 @@ export function clearOnServiceChange(prevServiceId: string | null, nextServiceId
   }
   
   try {
-    // Service-scoped data (business data tied to a specific service)
-    localStorage.removeItem(STORAGE_KEYS.COMPANY);
+    // Firemní údaje: dřív se tu jen smazaly. Jenže do 4. 9. 2026 žily jen
+    // v localStorage (DB je dostala až s service_settings.config.companyData),
+    // takže přepnutí servisu je nenávratně zahodilo – tak zmizely údaje
+    // servisu MajkaPajka. Teď se odloží pod klíč předchozího servisu a při
+    // návratu k němu se vrátí; Nastavení je při načtení pošle do DB, pokud
+    // tam ještě nejsou.
+    const company = localStorage.getItem(STORAGE_KEYS.COMPANY);
+    if (company) localStorage.setItem(`${STORAGE_KEYS.COMPANY}__${prevServiceId}`, company);
+    const restored = localStorage.getItem(`${STORAGE_KEYS.COMPANY}__${nextServiceId}`);
+    if (restored) localStorage.setItem(STORAGE_KEYS.COMPANY, restored);
+    else localStorage.removeItem(STORAGE_KEYS.COMPANY);
     localStorage.removeItem(STORAGE_KEYS.DOCUMENTS_CONFIG);
     // DEVICES and INVENTORY are now per-service; do not clear on service change
 

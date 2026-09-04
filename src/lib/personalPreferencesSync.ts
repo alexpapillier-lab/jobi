@@ -21,12 +21,16 @@
 import { supabase } from "./supabaseClient";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { SHORTCUTS_CHANGED_EVENT } from "./keyboardShortcuts";
+import { THEME_PREFERENCE_STORAGE_KEY } from "../theme/ThemeProvider";
 
 /** Klíče v localStorage, které se sdílí. Přidat další stačí sem. */
 const SYNCED_KEYS = [
   STORAGE_KEYS.UI_SETTINGS,
   STORAGE_KEYS.LOGO_PRESET,
   STORAGE_KEYS.THEME,
+  // Volba „podle systému“ – přeložené ID je v THEME, tohle nese, že se má
+  // překládat podle OS. Bez toho by druhé zařízení dostalo jen pevný motiv.
+  THEME_PREFERENCE_STORAGE_KEY,
   STORAGE_KEYS.INVENTORY_DISPLAY_MODE,
   STORAGE_KEYS.KEYBOARD_SHORTCUTS,
 ] as const;
@@ -37,6 +41,7 @@ const REFRESH_EVENT: Record<SyncedKey, string> = {
   [STORAGE_KEYS.UI_SETTINGS]: "jobsheet:ui-updated",
   [STORAGE_KEYS.LOGO_PRESET]: "jobsheet:logo-preset-changed",
   [STORAGE_KEYS.THEME]: "jobsheet:theme-changed",
+  [THEME_PREFERENCE_STORAGE_KEY]: "jobsheet:theme-changed",
   [STORAGE_KEYS.INVENTORY_DISPLAY_MODE]: "jobsheet:inventory-display-mode-changed",
   [STORAGE_KEYS.KEYBOARD_SHORTCUTS]: SHORTCUTS_CHANGED_EVENT,
 };

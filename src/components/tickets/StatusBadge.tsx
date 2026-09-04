@@ -1,3 +1,5 @@
+import { CheckIcon } from "../icons";
+
 type StatusBadgeProps = {
   label: string;
   bg: string;
@@ -25,7 +27,7 @@ export function StatusBadge({ label, bg, isFinal, size = "sm" }: StatusBadgeProp
         letterSpacing: "0.01em",
       }}
     >
-      {isFinal && <span style={{ fontSize: isSmall ? 8 : 9 }}>✓</span>}
+      {isFinal && <CheckIcon size={isSmall ? 9 : 11} />}
       {label}
     </span>
   );
