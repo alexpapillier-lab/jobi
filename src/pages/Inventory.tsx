@@ -2128,11 +2128,14 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                           </div>
                         ) : productDisplayMode === "list" ? (
                           <>
-                          {/* Řádek jako u oprav: vlevo popis, vpravo cena, sklad a akce. */}
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                          {/* Řádek jako u oprav: vlevo popis, vpravo cena, sklad a akce.
+                              Na telefonu pod sebou – pravá skupina je širší než displej
+                              a levý sloupec se jinak zmáčkl na jedno písmeno na řádek. */}
+                          <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "flex-start", gap: isNarrow ? 10 : 16 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                              <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: isNarrow ? "wrap" : "nowrap" }}>
+                                {/* Na telefonu má název celý řádek, štítky jdou pod něj – jinak z názvu zbylo „Originální bat…“. */}
+                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isNarrow ? "normal" : "nowrap", flex: isNarrow ? "1 1 100%" : "0 1 auto" }}>{p.name}</span>
                                 {stitekViditelnosti("products", p)}
                                 {hasNoModels && (
                                   <span style={{
@@ -2158,7 +2161,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                   {productModels.length > 3 && ` a ${productModels.length - 3} dalších`}
                                 </div>
                               )}
-                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, overflowWrap: "anywhere" }}>
                                 {[productCategory?.name, p.sku ? `SKU: ${p.sku}` : null].filter(Boolean).join(" · ") || "—"}
                               </div>
                               {p.description && (
@@ -2177,8 +2180,8 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               )}
                             </div>
 
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                              <div style={{ textAlign: "right" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, flexWrap: isNarrow ? "wrap" : "nowrap", justifyContent: isNarrow ? "space-between" : "flex-end", borderTop: isNarrow ? "1px solid var(--border)" : "none", paddingTop: isNarrow ? 8 : 0 }}>
+                              <div style={{ textAlign: isNarrow ? "left" : "right" }}>
                                 <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
                                   {p.price} Kč
                                 </div>
