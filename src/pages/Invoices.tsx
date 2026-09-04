@@ -1,49 +1,46 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Button, MenuItem } from "../components/ui";
+import { Button, Input, Label } from "../components/ui";
+import { XIcon } from "../components/icons";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
-import { FieldLabel, TextInput } from "../lib/settingsUi";
 import { safeLoadCompanyData } from "../lib/companyData";
-import { computeTotals, formatCurrency, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
+import { computeTotals, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
-import { invoiceToJobiDocsVariables, companyDataToJobiDocsPayload } from "../lib/invoiceToJobiDocs";
-import { printDocumentViaJobiDocs, exportDocumentViaJobiDocs, isJobiDocsRunning, renderPdfViaJobiDocs, formatJobiDocsErrorForUser } from "../lib/jobidocs";
+import { invoiceDocumentData } from "../lib/documentData";
+import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { isWeb } from "../lib/platform";
 import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
-import type { Database } from "../types/supabase";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { validateInvoiceForSave } from "../lib/invoiceValidation";
-
-type Invoice = Database["public"]["Tables"]["invoices"]["Row"];
-type InvoiceItem = Database["public"]["Tables"]["invoice_items"]["Row"];
-type InvoiceEvent = Database["public"]["Tables"]["invoice_events"]["Row"];
-
-type InvoiceStatus = "draft" | "issued" | "sent" | "paid" | "overdue" | "cancelled";
-
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  draft: "Koncept",
-  issued: "Vystaveno",
-  sent: "Odesláno",
-  paid: "Zaplaceno",
-  overdue: "Po splatnosti",
-  cancelled: "Stornováno",
-};
-
-const STATUS_COLORS: Record<InvoiceStatus, { bg: string; fg: string }> = {
-  draft: { bg: "rgba(107,114,128,0.15)", fg: "var(--muted)" },
-  issued: { bg: "rgba(37,99,235,0.15)", fg: "#2563eb" },
-  sent: { bg: "rgba(139,92,246,0.15)", fg: "#8b5cf6" },
-  paid: { bg: "var(--success-soft)", fg: "var(--success-text)" },
-  overdue: { bg: "var(--danger-soft)", fg: "var(--danger-text)" },
-  cancelled: { bg: "var(--panel-2)", fg: "var(--muted)" },
-};
+import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
+import { InvoiceList } from "./Invoices/InvoiceList";
+import { InvoiceEditor, type InvoiceCustomerMatch } from "./Invoices/InvoiceEditor";
+import { InvoiceDetail } from "./Invoices/InvoiceDetail";
+import {
+  STATUS_LABELS,
+  addDaysIso,
+  todayIso,
+  type EditorLineItem,
+  type Invoice,
+  type InvoiceEvent,
+  type InvoiceItem,
+  type InvoiceStatus,
+  type ListFilter,
+} from "./Invoices/types";
 
 type View = "list" | "editor";
+
+type ConfirmState = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  variant?: "default" | "danger";
+  onConfirm: () => void;
+};
 
 type Props = {
   activeServiceId: string | null;
@@ -66,6 +63,29 @@ type Props = {
   onOpenTicket?: (ticketId: string) => void;
 };
 
+/** Validátor bere `undefined`, databáze vrací `null` – sjednocení. */
+function toValidationData(inv: Partial<Invoice>) {
+  return {
+    number: inv.number ?? undefined,
+    issue_date: inv.issue_date ?? undefined,
+    due_date: inv.due_date ?? undefined,
+    customer_name: inv.customer_name ?? undefined,
+    supplier_name: inv.supplier_name ?? undefined,
+    status: inv.status ?? undefined,
+  };
+}
+
+/** Otisk editoru pro zjištění neuložených změn. */
+function snapshot(inv: Partial<Invoice>, items: EditorLineItem[]): string {
+  return JSON.stringify([inv, items]);
+}
+
+/**
+ * Stránka Faktury: drží data a akce, vykreslování má ve třech částech –
+ * seznam (InvoiceList), editor (InvoiceEditor) a boční detail
+ * (InvoiceDetail). Modální okna pro e-mail a náhled PDF zůstávají tady,
+ * protože pracují se stejnými akcemi jako detail.
+ */
 export default function Invoices({ activeServiceId, prefillFromTicket, onPrefillConsumed, openInvoiceId, onOpenInvoiceIdConsumed, onOpenTicket }: Props) {
   const dph = useServiceVat(activeServiceId);
   /** Sazba pro nové položky – neplátce DPH má 0. */
@@ -76,37 +96,40 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Filters
-  const [filterStatus, setFilterStatus] = useState<InvoiceStatus | "all">("all");
+  // Filtr seznamu
+  const [filter, setFilter] = useState<ListFilter>("all");
   const [filterSearch, setFilterSearch] = useState("");
 
-  // Editor state
+  // Editor
   const [editorInvoice, setEditorInvoice] = useState<Partial<Invoice>>({});
-  const [editorItems, setEditorItems] = useState<(InvoiceLineItem & { id?: string })[]>([emptyLineItem(sazbaNoveVPolozky)]);
+  const [editorItems, setEditorItems] = useState<EditorLineItem[]>([emptyLineItem(sazbaNoveVPolozky)]);
+  const [editorBaseline, setEditorBaseline] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Detail/events
+  // Detail
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
   const [detailEvents, setDetailEvents] = useState<InvoiceEvent[]>([]);
   const [showDetail, setShowDetail] = useState(false);
 
-  // Send email modal
+  // Odeslání e-mailem
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendEmail, setSendEmail] = useState("");
   const [sendSubject, setSendSubject] = useState("");
   const [sendBody, setSendBody] = useState("");
   const [sending, setSending] = useState(false);
 
-  // Confirm dialog
-  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  // PDF preview
+  // Náhled PDF
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  previewUrlRef.current = previewUrl;
 
   const companyData = useMemo(() => safeLoadCompanyData(), []);
 
-  // Load invoices
+  // ─── Načtení ───────────────────────────────────────────────
+
   const loadInvoices = useCallback(async () => {
     if (!activeServiceId) return;
     setLoading(true);
@@ -120,7 +143,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       if (error) throw error;
       setInvoices(data || []);
     } catch (err) {
-      console.error("Failed to load invoices:", err);
+      reportSilent({ code: "invoices.load_failed", error: err, source: "Invoices.loadInvoices" });
     } finally {
       setLoading(false);
     }
@@ -130,120 +153,84 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     loadInvoices();
   }, [loadInvoices]);
 
-  // Auto-detect overdue invoices
+  // Faktury po splatnosti se označí automaticky.
   useEffect(() => {
     if (!activeServiceId || invoices.length === 0) return;
-    const today = new Date().toISOString().split("T")[0];
-    const overdueIds = invoices
-      .filter((i) => ["issued", "sent"].includes(i.status) && i.due_date < today)
-      .map((i) => i.id);
+    const today = todayIso();
+    const overdueIds = invoices.filter((i) => ["issued", "sent"].includes(i.status) && i.due_date < today).map((i) => i.id);
     if (overdueIds.length === 0) return;
     (async () => {
       try {
-        await typedSupabase
-          .from("invoices")
-          .update({ status: "overdue" })
-          .in("id", overdueIds);
+        await typedSupabase.from("invoices").update({ status: "overdue" }).in("id", overdueIds);
         loadInvoices();
       } catch (e) {
-        // Automatické označení faktur po splatnosti. Když selže, uživatel
-        // uvidí zastaralý stav a nepozná proč – proto se to zaloguje.
+        // Když selže, uživatel uvidí zastaralý stav a nepozná proč – proto se to zaloguje.
         reportSilent({ code: "invoices.mark_overdue_failed", error: e, source: "Invoices.markOverdue" });
       }
     })();
-  }, [invoices, activeServiceId]);
+  }, [invoices, activeServiceId, loadInvoices]);
 
-  // Handle prefill from ticket
-  useEffect(() => {
-    if (!prefillFromTicket || !activeServiceId) return;
-    openNewInvoice(prefillFromTicket);
-    onPrefillConsumed?.();
-  }, [prefillFromTicket, activeServiceId]);
+  // ─── Otevření editoru / detailu ────────────────────────────
 
-  // Handle open existing invoice by id (e.g. from Zakázky "Přejít na fakturu")
-  useEffect(() => {
-    if (!openInvoiceId || !onOpenInvoiceIdConsumed) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: inv, error } = await typedSupabase
-          .from("invoices")
-          .select("*")
-          .eq("id", openInvoiceId)
-          .single();
-        if (cancelled || error || !inv) {
-          onOpenInvoiceIdConsumed();
-          return;
-        }
-        await openEditInvoice(inv as Invoice);
-      } catch {
-        // ignore
-      }
-      onOpenInvoiceIdConsumed();
-    })();
-    return () => { cancelled = true; };
-  }, [openInvoiceId, onOpenInvoiceIdConsumed]);
+  const openNewInvoice = useCallback(
+    async (prefill?: Props["prefillFromTicket"]) => {
+      if (!activeServiceId) return;
+      const number = await generateInvoiceNumber(activeServiceId);
+      const today = todayIso();
+      const cd = safeLoadCompanyData();
 
-  const openNewInvoice = useCallback(async (prefill?: Props["prefillFromTicket"]) => {
-    const number = await generateInvoiceNumber(activeServiceId!);
-    const today = new Date().toISOString().split("T")[0];
-    const due = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
-    const cd = safeLoadCompanyData();
+      const inv: Partial<Invoice> = {
+        number,
+        variable_symbol: invoiceNumberToVS(number),
+        status: "draft",
+        issue_date: today,
+        due_date: addDaysIso(today, 14),
+        taxable_date: today,
+        currency: "CZK",
+        supplier_name: cd.name,
+        supplier_ico: cd.ico,
+        supplier_dic: cd.dic,
+        supplier_address: [cd.addressStreet, cd.addressCity, cd.addressZip].filter(Boolean).join(", "),
+        supplier_email: cd.email,
+        supplier_phone: cd.phone,
+        supplier_bank_account: cd.bankAccount,
+        supplier_iban: cd.iban,
+        supplier_swift: cd.swift,
+        customer_name: prefill?.customerName || "",
+        customer_email: prefill?.customerEmail || "",
+        customer_phone: prefill?.customerPhone || "",
+        customer_ico: prefill?.customerIco || "",
+        customer_dic: prefill?.customerDic || "",
+        customer_address: prefill?.customerAddress || "",
+        ticket_id: prefill?.ticketId || null,
+        customer_id: prefill?.customerId || null,
+      };
+      const items: EditorLineItem[] = prefill?.items?.length ? prefill.items.map((i) => ({ ...i })) : [emptyLineItem(sazbaNoveVPolozky)];
+      setEditorInvoice(inv);
+      setEditorItems(items);
+      setEditorBaseline(snapshot(inv, items));
+      setEditingId(null);
+      setShowDetail(false);
+      setView("editor");
+    },
+    [activeServiceId, sazbaNoveVPolozky],
+  );
 
-    const inv: Partial<Invoice> = {
-      number,
-      variable_symbol: invoiceNumberToVS(number),
-      status: "draft",
-      issue_date: today,
-      due_date: due,
-      taxable_date: today,
-      currency: "CZK",
-      supplier_name: cd.name,
-      supplier_ico: cd.ico,
-      supplier_dic: cd.dic,
-      supplier_address: [cd.addressStreet, cd.addressCity, cd.addressZip].filter(Boolean).join(", "),
-      supplier_email: cd.email,
-      supplier_phone: cd.phone,
-      supplier_bank_account: cd.bankAccount,
-      supplier_iban: cd.iban,
-      supplier_swift: cd.swift,
-      customer_name: prefill?.customerName || "",
-      customer_email: prefill?.customerEmail || "",
-      customer_phone: prefill?.customerPhone || "",
-      customer_ico: prefill?.customerIco || "",
-      customer_dic: prefill?.customerDic || "",
-      customer_address: prefill?.customerAddress || "",
-      ticket_id: prefill?.ticketId || null,
-      customer_id: prefill?.customerId || null,
-    };
-    setEditorInvoice(inv);
-    setEditorItems(prefill?.items?.length ? prefill.items.map(i => ({ ...i })) : [emptyLineItem(sazbaNoveVPolozky)]);
-    setEditingId(null);
-    setView("editor");
-  }, [activeServiceId]);
-
-  const openEditInvoice = useCallback(async (inv: Invoice) => {
-    const { data: items } = await typedSupabase
-      .from("invoice_items")
-      .select("*")
-      .eq("invoice_id", inv.id)
-      .order("sort_order", { ascending: true });
-    setEditorInvoice(inv);
-    setEditorItems(
-      items?.length
-        ? items.map((it) => ({
-            id: it.id,
-            name: it.name,
-            qty: it.qty,
-            unit: it.unit,
-            unit_price: it.unit_price,
-            vat_rate: it.vat_rate,
-          }))
-        : [emptyLineItem(sazbaNoveVPolozky)],
-    );
-    setEditingId(inv.id);
-    setView("editor");
-  }, []);
+  const openEditInvoice = useCallback(
+    async (inv: Invoice) => {
+      const { data: rows } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true });
+      const items: EditorLineItem[] = rows?.length
+        ? rows.map((it) => ({ id: it.id, name: it.name, qty: it.qty, unit: it.unit, unit_price: it.unit_price, vat_rate: it.vat_rate }))
+        : [emptyLineItem(sazbaNoveVPolozky)];
+      setEditorInvoice(inv);
+      setEditorItems(items);
+      setEditorBaseline(snapshot(inv, items));
+      setEditingId(inv.id);
+      setShowDetail(false);
+      setView("editor");
+    },
+    [sazbaNoveVPolozky],
+  );
 
   const openDetail = useCallback(async (inv: Invoice) => {
     setDetailInvoice(inv);
@@ -256,347 +243,539 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     setDetailEvents(eventsRes.data || []);
   }, []);
 
-  // Save invoice
-  const saveInvoice = useCallback(async () => {
-    if (!activeServiceId || saving) return;
+  // Předvyplnění ze zakázky
+  useEffect(() => {
+    if (!prefillFromTicket || !activeServiceId) return;
+    openNewInvoice(prefillFromTicket);
+    onPrefillConsumed?.();
+    // openNewInvoice se mění s aktivním servisem; spouštět jen při novém prefillu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillFromTicket, activeServiceId]);
 
-    const validationErrors = validateInvoiceForSave(editorInvoice as any, editorItems);
-    if (validationErrors.length > 0) {
-      reportError({
-        code: "invoices.validation_errors_failed",
-        error: undefined,
-        userMessage: validationErrors[0].message,
-        source: "Invoices.validationErrors",
-      });
-      return;
-    }
+  // Otevření konkrétní faktury (např. ze zakázky „Přejít na fakturu“)
+  useEffect(() => {
+    if (!openInvoiceId || !onOpenInvoiceIdConsumed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: inv, error } = await typedSupabase.from("invoices").select("*").eq("id", openInvoiceId).single();
+        if (cancelled || error || !inv) {
+          onOpenInvoiceIdConsumed();
+          return;
+        }
+        if (inv.status === "draft") await openEditInvoice(inv);
+        else await openDetail(inv);
+      } catch (e) {
+        reportSilent({ code: "invoices.open_by_id_failed", error: e, source: "Invoices.openInvoiceId" });
+      }
+      onOpenInvoiceIdConsumed();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openInvoiceId, onOpenInvoiceIdConsumed, openEditInvoice, openDetail]);
 
-    setSaving(true);
-    try {
-      const totals = computeTotals(editorItems);
-      const payload: any = {
-        ...editorInvoice,
-        service_id: activeServiceId,
-        subtotal: totals.subtotal,
-        vat_amount: totals.vat_amount,
-        total: totals.total_rounded,
-        rounding: totals.rounding,
-      };
-      delete payload.id;
-      delete payload.created_at;
-      delete payload.updated_at;
-      delete payload.deleted_at;
+  // ─── Události ──────────────────────────────────────────────
 
-      let invoiceId: string;
+  const logEvent = useCallback(
+    async (invoiceId: string, type: string, payload: Record<string, unknown>) => {
+      try {
+        await typedSupabase.from("invoice_events").insert({
+          invoice_id: invoiceId,
+          type,
+          payload: payload as never,
+          created_by: session?.user?.id || null,
+        });
+      } catch (e) {
+        // Selhání nebrání práci, ale bez logu by chyběl záznam a nikdo by nevěděl, že se nezapisuje.
+        reportSilent({ code: "invoices.log_event_failed", error: e, source: "Invoices.logEvent" });
+      }
+    },
+    [session],
+  );
 
-      if (editingId) {
-        const { error } = await typedSupabase.from("invoices").update(payload).eq("id", editingId);
-        if (error) throw error;
-        invoiceId = editingId;
-        await typedSupabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
-      } else {
-        const { data, error } = await typedSupabase
-          .from("invoices")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (error) throw error;
-        invoiceId = data!.id;
+  // ─── Uložení z editoru ─────────────────────────────────────
+
+  const editorTotals = useMemo(() => computeTotals(editorItems), [editorItems]);
+  const editorDirty = snapshot(editorInvoice, editorItems) !== editorBaseline;
+
+  /**
+   * Uloží editor. `issue` navíc přepne koncept na „vystaveno“ – s přísnější
+   * validací (odběratel a dodavatel jsou povinní).
+   */
+  const persistEditor = useCallback(
+    async (issue: boolean) => {
+      if (!activeServiceId || saving) return;
+
+      const validation = issue ? validateInvoiceForIssue : validateInvoiceForSave;
+      const errors = validation(toValidationData(editorInvoice), editorItems);
+      if (errors.length > 0) {
+        showToast(errors[0].message, "error");
+        return;
       }
 
-      const itemsPayload = editorItems.map((it, idx) => ({
-        invoice_id: invoiceId,
-        sort_order: idx,
-        name: it.name,
-        qty: it.qty,
-        unit: it.unit,
-        unit_price: it.unit_price,
-        vat_rate: it.vat_rate,
-        line_total: Math.round(it.qty * it.unit_price * 100) / 100,
-      }));
-      if (itemsPayload.length > 0) {
-        const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(itemsPayload);
-        if (itemsErr) throw itemsErr;
-      }
+      setSaving(true);
+      try {
+        const totals = computeTotals(editorItems);
+        const wasDraft = (editorInvoice.status || "draft") === "draft";
+        const nextStatus = issue && wasDraft ? "issued" : editorInvoice.status || "draft";
+        const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, ...rest } = editorInvoice;
+        const payload = {
+          ...rest,
+          service_id: activeServiceId,
+          status: nextStatus,
+          subtotal: totals.subtotal,
+          vat_amount: totals.vat_amount,
+          total: totals.total_rounded,
+          rounding: totals.rounding,
+        };
 
-      await logEvent(invoiceId, editingId ? "updated" : "created", {
-        number: editorInvoice.number,
-        total: totals.total_rounded,
-        items_count: editorItems.length,
-      });
+        let invoiceId: string;
+        if (editingId) {
+          const { error } = await typedSupabase.from("invoices").update(payload).eq("id", editingId);
+          if (error) throw error;
+          invoiceId = editingId;
+          await typedSupabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+        } else {
+          const { data, error } = await typedSupabase
+            .from("invoices")
+            .insert(payload as never)
+            .select("id")
+            .single();
+          if (error) throw error;
+          invoiceId = data!.id;
+        }
 
-      showToast(editingId ? "Faktura uložena" : "Faktura vytvořena", "success");
-      setView("list");
-      loadInvoices();
-    } catch (err: any) {
-      reportError({
-        code: "invoices.items_payload_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.itemsPayload",
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [activeServiceId, saving, editorInvoice, editorItems, editingId, loadInvoices]);
-
-  const logEvent = useCallback(async (invoiceId: string, type: string, payload: Record<string, any>) => {
-    try {
-      await typedSupabase.from("invoice_events").insert({
-        invoice_id: invoiceId,
-        type,
-        payload: payload as any,
-        created_by: session?.user?.id || null,
-      });
-    } catch (e) {
-      // Zápis do historie faktury. Selhání nebrání práci, ale bez logu
-      // by chyběl záznam a nikdo by nevěděl, že se nezapisuje.
-      reportSilent({ code: "invoices.log_event_failed", error: e, source: "Invoices.logEvent" });
-    }
-  }, [session]);
-
-  const updateStatus = useCallback(async (inv: Invoice, newStatus: InvoiceStatus) => {
-    try {
-      const updates: any = { status: newStatus };
-      if (newStatus === "paid") updates.paid_at = new Date().toISOString();
-      if (newStatus === "sent") updates.sent_at = new Date().toISOString();
-      await typedSupabase.from("invoices").update(updates).eq("id", inv.id);
-      await logEvent(inv.id, "status_changed", { from: inv.status, to: newStatus });
-      showToast(`Stav změněn na: ${STATUS_LABELS[newStatus]}`, "success");
-      loadInvoices();
-      if (showDetail && detailInvoice?.id === inv.id) {
-        openDetail({ ...inv, ...updates });
-      }
-    } catch (err: any) {
-      reportError({
-        code: "invoices.update_status_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.updateStatus",
-      });
-    }
-  }, [logEvent, loadInvoices, showDetail, detailInvoice, openDetail]);
-
-  const deleteInvoice = useCallback(async (inv: Invoice) => {
-    try {
-      await typedSupabase.from("invoices").update({ deleted_at: new Date().toISOString() }).eq("id", inv.id);
-      await logEvent(inv.id, "deleted", {});
-      showToast("Faktura smazána", "success");
-      loadInvoices();
-      if (showDetail && detailInvoice?.id === inv.id) setShowDetail(false);
-    } catch (err: any) {
-      reportError({
-        code: "invoices.delete_invoice_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.deleteInvoice",
-      });
-    }
-  }, [logEvent, loadInvoices, showDetail, detailInvoice]);
-
-  const duplicateInvoice = useCallback(async (inv: Invoice) => {
-    try {
-      const number = await generateInvoiceNumber(activeServiceId!);
-      const today = new Date().toISOString().split("T")[0];
-      const due = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
-
-      const { data: items } = await typedSupabase
-        .from("invoice_items")
-        .select("*")
-        .eq("invoice_id", inv.id)
-        .order("sort_order");
-
-      const newInv: any = {
-        service_id: activeServiceId,
-        number,
-        variable_symbol: invoiceNumberToVS(number),
-        status: "draft",
-        issue_date: today,
-        due_date: due,
-        taxable_date: today,
-        currency: inv.currency,
-        subtotal: inv.subtotal,
-        vat_amount: inv.vat_amount,
-        total: inv.total,
-        rounding: inv.rounding,
-        supplier_name: inv.supplier_name,
-        supplier_ico: inv.supplier_ico,
-        supplier_dic: inv.supplier_dic,
-        supplier_address: inv.supplier_address,
-        supplier_email: inv.supplier_email,
-        supplier_phone: inv.supplier_phone,
-        supplier_bank_account: inv.supplier_bank_account,
-        supplier_iban: inv.supplier_iban,
-        supplier_swift: inv.supplier_swift,
-        customer_name: inv.customer_name,
-        customer_ico: inv.customer_ico,
-        customer_dic: inv.customer_dic,
-        customer_address: inv.customer_address,
-        customer_email: inv.customer_email,
-        customer_phone: inv.customer_phone,
-        customer_id: inv.customer_id,
-        notes: inv.notes,
-      };
-
-      const { data: created, error } = await typedSupabase
-        .from("invoices")
-        .insert(newInv)
-        .select("id")
-        .single();
-      if (error) throw error;
-
-      if (items && items.length > 0) {
-        const newItems = items.map((it, idx) => ({
-          invoice_id: created!.id,
+        const itemsPayload = editorItems.map((it, idx) => ({
+          invoice_id: invoiceId,
           sort_order: idx,
           name: it.name,
           qty: it.qty,
           unit: it.unit,
           unit_price: it.unit_price,
           vat_rate: it.vat_rate,
-          line_total: it.line_total,
+          line_total: Math.round(it.qty * it.unit_price * 100) / 100,
         }));
-        await typedSupabase.from("invoice_items").insert(newItems);
-      }
+        if (itemsPayload.length > 0) {
+          const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(itemsPayload);
+          if (itemsErr) throw itemsErr;
+        }
 
-      await logEvent(created!.id, "created", { duplicated_from: inv.id, number });
-      showToast(`Faktura duplikována jako ${number}`, "success");
-      loadInvoices();
-    } catch (err: any) {
-      reportError({
-        code: "invoices.new_items_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.newItems",
-      });
-    }
-  }, [activeServiceId, logEvent, loadInvoices]);
-
-  // PDF actions
-  const handlePrint = useCallback(async (inv: Invoice) => {
-    if (isWeb()) {
-      try {
-        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-        await printDocumentInBrowser("faktura", activeServiceId, {
-          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+        await logEvent(invoiceId, editingId ? "updated" : "created", {
+          number: editorInvoice.number,
+          total: totals.total_rounded,
+          items_count: editorItems.length,
         });
+        if (issue && wasDraft) {
+          await logEvent(invoiceId, "status_changed", { from: "draft", to: "issued" });
+        }
+
+        showToast(issue && wasDraft ? `Faktura ${editorInvoice.number} vystavena` : editingId ? "Faktura uložena" : "Koncept uložen", "success");
+        setEditorBaseline(snapshot(editorInvoice, editorItems));
+        setView("list");
+        await loadInvoices();
+
+        // Po vystavení se otevře detail – odtud se tiskne a posílá.
+        if (issue) {
+          const { data: saved } = await typedSupabase.from("invoices").select("*").eq("id", invoiceId).single();
+          if (saved) openDetail(saved);
+        }
       } catch (err) {
         reportError({
-          code: "invoices.handle_print_failed",
+          code: "invoices.save_failed",
+          error: err,
+          userMessage: "Fakturu se nepodařilo uložit: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.persistEditor",
+        });
+      } finally {
+        setSaving(false);
+      }
+    },
+    [activeServiceId, saving, editorInvoice, editorItems, editingId, logEvent, loadInvoices, openDetail],
+  );
+
+  const saveDraft = useCallback(() => persistEditor(false), [persistEditor]);
+  const issueFromEditor = useCallback(() => persistEditor(true), [persistEditor]);
+
+  /** Odchod z editoru; s neuloženými změnami se nejdřív zeptá. */
+  const leaveEditor = useCallback(() => {
+    if (!editorDirty) {
+      setView("list");
+      return;
+    }
+    setConfirm({
+      title: "Neuložené změny",
+      message: "Ve faktuře máte neuložené změny. Chcete odejít bez uložení?",
+      confirmLabel: "Odejít bez uložení",
+      variant: "danger",
+      onConfirm: () => setView("list"),
+    });
+  }, [editorDirty]);
+
+  // ─── Našeptávač odběratele ─────────────────────────────────
+
+  const searchCustomers = useCallback(
+    async (q: string): Promise<InvoiceCustomerMatch[]> => {
+      if (!activeServiceId) return [];
+      const safe = q.replace(/[,()*%\\]/g, " ").trim();
+      if (safe.length < 2) return [];
+      const digits = q.replace(/\D/g, "");
+      const ors = [`name.ilike.*${safe}*`, `email.ilike.*${safe}*`, `company.ilike.*${safe}*`, `phone.ilike.*${safe}*`, `ico.ilike.*${safe}*`];
+      if (digits.length >= 3) {
+        ors.push(`phone_norm.ilike.*${digits}*`);
+        ors.push(`phone.ilike.*${digits}*`);
+      }
+      try {
+        const { data, error } = await typedSupabase
+          .from("customers")
+          .select("id,name,phone,email,company,ico,dic,address_street,address_city,address_zip")
+          .eq("service_id", activeServiceId)
+          .or(ors.join(","))
+          .order("name", { ascending: true })
+          .limit(16);
+        if (error || !data) return [];
+        const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const needle = fold(safe);
+        const rank = (c: { name: string; company: string | null }) => {
+          const name = fold(c.name || "");
+          if (name.startsWith(needle)) return 0;
+          if (name.split(/\s+/).some((w) => w.startsWith(needle))) return 1;
+          if (fold(c.company || "").startsWith(needle)) return 2;
+          return 3;
+        };
+        return [...data]
+          .sort((a, b) => rank(a) - rank(b))
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone,
+            email: c.email,
+            company: c.company,
+            city: c.address_city,
+            ico: c.ico,
+            dic: c.dic,
+            address: [c.address_street, [c.address_zip, c.address_city].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+          }));
+      } catch (e) {
+        reportSilent({ code: "invoices.customer_search_failed", error: e, source: "Invoices.searchCustomers" });
+        return [];
+      }
+    },
+    [activeServiceId],
+  );
+
+  // ─── Akce nad fakturou ─────────────────────────────────────
+
+  const updateStatus = useCallback(
+    async (inv: Invoice, newStatus: InvoiceStatus) => {
+      try {
+        const updates: Partial<Invoice> = { status: newStatus };
+        if (newStatus === "paid") updates.paid_at = new Date().toISOString();
+        if (newStatus === "sent") updates.sent_at = new Date().toISOString();
+        const { error } = await typedSupabase.from("invoices").update(updates).eq("id", inv.id);
+        if (error) throw error;
+        await logEvent(inv.id, "status_changed", { from: inv.status, to: newStatus });
+        showToast(`Stav změněn na: ${STATUS_LABELS[newStatus]}`, "success");
+        loadInvoices();
+        if (showDetail && detailInvoice?.id === inv.id) {
+          openDetail({ ...inv, ...updates });
+        }
+      } catch (err) {
+        reportError({
+          code: "invoices.update_status_failed",
+          error: err,
+          userMessage: "Stav se nepodařilo změnit: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.updateStatus",
+        });
+      }
+    },
+    [logEvent, loadInvoices, showDetail, detailInvoice, openDetail],
+  );
+
+  /** Vystavení z detailu – stejná validace jako v editoru. */
+  const issueFromDetail = useCallback(
+    (inv: Invoice) => {
+      const errors = validateInvoiceForIssue(toValidationData(inv), detailItems);
+      if (errors.length > 0) {
+        showToast(errors[0].message, "error");
+        return;
+      }
+      updateStatus(inv, "issued");
+    },
+    [detailItems, updateStatus],
+  );
+
+  const deleteInvoice = useCallback(
+    async (inv: Invoice) => {
+      try {
+        const { error } = await typedSupabase.from("invoices").update({ deleted_at: new Date().toISOString() }).eq("id", inv.id);
+        if (error) throw error;
+        await logEvent(inv.id, "deleted", {});
+        showToast("Koncept smazán", "success");
+        loadInvoices();
+        if (showDetail && detailInvoice?.id === inv.id) setShowDetail(false);
+      } catch (err) {
+        reportError({
+          code: "invoices.delete_invoice_failed",
+          error: err,
+          userMessage: "Fakturu se nepodařilo smazat: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.deleteInvoice",
+        });
+      }
+    },
+    [logEvent, loadInvoices, showDetail, detailInvoice],
+  );
+
+  /** Vytvoří koncept se stejným obsahem a otevře ho v editoru. */
+  const duplicateInvoice = useCallback(
+    async (inv: Invoice) => {
+      if (!activeServiceId) return;
+      try {
+        const number = await generateInvoiceNumber(activeServiceId);
+        const today = todayIso();
+
+        const { data: items } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+
+        const newInv = {
+          service_id: activeServiceId,
+          number,
+          variable_symbol: invoiceNumberToVS(number),
+          status: "draft",
+          issue_date: today,
+          due_date: addDaysIso(today, 14),
+          taxable_date: today,
+          currency: inv.currency,
+          subtotal: inv.subtotal,
+          vat_amount: inv.vat_amount,
+          total: inv.total,
+          rounding: inv.rounding,
+          supplier_name: inv.supplier_name,
+          supplier_ico: inv.supplier_ico,
+          supplier_dic: inv.supplier_dic,
+          supplier_address: inv.supplier_address,
+          supplier_email: inv.supplier_email,
+          supplier_phone: inv.supplier_phone,
+          supplier_bank_account: inv.supplier_bank_account,
+          supplier_iban: inv.supplier_iban,
+          supplier_swift: inv.supplier_swift,
+          customer_name: inv.customer_name,
+          customer_ico: inv.customer_ico,
+          customer_dic: inv.customer_dic,
+          customer_address: inv.customer_address,
+          customer_email: inv.customer_email,
+          customer_phone: inv.customer_phone,
+          customer_id: inv.customer_id,
+          notes: inv.notes,
+        };
+
+        const { data: created, error } = await typedSupabase
+          .from("invoices")
+          .insert(newInv as never)
+          .select("*")
+          .single();
+        if (error) throw error;
+
+        if (items && items.length > 0) {
+          const newItems = items.map((it, idx) => ({
+            invoice_id: created!.id,
+            sort_order: idx,
+            name: it.name,
+            qty: it.qty,
+            unit: it.unit,
+            unit_price: it.unit_price,
+            vat_rate: it.vat_rate,
+            line_total: it.line_total,
+          }));
+          const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(newItems);
+          if (itemsErr) throw itemsErr;
+        }
+
+        await logEvent(created!.id, "created", { duplicated_from: inv.id, number });
+        showToast(`Vytvořen koncept ${number}`, "success");
+        loadInvoices();
+        await openEditInvoice(created as Invoice);
+      } catch (err) {
+        reportError({
+          code: "invoices.duplicate_failed",
+          error: err,
+          userMessage: "Fakturu se nepodařilo duplikovat: " + (err instanceof Error ? err.message : String(err)),
+          source: "Invoices.duplicateInvoice",
+        });
+      }
+    },
+    [activeServiceId, logEvent, loadInvoices, openEditInvoice],
+  );
+
+  // ─── Tisk, PDF, náhled ─────────────────────────────────────
+
+  const loadItemsFor = useCallback(async (inv: Invoice) => {
+    const { data } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+    return data || [];
+  }, []);
+
+  const handlePrint = useCallback(
+    async (inv: Invoice) => {
+      if (isWeb()) {
+        try {
+          const items = await loadItemsFor(inv);
+          await printDocumentInBrowser("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        } catch (err) {
+          reportError({
+            code: "invoices.handle_print_failed",
+            error: err,
+            userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+            source: "Invoices.handlePrint",
+          });
+        }
+        return;
+      }
+      const running = await isJobiDocsRunning();
+      if (!running) {
+        reportError({
+          code: "invoices.running_failed",
+          error: undefined,
+          userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro tisk.",
+          source: "Invoices.running",
+        });
+        return;
+      }
+      try {
+        const items = await loadItemsFor(inv);
+        const result = await printDocument("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        if (result.ok) {
+          showToast("Tisk odeslán", "success");
+        } else {
+          reportError({
+            code: "invoices.print_failed",
+            error: result.error,
+            userMessage: "Chyba tisku: " + formatJobiDocsErrorForUser(result.error),
+            source: "Invoices.printOrExport",
+          });
+        }
+      } catch (err) {
+        reportError({
+          code: "invoices.result_failed",
           error: err,
           userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
-          source: "Invoices.handlePrint",
-        });
-      }
-      return;
-    }
-    const running = await isJobiDocsRunning();
-    if (!running) {
-      reportError({
-        code: "invoices.running_failed",
-        error: undefined,
-        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro tisk.",
-        source: "Invoices.running",
-      });
-      return;
-    }
-    try {
-      const { data: items } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-      const vars = invoiceToJobiDocsVariables(inv, items || []);
-      const cd = safeLoadCompanyData();
-      const result = await printDocumentViaJobiDocs("faktura", activeServiceId!, companyDataToJobiDocsPayload(cd), {}, { variables: vars });
-      if (result.ok) {
-        showToast("Tisk odeslán", "success");
-      } else {
-        reportError({
-          code: "invoices.print_failed",
-          error: result.error,
-          userMessage: "Chyba tisku: " + formatJobiDocsErrorForUser(result.error),
           source: "Invoices.printOrExport",
         });
       }
-    } catch (err: any) {
-      reportError({
-        code: "invoices.result_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.printOrExport",
-      });
-    }
-  }, [activeServiceId]);
+    },
+    [activeServiceId, dph.vatPayer, loadItemsFor],
+  );
 
-  const handleExport = useCallback(async (inv: Invoice) => {
-    if (isWeb()) {
-      try {
-        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-        showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-        await printDocumentInBrowser("faktura", activeServiceId, {
-          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+  const handleExport = useCallback(
+    async (inv: Invoice) => {
+      if (isWeb()) {
+        try {
+          const items = await loadItemsFor(inv);
+          showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
+          await printDocumentInBrowser("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        } catch (err) {
+          reportError({
+            code: "invoices.handle_export_failed",
+            error: err,
+            userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+            source: "Invoices.handleExport",
+          });
+        }
+        return;
+      }
+      const running = await isJobiDocsRunning();
+      if (!running) {
+        reportError({
+          code: "invoices.running_failed",
+          error: undefined,
+          userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro export PDF.",
+          source: "Invoices.running",
         });
+        return;
+      }
+      try {
+        const items = await loadItemsFor(inv);
+        const filename = `Faktura_${inv.number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
+        let downloadDir = "";
+        try {
+          const { desktopDir, downloadDir: dl } = await import("@tauri-apps/api/path");
+          downloadDir = await dl().catch(() => desktopDir());
+        } catch {
+          downloadDir = "/tmp";
+        }
+        const targetPath = `${downloadDir}/${filename}`;
+        const result = await exportDocument("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer), targetPath);
+        if (result.ok) {
+          showToast(`PDF uložen: ${filename}`, "success");
+        } else {
+          reportError({
+            code: "invoices.export_failed",
+            error: result.error,
+            userMessage: "Chyba exportu: " + formatJobiDocsErrorForUser(result.error),
+            source: "Invoices.printOrExport",
+          });
+        }
       } catch (err) {
         reportError({
-          code: "invoices.handle_export_failed",
+          code: "invoices.result_failed",
           error: err,
           userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
-          source: "Invoices.handleExport",
-        });
-      }
-      return;
-    }
-    const running = await isJobiDocsRunning();
-    if (!running) {
-      reportError({
-        code: "invoices.running_failed",
-        error: undefined,
-        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro export PDF.",
-        source: "Invoices.running",
-      });
-      return;
-    }
-    try {
-      const { data: items } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-      const vars = invoiceToJobiDocsVariables(inv, items || []);
-      const cd = safeLoadCompanyData();
-      const filename = `Faktura_${inv.number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
-      let downloadDir = "";
-      try {
-        const { desktopDir, downloadDir: dl } = await import("@tauri-apps/api/path");
-        downloadDir = await dl().catch(() => desktopDir());
-      } catch {
-        downloadDir = "/tmp";
-      }
-      const targetPath = `${downloadDir}/${filename}`;
-      const result = await exportDocumentViaJobiDocs("faktura", activeServiceId!, companyDataToJobiDocsPayload(cd), {}, targetPath, { variables: vars });
-      if (result.ok) {
-        showToast(`PDF uložen: ${filename}`, "success");
-      } else {
-        reportError({
-          code: "invoices.export_failed",
-          error: result.error,
-          userMessage: "Chyba exportu: " + formatJobiDocsErrorForUser(result.error),
           source: "Invoices.printOrExport",
         });
       }
-    } catch (err: any) {
-      reportError({
-        code: "invoices.result_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.printOrExport",
-      });
-    }
-  }, [activeServiceId]);
+    },
+    [activeServiceId, dph.vatPayer, loadItemsFor],
+  );
 
-  // PDF preview
-  const handlePreview = useCallback(async (inv: Invoice) => {
-    if (isWeb()) {
-      try {
-        const { data: itemsWeb } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-        const url = await buildDocumentPreviewUrlForWeb("faktura", activeServiceId, {
-          variables: invoiceToJobiDocsVariables(inv, itemsWeb || []),
+  const showPreview = useCallback((url: string) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    setPreviewUrl(url);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    setPreviewUrl(null);
+  }, []);
+
+  const handlePreview = useCallback(
+    async (inv: Invoice) => {
+      if (isWeb()) {
+        try {
+          const items = await loadItemsFor(inv);
+          const url = await buildDocumentPreviewUrlForWeb("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+          showPreview(url);
+        } catch (err) {
+          reportError({
+            code: "invoices.url_failed",
+            error: err,
+            userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+            source: "Invoices.previewInvoice",
+          });
+        }
+        return;
+      }
+      const running = await isJobiDocsRunning();
+      if (!running) {
+        reportError({
+          code: "invoices.running_failed",
+          error: undefined,
+          userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro náhled.",
+          source: "Invoices.running",
         });
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(url);
+        return;
+      }
+      try {
+        const items = await loadItemsFor(inv);
+        const result = await renderPdf("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        if (result.ok && result.data) {
+          const blob = new Blob([result.data], { type: "application/pdf" });
+          showPreview(URL.createObjectURL(blob));
+        } else {
+          reportError({
+            code: "invoices.preview_failed",
+            error: result.error,
+            userMessage: "Chyba náhledu: " + formatJobiDocsErrorForUser(result.error),
+            source: "Invoices.previewInvoice",
+          });
+        }
       } catch (err) {
         reportError({
           code: "invoices.url_failed",
@@ -605,54 +784,22 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           source: "Invoices.previewInvoice",
         });
       }
-      return;
-    }
-    const running = await isJobiDocsRunning();
-    if (!running) {
-      reportError({
-        code: "invoices.running_failed",
-        error: undefined,
-        userMessage: "JobiDocs není spuštěn. Spusťte JobiDocs pro náhled.",
-        source: "Invoices.running",
-      });
-      return;
-    }
-    try {
-      const { data: items } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
-      const vars = invoiceToJobiDocsVariables(inv, items || []);
-      const cd = safeLoadCompanyData();
-      const result = await renderPdfViaJobiDocs("faktura", activeServiceId!, companyDataToJobiDocsPayload(cd), {}, { variables: vars });
-      if (result.ok && result.data) {
-        const blob = new Blob([result.data], { type: "application/pdf" });
-        const url = URL.createObjectURL(blob);
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(url);
-      } else {
-        reportError({
-          code: "invoices.preview_failed",
-          error: result.error,
-          userMessage: "Chyba náhledu: " + formatJobiDocsErrorForUser(result.error),
-          source: "Invoices.previewInvoice",
-        });
-      }
-    } catch (err: any) {
-      reportError({
-        code: "invoices.url_failed",
-        error: err,
-        userMessage: "Chyba: " + (err?.message || err),
-        source: "Invoices.previewInvoice",
-      });
-    }
-  }, [activeServiceId, previewUrl]);
+    },
+    [activeServiceId, dph.vatPayer, loadItemsFor, showPreview],
+  );
 
-  // Send email
-  const openSendModal = useCallback((inv: Invoice) => {
-    setSendEmail(inv.customer_email || "");
-    setSendSubject(`Faktura ${inv.number}`);
-    setSendBody(`Dobrý den,\n\nv příloze zasíláme fakturu č. ${inv.number}.\n\nS pozdravem,\n${companyData.name || "Váš servis"}`);
-    setDetailInvoice(inv);
-    setSendModalOpen(true);
-  }, [companyData]);
+  // ─── E-mail ────────────────────────────────────────────────
+
+  const openSendModal = useCallback(
+    (inv: Invoice) => {
+      setSendEmail(inv.customer_email || "");
+      setSendSubject(`Faktura ${inv.number}`);
+      setSendBody(`Dobrý den,\n\nv příloze zasíláme fakturu č. ${inv.number}.\n\nS pozdravem\n${companyData.name || "Váš servis"}`);
+      setDetailInvoice(inv);
+      setSendModalOpen(true);
+    },
+    [companyData],
+  );
 
   const handleSendEmail = useCallback(async () => {
     if (!detailInvoice || !supabase || sending) return;
@@ -671,1169 +818,232 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         },
       });
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      const fnError = (data as { error?: string } | null)?.error;
+      if (fnError) throw new Error(fnError);
       showToast("Faktura odeslána e-mailem", "success");
       setSendModalOpen(false);
-      await updateStatus(detailInvoice, "sent");
-      loadInvoices();
-    } catch (err: any) {
+      await logEvent(detailInvoice.id, "sent", { recipient: sendEmail });
+      if (detailInvoice.status === "issued") {
+        await updateStatus(detailInvoice, "sent");
+      } else {
+        loadInvoices();
+        if (showDetail) openDetail(detailInvoice);
+      }
+    } catch (err) {
       reportError({
-        code: "invoices.access_token_failed",
+        code: "invoices.send_email_failed",
         error: err,
-        userMessage: "Chyba odesílání: " + (err?.message || err),
-        source: "Invoices.accessToken",
+        userMessage: "Chyba odesílání: " + (err instanceof Error ? err.message : String(err)),
+        source: "Invoices.handleSendEmail",
       });
     } finally {
       setSending(false);
     }
-  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, updateStatus, loadInvoices]);
+  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail]);
 
-  // Computed totals for editor
-  const editorTotals = useMemo(() => computeTotals(editorItems), [editorItems]);
-
-  // Filtered invoices
-  const filteredInvoices = useMemo(() => {
-    let list = invoices;
-    if (filterStatus !== "all") {
-      list = list.filter((i) => i.status === filterStatus);
-    }
-    if (filterSearch.trim()) {
-      const q = filterSearch.toLowerCase();
-      list = list.filter(
-        (i) =>
-          (i.number || "").toLowerCase().includes(q) ||
-          (i.customer_name || "").toLowerCase().includes(q) ||
-          (i.variable_symbol || "").toLowerCase().includes(q),
-      );
-    }
-    return list;
-  }, [invoices, filterStatus, filterSearch]);
-
-  // Summary stats
-  const stats = useMemo(() => {
-    const total = invoices.reduce((s, i) => s + (i.status !== "cancelled" ? i.total : 0), 0);
-    const paid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
-    const unpaid = invoices.filter((i) => ["issued", "sent", "overdue"].includes(i.status)).reduce((s, i) => s + i.total, 0);
-    const overdue = invoices.filter((i) => i.status === "overdue").length;
-
-    // Monthly revenue (last 6 months)
-    const monthly: { label: string; total: number; paid: number }[] = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = d.toLocaleDateString("cs-CZ", { month: "short", year: "2-digit" });
-      const year = d.getFullYear();
-      const month = d.getMonth();
-      const monthInvoices = invoices.filter((inv) => {
-        if (inv.status === "cancelled") return false;
-        const id = new Date(inv.issue_date);
-        return id.getFullYear() === year && id.getMonth() === month;
-      });
-      monthly.push({
-        label,
-        total: monthInvoices.reduce((s, inv) => s + inv.total, 0),
-        paid: monthInvoices.filter((inv) => inv.status === "paid").reduce((s, inv) => s + inv.total, 0),
-      });
-    }
-
-    return { total, paid, unpaid, count: invoices.length, overdue, monthly };
-  }, [invoices]);
+  // ─── Vykreslení ────────────────────────────────────────────
 
   if (!activeServiceId) {
     return (
-      <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+      <div style={{ padding: "var(--space-8)", textAlign: "center", color: "var(--muted)", fontSize: "var(--text-base)" }}>
         Vyberte servis pro zobrazení faktur.
       </div>
     );
   }
 
+  const confirmDialog = (
+    <ConfirmDialog
+      open={!!confirm}
+      title={confirm?.title || "Potvrzení"}
+      message={confirm?.message || ""}
+      confirmLabel={confirm?.confirmLabel}
+      onConfirm={() => {
+        confirm?.onConfirm();
+        setConfirm(null);
+      }}
+      onCancel={() => setConfirm(null)}
+      variant={confirm?.variant || "danger"}
+    />
+  );
+
   if (view === "editor") {
     return (
-      <InvoiceEditor
-        vatRate={sazbaNoveVPolozky}
-        invoice={editorInvoice}
-        setInvoice={setEditorInvoice}
-        items={editorItems}
-        setItems={setEditorItems}
-        totals={editorTotals}
-        saving={saving}
-        isNew={!editingId}
-        onSave={saveInvoice}
-        onCancel={() => setView("list")}
-        serviceId={activeServiceId}
-      />
+      <>
+        <InvoiceEditor
+          vatRate={sazbaNoveVPolozky}
+          invoice={editorInvoice}
+          setInvoice={setEditorInvoice}
+          items={editorItems}
+          setItems={setEditorItems}
+          totals={editorTotals}
+          saving={saving}
+          isNew={!editingId}
+          dirty={editorDirty}
+          searchCustomers={searchCustomers}
+          onSave={saveDraft}
+          onIssue={issueFromEditor}
+          onCancel={leaveEditor}
+        />
+        {confirmDialog}
+      </>
     );
   }
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "var(--text)" }}>Faktury</h1>
-          <button
-            onClick={() => openNewInvoice()}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 12,
-              border: "none",
-              background: "var(--accent)",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nová faktura
-          </button>
-        </div>
+    <>
+      <InvoiceList
+        invoices={invoices}
+        loading={loading}
+        filter={filter}
+        onFilterChange={setFilter}
+        search={filterSearch}
+        onSearchChange={setFilterSearch}
+        onNew={() => openNewInvoice()}
+        onOpen={openDetail}
+      />
 
-        {/* Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))", gap: 12, marginBottom: 16 }}>
-          <StatCard label="Celkem" value={formatCurrency(stats.total)} />
-          <StatCard label="Zaplaceno" value={formatCurrency(stats.paid)} color="var(--success)" />
-          <StatCard label="Nezaplaceno" value={formatCurrency(stats.unpaid)} color="var(--danger)" />
-          <StatCard label="Počet faktur" value={String(stats.count)} />
-          {stats.overdue > 0 && <StatCard label="Po splatnosti" value={String(stats.overdue)} color="var(--danger)" />}
-        </div>
-
-        {/* Monthly revenue chart */}
-        {stats.monthly.some((m) => m.total > 0) && (
-          <MonthlyChart data={stats.monthly} />
-        )}
-
-        {/* Filters */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <input
-            type="text"
-            placeholder="Hledat číslo, zákazník..."
-            value={filterSearch}
-            onChange={(e) => setFilterSearch(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 180,
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--panel)",
-              color: "var(--text)",
-              outline: "none",
-              fontSize: 13,
-            }}
-          />
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--panel)",
-              color: "var(--text)",
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            <option value="all">Všechny stavy</option>
-            {(Object.keys(STATUS_LABELS) as InvoiceStatus[]).map((s) => (
-              <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* List */}
-      <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }}>
-        {loading ? (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>Načítám...</div>
-        ) : filteredInvoices.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
-            {invoices.length === 0 ? "Zatím žádné faktury." : "Žádné faktury nevyhovují filtru."}
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {filteredInvoices.map((inv) => (
-              <InvoiceRow
-                key={inv.id}
-                invoice={inv}
-                onOpen={() => openDetail(inv)}
-                onEdit={() => openEditInvoice(inv)}
-                onPrint={() => handlePrint(inv)}
-                onExport={() => handleExport(inv)}
-                onPreview={() => handlePreview(inv)}
-                onSend={() => openSendModal(inv)}
-                onDuplicate={() => duplicateInvoice(inv)}
-                onStatusChange={(s) => updateStatus(inv, s)}
-                onDelete={() => setConfirmDialog({ message: `Opravdu smazat fakturu ${inv.number}?`, onConfirm: () => deleteInvoice(inv) })}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Detail slide-over */}
       {showDetail && detailInvoice && (
-        <DetailPanel
+        <InvoiceDetail
           invoice={detailInvoice}
           items={detailItems}
           events={detailEvents}
           onClose={() => setShowDetail(false)}
-          onEdit={() => { setShowDetail(false); openEditInvoice(detailInvoice); }}
+          onEdit={() => openEditInvoice(detailInvoice)}
           onPrint={() => handlePrint(detailInvoice)}
           onExport={() => handleExport(detailInvoice)}
-          onSend={() => { setShowDetail(false); openSendModal(detailInvoice); }}
-          onStatusChange={(s) => updateStatus(detailInvoice, s)}
-          onOpenTicket={detailInvoice.ticket_id && onOpenTicket ? () => { setShowDetail(false); onOpenTicket(detailInvoice.ticket_id!); } : undefined}
+          onPreview={() => handlePreview(detailInvoice)}
+          onSend={() => openSendModal(detailInvoice)}
+          onIssue={() => issueFromDetail(detailInvoice)}
+          onMarkPaid={() => updateStatus(detailInvoice, "paid")}
+          onDuplicate={() => duplicateInvoice(detailInvoice)}
+          onCancelInvoice={() =>
+            setConfirm({
+              title: "Stornovat fakturu",
+              message: `Faktura ${detailInvoice.number} bude označena jako stornovaná. Tuto akci nelze vrátit.`,
+              confirmLabel: "Stornovat",
+              variant: "danger",
+              onConfirm: () => updateStatus(detailInvoice, "cancelled"),
+            })
+          }
+          onDelete={() =>
+            setConfirm({
+              title: "Smazat koncept",
+              message: `Opravdu chcete smazat koncept ${detailInvoice.number}?`,
+              confirmLabel: "Smazat",
+              variant: "danger",
+              onConfirm: () => deleteInvoice(detailInvoice),
+            })
+          }
+          onOpenTicket={
+            detailInvoice.ticket_id && onOpenTicket
+              ? () => {
+                  setShowDetail(false);
+                  onOpenTicket(detailInvoice.ticket_id!);
+                }
+              : undefined
+          }
         />
       )}
 
-      {/* Send email modal */}
-      {sendModalOpen && createPortal(
-        /* Portál do body: <main> má transform kvůli plynulému posouvání,
-           což z něj dělá vztažný rámec pro position: fixed – okno pak leží
-           uvnitř jeho vrstvy a spodní navigace se přes něj vykreslí. */
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 12 }}>
-          <div style={{ background: "var(--panel)", borderRadius: 16, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-            <h3 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "var(--text)" }}>Odeslat fakturu e-mailem</h3>
-            <FieldLabel>E-mail příjemce</FieldLabel>
-            <TextInput value={sendEmail} onChange={(e) => setSendEmail(e.target.value)} placeholder="email@example.com" />
-            <FieldLabel>Předmět</FieldLabel>
-            <TextInput value={sendSubject} onChange={(e) => setSendSubject(e.target.value)} />
-            <FieldLabel>Text zprávy</FieldLabel>
-            <textarea
-              value={sendBody}
-              onChange={(e) => setSendBody(e.target.value)}
-              rows={5}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-                background: "var(--panel)",
-                color: "var(--text)",
-                outline: "none",
-                resize: "vertical",
-                fontSize: 13,
-                fontFamily: "inherit",
-              }}
-            />
-            <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-              <Button onClick={() => setSendModalOpen(false)}>Zrušit</Button>
-              <Button variant="primary" onClick={handleSendEmail} disabled={sending || !sendEmail.includes("@")}>
-                {sending ? "Odesílám..." : "Odeslat"}
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* PDF Preview modal */}
-      {previewUrl && createPortal(
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 12 }}>
-          <div style={{ background: "var(--panel)", borderRadius: 16, width: "100%", height: "85dvh", maxWidth: 900, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
-            <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Náhled PDF</h3>
-              <button onClick={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "var(--muted)", cursor: "pointer" }}>✕</button>
-            </div>
-            <iframe src={previewUrl} style={{ flex: 1, border: "none", width: "100%" }} title="PDF Preview" />
-          </div>
-        </div>,
-        document.body
-      )}
-
-      <ConfirmDialog
-        open={!!confirmDialog}
-        title="Potvrzení"
-        message={confirmDialog?.message || ""}
-        onConfirm={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
-        onCancel={() => setConfirmDialog(null)}
-        variant="danger"
-      />
-    </div>
-  );
-}
-
-// ─── Sub-components ──────────────────────────────────────────
-
-function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{
-      background: "var(--panel)",
-      border: "1px solid var(--border)",
-      borderRadius: 14,
-      padding: "14px 16px",
-      backdropFilter: "var(--blur)",
-    }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color: color || "var(--text)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
-    </div>
-  );
-}
-
-function MonthlyChart({ data }: { data: { label: string; total: number; paid: number }[] }) {
-  const maxVal = Math.max(...data.map((d) => d.total), 1);
-  return (
-    <div style={{
-      background: "var(--panel)",
-      border: "1px solid var(--border)",
-      borderRadius: 14,
-      padding: "16px 20px",
-      marginBottom: 12,
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Měsíční přehled</div>
-      <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 80 }}>
-        {data.map((m, i) => (
-          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div style={{ width: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", height: 60, gap: 1 }}>
-              <div
-                style={{
-                  width: "100%",
-                  borderRadius: "4px 4px 0 0",
-                  background: "rgba(37,99,235,0.2)",
-                  height: `${Math.max((m.total / maxVal) * 60, 2)}px`,
-                  position: "relative",
-                }}
-                title={`Celkem: ${formatCurrency(m.total)}`}
-              >
-                <div
-                  style={{
-                    width: "100%",
-                    borderRadius: "4px 4px 0 0",
-                    background: "var(--success)",
-                    height: `${m.total > 0 ? Math.max((m.paid / m.total) * 100, 0) : 0}%`,
-                    position: "absolute",
-                    bottom: 0,
-                    opacity: 0.7,
-                  }}
-                  title={`Zaplaceno: ${formatCurrency(m.paid)}`}
-                />
-              </div>
-            </div>
-            <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap" }}>{m.label}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: "var(--text-xs)", color: "var(--muted)" }}>
-        <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "rgba(37,99,235,0.3)", marginRight: 4 }} />Celkem</span>
-        <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--success)", opacity: 0.7, marginRight: 4 }} />Zaplaceno</span>
-      </div>
-    </div>
-  );
-}
-
-function CustomerPicker({
-  serviceId,
-  onSelect,
-}: {
-  serviceId: string;
-  onSelect: (customer: { id: string; name: string; email?: string; phone?: string; ico?: string; dic?: string; address?: string }) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any[]>([]);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (query.length < 2) { setResults([]); return; }
-    const timeout = setTimeout(async () => {
-      try {
-        const { data } = await typedSupabase
-          .from("customers")
-          .select("id, name, email, phone, ico, dic, address_street, address_city, address_zip")
-          .eq("service_id", serviceId)
-          .or(`name.ilike.%${query}%,email.ilike.%${query}%,ico.ilike.%${query}%,phone.ilike.%${query}%`)
-          .limit(8);
-        setResults(data || []);
-        setOpen(true);
-      } catch (e) {
-        // Našeptávač zákazníků. Uživatel jen nevidí návrhy a neví proč.
-        reportSilent({ code: "invoices.customer_search_failed", error: e, source: "Invoices.searchCustomers" });
-      }
-    }, 300);
-    return () => clearTimeout(timeout);
-  }, [query, serviceId]);
-
-  return (
-    <div style={{ position: "relative", marginBottom: 8 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>Vyhledat zákazníka</div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Začněte psát jméno, IČO, e-mail..."
-        onFocus={() => results.length > 0 && setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-        style={{
-          width: "100%",
-          padding: "8px 10px",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          background: "var(--panel)",
-          color: "var(--text)",
-          fontSize: 13,
-          outline: "none",
-        }}
-      />
-      {open && results.length > 0 && (
-        <div style={{
-          position: "absolute",
-          top: "100%",
-          left: 0,
-          right: 0,
-          marginTop: 4,
-          background: "var(--panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
-          maxHeight: 240,
-          overflow: "auto",
-          zIndex: 1100,
-        }}>
-          {results.map((c) => (
-            <MenuItem
-              divider
-              key={c.id}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onSelect({
-                  id: c.id,
-                  name: c.name || "",
-                  email: c.email || undefined,
-                  phone: c.phone || undefined,
-                  ico: c.ico || undefined,
-                  dic: c.dic || undefined,
-                  address: [c.address_street, c.address_city, c.address_zip].filter(Boolean).join(", ") || undefined,
-                });
-                setQuery("");
-                setOpen(false);
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{c.name}</div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                {[c.email, c.ico ? `IČO: ${c.ico}` : null, c.phone].filter(Boolean).join(" · ")}
-              </div>
-            </MenuItem>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const s = status as InvoiceStatus;
-  const c = STATUS_COLORS[s] || STATUS_COLORS.draft;
-  return (
-    <span style={{
-      display: "inline-block",
-      padding: "3px 10px",
-      borderRadius: 8,
-      fontSize: 11,
-      fontWeight: 700,
-      background: c.bg,
-      color: c.fg,
-      textTransform: "uppercase",
-      letterSpacing: "0.03em",
-    }}>
-      {STATUS_LABELS[s] || status}
-    </span>
-  );
-}
-
-function InvoiceRow({
-  invoice: inv,
-  onOpen,
-  onEdit,
-  onPrint,
-  onExport,
-  onPreview,
-  onSend,
-  onDuplicate,
-  onStatusChange,
-  onDelete,
-}: {
-  invoice: Invoice;
-  onOpen: () => void;
-  onEdit: () => void;
-  onPrint: () => void;
-  onExport: () => void;
-  onPreview: () => void;
-  onSend: () => void;
-  onDuplicate: () => void;
-  onStatusChange: (s: InvoiceStatus) => void;
-  onDelete: () => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        zIndex: menuOpen ? 200 : undefined,
-        display: "flex",
-        alignItems: "center",
-        /* Číslo faktury, odznak stavu, částka a nabídka se na 320px displeji
-           do jedné řady nevejdou – bez zalomení se číslo zmáčklo na 64 px. */
-        flexWrap: "wrap",
-        gap: 12,
-        padding: "12px 16px",
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 14,
-        cursor: "pointer",
-        transition: "var(--transition-smooth)",
-      }}
-      onClick={onOpen}
-    >
-      <div style={{ flex: "1 1 160px", minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2, flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap" }}>{inv.number}</span>
-          <StatusBadge status={inv.status} />
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {inv.customer_name && <span>{inv.customer_name}</span>}
-          <span>{new Date(inv.issue_date).toLocaleDateString("cs-CZ")}</span>
-          <span>Splatnost: {new Date(inv.due_date).toLocaleDateString("cs-CZ")}</span>
-        </div>
-      </div>
-      <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-        {formatCurrency(inv.total, inv.currency)}
-      </div>
-      <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          style={{
-            padding: "6px 8px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "transparent",
-            color: "var(--muted)",
-            cursor: "pointer",
-            fontSize: 16,
-            lineHeight: 1,
-          }}
-        >
-          ⋯
-        </button>
-        {menuOpen && (
+      {/* Odeslání e-mailem. Portál do body: <main> má transform kvůli plynulému
+          posouvání, což z něj dělá vztažný rámec pro position: fixed. */}
+      {sendModalOpen &&
+        createPortal(
           <div
-            style={{
-              position: "absolute",
-              right: 0,
-              top: "100%",
-              marginTop: 4,
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
-              minWidth: 170,
-              zIndex: 1110,
-              overflow: "hidden",
-            }}
-            onMouseLeave={() => setMenuOpen(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "var(--space-3)" }}
+            onClick={() => !sending && setSendModalOpen(false)}
           >
-            <MenuBtn onClick={() => { setMenuOpen(false); onEdit(); }}>Upravit</MenuBtn>
-            <MenuBtn onClick={() => { setMenuOpen(false); onPreview(); }}>Náhled PDF</MenuBtn>
-            <MenuBtn onClick={() => { setMenuOpen(false); onPrint(); }}>Tisk</MenuBtn>
-            <MenuBtn onClick={() => { setMenuOpen(false); onExport(); }}>Export PDF</MenuBtn>
-            <MenuBtn onClick={() => { setMenuOpen(false); onSend(); }}>Odeslat e-mailem</MenuBtn>
-            <MenuBtn onClick={() => { setMenuOpen(false); onDuplicate(); }}>Duplikovat</MenuBtn>
-            <div style={{ height: 1, background: "var(--border)" }} />
-            {inv.status === "draft" && <MenuBtn onClick={() => { setMenuOpen(false); onStatusChange("issued"); }}>Vystavit</MenuBtn>}
-            {["issued", "sent", "overdue"].includes(inv.status) && <MenuBtn onClick={() => { setMenuOpen(false); onStatusChange("paid"); }}>Označit zaplaceno</MenuBtn>}
-            {inv.status !== "cancelled" && inv.status !== "paid" && (
-              <MenuBtn onClick={() => { setMenuOpen(false); onStatusChange("cancelled"); }} danger>Stornovat</MenuBtn>
-            )}
-            <MenuBtn onClick={() => { setMenuOpen(false); onDelete(); }} danger>Smazat</MenuBtn>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MenuBtn({ onClick, children, danger }: { onClick: () => void; children: React.ReactNode; danger?: boolean }) {
-  return (
-    <MenuItem
-      variant={danger ? "danger" : "default"}
-      onClick={onClick}
-    >
-      {children}
-    </MenuItem>
-  );
-}
-
-// ─── Detail Panel ──────────────────────────────────────────
-
-function DetailPanel({
-  invoice: inv,
-  items,
-  events,
-  onClose,
-  onEdit,
-  onPrint,
-  onExport,
-  onSend,
-  onStatusChange,
-  onOpenTicket,
-}: {
-  invoice: Invoice;
-  items: InvoiceItem[];
-  events: InvoiceEvent[];
-  onClose: () => void;
-  onEdit: () => void;
-  onPrint: () => void;
-  onExport: () => void;
-  onSend: () => void;
-  onStatusChange: (s: InvoiceStatus) => void;
-  onOpenTicket?: () => void;
-}) {
-  /* Portál do body: <main> má transform kvůli plynulému posouvání, což z něj
-     dělá vztažný rámec pro position: fixed – panel by jinak ležel uvnitř jeho
-     vrstvy a spodní navigace by se přes něj vykreslila. */
-  return createPortal(
-    <div style={{ position: "fixed", inset: 0, display: "flex", zIndex: 9990 }}>
-      <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
-      <div style={{
-        width: 480,
-        maxWidth: "90vw",
-        background: "var(--panel)",
-        borderLeft: "1px solid var(--border)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}>
-        <div style={{ padding: "20px 24px 12px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{inv.number}</h2>
-            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: "var(--muted)", cursor: "pointer" }}>✕</button>
-          </div>
-          <StatusBadge status={inv.status} />
-          <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-            {onOpenTicket && <SmallBtn onClick={onOpenTicket}>Přejít na zakázku</SmallBtn>}
-            <SmallBtn onClick={onEdit}>Upravit</SmallBtn>
-            <SmallBtn onClick={onPrint}>Tisk</SmallBtn>
-            <SmallBtn onClick={onExport}>Export PDF</SmallBtn>
-            <SmallBtn onClick={onSend}>Odeslat</SmallBtn>
-            {inv.status === "draft" && <SmallBtn onClick={() => onStatusChange("issued")}>Vystavit</SmallBtn>}
-            {["issued", "sent", "overdue"].includes(inv.status) && <SmallBtn onClick={() => onStatusChange("paid")}>Zaplaceno</SmallBtn>}
-          </div>
-        </div>
-        <div style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
-          <DetailSection title="Odběratel">
-            <DetailRow label="Název" value={inv.customer_name} />
-            <DetailRow label="IČO" value={inv.customer_ico} />
-            <DetailRow label="DIČ" value={inv.customer_dic} />
-            <DetailRow label="Adresa" value={inv.customer_address} />
-            <DetailRow label="E-mail" value={inv.customer_email} />
-          </DetailSection>
-          <DetailSection title="Data">
-            <DetailRow label="Datum vystavení" value={inv.issue_date ? new Date(inv.issue_date).toLocaleDateString("cs-CZ") : ""} />
-            <DetailRow label="Datum splatnosti" value={inv.due_date ? new Date(inv.due_date).toLocaleDateString("cs-CZ") : ""} />
-            <DetailRow label="DUZP" value={inv.taxable_date ? new Date(inv.taxable_date).toLocaleDateString("cs-CZ") : ""} />
-            <DetailRow label="VS" value={inv.variable_symbol} />
-          </DetailSection>
-          <DetailSection title="Položky">
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: "2px solid var(--border)" }}>
-                  <th style={{ textAlign: "left", padding: "6px 0", color: "var(--muted)", fontWeight: 600 }}>Položka</th>
-                  <th style={{ textAlign: "right", padding: "6px 4px", color: "var(--muted)", fontWeight: 600 }}>Množství</th>
-                  <th style={{ textAlign: "right", padding: "6px 4px", color: "var(--muted)", fontWeight: 600 }}>Cena/j.</th>
-                  <th style={{ textAlign: "right", padding: "6px 4px", color: "var(--muted)", fontWeight: 600 }}>DPH</th>
-                  <th style={{ textAlign: "right", padding: "6px 0", color: "var(--muted)", fontWeight: 600 }}>Celkem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => (
-                  <tr key={it.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "6px 0", color: "var(--text)" }}>{it.name}</td>
-                    <td style={{ textAlign: "right", padding: "6px 4px", color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{it.qty} {it.unit}</td>
-                    <td style={{ textAlign: "right", padding: "6px 4px", color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(it.unit_price)}</td>
-                    <td style={{ textAlign: "right", padding: "6px 4px", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{it.vat_rate}%</td>
-                    <td style={{ textAlign: "right", padding: "6px 0", fontWeight: 600, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(it.line_total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DetailSection>
-          <DetailSection title="Souhrn">
-            <DetailRow label="Základ" value={formatCurrency(inv.subtotal, inv.currency)} />
-            <DetailRow label="DPH" value={formatCurrency(inv.vat_amount, inv.currency)} />
-            {inv.rounding !== 0 && <DetailRow label="Zaokrouhlení" value={formatCurrency(inv.rounding, inv.currency)} />}
-            <div style={{ borderTop: "2px solid var(--border)", marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontWeight: 800, color: "var(--text)" }}>Celkem</span>
-              <span style={{ fontWeight: 800, fontSize: 16, color: "var(--text)" }}>{formatCurrency(inv.total, inv.currency)}</span>
-            </div>
-          </DetailSection>
-          {inv.notes && (
-            <DetailSection title="Poznámky">
-              <p style={{ margin: 0, fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{inv.notes}</p>
-            </DetailSection>
-          )}
-          <DetailSection title="Historie">
-            {events.length === 0 ? (
-              <p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>Žádné události.</p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {events.map((ev) => (
-                  <div key={ev.id} style={{ fontSize: 12, color: "var(--muted)", display: "flex", gap: 8 }}>
-                    <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{new Date(ev.created_at).toLocaleString("cs-CZ")}</span>
-                    <span style={{ color: "var(--text)", fontWeight: 600 }}>{ev.type}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </DetailSection>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-function SmallBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "5px 12px",
-        borderRadius: 8,
-        border: "1px solid var(--border)",
-        background: "var(--panel-2)",
-        color: "var(--text)",
-        fontSize: 12,
-        fontWeight: 600,
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
-      <span style={{ color: "var(--muted)" }}>{label}</span>
-      <span style={{ color: "var(--text)", fontWeight: 500, textAlign: "right" }}>{value}</span>
-    </div>
-  );
-}
-
-// ─── Invoice Editor ──────────────────────────────────────────
-
-function InvoiceEditor({
-  invoice,
-  setInvoice,
-  items,
-  setItems,
-  totals,
-  saving,
-  isNew,
-  onSave,
-  onCancel,
-  serviceId,
-  vatRate,
-}: {
-  invoice: Partial<Invoice>;
-  setInvoice: (i: Partial<Invoice>) => void;
-  items: (InvoiceLineItem & { id?: string })[];
-  setItems: (items: (InvoiceLineItem & { id?: string })[]) => void;
-  totals: ReturnType<typeof computeTotals>;
-  saving: boolean;
-  isNew: boolean;
-  onSave: () => void;
-  onCancel: () => void;
-  serviceId: string;
-  /** Sazba pro nové položky podle nastavení servisu (neplátce 0). */
-  vatRate: number;
-}) {
-  const updateField = (field: string, value: any) => {
-    setInvoice({ ...invoice, [field]: value });
-  };
-
-  const updateItem = (index: number, field: keyof InvoiceLineItem, value: any) => {
-    const next = [...items];
-    (next[index] as any)[field] = value;
-    setItems(next);
-  };
-
-  const addItem = () => {
-    setItems([...items, emptyLineItem(vatRate)]);
-  };
-
-  const removeItem = (index: number) => {
-    if (items.length <= 1) return;
-    setItems(items.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onCancel} style={{ background: "none", border: "none", fontSize: 18, color: "var(--muted)", cursor: "pointer" }}>←</button>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "var(--text)" }}>
-            {isNew ? "Nová faktura" : `Upravit ${invoice.number || ""}`}
-          </h2>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button onClick={onCancel}>Zrušit</Button>
-          <Button variant="primary" onClick={onSave} disabled={saving}>
-            {saving ? "Ukládám..." : "Uložit"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Editor body */}
-      <div style={{ flex: 1, overflow: "auto", padding: "20px 24px 40px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 24 }}>
-          {/* Left: Supplier + meta */}
-          <div>
-            <EditorSection title="Faktura">
-              <EditorRow>
-                <EditorField label="Číslo faktury" value={invoice.number || ""} onChange={(v) => updateField("number", v)} />
-                <EditorField label="Variabilní symbol" value={invoice.variable_symbol || ""} onChange={(v) => updateField("variable_symbol", v)} />
-              </EditorRow>
-              <EditorRow>
-                <EditorField label="Datum vystavení" type="date" value={invoice.issue_date || ""} onChange={(v) => updateField("issue_date", v)} />
-                <EditorField label="Datum splatnosti" type="date" value={invoice.due_date || ""} onChange={(v) => updateField("due_date", v)} />
-              </EditorRow>
-              <EditorRow>
-                <EditorField label="DUZP" type="date" value={invoice.taxable_date || ""} onChange={(v) => updateField("taxable_date", v)} />
-                <EditorField label="Měna" value={invoice.currency || "CZK"} onChange={(v) => updateField("currency", v)} />
-              </EditorRow>
-            </EditorSection>
-
-            <EditorCollapsibleSection
-              title="Dodavatel"
-              summary={invoice.supplier_name || "Údaje z nastavení servisu"}
-              defaultOpen={false}
+            <div
+              role="dialog"
+              aria-labelledby="invoice-send-title"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+                padding: "var(--space-6)",
+                width: 460,
+                maxWidth: "92vw",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              }}
             >
-              <div style={{ paddingTop: 12 }}>
-                <EditorField label="Název" value={invoice.supplier_name || ""} onChange={(v) => updateField("supplier_name", v)} />
-                <EditorRow>
-                  <EditorField label="IČO" value={invoice.supplier_ico || ""} onChange={(v) => updateField("supplier_ico", v)} />
-                  <EditorField label="DIČ" value={invoice.supplier_dic || ""} onChange={(v) => updateField("supplier_dic", v)} />
-                </EditorRow>
-                <EditorField label="Adresa" value={invoice.supplier_address || ""} onChange={(v) => updateField("supplier_address", v)} />
-                <EditorRow>
-                  <EditorField label="E-mail" value={invoice.supplier_email || ""} onChange={(v) => updateField("supplier_email", v)} />
-                  <EditorField label="Telefon" value={invoice.supplier_phone || ""} onChange={(v) => updateField("supplier_phone", v)} />
-                </EditorRow>
-                <EditorField label="Číslo účtu" value={invoice.supplier_bank_account || ""} onChange={(v) => updateField("supplier_bank_account", v)} />
-                <EditorRow>
-                  <EditorField label="IBAN" value={invoice.supplier_iban || ""} onChange={(v) => updateField("supplier_iban", v)} />
-                  <EditorField label="SWIFT" value={invoice.supplier_swift || ""} onChange={(v) => updateField("supplier_swift", v)} />
-                </EditorRow>
+              <h3 id="invoice-send-title" style={{ margin: "0 0 var(--space-4)", fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--text)" }}>
+                Odeslat fakturu e-mailem
+              </h3>
+              <Label>E-mail příjemce</Label>
+              <div style={{ marginTop: 4, marginBottom: "var(--space-3)" }}>
+                <Input type="email" value={sendEmail} onChange={(e) => setSendEmail(e.target.value)} placeholder="jmeno@firma.cz" autoFocus />
               </div>
-            </EditorCollapsibleSection>
-          </div>
-
-          {/* Right: Customer */}
-          <div>
-            <EditorSection title="Odběratel">
-              <CustomerPicker
-                serviceId={serviceId}
-                onSelect={(c) => {
-                  setInvoice({
-                    ...invoice,
-                    customer_id: c.id,
-                    customer_name: c.name,
-                    customer_email: c.email || invoice.customer_email || "",
-                    customer_phone: c.phone || invoice.customer_phone || "",
-                    customer_ico: c.ico || invoice.customer_ico || "",
-                    customer_dic: c.dic || invoice.customer_dic || "",
-                    customer_address: c.address || invoice.customer_address || "",
-                  });
-                }}
-              />
-              <EditorField label="Název" value={invoice.customer_name || ""} onChange={(v) => updateField("customer_name", v)} />
-              <EditorRow>
-                <EditorField label="IČO" value={invoice.customer_ico || ""} onChange={(v) => updateField("customer_ico", v)} />
-                <EditorField label="DIČ" value={invoice.customer_dic || ""} onChange={(v) => updateField("customer_dic", v)} />
-              </EditorRow>
-              <EditorField label="Adresa" value={invoice.customer_address || ""} onChange={(v) => updateField("customer_address", v)} />
-              <EditorRow>
-                <EditorField label="E-mail" value={invoice.customer_email || ""} onChange={(v) => updateField("customer_email", v)} />
-                <EditorField label="Telefon" value={invoice.customer_phone || ""} onChange={(v) => updateField("customer_phone", v)} />
-              </EditorRow>
-            </EditorSection>
-
-            <EditorSection title="Poznámky">
+              <Label>Předmět</Label>
+              <div style={{ marginTop: 4, marginBottom: "var(--space-3)" }}>
+                <Input value={sendSubject} onChange={(e) => setSendSubject(e.target.value)} />
+              </div>
+              <Label>Text zprávy</Label>
               <textarea
-                value={invoice.notes || ""}
-                onChange={(e) => updateField("notes", e.target.value)}
-                rows={3}
-                placeholder="Poznámky na faktuře..."
+                value={sendBody}
+                onChange={(e) => setSendBody(e.target.value)}
+                rows={5}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
+                  marginTop: 4,
+                  padding: "10px var(--space-3)",
+                  borderRadius: "var(--radius-sm)",
                   border: "1px solid var(--border)",
                   background: "var(--panel)",
                   color: "var(--text)",
                   outline: "none",
                   resize: "vertical",
-                  fontSize: 13,
+                  fontSize: "var(--text-base)",
                   fontFamily: "inherit",
                 }}
               />
-              <div style={{ marginTop: 8 }}>
-                <FieldLabel>Interní poznámka</FieldLabel>
-                <textarea
-                  value={invoice.internal_note || ""}
-                  onChange={(e) => updateField("internal_note", e.target.value)}
-                  rows={2}
-                  placeholder="Interní poznámka (nebude na faktuře)..."
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    outline: "none",
-                    resize: "vertical",
-                    fontSize: 13,
-                    fontFamily: "inherit",
-                  }}
-                />
+              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", justifyContent: "flex-end" }}>
+                <Button variant="ghost" onClick={() => setSendModalOpen(false)} disabled={sending}>
+                  Zrušit
+                </Button>
+                <Button variant="primary" onClick={handleSendEmail} disabled={sending || !sendEmail.includes("@")}>
+                  {sending ? "Odesílám…" : "Odeslat"}
+                </Button>
               </div>
-            </EditorSection>
-          </div>
-        </div>
-
-        {/* Items table */}
-        <EditorSection title="Položky">
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid var(--border)" }}>
-                <th style={thStyle}>Název</th>
-                <th style={{ ...thStyle, width: 70, textAlign: "right" }}>Množství</th>
-                <th style={{ ...thStyle, width: 60, textAlign: "center" }}>Jednotka</th>
-                <th style={{ ...thStyle, width: 100, textAlign: "right" }}>Cena/j.</th>
-                <th style={{ ...thStyle, width: 70, textAlign: "right" }}>DPH %</th>
-                <th style={{ ...thStyle, width: 100, textAlign: "right" }}>Celkem</th>
-                <th style={{ ...thStyle, width: 36 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, idx) => {
-                const lineTotal = Math.round(item.qty * item.unit_price * 100) / 100;
-                return (
-                  <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={tdStyle}>
-                      <input
-                        value={item.name}
-                        onChange={(e) => updateItem(idx, "name", e.target.value)}
-                        placeholder="Název položky"
-                        style={cellInput}
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={item.qty}
-                        onChange={(e) => updateItem(idx, "qty", parseFloat(e.target.value) || 0)}
-                        style={{ ...cellInput, textAlign: "right" }}
-                        step="0.001"
-                        min="0"
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <input
-                        value={item.unit}
-                        onChange={(e) => updateItem(idx, "unit", e.target.value)}
-                        style={{ ...cellInput, textAlign: "center" }}
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={item.unit_price}
-                        onChange={(e) => updateItem(idx, "unit_price", parseFloat(e.target.value) || 0)}
-                        style={{ ...cellInput, textAlign: "right" }}
-                        step="0.01"
-                        min="0"
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <select
-                        value={item.vat_rate}
-                        onChange={(e) => updateItem(idx, "vat_rate", parseFloat(e.target.value))}
-                        style={{ ...cellInput, textAlign: "right", cursor: "pointer" }}
-                      >
-                        <option value="0">0%</option>
-                        <option value="12">12%</option>
-                        <option value="21">21%</option>
-                      </select>
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
-                      {formatCurrency(lineTotal)}
-                    </td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => removeItem(idx)}
-                        disabled={items.length <= 1}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: items.length <= 1 ? "var(--border)" : "var(--danger-text)",
-                          cursor: items.length <= 1 ? "default" : "pointer",
-                          fontSize: 16,
-                          padding: "2px 4px",
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <Button onClick={addItem} style={{ marginTop: 8 }}>
-            + Přidat položku
-          </Button>
-        </EditorSection>
-
-        {/* Totals */}
-        <div style={{ maxWidth: 300, marginLeft: "auto", marginTop: 8 }}>
-          <TotalRow label="Základ" value={formatCurrency(totals.subtotal)} />
-          {totals.vat_breakdown.map((v) => (
-            <TotalRow key={v.rate} label={`DPH ${v.rate}%`} value={formatCurrency(v.vat)} />
-          ))}
-          {totals.rounding !== 0 && <TotalRow label="Zaokrouhlení" value={formatCurrency(totals.rounding)} />}
-          <div style={{ borderTop: "2px solid var(--border)", marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: "var(--text)" }}>Celkem</span>
-            <span style={{ fontWeight: 800, fontSize: 18, color: "var(--text)" }}>{formatCurrency(totals.total_rounded)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EditorSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function EditorCollapsibleSection({
-  title,
-  summary,
-  defaultOpen,
-  children,
-}: {
-  title: string;
-  summary?: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  return (
-    <div style={{ marginBottom: 20, border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--panel-2)" }}>
-      <MenuItem
-        layout="between"
-        size="md"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span style={{ fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</span>
-        {summary && !open && (
-          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--muted)", fontSize: 12 }}>{summary}</span>
+            </div>
+          </div>,
+          document.body,
         )}
-        <span style={{ flexShrink: 0, color: "var(--muted)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
-      </MenuItem>
-      {open && (
-        <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)" }}>
-          {children}
-        </div>
-      )}
-    </div>
+
+      {/* Náhled PDF */}
+      {previewUrl &&
+        createPortal(
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "var(--space-3)" }}
+            onClick={closePreview}
+          >
+            <div
+              role="dialog"
+              aria-label="Náhled PDF"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--panel)",
+                borderRadius: "var(--radius-md)",
+                width: "100%",
+                height: "85dvh",
+                maxWidth: 900,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              }}
+            >
+              <div style={{ padding: "var(--space-3) var(--space-5)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                <h3 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--text)" }}>Náhled PDF</h3>
+                <Button variant="ghost" iconOnly aria-label="Zavřít náhled" title="Zavřít" icon={<XIcon size={16} />} onClick={closePreview} />
+              </div>
+              <iframe src={previewUrl} style={{ flex: 1, border: "none", width: "100%" }} title="Náhled PDF" />
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {confirmDialog}
+    </>
   );
 }
-
-function EditorRow({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>{children}</div>;
-}
-
-function EditorField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
-  return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 3 }}>{label}</div>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "8px 10px",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          background: "var(--panel)",
-          color: "var(--text)",
-          fontSize: 13,
-          outline: "none",
-        }}
-      />
-    </div>
-  );
-}
-
-function TotalRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 13 }}>
-      <span style={{ color: "var(--muted)" }}>{label}</span>
-      <span style={{ color: "var(--text)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{value}</span>
-    </div>
-  );
-}
-
-// ─── Shared styles ──────────────────────────────────────────
-
-
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 6px",
-  fontSize: 11,
-  fontWeight: 700,
-  color: "var(--muted)",
-  textTransform: "uppercase",
-  letterSpacing: "0.03em",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "4px 6px",
-};
-
-const cellInput: React.CSSProperties = {
-  width: "100%",
-  padding: "7px 8px",
-  borderRadius: 8,
-  border: "1px solid var(--border)",
-  background: "var(--panel-2)",
-  color: "var(--text)",
-  fontSize: 13,
-  outline: "none",
-};

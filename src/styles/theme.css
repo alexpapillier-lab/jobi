@@ -23,6 +23,10 @@
   --sidebar-expanded: 220px;
   --sidebar-bottom-collapsed: 52px;
   --sidebar-bottom-expanded: 52px;
+  /* Lišta rozbalená najetím myší leží PŘES obsah – silnější stín ji odliší
+     od připnuté, která obsah odsunuje. Proužek značí aktivní položku. */
+  --sidebar-shadow-flyout: 0 24px 64px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.10);
+  --sidebar-active-bar: 3px;
 
   /* Spodní navigace na úzkých obrazovkách (webová verze na telefonu).
      --safe-bottom respektuje domovský indikátor na iPhonu. */

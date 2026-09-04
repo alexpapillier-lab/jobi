@@ -9,6 +9,24 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 
 type SidebarPosition = "left" | "right" | "bottom";
 
+/** Klíč je záměrně doslovný – storageKeys.ts spravuje jiný tým (viz zadání). */
+const SIDEBAR_PINNED_KEY = "jobsheet_sidebar_pinned";
+/** Prodlevy rozbalení/sbalení po najetí – přejetí myší přes hranu lištu neroztřese. */
+const HOVER_OPEN_DELAY_MS = 180;
+const HOVER_CLOSE_DELAY_MS = 250;
+const sidebarTransition = "180ms cubic-bezier(0.4, 0, 0.2, 1)";
+
+function readPinned(fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_PINNED_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
 export function AppLayout({
   children,
   pageTitle: _pageTitle,
@@ -24,6 +42,8 @@ export function AppLayout({
   sidebarPosition = "left",
   smsUnreadCount = 0,
   smsEnabled = false,
+  sidebarPinned = false,
+  onSidebarPinnedChange,
 }: {
   children: React.ReactNode;
   pageTitle: string;
@@ -39,6 +59,9 @@ export function AppLayout({
   sidebarPosition?: SidebarPosition;
   smsUnreadCount?: number;
   smsEnabled?: boolean;
+  /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
+  sidebarPinned?: boolean;
+  onSidebarPinnedChange?: (pinned: boolean) => void;
 }) {
   const handleSignOut = async () => {
     clearOnSignOut();
@@ -48,10 +71,67 @@ export function AppLayout({
     }
     await onSignOut();
   };
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  /** Rozbalení najetím myší / fokusem. Připnutá lišta ho nepotřebuje. */
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const [pinned, setPinned] = useState<boolean>(() => readPinned(sidebarPinned));
   /** Otevřená nabídka servisů drží lištu rozbalenou – viz Sidebar. */
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const isNarrow = useIsNarrow();
+
+  // Změna zvenku (např. z Nastavení) – reagovat jen na skutečnou změnu prop,
+  // ne při připojení, kdy má přednost hodnota z localStorage. Úprava stavu
+  // přímo při vykreslení je doporučený vzor místo effectu se setState.
+  const [lastPinnedProp, setLastPinnedProp] = useState(sidebarPinned);
+  if (lastPinnedProp !== sidebarPinned) {
+    setLastPinnedProp(sidebarPinned);
+    setPinned(sidebarPinned);
+  }
+
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHoverTimers = useCallback(() => {
+    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  }, []);
+  useEffect(() => clearHoverTimers, [clearHoverTimers]);
+
+  const expandSoon = useCallback(() => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    if (openTimer.current) return;
+    openTimer.current = setTimeout(() => {
+      openTimer.current = null;
+      setHoverExpanded(true);
+    }, HOVER_OPEN_DELAY_MS);
+  }, []);
+  const collapseSoon = useCallback(() => {
+    if (openTimer.current) { clearTimeout(openTimer.current); openTimer.current = null; }
+    if (closeTimer.current) return;
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setHoverExpanded(false);
+    }, HOVER_CLOSE_DELAY_MS);
+  }, []);
+  const expandNow = useCallback(() => {
+    clearHoverTimers();
+    setHoverExpanded(true);
+  }, [clearHoverTimers]);
+  const collapseNow = useCallback(() => {
+    clearHoverTimers();
+    setHoverExpanded(false);
+  }, [clearHoverTimers]);
+
+  const togglePinned = useCallback(() => {
+    const next = !pinned;
+    setPinned(next);
+    try {
+      localStorage.setItem(SIDEBAR_PINNED_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+    onSidebarPinnedChange?.(next);
+    // Po odepnutí kurzor stále leží na liště – sbalí se, až ji opustí.
+    if (!next) setHoverExpanded(true);
+  }, [pinned, onSidebarPinnedChange]);
   const [showJobiDocsGuide, setShowJobiDocsGuide] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -70,7 +150,11 @@ export function AppLayout({
 
   const isBottom = sidebarPosition === "bottom";
   const isRight = sidebarPosition === "right";
-  const sidebarTransition = "180ms cubic-bezier(0.4, 0, 0.2, 1)";
+  /* Připnutí nemá u spodní lišty smysl – má jednu výšku. */
+  const effectivePinned = pinned && !isBottom;
+  const sidebarExpanded = effectivePinned || hoverExpanded;
+  /* Rozbalená jen najetím = leží přes obsah, ať to i vypadá jako výsuvný panel. */
+  const isFlyout = sidebarExpanded && !effectivePinned && !isBottom;
 
   const sidebarStyle = useMemo<React.CSSProperties>(() => {
     if (isBottom) {
@@ -92,7 +176,7 @@ export function AppLayout({
       background: "var(--panel)",
       backdropFilter: "var(--blur)",
       WebkitBackdropFilter: "var(--blur)",
-      boxShadow: "var(--shadow-soft)",
+      boxShadow: isFlyout ? "var(--sidebar-shadow-flyout)" : "var(--shadow-soft)",
       display: "flex",
       overflow: "hidden",
       zIndex: 1000,
@@ -119,7 +203,7 @@ export function AppLayout({
       flexDirection: "column",
       borderRight: "1px solid var(--border)",
     };
-  }, [isBottom, isRight]);
+  }, [isBottom, isRight, isFlyout]);
 
   const contentStyle = useMemo<React.CSSProperties>(() => {
     if (isBottom) {
@@ -127,15 +211,13 @@ export function AppLayout({
         paddingBottom: "var(--sidebar-bottom-collapsed)",
       };
     }
+    const inset = effectivePinned ? "var(--sidebar-expanded)" : "var(--sidebar-collapsed)";
+    const transition = `padding ${sidebarTransition}`;
     if (isRight) {
-      return {
-        paddingRight: "var(--sidebar-collapsed)",
-      };
+      return { paddingRight: inset, transition };
     }
-    return {
-      paddingLeft: "var(--sidebar-collapsed)",
-    };
-  }, [isBottom, isRight]);
+    return { paddingLeft: inset, transition };
+  }, [isBottom, isRight, effectivePinned]);
 
   return (
     <div style={{ display: "flex", flexDirection: isBottom ? "column" : "row", height: "100%", position: "relative" }}>
@@ -147,15 +229,13 @@ export function AppLayout({
           ...sidebarStyle,
           ...asidePositionStyle,
         }}
-        // Na úzké obrazovce se rozbaluje klepnutím – najetí myší tam nedává smysl.
-        onClick={isNarrow ? () => setSidebarExpanded((v) => !v) : undefined}
-        onMouseEnter={isNarrow ? undefined : () => setSidebarExpanded(true)}
-        onMouseLeave={isNarrow || serviceMenuOpen ? undefined : () => setSidebarExpanded(false)}
-        onFocusCapture={() => setSidebarExpanded(true)}
+        onMouseEnter={effectivePinned ? undefined : expandSoon}
+        onMouseLeave={effectivePinned || serviceMenuOpen ? undefined : collapseSoon}
+        onFocusCapture={effectivePinned ? undefined : expandNow}
         onBlurCapture={(e) => {
           const next = e.relatedTarget as Node | null;
           if (next && e.currentTarget.contains(next)) return;
-          if (!isNarrow && !serviceMenuOpen) setSidebarExpanded(false);
+          if (!effectivePinned && !serviceMenuOpen) collapseNow();
         }}
       >
         <Sidebar 
@@ -173,6 +253,9 @@ export function AppLayout({
             invoicingEnabled,
             onJobiDocsFirstConnect: () => setShowJobiDocsGuide(true),
             horizontal: isBottom,
+            side: isRight ? "right" : "left",
+            pinned: effectivePinned,
+            onTogglePin: isBottom ? undefined : togglePinned,
             smsUnreadCount,
             smsEnabled,
           } satisfies SidebarProps)}

@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useEntitlements } from "../hooks/useEntitlements";
-import { Button } from "../components/ui";
+import { Button, Card, PageHeader } from "../components/ui";
 import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { showToast } from "../components/Toast";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
@@ -9,55 +10,30 @@ import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { loadInventoryFromDb, saveInventoryToDb, celkemKusu, vychoziSklad, stavyZeStarehoTvaru } from "../lib/inventoryDb";
 import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { DeviceTree, DeviceTreeSheet, TreeTriggerButton } from "./Devices/DeviceTree";
+import { RepairsPane } from "./Devices/RepairsPane";
+import { plural } from "./Devices/shared";
+import {
+  EMPTY_REPAIR_DRAFT,
+  KIND_KEY,
+  type Brand,
+  type Category,
+  type DeviceModel,
+  type DevicesData,
+  type InventoryProduct,
+  type NodeKind,
+  type Repair,
+  type RepairDraft,
+  type Selection,
+} from "./Devices/types";
 
-type Brand = {
-  id: string;
-  name: string;
-  createdAt: string;
-  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
-  publicVisible?: boolean;
-};
-
-type Category = {
-  id: string;
-  brandId: string;
-  name: string;
-  createdAt: string;
-  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
-  publicVisible?: boolean;
-};
-
-type DeviceModel = {
-  id: string;
-  categoryId: string;
-  name: string;
-  createdAt: string;
-  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
-  publicVisible?: boolean;
-};
-
-type Repair = {
-  id: string;
-  modelIds: string[]; // může být u více modelů
-  name: string;
-  price: number;
-  estimatedTime: number;
-  details: string;
-  costs?: number; // náklady
-  productIds?: string[]; // produkty používané u této opravy
-  createdAt: string;
-  /** Posílat do veřejného API? Duplicitní typ vůči lib/devicesDb.ts. */
-  publicVisible?: boolean;
-  /** Modely, u kterých se tahle oprava do ceníku neposílá. */
-  publicHiddenModelIds?: string[];
-};
-
-type DevicesData = {
-  brands: Brand[];
-  categories: Category[];
-  models: DeviceModel[];
-  repairs: Repair[];
-};
+/**
+ * Zařízení a opravy.
+ *
+ * Vlevo strom značka › kategorie › model (DeviceTree), vpravo opravy
+ * vybraného uzlu (RepairsPane). Tenhle soubor drží data, ukládání do DB,
+ * import a všechny akce – panely jen kreslí a volají zpět.
+ */
 
 function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
@@ -87,32 +63,35 @@ function loadDevicesFromKey(key: string): DevicesData {
 
 const EMPTY_DEVICES: DevicesData = { brands: [], categories: [], models: [], repairs: [] };
 
+/** Čtvrtý pád pro titulky dialogů („Smazat značku …“). */
+const KIND_ACCUSATIVE: Record<NodeKind, string> = { brand: "značku", category: "kategorii", model: "model" };
+
+/** Přeskládá sourozence podle `order`; ostatní položky pole zůstanou, kde byly. */
+function reorderWithin<T extends { id: string }>(list: T[], siblingIds: Set<string>, order: string[]): T[] {
+  const byId = new Map(list.map((x) => [x.id, x]));
+  let i = 0;
+  return list.map((x) => (siblingIds.has(x.id) ? byId.get(order[i++])! : x));
+}
+
 export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
   const isNarrow = useIsNarrow();
   const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
   /** Přepínače viditelnosti mají smysl, jen když servis ceník ven posílá. */
   const { has: maModul } = useEntitlements(activeServiceId);
   const ukazatViditelnost = maModul("api_catalog");
-  const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
 
-  const [editingBrand, setEditingBrand] = useState<string | null>(null);
-  const [editingCategory, setEditingCategory] = useState<string | null>(null);
-  const [editingModel, setEditingModel] = useState<string | null>(null);
+  /** Vybraný uzel stromu – určuje, které opravy jsou vpravo. */
+  const [selection, setSelection] = useState<Selection | null>(null);
+  /** Uzel, který se právě přejmenovává přímo v řádku stromu. */
+  const [renaming, setRenaming] = useState<Selection | null>(null);
+  /** Úzká obrazovka: strom je v panelu, který se otevírá tlačítkem s drobečky. */
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+
   const [editingRepair, setEditingRepair] = useState<string | null>(null);
-
-  const [editBrandName, setEditBrandName] = useState("");
-  const [editCategoryName, setEditCategoryName] = useState("");
-  const [editModelName, setEditModelName] = useState("");
-  const [editRepairData, setEditRepairData] = useState({ name: "", price: "", time: "", details: "", costs: "", productIds: [] as string[], modelIds: [] as string[], hiddenModelIds: [] as string[], productSearch: "", modelSearch: "" });
-
-  const [newBrandName, setNewBrandName] = useState("");
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newModelName, setNewModelName] = useState("");
-  const [newRepair, setNewRepair] = useState({ name: "", price: "", time: "", details: "", costs: "", productIds: [] as string[], modelIds: [] as string[], productSearch: "", modelSearch: "" });
-  
-  // Filters for repair list
+  const [editRepairData, setEditRepairData] = useState<RepairDraft>(EMPTY_REPAIR_DRAFT);
+  const [addingRepair, setAddingRepair] = useState(false);
+  const [newRepair, setNewRepair] = useState<RepairDraft>(EMPTY_REPAIR_DRAFT);
   const [repairSearchQuery, setRepairSearchQuery] = useState("");
 
   // Import section
@@ -124,19 +103,6 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     repairs: { name: string; model: string; category: string; brand: string; price: number; time: number; costs?: number; products?: string[]; details?: string }[];
     duplicates: { type: string; name: string }[];
   } | null>(null);
-
-  type InventoryProduct = {
-    id: string;
-    name: string;
-    modelIds: string[];
-    stock: number;
-    price: number;
-    sku?: string;
-    description?: string;
-    imageUrl?: string;
-    repairIds?: string[];
-    createdAt: string;
-  };
 
   type InventoryData = {
     brands: Brand[];
@@ -158,8 +124,6 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
 
   const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
 
-  const [draggedModelId, setDraggedModelId] = useState<string | null>(null);
-  const [dragOverModelId, setDragOverModelId] = useState<string | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesLoadError, setDevicesLoadError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -347,6 +311,8 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     };
   }, [activeServiceId]);
 
+
+  /* Styly jen pro obrazovku importu – hlavní stránka používá Card / Input. */
   const border = "1px solid var(--border)";
   const card: React.CSSProperties = {
     border,
@@ -354,10 +320,9 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     background: "var(--panel)",
     backdropFilter: "var(--blur)",
     WebkitBackdropFilter: "var(--blur)",
-    padding: 16,
+    padding: "var(--pad-16)",
     boxShadow: "var(--shadow-soft)",
     color: "var(--text)",
-    maxHeight: "600px",
     display: "flex",
     flexDirection: "column",
   };
@@ -365,67 +330,191 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "10px 12px",
-    borderRadius: 12,
+    borderRadius: "var(--radius-sm)",
     border,
     outline: "none",
     background: "var(--panel)",
-    backdropFilter: "var(--blur)",
-    WebkitBackdropFilter: "var(--blur)",
     color: "var(--text)",
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    fontFamily: "inherit",
+    fontSize: "var(--text-base)",
     transition: "var(--transition-smooth)",
     boxShadow: "var(--shadow-soft)",
   };
 
+  const now = () => new Date().toISOString();
 
+  const nodeName = (sel: Selection) =>
+    (data[KIND_KEY[sel.kind]] as { id: string; name: string }[]).find((x) => x.id === sel.id)?.name ?? "";
 
-
-  const arrowBtn = (disabled: boolean): React.CSSProperties => ({
-    background: "none",
-    border: "none",
-    color: disabled ? "var(--muted)" : "var(--accent)",
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: 16,
-    fontWeight: 900,
-    padding: 4,
-    opacity: disabled ? 0.3 : 1,
-  });
-
-  const addBrand = () => {
-    if (!newBrandName.trim()) return;
-    const brand: Brand = { id: uuid(), name: newBrandName.trim(), createdAt: new Date().toISOString() };
-    const next: DevicesData = { ...data, brands: [...data.brands, brand] };
-    setData(next);
-    setNewBrandName("");
-    showToast("Značka přidána", "success");
+  const parentOf = (sel: Selection): Selection | null => {
+    if (sel.kind === "model") {
+      const m = data.models.find((x) => x.id === sel.id);
+      return m ? { kind: "category", id: m.categoryId } : null;
+    }
+    if (sel.kind === "category") {
+      const c = data.categories.find((x) => x.id === sel.id);
+      return c ? { kind: "brand", id: c.brandId } : null;
+    }
+    return null;
   };
 
-  const addCategory = () => {
-    if (!newCategoryName.trim() || !selectedBrandId) return;
-    const cat: Category = {
-      id: uuid(),
-      brandId: selectedBrandId,
-      name: newCategoryName.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    const next: DevicesData = { ...data, categories: [...data.categories, cat] };
-    setData(next);
-    setNewCategoryName("");
-    showToast("Kategorie přidána", "success");
+  /* ---------- strom: přidat / přejmenovat / smazat / přesunout ---------- */
+
+  const addNode = (kind: NodeKind, parentId: string | null, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const id = uuid();
+    if (kind === "brand") {
+      const brand: Brand = { id, name: trimmed, createdAt: now() };
+      setData((d) => ({ ...d, brands: [...d.brands, brand] }));
+      showToast("Značka přidána", "success");
+    } else if (kind === "category") {
+      if (!parentId) return;
+      const cat: Category = { id, brandId: parentId, name: trimmed, createdAt: now() };
+      setData((d) => ({ ...d, categories: [...d.categories, cat] }));
+      showToast("Kategorie přidána", "success");
+    } else {
+      if (!parentId) return;
+      const model: DeviceModel = { id, categoryId: parentId, name: trimmed, createdAt: now() };
+      setData((d) => ({ ...d, models: [...d.models, model] }));
+      showToast("Model přidán", "success");
+    }
+    setSelection({ kind, id });
   };
 
-  const addModel = () => {
-    if (!newModelName.trim() || !selectedCategoryId) return;
-    const model: DeviceModel = {
-      id: uuid(),
-      categoryId: selectedCategoryId,
-      name: newModelName.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    const next: DevicesData = { ...data, models: [...data.models, model] };
-    setData(next);
-    setNewModelName("");
-    showToast("Model přidán", "success");
+  const renameNode = (sel: Selection, name: string) => {
+    const key = KIND_KEY[sel.kind];
+    setData(
+      (d) =>
+        ({
+          ...d,
+          [key]: (d[key] as { id: string; name: string }[]).map((x) => (x.id === sel.id ? { ...x, name } : x)),
+        }) as DevicesData,
+    );
+    setRenaming(null);
+    showToast(
+      sel.kind === "brand" ? "Značka přejmenována" : sel.kind === "category" ? "Kategorie přejmenována" : "Model přejmenován",
+      "success",
+    );
+  };
+
+  /** Co všechno pod uzlem visí – pro potvrzení i pro samotné smazání. */
+  const subtreeOf = (sel: Selection) => {
+    const catIds =
+      sel.kind === "brand"
+        ? data.categories.filter((c) => c.brandId === sel.id).map((c) => c.id)
+        : sel.kind === "category"
+          ? [sel.id]
+          : [];
+    const modelIds =
+      sel.kind === "model" ? [sel.id] : data.models.filter((m) => catIds.includes(m.categoryId)).map((m) => m.id);
+    const modelSet = new Set(modelIds);
+    const repairCount = data.repairs.filter((r) => r.modelIds?.some((m) => modelSet.has(m))).length;
+    return { catIds, modelIds, modelSet, repairCount };
+  };
+
+  /* Oprava sdílená s dalšími modely u nich zůstane; zanikne jen ta, které
+     nezbyl žádný model. Dřív se mazala každá oprava, která smazaný model
+     obsahovala – i když patřila ještě k devíti dalším. */
+  const withoutModels = (repairs: Repair[], gone: Set<string>): Repair[] =>
+    repairs
+      .map((r) =>
+        r.modelIds?.some((m) => gone.has(m))
+          ? {
+              ...r,
+              modelIds: r.modelIds.filter((m) => !gone.has(m)),
+              publicHiddenModelIds: r.publicHiddenModelIds?.filter((m) => !gone.has(m)),
+            }
+          : r,
+      )
+      .filter((r) => !r.modelIds || r.modelIds.length > 0);
+
+  const deleteNode = (sel: Selection) => {
+    const { catIds, modelSet } = subtreeOf(sel);
+    const catSet = new Set(catIds);
+    setData({
+      brands: sel.kind === "brand" ? data.brands.filter((b) => b.id !== sel.id) : data.brands,
+      categories: data.categories.filter((c) => !catSet.has(c.id)),
+      models: data.models.filter((m) => !modelSet.has(m.id)),
+      repairs: withoutModels(data.repairs, modelSet),
+    });
+    const gone = new Set([sel.id, ...catIds, ...modelSet]);
+    if (selection && gone.has(selection.id)) setSelection(parentOf(sel));
+    if (renaming && gone.has(renaming.id)) setRenaming(null);
+    showToast(sel.kind === "brand" ? "Značka smazána" : sel.kind === "category" ? "Kategorie smazána" : "Model smazán", "success");
+  };
+
+  const askDeleteNode = (sel: Selection) => {
+    const { catIds, modelIds, repairCount } = subtreeOf(sel);
+    const parts: string[] = [];
+    if (sel.kind === "brand" && catIds.length) parts.push(`${catIds.length} ${plural(catIds.length, ["kategorie", "kategorie", "kategorií"])}`);
+    if (sel.kind !== "model" && modelIds.length) parts.push(`${modelIds.length} ${plural(modelIds.length, ["model", "modely", "modelů"])}`);
+    if (repairCount) parts.push(`${repairCount} ${plural(repairCount, ["oprava", "opravy", "oprav"])}`);
+    setConfirm({
+      title: `Smazat ${KIND_ACCUSATIVE[sel.kind]} „${nodeName(sel)}“?`,
+      message: parts.length
+        ? `Spolu s tím zmizí ${parts.join(", ")}. Opravy sdílené s dalšími modely u nich zůstanou. Akci nelze vrátit zpět.`
+        : "Akci nelze vrátit zpět.",
+      onConfirm: () => deleteNode(sel),
+    });
+  };
+
+  const siblingsOf = (d: DevicesData, sel: Selection): { id: string }[] => {
+    if (sel.kind === "brand") return d.brands;
+    if (sel.kind === "category") {
+      const c = d.categories.find((x) => x.id === sel.id);
+      return d.categories.filter((x) => x.brandId === c?.brandId);
+    }
+    const m = d.models.find((x) => x.id === sel.id);
+    return d.models.filter((x) => x.categoryId === m?.categoryId);
+  };
+
+  const applyOrder = (d: DevicesData, kind: NodeKind, order: string[]): DevicesData => {
+    const ids = new Set(order);
+    if (kind === "brand") return { ...d, brands: reorderWithin(d.brands, ids, order) };
+    if (kind === "category") return { ...d, categories: reorderWithin(d.categories, ids, order) };
+    return { ...d, models: reorderWithin(d.models, ids, order) };
+  };
+
+  /** Posun o jednu pozici mezi sourozenci (nabídka „Posunout nahoru / dolů“). */
+  const moveNode = (sel: Selection, dir: -1 | 1) => {
+    setData((d) => {
+      const order = siblingsOf(d, sel).map((x) => x.id);
+      const idx = order.indexOf(sel.id);
+      const j = idx + dir;
+      if (idx < 0 || j < 0 || j >= order.length) return d;
+      [order[idx], order[j]] = [order[j], order[idx]];
+      return applyOrder(d, sel.kind, order);
+    });
+  };
+
+  /** Přetažení na jiného sourozence – položka se zařadí na jeho místo. */
+  const reorderNode = (kind: NodeKind, fromId: string, toId: string) => {
+    setData((d) => {
+      const order = siblingsOf(d, { kind, id: fromId }).map((x) => x.id);
+      const from = order.indexOf(fromId);
+      const to = order.indexOf(toId);
+      if (from < 0 || to < 0 || from === to) return d;
+      order.splice(from, 1);
+      order.splice(to, 0, fromId);
+      return applyOrder(d, kind, order);
+    });
+  };
+
+  /* ---------- opravy ---------- */
+
+  const canAddRepair = selection?.kind === "model" || selection?.kind === "category";
+
+  const openAddRepair = () => {
+    const modelIds =
+      selection?.kind === "model"
+        ? [selection.id]
+        : selection?.kind === "category"
+          ? data.models.filter((m) => m.categoryId === selection.id).map((m) => m.id)
+          : [];
+    setNewRepair({ ...EMPTY_REPAIR_DRAFT, modelIds });
+    setEditingRepair(null);
+    setAddingRepair(true);
   };
 
   const addRepairItem = () => {
@@ -439,80 +528,49 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       details: newRepair.details.trim(),
       costs: parseFloat(newRepair.costs) || undefined,
       productIds: newRepair.productIds.length > 0 ? newRepair.productIds : undefined,
-      createdAt: new Date().toISOString(),
+      createdAt: now(),
     };
-    const next: DevicesData = { ...data, repairs: [...data.repairs, repair] };
-    setData(next);
-    setNewRepair({ name: "", price: "", time: "", details: "", costs: "", productIds: [], modelIds: [], productSearch: "", modelSearch: "" });
+    setData((d) => ({ ...d, repairs: [...d.repairs, repair] }));
+    setNewRepair(EMPTY_REPAIR_DRAFT);
+    setAddingRepair(false);
     showToast("Oprava přidána", "success");
   };
 
-  const deleteBrand = (id: string) => {
-    const catIds = data.categories.filter((c) => c.brandId === id).map((c) => c.id);
-    const modelIds = data.models.filter((m) => catIds.includes(m.categoryId)).map((m) => m.id);
-    const next: DevicesData = {
-      brands: data.brands.filter((b) => b.id !== id),
-      categories: data.categories.filter((c) => c.brandId !== id),
-      models: data.models.filter((m) => !catIds.includes(m.categoryId)),
-      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
-    };
-    setData(next);
-    if (selectedBrandId === id) setSelectedBrandId(null);
-    showToast("Značka smazána", "success");
-  };
-
-  const deleteCategory = (id: string) => {
-    const modelIds = data.models.filter((m) => m.categoryId === id).map((m) => m.id);
-    const next: DevicesData = {
-      ...data,
-      categories: data.categories.filter((c) => c.id !== id),
-      models: data.models.filter((m) => m.categoryId !== id),
-      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.some((mid) => modelIds.includes(mid))),
-    };
-    setData(next);
-    if (selectedCategoryId === id) setSelectedCategoryId(null);
-    showToast("Kategorie smazána", "success");
-  };
-
-  const deleteModel = (id: string) => {
-    const next: DevicesData = {
-      ...data,
-      models: data.models.filter((m) => m.id !== id),
-      repairs: data.repairs.filter((r) => !r.modelIds || !r.modelIds.includes(id)),
-    };
-    setData(next);
-    if (selectedModelId === id) setSelectedModelId(null);
-    showToast("Model smazán", "success");
+  const startEditRepair = (r: Repair) => {
+    setAddingRepair(false);
+    setEditRepairData({
+      name: r.name,
+      price: String(r.price),
+      time: String(r.estimatedTime),
+      details: r.details,
+      costs: r.costs ? String(r.costs) : "",
+      productIds: r.productIds || [],
+      modelIds: r.modelIds || [],
+      hiddenModelIds: r.publicHiddenModelIds || [],
+      productSearch: "",
+      modelSearch: "",
+    });
+    setEditingRepair(r.id);
   };
 
   const deleteRepair = (id: string) => {
-    const next: DevicesData = { ...data, repairs: data.repairs.filter((r) => r.id !== id) };
-    setData(next);
+    setData((d) => ({ ...d, repairs: d.repairs.filter((r) => r.id !== id) }));
+    if (editingRepair === id) setEditingRepair(null);
     showToast("Oprava smazána", "success");
   };
 
-  const updateBrand = (id: string, name: string) => {
-    const next: DevicesData = { ...data, brands: data.brands.map((b) => (b.id === id ? { ...b, name } : b)) };
-    setData(next);
-    setEditingBrand(null);
-    showToast("Značka upravena", "success");
+  const askDeleteRepair = (r: Repair) => {
+    setConfirm({
+      title: `Smazat opravu „${r.name}“?`,
+      message:
+        r.modelIds.length > 1
+          ? `Oprava zmizí u všech ${r.modelIds.length} modelů, ke kterým patří. Akci nelze vrátit zpět.`
+          : "Akci nelze vrátit zpět.",
+      onConfirm: () => deleteRepair(r.id),
+    });
   };
 
-  const updateCategory = (id: string, name: string) => {
-    const next: DevicesData = { ...data, categories: data.categories.map((c) => (c.id === id ? { ...c, name } : c)) };
-    setData(next);
-    setEditingCategory(null);
-    showToast("Kategorie upravena", "success");
-  };
-
-  const updateModel = (id: string, name: string) => {
-    const next: DevicesData = { ...data, models: data.models.map((m) => (m.id === id ? { ...m, name } : m)) };
-    setData(next);
-    setEditingModel(null);
-    showToast("Model upraven", "success");
-  };
-
-  const updateRepair = (id: string, repairData: { name: string; price: string; time: string; details: string; costs: string; productIds: string[]; modelIds: string[]; hiddenModelIds: string[] }) => {
+  const updateRepair = (id: string, repairData: RepairDraft) => {
     const next: DevicesData = {
       ...data,
       repairs: data.repairs.map((r) =>
@@ -539,121 +597,69 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     showToast("Oprava upravena", "success");
   };
 
+  /* ---------- výběr → opravy vpravo ---------- */
 
-  const reorderModels = (fromIndex: number, toIndex: number) => {
-    setData((d) => {
-      const models = [...d.models];
-      const filtered = models.filter((m) => m.categoryId === selectedCategoryId);
-      const others = models.filter((m) => m.categoryId !== selectedCategoryId);
-      const [moved] = filtered.splice(fromIndex, 1);
-      filtered.splice(toIndex, 0, moved);
-      return { ...d, models: [...others, ...filtered] };
-    });
-  };
-
-
-  const moveBrandUp = (index: number) => {
-    if (index === 0) return;
-    setData((d) => {
-      const brands = [...d.brands];
-      [brands[index - 1], brands[index]] = [brands[index], brands[index - 1]];
-      return { ...d, brands };
-    });
-  };
-
-  const moveBrandDown = (index: number) => {
-    if (index === data.brands.length - 1) return;
-    setData((d) => {
-      const brands = [...d.brands];
-      [brands[index], brands[index + 1]] = [brands[index + 1], brands[index]];
-      return { ...d, brands };
-    });
-  };
-
-  const moveCategoryUp = (index: number) => {
-    if (index === 0) return;
-    const filtered = filteredCategories;
-    const categoryToMove = filtered[index];
-    const categoryAbove = filtered[index - 1];
-    
-    setData((d) => {
-      const categories = d.categories.map((c) => {
-        if (c.id === categoryToMove.id) return categoryAbove;
-        if (c.id === categoryAbove.id) return categoryToMove;
-        return c;
-      });
-      return { ...d, categories };
-    });
-  };
-
-  const moveCategoryDown = (index: number) => {
-    if (index === filteredCategories.length - 1) return;
-    const filtered = filteredCategories;
-    const categoryToMove = filtered[index];
-    const categoryBelow = filtered[index + 1];
-    
-    setData((d) => {
-      const categories = d.categories.map((c) => {
-        if (c.id === categoryToMove.id) return categoryBelow;
-        if (c.id === categoryBelow.id) return categoryToMove;
-        return c;
-      });
-      return { ...d, categories };
-    });
-  };
-
-  const moveModelUp = (index: number) => {
-    if (index === 0) return;
-    const filtered = filteredModels;
-    const modelToMove = filtered[index];
-    const modelAbove = filtered[index - 1];
-    
-    setData((d) => {
-      const models = d.models.map((m) => {
-        if (m.id === modelToMove.id) return modelAbove;
-        if (m.id === modelAbove.id) return modelToMove;
-        return m;
-      });
-      return { ...d, models };
-    });
-  };
-
-  const moveModelDown = (index: number) => {
-    if (index === filteredModels.length - 1) return;
-    const filtered = filteredModels;
-    const modelToMove = filtered[index];
-    const modelBelow = filtered[index + 1];
-    
-    setData((d) => {
-      const models = d.models.map((m) => {
-        if (m.id === modelToMove.id) return modelBelow;
-        if (m.id === modelBelow.id) return modelToMove;
-        return m;
-      });
-      return { ...d, models };
-    });
-  };
-
-
-  const filteredCategories = useMemo(() => {
-    return selectedBrandId
-      ? data.categories.filter((c) => c.brandId === selectedBrandId)
-      : [];
-  }, [data.categories, selectedBrandId]);
-
-  const filteredModels = useMemo(() => {
-    return selectedCategoryId ? data.models.filter((m) => m.categoryId === selectedCategoryId) : [];
-  }, [data.models, selectedCategoryId]);
+  /** Modely, jejichž opravy se zobrazují. null = bez omezení (nic nevybráno). */
+  const scopeModelIds = useMemo<Set<string> | null>(() => {
+    if (!selection) return null;
+    if (selection.kind === "model") return new Set([selection.id]);
+    const catIds =
+      selection.kind === "category"
+        ? new Set([selection.id])
+        : new Set(data.categories.filter((c) => c.brandId === selection.id).map((c) => c.id));
+    return new Set(data.models.filter((m) => catIds.has(m.categoryId)).map((m) => m.id));
+  }, [data.categories, data.models, selection]);
 
   const filteredRepairs = useMemo(() => {
-    return selectedModelId ? data.repairs.filter((r) => r.modelIds && r.modelIds.includes(selectedModelId)) : [];
-  }, [data.repairs, selectedModelId]);
+    const q = repairSearchQuery.trim().toLowerCase();
+    const modelName = new Map(data.models.map((m) => [m.id, m.name.toLowerCase()]));
+    return data.repairs.filter((r) => {
+      if (scopeModelIds && !r.modelIds?.some((m) => scopeModelIds.has(m))) return false;
+      if (!q) return true;
+      return (
+        r.name.toLowerCase().includes(q) ||
+        (r.details ?? "").toLowerCase().includes(q) ||
+        (r.modelIds ?? []).some((m) => modelName.get(m)?.includes(q))
+      );
+    });
+  }, [data.repairs, data.models, scopeModelIds, repairSearchQuery]);
 
-  const selectedBrand = data.brands.find((b) => b.id === selectedBrandId);
-  const selectedCategory = data.categories.find((c) => c.id === selectedCategoryId);
-  const selectedModel = data.models.find((m) => m.id === selectedModelId);
+  /** „Apple › iPhone › iPhone 13“ pro tlačítko na úzké obrazovce. */
+  const crumbText = useMemo(() => {
+    if (!selection) return null;
+    const names: string[] = [];
+    let category: Category | undefined;
+    if (selection.kind === "model") {
+      const m = data.models.find((x) => x.id === selection.id);
+      if (m) {
+        names.unshift(m.name);
+        category = data.categories.find((c) => c.id === m.categoryId);
+      }
+    } else if (selection.kind === "category") {
+      category = data.categories.find((c) => c.id === selection.id);
+    }
+    if (category) {
+      names.unshift(category.name);
+      const b = data.brands.find((x) => x.id === category!.brandId);
+      if (b) names.unshift(b.name);
+    }
+    if (selection.kind === "brand") {
+      const b = data.brands.find((x) => x.id === selection.id);
+      if (b) names.push(b.name);
+    }
+    return names.join(" › ");
+  }, [data, selection]);
 
-  // Parse import file
+  const selectNode = (sel: Selection | null) => {
+    setSelection(sel);
+    setRenaming(null);
+    /* Rozepsaná oprava má modely podle starého výběru – prázdný formulář
+       zavřeme, do rozepsaného uživateli nesaháme. */
+    if (addingRepair && !newRepair.name.trim()) setAddingRepair(false);
+    if (isNarrow && sel) setTreeOpen(false);
+  };
+
+
   const parseImportFile = (text: string) => {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
     const preview = {
@@ -956,15 +962,6 @@ DETALY: Výměna opotřebované baterie
     setImportPreview(null);
   };
 
-  /**
-   * Přepne, jestli položka jde do veřejného API.
-   *
-   * Ukládá se hned, ne přes debounce – jinak by uživatel mohl odejít
-   * dřív, než se změna zapíše, a myslel si, že něco skryl.
-   */
-  /* Značky, kategorie a modely jsou v úzkých sloupcích – vejde se sem jen
-     krátký štítek, ne celé tlačítko jako u oprav. Skrytí se v API dědí dolů
-     (skrytá značka schová i kategorie, modely a jejich opravy). */
   /* Odklikat stovku oprav po jedné nikdo nebude. Působí jen na to, co je
      zrovna vidět podle filtrů – „zveřejnit vše“ napříč celým servisem by
      byl moc velký kanón na omylem stisknuté tlačítko. */
@@ -987,41 +984,12 @@ DETALY: Výměna opotřebované baterie
     });
   };
 
-  const stitekViditelnosti = (
-    druh: "brands" | "categories" | "models",
-    polozka: { id: string; publicVisible?: boolean },
-  ) => {
-    if (!ukazatViditelnost) return null;
-    const skryto = polozka.publicVisible === false;
-    return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          prepnoutViditelnost(druh, polozka.id);
-        }}
-        title={
-          skryto
-            ? "Neposílá se do veřejného API ceníku, včetně všeho pod tím. Kliknutím zařadíš."
-            : "Posílá se do veřejného API ceníku. Kliknutím vyřadíš i všechno pod tím."
-        }
-        style={{
-          flexShrink: 0,
-          border: `1px solid ${skryto ? "var(--warn, #e5a94a)" : "var(--border)"}`,
-          background: "none",
-          borderRadius: 999,
-          padding: "1px 7px",
-          fontSize: 10,
-          fontWeight: 700,
-          lineHeight: 1.6,
-          cursor: "pointer",
-          color: skryto ? "var(--warn, #e5a94a)" : "var(--muted)",
-        }}
-      >
-        {skryto ? "mimo API" : "v API"}
-      </button>
-    );
-  };
-
+  /**
+   * Přepne, jestli položka jde do veřejného API.
+   *
+   * Ukládá se hned, ne přes debounce – jinak by uživatel mohl odejít
+   * dřív, než se změna zapíše, a myslel si, že něco skryl.
+   */
   const prepnoutViditelnost = (
     druh: "brands" | "categories" | "models" | "repairs",
     id: string,
@@ -1041,26 +1009,24 @@ DETALY: Výměna opotřebované baterie
 
   if (showImport) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Import zařízení a oprav</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-              Importujte značky, kategorie, modely a opravy z TXT souboru
-            </div>
-          </div>
-          <Button variant="soft" onClick={() => setShowImport(false)}>
-            Zpět na správu
-          </Button>
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <PageHeader
+          title="Import zařízení a oprav"
+          subtitle="Importujte značky, kategorie, modely a opravy z TXT souboru."
+          actions={
+            <Button variant="soft" onClick={() => setShowImport(false)}>
+              Zpět na správu
+            </Button>
+          }
+        />
 
         <div style={card}>
-          <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
+          <div style={{ fontWeight: 950, fontSize: "var(--text-lg)", marginBottom: 16, color: "var(--text)" }}>
             Návod k použití
           </div>
-          <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6, marginBottom: 20 }}>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--text)", lineHeight: 1.6, marginBottom: 20 }}>
             <p style={{ marginBottom: 12 }}>
-              <strong>Struktura souboru:</strong> Soubor musí obsahovat hierarchii ZNAČKA → KATEGORIE → MODEL → OPRAVA.
+              <strong>Struktura souboru:</strong> Soubor musí obsahovat hierarchii ZNAČKA › KATEGORIE › MODEL › OPRAVA.
             </p>
             <p style={{ marginBottom: 12 }}>
               <strong>Formát:</strong> Každý řádek začíná klíčovým slovem (ZNAČKA:, KATEGORIE:, MODEL:, OPRAVA:, CENA:, ČAS:, NÁKLADY:, PRODUKTY:, DETALY:).
@@ -1084,7 +1050,7 @@ DETALY: Výměna opotřebované baterie
         </div>
 
         <div style={card}>
-          <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
+          <div style={{ fontWeight: 950, fontSize: "var(--text-lg)", marginBottom: 16, color: "var(--text)" }}>
             Nahrát soubor
           </div>
           <input
@@ -1097,35 +1063,35 @@ DETALY: Výměna opotřebované baterie
 
         {importPreview && (
           <div style={card}>
-            <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 16, color: "var(--text)" }}>
+            <div style={{ fontWeight: 950, fontSize: "var(--text-lg)", marginBottom: 16, color: "var(--text)" }}>
               Náhled importu
             </div>
             
             {/* Summary */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 100px), 1fr))", gap: 12, marginBottom: 20 }}>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
+                <div style={{ fontSize: "var(--text-2xl)", fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.brands.length}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Značky</div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>Značky</div>
               </div>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
+                <div style={{ fontSize: "var(--text-2xl)", fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.categories.length}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Kategorie</div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>Kategorie</div>
               </div>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
+                <div style={{ fontSize: "var(--text-2xl)", fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.models.length}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Modely</div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>Modely</div>
               </div>
               <div style={{ padding: 12, background: "var(--panel-2)", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 24, fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
+                <div style={{ fontSize: "var(--text-2xl)", fontWeight: 950, color: "var(--accent)", marginBottom: 4 }}>
                   {importPreview.repairs.length}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Opravy</div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>Opravy</div>
               </div>
             </div>
 
@@ -1135,28 +1101,28 @@ DETALY: Výměna opotřebované baterie
                 const brandCategories = importPreview.categories.filter(c => c.brand === brand);
                 return (
                   <div key={brandIdx} style={{ marginBottom: 16, padding: 12, background: "var(--panel-2)", borderRadius: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", marginBottom: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)", marginBottom: 8 }}>
                       <DeviceIcon size={14} /> {brand}
                     </div>
                     {brandCategories.map((cat, catIdx) => {
                       const catModels = importPreview.models.filter(m => m.brand === brand && m.category === cat.name);
                       return (
                         <div key={catIdx} style={{ marginLeft: 16, marginBottom: 12 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", marginBottom: 6 }}>
+                          <div style={{ fontWeight: 600, fontSize: "var(--text-sm)", color: "var(--text)", marginBottom: 6 }}>
                             <FolderIcon size={14} /> {cat.name}
                           </div>
                           {catModels.map((model, modelIdx) => {
                             const modelRepairs = importPreview.repairs.filter(r => r.brand === brand && r.category === cat.name && r.model === model.name);
                             return (
                               <div key={modelIdx} style={{ marginLeft: 16, marginBottom: 8 }}>
-                                <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text)", marginBottom: 4 }}>
+                                <div style={{ fontWeight: 600, fontSize: "var(--text-xs)", color: "var(--text)", marginBottom: 4 }}>
                                   <WrenchIcon size={14} /> {model.name}
                                 </div>
                                 {modelRepairs.length > 0 && (
                                   <div style={{ marginLeft: 16 }}>
                                     {modelRepairs.map((repair, repairIdx) => (
-                                      <div key={repairIdx} style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, padding: "4px 8px", background: "var(--panel)", borderRadius: 4 }}>
-                                        • {repair.name} ({repair.price} Kč, {repair.time} min{repair.costs ? `, náklady: ${repair.costs} Kč` : ""})
+                                      <div key={repairIdx} style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: 4, padding: "4px 8px", background: "var(--panel)", borderRadius: 4 }}>
+                                        {repair.name} ({repair.price} Kč, {repair.time} min{repair.costs ? `, náklady: ${repair.costs} Kč` : ""})
                                       </div>
                                     ))}
                                   </div>
@@ -1179,12 +1145,12 @@ DETALY: Výměna opotřebované baterie
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 150, overflowY: "auto" }}>
                   {importPreview.duplicates.map((dup, idx) => (
-                    <div key={idx} style={{ fontSize: 12, color: "var(--text)", padding: "4px 8px", background: "rgba(239, 68, 68, 0.1)", borderRadius: 4 }}>
+                    <div key={idx} style={{ fontSize: "var(--text-xs)", color: "var(--text)", padding: "4px 8px", background: "rgba(239, 68, 68, 0.1)", borderRadius: 4 }}>
                       {dup.type}: {dup.name}
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginTop: 8 }}>
                   Duplicitní položky budou přeskočeny při importu.
                 </div>
               </div>
@@ -1201,1277 +1167,174 @@ DETALY: Výměna opotřebované baterie
     );
   }
 
+  const subtitle = [
+    `${data.brands.length} ${plural(data.brands.length, ["značka", "značky", "značek"])}`,
+    `${data.models.length} ${plural(data.models.length, ["model", "modely", "modelů"])}`,
+    `${data.repairs.length} ${plural(data.repairs.length, ["oprava", "opravy", "oprav"])}`,
+  ].join(" · ");
+
+  const tree = (
+    <DeviceTree
+      data={data}
+      selection={selection}
+      onSelect={selectNode}
+      renaming={renaming}
+      onStartRename={setRenaming}
+      onCommitRename={renameNode}
+      onCancelRename={() => setRenaming(null)}
+      onDelete={askDeleteNode}
+      onAdd={addNode}
+      onMove={moveNode}
+      onReorder={reorderNode}
+      onTogglePublic={(sel) => prepnoutViditelnost(KIND_KEY[sel.kind], sel.id)}
+      showPublic={ukazatViditelnost}
+    />
+  );
+
+  const repairsPane = (
+    <RepairsPane
+      data={data}
+      products={inventoryData.products}
+      selection={selection}
+      onSelect={selectNode}
+      onStartRename={(sel) => {
+        setRenaming(sel);
+        if (isNarrow) setTreeOpen(true);
+      }}
+      onToggleNodePublic={(sel) => prepnoutViditelnost(KIND_KEY[sel.kind], sel.id)}
+      showPublic={ukazatViditelnost}
+      repairs={filteredRepairs}
+      search={repairSearchQuery}
+      onSearch={setRepairSearchQuery}
+      onToggleRepairPublic={(id) => prepnoutViditelnost("repairs", id)}
+      onBulkPublic={hromadnaViditelnost}
+      canAdd={canAddRepair}
+      adding={addingRepair}
+      onOpenAdd={openAddRepair}
+      onCancelAdd={() => {
+        setAddingRepair(false);
+        setNewRepair(EMPTY_REPAIR_DRAFT);
+      }}
+      newRepair={newRepair}
+      setNewRepair={setNewRepair}
+      onSubmitAdd={addRepairItem}
+      editingId={editingRepair}
+      editDraft={editRepairData}
+      setEditDraft={setEditRepairData}
+      onStartEdit={startEditRepair}
+      onSaveEdit={() => {
+        if (editingRepair) updateRepair(editingRepair, editRepairData);
+      }}
+      onCancelEdit={() => setEditingRepair(null)}
+      onDeleteRepair={askDeleteRepair}
+    />
+  );
+
   return (
-    <div data-tour="devices-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div data-tour="devices-main" style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
       {devicesLoadError && (
         <div
+          role="alert"
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: 12,
-            padding: 16,
-            background: "rgba(239,68,68,0.08)",
-            borderRadius: 12,
-            border: "1px solid rgba(239,68,68,0.3)",
+            gap: "var(--space-3)",
+            padding: "var(--space-3) var(--space-4)",
+            background: "var(--danger-soft)",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--danger)",
             color: "var(--text)",
+            fontSize: "var(--text-base)",
           }}
         >
-          <span style={{ fontSize: 14 }}>Chyba načítání: {devicesLoadError}</span>
-          <button
+          <span>Chyba načítání: {devicesLoadError}</span>
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => {
               resetTauriFetchState();
               setRetryKey((k) => k + 1);
             }}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 10,
-              border: "none",
-              background: "var(--accent)",
-              color: "white",
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
           >
             Načíst znovu
-          </button>
+          </Button>
         </div>
       )}
       {devicesLoading && activeServiceId && !devicesLoadError && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-            padding: 24,
-            background: "var(--panel)",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-          }}
-        >
+        <Card style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "var(--space-3)", padding: "var(--space-5)" }}>
           <div
+            aria-hidden="true"
             style={{
-              width: 24,
-              height: 24,
+              width: 22,
+              height: 22,
               border: "2px solid var(--accent)",
               borderTopColor: "transparent",
               borderRadius: "50%",
               animation: "devicesSpin 0.7s linear infinite",
             }}
           />
-          <span style={{ color: "var(--muted)", fontSize: 14 }}>Načítání zařízení…</span>
-        </div>
+          <span style={{ color: "var(--muted)", fontSize: "var(--text-base)" }}>Načítání zařízení…</span>
+        </Card>
       )}
       <style>{`@keyframes devicesSpin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zařízení a opravy</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-            Použijte ↑↓ pro změnu pořadí.
-          </div>
-        </div>
-        {/* Viz Sklad: 120 px uhýbá plovoucímu "+", které na telefonu
-            sedí jinde. */}
-        <Button variant="primary" onClick={() => setShowImport(true)} style={isNarrow ? undefined : { marginRight: 120 }}>
-          Import
-        </Button>
-      </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* First row: Brands and Categories */}
-        {/* Na telefonu pod sebe – ve dvou sloupcích zbylo na panel 167 px
-            a do pole "Nová značka…" se vešlo "Nová zn". */}
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "repeat(2, 1fr)", gap: 16 }}>
-        {/* BRANDS */}
-        <div style={card}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Značky</div>
+      <PageHeader
+        title="Zařízení a opravy"
+        subtitle={subtitle}
+        actions={
+          <Button variant="primary" onClick={() => setShowImport(true)}>
+            Import
+          </Button>
+        }
+      />
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <input
-              placeholder="Nová značka…"
-              value={newBrandName}
-              onChange={(e) => setNewBrandName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addBrand()}
-              style={inputStyle}
-            />
-            <Button variant="primary" onClick={addBrand}>
-              +
-            </Button>
-          </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-            {data.brands.map((b, idx) => (
-              <div
-                key={b.id}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border,
-                  background: selectedBrandId === b.id ? "var(--accent-soft)" : "var(--panel)",
-                  color: selectedBrandId === b.id ? "var(--accent)" : "var(--text)",
-                  fontWeight: 600,
-                  fontSize: 13,
-                }}
-              >
-                {editingBrand === b.id ? (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <input
-                      value={editBrandName}
-                      onChange={(e) => setEditBrandName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") updateBrand(b.id, editBrandName);
-                        if (e.key === "Escape") setEditingBrand(null);
-                      }}
-                      style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
-                      autoFocus
-                    />
-                    <Button variant="primary" size="sm" onClick={() => updateBrand(b.id, editBrandName)}>
-                      ✓
-                    </Button>
-                    <Button variant="soft" size="sm" onClick={() => setEditingBrand(null)}>
-                      ✕
-                    </Button>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => {
-                      if (selectedBrandId === b.id) {
-                        setSelectedBrandId(null);
-                        setSelectedCategoryId(null);
-                        setSelectedModelId(null);
-                      } else {
-                      setSelectedBrandId(b.id);
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                      }
-                    }}
-                    style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
-                          {stitekViditelnosti("brands", b)}
-                        </span>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveBrandUp(idx);
-                        }}
-                        disabled={idx === 0}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: idx === 0 ? "var(--muted)" : "var(--accent)",
-                          cursor: idx === 0 ? "not-allowed" : "pointer",
-                          fontSize: 16,
-                          fontWeight: 900,
-                          padding: 4,
-                          opacity: idx === 0 ? 0.3 : 1,
-                        }}
-                        title="Posunout nahoru"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveBrandDown(idx);
-                        }}
-                        disabled={idx === data.brands.length - 1}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: idx === data.brands.length - 1 ? "var(--muted)" : "var(--accent)",
-                          cursor: idx === data.brands.length - 1 ? "not-allowed" : "pointer",
-                          fontSize: 16,
-                          fontWeight: 900,
-                          padding: 4,
-                          opacity: idx === data.brands.length - 1 ? 0.3 : 1,
-                        }}
-                        title="Posunout dolů"
-                      >
-                        ↓
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditBrandName(b.name);
-                          setEditingBrand(b.id);
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "var(--accent)",
-                          cursor: "pointer",
-                          fontSize: 14,
-                          fontWeight: 900,
-                          padding: 4,
-                        }}
-                        title="Upravit"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteBrand(b.id);
-                        }}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "rgba(239,68,68,0.8)",
-                          cursor: "pointer",
-                          fontSize: 16,
-                          fontWeight: 900,
-                          padding: 4,
-                        }}
-                        title="Smazat"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CATEGORIES */}
-        <div style={card}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>
-            Kategorie {selectedBrand && `· ${selectedBrand.name}`}
-          </div>
-
-          {selectedBrandId && (
-            <>
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input
-                  placeholder="Nová kategorie…"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addCategory()}
-                  style={inputStyle}
-                />
-                <Button variant="primary" onClick={addCategory}>
-                  +
-                </Button>
-              </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-                {filteredCategories.map((c, idx) => (
-                  <div
-                    key={c.id}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border,
-                      background: selectedCategoryId === c.id ? "var(--accent-soft)" : "var(--panel)",
-                      color: selectedCategoryId === c.id ? "var(--accent)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                    }}
-                  >
-                    {editingCategory === c.id ? (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <input
-                          value={editCategoryName}
-                          onChange={(e) => setEditCategoryName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") updateCategory(c.id, editCategoryName);
-                            if (e.key === "Escape") setEditingCategory(null);
-                          }}
-                          style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
-                          autoFocus
-                        />
-                        <Button variant="primary" size="sm" onClick={() => updateCategory(c.id, editCategoryName)}>
-                          ✓
-                        </Button>
-                        <Button variant="soft" size="sm" onClick={() => setEditingCategory(null)}>
-                          ✕
-                        </Button>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => {
-                          if (selectedCategoryId === c.id) {
-                            setSelectedCategoryId(null);
-                            setSelectedModelId(null);
-                          } else {
-                            setSelectedCategoryId(c.id);
-                            setSelectedModelId(null);
-                          }
-                        }}
-                        style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                      >
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                          {stitekViditelnosti("categories", c)}
-                        </span>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={(e) => { e.stopPropagation(); moveCategoryUp(idx); }} disabled={idx === 0} style={arrowBtn(idx === 0)} title="Posunout nahoru">↑</button>
-                          <button onClick={(e) => { e.stopPropagation(); moveCategoryDown(idx); }} disabled={idx === filteredCategories.length - 1} style={arrowBtn(idx === filteredCategories.length - 1)} title="Posunout dolů">↓</button>
-                          <button onClick={(e) => { e.stopPropagation(); setEditCategoryName(c.name); setEditingCategory(c.id); }} style={arrowBtn(false)} title="Upravit">✎</button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteCategory(c.id); }} style={{ ...arrowBtn(false), color: "rgba(239,68,68,0.8)" }} title="Smazat">×</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {!selectedBrandId && (
-            <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Vyberte značku
-            </div>
-          )}
-          </div>
-        </div>
-
-        {/* Second row: Models and Repairs */}
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 2fr", gap: 16 }}>
-        {/* MODELS */}
-          <div style={{ ...card, maxHeight: "400px" }}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>
-            Modely {selectedCategory && `· ${selectedCategory.name}`}
-          </div>
-
-          {selectedCategoryId && (
-            <>
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input
-                  placeholder="Nový model…"
-                  value={newModelName}
-                  onChange={(e) => setNewModelName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addModel()}
-                  style={inputStyle}
-                />
-                <Button variant="primary" onClick={addModel}>
-                  +
-                </Button>
-              </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-                {filteredModels.map((m, idx) => (
-                  <div
-                    key={m.id}
-                    draggable={!editingModel}
-                    onDragStart={() => {
-                      setDraggedModelId(m.id);
-                    }}
-                    onDragEnd={() => {
-                      setDraggedModelId(null);
-                      setDragOverModelId(null);
-                    }}
-                    onDragEnter={(e) => {
-                      e.preventDefault();
-                      if (draggedModelId && draggedModelId !== m.id) {
-                        setDragOverModelId(m.id);
-                      }
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (draggedModelId && draggedModelId !== m.id) {
-                        const draggedIdx = filteredModels.findIndex((mod) => mod.id === draggedModelId);
-                        const targetIdx = filteredModels.findIndex((mod) => mod.id === m.id);
-                        reorderModels(draggedIdx, targetIdx);
-                      }
-                      setDraggedModelId(null);
-                      setDragOverModelId(null);
-                    }}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: dragOverModelId === m.id ? "2px solid var(--accent)" : border,
-                      background: selectedModelId === m.id ? "var(--accent-soft)" : "var(--panel)",
-                      color: selectedModelId === m.id ? "var(--accent)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                      cursor: editingModel ? "default" : draggedModelId ? "grabbing" : "grab",
-                      opacity: draggedModelId === m.id ? 0.4 : 1,
-                      transition: "opacity 150ms ease, border 150ms ease",
-                    }}
-                  >
-                    {editingModel === m.id ? (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <input
-                          value={editModelName}
-                          onChange={(e) => setEditModelName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") updateModel(m.id, editModelName);
-                            if (e.key === "Escape") setEditingModel(null);
-                          }}
-                          style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
-                          autoFocus
-                        />
-                        <Button variant="primary" size="sm" onClick={() => updateModel(m.id, editModelName)}>
-                          ✓
-                        </Button>
-                        <Button variant="soft" size="sm" onClick={() => setEditingModel(null)}>
-                          ✕
-                        </Button>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => {
-                          if (selectedModelId === m.id) {
-                            setSelectedModelId(null);
-                          } else {
-                            setSelectedModelId(m.id);
-                          }
-                        }}
-                        style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                      >
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
-                          {stitekViditelnosti("models", m)}
-                        </span>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={(e) => { e.stopPropagation(); moveModelUp(idx); }} disabled={idx === 0} style={arrowBtn(idx === 0)} title="Posunout nahoru">↑</button>
-                          <button onClick={(e) => { e.stopPropagation(); moveModelDown(idx); }} disabled={idx === filteredModels.length - 1} style={arrowBtn(idx === filteredModels.length - 1)} title="Posunout dolů">↓</button>
-                          <button onClick={(e) => { e.stopPropagation(); setEditModelName(m.name); setEditingModel(m.id); }} style={arrowBtn(false)} title="Upravit">✎</button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteModel(m.id); }} style={{ ...arrowBtn(false), color: "rgba(239,68,68,0.8)" }} title="Smazat">×</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {!selectedCategoryId && (
-            <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Vyberte kategorii
-            </div>
-          )}
-        </div>
-
-          {/* REPAIRS - Add Form Only */}
-          {/* Taky bez stropu – formulář nemá vnitřní scroll a našeptávače v něm
-              jsou position:absolute, scrollující obal by je ořezal. */}
-          <div style={{ ...card, maxHeight: "none" }}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>
-              Přidání opravy {selectedModel && `· ${selectedModel.name}`}
-          </div>
-
-            {selectedCategoryId && (
-            <>
-              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                      Modely (samodoplnovací výběr)
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        placeholder="Hledat model (např. dyson)…"
-                        value={newRepair.modelSearch}
-                        onChange={(e) => setNewRepair((p) => ({ ...p, modelSearch: e.target.value }))}
-                        style={inputStyle}
-                      />
-                      {newRepair.modelSearch && (
-                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
-                          {data.models
-                            .filter((m) => 
-                              m.name.toLowerCase().includes(newRepair.modelSearch.toLowerCase()) &&
-                              !newRepair.modelIds.includes(m.id)
-                            )
-                            .slice(0, 10)
-                            .map((m) => (
-                              <div
-                                key={m.id}
-                                onClick={() => {
-                                  setNewRepair((prev) => ({
-                                    ...prev,
-                                    modelIds: [...prev.modelIds, m.id],
-                                    modelSearch: "",
-                                  }));
-                                }}
-                                style={{
-                                  padding: "8px 12px",
-                                  cursor: "pointer",
-                                  fontSize: 13,
-                                  borderBottom: border,
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = "var(--accent-soft)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = "transparent";
-                                }}
-                              >
-                                {m.name}
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                    {newRepair.modelIds.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                        {newRepair.modelIds.map((mid) => {
-                          const model = data.models.find((m) => m.id === mid);
-                          if (!model) return null;
-                          return (
-                            <div
-                              key={mid}
-                              style={{
-                                padding: "4px 10px",
-                                background: "var(--accent-soft)",
-                                borderRadius: 6,
-                                fontSize: 12,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              <span>{model.name}</span>
-                              <button
-                                onClick={() => {
-                                  setNewRepair((prev) => ({
-                                    ...prev,
-                                    modelIds: prev.modelIds.filter((id) => id !== mid),
-                                  }));
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "var(--accent)",
-                                  cursor: "pointer",
-                                  fontSize: 14,
-                                  padding: 0,
-                                  width: 16,
-                                  height: 16,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                <input
-                  placeholder="Název opravy…"
-                  value={newRepair.name}
-                  onChange={(e) => setNewRepair((p) => ({ ...p, name: e.target.value }))}
-                  style={inputStyle}
-                />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
-                  <input
-                    placeholder="Cena (Kč)"
-                    type="number"
-                    value={newRepair.price}
-                    onChange={(e) => setNewRepair((p) => ({ ...p, price: e.target.value }))}
-                    style={inputStyle}
-                  />
-                  <input
-                    placeholder="Čas (min)"
-                    type="number"
-                    value={newRepair.time}
-                    onChange={(e) => setNewRepair((p) => ({ ...p, time: e.target.value }))}
-                    style={inputStyle}
-                  />
-                </div>
-                  <input
-                    placeholder="Náklady (Kč, volitelné)"
-                    type="number"
-                    value={newRepair.costs}
-                    onChange={(e) => setNewRepair((p) => ({ ...p, costs: e.target.value }))}
-                    style={inputStyle}
-                  />
-                  <div>
-                    <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                      Produkty (samodoplnovací výběr)
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        placeholder="Hledat produkt…"
-                        value={newRepair.productSearch}
-                        onChange={(e) => setNewRepair((p) => ({ ...p, productSearch: e.target.value }))}
-                        style={inputStyle}
-                      />
-                      {newRepair.productSearch && (
-                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
-                          {inventoryData.products
-                            .filter((p) => 
-                              p.name.toLowerCase().includes(newRepair.productSearch.toLowerCase()) &&
-                              !newRepair.productIds.includes(p.id)
-                            )
-                            /* Produkt bez vazby na vybraný model se dřív vůbec nenabídl, takže
-                               nově založený díl nešlo k opravě připojit a nikde nebylo vidět proč.
-                               Nabízíme všechny; přiřazené k modelu jdou první. */
-                            .sort((a, b) => Number(b.modelIds.includes(selectedModelId!)) - Number(a.modelIds.includes(selectedModelId!)))
-                            .slice(0, 10)
-                            .map((p) => (
-                              <div
-                                key={p.id}
-                                onClick={() => {
-                                  setNewRepair((prev) => ({
-                                    ...prev,
-                                    productIds: [...prev.productIds, p.id],
-                                    productSearch: "",
-                                  }));
-                                }}
-                                style={{
-                                  padding: "8px 12px",
-                                  cursor: "pointer",
-                                  borderBottom: border,
-                                  fontSize: 13,
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = "var(--accent-soft)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = "var(--panel)";
-                                }}
-                              >
-                                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                  <div style={{ fontWeight: 600 }}>{p.name} {p.sku && `(${p.sku})`}</div>
-                                  {selectedModelId && !p.modelIds.includes(selectedModelId) && (
-                                    <div style={{ fontSize: 11, color: "var(--warning-text, var(--muted))" }}>
-                                      Není přiřazen k vybranému modelu
-                                    </div>
-                                  )}
-                                  {p.modelIds.length > 0 && (
-                                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                      Modely: {p.modelIds.map((mid) => {
-                                        const model = data.models.find((m) => m.id === mid);
-                                        return model?.name;
-                                      }).filter(Boolean).join(", ")}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                    {newRepair.productIds.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                        {newRepair.productIds.map((pid) => {
-                          const product = inventoryData.products.find((p) => p.id === pid);
-                          if (!product) return null;
-                          return (
-                            <div
-                              key={pid}
-                              style={{
-                                padding: "6px 10px",
-                                background: "var(--accent-soft)",
-                                borderRadius: 6,
-                                fontSize: 12,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              <span>{product.name}</span>
-                              <button
-                                onClick={() => {
-                                  setNewRepair((prev) => ({
-                                    ...prev,
-                                    productIds: prev.productIds.filter((id) => id !== pid),
-                                  }));
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "var(--accent)",
-                                  cursor: "pointer",
-                                  fontSize: 16,
-                                  padding: 0,
-                                  width: 16,
-                                  height: 16,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                <textarea
-                  placeholder="Podrobnosti…"
-                  value={newRepair.details}
-                  onChange={(e) => setNewRepair((p) => ({ ...p, details: e.target.value }))}
-                  style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
-                />
-                <Button variant="primary" onClick={addRepairItem}>
-                  Přidat opravu
-                </Button>
-              </div>
-              </>
-            )}
-
-            {!selectedCategoryId && (
-              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-                Vyberte kategorii pro přidání opravy
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Repair List - Full Width */}
-      {/* Bez stropu z `card`: panely vedle sebe mají uvnitř vlastní scroll
-          (flex:1 + overflowY), tenhle ne, takže by seznam vytekl ven z pozadí. */}
-      <div style={{ ...card, marginTop: 16, maxHeight: "none" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-          <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>
-            Seznam oprav
-          </div>
-          {ukazatViditelnost && filteredRepairs.length > 0 && (
-            <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                Posílat do veřejného API ({filteredRepairs.length} zobrazených):
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
-                Zveřejnit vše
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(false)}>
-                Skrýt vše
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Filters */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginBottom: 16 }}>
-          <input
-            placeholder="Hledat opravu (název, podrobnosti)…"
-            value={repairSearchQuery}
-            onChange={(e) => setRepairSearchQuery(e.target.value)}
-            style={inputStyle}
+      {isNarrow ? (
+        <>
+          <TreeTriggerButton
+            label={crumbText ?? "Všechna zařízení – klepnutím vyberete značku, kategorii nebo model"}
+            onClick={() => setTreeOpen(true)}
           />
+          <DeviceTreeSheet open={treeOpen} onClose={() => setTreeOpen(false)}>
+            {tree}
+          </DeviceTreeSheet>
+          {repairsPane}
+        </>
+      ) : (
+        <div style={{ display: "flex", gap: "var(--space-4)", alignItems: "flex-start" }}>
+          {/* Strom si posouvá sám: lepí se k hornímu okraji a nepřeroste
+              viditelnou plochu, seznam oprav vpravo běží s celou stránkou. */}
+          <Card
+            style={{
+              width: 320,
+              flexShrink: 0,
+              position: "sticky",
+              top: 0,
+              maxHeight: "calc(100dvh - var(--topbar-h) - var(--pad-24) * 2)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              padding: "var(--space-3)",
+            }}
+          >
+            {tree}
+          </Card>
+          <div style={{ flex: 1, minWidth: 0 }}>{repairsPane}</div>
         </div>
+      )}
 
-        {/* Active filters info */}
-        {(selectedBrandId || selectedCategoryId || selectedModelId) && (
-          <div style={{ 
-              display: "flex", 
-              flexWrap: "wrap", 
-              gap: 8, 
-              marginBottom: 16,
-              padding: 12,
-              background: "var(--panel-2)",
-              borderRadius: 10,
-              border,
-            }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Aktivní filtry:</div>
-              {selectedBrandId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Značka: {data.brands.find((b) => b.id === selectedBrandId)?.name}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedBrandId(null);
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                    }}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {selectedCategoryId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Kategorie: {data.categories.find((c) => c.id === selectedCategoryId)?.name}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                    }}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {selectedModelId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Model: {data.models.find((m) => m.id === selectedModelId)?.name}</span>
-                  <button
-                    onClick={() => setSelectedModelId(null)}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </div>
-        )}
-
-        {/* Seznam oprav – řádky, ne dlaždice. U dlaždic dělal dlouhý výčet
-            modelů karty různě vysoké a přebíjel cenu i čas. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filteredRepairs.map((r) => {
-              const repairModels = data.models.filter((m) => r.modelIds && r.modelIds.includes(m.id));
-              const isEditing = editingRepair === r.id;
-              
-              return (
-                  <div
-                    key={r.id}
-                  style={{
-                    padding: isEditing ? 16 : "10px 14px",
-                    borderRadius: 10,
-                    border,
-                    background: "var(--panel)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: isEditing ? 12 : 6,
-                    minWidth: 0,
-                  }}
-                >
-                  {isEditing ? (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Modely (samodoplnovací výběr)
-                        </label>
-                        <div style={{ position: "relative" }}>
-                          <input
-                            placeholder="Hledat model (např. dyson)…"
-                            value={editRepairData.modelSearch}
-                            onChange={(e) => setEditRepairData((p) => ({ ...p, modelSearch: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                          {editRepairData.modelSearch && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
-                              {data.models
-                                .filter((m) => 
-                                  m.name.toLowerCase().includes(editRepairData.modelSearch.toLowerCase()) &&
-                                  !editRepairData.modelIds.includes(m.id)
-                                )
-                                .slice(0, 10)
-                                .map((m) => (
-                                  <div
-                                    key={m.id}
-                                    onClick={() => {
-                                      setEditRepairData((prev) => ({
-                                        ...prev,
-                                        modelIds: [...prev.modelIds, m.id],
-                                        modelSearch: "",
-                                      }));
-                                    }}
-                                    style={{
-                                      padding: "8px 12px",
-                                      cursor: "pointer",
-                                      fontSize: 13,
-                                      borderBottom: border,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.background = "var(--accent-soft)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.background = "transparent";
-                                    }}
-                                  >
-                                    {m.name}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        {editRepairData.modelIds.length > 0 && ukazatViditelnost && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
-                            Štítkem u modelu určíš, jestli se tahle oprava posílá do veřejného
-                            ceníku právě u něj. Uvnitř aplikace se nabízí u všech.
-                          </div>
-                        )}
-                        {editRepairData.modelIds.length > 0 && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                            {editRepairData.modelIds.map((mid) => {
-                              const model = data.models.find((m) => m.id === mid);
-                              if (!model) return null;
-                              const skrytyUModelu = editRepairData.hiddenModelIds.includes(mid);
-                              return (
-                                <div
-                                  key={mid}
-                    style={{
-                                    padding: "4px 10px",
-                                    background: skrytyUModelu ? "var(--panel)" : "var(--accent-soft)",
-                                    border: skrytyUModelu ? "1px solid var(--warn, #e5a94a)" : "1px solid transparent",
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <span style={{ color: skrytyUModelu ? "var(--muted)" : undefined }}>{model.name}</span>
-                                  {ukazatViditelnost && (
-                                    <button
-                                      onClick={() => {
-                                        setEditRepairData((prev) => ({
-                                          ...prev,
-                                          hiddenModelIds: prev.hiddenModelIds.includes(mid)
-                                            ? prev.hiddenModelIds.filter((id) => id !== mid)
-                                            : [...prev.hiddenModelIds, mid],
-                                        }));
-                                      }}
-                                      title={skrytyUModelu
-                                        ? `Tahle oprava se u modelu ${model.name} do veřejného ceníku neposílá. Kliknutím ji tam vrátíš.`
-                                        : `Tahle oprava je u modelu ${model.name} ve veřejném ceníku. Kliknutím ji tam skryješ.`}
-                                      style={{
-                                        border: `1px solid ${skrytyUModelu ? "var(--warn, #e5a94a)" : "var(--border)"}`,
-                                        background: "none",
-                                        borderRadius: 999,
-                                        padding: "0 6px",
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        cursor: "pointer",
-                                        color: skrytyUModelu ? "var(--warn, #e5a94a)" : "var(--muted)",
-                                      }}
-                                    >
-                                      {skrytyUModelu ? "mimo API" : "v API"}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      setEditRepairData((prev) => ({
-                                        ...prev,
-                                        modelIds: prev.modelIds.filter((id) => id !== mid),
-                                      }));
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      color: "var(--accent)",
-                                      cursor: "pointer",
-                                      fontSize: 14,
-                                      padding: 0,
-                                      width: 16,
-                                      height: 16,
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                        <input
-                          placeholder="Název opravy…"
-                          value={editRepairData.name}
-                          onChange={(e) => setEditRepairData((p) => ({ ...p, name: e.target.value }))}
-                          style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                        />
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
-                          <input
-                            placeholder="Cena (Kč)"
-                            type="number"
-                            value={editRepairData.price}
-                            onChange={(e) => setEditRepairData((p) => ({ ...p, price: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                          <input
-                            placeholder="Čas (min)"
-                            type="number"
-                            value={editRepairData.time}
-                            onChange={(e) => setEditRepairData((p) => ({ ...p, time: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                        </div>
-                      <input
-                        placeholder="Náklady (Kč, volitelné)"
-                        type="number"
-                        value={editRepairData.costs}
-                        onChange={(e) => setEditRepairData((p) => ({ ...p, costs: e.target.value }))}
-                        style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                      />
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Produkty (samodoplnovací výběr)
-                        </label>
-                        <div style={{ position: "relative" }}>
-                          <input
-                            placeholder="Hledat produkt…"
-                            value={editRepairData.productSearch}
-                            onChange={(e) => setEditRepairData((p) => ({ ...p, productSearch: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                          {editRepairData.productSearch && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
-                              {inventoryData.products
-                                .filter((p) => 
-                                  p.name.toLowerCase().includes(editRepairData.productSearch.toLowerCase()) &&
-                                  !editRepairData.productIds.includes(p.id)
-                                )
-                                /* Viz výše – nabízíme i díly, které k modelu zatím přiřazené nejsou. */
-                                .sort((a, b) => Number(b.modelIds.some((m) => editRepairData.modelIds.includes(m)))
-                                  - Number(a.modelIds.some((m) => editRepairData.modelIds.includes(m))))
-                                .slice(0, 10)
-                                .map((p) => (
-                                  <div
-                                    key={p.id}
-                                    onClick={() => {
-                                      setEditRepairData((prev) => ({
-                                        ...prev,
-                                        productIds: [...prev.productIds, p.id],
-                                        productSearch: "",
-                                      }));
-                                    }}
-                                    style={{
-                                      padding: "8px 12px",
-                                      cursor: "pointer",
-                                      fontSize: 13,
-                                      borderBottom: border,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.background = "var(--accent-soft)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.background = "transparent";
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                      <div style={{ fontWeight: 600 }}>{p.name} {p.sku && `(${p.sku})`}</div>
-                                      {editRepairData.modelIds.length > 0 && !p.modelIds.some((m) => editRepairData.modelIds.includes(m)) && (
-                                        <div style={{ fontSize: 11, color: "var(--warning-text, var(--muted))" }}>
-                                          Není přiřazen k vybranému modelu
-                                        </div>
-                                      )}
-                                      {p.modelIds.length > 0 && (
-                                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                          Modely: {p.modelIds.map((mid) => {
-                                            const model = data.models.find((m) => m.id === mid);
-                                            return model?.name;
-                                          }).filter(Boolean).join(", ")}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        {editRepairData.productIds.length > 0 && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                            {editRepairData.productIds.map((pid) => {
-                              const product = inventoryData.products.find((p) => p.id === pid);
-                              if (!product) return null;
-                              return (
-                                <div
-                                  key={pid}
-                                  style={{
-                                    padding: "6px 10px",
-                                    background: "var(--accent-soft)",
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <span>{product.name}</span>
-                                  <button
-                                    onClick={() => {
-                                      setEditRepairData((prev) => ({
-                                        ...prev,
-                                        productIds: prev.productIds.filter((id) => id !== pid),
-                                      }));
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      color: "var(--accent)",
-                                      cursor: "pointer",
-                                      fontSize: 16,
-                                      padding: 0,
-                                      width: 16,
-                                      height: 16,
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                        <textarea
-                          placeholder="Podrobnosti…"
-                          value={editRepairData.details}
-                          onChange={(e) => setEditRepairData((p) => ({ ...p, details: e.target.value }))}
-                          style={{ ...inputStyle, minHeight: 50, resize: "vertical", fontSize: 13, padding: "8px 10px" }}
-                        />
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Button variant="primary" onClick={() => updateRepair(r.id, editRepairData)} style={{ flex: 1 }}>
-                            Uložit
-                          </Button>
-                          <Button variant="soft" onClick={() => setEditingRepair(null)}>
-                            Zrušit
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                      {/* Řádek: vlevo popis, vpravo cena a akce. */}
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
-                          {ukazatViditelnost && (
-                            /* Text, ne ikona: „jde tahle oprava na web?“ nevystihne
-                               žádný piktogram a aplikace emoji jinde nepoužívá. */
-                            <Button
-                              variant={r.publicVisible === false ? "soft" : "ghost"}
-                              size="sm"
-                              onClick={() => prepnoutViditelnost("repairs", r.id)}
-                              title={r.publicVisible === false
-                                ? "Tahle oprava se do veřejného API neposílá. Kliknutím ji zařadíš."
-                                : "Tahle oprava se posílá do veřejného API. Kliknutím ji vyřadíš."}
-                              style={{
-                                flexShrink: 0,
-                                fontWeight: 600,
-                                color: r.publicVisible === false ? "var(--warn, #e5a94a)" : "var(--muted)",
-                              }}
-                            >
-                              {r.publicVisible === false ? "Mimo API" : "Posílá se do API"}
-                            </Button>
-                          )}
-                          </div>
-                        {repairModels.length > 0 && (
-                          /* Výčet zkrácený – u opravy platné pro 40 modelů
-                             přebíjel všechno ostatní. Celý je v titulku. */
-                          <div
-                            style={{ fontSize: 11, color: "var(--muted)" }}
-                            title={repairModels.map((m) => m.name).join(", ")}
-                          >
-                            {repairModels.slice(0, 3).map((m) => m.name).join(", ")}
-                            {repairModels.length > 3 && ` a ${repairModels.length - 3} dalších`}
-                          </div>
-                        )}
-                        {r.productIds && r.productIds.length > 0 && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            Produkty: {r.productIds.map((pid) => {
-                              const product = inventoryData.products.find((p) => p.id === pid);
-                              return product?.name;
-                            }).filter(Boolean).join(", ")}
-                          </div>
-                        )}
-                        {r.details && (
-                          /* Dvě řádky stačí na přehled, celý text je v úpravě. */
-                          <div style={{
-                            fontSize: 12,
-                            color: "var(--muted)",
-                            lineHeight: 1.4,
-                            marginTop: 4,
-                            display: "-webkit-box",
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: "vertical",
-                            overflow: "hidden",
-                          }}>
-                            {r.details}
-                          </div>
-                        )}
-                        </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
-                            {r.price} Kč
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                            {r.estimatedTime} min{r.costs ? ` · náklady ${r.costs} Kč` : ""}
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Button variant="soft"
-                            onClick={() => {
-                              setEditRepairData({ 
-                                name: r.name, 
-                                price: String(r.price), 
-                                time: String(r.estimatedTime), 
-                                details: r.details, 
-                                costs: r.costs ? String(r.costs) : "", 
-                                productIds: r.productIds || [], 
-                                modelIds: r.modelIds || [],
-                                hiddenModelIds: r.publicHiddenModelIds || [],
-                                productSearch: "",
-                                modelSearch: "",
-                              });
-                              setEditingRepair(r.id);
-                            }} style={{ fontSize: 12 }}
-                          >
-                            Upravit
-                          </Button>
-                          <Button variant="danger"
-                            onClick={() => deleteRepair(r.id)} style={{ fontSize: 12 }}
-                          >
-                            Smazat
-                          </Button>
-                        </div>
-                      </div>
-                      </div>
-                      </>
-                    )}
-                  </div>
-              );
-          })}
-        </div>
-
-        {filteredRepairs.length === 0 && (
-            <div style={{ 
-              padding: 40, 
-              textAlign: "center", 
-              color: "var(--muted)",
-              fontSize: 14,
-            }}>
-              {repairSearchQuery || selectedBrandId || selectedCategoryId || selectedModelId
-                ? "Žádné opravy neodpovídají zvoleným filtrům"
-                : "Zatím nebyly přidány žádné opravy"}
-            </div>
-        )}
-      </div>
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel="Smazat"
+        variant="danger"
+        onConfirm={() => {
+          confirm?.onConfirm();
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
+      />
     </div>
   );
 }

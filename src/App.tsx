@@ -21,6 +21,7 @@ import { OnlineGate } from "./components/OnlineGate";
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
+import { startServicePresence } from "./lib/presence";
 import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "./lib/zvyrazneniStavu";
 import { getPendingInviteToken, clearPendingInviteToken } from "./lib/pendingInvite";
 import { showToast, showPersistentToast } from "./components/Toast";
@@ -82,7 +83,8 @@ const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean };
-  sidebar: { position: SidebarPosition };
+  /** `pinned` – lišta trvale rozbalená (viz AppLayout); chybí-li, bere se false. */
+  sidebar: { position: SidebarPosition; pinned?: boolean };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: DisplayMode; pageSize: number; zvyrazneniStavu: ZvyrazneniStavu };
   /** Zapnutý modul Faktury (stránka, tlačítka u zakázek). Vypnout, pokud používáte vlastní fakturační systém. */
@@ -107,7 +109,7 @@ function defaultReducedEffects(): boolean {
 function defaultUIConfig(): UIConfig {
   return {
     app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects() },
-    sidebar: { position: "left" },
+    sidebar: { position: "left", pinned: false },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, zvyrazneniStavu: VYCHOZI_ZVYRAZNENI },
     invoicingEnabled: true,
@@ -143,6 +145,7 @@ function safeLoadUIConfig(): UIConfig {
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
+        pinned: typeof parsed?.sidebar?.pinned === "boolean" ? parsed.sidebar.pinned : false,
       },
       home: {
         orderFilters: {
@@ -180,7 +183,7 @@ export default function App() {
     });
   }, [activePage]);
   /** Když uživatel klikne „Jít do nastavení“ v toastu aktualizace, otevřeme Settings na této subsekci */
-  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "about"; subsection: "about_updates" } | null>(null);
+  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "app"; subsection: "about_updates" } | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
@@ -190,6 +193,17 @@ export default function App() {
     }
   });
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+
+  // Přítomnost v týmu (zelená tečka v Nastavení → Tým, bubliny „kdo tu je“
+  // u zakázky). Jeden kanál na servis, spuštěný tady, aby byl online každý,
+  // kdo má appku otevřenou – ne jen ten, kdo má otevřené Nastavení.
+  const presenceUserId = session?.user?.id ?? null;
+  const presenceNickname = userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Kolega";
+  const presenceAvatarUrl = userProfile?.avatarUrl ?? null;
+  useEffect(() => {
+    if (!activeServiceId || !presenceUserId) return;
+    return startServicePresence(activeServiceId, presenceUserId, { nickname: presenceNickname, avatarUrl: presenceAvatarUrl });
+  }, [activeServiceId, presenceUserId, presenceNickname, presenceAvatarUrl]);
   const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
 
@@ -418,7 +432,7 @@ export default function App() {
         page: "settings",
         title: "Nastavení – záložky",
         description:
-          "V horní řadě přepínejte mezi sekcemi: Servis, Zakázky, Vzhled a chování, Můj profil, O aplikaci.",
+          "V levém sloupci přepínejte mezi skupinami: Firma, Zakázky, Dokumenty a tisk, Komunikace, Lidé a přístupy, Aplikace, Můj profil. Nahoře je hledání v nastavení.",
         selector: "[data-tour=\"settings-categories\"]",
         icon: "settings",
       },
@@ -428,7 +442,7 @@ export default function App() {
         description:
           "Název servisu, IČO, adresa, kontaktní údaje a logo. Tyto údaje se zobrazují v hlavičce tiskových dokumentů a v nastavení.",
         selector: "[data-tour=\"settings-sub-service_basic\"]",
-        settingsSection: { category: "service", subsection: "service_basic" },
+        settingsSection: { category: "company", subsection: "service_basic" },
         icon: "settings",
       },
       {
@@ -437,7 +451,7 @@ export default function App() {
         description:
           "Pozvánky členů týmu, role a správa přístupů. Admin může přidávat a odebírat členy svého servisu.",
         selector: "[data-tour=\"settings-sub-service_team\"]",
-        settingsSection: { category: "service", subsection: "service_team" },
+        settingsSection: { category: "people", subsection: "service_team" },
         icon: "team",
       },
       {
@@ -464,7 +478,7 @@ export default function App() {
         description:
           "Automatický tisk po změně stavu a výchozí tiskárna. Šablony dokumentů (zakázkový list, protokol, záruční list) se upravují v aplikaci JobiDocs.",
         selector: "[data-tour=\"settings-sub-orders_tisk_dokumentu\"]",
-        settingsSection: { category: "orders", subsection: "orders_tisk_dokumentu" },
+        settingsSection: { category: "documents", subsection: "orders_tisk_dokumentu" },
         icon: "doc",
       },
       {
@@ -482,7 +496,7 @@ export default function App() {
         description:
           "Plovoucí tlačítko +, způsob zobrazení zakázek (seznam/mřížka/kompaktní), počet zakázek na stránku, zvuky a měřítko rozhraní. Povinný telefon u zakázky nastavíte v Zakázky → Povinná pole u zakázky.",
         selector: "[data-tour=\"settings-sub-appearance_ui\"]",
-        settingsSection: { category: "appearance", subsection: "appearance_ui" },
+        settingsSection: { category: "app", subsection: "appearance_ui" },
         icon: "settings",
       },
       {
@@ -491,7 +505,7 @@ export default function App() {
         description:
           "Přepínání mezi světlým a tmavým režimem aplikace. Téma se ukládá a použije při příštím spuštění.",
         selector: "[data-tour=\"settings-sub-appearance_theme\"]",
-        settingsSection: { category: "appearance", subsection: "appearance_theme" },
+        settingsSection: { category: "app", subsection: "appearance_theme" },
         icon: "settings",
       },
       {
@@ -500,7 +514,7 @@ export default function App() {
         description:
           "Prohlédněte si a upravte klávesové zkratky pro rychlé akce (nová zakázka, vyhledávání, přepínání stránek). Stiskněte ? kdekoli pro nápovědu.",
         selector: "[data-tour=\"settings-sub-appearance_shortcuts\"]",
-        settingsSection: { category: "appearance", subsection: "appearance_shortcuts" },
+        settingsSection: { category: "app", subsection: "appearance_shortcuts" },
         icon: "keyboard",
       },
       {
@@ -518,7 +532,7 @@ export default function App() {
         description:
           "Verze aplikace, údaje pro podporu a tlačítko „Spustit průvodce“ pro znovu spuštění tohoto průvodce.",
         selector: "[data-tour=\"settings-sub-about_app\"]",
-        settingsSection: { category: "about", subsection: "about_app" },
+        settingsSection: { category: "app", subsection: "about_app" },
         icon: "settings",
       },
     ],
@@ -1012,18 +1026,59 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
 
   const appUpdate = useAppUpdate();
   const lastShownUpdateVersionRef = useRef<string | null>(null);
+  const openUpdateSettings = () => {
+    setActivePage("settings");
+    setOpenSettingsToSubsection({ category: "app", subsection: "about_updates" });
+  };
+  // Ozveme se jednou, a to až s hotovou verzí – ne „něco je k dispozici,
+  // jděte si to stáhnout“. Když je automatické stahování vypnuté, nabídne
+  // toast rovnou stažení.
   useEffect(() => {
-    const v = appUpdate?.update?.version;
-    if (!v || v === lastShownUpdateVersionRef.current) return;
-    lastShownUpdateVersionRef.current = v;
-    showPersistentToast("Je k dispozici aktualizace aplikace.", "info", {
-      actionLabel: "Jít do nastavení",
-      onAction: () => {
-        setActivePage("settings");
-        setOpenSettingsToSubsection({ category: "about", subsection: "about_updates" });
-      },
-    });
-  }, [appUpdate?.update?.version]);
+    if (!appUpdate) return;
+    const v = appUpdate.update?.version;
+    if (!v) return;
+    const key = `${appUpdate.phase}:${v}`;
+    if (appUpdate.phase === "ready") {
+      if (lastShownUpdateVersionRef.current === key) return;
+      lastShownUpdateVersionRef.current = key;
+      showPersistentToast(`Verze ${v} je připravená.`, "info", {
+        subtitle: "Nainstaluje se při restartu aplikace, trvá to pár sekund.",
+        actionLabel: "Restartovat",
+        onAction: () => { void appUpdate.relaunch(); },
+        secondaryLabel: "Později",
+        onSecondaryAction: () => {},
+        silent: true,
+      });
+      return;
+    }
+    if (appUpdate.phase === "available" && !appUpdate.autoDownload) {
+      if (lastShownUpdateVersionRef.current === key) return;
+      lastShownUpdateVersionRef.current = key;
+      showPersistentToast(`Je k dispozici verze ${v}.`, "info", {
+        actionLabel: "Stáhnout",
+        onAction: () => { void appUpdate.downloadAndInstall(); },
+        secondaryLabel: "Podrobnosti",
+        onSecondaryAction: openUpdateSettings,
+        silent: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appUpdate?.phase, appUpdate?.update?.version, appUpdate?.autoDownload]);
+
+  // Po restartu do nové verze jednou „Co je nového“.
+  useEffect(() => {
+    const v = appUpdate?.currentVersion;
+    if (!v) return;
+    try {
+      const seen = localStorage.getItem("jobsheet_last_seen_version");
+      if (seen && seen !== v) {
+        showToast(`Aplikace je aktualizovaná na verzi ${v}.`, "success");
+      }
+      localStorage.setItem("jobsheet_last_seen_version", v);
+    } catch {
+      // ignore
+    }
+  }, [appUpdate?.currentVersion]);
 
   // Apply saved logo preset to app (Dock) icon on startup (Tauri/macOS only).
   useEffect(() => {
@@ -1104,6 +1159,19 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           setActiveServiceId={setActiveServiceId}
           invoicingEnabled={invoicesAvailable}
           sidebarPosition={uiCfg.sidebar?.position || "left"}
+          sidebarPinned={uiCfg.sidebar?.pinned ?? false}
+          onSidebarPinnedChange={(pinned) => {
+            setUiCfg((prev) => ({ ...prev, sidebar: { ...prev.sidebar, pinned } }));
+            // Zrcadlit i do uložených UI nastavení, aby to přežilo reload i bez klíče lišty.
+            try {
+              const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
+              const parsed = raw ? JSON.parse(raw) : {};
+              parsed.sidebar = { ...(parsed.sidebar ?? {}), pinned };
+              localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(parsed));
+            } catch {
+              // ignore
+            }
+          }}
           smsUnreadCount={globalSmsUnreadCount}
           smsEnabled={smsEnabled}
         >
@@ -1301,6 +1369,10 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               odeslat, takže se zpráva nedala odeslat vůbec. */}
           {uiCfg.app.fabNewOrderEnabled !== false &&
             !(isNarrowFab && activePage === "sms") &&
+            /* V Nastavení překrývalo pruh „Neuložené změny“ a ve Fakturách
+               formulář – tam se nová zakázka nezakládá. */
+            activePage !== "settings" &&
+            activePage !== "invoices" &&
             createPortal(
               <button
                 type="button"
@@ -1311,7 +1383,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                 title="Nová zakázka"
                 style={{
                   position: "fixed",
-                  right: uiCfg.sidebar.position === "right" ? 90 : 22,
+                  right: uiCfg.sidebar.position === "right" ? (uiCfg.sidebar.pinned ? 242 : 90) : 22,
                   /* Na úzké obrazovce je dole navigace – bez tohohle si na ni
                      tlačítko sedne a zakryje poslední záložku. */
                   bottom: isNarrowFab

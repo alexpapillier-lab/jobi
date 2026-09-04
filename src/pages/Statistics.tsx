@@ -1,35 +1,33 @@
-import type React from "react";
-import { Button, Segmented, Selectable, MenuItem } from "../components/ui";
-import { useCallback, useMemo, useState, useRef, useEffect, useLayoutEffect } from "react";
-import { DocumentIcon, StatusIcon, CoinsIcon, TrendIcon, GiftIcon } from "../components/icons";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, Card, Input, PageHeader, Pill, Segmented, Selectable, Toolbar, ToolbarSpacer } from "../components/ui";
+import { SectionHeading } from "../components/SectionHeading";
+import {
+  ClockIcon,
+  CoinsIcon,
+  DeviceIcon,
+  DocumentIcon,
+  DownloadIcon,
+  GiftIcon,
+  StatusIcon,
+  TrendIcon,
+  WrenchIcon,
+  XIcon,
+} from "../components/icons";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
-import { formatCurrency } from "../lib/invoiceMath";
-
-// Ve statistických kartách se haléře nehodí – jen zbytečně prodlužují
-// částku (a Kč navíc formátuje s nedělitelnou mezerou, takže se to
-// v užší kartě nemá kde zalomit). Zaokrouhlené číslo se vejde na řádek.
-function formatCurrencyRounded(amount: number): string {
-  return new Intl.NumberFormat("cs-CZ", {
-    style: "currency",
-    currency: "CZK",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-/** Desetinné číslo česky (čárka místo tečky). */
-function cislo(n: number, desetinnych = 1): string {
-  return n.toLocaleString("cs-CZ", { minimumFractionDigits: desetinnych, maximumFractionDigits: desetinnych });
-}
+import { KpiTile, KpiTileSkeleton } from "./Statistics/KpiTile";
+import { MonthlyChart, type MonthStat } from "./Statistics/MonthlyChart";
+import { RankList } from "./Statistics/RankList";
+import { StatusBars } from "./Statistics/StatusBars";
+import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
 
 const TICKETS_SELECT =
   "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
 
 type PeriodType = "all" | "today" | "week" | "month" | "quarter" | "year" | "custom";
+type ViewMode = "cards" | "table" | "charts";
 
 type DrillDown =
   | null
@@ -38,174 +36,221 @@ type DrillDown =
   | { type: "repair"; value: string }
   | { type: "device"; value: string };
 
+type DrillFacet = Exclude<DrillDown, null>["type"];
+
+/** Mapování z Orders.tsx přidává completed_at mimo typ TicketEx. */
+type TicketWithCompletion = TicketEx & { completed_at?: string | null };
+
+type DateRange = { start: Date; end: Date };
+
+const PERIOD_OPTIONS: Array<{ value: PeriodType; label: string }> = [
+  { value: "today", label: "Dnes" },
+  { value: "week", label: "Týden" },
+  { value: "month", label: "Měsíc" },
+  { value: "quarter", label: "Kvartál" },
+  { value: "year", label: "Rok" },
+  { value: "all", label: "Vše" },
+  { value: "custom", label: "Vlastní" },
+];
+
+/** Období, pro která má smysl „předchozí období“ (stejná délka, o krok dozadu). */
+const COMPARABLE_PERIODS: PeriodType[] = ["today", "week", "month", "quarter", "year"];
+
 // ========================
-// Period Picker (custom dropdown)
+// Období
 // ========================
-type PeriodPickerProps = {
-  value: PeriodType;
-  onChange: (value: PeriodType) => void;
-};
 
-function PeriodPicker({ value, onChange }: PeriodPickerProps) {
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: 0, top: 0, width: 0, maxHeight: 300 });
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
 
-  const options: Array<{ value: PeriodType; label: string }> = [
-    { value: "all", label: "Vše" },
-    { value: "today", label: "Dnes" },
-    { value: "week", label: "Tento týden" },
-    { value: "month", label: "Tento měsíc" },
-    { value: "quarter", label: "Toto čtvrtletí" },
-    { value: "year", label: "Tento rok" },
-    { value: "custom", label: "Vlastní rozsah" },
-  ];
+function endOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
 
-  const selected = options.find((o) => o.value === value) ?? options[0];
+/** Pondělí týdne, do kterého spadá `d`. */
+function mondayOf(d: Date): Date {
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+}
 
-  useLayoutEffect(() => {
-    if (open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-
-      const estimatedMenuHeight = 300;
-      const gap = 8;
-      const margin = 10;
-
-      const openUp = spaceBelow < estimatedMenuHeight + margin && spaceAbove > spaceBelow;
-
-      const maxHeight = Math.max(100, Math.min(400, openUp ? spaceAbove - gap - margin : spaceBelow - gap - margin));
-
-      setPos({
-        left: rect.left,
-        top: openUp ? rect.top - maxHeight - gap : rect.bottom + gap,
-        width: rect.width,
-        maxHeight,
-      });
+function periodRange(period: PeriodType, customStart: string, customEnd: string, now: Date): DateRange | null {
+  switch (period) {
+    case "all":
+      return null;
+    case "today":
+      return { start: startOfDay(now), end: endOfDay(now) };
+    case "week":
+      return { start: mondayOf(now), end: endOfDay(now) };
+    case "month":
+      return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: endOfDay(now) };
+    case "quarter": {
+      const q = Math.floor(now.getMonth() / 3);
+      return { start: new Date(now.getFullYear(), q * 3, 1), end: endOfDay(now) };
     }
-  }, [open]);
+    case "year":
+      return { start: new Date(now.getFullYear(), 0, 1), end: endOfDay(now) };
+    case "custom": {
+      if (!customStart || !customEnd) return null;
+      const start = new Date(customStart);
+      const end = new Date(customEnd);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+      return { start: startOfDay(start), end: endOfDay(end) };
+    }
+    default:
+      return null;
+  }
+}
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(e.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+/** Posun o celé měsíce; den v měsíci se ořízne na poslední den cílového měsíce (31. 3. → 28. 2.). */
+function shiftMonths(d: Date, months: number): Date {
+  const target = new Date(d.getFullYear(), d.getMonth() + months, 1, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d.getDate(), lastDay));
+  return target;
+}
 
-  const menu = open ? (
-    <div
-      ref={menuRef}
-      role="listbox"
-      style={{
-        position: "fixed",
-        left: pos.left,
-        top: pos.top,
-        width: pos.width,
-        borderRadius: 14,
-        border: "1px solid var(--border)",
-        background: "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
-        boxShadow: "0 25px 60px rgba(0,0,0,0.22)",
-        padding: 6,
-        zIndex: 10000,
-        maxHeight: pos.maxHeight,
-        overflowY: "auto",
-      }}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <MenuItem
-            layout="between"
-            size="md"
-            selected={active}
-            key={opt.value}
-            onClick={() => {
-              onChange(opt.value);
-              setOpen(false);
-            }}
-          >
-            <span>{opt.label}</span>
-            {active && <span style={{ marginLeft: "auto", fontSize: 16, opacity: 0.8 }}>✓</span>}
-          </MenuItem>
-        );
-      })}
-    </div>
-  ) : null;
+function shiftDays(d: Date, days: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+}
 
-  const border = "1px solid var(--border)";
+/**
+ * Předchozí období stejné délky – včera, minulý týden do stejného dne,
+ * minulý měsíc do stejného dne… Aktuální období běží jen „do dneška“, takže
+ * porovnávat ho s celým minulým měsícem by vždy vycházelo v neprospěch.
+ */
+function previousPeriodRange(period: PeriodType, now: Date): DateRange | null {
+  const current = periodRange(period, "", "", now);
+  if (!current) return null;
+  switch (period) {
+    case "today":
+      return { start: shiftDays(current.start, -1), end: shiftDays(current.end, -1) };
+    case "week":
+      return { start: shiftDays(current.start, -7), end: shiftDays(current.end, -7) };
+    case "month":
+      return { start: shiftMonths(current.start, -1), end: shiftMonths(current.end, -1) };
+    case "quarter":
+      return { start: shiftMonths(current.start, -3), end: shiftMonths(current.end, -3) };
+    case "year":
+      return { start: shiftMonths(current.start, -12), end: shiftMonths(current.end, -12) };
+    default:
+      return null;
+  }
+}
 
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%",
-          padding: "12px 40px 12px 14px",
-          borderRadius: 12,
-          border: open ? "1px solid var(--accent)" : border,
-          outline: "none",
-          background: open ? "var(--panel-2)" : "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          color: "var(--text)",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          fontWeight: 500,
-          fontSize: 14,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          boxShadow: open ? "0 0 0 3px var(--accent-soft)" : "var(--shadow-soft)",
-          transition: "var(--transition-smooth)",
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--accent)";
-          if (!open) e.currentTarget.style.boxShadow = "0 4px 16px var(--accent-glow)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--border)";
-          if (!open) e.currentTarget.style.boxShadow = "var(--shadow-soft)";
-        }}
-      >
-        <span>{selected.label}</span>
-        <span style={{ opacity: 0.65, fontWeight: 900, fontSize: 12 }}>▾</span>
-      </button>
-      {open ? createPortal(menu, document.body) : null}
-    </>
-  );
+function inRange(t: TicketEx, range: DateRange): boolean {
+  const d = new Date(t.createdAt);
+  return d >= range.start && d <= range.end;
+}
+
+// ========================
+// Výpočty
+// ========================
+
+function ticketGross(t: TicketEx): number {
+  return (t.performedRepairs || []).reduce((sum, r) => sum + (r.price || 0), 0);
+}
+
+function ticketDiscount(t: TicketEx): number {
+  const gross = ticketGross(t);
+  if (t.discountType === "percentage") return (gross * (t.discountValue || 0)) / 100;
+  if (t.discountType === "amount") return t.discountValue || 0;
+  return 0;
 }
 
 function ticketRevenue(t: TicketEx): number {
-  const repairs = t.performedRepairs || [];
-  const ticketPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-  let discountAmount = 0;
-  if (t.discountType === "percentage") discountAmount = (ticketPrice * (t.discountValue || 0)) / 100;
-  else if (t.discountType === "amount") discountAmount = t.discountValue || 0;
-  return Math.max(0, ticketPrice - discountAmount);
+  return Math.max(0, ticketGross(t) - ticketDiscount(t));
 }
+
+function ticketCosts(t: TicketEx): number {
+  return (t.performedRepairs || []).reduce((sum, r) => sum + (r.costs || 0), 0);
+}
+
+type Kpis = {
+  totalTickets: number;
+  totalRevenue: number;
+  totalCosts: number;
+  totalDiscounts: number;
+  profit: number;
+  averageTicketPrice: number;
+  averageTicketDurationDays: number;
+};
+
+function computeKpis(list: TicketEx[]): Kpis {
+  let totalRevenue = 0;
+  let totalCosts = 0;
+  let totalDiscounts = 0;
+  let paidCount = 0;
+  let durationSum = 0;
+  let durationCount = 0;
+
+  for (const t of list) {
+    const rev = ticketRevenue(t);
+    totalRevenue += rev;
+    totalCosts += ticketCosts(t);
+    totalDiscounts += ticketDiscount(t);
+    if (rev > 0) paidCount += 1;
+
+    const completedAt = (t as TicketWithCompletion).completed_at;
+    if (completedAt && t.createdAt) {
+      const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
+      if (ms > 0) {
+        durationSum += ms / (24 * 60 * 60 * 1000);
+        durationCount += 1;
+      }
+    }
+  }
+
+  return {
+    totalTickets: list.length,
+    totalRevenue,
+    totalCosts,
+    totalDiscounts,
+    profit: totalRevenue - totalCosts,
+    averageTicketPrice: paidCount > 0 ? totalRevenue / paidCount : 0,
+    averageTicketDurationDays: durationCount > 0 ? durationSum / durationCount : 0,
+  };
+}
+
+function topCounts(counts: Record<string, number>, limit: number): Array<{ name: string; count: number }> {
+  return Object.entries(counts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([name, count]) => ({ name, count }));
+}
+
+function formatDuration(days: number): string {
+  if (days <= 0) return "—";
+  if (days < 1) return `${Math.round(days * 24)} h`;
+  return dny(Number(days.toFixed(1)));
+}
+
+function matchesDrill(t: TicketEx, d: Exclude<DrillDown, null>): boolean {
+  switch (d.type) {
+    case "status":
+      return (t.status || "unknown") === d.value;
+    case "month": {
+      const date = new Date(t.createdAt);
+      return date.getFullYear() === d.year && date.getMonth() === d.month;
+    }
+    case "repair":
+      return (t.performedRepairs || []).some((r) => r.name === d.value);
+    case "device":
+      return t.deviceLabel === d.value;
+    default:
+      return true;
+  }
+}
+
+/** Hodnota do CSV – středník jako oddělovač (české Excel), uvozovky podle potřeby. */
+function csvCell(value: string): string {
+  return /[";\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+// ========================
+// Stránka
+// ========================
 
 type StatisticsProps = {
   activeServiceId: string | null;
@@ -216,20 +261,22 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const { getByKey } = useStatuses();
   /**
    * Stav v databázi je anglický klíč ("received", "ready"). Zbytek aplikace
-   * ho překládá přes getByKey, statistiky ho ale vypisovaly surový – uživatel
-   * viděl "received" tam, kde v seznamu zakázek stojí "Přijato".
+   * ho překládá přes getByKey; tady taky, aby uživatel neviděl "received"
+   * tam, kde v seznamu zakázek stojí "Přijato".
    */
   const nazevStavu = useCallback(
     (key: string) => (key === "unknown" ? "Neznámý" : getByKey(key)?.label ?? key),
     [getByKey]
   );
+
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [periodType, setPeriodType] = useState<PeriodType>("all");
-  const [customStartDate, setCustomStartDate] = useState<string>("");
-  const [customEndDate, setCustomEndDate] = useState<string>("");
-  const [viewMode, setViewMode] = useState<"cards" | "table" | "charts">("cards");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [drillDown, setDrillDown] = useState<DrillDown>(null);
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
 
@@ -240,12 +287,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       setTicketsError(null);
       return;
     }
+    const client = supabase;
+    let cancelled = false;
     setTicketsLoading(true);
     setTicketsError(null);
     (async () => {
       try {
         const { data, error } = await fetchAllPages((from, to) =>
-          (supabase as any)
+          client
             .from("tickets")
             .select(TICKETS_SELECT)
             .eq("service_id", activeServiceId)
@@ -255,290 +304,243 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             .range(from, to)
         );
         if (error) throw error;
-        setAllTickets((data || []).map((row: any) => mapSupabaseTicketToTicketEx(row)));
+        if (cancelled) return;
+        setAllTickets((data || []).map((row) => mapSupabaseTicketToTicketEx(row)));
       } catch (err) {
-        setTicketsError(err instanceof Error ? err.message : "Chyba při načítání");
+        if (cancelled) return;
+        setTicketsError(err instanceof Error ? err.message : "Zakázky se nepodařilo načíst.");
         setAllTickets([]);
       } finally {
-        setTicketsLoading(false);
+        if (!cancelled) setTicketsLoading(false);
       }
     })();
-  }, [activeServiceId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServiceId, reloadToken]);
 
-  // Filtrování tickets podle vybraného období
+  const compareAvailable = COMPARABLE_PERIODS.includes(periodType);
+  const compareActive = compareWithPrevious && compareAvailable;
+
+  // Zakázky ve vybraném období
   const tickets = useMemo(() => {
-    if (periodType === "all") return allTickets;
-
-    const now = new Date();
-    let startDate: Date;
-    let endDate: Date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-
-    switch (periodType) {
-      case "today":
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        break;
-      case "week":
-        const dayOfWeek = now.getDay();
-        const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday
-        startDate = new Date(now.getFullYear(), now.getMonth(), diff, 0, 0, 0);
-        break;
-      case "month":
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-        break;
-      case "quarter":
-        const quarter = Math.floor(now.getMonth() / 3);
-        startDate = new Date(now.getFullYear(), quarter * 3, 1, 0, 0, 0);
-        break;
-      case "year":
-        startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
-        break;
-      case "custom":
-        if (!customStartDate || !customEndDate) return allTickets;
-        startDate = new Date(customStartDate);
-        endDate = new Date(customEndDate);
-        endDate.setHours(23, 59, 59, 999);
-        break;
-      default:
-        return allTickets;
-    }
-
-    return allTickets.filter((t) => {
-      const ticketDate = new Date(t.createdAt);
-      return ticketDate >= startDate && ticketDate <= endDate;
-    });
+    const range = periodRange(periodType, customStartDate, customEndDate, new Date());
+    if (!range) return allTickets;
+    return allTickets.filter((t) => inRange(t, range));
   }, [allTickets, periodType, customStartDate, customEndDate]);
 
-  // Předchozí období (stejná délka, posunuté dozadu) pro porovnání
+  // Zakázky v předchozím období (jen pro porovnání)
   const previousPeriodTickets = useMemo(() => {
-    if (tickets.length === 0) return [];
+    if (!compareActive) return [];
+    const range = previousPeriodRange(periodType, new Date());
+    if (!range) return [];
+    return allTickets.filter((t) => inRange(t, range));
+  }, [allTickets, periodType, compareActive]);
+
+  // Drill-down: kliknutím na stav / měsíc / opravu / zařízení
+  const filteredTickets = useMemo(
+    () => (drillDown ? tickets.filter((t) => matchesDrill(t, drillDown)) : tickets),
+    [tickets, drillDown]
+  );
+
+  /**
+   * Podklad pro jednotlivé „fasety“. Když je aktivní filtr podle stavu,
+   * pruhy stavů se počítají ze všech zakázek období – jinak by v grafu zůstal
+   * jediný pruh a nebylo by kam klikat dál. Ostatní sekce filtr respektují.
+   */
+  const facetTickets = useCallback(
+    (facet: DrillFacet) => (drillDown && drillDown.type === facet ? tickets : filteredTickets),
+    [drillDown, tickets, filteredTickets]
+  );
+
+  const kpis = useMemo(() => computeKpis(filteredTickets), [filteredTickets]);
+  const prevKpis = useMemo(() => computeKpis(previousPeriodTickets), [previousPeriodTickets]);
+
+  const statusItems = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of facetTickets("status")) {
+      const key = t.status || "unknown";
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([key, count]) => ({ key, label: nazevStavu(key), count, color: getByKey(key)?.bg }));
+  }, [facetTickets, nazevStavu, getByKey]);
+
+  const topRepairs = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of facetTickets("repair")) {
+      for (const r of t.performedRepairs || []) counts[r.name] = (counts[r.name] || 0) + 1;
+    }
+    return topCounts(counts, 5);
+  }, [facetTickets]);
+
+  const topDevices = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of facetTickets("device")) {
+      if (t.deviceLabel) counts[t.deviceLabel] = (counts[t.deviceLabel] || 0) + 1;
+    }
+    return topCounts(counts, 5);
+  }, [facetTickets]);
+
+  const monthlyStats = useMemo<MonthStat[]>(() => {
+    const list = facetTickets("month");
+    if (list.length === 0) return [];
     const now = new Date();
-    let startPrev: Date;
-    let endPrev: Date;
+    const range = periodRange(periodType, customStartDate, customEndDate, now);
 
-    if (periodType === "all" || periodType === "custom") {
-      if (!customStartDate || !customEndDate) return [];
-      const start = new Date(customStartDate);
-      const end = new Date(customEndDate);
-      const days = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
-      endPrev = new Date(start);
-      endPrev.setDate(endPrev.getDate() - 1);
-      endPrev.setHours(23, 59, 59, 999);
-      startPrev = new Date(endPrev);
-      startPrev.setDate(startPrev.getDate() - days);
-    } else {
-      switch (periodType) {
-        case "today":
-          startPrev = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0);
-          endPrev = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
-          break;
-        case "week": {
-          const dayOfWeek = now.getDay();
-          const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-          const lastMonday = new Date(now.getFullYear(), now.getMonth(), diff - 7, 0, 0, 0);
-          const lastSunday = new Date(lastMonday);
-          lastSunday.setDate(lastSunday.getDate() + 6);
-          lastSunday.setHours(23, 59, 59, 999);
-          startPrev = lastMonday;
-          endPrev = lastSunday;
-          break;
-        }
-        case "month":
-          startPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
-          endPrev = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-          break;
-        case "quarter": {
-          const q = Math.floor(now.getMonth() / 3);
-          const prevQ = q === 0 ? 3 : q - 1;
-          const prevYear = q === 0 ? now.getFullYear() - 1 : now.getFullYear();
-          startPrev = new Date(prevYear, prevQ * 3, 1, 0, 0, 0);
-          endPrev = new Date(prevYear, prevQ * 3 + 3, 0, 23, 59, 59);
-          break;
-        }
-        case "year":
-          startPrev = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0);
-          endPrev = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
-          break;
-        default:
-          return [];
-      }
-    }
-
-    return allTickets.filter((t) => {
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    const byMonth = new Map<string, MonthStat>();
+    for (const t of list) {
       const d = new Date(t.createdAt);
-      return d >= startPrev && d <= endPrev;
-    });
-  }, [allTickets, periodType, customStartDate, customEndDate, tickets.length]);
-
-  // Drill-down: filtrování podle kliku na status / měsíc / opravu / zařízení
-  const filteredTickets = useMemo(() => {
-    if (!drillDown) return tickets;
-    return tickets.filter((t) => {
-      if (drillDown.type === "status") return (t.status || "unknown") === drillDown.value;
-      if (drillDown.type === "month") {
-        const d = new Date(t.createdAt);
-        return d.getFullYear() === drillDown.year && d.getMonth() === drillDown.month;
-      }
-      if (drillDown.type === "repair") {
-        return (t.performedRepairs || []).some((r) => r.name === drillDown.value);
-      }
-      if (drillDown.type === "device") return t.deviceLabel === drillDown.value;
-      return true;
-    });
-  }, [tickets, drillDown]);
-
-  // Základní statistiky (z filteredTickets)
-  const stats = useMemo(() => {
-    const list = filteredTickets;
-    const totalTickets = list.length;
-
-    const byStatus: Record<string, number> = {};
-    list.forEach((t) => {
-      const status = t.status || "unknown";
-      byStatus[status] = (byStatus[status] || 0) + 1;
-    });
-
-    let totalRevenue = 0;
-    let totalCosts = 0;
-    let totalDiscounts = 0;
-    const ticketPrices: number[] = [];
-
-    list.forEach((t) => {
-      const rev = ticketRevenue(t);
-      totalRevenue += rev;
-      const repairs = t.performedRepairs || [];
-      let discountAmount = 0;
-      const ticketPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-      if (t.discountType === "percentage") discountAmount = (ticketPrice * (t.discountValue || 0)) / 100;
-      else if (t.discountType === "amount") discountAmount = t.discountValue || 0;
-      totalDiscounts += discountAmount;
-      totalCosts += repairs.reduce((sum, r) => sum + (r.costs || 0), 0);
-      if (rev > 0) ticketPrices.push(rev);
-    });
-
-    const averageTicketPrice = ticketPrices.length > 0
-      ? ticketPrices.reduce((sum, p) => sum + p, 0) / ticketPrices.length
-      : 0;
-
-    const durations: number[] = [];
-    list.forEach((t) => {
-      const completedAt = (t as any).completed_at;
-      if (completedAt && t.createdAt) {
-        const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
-        if (ms > 0) durations.push(ms / (24 * 60 * 60 * 1000));
-      }
-    });
-    const averageTicketDurationDays = durations.length > 0
-      ? durations.reduce((a, b) => a + b, 0) / durations.length
-      : 0;
-
-    const repairCounts: Record<string, number> = {};
-    list.forEach((t) => {
-      (t.performedRepairs || []).forEach((r) => {
-        repairCounts[r.name] = (repairCounts[r.name] || 0) + 1;
-      });
-    });
-    const topRepairs = Object.entries(repairCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([name, count]) => ({ name, count }));
-
-    const deviceCounts: Record<string, number> = {};
-    list.forEach((t) => {
-      if (t.deviceLabel) deviceCounts[t.deviceLabel] = (deviceCounts[t.deviceLabel] || 0) + 1;
-    });
-    const topDevices = Object.entries(deviceCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([name, count]) => ({ name, count }));
-
-    const monthlyStats: Array<{ month: string; count: number; revenue: number; year: number; monthIndex: number }> = [];
-    if (list.length > 0) {
-      const dates = list.map((t) => new Date(t.createdAt)).sort((a, b) => a.getTime() - b.getTime());
-      const startMonth = new Date(dates[0].getFullYear(), dates[0].getMonth(), 1);
-      const endMonth = new Date(dates[dates.length - 1].getFullYear(), dates[dates.length - 1].getMonth(), 1);
-      let current = new Date(startMonth);
-      while (current <= endMonth) {
-        const y = current.getFullYear();
-        const m = current.getMonth();
-        const monthTickets = list.filter((t) => {
-          const d = new Date(t.createdAt);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-        const monthRevenue = monthTickets.reduce((s, t) => s + ticketRevenue(t), 0);
-        monthlyStats.push({
-          month: current.toLocaleDateString("cs-CZ", { month: "short", year: "numeric" }),
-          count: monthTickets.length,
-          revenue: monthRevenue,
-          year: y,
-          monthIndex: m,
-        });
-        current = new Date(y, m + 1, 1);
-      }
+      const time = d.getTime();
+      if (Number.isNaN(time)) continue;
+      minTime = Math.min(minTime, time);
+      maxTime = Math.max(maxTime, time);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const entry = byMonth.get(key) ?? { year: d.getFullYear(), monthIndex: d.getMonth(), count: 0, revenue: 0 };
+      entry.count += 1;
+      entry.revenue += ticketRevenue(t);
+      byMonth.set(key, entry);
     }
+    if (!Number.isFinite(minTime)) return [];
 
-    return {
-      totalTickets,
-      byStatus,
-      totalRevenue,
-      totalCosts,
-      totalDiscounts,
-      profit: totalRevenue - totalCosts,
-      averageTicketPrice,
-      averageTicketDurationDays,
-      topRepairs,
-      topDevices,
-      monthlyStats,
-    };
-  }, [filteredTickets]);
+    // Rozsah osy: od začátku období (nebo první zakázky) po dnešek (nebo konec
+    // období), aby byly vidět i prázdné měsíce – ty jsou informace sama o sobě.
+    const firstData = new Date(minTime);
+    const startSource = range && range.start < firstData ? range.start : firstData;
+    const endCandidate = range && range.end < now ? range.end : now;
+    const lastData = new Date(maxTime);
+    const endSource = lastData > endCandidate ? lastData : endCandidate;
 
-  // Statistiky předchozího období (pro porovnání)
-  const prevStats = useMemo(() => {
-    const list = previousPeriodTickets;
-    const totalTickets = list.length;
-    let totalRevenue = 0;
-    let totalCosts = 0;
-    list.forEach((t) => {
-      totalRevenue += ticketRevenue(t);
-      totalCosts += (t.performedRepairs || []).reduce((s, r) => s + (r.costs || 0), 0);
-    });
-    const ticketPrices = list.map(ticketRevenue).filter((p) => p > 0);
-    const averageTicketPrice = ticketPrices.length > 0
-      ? ticketPrices.reduce((a, b) => a + b, 0) / ticketPrices.length
-      : 0;
-    const durations: number[] = [];
-    list.forEach((t) => {
-      const completedAt = (t as any).completed_at;
-      if (completedAt && t.createdAt) {
-        const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
-        if (ms > 0) durations.push(ms / (24 * 60 * 60 * 1000));
-      }
-    });
-    const averageTicketDurationDays = durations.length > 0
-      ? durations.reduce((a, b) => a + b, 0) / durations.length
-      : 0;
-    return {
-      totalTickets,
-      totalRevenue,
-      totalCosts,
-      profit: totalRevenue - totalCosts,
-      averageTicketPrice,
-      averageTicketDurationDays,
-    };
-  }, [previousPeriodTickets]);
+    const result: MonthStat[] = [];
+    const cursor = new Date(startSource.getFullYear(), startSource.getMonth(), 1);
+    const end = new Date(endSource.getFullYear(), endSource.getMonth(), 1);
+    while (cursor <= end && result.length < 240) {
+      const y = cursor.getFullYear();
+      const m = cursor.getMonth();
+      result.push(byMonth.get(`${y}-${m}`) ?? { year: y, monthIndex: m, count: 0, revenue: 0 });
+      cursor.setMonth(m + 1);
+    }
+    return result;
+  }, [facetTickets, periodType, customStartDate, customEndDate]);
 
-  const border = "1px solid var(--border)";
-  const maxCount = Math.max(1, ...Object.values(stats.byStatus), 1);
-  const maxRevenue = Math.max(1, ...stats.monthlyStats.map((m) => m.revenue));
+  const toggleStatus = useCallback((key: string) => {
+    setDrillDown((prev) => (prev?.type === "status" && prev.value === key ? null : { type: "status", value: key }));
+  }, []);
+  const toggleMonth = useCallback((year: number, month: number) => {
+    setDrillDown((prev) =>
+      prev?.type === "month" && prev.year === year && prev.month === month ? null : { type: "month", year, month }
+    );
+  }, []);
+  const toggleRepair = useCallback((name: string) => {
+    setDrillDown((prev) => (prev?.type === "repair" && prev.value === name ? null : { type: "repair", value: name }));
+  }, []);
+  const toggleDevice = useCallback((name: string) => {
+    setDrillDown((prev) => (prev?.type === "device" && prev.value === name ? null : { type: "device", value: name }));
+  }, []);
+
+  const drillLabel = useMemo(() => {
+    if (!drillDown) return null;
+    switch (drillDown.type) {
+      case "status":
+        return `Stav: ${nazevStavu(drillDown.value)}`;
+      case "month":
+        return `Měsíc: ${monthLabelLong(drillDown.year, drillDown.month)}`;
+      case "repair":
+        return `Oprava: ${drillDown.value}`;
+      case "device":
+        return `Zařízení: ${drillDown.value}`;
+      default:
+        return null;
+    }
+  }, [drillDown, nazevStavu]);
+
+  const exportCsv = useCallback(() => {
+    const header = ["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)"];
+    const rows = filteredTickets.map((t) => [
+      t.code ?? "",
+      t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "",
+      t.customerName || "",
+      t.deviceLabel || "",
+      t.status ? nazevStavu(t.status) : "",
+      ticketRevenue(t).toFixed(2).replace(".", ","),
+    ]);
+    // BOM, aby Excel poznal UTF-8 a nerozbil diakritiku.
+    const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `statistiky-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [filteredTickets, nazevStavu]);
 
   if (!activeServiceId) {
     return (
       <div data-tour="statistics-main" style={{ padding: "var(--pad-24)", maxWidth: 1400, margin: "0 auto" }}>
-        <div style={{ padding: 48, textAlign: "center", color: "var(--muted)", background: "var(--panel)", border, borderRadius: "var(--radius-lg)" }}>
+        <Card style={{ padding: "var(--space-8)", textAlign: "center", color: "var(--muted)" }}>
           Vyberte servis v postranním panelu pro zobrazení statistik.
-        </div>
+        </Card>
       </div>
     );
   }
+
+  const compareTitle = compareAvailable
+    ? "Zobrazí u každé hodnoty změnu oproti předchozímu období stejné délky."
+    : "Porovnání je dostupné pro Dnes, Týden, Měsíc, Kvartál a Rok.";
+
+  const statusSection = (
+    <Card style={{ padding: "var(--pad-24)" }}>
+      <SectionHeading icon={<StatusIcon size={18} />}>Zakázky podle stavu</SectionHeading>
+      <StatusBars
+        items={statusItems}
+        selected={drillDown?.type === "status" ? drillDown.value : null}
+        onSelect={toggleStatus}
+      />
+    </Card>
+  );
+
+  const rankSection = (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "var(--space-4)" }}>
+      <Card style={{ padding: "var(--pad-24)" }}>
+        <SectionHeading icon={<WrenchIcon size={18} />}>Nejčastější opravy</SectionHeading>
+        <RankList
+          items={topRepairs}
+          selected={drillDown?.type === "repair" ? drillDown.value : null}
+          onSelect={toggleRepair}
+          emptyText="Ve vybraném období nejsou žádné provedené opravy."
+          titlePrefix="Filtrovat opravu"
+        />
+      </Card>
+      <Card style={{ padding: "var(--pad-24)" }}>
+        <SectionHeading icon={<DeviceIcon size={18} />}>Nejčastější zařízení</SectionHeading>
+        <RankList
+          items={topDevices}
+          selected={drillDown?.type === "device" ? drillDown.value : null}
+          onSelect={toggleDevice}
+          emptyText="Ve vybraném období nejsou žádná zařízení."
+          titlePrefix="Filtrovat zařízení"
+        />
+      </Card>
+    </div>
+  );
+
+  const monthlySection = (
+    <Card style={{ padding: "var(--pad-24)" }}>
+      <SectionHeading icon={<TrendIcon size={18} />}>Měsíční přehled</SectionHeading>
+      <MonthlyChart
+        months={monthlyStats}
+        selected={drillDown?.type === "month" ? { year: drillDown.year, monthIndex: drillDown.month } : null}
+        onSelect={toggleMonth}
+      />
+    </Card>
+  );
 
   return (
     <div
@@ -547,662 +549,370 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         padding: "var(--pad-24)",
         display: "flex",
         flexDirection: "column",
-        gap: 24,
+        gap: "var(--space-5)",
         maxWidth: 1400,
         margin: "0 auto",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <h1 style={{ fontWeight: 800, fontSize: 28, color: "var(--text)", marginBottom: 8 }}>
-            Statistiky
-          </h1>
-          <p style={{ color: "var(--muted)", fontSize: 14 }}>
-            Přehled zakázek, příjmů a výkonnosti. Klikněte na grafy, karty nebo položky pro zobrazení pouze vybraných zakázek; v tabulce řádek otevře zakázku.
-            {periodType !== "all" && (
-              <span style={{ marginLeft: 8, fontWeight: 600 }}>
-                ({(() => {
-                  switch (periodType) {
-                    case "today": return "Dnes";
-                    case "week": return "Tento týden";
-                    case "month": return "Tento měsíc";
-                    case "quarter": return "Toto čtvrtletí";
-                    case "year": return "Tento rok";
-                    case "custom":
-                      if (customStartDate && customEndDate) {
-                        const start = new Date(customStartDate).toLocaleDateString("cs-CZ");
-                        const end = new Date(customEndDate).toLocaleDateString("cs-CZ");
-                        return `${start} - ${end}`;
-                      }
-                      return "Vlastní rozsah";
-                    default: return "";
-                  }
-                })()})
-              </span>
-            )}
-          </p>
-        </div>
+      <PageHeader title="Statistiky" subtitle="Kliknutím na stav, opravu nebo měsíc zúžíte výběr." />
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-end" }}>
-          {/* Režim zobrazení */}
-          <div style={{ display: "flex", gap: 6 }}>
-              <Segmented<"cards" | "table" | "charts">
-                ariaLabel="Režim zobrazení statistik"
-                size="sm"
-                value={viewMode}
-                onChange={setViewMode}
-                options={[
-                  { value: "cards", label: "Karty" },
-                  { value: "table", label: "Tabulka" },
-                  { value: "charts", label: "Grafy", dataTour: "statistics-view-charts" },
-                ]}
-              />
-          </div>
+      <Toolbar>
+        <Segmented<ViewMode>
+          ariaLabel="Režim zobrazení statistik"
+          size="sm"
+          value={viewMode}
+          onChange={setViewMode}
+          options={[
+            { value: "cards", label: "Karty" },
+            { value: "table", label: "Tabulka" },
+            { value: "charts", label: "Grafy", dataTour: "statistics-view-charts" },
+          ]}
+        />
 
-          {/* Porovnat s předchozím obdobím */}
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text)" }}>
-            <input
-              type="checkbox"
-              checked={compareWithPrevious}
-              onChange={(e) => setCompareWithPrevious(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "var(--accent)" }}
+        <span aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 var(--space-1)" }} />
+
+        <Segmented<PeriodType>
+          ariaLabel="Časové období"
+          dataTour="statistics-period"
+          size="sm"
+          value={periodType}
+          onChange={(next) => {
+            setPeriodType(next);
+            if (next !== "custom") {
+              setCustomStartDate("");
+              setCustomEndDate("");
+            }
+          }}
+          options={PERIOD_OPTIONS}
+        />
+
+        {periodType === "custom" && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)" }}>
+            <Input
+              type="date"
+              aria-label="Od"
+              value={customStartDate}
+              max={customEndDate || undefined}
+              onChange={(e) => setCustomStartDate(e.target.value)}
+              style={{ width: 150, padding: "6px var(--space-2)", fontSize: "var(--text-sm)" }}
+            />
+            <span style={{ color: "var(--muted)", fontSize: "var(--text-sm)" }}>–</span>
+            <Input
+              type="date"
+              aria-label="Do"
+              value={customEndDate}
+              min={customStartDate || undefined}
+              onChange={(e) => setCustomEndDate(e.target.value)}
+              style={{ width: 150, padding: "6px var(--space-2)", fontSize: "var(--text-sm)" }}
+            />
+          </span>
+        )}
+
+        <span title={compareTitle} style={{ display: "inline-flex" }}>
+          <Selectable
+            selected={compareActive}
+            disabled={!compareAvailable}
+            size="sm"
+            layout="row"
+            onClick={() => setCompareWithPrevious((v) => !v)}
+            style={{ width: "auto", borderRadius: "var(--radius-pill)", padding: "5px var(--space-3)", fontSize: "var(--text-sm)", fontWeight: 600, gap: "var(--space-1)" }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: compareActive ? "var(--accent)" : "var(--border)",
+                flexShrink: 0,
+              }}
             />
             Porovnat s předchozím obdobím
-          </label>
+          </Selectable>
+        </span>
 
-          {/* Výběr časového období */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 250 }} data-tour="statistics-period">
-            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-              Časové období
-            </label>
-            <PeriodPicker
-            value={periodType}
-            onChange={(newValue) => {
-              setPeriodType(newValue);
-              if (newValue !== "custom") {
-                setCustomStartDate("");
-                setCustomEndDate("");
-              }
-            }}
-          />
-          
-          {periodType === "custom" && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <label style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                  Od
-                </label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    border,
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: 13,
-                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                    width: "100%",
-                  }}
-                />
-              </div>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <label style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                  Do
-                </label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    border,
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: 13,
-                    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-                    width: "100%",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-          </div>
-        </div>
-      </div>
+        <ToolbarSpacer />
 
-      {/* Aktivní filtr (drill-down) – klikem na status/měsíc/opravu/zařízení */}
-      {drillDown && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Filtr:</span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "var(--accent-soft)",
-              color: "var(--accent)",
-              fontWeight: 600,
-              fontSize: 13,
-            }}
+        {drillDown && drillLabel && (
+          <Pill
+            color="var(--accent)"
+            style={{ padding: "4px var(--space-1) 4px var(--space-3)", fontSize: "var(--text-sm)", background: "var(--accent-soft)", gap: "var(--space-1)" }}
           >
-            {drillDown.type === "status" && `Stav: ${nazevStavu(drillDown.value)}`}
-            {drillDown.type === "month" &&
-              new Date(drillDown.year, drillDown.month).toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
-            {drillDown.type === "repair" && `Oprava: ${drillDown.value}`}
-            {drillDown.type === "device" && `Zařízení: ${drillDown.value}`}
-            <Button variant="ghost" size="sm" iconOnly onClick={() => setDrillDown(null)} title="Zrušit filtr" aria-label="Zrušit filtr">×</Button>
-          </span>
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>
-            {filteredTickets.length} zakázek
-          </span>
-        </div>
-      )}
+            <span>{drillLabel}</span>
+            <span style={{ color: "var(--muted)", fontWeight: 500 }}>· {zakazky(filteredTickets.length)}</span>
+            <button
+              type="button"
+              onClick={() => setDrillDown(null)}
+              aria-label="Zrušit filtr"
+              title="Zrušit filtr"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                border: "none",
+                background: "transparent",
+                color: "inherit",
+                cursor: "pointer",
+                padding: 0,
+                marginLeft: 2,
+              }}
+            >
+              <XIcon size={12} />
+            </button>
+          </Pill>
+        )}
+      </Toolbar>
 
       {ticketsLoading && (
-        <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", background: "var(--panel)", border, borderRadius: "var(--radius-lg)" }}>
-          Načítání zakázek…
-        </div>
+        <>
+          <style>{`@keyframes stats-skeleton-pulse{0%,100%{opacity:.55}50%{opacity:1}}.stats-skeleton{animation:stats-skeleton-pulse 1.4s ease-in-out infinite}`}</style>
+          <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+            Načítání zakázek…
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: "var(--space-3)" }}>
+            {Array.from({ length: 7 }, (_, i) => (
+              <KpiTileSkeleton key={i} />
+            ))}
+          </div>
+          <Card aria-hidden="true" style={{ padding: "var(--pad-24)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            <span className="stats-skeleton" style={{ display: "block", width: "30%", height: 16, borderRadius: "var(--radius-xs)", background: "var(--panel-2)", border: "1px solid var(--border)" }} />
+            {[70, 45, 30].map((w) => (
+              <span key={w} className="stats-skeleton" style={{ display: "block", width: `${w}%`, height: 22, borderRadius: "var(--radius-2xs)", background: "var(--panel-2)", border: "1px solid var(--border)" }} />
+            ))}
+          </Card>
+        </>
       )}
-      {ticketsError && (
-        <div style={{ padding: 24, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "var(--radius-lg)", color: "rgba(239,68,68,0.95)" }}>
-          {ticketsError}
-        </div>
+
+      {!ticketsLoading && ticketsError && (
+        <Card
+          role="alert"
+          style={{
+            padding: "var(--pad-24)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-4)",
+            flexWrap: "wrap",
+            borderColor: "var(--danger)",
+            background: "var(--danger-soft)",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 700, color: "var(--danger-text)", marginBottom: "var(--space-1)" }}>Statistiky se nepodařilo načíst</div>
+            <div style={{ fontSize: "var(--text-base)", color: "var(--text)", overflowWrap: "anywhere" }}>{ticketsError}</div>
+          </div>
+          <Button variant="primary" size="sm" onClick={() => setReloadToken((t) => t + 1)}>
+            Zkusit znovu
+          </Button>
+        </Card>
       )}
 
       {!ticketsLoading && !ticketsError && (
         <>
-      {/* Hlavní statistiky */}
-      <div style={{ display: viewMode === "charts" ? "none" : "flex", flexWrap: "wrap", gap: 16 }}>
-        <StatCard
-          title="Celkem zakázek"
-          value={stats.totalTickets}
-          icon={<DocumentIcon size={22} />}
-          delta={compareWithPrevious ? stats.totalTickets - prevStats.totalTickets : undefined}
-          deltaLabel="vs. předch. období"
-        />
-        <StatCard
-          title="Celkový příjem"
-          value={formatCurrencyRounded(stats.totalRevenue)}
-          icon={<CoinsIcon size={22} />}
-          delta={compareWithPrevious && prevStats.totalRevenue > 0 ? ((stats.totalRevenue - prevStats.totalRevenue) / prevStats.totalRevenue) * 100 : undefined}
-          deltaPercent
-          deltaLabel="vs. předch. období"
-        />
-        <StatCard
-          title="Celkové náklady"
-          value={formatCurrencyRounded(stats.totalCosts)}
-          icon={<CoinsIcon size={22} />}
-          delta={compareWithPrevious && prevStats.totalCosts > 0 ? ((stats.totalCosts - prevStats.totalCosts) / prevStats.totalCosts) * 100 : undefined}
-          deltaPercent
-          deltaLabel="vs. předch. období"
-        />
-        <StatCard
-          title="Zisk"
-          value={formatCurrencyRounded(stats.profit)}
-          icon={<TrendIcon size={22} />}
-          color={stats.profit >= 0 ? "var(--accent)" : "rgba(239,68,68,0.9)"}
-          delta={compareWithPrevious ? stats.profit - prevStats.profit : undefined}
-          deltaLabel="vs. předch. období"
-          deltaIsCurrency
-        />
-        <StatCard
-          title="Průměrná cena"
-          value={formatCurrencyRounded(stats.averageTicketPrice)}
-          icon={<StatusIcon size={22} />}
-          delta={compareWithPrevious && prevStats.averageTicketPrice > 0 ? ((stats.averageTicketPrice - prevStats.averageTicketPrice) / prevStats.averageTicketPrice) * 100 : undefined}
-          deltaPercent
-          deltaLabel="vs. předch. období"
-        />
-        <StatCard
-          title="Celkové slevy"
-          value={formatCurrencyRounded(stats.totalDiscounts)}
-          icon={<GiftIcon size={22} />}
-        />
-        <StatCard
-          title="Průměrná doba zakázky"
-          value={
-            stats.averageTicketDurationDays > 0
-              ? (() => {
-                  const d = stats.averageTicketDurationDays;
-                  if (d < 1) return `${Math.round(d * 24)} h`;
-                  if (d < 7) return `${cislo(d)} dní`;
-                  return `${cislo(d / 7)} týdnů`;
-                })()
-              : "—"
-          }
-          icon="⏱"
-          delta={
-            compareWithPrevious && stats.averageTicketDurationDays > 0 && prevStats.averageTicketDurationDays > 0
-              ? stats.averageTicketDurationDays - prevStats.averageTicketDurationDays
-              : undefined
-          }
-          deltaLabel="vs. předch. období"
-          deltaSuffix=" dní"
-          deltaInverted
-        />
-      </div>
-
-      {/* Tabulka zakázek (režim Tabulka) */}
-      {viewMode === "table" && (
-        <div style={{ background: "var(--panel)", border, borderRadius: "var(--radius-lg)", padding: "var(--pad-24)", boxShadow: "var(--shadow-soft)", overflowX: "auto" }}>
-          <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 16 }}>Zakázky v období</h2>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Kód</th>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Datum</th>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Zákazník</th>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Zařízení</th>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Stav</th>
-                <th style={{ padding: "10px 12px", color: "var(--muted)", fontWeight: 600 }}>Příjem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTickets.slice(0, 100).map((t) => {
-                const finalPrice = ticketRevenue(t);
-                return (
-                  <tr
-                    key={t.id}
-                    style={{
-                      borderBottom: "1px solid var(--border)",
-                      cursor: onOpenTicket ? "pointer" : undefined,
-                    }}
-                    onClick={() => onOpenTicket?.(t.id)}
-                    onMouseEnter={(e) => {
-                      if (onOpenTicket) e.currentTarget.style.background = "var(--panel-2)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "";
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onOpenTicket?.(t.id);
-                      }
-                    }}
-                    role={onOpenTicket ? "button" : undefined}
-                    tabIndex={onOpenTicket ? 0 : undefined}
-                    title={onOpenTicket ? "Otevřít zakázku" : undefined}
-                  >
-                    <td style={{ padding: "10px 12px", color: "var(--text)", fontFamily: "ui-monospace" }}>{t.code ?? "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.customerName || "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.deviceLabel || "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--text)" }}>{t.status ? nazevStavu(t.status) : "—"}</td>
-                    <td style={{ padding: "10px 12px", color: "var(--accent)", fontWeight: 600 }}>{finalPrice > 0 ? `${finalPrice.toLocaleString("cs-CZ")} Kč` : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {filteredTickets.length > 100 && (
-            <div style={{ marginTop: 12, fontSize: 12, color: "var(--muted)" }}>Zobrazeno 100 z {filteredTickets.length} zakázek. Kliknutím na řádek otevřete zakázku.</div>
-          )}
-        </div>
-      )}
-
-      {/* Grafy (režim Grafy) – klik na pruh/měsíc filtruje data */}
-      {viewMode === "charts" && (
-        <>
-          <div style={{ background: "var(--panel)", border, borderRadius: "var(--radius-lg)", padding: "var(--pad-24)", boxShadow: "var(--shadow-soft)" }}>
-            <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>Zakázky podle stavu</h2>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na řádek pro zobrazení pouze zakázek v daném stavu.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {Object.entries(stats.byStatus).length === 0 ? (
-                <div style={{ color: "var(--muted)", fontSize: 14 }}>Žádná data</div>
-              ) : (
-                Object.entries(stats.byStatus).map(([status, count]) => {
-                  const isActive = drillDown?.type === "status" && drillDown.value === status;
-                  return (
-                    <Selectable
-                      selected={isActive}
-                      layout="row"
-                      variant="plain"
-                      key={status}
-                      onClick={() => setDrillDown((prev) => (prev?.type === "status" && prev.value === status ? null : { type: "status", value: status }))}
-                      title={`Filtrovat: ${nazevStavu(status)} (${count} zakázek)`}
-                    >
-                      <span style={{ minWidth: 120, fontSize: 13, color: "var(--text)" }}>{nazevStavu(status)}</span>
-                      <div style={{ flex: 1, height: 28, background: "var(--panel-2)", borderRadius: 8, overflow: "hidden", display: "flex" }}>
-                        <div
-                          style={{
-                            width: `${(count / maxCount) * 100}%`,
-                            minWidth: count > 0 ? 24 : 0,
-                            height: "100%",
-                            background: "var(--accent)",
-                            borderRadius: 8,
-                            transition: "width 0.3s ease",
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", minWidth: 36 }}>{count}</span>
-                    </Selectable>
-                  );
-                })
-              )}
-            </div>
-          </div>
-          <div style={{ background: "var(--panel)", border, borderRadius: "var(--radius-lg)", padding: "var(--pad-24)", boxShadow: "var(--shadow-soft)" }}>
-            <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>Příjem podle měsíců</h2>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na sloupec pro zobrazení pouze zakázek v daném měsíci.</p>
-            {stats.monthlyStats.length === 0 ? (
-              <div style={{ color: "var(--muted)", fontSize: 14 }}>Žádná data pro vybrané období</div>
-            ) : (
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 200 }}>
-                {stats.monthlyStats.map((m) => {
-                  const isActive = drillDown?.type === "month" && drillDown.year === m.year && drillDown.month === m.monthIndex;
-                  return (
-                    <button
-                      key={m.month}
-                      aria-pressed={isActive}
-                      type="button"
-                      onClick={() =>
-                        setDrillDown((prev) =>
-                          prev?.type === "month" && prev.year === m.year && prev.month === m.monthIndex ? null : { type: "month", year: m.year, month: m.monthIndex }
-                        )
-                      }
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                        border: "none",
-                        background: "transparent",
-                        cursor: "pointer",
-                        padding: 0,
-                      }}
-                      title={`${m.month}: ${m.revenue.toLocaleString("cs-CZ")} Kč (${m.count} zakázek) – klik pro filtr`}
-                    >
-                      <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                        <div
-                          style={{
-                            width: "80%",
-                            maxWidth: 48,
-                            height: `${Math.max(4, (m.revenue / maxRevenue) * 100)}%`,
-                            minHeight: 8,
-                            background: isActive
-                              ? "linear-gradient(180deg, var(--accent), var(--accent-hover))"
-                              : "linear-gradient(180deg, var(--accent), var(--accent-hover))",
-                            borderRadius: "8px 8px 0 0",
-                            transition: "height 0.3s ease",
-                            boxShadow: isActive ? "0 0 0 2px var(--accent)" : undefined,
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", transform: "rotate(-12deg)", transformOrigin: "top center" }}>{m.month}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Počty podle statusu (režim Karty) – klik filtruje */}
-      {viewMode === "cards" && (
-      <div
-        style={{
-          background: "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          border,
-          borderRadius: "var(--radius-lg)",
-          padding: "var(--pad-24)",
-          boxShadow: "var(--shadow-soft)",
-        }}
-      >
-        <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
-          Zakázky podle stavu
-        </h2>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na kartu pro zobrazení pouze zakázek v daném stavu.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 150px), 1fr))", gap: 12 }}>
-          {Object.entries(stats.byStatus).map(([status, count]) => {
-            const isActive = drillDown?.type === "status" && drillDown.value === status;
-            return (
-              <Selectable
-                selected={isActive}
-                key={status}
-                onClick={() => setDrillDown((prev) => (prev?.type === "status" && prev.value === status ? null : { type: "status", value: status }))}
-                title={`Filtrovat: ${nazevStavu(status)}`}
-              >
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{nazevStavu(status)}</div>
-                <div style={{ fontWeight: 700, fontSize: 20, color: "var(--text)" }}>{count}</div>
-              </Selectable>
-            );
-          })}
-        </div>
-      </div>
-      )}
-
-      {/* Nejčastější opravy a zařízení */}
-      {viewMode !== "table" && (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
-        <div
-          style={{
-            background: "var(--panel)",
-            backdropFilter: "var(--blur)",
-            WebkitBackdropFilter: "var(--blur)",
-            border,
-            borderRadius: "var(--radius-lg)",
-            padding: "var(--pad-24)",
-            boxShadow: "var(--shadow-soft)",
-          }}
-        >
-          <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
-            Nejčastější opravy
-          </h2>
-          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte pro zobrazení pouze zakázek s touto opravou.</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {stats.topRepairs.length > 0 ? (
-              stats.topRepairs.map((repair, idx) => {
-                const isActive = drillDown?.type === "repair" && drillDown.value === repair.name;
-                return (
-                  <Selectable
-                    selected={isActive}
-                    layout="between"
-                    size="sm"
-                    key={repair.name}
-                    onClick={() => setDrillDown((prev) => (prev?.type === "repair" && prev.value === repair.name ? null : { type: "repair", value: repair.name }))}
-                    title={`Filtrovat: ${repair.name}`}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{idx + 1 === 1 ? "🥇" : idx + 1 === 2 ? "🥈" : idx + 1 === 3 ? "🥉" : "•"}</span>
-                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{repair.name}</span>
-                    </div>
-                    <span style={{ fontWeight: 700, color: "var(--accent)" }}>{repair.count}x</span>
-                  </Selectable>
-                );
-              })
-            ) : (
-              <div style={{ color: "var(--muted)", fontSize: 14, textAlign: "center", padding: 20 }}>
-                Žádné opravy
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: "var(--panel)",
-            backdropFilter: "var(--blur)",
-            WebkitBackdropFilter: "var(--blur)",
-            border,
-            borderRadius: "var(--radius-lg)",
-            padding: "var(--pad-24)",
-            boxShadow: "var(--shadow-soft)",
-          }}
-        >
-          <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
-            Nejčastější zařízení
-          </h2>
-          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte pro zobrazení pouze zakázek s tímto zařízením.</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {stats.topDevices.length > 0 ? (
-              stats.topDevices.map((device, idx) => {
-                const isActive = drillDown?.type === "device" && drillDown.value === device.name;
-                return (
-                  <Selectable
-                    selected={isActive}
-                    layout="between"
-                    size="sm"
-                    key={device.name}
-                    onClick={() => setDrillDown((prev) => (prev?.type === "device" && prev.value === device.name ? null : { type: "device", value: device.name }))}
-                    title={`Filtrovat: ${device.name}`}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{idx + 1 === 1 ? "🥇" : idx + 1 === 2 ? "🥈" : idx + 1 === 3 ? "🥉" : "•"}</span>
-                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{device.name}</span>
-                    </div>
-                    <span style={{ fontWeight: 700, color: "var(--accent)" }}>{device.count}x</span>
-                  </Selectable>
-                );
-              })
-            ) : (
-              <div style={{ color: "var(--muted)", fontSize: 14, textAlign: "center", padding: 20 }}>
-                Žádná zařízení
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* Měsíční statistiky (režim Karty) – klik filtruje podle měsíce */}
-      {viewMode === "cards" && (
-      <div
-        style={{
-          background: "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          border,
-          borderRadius: "var(--radius-lg)",
-          padding: "var(--pad-24)",
-          boxShadow: "var(--shadow-soft)",
-        }}
-      >
-        <h2 style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 8 }}>
-          Měsíční přehled
-        </h2>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Klikněte na měsíc pro zobrazení pouze zakázek v daném měsíci.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 12 }}>
-          {stats.monthlyStats.map((month) => {
-            const isActive = drillDown?.type === "month" && drillDown.year === month.year && drillDown.month === month.monthIndex;
-            return (
-              <Selectable
-                selected={isActive}
-                size="lg"
-                key={month.month}
-                onClick={() =>
-                  setDrillDown((prev) =>
-                    prev?.type === "month" && prev.year === month.year && prev.month === month.monthIndex ? null : { type: "month", year: month.year, month: month.monthIndex }
-                  )
+          {/* Klíčová čísla */}
+          {viewMode !== "charts" && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: "var(--space-3)" }}>
+              <KpiTile
+                title="Celkem zakázek"
+                value={celeCislo(kpis.totalTickets)}
+                icon={<DocumentIcon size={16} />}
+                delta={compareActive ? { current: kpis.totalTickets, previous: prevKpis.totalTickets, formatAbsolute: celeCislo } : undefined}
+              />
+              <KpiTile
+                title="Celkový příjem"
+                value={formatCurrencyRounded(kpis.totalRevenue)}
+                icon={<CoinsIcon size={16} />}
+                delta={compareActive ? { current: kpis.totalRevenue, previous: prevKpis.totalRevenue, formatAbsolute: formatCurrencyRounded } : undefined}
+              />
+              <KpiTile
+                title="Celkové náklady"
+                value={formatCurrencyRounded(kpis.totalCosts)}
+                icon={<CoinsIcon size={16} />}
+                delta={compareActive ? { current: kpis.totalCosts, previous: prevKpis.totalCosts, formatAbsolute: formatCurrencyRounded, invert: true } : undefined}
+              />
+              <KpiTile
+                title="Zisk"
+                value={formatCurrencyRounded(kpis.profit)}
+                icon={<TrendIcon size={16} />}
+                delta={
+                  compareActive
+                    ? { current: kpis.profit, previous: prevKpis.profit, formatAbsolute: formatCurrencyRounded, absolute: prevKpis.profit <= 0 }
+                    : undefined
                 }
-                title={`Filtrovat: ${month.month}`}
-              >
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{month.month}</div>
-                <div style={{ fontWeight: 700, fontSize: 18, color: "var(--text)", marginBottom: 4 }}>{month.count} zakázek</div>
-                <div style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>{formatCurrency(month.revenue)}</div>
-              </Selectable>
-            );
-          })}
-        </div>
-      </div>
-      )}
+              />
+              <KpiTile
+                title="Průměrná cena"
+                value={formatCurrencyRounded(kpis.averageTicketPrice)}
+                icon={<StatusIcon size={16} />}
+                delta={compareActive ? { current: kpis.averageTicketPrice, previous: prevKpis.averageTicketPrice, formatAbsolute: formatCurrencyRounded } : undefined}
+              />
+              <KpiTile
+                title="Celkové slevy"
+                value={formatCurrencyRounded(kpis.totalDiscounts)}
+                icon={<GiftIcon size={16} />}
+                delta={compareActive ? { current: kpis.totalDiscounts, previous: prevKpis.totalDiscounts, formatAbsolute: formatCurrencyRounded, invert: true } : undefined}
+              />
+              <KpiTile
+                title="Průměrná doba zakázky"
+                value={formatDuration(kpis.averageTicketDurationDays)}
+                icon={<ClockIcon size={16} />}
+                delta={
+                  compareActive && kpis.averageTicketDurationDays > 0 && prevKpis.averageTicketDurationDays > 0
+                    ? {
+                        current: kpis.averageTicketDurationDays,
+                        previous: prevKpis.averageTicketDurationDays,
+                        formatAbsolute: (n) => dny(Number(n.toFixed(1))),
+                        absolute: true,
+                        invert: true,
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          )}
+
+          {viewMode === "cards" && (
+            <>
+              {statusSection}
+              {rankSection}
+              {monthlySection}
+            </>
+          )}
+
+          {viewMode === "charts" && (
+            <>
+              {monthlySection}
+              {statusSection}
+              {rankSection}
+            </>
+          )}
+
+          {viewMode === "table" && (
+            <Card style={{ padding: "var(--pad-24)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-3)" }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <SectionHeading icon={<DocumentIcon size={18} />}>Zakázky v období</SectionHeading>
+                  <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginTop: "calc(-1 * var(--space-2))" }}>
+                    {zakazky(filteredTickets.length)}
+                    {filteredTickets.length > 100 && " · v tabulce je prvních 100, export obsahuje všechny"}
+                    {onOpenTicket && " · kliknutím na řádek otevřete zakázku"}
+                  </div>
+                </div>
+                <Button
+                  variant="soft"
+                  size="sm"
+                  icon={<DownloadIcon size={14} />}
+                  onClick={exportCsv}
+                  disabled={filteredTickets.length === 0}
+                  title="Uloží zobrazené zakázky jako CSV (oddělovač středník)"
+                >
+                  Export CSV
+                </Button>
+              </div>
+
+              {filteredTickets.length === 0 ? (
+                <div style={{ color: "var(--muted)", fontSize: "var(--text-base)", padding: "var(--space-4) 0" }}>
+                  Ve vybraném období nejsou žádné zakázky.
+                </div>
+              ) : (
+                <div style={{ maxHeight: "60vh", overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "var(--text-base)" }}>
+                    <thead>
+                      <tr>
+                        {(["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem"] as const).map((label, i) => (
+                          <th
+                            key={label}
+                            scope="col"
+                            style={{
+                              position: "sticky",
+                              top: 0,
+                              zIndex: 1,
+                              background: "var(--panel)",
+                              backdropFilter: "var(--blur)",
+                              WebkitBackdropFilter: "var(--blur)",
+                              borderBottom: "1px solid var(--border)",
+                              padding: "var(--space-2) var(--space-3)",
+                              textAlign: i === 5 ? "right" : "left",
+                              color: "var(--muted)",
+                              fontWeight: 600,
+                              fontSize: "var(--text-sm)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTickets.slice(0, 100).map((t) => {
+                        const finalPrice = ticketRevenue(t);
+                        const cell = { padding: "var(--space-2) var(--space-3)", borderBottom: "1px solid var(--border)", color: "var(--text)" } as const;
+                        return (
+                          <tr
+                            key={t.id}
+                            style={{ cursor: onOpenTicket ? "pointer" : undefined }}
+                            onClick={() => onOpenTicket?.(t.id)}
+                            onMouseEnter={(e) => {
+                              if (onOpenTicket) e.currentTarget.style.background = "var(--panel-2)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "";
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onOpenTicket?.(t.id);
+                              }
+                            }}
+                            role={onOpenTicket ? "button" : undefined}
+                            tabIndex={onOpenTicket ? 0 : undefined}
+                            title={onOpenTicket ? "Otevřít zakázku" : undefined}
+                          >
+                            <td style={{ ...cell, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontVariantNumeric: "tabular-nums" }}>{t.code ?? "—"}</td>
+                            <td style={{ ...cell, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                              {t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "—"}
+                            </td>
+                            <td style={cell}>{t.customerName || "—"}</td>
+                            <td style={cell}>{t.deviceLabel || "—"}</td>
+                            <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                              {t.status ? (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+                                  <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: getByKey(t.status)?.bg || "var(--accent)", flexShrink: 0 }} />
+                                  {nazevStavu(t.status)}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                              {finalPrice > 0 ? formatCurrencyRounded(finalPrice) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Souhrn pod tabulkou i kartami – kolik zakázek je v aktuálním výběru */}
+          {viewMode !== "table" && (
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              {drillDown
+                ? `Ve výběru je ${zakazky(filteredTickets.length)} z ${celeCislo(tickets.length)} v období.`
+                : `V období je ${zakazky(tickets.length)}.`}
+              {compareActive && ` Předchozí období: ${zakazky(previousPeriodTickets.length)}.`}
+              {kpis.averageTicketDurationDays > 0 &&
+                ` Průměrná doba zakázky vychází z dokončených zakázek (${cislo(kpis.averageTicketDurationDays)} dne).`}
+            </div>
+          )}
         </>
       )}
     </div>
   );
 }
-
-function StatCard({
-  title,
-  value,
-  icon,
-  color,
-  delta,
-  deltaPercent,
-  deltaLabel,
-  deltaIsCurrency,
-  deltaSuffix,
-  deltaInverted,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  color?: string;
-  delta?: number;
-  deltaPercent?: boolean;
-  deltaLabel?: string;
-  deltaIsCurrency?: boolean;
-  /** např. " dní" pro průměrnou dobu */
-  deltaSuffix?: string;
-  /** true = vyšší delta = červená (horší), nižší = zelená (lepší) */
-  deltaInverted?: boolean;
-}) {
-  const deltaStr =
-    delta !== undefined && delta !== null
-      ? deltaPercent
-        ? `${delta >= 0 ? "+" : ""}${cislo(delta)} %`
-        : deltaIsCurrency
-          ? `${delta >= 0 ? "+" : ""}${formatCurrency(delta)}`
-          : `${delta >= 0 ? "+" : ""}${cislo(delta)}${deltaSuffix ?? ""}`
-      : null;
-  const deltaUp = delta !== undefined && delta > 0;
-  const deltaDown = delta !== undefined && delta < 0;
-  const deltaColor = deltaInverted
-    ? (deltaUp ? "rgba(239,68,68,0.9)" : deltaDown ? "var(--accent)" : "var(--muted)")
-    : (deltaUp ? "var(--accent)" : deltaDown ? "rgba(239,68,68,0.9)" : "var(--muted)");
-
-  // Delší částky (s "Kč" a mezerami mezi tisíci) se do karty na jeden
-  // řádek při fontSize 28 nevejdou – zmenšit podle délky textu, ať se
-  // nelámou (i po zaokrouhlení na celé koruny v jiných měnách/velkých
-  // částkách to pořád může být dlouhé).
-  const valueLength = String(value).length;
-  const valueFontSize = valueLength > 10 ? 20 : valueLength > 6 ? 24 : 28;
-
-  return (
-    <div
-      style={{
-        background: "var(--panel)",
-        backdropFilter: "var(--blur)",
-        WebkitBackdropFilter: "var(--blur)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "var(--pad-24)",
-        boxShadow: "var(--shadow-soft)",
-        flex: "1 1 200px",
-        minWidth: 0,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <span style={{ display: "flex", color: "var(--muted)" }}>{icon}</span>
-        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{title}</div>
-      </div>
-      <div
-        style={{
-          fontWeight: 800,
-          fontSize: valueFontSize,
-          color: color || "var(--text)",
-          lineHeight: 1.2,
-          overflowWrap: "anywhere",
-        }}
-      >
-        {value}
-      </div>
-      {deltaStr && deltaLabel && (
-        <div style={{ marginTop: 6, fontSize: 12, color: deltaColor, fontWeight: 600 }}>
-          {deltaStr} {deltaLabel}
-        </div>
-      )}
-    </div>
-  );
-}
-

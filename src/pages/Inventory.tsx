@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { Button, Input, MenuItem } from "../components/ui";
-import { BoxIcon, WarningIcon } from "../components/icons";
-import { createPortal } from "react-dom";
+import { Button, Input, PageHeader, Segmented, Toolbar, ToolbarSpacer, type SegmentedOption } from "../components/ui";
+import { BoxIcon, CheckIcon, ChevronDownIcon, DownloadIcon, EditIcon, PlusIcon, SearchIcon, TrashIcon, WarningIcon, XIcon } from "../components/icons";
+import { SectionHeading } from "../components/SectionHeading";
+import { KpiStrip, LOW_STOCK_LIMIT, type StockFilter } from "./Inventory/KpiStrip";
+import { RestockDialog } from "./Inventory/RestockDialog";
+import { InventoryDialog } from "./Inventory/InventoryDialog";
+import { DeviceFilter } from "./Inventory/DeviceFilter";
 import { showToast } from "../components/Toast";
 import { reportError } from "../lib/reportError";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -19,6 +23,7 @@ import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { supabase } from "../lib/supabaseClient";
 const PRODUCT_DISPLAY_MODE_KEY = STORAGE_KEYS.INVENTORY_DISPLAY_MODE;
 const INVENTORY_DISPLAY_MODE_EVENT = "jobsheet:inventory-display-mode-changed";
+const ADMIN_OPEN_KEY = "jobsheet_inventory_admin_open";
 
 /**
  * Stav skladu, který tenhle klient naposledy viděl uložený. Od něj se počítá,
@@ -155,244 +160,6 @@ function sladitSeSklady(data: InventoryData, sklady: Warehouse[]): InventoryData
   };
 }
 
-// Product Filter Picker Component
-function ProductFilterPicker({ value, onChange }: { value: "all" | "inStock" | "lowStock" | "outOfStock" | "noModels"; onChange: (v: "all" | "inStock" | "lowStock" | "outOfStock" | "noModels") => void }) {
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open || !buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    setMenuPosition({
-      top: rect.bottom + window.scrollY + 4,
-      left: rect.left + window.scrollX,
-    });
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) && buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleEscape, true);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleEscape, true);
-    };
-  }, [open]);
-
-  const options = [
-    { value: "all", label: "Všechny produkty" },
-    { value: "inStock", label: "Na skladě" },
-    { value: "lowStock", label: "Nízký stav (<5)" },
-    { value: "outOfStock", label: "Vyprodáno" },
-    { value: "noModels", label: "Bez modelu" },
-  ];
-
-  const selected = options.find(o => o.value === value) || options[0];
-
-  const menu = open ? (
-    <div
-      ref={menuRef}
-      style={{
-        position: "absolute",
-        top: menuPosition.top,
-        left: menuPosition.left,
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-        zIndex: 10000,
-        minWidth: 200,
-        overflow: "hidden",
-      }}
-    >
-      {options.map((opt) => (
-        <MenuItem
-          layout="between"
-          selected={value === opt.value}
-          key={opt.value}
-          onClick={() => {
-            onChange(opt.value as any);
-            setOpen(false);
-          }}
-        >
-          <span>{opt.label}</span>
-          {value === opt.value && <span style={{ fontSize: 12, opacity: 0.8 }}>✓</span>}
-        </MenuItem>
-      ))}
-    </div>
-  ) : null;
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          padding: "10px 14px",
-          minWidth: 160,
-          borderRadius: 12,
-          border: open ? "1px solid var(--accent)" : "1px solid var(--border)",
-          outline: "none",
-          background: open ? "var(--panel-2)" : "var(--panel)",
-          color: "var(--text)",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          fontWeight: 900,
-          fontSize: 13,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          boxShadow: open ? "0 0 0 3px var(--accent-soft)" : "var(--shadow-soft)",
-          transition: "var(--transition-smooth)",
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--accent)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--border)";
-        }}
-      >
-        <span>{selected.label}</span>
-        <span style={{ opacity: 0.65, fontWeight: 900, fontSize: 10 }}>▾</span>
-      </button>
-      {open ? createPortal(menu, document.body) : null}
-    </div>
-  );
-}
-
-// Product Display Mode Picker Component
-function ProductDisplayModePicker({ value, onChange }: { value: "grid" | "list" | "compact"; onChange: (v: "grid" | "list" | "compact") => void }) {
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open || !buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    setMenuPosition({
-      top: rect.bottom + window.scrollY + 4,
-      right: window.innerWidth - rect.right - window.scrollX,
-    });
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) && buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleEscape, true);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleEscape, true);
-    };
-  }, [open]);
-
-  const options = [
-    { value: "grid", label: "Mřížka", icon: "⊞" },
-    { value: "list", label: "Seznam", icon: "☰" },
-    { value: "compact", label: "Kompaktní", icon: "☷" },
-  ];
-
-  const selected = options.find(o => o.value === value) || options[0];
-
-  const menu = open ? (
-    <div
-      ref={menuRef}
-      style={{
-        position: "absolute",
-        top: menuPosition.top,
-        right: menuPosition.right,
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-        zIndex: 10000,
-        minWidth: 180,
-        overflow: "hidden",
-      }}
-    >
-      {options.map((opt) => (
-        <MenuItem
-          layout="between"
-          selected={value === opt.value}
-          key={opt.value}
-          onClick={() => {
-            onChange(opt.value as any);
-            setOpen(false);
-          }}
-        >
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 16 }}>{opt.icon}</span>
-            <span>{opt.label}</span>
-          </span>
-          {value === opt.value && <span style={{ fontSize: 12, opacity: 0.8 }}>✓</span>}
-        </MenuItem>
-      ))}
-    </div>
-  ) : null;
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          padding: "10px 14px",
-          minWidth: 140,
-          borderRadius: 12,
-          border: open ? "1px solid var(--accent)" : "1px solid var(--border)",
-          outline: "none",
-          background: open ? "var(--panel-2)" : "var(--panel)",
-          color: "var(--text)",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          fontWeight: 900,
-          fontSize: 13,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          boxShadow: open ? "0 0 0 3px var(--accent-soft)" : "var(--shadow-soft)",
-          transition: "var(--transition-smooth)",
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--accent)";
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.borderColor = "var(--border)";
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 16 }}>{selected.icon}</span>
-          <span>{selected.label}</span>
-        </span>
-        <span style={{ opacity: 0.65, fontWeight: 900, fontSize: 10 }}>▾</span>
-      </button>
-      {open ? createPortal(menu, document.body) : null}
-    </div>
-  );
-}
-
 /**
  * Rychlá změna počtu kusů přímo v náhledu produktu.
  * Vlastní <button>, ne Button z ui – potřebujeme čtvercové tlačítko
@@ -515,6 +282,63 @@ function StockCell({
   );
 }
 
+/** „Pod minimem“ = něco skladem, ale míň než LOW_STOCK_LIMIT kusů. Nula je „vyprodáno“. */
+function jePodMinimem(stock: number) {
+  return stock > 0 && stock < LOW_STOCK_LIMIT;
+}
+
+const PODMINKA_ZASOBY: Record<StockFilter, (p: Pick<Product, "stock" | "modelIds">) => boolean> = {
+  all: () => true,
+  inStock: (p) => p.stock > 0,
+  lowStock: (p) => jePodMinimem(p.stock),
+  outOfStock: (p) => p.stock === 0,
+  noModels: (p) => p.modelIds.length === 0,
+};
+
+function sklonuj(n: number, tvary: [string, string, string]) {
+  const t = n === 1 ? tvary[0] : n >= 2 && n <= 4 ? tvary[1] : tvary[2];
+  return `${n} ${t}`;
+}
+
+/** Počet za popiskem volby ve filtru – tlumeně, aby nesoupeřil s textem. */
+function Pocet({ n }: { n: number }) {
+  return (
+    <span style={{ marginLeft: "var(--space-1)", opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>
+      {n}
+    </span>
+  );
+}
+
+const filtrPopisek: React.CSSProperties = {
+  fontSize: "var(--text-xs)",
+  fontWeight: 700,
+  color: "var(--muted)",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
+function PrazdnyStav({ nadpis, text, akce }: { nadpis: string; text: string; akce: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "var(--space-8) var(--space-4)",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "var(--space-2)",
+      }}
+    >
+      <span style={{ color: "var(--muted)", display: "inline-flex" }}>
+        <BoxIcon size={28} />
+      </span>
+      <div style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--text)" }}>{nadpis}</div>
+      <div style={{ fontSize: "var(--text-base)", color: "var(--muted)", maxWidth: 420 }}>{text}</div>
+      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", justifyContent: "center", marginTop: "var(--space-2)" }}>{akce}</div>
+    </div>
+  );
+}
+
 type InventoryProps = { activeServiceId: string | null };
 
 const EMPTY_INVENTORY: InventoryData = { productCategories: [], products: [], warehouses: [] };
@@ -562,17 +386,33 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   
   // Filters for product list
   const [productSearchQuery, setProductSearchQuery] = useState("");
-  const [productStockFilter, setProductStockFilter] = useState<"all" | "inStock" | "lowStock" | "outOfStock" | "noModels">("all");
+  const [productStockFilter, setProductStockFilter] = useState<StockFilter>("all");
   const [productDisplayMode, setProductDisplayMode] = useState<"grid" | "list" | "compact">(() => {
     const saved = localStorage.getItem(PRODUCT_DISPLAY_MODE_KEY);
     // Výchozí je řádkový seznam – stejné rozvržení jako u oprav v Zařízeních.
     return (saved as "grid" | "list" | "compact") || "list";
   });
-  const [stockChanges, setStockChanges] = useState<Record<string, string>>({});
   /* Do kterého skladu se naskladňuje. Prázdné = výchozí sklad. */
   const [restockWarehouseId, setRestockWarehouseId] = useState<string>("");
-  const [editingStock, setEditingStock] = useState<string | null>(null);
   const [nahravamObrazek, setNahravamObrazek] = useState(false);
+  const [restockOpen, setRestockOpen] = useState(false);
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  /* Správa skladů a kategorií je pod seznamem, sbalená; stav si pamatuje
+     prohlížeč, ať ji nemusí rozbalovat ten, kdo ji používá denně. */
+  const [adminOpen, setAdminOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ADMIN_OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_OPEN_KEY, adminOpen ? "1" : "0");
+    } catch {
+      /* soukromý režim – nevadí */
+    }
+  }, [adminOpen]);
 
   const [devicesData, setDevicesData] = useState<DevicesData>({ brands: [], categories: [], models: [], repairs: [] });
 
@@ -735,10 +575,6 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       window.removeEventListener("beforeunload", dopis);
     };
   }, [ulozSklad]);
-
-  useEffect(() => {
-    if (!canAdjustInventoryQuantity && editingStock) setEditingStock(null);
-  }, [canAdjustInventoryQuantity, editingStock]);
 
   useEffect(() => {
     if (localStorage.getItem(PRODUCT_DISPLAY_MODE_KEY) === productDisplayMode) return;
@@ -1189,12 +1025,6 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   // Brands, categories and models are managed in Devices page - no reorder functions needed
 
-  const filteredCategories = useMemo(() => {
-    return selectedBrandId
-      ? devicesData.categories.filter((c) => c.brandId === selectedBrandId)
-      : [];
-  }, [devicesData.categories, selectedBrandId]);
-
   const filteredModels = useMemo(() => {
     return selectedCategoryId ? devicesData.models.filter((m) => m.categoryId === selectedCategoryId) : [];
   }, [devicesData.models, selectedCategoryId]);
@@ -1251,7 +1081,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           background: "none",
           borderRadius: 999,
           padding: "1px 7px",
-          fontSize: 10,
+          fontSize: "var(--text-xs)",
           fontWeight: 700,
           lineHeight: 1.6,
           cursor: "pointer",
@@ -1263,9 +1093,11 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     );
   };
 
-  const filteredProducts = useMemo(() => {
+  /* Všechno kromě filtru zásoby. Z toho se počítají čísla v přepínači
+     (Skladem 12 · Vyprodáno 3…), aby seděla na to, co je zrovna vidět. */
+  const produktyPredZasobou = useMemo(() => {
     let products = [...data.products];
-    
+
     // Filter by brand (all products for models of this brand)
     if (selectedBrandId) {
       const brandCategoryIds = devicesData.categories
@@ -1276,7 +1108,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         .map((m) => m.id);
       products = products.filter((p) => p.modelIds.some((mid) => brandModelIds.includes(mid)));
     }
-    
+
     // Filter by category (all products for models of this category)
     if (selectedCategoryId) {
       const categoryModelIds = devicesData.models
@@ -1284,43 +1116,82 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         .map((m) => m.id);
       products = products.filter((p) => p.modelIds.some((mid) => categoryModelIds.includes(mid)));
     }
-    
+
     // Filter by model
     if (selectedModelId) {
       products = products.filter((p) => p.modelIds.includes(selectedModelId));
     }
-    
+
     // Filter by product category
     if (selectedProductCategoryId) {
       products = products.filter((p) => p.categoryId === selectedProductCategoryId);
     }
-    
+
     // Filter by search query
     if (productSearchQuery.trim()) {
       const query = productSearchQuery.toLowerCase();
-      products = products.filter((p) => 
+      products = products.filter((p) =>
         p.name.toLowerCase().includes(query) ||
         (p.sku && p.sku.toLowerCase().includes(query)) ||
         (p.description && p.description.toLowerCase().includes(query))
       );
     }
-    
-    // Filter by stock
-    if (productStockFilter === "inStock") {
-      products = products.filter((p) => p.stock > 0);
-    } else if (productStockFilter === "lowStock") {
-      products = products.filter((p) => p.stock > 0 && p.stock < 5);
-    } else if (productStockFilter === "outOfStock") {
-      products = products.filter((p) => p.stock === 0);
-    } else if (productStockFilter === "noModels") {
-      products = products.filter((p) => p.modelIds.length === 0);
-    }
-    
-    return products;
-  }, [data.products, selectedBrandId, selectedCategoryId, selectedModelId, selectedProductCategoryId, productSearchQuery, productStockFilter, devicesData]);
 
-  const selectedBrand = devicesData.brands.find((b) => b.id === selectedBrandId);
-  const selectedCategory = devicesData.categories.find((c) => c.id === selectedCategoryId);
+    return products;
+  }, [data.products, selectedBrandId, selectedCategoryId, selectedModelId, selectedProductCategoryId, productSearchQuery, devicesData]);
+
+  const pocty = useMemo(() => {
+    const p = produktyPredZasobou;
+    return {
+      all: p.length,
+      inStock: p.filter((x) => x.stock > 0).length,
+      lowStock: p.filter((x) => jePodMinimem(x.stock)).length,
+      outOfStock: p.filter((x) => x.stock === 0).length,
+      noModels: p.filter((x) => x.modelIds.length === 0).length,
+    };
+  }, [produktyPredZasobou]);
+
+  const filteredProducts = useMemo(
+    () => produktyPredZasobou.filter(PODMINKA_ZASOBY[productStockFilter]),
+    [produktyPredZasobou, productStockFilter],
+  );
+
+  /* Dlaždice nahoře počítají z celého skladu, ne z filtru – jsou to
+     ukazatele stavu, ne shrnutí seznamu. Hodnota = kusy × nákupní cena;
+     kde nákupní chybí, bere se prodejní, a dlaždice to řekne v tooltipu. */
+  const kpi = useMemo(() => {
+    let podMinimem = 0;
+    let vyprodano = 0;
+    let hodnota = 0;
+    let bezNakupni = 0;
+    for (const p of data.products) {
+      if (p.stock === 0) vyprodano += 1;
+      else if (jePodMinimem(p.stock)) podMinimem += 1;
+      const cena = p.purchasePrice ?? p.price;
+      if (p.purchasePrice == null && p.stock > 0) bezNakupni += 1;
+      hodnota += p.stock * (Number.isFinite(cena) ? cena : 0);
+    }
+    return { podMinimem, vyprodano, hodnota, bezNakupni };
+  }, [data.products]);
+
+  const vymazatFiltry = () => {
+    setProductSearchQuery("");
+    setSelectedBrandId(null);
+    setSelectedCategoryId(null);
+    setSelectedModelId(null);
+    setSelectedProductCategoryId(null);
+    setProductStockFilter("all");
+    setWarehouseFilter("all");
+  };
+
+  const stockOptions: SegmentedOption<StockFilter>[] = [
+    { value: "all", label: <>Vše<Pocet n={pocty.all} /></> },
+    { value: "inStock", label: <>Skladem<Pocet n={pocty.inStock} /></> },
+    { value: "lowStock", label: <>Pod minimem<Pocet n={pocty.lowStock} /></>, title: `Produkty s 1–${LOW_STOCK_LIMIT - 1} ks` },
+    { value: "outOfStock", label: <>Vyprodáno<Pocet n={pocty.outOfStock} /></> },
+    { value: "noModels", label: <>Bez modelu<Pocet n={pocty.noModels} /></>, title: "Produkty bez přiřazeného modelu zařízení" },
+  ];
+
   const selectedModel = devicesData.models.find((m) => m.id === selectedModelId);
 
   // Auto-match product to models based on name - STRICT: only high confidence matches
@@ -1836,34 +1707,1075 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
   }
 
   return (
-    <div data-tour="inventory-main" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-      <div>
-        <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Sklad</div>
+    <div data-tour="inventory-main" style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+      <PageHeader
+        title="Sklad"
+        subtitle={`${sklonuj(data.products.length, ["produkt", "produkty", "produktů"])} · ${sklonuj(data.warehouses.length, ["sklad", "sklady", "skladů"])}`}
+        actions={
+          <>
+            <Button variant="primary" icon={<BoxIcon size={14} />} data-tour="inventory-restock" onClick={() => setRestockOpen(true)}>
+              Naskladnit
+            </Button>
+            <Button variant="soft" icon={<PlusIcon size={14} />} onClick={() => setNewProductOpen(true)}>
+              Nový produkt
+            </Button>
+            <Button variant="soft" icon={<DownloadIcon size={14} />} data-tour="inventory-import" onClick={() => setShowImport(true)}>
+              Import
+            </Button>
+          </>
+        }
+      />
+
+      <KpiStrip
+        pocetProduktu={data.products.length}
+        podMinimem={kpi.podMinimem}
+        vyprodano={kpi.vyprodano}
+        hodnotaSkladu={kpi.hodnota}
+        bezNakupniCeny={kpi.bezNakupni}
+        aktivniFiltr={productStockFilter}
+        onFiltr={setProductStockFilter}
+      />
+
+      {/* PRODUKTY – hlavní obsah stránky. Filtry sedí přímo nad seznamem;
+          správa skladů a kategorií je až dole, sbalená. */}
+      <div style={card} data-tour="inventory-products">
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+          <SectionHeading icon={<BoxIcon size={16} />}>Produkty</SectionHeading>
+          {ukazatViditelnost && filteredProducts.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                Posílat do veřejného API ({filteredProducts.length} zobrazených):
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
+                Zveřejnit vše
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(false)}>
+                Skrýt vše
+              </Button>
+            </div>
+          )}
         </div>
-        {/* Odsazení uhýbá plovoucímu "+" v pravém dolním rohu. Na telefonu
-            je "+" nad spodní lištou, ne vedle nadpisu, takže by 120 px jen
-            odstrčilo tlačítko doprostřed. */}
-        <Button variant="primary" data-tour="inventory-import" onClick={() => setShowImport(true)} style={isNarrow ? undefined : { marginRight: 120 }}>
-          Import
-        </Button>
+
+        {data.products.length === 0 ? (
+          <PrazdnyStav
+            nadpis="Zatím žádné produkty"
+            text="Přidejte první produkt ručně, nebo naimportujte ceník ze souboru."
+            akce={
+              <>
+                <Button variant="primary" icon={<PlusIcon size={14} />} onClick={() => setNewProductOpen(true)}>
+                  Nový produkt
+                </Button>
+                <Button variant="soft" icon={<DownloadIcon size={14} />} onClick={() => setShowImport(true)}>
+                  Import
+                </Button>
+              </>
+            }
+          />
+        ) : (
+          <>
+            <Toolbar style={{ marginBottom: "var(--space-3)" }}>
+              <div style={{ flex: "1 1 240px", minWidth: 0, position: "relative" }}>
+                <span aria-hidden="true" style={{ position: "absolute", left: "var(--space-3)", top: "50%", transform: "translateY(-50%)", color: "var(--muted)", display: "inline-flex" }}>
+                  <SearchIcon size={14} />
+                </span>
+                <Input
+                  aria-label="Hledat produkt"
+                  placeholder="Hledat produkt (název, SKU, popis)…"
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  style={{ paddingLeft: "calc(var(--space-3) + 22px)" }}
+                />
+              </div>
+              {data.warehouses.length > 1 && data.warehouses.length <= 4 && (
+                <Segmented
+                  size="sm"
+                  ariaLabel="Který sklad ukazovat"
+                  value={warehouseFilter}
+                  options={[{ value: "all", label: "Všechny sklady" }, ...data.warehouses.map((w) => ({ value: w.id, label: w.name }))]}
+                  onChange={setWarehouseFilter}
+                />
+              )}
+              {data.warehouses.length > 4 && (
+                <select
+                  className="ui-input"
+                  aria-label="Který sklad ukazovat"
+                  value={warehouseFilter}
+                  onChange={(e) => setWarehouseFilter(e.target.value)}
+                  style={{ width: "auto", padding: "6px var(--space-3)", fontSize: "var(--text-sm)" }}
+                >
+                  <option value="all">Všechny sklady</option>
+                  {data.warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              )}
+              <ToolbarSpacer />
+              <Segmented
+                size="sm"
+                ariaLabel="Zobrazení"
+                value={productDisplayMode}
+                options={[
+                  { value: "grid", label: "Mřížka" },
+                  { value: "list", label: "Seznam" },
+                  { value: "compact", label: "Kompaktní" },
+                ]}
+                onChange={setProductDisplayMode}
+              />
+            </Toolbar>
+
+            <Toolbar style={{ marginBottom: "var(--space-3)" }}>
+              <Segmented size="sm" ariaLabel="Filtr zásoby" value={productStockFilter} options={stockOptions} onChange={setProductStockFilter} />
+            </Toolbar>
+
+            {data.productCategories.length > 0 && (
+              <Toolbar style={{ marginBottom: "var(--space-3)" }}>
+                <span style={filtrPopisek}>Kategorie</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="Kategorie produktu"
+                  value={selectedProductCategoryId ?? ""}
+                  options={[{ value: "", label: "Všechny" }, ...data.productCategories.map((c) => ({ value: c.id, label: c.name }))]}
+                  onChange={(v) => setSelectedProductCategoryId(v || null)}
+                />
+              </Toolbar>
+            )}
+
+            {devicesData.brands.length > 0 && (
+              <div style={{ marginBottom: "var(--space-4)" }}>
+                <DeviceFilter
+                  brands={devicesData.brands}
+                  categories={devicesData.categories}
+                  models={devicesData.models}
+                  brandId={selectedBrandId}
+                  categoryId={selectedCategoryId}
+                  modelId={selectedModelId}
+                  onBrand={(id) => {
+                    setSelectedBrandId(id);
+                    setSelectedCategoryId(null);
+                    setSelectedModelId(null);
+                  }}
+                  onCategory={(id) => {
+                    setSelectedCategoryId(id);
+                    setSelectedModelId(null);
+                  }}
+                  onModel={setSelectedModelId}
+                  onClear={() => {
+                    setSelectedBrandId(null);
+                    setSelectedCategoryId(null);
+                    setSelectedModelId(null);
+                  }}
+                />
+              </div>
+            )}
+
+            {filteredProducts.length === 0 ? (
+              <PrazdnyStav
+                nadpis="Nic neodpovídá filtru"
+                text="Zkuste jiné hledání, nebo filtr vymažte."
+                akce={
+                  <Button variant="soft" icon={<XIcon size={14} />} onClick={vymazatFiltry}>
+                    Vymazat filtr
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+              {/* Products Display */}
+              <div style={{ 
+                display: productDisplayMode === "grid" ? "grid" : "flex",
+                gridTemplateColumns: productDisplayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))" : undefined,
+                flexWrap: productDisplayMode === "grid" ? undefined : productDisplayMode === "list" ? "nowrap" : "wrap",
+                flexDirection: productDisplayMode === "list" ? "column" : "row",
+                gap: productDisplayMode === "compact" ? 8 : 16,
+                alignItems: productDisplayMode === "grid" ? "stretch" : undefined
+              }}>
+                {filteredProducts.map((p) => {
+                  const productModels = devicesData.models.filter((m) => p.modelIds.includes(m.id));
+                  const productCategory = p.categoryId ? data.productCategories.find((c) => c.id === p.categoryId) : null;
+                  const isEditing = editingProduct === p.id;
+                  const availableRepairsForProduct = (devicesData.repairs || []).filter((r: any) => r.modelIds && productModels.some((m) => r.modelIds.includes(m.id)));
+                  const hasNoModels = p.modelIds.length === 0;
+
+                  return (
+                    <div
+                      key={p.id}
+                        style={{
+                        padding: productDisplayMode === "compact" ? 12 : 16,
+                        borderRadius: 12,
+                        border: hasNoModels ? "1px solid var(--border)" : border,
+                          background: "var(--panel)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: productDisplayMode === "compact" ? 8 : 12,
+                        flex: productDisplayMode === "grid" ? "1 1 auto" : productDisplayMode === "list" ? "0 0 auto" : "1 1 250px",
+                        minWidth: productDisplayMode === "list" ? "100%" : 0,
+                        height: productDisplayMode === "grid" ? "100%" : productDisplayMode === "compact" ? "auto" : "auto",
+                        minHeight: productDisplayMode === "grid" ? 320 : productDisplayMode === "compact" ? 220 : "auto",
+                        position: "relative",
+                        alignItems: "stretch",
+                      }}
+                    >
+                      {isEditing ? (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <input
+                              placeholder="Název produktu…"
+                              value={editProductData.name}
+                            onChange={(e) => setEditProductData((d) => ({ ...d, name: e.target.value }))}
+                              style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                            />
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                              <input
+                                placeholder="Sklad (ks)"
+                                type="number"
+                                value={editProductData.stock}
+                              onChange={(e) => setEditProductData((d) => ({ ...d, stock: e.target.value }))}
+                                style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                              />
+                              <input
+                                placeholder="Cena (Kč)"
+                                type="number"
+                                value={editProductData.price}
+                              onChange={(e) => setEditProductData((d) => ({ ...d, price: e.target.value }))}
+                                style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                              />
+                            </div>
+                            <input
+                              placeholder="SKU (volitelné)"
+                              value={editProductData.sku}
+                            onChange={(e) => setEditProductData((d) => ({ ...d, sku: e.target.value }))}
+                              style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                            />
+                            <textarea
+                              placeholder="Popis (volitelné)…"
+                              value={editProductData.description}
+                            onChange={(e) => setEditProductData((d) => ({ ...d, description: e.target.value }))}
+                            style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontSize: 13, padding: "8px 10px" }}
+                          />
+                          <div>
+                            <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                              Modely (samodoplnovací výběr)
+                            </label>
+                            <div style={{ position: "relative" }}>
+                              <input
+                                placeholder="Hledat model (např. dyson)…"
+                                value={editProductData.modelSearch}
+                                onChange={(e) => setEditProductData((d) => ({ ...d, modelSearch: e.target.value }))}
+                                style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                              />
+                              {editProductData.modelSearch && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
+                                  {devicesData.models
+                                    .filter((m) =>
+                                      m.name.toLowerCase().includes(editProductData.modelSearch.toLowerCase()) &&
+                                      !editProductData.modelIds.includes(m.id)
+                                    )
+                                    .slice(0, 10)
+                                    .map((m) => (
+                                      <div
+                                        key={m.id}
+                                        onClick={() => {
+                                          setEditProductData((prev) => ({
+                                            ...prev,
+                                            modelIds: [...prev.modelIds, m.id],
+                                            modelSearch: "",
+                                          }));
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          cursor: "pointer",
+                                          fontSize: 13,
+                                          borderBottom: border,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background = "var(--accent-soft)";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background = "transparent";
+                                        }}
+                                      >
+                                        {m.name}
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+                            {editProductData.modelIds.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                                {editProductData.modelIds.map((mid) => {
+                                  const model = devicesData.models.find((m) => m.id === mid);
+                                  if (!model) return null;
+                                  return (
+                                    <div
+                                      key={mid}
+                                      style={{
+                                        padding: "4px 10px",
+                                        background: "var(--accent-soft)",
+                                        borderRadius: 6,
+                                        fontSize: 12,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                      }}
+                                    >
+                                      <span>{model.name}</span>
+                                      <button
+                                        onClick={() => {
+                                          setEditProductData((prev) => ({
+                                            ...prev,
+                                            modelIds: prev.modelIds.filter((id) => id !== mid),
+                                          }));
+                                        }}
+                                        style={{
+                                          background: "none",
+                                          border: "none",
+                                          color: "var(--accent)",
+                                          cursor: "pointer",
+                                          fontSize: 14,
+                                          padding: 0,
+                                          width: 16,
+                                          height: 16,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                              Kategorie produktu (volitelné)
+                            </label>
+                            <select
+                              value={editProductData.categoryId}
+                              onChange={(e) => setEditProductData((d) => ({ ...d, categoryId: e.target.value }))}
+                              style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                            >
+                              <option value="">Bez kategorie</option>
+                              {data.productCategories
+                                .filter((cat) => {
+                                  const product = data.products.find((p) => editingProduct === p.id);
+                                  if (!product) return true;
+                                  if (product.modelIds.length === 0) return true;
+                                  return product.modelIds.some((mid) => (cat.modelIds || []).includes(mid));
+                                })
+                                .map((cat) => (
+                                  <option key={cat.id} value={cat.id}>
+                                    {cat.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                              Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
+                            </label>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleImageUpload(e, true)}
+                              style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                            />
+                            {editProductData.imageUrl && (
+                              <div style={{ marginTop: 8 }}>
+                                <img src={editProductData.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
+                                <Button variant="danger" size="sm"
+                                  onClick={() => { void smazObrazekProduktu(supabase, editProductData.imageUrl); setEditProductData((d) => ({ ...d, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
+                                >
+                                  Odstranit obrázek
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                          {availableRepairsForProduct.length > 0 && (
+                            <div>
+                              <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                                Používá se u oprav (volitelné)
+                              </label>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 150, overflowY: "auto", padding: 8, border, borderRadius: 8 }}>
+                                {availableRepairsForProduct.map((repair) => (
+                                  <label key={repair.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={editProductData.repairIds.includes(repair.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setEditProductData((d) => ({ ...d, repairIds: [...d.repairIds, repair.id] }));
+                                        } else {
+                                          setEditProductData((d) => ({ ...d, repairIds: d.repairIds.filter((id) => id !== repair.id) }));
+                                        }
+                                      }}
+                                    />
+                                    <span style={{ fontSize: 13 }}>{repair.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <Button variant="primary" onClick={() => updateProduct(p.id, editProductData)} style={{ flex: 1 }}>
+                                Uložit
+                              </Button>
+                              <Button variant="soft" onClick={() => setEditingProduct(null)}>
+                                Zrušit
+                              </Button>
+                            </div>
+                          </div>
+                        ) : productDisplayMode === "list" ? (
+                          <>
+                          {/* Řádek jako u oprav: vlevo popis, vpravo cena, sklad a akce. */}
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                                {stitekViditelnosti("products", p)}
+                                {hasNoModels && (
+                                  <span style={{
+                                    padding: "2px 6px",
+                                    background: "var(--accent-soft)",
+                                    borderRadius: 4,
+                                    fontSize: "var(--text-xs)",
+                                    fontWeight: 700,
+                                    color: "var(--muted)",
+                                    whiteSpace: "nowrap",
+                                  }}>
+                                    Nezávislý produkt
+                                  </span>
+                                )}
+                              </div>
+                              {productModels.length > 0 && (
+                                /* Zkrácený výčet, celý je v titulku – stejně jako u oprav. */
+                                <div
+                                  style={{ fontSize: 11, color: "var(--muted)" }}
+                                  title={productModels.map((m) => m.name).join(", ")}
+                                >
+                                  {productModels.slice(0, 3).map((m) => m.name).join(", ")}
+                                  {productModels.length > 3 && ` a ${productModels.length - 3} dalších`}
+                                </div>
+                              )}
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                                {[productCategory?.name, p.sku ? `SKU: ${p.sku}` : null].filter(Boolean).join(" · ") || "—"}
+                              </div>
+                              {p.description && (
+                                <div style={{
+                                  fontSize: 12,
+                                  color: "var(--muted)",
+                                  lineHeight: 1.4,
+                                  marginTop: 4,
+                                  display: "-webkit-box",
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: "vertical",
+                                  overflow: "hidden",
+                                }}>
+                                  {p.description}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                              <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
+                                  {p.price} Kč
+                                </div>
+                                {p.purchasePrice != null && (
+                                  <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                                    nákup {p.purchasePrice} Kč
+                                  </div>
+                                )}
+                              </div>
+                              <StockCell
+                                product={p}
+                                warehouses={data.warehouses}
+                                filterId={warehouseFilter}
+                                onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
+                              />
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <Button variant="soft" size="sm"
+                                  onClick={() => {
+                                    setEditProductData({ 
+                                      name: p.name, 
+                                      stock: String(p.stock), 
+                                      price: String(p.price), 
+                                      sku: p.sku || "", 
+                                      description: p.description || "", 
+                                      imageUrl: p.imageUrl || "", 
+                                      repairIds: p.repairIds || [],
+                                      categoryId: p.categoryId || "",
+                                      modelIds: p.modelIds || [],
+                                      modelSearch: "",
+                                    });
+                                    setEditingProduct(p.id);
+                                  }} style={{ fontSize: 11 }}
+                                >
+                                  Upravit
+                                </Button>
+                                <Button variant="danger" size="sm"
+                                  onClick={() => deleteProduct(p.id)} style={{ fontSize: 11 }}
+                                >
+                                  Smazat
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                          </>
+                        ) : (
+                          <>
+                          {p.imageUrl && productDisplayMode !== "compact" && (
+                            <div style={{ width: "100%", aspectRatio: "16/9", borderRadius: 8, overflow: "hidden", background: "var(--panel-2)" }}>
+                              <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              </div>
+                          )}
+
+                          <div>
+                            <div style={{ fontWeight: 950, fontSize: productDisplayMode === "compact" ? 13 : 15, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span>{p.name}</span>
+                                  {stitekViditelnosti("products", p)}
+                              {hasNoModels && (
+                                <span style={{
+                                  padding: "2px 6px",
+                                  background: "var(--accent-soft)",
+                                  borderRadius: 4,
+                                  fontSize: "var(--text-xs)",
+                                  fontWeight: 700,
+                                  color: "var(--muted)",
+                                }}>
+                                  Nezávislý produkt
+                                </span>
+                        )}
+                      </div>
+                            {productCategory && productDisplayMode !== "compact" && (
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+                                {productCategory.name}
+                  </div>
+                            )}
+                            {productModels.length > 0 && (
+                              <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: 4 }}>
+                                Modely: {productModels.map((m) => m.name).join(", ")}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8, flexWrap: "wrap", paddingTop: 8, borderTop: border, marginTop: "auto" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: productDisplayMode === "compact" ? 13 : 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
+                                {p.price} Kč
+                              </div>
+                              {p.purchasePrice != null && (
+                                <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                                  nákup {p.purchasePrice} Kč
+                                </div>
+                              )}
+                              <div style={{ marginTop: 6 }}>
+                                <StockCell
+                                  product={p}
+                                  warehouses={data.warehouses}
+                                  filterId={warehouseFilter}
+                                  dense={productDisplayMode === "compact"}
+                                  onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
+                                />
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <Button variant="soft"
+                                onClick={() => {
+                                  setEditProductData({ 
+                                    name: p.name, 
+                                    stock: String(p.stock), 
+                                    price: String(p.price), 
+                                    sku: p.sku || "", 
+                                    description: p.description || "", 
+                                    imageUrl: p.imageUrl || "", 
+                                    repairIds: p.repairIds || [],
+                                    categoryId: p.categoryId || "",
+                                    modelIds: p.modelIds || [],
+                                    modelSearch: "",
+                                  });
+                                  setEditingProduct(p.id);
+                                }} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
+                              >
+                                Upravit
+                              </Button>
+                              <Button variant="danger"
+                                onClick={() => deleteProduct(p.id)} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
+                              >
+                                Smazat
+                              </Button>
+                            </div>
+                          </div>
+
+                            {p.sku && productDisplayMode !== "compact" && (
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                SKU: {p.sku}
+                              </div>
+                            )}
+                            {p.description && productDisplayMode !== "compact" && (
+                            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
+                              {p.description}
+                            </div>
+                            )}
+                </>
+              )}
+                      </div>
+                  );
+                })}
+                  </div>
+              </>
+            )}
+          </>
+        )}
       </div>
 
-      {/* NASKLADNĚNÍ */}
-        <div style={card}>
-        <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Naskladnění</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-          Rychlé naskladnění produktů - vyberte produkt a zadejte množství
-        </div>
+      {/* SPRÁVA SKLADU – sbaleno. Sklady a kategorie se zakládají párkrát
+          za rok, nemají co dělat nad seznamem produktů. */}
+      <div style={{ ...card, padding: 0 }}>
+        <button
+          type="button"
+          aria-expanded={adminOpen}
+          onClick={() => setAdminOpen((o) => !o)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            width: "100%",
+            padding: "var(--space-3) var(--space-4)",
+            background: "none",
+            border: "none",
+            borderRadius: "var(--radius-lg)",
+            color: "var(--text)",
+            fontFamily: "inherit",
+            fontSize: "var(--text-base)",
+            fontWeight: 800,
+            textAlign: "left",
+            cursor: "pointer",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-flex",
+              color: "var(--muted)",
+              transition: "transform 0.15s ease",
+              transform: adminOpen ? "rotate(0deg)" : "rotate(-90deg)",
+            }}
+          >
+            <ChevronDownIcon size={16} />
+          </span>
+          <span>Správa skladu</span>
+          <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: "var(--text-sm)" }}>
+            sklady a kategorie produktů
+          </span>
+        </button>
+        {adminOpen && (
+          <div
+            style={{
+              padding: "0 var(--space-4) var(--space-4)",
+              display: "grid",
+              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+              gap: "var(--space-4)",
+            }}
+          >
+            {/* SKLADY */}
+            <div style={{ ...card, maxHeight: "400px", overflowY: "auto" }}>
+              <SectionHeading size="sm">Sklady</SectionHeading>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginTop: "calc(-1 * var(--space-2))", marginBottom: 12 }}>
+                Stejný díl může ležet ve víc skladech. Součet je pak zásoba produktu.
+              </div>
 
-        <div style={{ display: "grid", gap: 12 }}>
-          <div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <input
+                  placeholder="Nový sklad…"
+                  value={newWarehouseName}
+                  onChange={(e) => setNewWarehouseName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newWarehouseName.trim()) {
+                      addWarehouse(newWarehouseName);
+                      setNewWarehouseName("");
+                    }
+                  }}
+                  style={inputStyle}
+                />
+                <Button
+                  variant="primary"
+                  iconOnly
+                  aria-label="Přidat sklad"
+                  icon={<PlusIcon size={14} />}
+                  disabled={!newWarehouseName.trim()}
+                  onClick={() => { addWarehouse(newWarehouseName); setNewWarehouseName(""); }}
+                  style={{
+                    flexShrink: 0,
+                    opacity: !newWarehouseName.trim() ? 0.6 : 1,
+                    cursor: !newWarehouseName.trim() ? "not-allowed" : "pointer",
+                  }}
+                  title={!newWarehouseName.trim() ? "Zadejte název skladu" : "Přidat sklad"}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {data.warehouses.map((w) => {
+                  const kusy = data.products.reduce((a, pr) => a + (pr.stockByWarehouse[w.id] ?? 0), 0);
+                  const upravovan = editingWarehouse === w.id;
+                  return (
+                    <div
+                      key={w.id}
+                      style={{
+                        padding: 8,
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        background: "var(--panel-2)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      {upravovan ? (
+                        <>
+                          <input
+                            value={editWarehouseName}
+                            onChange={(e) => setEditWarehouseName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && editWarehouseName.trim()) {
+                                updateWarehouse(w.id, { name: editWarehouseName.trim() });
+                                setEditingWarehouse(null);
+                              }
+                              if (e.key === "Escape") setEditingWarehouse(null);
+                            }}
+                            autoFocus
+                            style={{ ...inputStyle, fontSize: 13, padding: "6px 8px" }}
+                          />
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              if (editWarehouseName.trim()) updateWarehouse(w.id, { name: editWarehouseName.trim() });
+                              setEditingWarehouse(null);
+                            }}
+                          >
+                            Uložit
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                              {w.isDefault && (
+                                <span style={{ padding: "1px 5px", borderRadius: 4, background: "var(--accent-soft)", fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)" }}>
+                                  výchozí
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                              {kusy} ks{ukazatViditelnost ? (w.publicVisible ? " · ve veřejné dostupnosti" : " · mimo veřejnou dostupnost") : ""}
+                            </div>
+                          </div>
+                          {!w.isDefault && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Sem půjde automatický odpis a zápis přes API"
+                              onClick={() => updateWarehouse(w.id, { isDefault: true })}
+                              style={{ fontSize: 11 }}
+                            >
+                              Výchozí
+                            </Button>
+                          )}
+                          {ukazatViditelnost && (
+                            <Button
+                              variant={w.publicVisible ? "ghost" : "soft"}
+                              size="sm"
+                              title="Počítat kusy z tohohle skladu do veřejné dostupnosti?"
+                              onClick={() => updateWarehouse(w.id, { publicVisible: !w.publicVisible })}
+                              style={{ fontSize: 11, color: w.publicVisible ? "var(--muted)" : "var(--warning-text)" }}
+                            >
+                              {w.publicVisible ? "Veřejný" : "Neveřejný"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            iconOnly
+                            aria-label="Přejmenovat sklad"
+                          icon={<EditIcon size={14} />}
+                            title="Přejmenovat"
+                            onClick={() => { setEditingWarehouse(w.id); setEditWarehouseName(w.name); }}
+                            style={{ fontSize: 11 }}
+                          />
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            iconOnly
+                            aria-label="Smazat sklad"
+                          icon={<TrashIcon size={14} />}
+                            disabled={data.warehouses.length <= 1}
+                            title={data.warehouses.length <= 1 ? "Poslední sklad nejde smazat" : "Smazat sklad"}
+                            onClick={() => deleteWarehouse(w.id)}
+                            style={{ fontSize: 11, opacity: data.warehouses.length <= 1 ? 0.4 : 1 }}
+                          />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* PRODUCT CATEGORIES */}
+            <div style={{ ...card, maxHeight: "400px" }}>
+              <SectionHeading size="sm">Kategorie produktů</SectionHeading>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input
+                  placeholder="Nová kategorie…"
+                  value={newProductCategoryName}
+                  onChange={(e) => setNewProductCategoryName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && newProductCategoryName.trim() && addProductCategory()}
+                    style={inputStyle}
+                  />
+                <Button variant="primary" iconOnly aria-label="Přidat kategorii" icon={<PlusIcon size={14} />}
+                    onClick={() => newProductCategoryName.trim() && addProductCategory()} style={{ flexShrink: 0, opacity: !newProductCategoryName.trim() ? 0.6 : 1,
+                      cursor: !newProductCategoryName.trim() ? "not-allowed" : "pointer" }}
+                    disabled={!newProductCategoryName.trim()}
+                    title={!newProductCategoryName.trim() ? "Zadejte název kategorie" : "Přidat kategorii"}
+                  />
+                </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
+                {data.productCategories.map((c) => (
+                  <div
+                    key={c.id}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                      border,
+                      background: selectedProductCategoryId === c.id ? "var(--accent-soft)" : "var(--panel)",
+                      color: selectedProductCategoryId === c.id ? "var(--accent)" : "var(--text)",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                    {editingProductCategory === c.id ? (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <input
+                          value={editProductCategoryName}
+                          onChange={(e) => setEditProductCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                            if (e.key === "Enter") updateProductCategory(c.id, editProductCategoryName);
+                            if (e.key === "Escape") setEditingProductCategory(null);
+                            }}
+                            style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
+                            autoFocus
+                          />
+                        <Button variant="primary" size="sm" iconOnly aria-label="Uložit" icon={<CheckIcon size={14} />} onClick={() => updateProductCategory(c.id, editProductCategoryName)} />
+                        <Button variant="soft" size="sm" iconOnly aria-label="Zrušit" icon={<XIcon size={14} />} onClick={() => setEditingProductCategory(null)} />
+                        </div>
+                      ) : (
+                      <div>
+                        <div
+                          onClick={() => setSelectedProductCategoryId(selectedProductCategoryId === c.id ? null : c.id)}
+                          style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}
+                        >
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                            {stitekViditelnosti("productCategories", c)}
+                          </span>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditProductCategoryName(c.name);
+                                setEditingProductCategory(c.id);
+                              }}
+                              style={arrowBtn(false)}
+                              title="Upravit"
+                              aria-label="Upravit kategorii"
+                            >
+                              <EditIcon size={14} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteProductCategory(c.id);
+                              }}
+                              style={{ ...arrowBtn(false), color: "var(--danger-text)" }}
+                              title="Smazat"
+                              aria-label="Smazat kategorii"
+                            >
+                              <TrashIcon size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        {/* Toggle pro modely */}
+                        {selectedCategoryId && filteredModels.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                            <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: 4 }}>Použít u modelů:</div>
+                            {filteredModels.map((model) => (
+                              <label
+                                key={model.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  cursor: "pointer",
+                                  fontSize: 12,
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div
+                                  style={{
+                                    width: 44,
+                                    height: 24,
+                                    borderRadius: 12,
+                                    background: (c.modelIds || []).includes(model.id) ? "var(--accent)" : "var(--panel-2)",
+                                    position: "relative",
+                                    transition: "background 200ms ease",
+                                    cursor: "pointer",
+                                  }}
+                                  onClick={() => toggleProductCategoryForModel(c.id, model.id)}
+                                >
+                                  <div
+                                    style={{
+                                      width: 20,
+                                      height: 20,
+                                      borderRadius: "50%",
+                                      background: "white",
+                                      position: "absolute",
+                                      top: 2,
+                                      left: (c.modelIds || []).includes(model.id) ? 22 : 2,
+                                      transition: "left 200ms ease",
+                                      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                                    }}
+                                  />
+                    </div>
+                                <span style={{ color: "var(--text)" }}>{model.name}</span>
+                              </label>
+                  ))}
+                </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {data.productCategories.length === 0 && (
+              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
+                    Žádné kategorie
+              </div>
+            )}
+              </div>
+          </div>
+          </div>
+        )}
+      </div>
+
+      <RestockDialog
+        open={restockOpen}
+        onClose={() => setRestockOpen(false)}
+        products={data.products}
+        warehouses={data.warehouses}
+        devices={devicesData}
+        warehouseId={restockWarehouseId}
+        onWarehouseChange={setRestockWarehouseId}
+        canAdjust={canAdjustInventoryQuantity}
+        onRestock={naskladnit}
+      />
+
+      <InventoryDialog
+        open={newProductOpen}
+        onClose={() => setNewProductOpen(false)}
+        title="Nový produkt"
+        subtitle={
+          selectedModel && !newProductUnassigned
+            ? `Přiřadí se k modelu ${selectedModel.name}. Model měníte filtrem zařízení nad seznamem.`
+            : "Model vyberete filtrem zařízení nad seznamem, nebo produkt nechte bez přiřazení."
+        }
+        width={560}
+      >
+        <div style={{ display: "grid", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
+            <input
+              type="checkbox"
+              checked={newProductUnassigned}
+              onChange={(e) => setNewProductUnassigned(e.target.checked)}
+            />
+            <span style={{ fontSize: 13, color: "var(--text)" }}>Nepřiřazovat k zařízení</span>
+          </label>
+          <input
+            placeholder="Název produktu…"
+            value={newProduct.name}
+            onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+            style={inputStyle}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <input
+              placeholder="Sklad (ks)"
+              type="number"
+              value={newProduct.stock}
+              onChange={(e) => setNewProduct((p) => ({ ...p, stock: e.target.value }))}
+              style={inputStyle}
+            />
+            <input
+              placeholder="Cena (Kč)"
+              type="number"
+              value={newProduct.price}
+              onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+              style={inputStyle}
+            />
+            {/* Nepovinná. Do veřejného API se neposílá, dokud si to
+                servis nezapne – prozrazuje marži. */}
+            <input
+              placeholder="Nákupní cena (Kč)"
+              title="Za kolik díl nakupujete. Nepovinné. Do veřejného API se neposílá, dokud si to nezapnete."
+              type="number"
+              value={newProduct.purchasePrice}
+              onChange={(e) => setNewProduct((p) => ({ ...p, purchasePrice: e.target.value }))}
+              /* Třetí pole v dvousloupci zůstávalo samo na druhém řádku
+                 a v půlce šířky se do něj nevešel ani popisek. */
+              style={{ ...inputStyle, gridColumn: "1 / -1" }}
+            />
+          </div>
+          <input
+            placeholder="SKU (volitelné)"
+            value={newProduct.sku}
+            onChange={(e) => setNewProduct((p) => ({ ...p, sku: e.target.value }))}
+            style={inputStyle}
+          />
+          <textarea
+            placeholder="Popis (volitelné)…"
+            value={newProduct.description}
+            onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
+            style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          />
+            <div>
+              <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                Kategorie produktu (volitelné)
+              </label>
+              <select
+                value={newProduct.categoryId}
+                onChange={(e) => setNewProduct((p) => ({ ...p, categoryId: e.target.value }))}
+                style={inputStyle}
+              >
+                <option value="">Bez kategorie</option>
+                {data.productCategories
+                  .filter((cat) => newProductUnassigned || !selectedModelId || (cat.modelIds || []).includes(selectedModelId))
+                  .map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
             {data.warehouses.length > 1 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Do kterého skladu</div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                  Do kterého skladu
+                </label>
                 <select
-                  value={restockWarehouseId}
-                  onChange={(e) => setRestockWarehouseId(e.target.value)}
+                  value={newProductWarehouseId}
+                  onChange={(e) => setNewProductWarehouseId(e.target.value)}
                   style={inputStyle}
                 >
                   <option value="">
@@ -1875,1467 +2787,71 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                 </select>
               </div>
             )}
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Vyhledat produkt</div>
-            <Input
-              type="text"
-              placeholder="Začněte psát název nebo SKU produktu..."
-              value={productSearchQuery}
-              onChange={(e) => setProductSearchQuery(e.target.value)} />
-          </div>
-
-          {(() => {
-            const searchLower = productSearchQuery.trim().toLowerCase();
-            const matchingProducts = searchLower
-              ? data.products.filter(
-                  (p) =>
-                    p.name.toLowerCase().includes(searchLower) ||
-                    (p.sku || "").toLowerCase().includes(searchLower)
-                )
-              : [];
-
-            if (matchingProducts.length === 0 && productSearchQuery.trim()) {
-              return (
-                <div style={{ padding: 20, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                  Žádný produkt nenalezen
-                </div>
-              );
-            }
-
-            if (matchingProducts.length === 0) {
-              return (
-                <div style={{ padding: 20, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-                  Začněte psát název nebo SKU produktu pro vyhledání
-                </div>
-              );
-            }
-
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflowY: "auto" }}>
-                {matchingProducts.map((product) => {
-                  const isEditing = editingStock === product.id;
-                  const stockChangeValue = stockChanges[product.id] || "";
-
-                  // Get model names with brands
-                  const productModels = product.modelIds
-                    .map((modelId) => {
-                      const model = devicesData.models.find((m) => m.id === modelId);
-                      if (!model) return null;
-                      const category = devicesData.categories.find((c) => c.id === model.categoryId);
-                      const brand = category ? devicesData.brands.find((b) => b.id === category.brandId) : null;
-                      if (brand && model) {
-                        return `${brand.name} ${model.name}`;
-                      }
-                      return model ? model.name : null;
-                    })
-                    .filter(Boolean) as string[];
-
-                  return (
-                    <div
-                      key={product.id}
-                style={{
-                        padding: 12,
-                  borderRadius: 10,
-                        border: "1px solid var(--border)",
-                        background: "var(--panel)",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{product.name}</div>
-                          {product.sku && (
-                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>SKU: {product.sku}</div>
-                          )}
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            Aktuální sklad: <span style={{ fontWeight: 600, color: product.stock > 0 ? "var(--accent)" : "rgba(239,68,68,0.9)" }}>{product.stock} ks</span>
-                          </div>
-                          {productModels.length > 0 && (
-                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                              Modely: <span style={{ color: "var(--text)" }}>{productModels.join(", ")}</span>
-                            </div>
-                          )}
-                        </div>
-                        {isEditing ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <button
-                              onClick={() => {
-                                const current = parseInt(stockChangeValue) || 0;
-                                setStockChanges((prev) => ({ ...prev, [product.id]: String(current - 1) }));
-                              }}
-                              style={{
-                                width: 32,
-                                height: 32,
-                                padding: 0,
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                background: "var(--panel-2)",
-                                color: "var(--text)",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                                fontSize: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              −
-                            </button>
-                    <input
-                              type="number"
-                              value={stockChangeValue}
-                              onChange={(e) => setStockChanges((prev) => ({ ...prev, [product.id]: e.target.value }))}
-                              placeholder="0"
-                              autoFocus
-                              style={{
-                                width: 80,
-                                padding: "6px 8px",
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                background: "var(--panel)",
-                                color: "var(--text)",
-                                outline: "none",
-                                fontSize: 13,
-                                textAlign: "center",
-                                fontWeight: 600,
-                              }}
-                      onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  const change = parseInt(stockChangeValue) || 0;
-                                  if (change !== 0) naskladnit(product.id, change);
-                                  setEditingStock(null);
-                                  setStockChanges((prev) => {
-                                    const next = { ...prev };
-                                    delete next[product.id];
-                                    return next;
-                                  });
-                                }
-                                if (e.key === "Escape") {
-                                  setEditingStock(null);
-                                  setStockChanges((prev) => {
-                                    const next = { ...prev };
-                                    delete next[product.id];
-                                    return next;
-                                  });
-                                }
-                              }}
-                              onBlur={() => {
-                                const change = parseInt(stockChangeValue) || 0;
-                                if (change !== 0) naskladnit(product.id, change);
-                                setEditingStock(null);
-                                setStockChanges((prev) => {
-                                  const next = { ...prev };
-                                  delete next[product.id];
-                                  return next;
-                                });
-                              }}
-                            />
-                            <button
-                    onClick={() => {
-                                const current = parseInt(stockChangeValue) || 0;
-                                setStockChanges((prev) => ({ ...prev, [product.id]: String(current + 1) }));
-                              }}
-                        style={{
-                                width: 32,
-                                height: 32,
-                                padding: 0,
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                background: "var(--panel-2)",
-                                color: "var(--text)",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                          fontSize: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              +
-                      </button>
-                      <button
-                              onClick={() => {
-                                const change = parseInt(stockChangeValue) || 0;
-                                if (change !== 0) naskladnit(product.id, change);
-                                setEditingStock(null);
-                                setStockChanges((prev) => {
-                                  const next = { ...prev };
-                                  delete next[product.id];
-                                  return next;
-                                });
-                              }}
-                        style={{
-                                padding: "8px 12px",
-                                borderRadius: 8,
-                          border: "none",
-                                background: "var(--accent)",
-                                color: "white",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                                fontSize: 12,
-                                marginLeft: 4,
-                              }}
-                            >
-                              ✓
-                      </button>
-                      <button
-                              onClick={() => {
-                                setEditingStock(null);
-                                setStockChanges((prev) => {
-                                  const next = { ...prev };
-                                  delete next[product.id];
-                                  return next;
-                                });
-                        }}
-                        style={{
-                                padding: "8px 12px",
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                background: "var(--panel)",
-                                color: "var(--text)",
-                                fontWeight: 700,
-                          cursor: "pointer",
-                                fontSize: 12,
-                        }}
-                      >
-                              ✕
-                      </button>
-                          </div>
-                        ) : canAdjustInventoryQuantity ? (
-                      <button
-                            onClick={() => setEditingStock(product.id)}
-                        style={{
-                              padding: "8px 14px",
-                              borderRadius: 8,
-                              border: "1px solid var(--accent)",
-                              background: "var(--accent-soft)",
-                              color: "var(--accent)",
-                              fontWeight: 700,
-                          cursor: "pointer",
-                              fontSize: 12,
-                              whiteSpace: "nowrap",
-                        }}
-                      >
-                            Upravit sklad
-                      </button>
-                        ) : null}
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* First row: Brands and Categories */}
-        {/* Na telefonu vedle sebe ne – na panel zbylo 167 px a seznamy
-            značek i kategorií se v něm zalomily na jedno písmeno na řádek. */}
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "repeat(2, 1fr)", gap: 16 }}>
-        {/* BRANDS */}
-        <div style={card}>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
-              Značky
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginTop: 4 }}>
-                (spravováno v Zařízení)
-              </div>
-          </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-            {devicesData.brands.map((b) => (
-              <div
-                key={b.id}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border,
-                  background: selectedBrandId === b.id ? "var(--accent-soft)" : "var(--panel)",
-                  color: selectedBrandId === b.id ? "var(--accent)" : "var(--text)",
-                  fontWeight: 600,
-                  fontSize: 13,
-                }}
-              >
-                  <div
-                    onClick={() => {
-                      if (selectedBrandId === b.id) {
-                        setSelectedBrandId(null);
-                        setSelectedCategoryId(null);
-                        setSelectedModelId(null);
-                      } else {
-                      setSelectedBrandId(b.id);
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                      }
-                    }}
-                    style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+            <div>
+              <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleImageUpload(e, false)}
+                style={{ ...inputStyle, padding: "8px 12px" }}
+              />
+              {newProduct.imageUrl && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={newProduct.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
+                  <Button variant="danger" size="sm"
+                    onClick={() => { void smazObrazekProduktu(supabase, newProduct.imageUrl); setNewProduct((p) => ({ ...p, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
                   >
-                    <span>{b.name}</span>
-                    </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CATEGORIES */}
-        <div style={card}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
-            Kategorie {selectedBrand && `· ${selectedBrand.name}`}
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginTop: 4 }}>
-                (spravováno v Zařízení)
-              </div>
-          </div>
-
-          {selectedBrandId && (
-            <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-                {filteredCategories.map((c) => (
-                  <div
-                    key={c.id}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border,
-                      background: selectedCategoryId === c.id ? "var(--accent-soft)" : "var(--panel)",
-                      color: selectedCategoryId === c.id ? "var(--accent)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                    }}
-                  >
-                      <div
-                        onClick={() => {
-                          if (selectedCategoryId === c.id) {
-                            setSelectedCategoryId(null);
-                            setSelectedModelId(null);
+                    Odstranit obrázek
+                  </Button>
+                </div>
+              )}
+            </div>
+            {availableRepairs.length > 0 && (
+              <div>
+                <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
+                  Používá se u oprav (volitelné)
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 150, overflowY: "auto", padding: 8, border, borderRadius: 8 }}>
+                  {availableRepairs.map((repair) => (
+                    <label key={repair.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={newProduct.repairIds.includes(repair.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewProduct((p) => ({ ...p, repairIds: [...p.repairIds, repair.id] }));
                           } else {
-                          setSelectedCategoryId(c.id);
-                          setSelectedModelId(null);
+                            setNewProduct((p) => ({ ...p, repairIds: p.repairIds.filter((id) => id !== repair.id) }));
                           }
                         }}
-                      style={{ cursor: "pointer" }}
-                      >
-                        <span>{c.name}</span>
-                        </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {!selectedBrandId && (
-            <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Vyberte značku
-            </div>
-          )}
-          </div>
-        </div>
-
-        {/* Second row: Models, Categories and Products */}
-        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 2fr", gap: 16 }}>
-        {/* MODELS */}
-          <div style={{ ...card, maxHeight: "400px" }}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
-            Modely {selectedCategory && `· ${selectedCategory.name}`}
-              <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginTop: 4 }}>
-                (spravováno v Zařízení)
-              </div>
-          </div>
-
-          {selectedCategoryId && (
-            <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-                {filteredModels.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border,
-                      background: selectedModelId === m.id ? "var(--accent-soft)" : "var(--panel)",
-                      color: selectedModelId === m.id ? "var(--accent)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                    }}
-                  >
-                    <div
-                      onClick={() => {
-                        if (selectedModelId === m.id) {
-                          setSelectedModelId(null);
-                        } else {
-                          setSelectedModelId(m.id);
-                        }
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <span>{m.name}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-            {!selectedCategoryId && (
-              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-                Vyberte kategorii
-              </div>
-            )}
-          </div>
-
-          {/* SKLADY */}
-          <div style={{ ...card, maxHeight: "400px", overflowY: "auto" }}>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>Sklady</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-              Stejný díl může ležet ve víc skladech. Součet je pak zásoba produktu.
-            </div>
-
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <input
-                placeholder="Nový sklad…"
-                value={newWarehouseName}
-                onChange={(e) => setNewWarehouseName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newWarehouseName.trim()) {
-                    addWarehouse(newWarehouseName);
-                    setNewWarehouseName("");
-                  }
-                }}
-                style={inputStyle}
-              />
-              <Button
-                variant="primary"
-                disabled={!newWarehouseName.trim()}
-                onClick={() => { addWarehouse(newWarehouseName); setNewWarehouseName(""); }}
-                style={{
-                  opacity: !newWarehouseName.trim() ? 0.6 : 1,
-                  cursor: !newWarehouseName.trim() ? "not-allowed" : "pointer",
-                }}
-                title={!newWarehouseName.trim() ? "Zadejte název skladu" : "Přidat sklad"}
-              >
-                +
-              </Button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {data.warehouses.map((w) => {
-                const kusy = data.products.reduce((a, pr) => a + (pr.stockByWarehouse[w.id] ?? 0), 0);
-                const upravovan = editingWarehouse === w.id;
-                return (
-                  <div
-                    key={w.id}
-                    style={{
-                      padding: 8,
-                      borderRadius: 8,
-                      border: "1px solid var(--border)",
-                      background: "var(--panel-2)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    {upravovan ? (
-                      <>
-                        <input
-                          value={editWarehouseName}
-                          onChange={(e) => setEditWarehouseName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && editWarehouseName.trim()) {
-                              updateWarehouse(w.id, { name: editWarehouseName.trim() });
-                              setEditingWarehouse(null);
-                            }
-                            if (e.key === "Escape") setEditingWarehouse(null);
-                          }}
-                          autoFocus
-                          style={{ ...inputStyle, fontSize: 13, padding: "6px 8px" }}
-                        />
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => {
-                            if (editWarehouseName.trim()) updateWarehouse(w.id, { name: editWarehouseName.trim() });
-                            setEditingWarehouse(null);
-                          }}
-                        >
-                          Uložit
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
-                            {w.isDefault && (
-                              <span style={{ padding: "1px 5px", borderRadius: 4, background: "var(--accent-soft)", fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)" }}>
-                                výchozí
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            {kusy} ks{ukazatViditelnost ? (w.publicVisible ? " · ve veřejné dostupnosti" : " · mimo veřejnou dostupnost") : ""}
-                          </div>
-                        </div>
-                        {!w.isDefault && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Sem půjde automatický odpis a zápis přes API"
-                            onClick={() => updateWarehouse(w.id, { isDefault: true })}
-                            style={{ fontSize: 11 }}
-                          >
-                            Výchozí
-                          </Button>
-                        )}
-                        {ukazatViditelnost && (
-                          <Button
-                            variant={w.publicVisible ? "ghost" : "soft"}
-                            size="sm"
-                            title="Počítat kusy z tohohle skladu do veřejné dostupnosti?"
-                            onClick={() => updateWarehouse(w.id, { publicVisible: !w.publicVisible })}
-                            style={{ fontSize: 11, color: w.publicVisible ? "var(--muted)" : "var(--warning-text)" }}
-                          >
-                            {w.publicVisible ? "Veřejný" : "Neveřejný"}
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => { setEditingWarehouse(w.id); setEditWarehouseName(w.name); }}
-                          style={{ fontSize: 11 }}
-                        >
-                          ✎
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          disabled={data.warehouses.length <= 1}
-                          title={data.warehouses.length <= 1 ? "Poslední sklad nejde smazat" : "Smazat sklad"}
-                          onClick={() => deleteWarehouse(w.id)}
-                          style={{ fontSize: 11, opacity: data.warehouses.length <= 1 ? 0.4 : 1 }}
-                        >
-                          ×
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* PRODUCT CATEGORIES */}
-          <div style={{ ...card, maxHeight: "400px" }}>
-            <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12 }}>
-              Kategorie produktů
-            </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input
-                placeholder="Nová kategorie…"
-                value={newProductCategoryName}
-                onChange={(e) => setNewProductCategoryName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && newProductCategoryName.trim() && addProductCategory()}
-                  style={inputStyle}
-                />
-              <Button variant="primary"
-                  onClick={() => newProductCategoryName.trim() && addProductCategory()} style={{ opacity: !newProductCategoryName.trim() ? 0.6 : 1,
-                    cursor: !newProductCategoryName.trim() ? "not-allowed" : "pointer" }}
-                  disabled={!newProductCategoryName.trim()}
-                  title={!newProductCategoryName.trim() ? "Zadejte název kategorie" : "Přidat kategorii"}
-                >
-                  +
-                </Button>
-              </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1 }}>
-              {data.productCategories.map((c) => (
-                <div
-                  key={c.id}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                    border,
-                    background: selectedProductCategoryId === c.id ? "var(--accent-soft)" : "var(--panel)",
-                    color: selectedProductCategoryId === c.id ? "var(--accent)" : "var(--text)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                    }}
-                  >
-                  {editingProductCategory === c.id ? (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <input
-                        value={editProductCategoryName}
-                        onChange={(e) => setEditProductCategoryName(e.target.value)}
-                          onKeyDown={(e) => {
-                          if (e.key === "Enter") updateProductCategory(c.id, editProductCategoryName);
-                          if (e.key === "Escape") setEditingProductCategory(null);
-                          }}
-                          style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
-                          autoFocus
-                        />
-                      <Button variant="primary" size="sm" onClick={() => updateProductCategory(c.id, editProductCategoryName)}>
-                          ✓
-                        </Button>
-                      <Button variant="soft" size="sm" onClick={() => setEditingProductCategory(null)}>
-                          ✕
-                        </Button>
-                      </div>
-                    ) : (
-                    <div>
-                      <div
-                        onClick={() => setSelectedProductCategoryId(selectedProductCategoryId === c.id ? null : c.id)}
-                        style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}
-                      >
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                          {stitekViditelnosti("productCategories", c)}
-                        </span>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditProductCategoryName(c.name);
-                              setEditingProductCategory(c.id);
-                            }}
-                            style={arrowBtn(false)}
-                            title="Upravit"
-                          >
-                            ✎
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteProductCategory(c.id);
-                            }}
-                            style={{ ...arrowBtn(false), color: "rgba(239,68,68,0.8)" }}
-                            title="Smazat"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                      {/* Toggle pro modely */}
-                      {selectedCategoryId && filteredModels.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Použít u modelů:</div>
-                          {filteredModels.map((model) => (
-                            <label
-                              key={model.id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                cursor: "pointer",
-                                fontSize: 12,
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div
-                                style={{
-                                  width: 44,
-                                  height: 24,
-                                  borderRadius: 12,
-                                  background: (c.modelIds || []).includes(model.id) ? "var(--accent)" : "var(--panel-2)",
-                                  position: "relative",
-                                  transition: "background 200ms ease",
-                                  cursor: "pointer",
-                                }}
-                                onClick={() => toggleProductCategoryForModel(c.id, model.id)}
-                              >
-                                <div
-                                  style={{
-                                    width: 20,
-                                    height: 20,
-                                    borderRadius: "50%",
-                                    background: "white",
-                                    position: "absolute",
-                                    top: 2,
-                                    left: (c.modelIds || []).includes(model.id) ? 22 : 2,
-                                    transition: "left 200ms ease",
-                                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                                  }}
-                                />
-                  </div>
-                              <span style={{ color: "var(--text)" }}>{model.name}</span>
-                            </label>
-                ))}
-              </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {data.productCategories.length === 0 && (
-            <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-                  Žádné kategorie
-            </div>
-          )}
-            </div>
-        </div>
-
-        {/* PRODUCTS */}
-          <div style={{ ...card, maxHeight: "none" }}>
-          <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>
-              {selectedModelId && selectedModel
-                ? `Přidat produkt${selectedModel.name ? ` · ${selectedModel.name}` : ""}`
-                : "Přidat produkt"}
-          </div>
-              <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
-                  <input
-                    type="checkbox"
-                    checked={newProductUnassigned}
-                    onChange={(e) => setNewProductUnassigned(e.target.checked)}
-                  />
-                  <span style={{ fontSize: 13, color: "var(--text)" }}>Nepřiřazovat k zařízení</span>
-                </label>
-                <input
-                  placeholder="Název produktu…"
-                  value={newProduct.name}
-                  onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
-                  style={inputStyle}
-                />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <input
-                    placeholder="Sklad (ks)"
-                    type="number"
-                    value={newProduct.stock}
-                    onChange={(e) => setNewProduct((p) => ({ ...p, stock: e.target.value }))}
-                    style={inputStyle}
-                  />
-                  <input
-                    placeholder="Cena (Kč)"
-                    type="number"
-                    value={newProduct.price}
-                    onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
-                    style={inputStyle}
-                  />
-                  {/* Nepovinná. Do veřejného API se neposílá, dokud si to
-                      servis nezapne – prozrazuje marži. */}
-                  <input
-                    placeholder="Nákupní cena (Kč)"
-                    title="Za kolik díl nakupujete. Nepovinné. Do veřejného API se neposílá, dokud si to nezapnete."
-                    type="number"
-                    value={newProduct.purchasePrice}
-                    onChange={(e) => setNewProduct((p) => ({ ...p, purchasePrice: e.target.value }))}
-                    /* Třetí pole v dvousloupci zůstávalo samo na druhém řádku
-                       a v půlce šířky se do něj nevešel ani popisek. */
-                    style={{ ...inputStyle, gridColumn: "1 / -1" }}
-                  />
-                </div>
-                <input
-                  placeholder="SKU (volitelné)"
-                  value={newProduct.sku}
-                  onChange={(e) => setNewProduct((p) => ({ ...p, sku: e.target.value }))}
-                  style={inputStyle}
-                />
-                <textarea
-                  placeholder="Popis (volitelné)…"
-                  value={newProduct.description}
-                  onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
-                  style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
-                />
-                  <div>
-                    <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                      Kategorie produktu (volitelné)
-                    </label>
-                    <select
-                      value={newProduct.categoryId}
-                      onChange={(e) => setNewProduct((p) => ({ ...p, categoryId: e.target.value }))}
-                      style={inputStyle}
-                    >
-                      <option value="">Bez kategorie</option>
-                      {data.productCategories
-                        .filter((cat) => newProductUnassigned || !selectedModelId || (cat.modelIds || []).includes(selectedModelId))
-                        .map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  {data.warehouses.length > 1 && (
-                    <div>
-                      <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                        Do kterého skladu
-                      </label>
-                      <select
-                        value={newProductWarehouseId}
-                        onChange={(e) => setNewProductWarehouseId(e.target.value)}
-                        style={inputStyle}
-                      >
-                        <option value="">
-                          Výchozí ({data.warehouses.find((w) => w.isDefault)?.name ?? data.warehouses[0]?.name})
-                        </option>
-                        {data.warehouses.map((w) => (
-                          <option key={w.id} value={w.id}>{w.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <div>
-                    <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                      Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleImageUpload(e, false)}
-                      style={{ ...inputStyle, padding: "8px 12px" }}
-                    />
-                    {newProduct.imageUrl && (
-                      <div style={{ marginTop: 8 }}>
-                        <img src={newProduct.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
-                        <Button variant="danger" size="sm"
-                          onClick={() => { void smazObrazekProduktu(supabase, newProduct.imageUrl); setNewProduct((p) => ({ ...p, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
-                        >
-                          Odstranit obrázek
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  {availableRepairs.length > 0 && (
-                    <div>
-                      <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                        Používá se u oprav (volitelné)
-                      </label>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 150, overflowY: "auto", padding: 8, border, borderRadius: 8 }}>
-                        {availableRepairs.map((repair) => (
-                          <label key={repair.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={newProduct.repairIds.includes(repair.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setNewProduct((p) => ({ ...p, repairIds: [...p.repairIds, repair.id] }));
-                                } else {
-                                  setNewProduct((p) => ({ ...p, repairIds: p.repairIds.filter((id) => id !== repair.id) }));
-                                }
-                              }}
-                            />
-                            <span style={{ fontSize: 13 }}>{repair.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                <Button variant="primary"
-                  onClick={() => newProduct.name.trim() && addProduct()} style={{ opacity: !newProduct.name.trim() ? 0.6 : 1,
-                    cursor: !newProduct.name.trim() ? "not-allowed" : "pointer" }}
-                  disabled={!newProduct.name.trim()}
-                  title={!newProduct.name.trim() ? "Zadejte název produktu" : "Přidat produkt"}
-                >
-                  Přidat produkt
-                </Button>
-              </div>
-          </div>
-        </div>
-
-        {/* Product List - Full Width */}
-        <div style={{ ...card, marginTop: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-            <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>
-              Seznam produktů
-            </div>
-            {ukazatViditelnost && filteredProducts.length > 0 && (
-              <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                  Posílat do veřejného API ({filteredProducts.length} zobrazených):
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(true)}>
-                  Zveřejnit vše
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => hromadnaViditelnost(false)}>
-                  Skrýt vše
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Filters */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              placeholder="Hledat produkt (název, SKU, popis)…"
-              value={productSearchQuery}
-              onChange={(e) => setProductSearchQuery(e.target.value)}
-              style={{ ...inputStyle, flex: "1 1 300px" }}
-            />
-            {data.warehouses.length > 1 && (
-              <select
-                value={warehouseFilter}
-                onChange={(e) => setWarehouseFilter(e.target.value)}
-                title="Který sklad ukazovat v seznamu"
-                style={{ ...inputStyle, flex: "0 0 auto", width: "auto" }}
-              >
-                <option value="all">Všechny sklady</option>
-                {data.warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            )}
-            <ProductFilterPicker value={productStockFilter} onChange={setProductStockFilter} />
-            <ProductDisplayModePicker value={productDisplayMode} onChange={setProductDisplayMode} />
-          </div>
-
-          {/* Active filters info */}
-          {(selectedBrandId || selectedCategoryId || selectedModelId || selectedProductCategoryId) && (
-            <div style={{ 
-              display: "flex", 
-              flexWrap: "wrap", 
-              gap: 8, 
-              marginBottom: 16,
-              padding: 12,
-              background: "var(--panel-2)",
-              borderRadius: 10,
-              border,
-            }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Aktivní filtry:</div>
-              {selectedBrandId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Značka: {devicesData.brands.find((b) => b.id === selectedBrandId)?.name}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedBrandId(null);
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                    }}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {selectedCategoryId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Kategorie: {devicesData.categories.find((c) => c.id === selectedCategoryId)?.name}</span>
-                  <button
-                    onClick={() => {
-                      setSelectedCategoryId(null);
-                      setSelectedModelId(null);
-                    }}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {selectedModelId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Model: {devicesData.models.find((m) => m.id === selectedModelId)?.name}</span>
-                  <button
-                    onClick={() => setSelectedModelId(null)}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {selectedProductCategoryId && (
-                <div style={{ 
-                  padding: "4px 10px", 
-                  background: "var(--accent-soft)", 
-                  borderRadius: 6, 
-                  fontSize: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  <span>Kategorie produktu: {data.productCategories.find((c) => c.id === selectedProductCategoryId)?.name}</span>
-                  <button
-                    onClick={() => setSelectedProductCategoryId(null)}
-                    style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 14, padding: 0, width: 16, height: 16 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Products Display */}
-          <div style={{ 
-            display: productDisplayMode === "grid" ? "grid" : "flex",
-            gridTemplateColumns: productDisplayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))" : undefined,
-            flexWrap: productDisplayMode === "grid" ? undefined : productDisplayMode === "list" ? "nowrap" : "wrap",
-            flexDirection: productDisplayMode === "list" ? "column" : "row",
-            gap: productDisplayMode === "compact" ? 8 : 16,
-            alignItems: productDisplayMode === "grid" ? "stretch" : undefined
-          }}>
-            {filteredProducts.map((p) => {
-              const productModels = devicesData.models.filter((m) => p.modelIds.includes(m.id));
-              const productCategory = p.categoryId ? data.productCategories.find((c) => c.id === p.categoryId) : null;
-              const isEditing = editingProduct === p.id;
-              const availableRepairsForProduct = (devicesData.repairs || []).filter((r: any) => r.modelIds && productModels.some((m) => r.modelIds.includes(m.id)));
-              const hasNoModels = p.modelIds.length === 0;
-              
-              return (
-                <div
-                  key={p.id}
-                    style={{
-                    padding: productDisplayMode === "compact" ? 12 : 16,
-                    borderRadius: 12,
-                    border: hasNoModels ? "1px solid var(--border)" : border,
-                      background: "var(--panel)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: productDisplayMode === "compact" ? 8 : 12,
-                    flex: productDisplayMode === "grid" ? "1 1 auto" : productDisplayMode === "list" ? "0 0 auto" : "1 1 250px",
-                    minWidth: productDisplayMode === "list" ? "100%" : 0,
-                    height: productDisplayMode === "grid" ? "100%" : productDisplayMode === "compact" ? "auto" : "auto",
-                    minHeight: productDisplayMode === "grid" ? 320 : productDisplayMode === "compact" ? 220 : "auto",
-                    position: "relative",
-                    alignItems: "stretch",
-                  }}
-                >
-                  {isEditing ? (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <input
-                          placeholder="Název produktu…"
-                          value={editProductData.name}
-                        onChange={(e) => setEditProductData((d) => ({ ...d, name: e.target.value }))}
-                          style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                        />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          <input
-                            placeholder="Sklad (ks)"
-                            type="number"
-                            value={editProductData.stock}
-                          onChange={(e) => setEditProductData((d) => ({ ...d, stock: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                          <input
-                            placeholder="Cena (Kč)"
-                            type="number"
-                            value={editProductData.price}
-                          onChange={(e) => setEditProductData((d) => ({ ...d, price: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                        </div>
-                        <input
-                          placeholder="SKU (volitelné)"
-                          value={editProductData.sku}
-                        onChange={(e) => setEditProductData((d) => ({ ...d, sku: e.target.value }))}
-                          style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                        />
-                        <textarea
-                          placeholder="Popis (volitelné)…"
-                          value={editProductData.description}
-                        onChange={(e) => setEditProductData((d) => ({ ...d, description: e.target.value }))}
-                        style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontSize: 13, padding: "8px 10px" }}
                       />
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Modely (samodoplnovací výběr)
-                        </label>
-                        <div style={{ position: "relative" }}>
-                          <input
-                            placeholder="Hledat model (např. dyson)…"
-                            value={editProductData.modelSearch}
-                            onChange={(e) => setEditProductData((d) => ({ ...d, modelSearch: e.target.value }))}
-                            style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                          />
-                          {editProductData.modelSearch && (
-                            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000, background: "var(--panel)", border, borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
-                              {devicesData.models
-                                .filter((m) =>
-                                  m.name.toLowerCase().includes(editProductData.modelSearch.toLowerCase()) &&
-                                  !editProductData.modelIds.includes(m.id)
-                                )
-                                .slice(0, 10)
-                                .map((m) => (
-                                  <div
-                                    key={m.id}
-                                    onClick={() => {
-                                      setEditProductData((prev) => ({
-                                        ...prev,
-                                        modelIds: [...prev.modelIds, m.id],
-                                        modelSearch: "",
-                                      }));
-                                    }}
-                                    style={{
-                                      padding: "8px 12px",
-                                      cursor: "pointer",
-                                      fontSize: 13,
-                                      borderBottom: border,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.background = "var(--accent-soft)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.background = "transparent";
-                                    }}
-                                  >
-                                    {m.name}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        {editProductData.modelIds.length > 0 && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                            {editProductData.modelIds.map((mid) => {
-                              const model = devicesData.models.find((m) => m.id === mid);
-                              if (!model) return null;
-                              return (
-                                <div
-                                  key={mid}
-                                  style={{
-                                    padding: "4px 10px",
-                                    background: "var(--accent-soft)",
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <span>{model.name}</span>
-                                  <button
-                                    onClick={() => {
-                                      setEditProductData((prev) => ({
-                                        ...prev,
-                                        modelIds: prev.modelIds.filter((id) => id !== mid),
-                                      }));
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      color: "var(--accent)",
-                                      cursor: "pointer",
-                                      fontSize: 14,
-                                      padding: 0,
-                                      width: 16,
-                                      height: 16,
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Kategorie produktu (volitelné)
-                        </label>
-                        <select
-                          value={editProductData.categoryId}
-                          onChange={(e) => setEditProductData((d) => ({ ...d, categoryId: e.target.value }))}
-                          style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                        >
-                          <option value="">Bez kategorie</option>
-                          {data.productCategories
-                            .filter((cat) => {
-                              const product = data.products.find((p) => editingProduct === p.id);
-                              if (!product) return true;
-                              if (product.modelIds.length === 0) return true;
-                              return product.modelIds.some((mid) => (cat.modelIds || []).includes(mid));
-                            })
-                            .map((cat) => (
-                              <option key={cat.id} value={cat.id}>
-                                {cat.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                          Obrázek produktu (volitelné){nahravamObrazek ? " – nahrávám…" : ""}
-                        </label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleImageUpload(e, true)}
-                          style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                        />
-                        {editProductData.imageUrl && (
-                          <div style={{ marginTop: 8 }}>
-                            <img src={editProductData.imageUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8, border }} />
-                            <Button variant="danger" size="sm"
-                              onClick={() => { void smazObrazekProduktu(supabase, editProductData.imageUrl); setEditProductData((d) => ({ ...d, imageUrl: "" })); }} style={{ marginTop: 8,  fontSize: 12 }}
-                            >
-                              Odstranit obrázek
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                      {availableRepairsForProduct.length > 0 && (
-                        <div>
-                          <label style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, display: "block" }}>
-                            Používá se u oprav (volitelné)
-                          </label>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 150, overflowY: "auto", padding: 8, border, borderRadius: 8 }}>
-                            {availableRepairsForProduct.map((repair) => (
-                              <label key={repair.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                                <input
-                                  type="checkbox"
-                                  checked={editProductData.repairIds.includes(repair.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setEditProductData((d) => ({ ...d, repairIds: [...d.repairIds, repair.id] }));
-                                    } else {
-                                      setEditProductData((d) => ({ ...d, repairIds: d.repairIds.filter((id) => id !== repair.id) }));
-                                    }
-                                  }}
-                                />
-                                <span style={{ fontSize: 13 }}>{repair.name}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Button variant="primary" onClick={() => updateProduct(p.id, editProductData)} style={{ flex: 1 }}>
-                            Uložit
-                          </Button>
-                          <Button variant="soft" onClick={() => setEditingProduct(null)}>
-                            Zrušit
-                          </Button>
-                        </div>
-                      </div>
-                    ) : productDisplayMode === "list" ? (
-                      <>
-                      {/* Řádek jako u oprav: vlevo popis, vpravo cena, sklad a akce. */}
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 2, display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                            {stitekViditelnosti("products", p)}
-                            {hasNoModels && (
-                              <span style={{
-                                padding: "2px 6px",
-                                background: "var(--accent-soft)",
-                                borderRadius: 4,
-                                fontSize: "var(--text-xs)",
-                                fontWeight: 700,
-                                color: "var(--muted)",
-                                whiteSpace: "nowrap",
-                              }}>
-                                Nezávislý produkt
-                              </span>
-                            )}
-                          </div>
-                          {productModels.length > 0 && (
-                            /* Zkrácený výčet, celý je v titulku – stejně jako u oprav. */
-                            <div
-                              style={{ fontSize: 11, color: "var(--muted)" }}
-                              title={productModels.map((m) => m.name).join(", ")}
-                            >
-                              {productModels.slice(0, 3).map((m) => m.name).join(", ")}
-                              {productModels.length > 3 && ` a ${productModels.length - 3} dalších`}
-                            </div>
-                          )}
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            {[productCategory?.name, p.sku ? `SKU: ${p.sku}` : null].filter(Boolean).join(" · ") || "—"}
-                          </div>
-                          {p.description && (
-                            <div style={{
-                              fontSize: 12,
-                              color: "var(--muted)",
-                              lineHeight: 1.4,
-                              marginTop: 4,
-                              display: "-webkit-box",
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: "vertical",
-                              overflow: "hidden",
-                            }}>
-                              {p.description}
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
-                              {p.price} Kč
-                            </div>
-                            {p.purchasePrice != null && (
-                              <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                                nákup {p.purchasePrice} Kč
-                              </div>
-                            )}
-                          </div>
-                          <StockCell
-                            product={p}
-                            warehouses={data.warehouses}
-                            filterId={warehouseFilter}
-                            onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
-                          />
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <Button variant="soft" size="sm"
-                              onClick={() => {
-                                setEditProductData({ 
-                                  name: p.name, 
-                                  stock: String(p.stock), 
-                                  price: String(p.price), 
-                                  sku: p.sku || "", 
-                                  description: p.description || "", 
-                                  imageUrl: p.imageUrl || "", 
-                                  repairIds: p.repairIds || [],
-                                  categoryId: p.categoryId || "",
-                                  modelIds: p.modelIds || [],
-                                  modelSearch: "",
-                                });
-                                setEditingProduct(p.id);
-                              }} style={{ fontSize: 11 }}
-                            >
-                              Upravit
-                            </Button>
-                            <Button variant="danger" size="sm"
-                              onClick={() => deleteProduct(p.id)} style={{ fontSize: 11 }}
-                            >
-                              Smazat
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                      </>
-                    ) : (
-                      <>
-                      {p.imageUrl && productDisplayMode !== "compact" && (
-                        <div style={{ width: "100%", aspectRatio: "16/9", borderRadius: 8, overflow: "hidden", background: "var(--panel-2)" }}>
-                          <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          </div>
-                      )}
-                      
-                      <div>
-                        <div style={{ fontWeight: 950, fontSize: productDisplayMode === "compact" ? 13 : 15, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span>{p.name}</span>
-                              {stitekViditelnosti("products", p)}
-                          {hasNoModels && (
-                            <span style={{
-                              padding: "2px 6px",
-                              background: "var(--accent-soft)",
-                              borderRadius: 4,
-                              fontSize: "var(--text-xs)",
-                              fontWeight: 700,
-                              color: "var(--muted)",
-                            }}>
-                              Nezávislý produkt
-                            </span>
-                    )}
-                  </div>
-                        {productCategory && productDisplayMode !== "compact" && (
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
-                            {productCategory.name}
+                      <span style={{ fontSize: 13 }}>{repair.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-                        )}
-                        {productModels.length > 0 && (
-                          <div style={{ fontSize: productDisplayMode === "compact" ? 10 : 11, color: "var(--muted)", marginBottom: 4 }}>
-                            Modely: {productModels.map((m) => m.name).join(", ")}
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 8, flexWrap: "wrap", paddingTop: 8, borderTop: border, marginTop: "auto" }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: productDisplayMode === "compact" ? 13 : 14, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
-                            {p.price} Kč
-                          </div>
-                          {p.purchasePrice != null && (
-                            <div style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                              nákup {p.purchasePrice} Kč
-                            </div>
-                          )}
-                          <div style={{ marginTop: 6 }}>
-                            <StockCell
-                              product={p}
-                              warehouses={data.warehouses}
-                              filterId={warehouseFilter}
-                              dense={productDisplayMode === "compact"}
-                              onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
-                            />
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Button variant="soft"
-                            onClick={() => {
-                              setEditProductData({ 
-                                name: p.name, 
-                                stock: String(p.stock), 
-                                price: String(p.price), 
-                                sku: p.sku || "", 
-                                description: p.description || "", 
-                                imageUrl: p.imageUrl || "", 
-                                repairIds: p.repairIds || [],
-                                categoryId: p.categoryId || "",
-                                modelIds: p.modelIds || [],
-                                modelSearch: "",
-                              });
-                              setEditingProduct(p.id);
-                            }} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
-                          >
-                            Upravit
-                          </Button>
-                          <Button variant="danger"
-                            onClick={() => deleteProduct(p.id)} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
-                          >
-                            Smazat
-                          </Button>
-                        </div>
-                      </div>
-
-                        {p.sku && productDisplayMode !== "compact" && (
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                            SKU: {p.sku}
-                          </div>
-                        )}
-                        {p.description && productDisplayMode !== "compact" && (
-                        <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
-                          {p.description}
-                        </div>
-                        )}
-            </>
-          )}
-                  </div>
-              );
-            })}
-              </div>
-
-          {filteredProducts.length === 0 && (
-            <div style={{ 
-              padding: 40, 
-              textAlign: "center", 
-              color: "var(--muted)",
-              fontSize: 14,
-            }}>
-              {productSearchQuery || selectedBrandId || selectedCategoryId || selectedModelId || selectedProductCategoryId || productStockFilter !== "all"
-                ? "Žádné produkty neodpovídají zvoleným filtrům"
-                : "Zatím nebyly přidány žádné produkty"}
-            </div>
-          )}
+            )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+            <Button variant="ghost" onClick={() => setNewProductOpen(false)}>
+              Zrušit
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!newProduct.name.trim()}
+              title={!newProduct.name.trim() ? "Zadejte název produktu" : "Přidat produkt"}
+              onClick={() => {
+                if (!newProduct.name.trim()) return;
+                addProduct();
+                setNewProductOpen(false);
+              }}
+            >
+              Přidat produkt
+            </Button>
+          </div>
         </div>
-      </div>
+      </InventoryDialog>
 
       {/* Smazání skladu, ve kterém ještě něco leží – kusy by se ztratily. */}
       <ConfirmDialog
