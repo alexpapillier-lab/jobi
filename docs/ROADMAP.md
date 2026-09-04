@@ -10,7 +10,7 @@ Stav: `[ ]` nezačato · `[~]` rozděláno · `[x]` hotovo
 
 Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 
-1. `[ ]` **Zákaznický portál** – odkaz v SMS: stav zakázky, fotky z příjmu,
+1. `[~]` **Zákaznický portál** (kód hotový 4. 9., čeká na nasazení migrace a edge funkce) – odkaz v SMS: stav zakázky, fotky z příjmu,
    cenová nabídka ke schválení jedním klikem s časovým razítkem, podpis
    příjemky prstem, platba předem (QR / brána), potvrzení vyzvednutí.
 2. `[ ]` **Stavebnice automatizací** – pravidla „když stav X → šablona Y“ pro
