@@ -900,7 +900,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           flexDirection: "column",
           gridTemplateColumns: "236px minmax(0, 1fr)",
           gap: "var(--space-5)",
-          alignItems: "start",
+          // Ve sloupci (telefon) musí být stretch: se start se obsah
+          // nesmršťuje na šířku displeje, ale roste podle nejširšího prvku
+          // (dlaždice režimů zobrazení měly 800 px) a stránka přetékala.
+          alignItems: isNarrow ? "stretch" : "start",
         }}
       >
       <SettingsNav
@@ -912,7 +915,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         isNarrow={isNarrow}
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0, maxWidth: "100%" }}>
 
       {/* SERVIS - ZÁKLADNÍ ÚDAJE */}
       {section.subsection === "service_basic" && (
