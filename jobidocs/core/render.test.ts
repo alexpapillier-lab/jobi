@@ -34,6 +34,18 @@ describe("render", () => {
     expect(renderDocument({ ...args, options: { mode: "print" } })).not.toContain("nahrajte ve Značce");
   });
 
+  it("QR „stav zakázky online“ se tiskne jen s odkazem z Jobi", () => {
+    const tpl = defaultTemplate("zakazkovy_list");
+    tpl.slots.headerRight = [...tpl.slots.headerRight, { id: "qr-portal", type: "qr", source: "portal", size: 20 }];
+    const withUrl = renderDocument({ template: tpl, data: { ...sampleData("zakazkovy_list", "short"), portalUrl: "https://appjobi.com/z/?t=abc" }, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
+    expect(withUrl).toContain("Stav zakázky sledujte online");
+    expect(withUrl).toContain('alt="QR"');
+    const withoutUrl = renderDocument({ template: tpl, data: { ...sampleData("zakazkovy_list", "short"), portalUrl: undefined }, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
+    expect(withoutUrl).not.toContain("Stav zakázky sledujte online");
+    expect(withoutUrl).not.toContain("ph-box");
+    expect(substitute("Sledujte: {{portalUrl}}", { ...sampleData("zakazkovy_list", "short"), portalUrl: "https://appjobi.com/z/?t=abc" })).toContain("https://appjobi.com/z/?t=abc");
+  });
+
   it("escapuje HTML z dat", () => {
     const data = sampleData("zakazkovy_list", "short");
     data.device!.issue = "<script>alert(1)</script>";

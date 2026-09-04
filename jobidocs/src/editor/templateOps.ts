@@ -39,7 +39,7 @@ export const SLOT_ITEM_LABELS: Record<SlotItemType, string> = {
   brand: "Název servisu a kontakty",
   logo: "Logo",
   stamp: "Razítko / podpis",
-  qr: "QR kód na hodnocení",
+  qr: "QR kód (hodnocení / stav zakázky)",
   signature: "Řádek na podpis",
   text: "Text",
   contact: "Kontakt servisu (řádek)",
@@ -51,7 +51,7 @@ export const SLOT_ITEM_DESCRIPTIONS: Record<SlotItemType, string> = {
   brand: "Velký název servisu a kontakty ve dvou sloupcích.",
   logo: "Logo ze Značky.",
   stamp: "Obrázek razítka ze Značky s čárou a popiskem.",
-  qr: "Odkaz na hodnocení ze Značky jako QR kód.",
+  qr: "QR kód s odkazem na hodnocení ze Značky, nebo na stav zakázky online pro zákazníka.",
   signature: "Čára s popiskem pro podpis.",
   text: "Krátký text, může obsahovat proměnné.",
   contact: "Název, telefon, e-mail a web servisu v jednom řádku.",
@@ -284,7 +284,7 @@ export function createSlotItem(type: SlotItemType): SlotItem {
     case "stamp":
       return { id, type, label: "Razítko a podpis technika", height: 22 };
     case "qr":
-      return { id, type, size: 22 };
+      return { id, type, source: "review", size: 22 };
     case "signature":
       return { id, type, label: "Podpis zákazníka", width: 50 };
     case "text":

@@ -498,7 +498,13 @@ function SlotItemPanel(p: Props & { item: SlotItem; slot: SlotName }) {
         )}
         {item.type === "qr" && (
           <>
-            <Row label="Text vedle QR" hint="Prázdné = text ze Značky.">
+            <Row label="Obsah QR kódu" hint="Stav zakázky online: odkaz na zákaznický portál, Jobi ho doplní při tisku. Zákazník na něm vidí stav, fotky, nabídku ke schválení a podpis.">
+              <select className="ui-input" value={item.source ?? "review"} onChange={(e) => upd({ source: e.target.value === "portal" ? "portal" : "review" })}>
+                <option value="review">Hodnocení servisu (odkaz ze Značky)</option>
+                <option value="portal">Stav zakázky online (zákaznický portál)</option>
+              </select>
+            </Row>
+            <Row label="Text vedle QR" hint={item.source === "portal" ? "Prázdné = „Stav zakázky sledujte online – načtěte QR kód.“" : "Prázdné = text ze Značky."}>
               <TextWithVars value={item.text ?? ""} onChange={(v) => upd({ text: v })} />
             </Row>
             <Row label="Velikost (mm)">

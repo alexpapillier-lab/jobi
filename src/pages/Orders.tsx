@@ -654,7 +654,18 @@ async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket
     showToast(mode === "print" ? "Vyberte servis pro tisk." : "Vyberte servis pro export.", "error");
     return;
   }
-  const data = ticketDocData(ticket, docType);
+  // Odkaz na zákaznický portál do dokumentu (QR „Stav zakázky online“ v JobiDocs).
+  // Token vzniká při prvním tisku; když RPC selže (starší server), tiskne se bez něj.
+  let withToken = ticket;
+  if (!ticket.portalToken) {
+    try {
+      const token = await ensurePortalToken(ticket.id);
+      withToken = { ...ticket, portalToken: token };
+    } catch {
+      /* bez portálu */
+    }
+  }
+  const data = ticketDocData(withToken, docType);
   if (isWeb()) return runWebDocument(mode, docType, sid, data);
   return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${ticket.code}.pdf`);
 }

@@ -9,6 +9,7 @@ import type { DocumentData, LineItem, Party } from "../../jobidocs/core/types";
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
 import type { CompanyData } from "./companyData";
+import { portalUrl } from "./portal";
 import type { Database } from "../types/supabase";
 
 export type { DocumentData } from "../../jobidocs/core/types";
@@ -57,8 +58,11 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     d.setMonth(d.getMonth() + warrantyMonths);
     warrantyUntil = d.toISOString();
   }
+  const portalToken = (ticket as TicketEx & { portalToken?: string | null }).portalToken;
   return {
     number: ticket.code ?? undefined,
+    // Odkaz na zákaznický portál – tiskne se jako QR, když si to servis v JobiDocs zapne.
+    portalUrl: portalToken ? portalUrl(portalToken) : undefined,
     service: serviceParty(cd),
     customer: {
       name: s(ticket.customerName),

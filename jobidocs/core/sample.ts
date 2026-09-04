@@ -33,6 +33,7 @@ export function sampleData(docType: DocType, kind: SampleKind = "short", service
     number: docType === "faktura" ? "FV-2026-0042" : docType.includes("reklamace") ? "R26000012" : "IRPAZ2601527",
     relatedNumber: docType.includes("reklamace") || docType === "faktura" ? "IRPAZ2601252" : undefined,
     pin: "9398",
+    portalUrl: docType === "faktura" ? undefined : "https://appjobi.com/z/?t=ukazka",
     service: svc,
     customer: {
       name: "Jan Novák",

@@ -345,10 +345,16 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
       return wrapItem(`<div class="stamp"><div class="stamp-img">${img}</div><div class="line"><span${editable(ctx, `item:${item.id}:label`, label)}>${escapeHtml(sub(ctx, label))}</span></div></div>`);
     }
     case "qr": {
-      const url = ctx.brand.reviewUrl ?? "";
+      const portal = item.source === "portal";
+      const url = portal ? ctx.data.portalUrl ?? "" : ctx.brand.reviewUrl ?? "";
       const size = item.size ?? 22;
-      const text = item.text?.trim() ? sub(ctx, item.text) : ctx.brand.reviewText ?? "";
-      if (!url) return ctx.editor ? wrapItem(`<div class="qr"><div class="ph-box" style="width:${mm(size)};height:${mm(size)}">QR</div><div class="muted">Odkaz na hodnocení nastavte ve Značce</div></div>`) : "";
+      const defaultText = portal ? "Stav zakázky sledujte online – načtěte QR kód." : ctx.brand.reviewText ?? "";
+      const text = item.text?.trim() ? sub(ctx, item.text) : defaultText;
+      // Bez odkazu se v tisku nic nevykreslí; v editoru zůstane rámeček s vysvětlením.
+      if (!url) {
+        const why = portal ? "Odkaz na stav zakázky doplní Jobi při tisku" : "Odkaz na hodnocení nastavte ve Značce";
+        return ctx.editor ? wrapItem(`<div class="qr"><div class="ph-box" style="width:${mm(size)};height:${mm(size)}">QR</div><div class="muted">${why}</div></div>`) : "";
+      }
       return wrapItem(`<div class="qr"><img src="${qrDataUrl(url, 200, "M")}" alt="QR" style="width:${mm(size)};height:${mm(size)}"><div class="qr-text"${editable(ctx, `item:${item.id}:text`, item.text ?? "")}>${escapeHtml(text)}</div></div>`);
     }
     case "signature": {

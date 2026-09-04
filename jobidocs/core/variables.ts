@@ -33,6 +33,7 @@ export const VARIABLES: VariableDef[] = [
   { key: "number", label: "Číslo dokumentu (zakázky)", group: G.doc, sample: "Z26000123" },
   { key: "relatedNumber", label: "Číslo původní zakázky", group: G.doc, sample: "Z26000098" },
   { key: "pin", label: "PIN zakázky", group: G.doc, sample: "9398" },
+  { key: "portalUrl", label: "Odkaz na stav zakázky online", group: G.doc, sample: "https://appjobi.com/z/?t=ukazka" },
   { key: "today", label: "Dnešní datum", group: G.doc, sample: "3. 9. 2026" },
 
   { key: "customer.name", label: "Jméno zákazníka", group: G.customer, sample: "Jan Novák" },
@@ -225,6 +226,7 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "number": return data.number ?? "";
     case "relatedNumber": return data.relatedNumber ?? "";
     case "pin": return data.pin ?? "";
+    case "portalUrl": return data.portalUrl ?? "";
     case "today": return formatDate(new Date().toISOString());
     case "customer.contact": return joinParts([data.customer?.name, data.customer?.phone ? `Tel.: ${data.customer.phone}` : undefined], ", ");
     case "device.serialOrImei": return data.device?.serial || data.device?.imei || "";

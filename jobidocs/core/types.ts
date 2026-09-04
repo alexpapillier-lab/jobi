@@ -73,6 +73,8 @@ export type DocumentData = {
   relatedNumber?: string;
   /** PIN zakázky pro zákaznický portál, pokud existuje. */
   pin?: string;
+  /** Odkaz na zákaznický portál (stav zakázky online) – vzniká v Jobi při tisku. */
+  portalUrl?: string;
   service: Party;
   customer?: Party;
   device?: {
@@ -161,7 +163,8 @@ export type SlotItem =
   | { id: string; type: "brand"; showContact?: boolean }
   | { id: string; type: "logo"; height?: number }
   | { id: string; type: "stamp"; label?: string; height?: number }
-  | { id: string; type: "qr"; text?: string; size?: number }
+  /** QR kód: `review` = odkaz na hodnocení ze Značky, `portal` = odkaz na stav zakázky online (z dat dokumentu). */
+  | { id: string; type: "qr"; source?: "review" | "portal"; text?: string; size?: number }
   | { id: string; type: "signature"; label: string; width?: number }
   | { id: string; type: "text"; content: string; size?: "normal" | "small" }
   | { id: string; type: "contact" }
