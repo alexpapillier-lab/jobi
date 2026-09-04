@@ -28,6 +28,7 @@ import {
 import { normalizePhone } from "../lib/phone";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
+import { useStatusActionsMap, runStatusChangeAutomations, runTicketCreatedAutomations } from "./Orders/hooks/useAutomations";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { SmsChat } from "../components/SmsChat";
@@ -61,7 +62,6 @@ import {
   CustomerAutocomplete,
   type CustomerMatch,
 } from "../components/orders";
-import { loadDocumentsConfigRawFromDB } from "../lib/documentSettings";
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
@@ -1288,9 +1288,11 @@ export default function Orders({
   const newOrderBodyRef = useRef<HTMLDivElement | null>(null);
   /**
    * Co se při přepnutí stavu stane automaticky (tisk podle nastavení
-   * dokumentů, SMS automatizace) – ukazuje se v nabídce stavů.
+   * dokumentů, pravidla automatizací) – ukazuje se v nabídce stavů.
+   * Obnovuje se při otevření detailu a každých 5 minut.
    */
-  const [statusActionsMap, setStatusActionsMap] = useState<Record<string, string[]>>({});
+  const statusLabelForHint = useCallback((key: string) => getByKey(key)?.label ?? key, [getByKey]);
+  const { statusActionsMap, hasRulesFor: hasAutomationRulesFor } = useStatusActionsMap(activeServiceId, detailId, statusLabelForHint);
 
   const [editedTicket, setEditedTicket] = useState<Partial<TicketEx>>({});
   const [returnToPage, setReturnToPage] = useState<NavKey | null>(null);
@@ -1781,50 +1783,6 @@ export default function Orders({
       // ignore
     }
   }, [newOrderMoreOpen]);
-
-  // Automatické akce po změně stavu (tisk dokumentů + SMS automatizace) – jednou na servis.
-  useEffect(() => {
-    if (!activeServiceId) {
-      setStatusActionsMap({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const map: Record<string, string[]> = {};
-      const add = (key: string | null | undefined, label: string) => {
-        if (!key) return;
-        (map[key] ||= []).push(label);
-      };
-      try {
-        const raw = await loadDocumentsConfigRawFromDB(activeServiceId);
-        const ap = raw?.config?.autoPrint ?? {};
-        add(ap.ticketListOnStatusKey, "Vytiskne se zakázkový list");
-        add(ap.warrantyOnStatusKey, "Vytiskne se záruční list");
-        add(ap.prijetiReklamaceOnStatusKey, "Vytiskne se přijetí reklamace");
-        add(ap.vydaniReklamaceOnStatusKey, "Vytiskne se vydání reklamace");
-      } catch {
-        // bez nastavení dokumentů se nic netiskne
-      }
-      try {
-        if (supabase) {
-          const { data } = await (supabase.from("sms_automations") as any)
-            .select("trigger_status_key, active")
-            .eq("service_id", activeServiceId);
-          const smsKeys = new Set<string>();
-          for (const row of (data ?? []) as Array<{ trigger_status_key: string | null; active: boolean | null }>) {
-            if (row.active !== false && row.trigger_status_key) smsKeys.add(row.trigger_status_key);
-          }
-          smsKeys.forEach((k) => add(k, "Odešle se SMS zákazníkovi"));
-        }
-      } catch {
-        // tabulka nemusí existovat / chybí oprávnění – nabídka jen nic neukáže
-      }
-      if (!cancelled) setStatusActionsMap(map);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeServiceId, supabase]);
 
   /**
    * Našeptávač zákazníků v nové zakázce: jméno, telefon, e-mail nebo firma.
@@ -2905,63 +2863,20 @@ export default function Orders({
             printWarranty(ticketUpdated as TicketEx, activeServiceId).then(() => {});
           }
         }
-        // SMS automations: send template message when status changes
-        if (ticketUpdated && activeServiceId && (ticketUpdated as TicketEx).customerPhone?.trim()) {
-          const smsClient = getTypedSupabaseClient();
-          if (smsClient) {
-          const { data: automations } = await smsClient
-            .from("sms_automations")
-            .select("id, message_template")
-            .eq("service_id", activeServiceId)
-            .eq("trigger_status_key", next)
-            .eq("active", true);
-          const statusLabel = statuses.find((s) => s.key === next)?.label ?? next;
-          const totalPrice = computeFinalPrice(toCardData(ticketUpdated as (typeof filtered)[number]));
-          // {{portal_url}} – token se zakládá jen když ho některá šablona používá; bez portálu na serveru zůstane prázdný.
-          let portalUrlVar = "";
-          if (automations?.some((a) => (a.message_template || "").includes("{{portal_url}}"))) {
-            try {
-              portalUrlVar = portalUrl((ticketUpdated as TicketEx).portalToken || (await ensurePortalToken(ticketId)));
-            } catch (error) {
-              reportSilent({ code: "portal.automation_token_failed", error, source: "Orders.setTicketStatus", serviceId: activeServiceId, context: { ticketId } });
-            }
-          }
-          const vars: Record<string, string> = {
-            code: (ticketUpdated as TicketEx).code ?? "",
-            customer_name: (ticketUpdated as TicketEx).customerName ?? "",
-            device_label: (ticketUpdated as TicketEx).deviceLabel ?? "",
-            total_price: String(totalPrice),
-            status: statusLabel,
-            notes: (ticketUpdated as TicketEx).issueShort ?? "",
-            portal_url: portalUrlVar,
-          };
-          const phoneNorm = normalizePhone((ticketUpdated as TicketEx).customerPhone!);
-          if (automations?.length && phoneNorm) {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData?.session?.access_token;
-            if (token) {
-              for (const a of automations) {
-                const body = (a.message_template || "").replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? "");
-                if (!body.trim()) continue;
-                supabaseFetch(`${supabaseUrl}/functions/v1/sms-send`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({
-                    service_id: activeServiceId,
-                    to: phoneNorm,
-                    body,
-                    ticket_id: ticketId,
-                  }),
-                }).then(async (res) => {
-                  const raw = await res.text();
-                  let data: { error?: string } = {};
-                  try { if (raw) data = JSON.parse(raw); } catch { }
-                  if (!res.ok || data.error) showToast(data.error ?? "SMS automatizace se nepodařila odeslat", "error");
-                }).catch(() => showToast("SMS automatizace se nepodařila odeslat", "error"));
-              }
-            }
-          }
-          }
+        // Automatizace (stavebnice pravidel) – na pozadí, po úspěšné změně stavu.
+        if (ticketUpdated && activeServiceId) {
+          const tu = ticketUpdated as TicketEx;
+          const sid = activeServiceId;
+          void runStatusChangeAutomations({
+            serviceId: sid,
+            ticketId,
+            statusKey: next,
+            statusLabel: statuses.find((s) => s.key === next)?.label ?? next,
+            ticket: tu,
+            totalPrice: computeFinalPrice(toCardData(tu as (typeof filtered)[number])),
+            resolvePortalUrl: async () => portalUrl(tu.portalToken || (await ensurePortalToken(ticketId))),
+            hasRules: hasAutomationRulesFor(next),
+          });
         }
       } catch (err: any) {
         // Rollback optimistic update
@@ -3317,6 +3232,9 @@ export default function Orders({
         }
         if (first && config?.autoPrint?.warrantyOnCreate) {
           printWarranty(first, activeServiceId).then(() => {});
+        }
+        if (activeServiceId) {
+          for (const t of tickets) void runTicketCreatedAutomations(activeServiceId, t.id);
         }
       },
     });

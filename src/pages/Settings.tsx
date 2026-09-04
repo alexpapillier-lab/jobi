@@ -26,6 +26,7 @@ import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSe
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
 import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
+import { AutomationsSection } from "./Settings/Automations/AutomationsSection";
 import { LogoPresetButton } from "./Settings/components/LogoPresetButton";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { isDesktop } from "../lib/platform";
@@ -53,6 +54,7 @@ import { useAuth } from "../auth/AuthProvider";
 type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_sms" | "service_team" | "service_owner" | "service_api"
+  | "communication_automations"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
@@ -69,7 +71,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders",
   orders_tisk_dokumentu: "documents",
-  service_sms: "communication",
+  service_sms: "communication", communication_automations: "communication",
   service_team: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app",
   profile_me: "profile",
@@ -393,8 +395,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [smsPhoneLoading, setSmsPhoneLoading] = useState(false);
   const [smsProvisionLoading, setSmsProvisionLoading] = useState(false);
   const [smsDisconnectLoading, setSmsDisconnectLoading] = useState(false);
-  const [smsAutomations, setSmsAutomations] = useState<Array<{ id: string; trigger_status_key: string; message_template: string; active: boolean; sort_order: number }>>([]);
-  const [smsAutomationsLoading, setSmsAutomationsLoading] = useState(false);
 
   useEffect(() => setUiCfg(safeLoadUIConfig()), []);
 
@@ -514,25 +514,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           return;
         }
         setSmsPhoneRow(data ?? null);
-      });
-  }, [activeServiceId]);
-
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    if (!activeServiceId || !client) {
-      setSmsAutomations([]);
-      return;
-    }
-    setSmsAutomationsLoading(true);
-    client
-      .from("sms_automations")
-      .select("id, trigger_status_key, message_template, active, sort_order")
-      .eq("service_id", activeServiceId)
-      .order("sort_order", { ascending: true })
-      .then(({ data, error }) => {
-        setSmsAutomationsLoading(false);
-        if (!error && data) setSmsAutomations(data);
-        else setSmsAutomations([]);
       });
   }, [activeServiceId]);
 
@@ -812,7 +793,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS", keywords: ["sms", "automatizace", "telefonní číslo", "zprávy", "přesměrování", "hovory", "šablona zprávy"] }] : []),
+        ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS", keywords: ["sms", "telefonní číslo", "zprávy", "přesměrování", "hovory", "šablona zprávy"] }] : []),
+        ...(isAdmin ? [{ key: "communication_automations" as const, label: "Automatizace", keywords: ["automatizace", "pravidla", "připomínka", "sms", "e-mail", "skladné", "recenze", "vyzvednutí"] }] : []),
       ],
     },
     {
@@ -865,7 +847,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_sms") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -1250,130 +1232,21 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             )}
           </Card>
 
-          {smsPhoneRow && (
-            <div style={{ marginTop: 24 }}>
-              <Card>
-              <div style={{ fontWeight: 950, fontSize: "var(--text-base)", marginBottom: 4, color: "var(--text)" }}>Automatické SMS při změně statusu</div>
-              <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 16 }}>
-                Když se status zakázky změní na zvolený, zákazníkovi se automaticky odešle SMS. V textu lze použít proměnné:{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{code}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{customer_name}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{device_label}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{total_price}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{status}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{notes}}`}</code>,{" "}
-                <code style={{ fontSize: "var(--text-xs)", background: "var(--panel-2)", padding: "2px 6px", borderRadius: 4 }}>{`{{portal_url}}`}</code>{" "}
-                (odkaz na zákaznický portál).
+          <div style={{ marginTop: 24 }}>
+            <Card>
+              <div style={{ fontWeight: 950, fontSize: "var(--text-base)", marginBottom: 4, color: "var(--text)" }}>Automatické zprávy</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 12 }}>
+                Automatické SMS při změně stavu, připomínky vyzvednutí a další pravidla nastavíte v sekci Komunikace → Automatizace.
               </div>
-              {smsAutomationsLoading ? (
-                <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Načítám…</div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-                    {smsAutomations.map((a) => {
-                      const statusLabel = statuses.find((s) => s.key === a.trigger_status_key)?.label ?? a.trigger_status_key;
-                      return (
-                        <div
-                          key={a.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: 12,
-                            padding: 12,
-                            borderRadius: 10,
-                            border: "1px solid var(--border)",
-                            background: a.active ? "var(--panel)" : "var(--panel-2)",
-                          }}
-                        >
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--text)", marginBottom: 4 }}>Status: {statusLabel}</div>
-                            <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message_template || "(prázdná zpráva)"}</div>
-                          </div>
-                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", color: "var(--muted)", flexShrink: 0 }}>
-                            <input
-                              type="checkbox"
-                              checked={a.active}
-                              onChange={async () => {
-                                const client = getTypedSupabaseClient();
-                                if (!client) return;
-                                const { error } = await client.from("sms_automations").update({ active: !a.active }).eq("id", a.id);
-                                if (!error) setSmsAutomations((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: !x.active } : x)));
-                              }}
-                            />
-                            Aktivní
-                          </label>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!confirm("Smazat tuto automatizaci?")) return;
-                              const client = getTypedSupabaseClient();
-                              if (!client) return;
-                              const { error } = await client.from("sms_automations").delete().eq("id", a.id);
-                              if (!error) setSmsAutomations((prev) => prev.filter((x) => x.id !== a.id));
-                            }}
-                            style={{ padding: "6px 10px", fontSize: "var(--text-xs)", border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", cursor: "pointer" }}
-                          >
-                            Smazat
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ padding: 12, border: "1px dashed var(--border)", borderRadius: 10, background: "var(--panel-2)" }}>
-                    <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", marginBottom: 8, color: "var(--text)" }}>Přidat automatizaci</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div>
-                        <FieldLabel>Kdy (status zakázky)</FieldLabel>
-                        <select
-                          id="sms-auto-status"
-                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: "var(--text-base)" }}
-                        >
-                          {statuses.map((s) => (
-                            <option key={s.key} value={s.key}>{s.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <FieldLabel>Text zprávy (s proměnnými)</FieldLabel>
-                        <textarea
-                          id="sms-auto-template"
-                          placeholder="Dobrý den, zakázka {{code}} je ve stavu {{status}}. Celková cena: {{total_price}} Kč."
-                          rows={3}
-                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: "var(--text-base)", resize: "vertical" }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const sel = document.getElementById("sms-auto-status") as HTMLSelectElement | null;
-                          const tpl = document.getElementById("sms-auto-template") as HTMLTextAreaElement | null;
-                          const trigger_status_key = sel?.value?.trim();
-                          const message_template = tpl?.value?.trim() ?? "";
-                          const client = getTypedSupabaseClient();
-                          if (!trigger_status_key || !activeServiceId || !client) return;
-                          const { data, error } = await client
-                            .from("sms_automations")
-                            .insert({ service_id: activeServiceId, trigger_status_key, message_template, active: true, sort_order: smsAutomations.length })
-                            .select("id, trigger_status_key, message_template, active, sort_order")
-                            .single();
-                          if (!error && data) {
-                            setSmsAutomations((prev) => [...prev, data]);
-                            if (tpl) tpl.value = "";
-                            showToast("Automatizace přidána", "success");
-                          }
-                        }}
-                        style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "var(--accent-fg)", fontWeight: 700, fontSize: "var(--text-base)", cursor: "pointer", alignSelf: "flex-start" }}
-                      >
-                        Přidat
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-              </Card>
-            </div>
-          )}
+              <Button size="sm" onClick={() => requestSection(sectionFor("communication_automations"))}>Otevřít Automatizace</Button>
+            </Card>
+          </div>
         </>
+      )}
+
+      {/* KOMUNIKACE - AUTOMATIZACE */}
+      {section.subsection === "communication_automations" && activeServiceId && (
+        <AutomationsSection activeServiceId={activeServiceId} />
       )}
 
       {/* SERVIS - TÝM / PŘÍSTUPY */}
