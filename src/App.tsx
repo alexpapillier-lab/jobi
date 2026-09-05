@@ -738,7 +738,11 @@ export default function App() {
   // Apply global UI scale – zoom na <html> škáluje celý obsah (seznamy, tlačítka, dropdowny)
   useEffect(() => {
     const s = uiCfg.app.uiScale ?? 1;
-    document.documentElement.style.setProperty("zoom", String(s));
+    // Při 100 % se zoom nenastavuje vůbec. `zoom: 1` sice nic nezvětší, ale
+    // vytvoří v prohlížeči zoomovací kontejner: souřadnice prvků pak nesedí
+    // s tím, kam se doopravdy kliká, což mate nástroje i automatické testy.
+    if (s === 1) document.documentElement.style.removeProperty("zoom");
+    else document.documentElement.style.setProperty("zoom", String(s));
     // Jednotky vh/dvh zoom neškáluje, takže „100dvh“ je při 120 % o pětinu
     // vyšší než okno a modály se ořezávají nahoře i dole. Rozvržení proto
     // dělí výšku okna touhle proměnnou (viz calc(100dvh / var(--ui-scale))).

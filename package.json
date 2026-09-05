@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^22.20.1",
     "@types/react": "^19.1.8",
@@ -62,7 +63,9 @@
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
-    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx"
+    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "type": "module",
   "version": "0.3.2"

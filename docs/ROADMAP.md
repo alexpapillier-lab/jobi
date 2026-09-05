@@ -121,8 +121,11 @@ První tři měsíce: body 1, 2, 4.
   na telefonu včetně fotek.
 - `[ ]` Ověřit v desktopu po 0.2.8: tisk s vypnutým JobiDocs, aktualizace
   na pozadí, presence s druhým uživatelem, migrace firemních údajů.
-- `[ ]` E2E testy hlavních cest (založit zakázku, změnit stav, vytisknout,
-  vystavit fakturu) – dnes jen unit testy.
+- `[~]` E2E testy hlavních cest – Playwright, `npm run test:e2e`, v CI
+  workflow „E2E testy". Pokryto přihlášení (i odmítnutí špatného hesla),
+  založení zakázky s kontrolou čísla a přidání provedené opravy. Jezdí
+  v samostatném servisu pod účtem e2e@jobi.test, viz `e2e/README.md`.
+  Zbývá tisk a vystavení faktury.
 - `[ ]` Výkon: Statistiky počítají z všech zakázek v prohlížeči – přesunout
   agregace na server dřív, než servis přesáhne ~10 000 zakázek.
 

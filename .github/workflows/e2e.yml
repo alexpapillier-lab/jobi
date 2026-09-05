@@ -1,0 +1,76 @@
+name: E2E testy
+
+# Projdou hlavní cestu servisu v prohlížeči: přihlášení, založení zakázky,
+# přidání provedené opravy. Jezdí proti ostrému Supabase, ale ve vlastním
+# servisu pod účtem e2e@jobi.test – RLS ho odděluje stejně jako kterékoli dva
+# zákaznické servisy, takže se nemůže dotknout cizích dat.
+#
+# Potřebuje secret E2E_PASSWORD (heslo toho účtu). Bez něj se testy přeskočí,
+# ať workflow nepadá lidem, kteří secrets nemají.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Testy pracují se společným testovacím servisem – dva běhy naráz by si
+  # navzájem přepisovaly data.
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Hlavní cesty v prohlížeči
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Je nastavené heslo k testovacímu účtu?
+        id: secrets
+        env:
+          HESLO: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          if [ -z "$HESLO" ]; then
+            echo "::notice::Chybí secret E2E_PASSWORD, E2E testy se přeskočí. Postup je v e2e/README.md."
+            echo "mame=ne" >> "$GITHUB_OUTPUT"
+          else
+            echo "mame=ano" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.secrets.outputs.mame == 'ano'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalace závislostí
+        if: steps.secrets.outputs.mame == 'ano'
+        run: npm ci
+
+      - name: Prohlížeč pro Playwright
+        if: steps.secrets.outputs.mame == 'ano'
+        run: npx playwright install --with-deps chromium
+
+      - name: Testy
+        if: steps.secrets.outputs.mame == 'ano'
+        env:
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ROOT_OWNER_ID: ${{ secrets.VITE_ROOT_OWNER_ID }}
+        run: npm run test:e2e
+
+      - name: Záznam z neúspěšných testů
+        if: failure() && steps.secrets.outputs.mame == 'ano'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-vysledky
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

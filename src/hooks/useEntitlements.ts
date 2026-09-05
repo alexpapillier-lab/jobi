@@ -40,6 +40,18 @@ export function useEntitlements(activeServiceId: string | null): State & {
   /** Konec zkušebního období = nejzazší platnost mezi časově omezenými nároky. */
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Pro který servis platí načtené nároky.
+   *
+   * Bez tohohle vzniklo okno jednoho vykreslení, kdy už `activeServiceId`
+   * existoval, `loading` bylo ještě z předchozího běhu `false` a `modules`
+   * prázdné. App si to vyložila jako „servis nemá přístup", vykreslila
+   * obrazovku konce zkušebního období a tím odpojila celou aplikaci; hned
+   * nato se postavila znovu. Uživatel přišel o rozepsanou zakázku a viděl
+   * bliknutí. Dokud nároky neodpovídají aktuálnímu servisu, hlásí se
+   * `loading`.
+   */
+  const [nactenoPro, setNactenoPro] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -48,6 +60,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
       setModules((prev) => (prev.size === 0 ? prev : new Set()));
       setQuotas({});
       setTrialEndsAt(null);
+      setNactenoPro(null);
       setLoading(false);
       return;
     }
@@ -89,6 +102,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
         const konce = data.map((r) => r.valid_until).filter((v): v is string => typeof v === "string");
         setTrialEndsAt(konce.length > 0 ? konce.sort().slice(-1)[0] : null);
       }
+      setNactenoPro(activeServiceId);
       setLoading(false);
     })();
     return () => {
@@ -114,5 +128,9 @@ export function useEntitlements(activeServiceId: string | null): State & {
     ? Math.ceil((new Date(trialEndsAt).getTime() - ted) / 86_400_000)
     : null;
 
-  return { modules, loading, has, quota, trialEndsAt, trialDaysLeft, refresh };
+  // Nároky z minulého servisu (nebo z doby, kdy žádný nebyl) se nesmí tvářit
+  // jako platná odpověď pro ten současný.
+  const nacitaSe = loading || nactenoPro !== (activeServiceId ?? null);
+
+  return { modules, loading: nacitaSe, has, quota, trialEndsAt, trialDaysLeft, refresh };
 }

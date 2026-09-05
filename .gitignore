@@ -75,3 +75,7 @@ dist-site
 # a SQL s ID konkrétního servisu, do repa nepatří (viz README v té složce).
 scripts/import-zakazkovylist/catalog_*.json
 scripts/import-zakazkovylist/import_katalog.sql
+
+# Playwright
+test-results/
+playwright-report/
