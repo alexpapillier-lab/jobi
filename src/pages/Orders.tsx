@@ -76,7 +76,7 @@ import {
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
-import { getShortcut, comboMatchesEvent, isInputFocused } from "../lib/keyboardShortcuts";
+import { registerShortcut } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
 import { safeLoadCompanyData } from "../lib/companyData";
@@ -1372,6 +1372,9 @@ export default function Orders({
   const ticketsLoadHasRunRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const openNewOrderRef = useRef<() => void>(() => {});
+  /** Aktuální stav detailu pro `enabled` u zkratek (čte se při stisku, ne při registraci). */
+  const detailIdRef = useRef<string | null>(null);
+  const isEditingRef = useRef(false);
   const startEditingRef = useRef<() => void>(() => {});
   const saveTicketChangesRef = useRef<() => Promise<boolean>>(async () => false);
 
@@ -3095,14 +3098,7 @@ export default function Orders({
 
   useEffect(() => {
     if (!detailedTicket) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (comboMatchesEvent(e, getShortcut("order_print"))) {
-        e.preventDefault();
-        printTicket(detailedTicket, activeServiceId);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return registerShortcut("order_print", () => printTicket(detailedTicket, activeServiceId), { priority: 20 });
   }, [detailedTicket, activeServiceId, session?.user?.id]);
 
   // Enter v náhledu zakázky při úpravách = Uložit a zavřít (kromě textarea, kde Enter = nový řádek)
@@ -3159,46 +3155,35 @@ export default function Orders({
     openNewOrderRef.current = openNewOrder;
     startEditingRef.current = startEditing;
     saveTicketChangesRef.current = saveTicketChanges;
+    detailIdRef.current = detailId;
+    isEditingRef.current = isEditing;
   });
 
-  // Zkratky stránky Zakázky a detailu (capture, aby Ctrl+S v detailu měl přednost před globální navigací)
-  // Na přehledu zakázek také přímo obsloužíme Q/S/D/C atd. (vlastní událost), aby fungovaly i když window keydown nedojde
+  /**
+   * Zkratky stránky Zakázky. Priorita 10 – přebijí globální navigaci, ale jen
+   * dokud je stránka vidět (App drží Orders namountované i skryté).
+   */
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (comboMatchesEvent(e, getShortcut("orders_search"))) {
-        e.preventDefault();
-        e.stopPropagation();
-        searchInputRef.current?.focus();
-        return;
-      }
-      if (isInputFocused()) return;
-      if (comboMatchesEvent(e, getShortcut("orders_new"))) {
-        e.preventDefault();
-        e.stopPropagation();
-        openNewOrderRef.current();
-        return;
-      }
-      if (detailId && !isEditing && comboMatchesEvent(e, getShortcut("order_detail_edit"))) {
-        e.preventDefault();
-        e.stopPropagation();
-        startEditingRef.current();
-        return;
-      }
-      if (detailId && isEditing && comboMatchesEvent(e, getShortcut("order_detail_save"))) {
-        e.preventDefault();
-        e.stopPropagation();
-        saveTicketChangesRef.current();
-        return;
-      }
-    };
-    const doc = document;
-    doc.addEventListener("keydown", onKey, true);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      doc.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [detailId, isEditing, session?.user?.id]);
+    const naStrance = () => !closeDetailWhen;
+    const offs = [
+      registerShortcut("orders_search", () => searchInputRef.current?.focus(), {
+        priority: 10,
+        allowInInput: true,
+        enabled: naStrance,
+      }),
+      registerShortcut("orders_new", () => openNewOrderRef.current(), { priority: 10, enabled: naStrance }),
+      registerShortcut("order_detail_edit", () => startEditingRef.current(), {
+        priority: 10,
+        enabled: () => naStrance() && !!detailIdRef.current && !isEditingRef.current,
+      }),
+      registerShortcut("order_detail_save", () => saveTicketChangesRef.current(), {
+        priority: 10,
+        allowInInput: true,
+        enabled: () => naStrance() && !!detailIdRef.current && isEditingRef.current,
+      }),
+    ];
+    return () => { for (const off of offs) off(); };
+  }, [closeDetailWhen]);
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};

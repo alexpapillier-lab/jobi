@@ -12,6 +12,26 @@ let cachedTauriFetch: typeof fetch | null = null;
 let tauriFetchLoadFailed = false;
 
 const LOG = "[supabaseFetch]";
+
+/**
+ * Kdy naposled Supabase odpověděl (jakýkoli HTTP stav = server je na příjmu).
+ *
+ * Slouží OnlineGate: dokud běžné dotazy aplikace procházejí, nemá smysl
+ * hlásit „Cloud není dostupný“ kvůli jednomu kontrolnímu pingu, který se
+ * v Tauri umí zaseknout. Tím zmizí falešné poplachy, kvůli kterým lidé
+ * restartovali aplikaci.
+ */
+let lastResponseAt = 0;
+
+/** Volá se po každé odpovědi Supabase. */
+export function markSupabaseReachable(): void {
+  lastResponseAt = Date.now();
+}
+
+/** Milisekundy od poslední odpovědi Supabase; Infinity, když ještě žádná nebyla. */
+export function msSinceSupabaseResponse(): number {
+  return lastResponseAt === 0 ? Number.POSITIVE_INFINITY : Date.now() - lastResponseAt;
+}
 const VERBOSE = import.meta.env.VITE_SUPABASE_FETCH_VERBOSE === "1";
 
 /** Resetuje stav při selhání síťového modulu. Volá se při visibility change nebo při explicitním „Zkusit znovu“. */
@@ -68,6 +88,7 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
       };
       try {
         const response = await cachedTauriFetch!(input, initWithTimeout);
+        markSupabaseReachable();
         return response;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -85,7 +106,9 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
       }
     }
 
-    return fetch(input, initClean ?? init);
+    const res = await fetch(input, initClean ?? init);
+    markSupabaseReachable();
+    return res;
   })();
 }
 

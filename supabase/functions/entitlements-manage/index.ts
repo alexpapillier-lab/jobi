@@ -9,7 +9,10 @@
  * POST body:
  *   { action: "list" }                          – všechny nároky + názvy servisů
  *   { action: "grant", serviceId, module,
- *     validUntil?: string|null, note?: string }  – udělí nebo obnoví
+ *     validUntil?: string|null, note?: string,
+ *     quota?: number|null }                      – udělí nebo obnoví; quota = počet
+ *                                                  kusů (dnes poboček), null = bez omezení.
+ *                                                  Neposlaná pole zůstanou beze změny.
  *   { action: "revoke", serviceId, module }      – zneplatní (nemaže, jen active=false)
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -22,6 +25,9 @@ const corsHeaders = {
 
 /** Moduly, které lze prodávat. Nový modul se přidá sem. */
 const KNOWN_MODULES = ["sms", "invoices", "api_catalog", "api_inventory", "branches"] as const;
+
+/** Moduly, které se prodávají po kusech – u nich má smysl `quota`. */
+const QUOTA_MODULES = ["branches"];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -59,7 +65,7 @@ serve(async (req) => {
     if (action === "list") {
       const { data: rows, error } = await svc
         .from("service_entitlements")
-        .select("id, service_id, module, active, valid_until, note, created_at, updated_at")
+        .select("id, service_id, module, active, valid_until, note, quota, created_at, updated_at")
         .order("created_at", { ascending: false });
       if (error) return json({ error: error.message }, 500);
 
@@ -69,9 +75,20 @@ serve(async (req) => {
         const { data: services } = await svc.from("services").select("id, name").in("id", ids);
         for (const s of services ?? []) names[s.id as string] = (s.name as string) ?? "";
       }
+
+      // Kolik poboček servisy opravdu mají – ať je u limitu vidět „3 z 5“.
+      const branchCounts: Record<string, number> = {};
+      const { data: branchRows } = await svc.from("branches").select("service_id");
+      for (const b of branchRows ?? []) {
+        const id = b.service_id as string;
+        branchCounts[id] = (branchCounts[id] ?? 0) + 1;
+      }
+
       return json({
         ok: true,
         modules: KNOWN_MODULES,
+        quotaModules: QUOTA_MODULES,
+        branchCounts,
         entitlements: (rows ?? []).map((r) => ({ ...r, service_name: names[r.service_id] ?? null })),
       });
     }
@@ -88,21 +105,54 @@ serve(async (req) => {
     if (!service) return json({ error: "Servis nenalezen." }, 404);
 
     if (action === "grant") {
-      const validUntil =
-        typeof body?.validUntil === "string" && body.validUntil.trim() ? body.validUntil : null;
+      // Pole, která tělo neposlalo, se nepřepisují – jinak by nastavení počtu
+      // poboček smazalo poznámku i platnost, které se nastavovaly zvlášť.
+      const { data: existing } = await svc
+        .from("service_entitlements")
+        .select("valid_until, note, quota")
+        .eq("service_id", serviceId)
+        .eq("module", module)
+        .maybeSingle();
+
+      const validUntil = "validUntil" in (body ?? {})
+        ? (typeof body.validUntil === "string" && body.validUntil.trim() ? body.validUntil : null)
+        : (existing?.valid_until ?? null);
+      const note = "note" in (body ?? {})
+        ? (typeof body.note === "string" && body.note.trim() ? body.note : null)
+        : (existing?.note ?? null);
+
+      let quota: number | null;
+      if ("quota" in (body ?? {})) {
+        if (body.quota === null || body.quota === "" || body.quota === undefined) {
+          quota = null;
+        } else {
+          const n = Number(body.quota);
+          if (!Number.isInteger(n) || n < 1) {
+            return json({ error: "Počet musí být celé číslo aspoň 1 (nebo prázdné = bez omezení)." }, 400);
+          }
+          quota = n;
+        }
+      } else {
+        quota = existing?.quota ?? null;
+      }
+      if (quota !== null && !QUOTA_MODULES.includes(module)) {
+        return json({ error: `Modul "${module}" se nepočítá na kusy.` }, 400);
+      }
+
       const { error } = await svc.from("service_entitlements").upsert(
         {
           service_id: serviceId,
           module,
           active: true,
           valid_until: validUntil,
-          note: typeof body?.note === "string" ? body.note : null,
+          note,
+          quota,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "service_id,module" }
       );
       if (error) return json({ error: error.message }, 500);
-      return json({ ok: true, granted: { serviceId, module, validUntil } });
+      return json({ ok: true, granted: { serviceId, module, validUntil, quota } });
     }
 
     if (action === "revoke") {

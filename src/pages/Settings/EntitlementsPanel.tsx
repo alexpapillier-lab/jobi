@@ -18,6 +18,8 @@ type Row = {
   active: boolean;
   valid_until: string | null;
   note: string | null;
+  /** Kolik kusů modulu má servis zaplaceno (dnes počet poboček). NULL = bez omezení. */
+  quota: number | null;
 };
 
 type Service = { service_id: string; service_name: string };
@@ -30,7 +32,10 @@ const MODULE_LABELS: Record<string, string> = {
   branches: "Pobočky",
 };
 
-async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[] }> {
+/** Popisek jednotky u modulů prodávaných po kusech. */
+const QUOTA_UNIT: Record<string, string> = { branches: "poboček" };
+
+async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[]; quotaModules?: string[]; branchCounts?: Record<string, number> }> {
   const client = supabase;
   if (!client || !supabaseUrl || !supabaseAnonKey) throw new Error("Chybí konfigurace Supabase.");
   // refreshSession: v desktopu getSession() často vrací prošlý token -> 401
@@ -57,6 +62,10 @@ async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean
 export function EntitlementsPanel({ services }: { services: Service[] }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [modules, setModules] = useState<string[]>([]);
+  const [quotaModules, setQuotaModules] = useState<string[]>(["branches"]);
+  const [branchCounts, setBranchCounts] = useState<Record<string, number>>({});
+  /** Rozepsaný limit, než ho uživatel potvrdí (Enter / opuštění pole). */
+  const [quotaDraft, setQuotaDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,6 +77,9 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       const data = await callManage({ action: "list" });
       setRows(data.entitlements ?? []);
       setModules(data.modules ?? ["sms", "invoices", "api_catalog", "api_inventory", "branches"]);
+      setQuotaModules(data.quotaModules ?? ["branches"]);
+      setBranchCounts(data.branchCounts ?? {});
+      setQuotaDraft({});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -88,6 +100,32 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
         `${MODULE_LABELS[module] ?? module} ${grant ? "zapnuto" : "vypnuto"}`,
         "success"
       );
+      await load();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Uloží limit počtu kusů (prázdné = bez omezení). */
+  const saveQuota = async (serviceId: string, module: string, raw: string) => {
+    const key = `${serviceId}:${module}`;
+    const trimmed = raw.trim();
+    const current = rows.find((x) => x.service_id === serviceId && x.module === module)?.quota ?? null;
+    const next = trimmed === "" ? null : Number(trimmed);
+    if (next !== null && (!Number.isInteger(next) || next < 1)) {
+      showToast("Počet musí být celé číslo aspoň 1, nebo prázdné pole pro bez omezení.", "error");
+      return;
+    }
+    if (next === current) {
+      setQuotaDraft((d) => { const c = { ...d }; delete c[key]; return c; });
+      return;
+    }
+    setBusy(key);
+    try {
+      await callManage({ action: "grant", serviceId, module, quota: next });
+      showToast(next === null ? "Limit zrušen (bez omezení)" : `Limit nastaven na ${next}`, "success");
       await load();
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), "error");
@@ -152,29 +190,64 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
             <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)" }}>
               {s.service_name}
             </span>
-            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
               {modules.map((m) => {
                 const on = isActive(s.service_id, m);
                 const key = `${s.service_id}:${m}`;
+                const row = rows.find((x) => x.service_id === s.service_id && x.module === m);
+                const hasQuota = quotaModules.includes(m);
+                const used = m === "branches" ? branchCounts[s.service_id] ?? 0 : 0;
+                const draft = quotaDraft[key] ?? (row?.quota == null ? "" : String(row.quota));
                 return (
-                  <button
-                    key={m}
-                    type="button"
-                    disabled={busy === key}
-                    onClick={() => void toggle(s.service_id, m, !on)}
-                    title={on ? "Kliknutím vypnout" : "Kliknutím zapnout"}
-                    style={{
-                      padding: "6px 14px", borderRadius: "var(--radius-pill)",
-                      border: `1px solid ${on ? "var(--success)" : "var(--border)"}`,
-                      background: on ? "var(--success-soft)" : "transparent",
-                      color: on ? "var(--success-text)" : "var(--muted)",
-                      fontWeight: 700, fontSize: "var(--text-sm)",
-                      cursor: busy === key ? "default" : "pointer",
-                      opacity: busy === key ? 0.5 : 1,
-                    }}
-                  >
-                    {MODULE_LABELS[m] ?? m} {on ? "✓" : "—"}
-                  </button>
+                  <span key={m} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <button
+                      type="button"
+                      disabled={busy === key}
+                      onClick={() => void toggle(s.service_id, m, !on)}
+                      title={on ? "Kliknutím vypnout" : "Kliknutím zapnout"}
+                      style={{
+                        padding: "6px 14px", borderRadius: "var(--radius-pill)",
+                        border: `1px solid ${on ? "var(--success)" : "var(--border)"}`,
+                        background: on ? "var(--success-soft)" : "transparent",
+                        color: on ? "var(--success-text)" : "var(--muted)",
+                        fontWeight: 700, fontSize: "var(--text-sm)",
+                        cursor: busy === key ? "default" : "pointer",
+                        opacity: busy === key ? 0.5 : 1,
+                      }}
+                    >
+                      {MODULE_LABELS[m] ?? m} {on ? "✓" : "—"}
+                    </button>
+                    {/* Moduly po kusech (pobočky): kolik jich má servis zaplaceno. Prázdné = bez omezení. */}
+                    {hasQuota && on && (
+                      <label
+                        title={`Kolik ${QUOTA_UNIT[m] ?? "kusů"} smí servis mít. Prázdné = bez omezení. Právě používá ${used}.`}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--text-xs)", color: "var(--muted)" }}
+                      >
+                        max
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          value={draft}
+                          placeholder="∞"
+                          disabled={busy === key}
+                          onChange={(e) => setQuotaDraft((d) => ({ ...d, [key]: e.target.value }))}
+                          onBlur={(e) => void saveQuota(s.service_id, m, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            if (e.key === "Escape") setQuotaDraft((d) => { const c = { ...d }; delete c[key]; return c; });
+                          }}
+                          style={{
+                            width: 52, padding: "4px 6px", borderRadius: "var(--radius-2xs)",
+                            border: "1px solid var(--border)", background: "var(--panel-2)",
+                            color: "var(--text)", fontSize: "var(--text-xs)", fontWeight: 700, textAlign: "center",
+                          }}
+                        />
+                        <span style={{ fontVariantNumeric: "tabular-nums" }}>· má {used}</span>
+                      </label>
+                    )}
+                  </span>
                 );
               })}
             </div>

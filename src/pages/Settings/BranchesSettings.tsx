@@ -7,6 +7,7 @@ import { showToast } from "../../components/Toast";
 import { supabase } from "../../lib/supabaseClient";
 import { useIsNarrow } from "../../hooks/useIsNarrow";
 import { useBranches } from "../../context/BranchContext";
+import { useEntitlements } from "../../hooks/useEntitlements";
 import { deleteBranch, normalizeBranchCode, saveBranch, setBranchDefault, type Branch, type BranchInput } from "../../lib/branches";
 import { FieldLabel, TextInput } from "../../lib/settingsUi";
 
@@ -68,6 +69,10 @@ function addressLine(b: Branch): string {
 export function BranchesSettings({ activeServiceId, abbreviation }: { activeServiceId: string; abbreviation: string }) {
   const narrow = useIsNarrow();
   const { branches, unavailable, loading, reload } = useBranches();
+  // Kolik poboček má servis zaplaceno (nastavuje majitel v Owner panelu).
+  const { quota } = useEntitlements(activeServiceId);
+  const limit = quota("branches");
+  const naLimitu = limit !== null && branches.length >= limit;
   const [editing, setEditing] = useState<BranchInput | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteFor, setDeleteFor] = useState<Branch | null>(null);
@@ -156,9 +161,22 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
               vlastní název, IČO, DIČ a bankovní účet; prázdná pole se berou z údajů firmy.
             </div>
           </div>
-          <Button variant="primary" icon={<PlusIcon size={14} />} onClick={() => setEditing(emptyInput())}>
-            Přidat pobočku
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {limit !== null && (
+              <span style={{ fontSize: "var(--text-sm)", color: naLimitu ? "var(--danger-text)" : "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                {branches.length} z {limit}
+              </span>
+            )}
+            <Button
+              variant="primary"
+              icon={<PlusIcon size={14} />}
+              onClick={() => setEditing(emptyInput())}
+              disabled={naLimitu}
+              title={naLimitu ? `Servis má zaplacené pobočky v počtu ${limit}. Vyšší počet vám nastaví správce Jobi.` : undefined}
+            >
+              Přidat pobočku
+            </Button>
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>

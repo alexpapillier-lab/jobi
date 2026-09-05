@@ -51,9 +51,9 @@ import { setAppIconFromPreset } from "./lib/setAppIcon";
 import { startPersonalPreferencesSync } from "./lib/personalPreferencesSync";
 import {
   getShortcut,
-  comboMatchesEvent,
-  isInputFocused,
   formatShortcutForDisplay,
+  registerShortcut,
+  startShortcutDispatcher,
   SHORTCUT_LABELS,
   ALL_SHORTCUT_IDS,
   type ShortcutId,
@@ -792,51 +792,49 @@ export default function App() {
     };
   }, []);
 
-  // Globální klávesové zkratky: nápověda (?) a navigace (Q, S, D, C, Ctrl+ř, Ctrl+,)
-  // document i window, capture phase – v Tauri/Electron může keydown chodit jen na document
+  /**
+   * Zkratky: jeden dispečink pro celou aplikaci (viz lib/keyboardShortcuts).
+   * Stránky si obsluhy jen přihlašují, takže se dvě obrazovky nepřebíjejí
+   * podle toho, která se dřív namountovala.
+   */
   useEffect(() => {
+    if (!session) return;
+    return startShortcutDispatcher(() => shortcutsHelpOpen);
+  }, [session, shortcutsHelpOpen]);
+
+  // Navigace – nejnižší priorita, obsluhy stránek ji mohou přebít.
+  useEffect(() => {
+    if (!session) return;
+    const navMap: Array<[ShortcutId, NavKey]> = [
+      ["nav_orders", "orders"],
+      ["nav_calendar", "calendar"],
+      ["nav_inventory", "inventory"],
+      ["nav_devices", "devices"],
+      ["nav_customers", "customers"],
+      ["nav_invoices", "invoices"],
+      ["nav_statistics", "statistics"],
+      ["nav_settings", "settings"],
+    ];
+    const offs = navMap.map(([id, page]) =>
+      registerShortcut(id, () => setActivePage(page), {
+        enabled: () => page !== "invoices" || invoicesAvailable,
+      })
+    );
+    offs.push(registerShortcut("help", () => setShortcutsHelpOpen(true)));
+    return () => { for (const off of offs) off(); };
+  }, [session, invoicesAvailable]);
+
+  // Escape zavře nápovědu zkratek. Není to nastavitelná zkratka, proto zvlášť.
+  useEffect(() => {
+    if (!shortcutsHelpOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!session) return;
-      if (shortcutsHelpOpen && e.key === "Escape") {
-        setShortcutsHelpOpen(false);
-        e.preventDefault();
-        return;
-      }
-      if (shortcutsHelpOpen) return;
-      if (document.body.dataset.jobsheetShortcutsConfig === "true") return;
-      if (isInputFocused()) return;
-      const navMap: Record<string, NavKey> = {
-        nav_orders: "orders",
-        nav_calendar: "calendar",
-        nav_inventory: "inventory",
-        nav_devices: "devices",
-        nav_customers: "customers",
-        nav_invoices: "invoices",
-        nav_statistics: "statistics",
-        nav_settings: "settings",
-      };
-      for (const [id, page] of Object.entries(navMap)) {
-        if (comboMatchesEvent(e, getShortcut(id as ShortcutId))) {
-          if (page === "invoices" && !invoicesAvailable) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setActivePage(page);
-          return;
-        }
-      }
-      if (comboMatchesEvent(e, getShortcut("help"))) {
-        e.preventDefault();
-        setShortcutsHelpOpen(true);
-        return;
-      }
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setShortcutsHelpOpen(false);
     };
     document.addEventListener("keydown", onKey, true);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [session, shortcutsHelpOpen, invoicesAvailable]);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [shortcutsHelpOpen]);
 
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {

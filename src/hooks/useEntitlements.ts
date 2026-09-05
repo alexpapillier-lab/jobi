@@ -22,11 +22,17 @@ type State = {
   loading: boolean;
 };
 
+/** Kolik kusů modulu má servis zaplaceno (dnes počet poboček). */
+type Quotas = Partial<Record<ModuleName, number>>;
+
 export function useEntitlements(activeServiceId: string | null): State & {
   has: (m: ModuleName) => boolean;
+  /** Limit počtu kusů modulu; null = bez omezení nebo modul není aktivní. */
+  quota: (m: ModuleName) => number | null;
   refresh: () => void;
 } {
   const [modules, setModules] = useState<Set<ModuleName>>(new Set());
+  const [quotas, setQuotas] = useState<Quotas>({});
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
@@ -34,6 +40,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
     if (!activeServiceId || !supabase) {
       // Nový Set je pokaždé jiná reference – viz useActiveRole.
       setModules((prev) => (prev.size === 0 ? prev : new Set()));
+      setQuotas({});
       setLoading(false);
       return;
     }
@@ -44,7 +51,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
       // Vygenerované typy Supabase tuhle tabulku zatím neznají
       // (types/supabase.ts se generuje ze schématu). Stejná obezlička
       // jako jinde v kódu; až se typy přegenerují, dá se odstranit.
-      type EntitlementRow = { module: string; active: boolean; valid_until: string | null };
+      type EntitlementRow = { module: string; active: boolean; valid_until: string | null; quota: number | null };
       const { data, error } = (await (supabase.from("service_entitlements") as never as {
         select: (c: string) => {
           eq: (a: string, b: unknown) => {
@@ -52,7 +59,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
           };
         };
       })
-        .select("module, active, valid_until")
+        .select("module, active, valid_until, quota")
         .eq("service_id", activeServiceId)
         .eq("active", true));
 
@@ -60,9 +67,15 @@ export function useEntitlements(activeServiceId: string | null): State & {
       if (error || !data) {
         // Při chybě raději nic nezpřístupnit – server by to stejně odmítl.
         setModules(new Set());
+        setQuotas({});
       } else {
         const live = data.filter((r) => !r.valid_until || r.valid_until > nowIso);
         setModules(new Set(live.map((r) => r.module as ModuleName)));
+        const q: Quotas = {};
+        for (const r of live) {
+          if (typeof r.quota === "number") q[r.module as ModuleName] = r.quota;
+        }
+        setQuotas(q);
       }
       setLoading(false);
     })();
@@ -72,7 +85,8 @@ export function useEntitlements(activeServiceId: string | null): State & {
   }, [activeServiceId, tick]);
 
   const has = useCallback((m: ModuleName) => modules.has(m), [modules]);
+  const quota = useCallback((m: ModuleName) => quotas[m] ?? null, [quotas]);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
-  return { modules, loading, has, refresh };
+  return { modules, loading, has, quota, refresh };
 }

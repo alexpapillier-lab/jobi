@@ -1,6 +1,6 @@
 import { Card } from "../../lib/settingsUi";
 import { showToast } from "../../components/Toast";
-import { type ShortcutId, isModifierOnlyKey, keyEventToCombo, setShortcut, formatShortcutForDisplay, resetShortcuts, ALL_SHORTCUT_IDS, getShortcut, DEFAULT_SHORTCUTS, SHORTCUT_LABELS, SHORTCUTS_CHANGED_EVENT } from "../../lib/keyboardShortcuts";
+import { type ShortcutId, isModifierOnlyKey, keyEventToCombo, setShortcut, formatShortcutForDisplay, resetShortcuts, ALL_SHORTCUT_IDS, getShortcut, DEFAULT_SHORTCUTS, SHORTCUT_LABELS, SHORTCUTS_CHANGED_EVENT, shortcutConflicts, shortcutIdsUsing } from "../../lib/keyboardShortcuts";
 import { useState, useEffect } from "react";
 
 export function ShortcutsSettingsSection() {
@@ -25,6 +25,18 @@ export function ShortcutsSettingsSection() {
       e.preventDefault();
       e.stopPropagation();
       const combo = keyEventToCombo(e);
+      if (combo === "Escape") {
+        setRecordingId(null);
+        return;
+      }
+      // Dvě akce na stejné klávese se navzájem přebijí a jedna „přestane
+      // fungovat“ – proto se druhé přiřazení rovnou odmítne.
+      const kolize = shortcutIdsUsing(combo, recordingId);
+      if (kolize.length > 0) {
+        setRecordingId(null);
+        showToast(`${formatShortcutForDisplay(combo)} už používá „${SHORTCUT_LABELS[kolize[0]]}“. Zvolte jinou kombinaci.`, "error");
+        return;
+      }
       setShortcut(recordingId, combo);
       setRecordingId(null);
       forceUpdate((n) => n + 1);
@@ -40,13 +52,21 @@ export function ShortcutsSettingsSection() {
     showToast("Zkratky obnoveny na výchozí", "success");
   };
 
+  const konflikty = [...shortcutConflicts().entries()];
   const border = "1px solid var(--border)";
   return (
     <Card>
       <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Klávesové zkratky</div>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-        Klikněte na zkratku a stiskněte novou kombinaci kláves. Na macOS použijte Cmd místo Ctrl.
+        Klikněte na zkratku a stiskněte novou kombinaci kláves. Na macOS použijte Cmd místo Ctrl, Escape nahrávání zruší.
+        Zkratky platí, jen když nepíšete do pole.
       </div>
+      {konflikty.length > 0 && (
+        <div style={{ marginBottom: 16, padding: "10px 12px", borderRadius: 10, background: "var(--danger-soft)", color: "var(--danger-text)", fontSize: 12, fontWeight: 600 }}>
+          Stejnou kombinaci má víc akcí, takže část z nich nefunguje:{" "}
+          {konflikty.map(([combo, ids]) => `${formatShortcutForDisplay(combo)} → ${ids.map((i) => SHORTCUT_LABELS[i]).join(", ")}`).join(" · ")}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {ALL_SHORTCUT_IDS.map((id) => {
           const isRecording = recordingId === id;

@@ -145,6 +145,8 @@ type NavItem = { key: NavKey; label: string; icon: React.ComponentType<{ size?: 
 
 const NAV_SHORTCUT_IDS: Partial<Record<NavKey, ShortcutId>> = {
   orders: "nav_orders",
+  calendar: "nav_calendar",
+  invoices: "nav_invoices",
   inventory: "nav_inventory",
   devices: "nav_devices",
   customers: "nav_customers",

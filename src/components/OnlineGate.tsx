@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
+import { supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState, msSinceSupabaseResponse } from "../lib/supabaseClient";
 
 type OnlineGateProps = {
   children: React.ReactNode;
@@ -60,7 +60,9 @@ export function OnlineGate({ children }: OnlineGateProps) {
   const CONNECTION_TIMEOUT_MS = 20_000;
   const MAX_RETRIES = 2;
   /** Kolik kontrol po sobě musí selhat, než se proužek ukáže (jedna chybějící odpověď není výpadek). */
-  const BANNER_AFTER_FAILS = 2;
+  const BANNER_AFTER_FAILS = 3;
+  /** Když Supabase odpověděl na běžný dotaz aplikace v posledních 90 s, je online – ping se vůbec nepouští. */
+  const RECENT_TRAFFIC_MS = 90_000;
 
   const checkConnection = useCallback(async () => {
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -69,6 +71,17 @@ export function OnlineGate({ children }: OnlineGateProps) {
       setIsChecking(false);
       return;
     }
+    // Aplikace právě normálně komunikuje – kontrolní ping je zbytečný a jen
+    // vyrábí falešné poplachy, když se v Tauri zasekne jedno spojení.
+    if (msSinceSupabaseResponse() < RECENT_TRAFFIC_MS) {
+      everOnlineRef.current = true;
+      failStreakRef.current = 0;
+      setIsOnline(true);
+      setError(null);
+      setIsChecking(false);
+      return;
+    }
+
     // Prohlížeč / systém hlásí offline – nemá smysl čekat na timeout.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       failStreakRef.current += 1;
@@ -110,6 +123,14 @@ export function OnlineGate({ children }: OnlineGateProps) {
             continue;
           }
           failStreakRef.current += 1;
+          // Poslední kontrola: mezitím mohl projít běžný dotaz aplikace.
+          if (msSinceSupabaseResponse() < RECENT_TRAFFIC_MS) {
+            everOnlineRef.current = true;
+            failStreakRef.current = 0;
+            setIsOnline(true);
+            setError(null);
+            return;
+          }
           if (!everOnlineRef.current || failStreakRef.current >= BANNER_AFTER_FAILS) {
             setError(getConnectionErrorMessage(err));
             setIsOnline(false);
@@ -124,9 +145,12 @@ export function OnlineGate({ children }: OnlineGateProps) {
   useEffect(() => {
     setIsChecking(true);
     checkConnection();
+    // Kontrola jen když je okno vidět – na pozadí se spojení uspává a
+    // probuzený ping selže, i když je všechno v pořádku.
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       checkConnection();
-    }, 30000);
+    }, 60000);
     // Návrat online / probuzení okna: nečekat na další tik.
     const onOnline = () => { resetTauriFetchState(); checkConnection(); };
     const onVisible = () => { if (document.visibilityState === "visible") checkConnection(); };

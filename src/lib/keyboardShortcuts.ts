@@ -37,7 +37,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
   nav_customers: "c",
   nav_statistics: "Ctrl+ř",
   nav_settings: "Ctrl+,",
-  orders_new: "Tab",
+  orders_new: "n",
   orders_search: "Ctrl+F",
   order_detail_edit: "e",
   order_detail_save: "Ctrl+S",
@@ -197,4 +197,135 @@ export function isInputFocused(): boolean {
   if (tag !== "input" && tag !== "textarea" && !el.isContentEditable) return false;
   if (!isElementVisible(el)) return false;
   return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// Dispečink zkratek
+//
+// Dřív si každá obrazovka registrovala vlastní posluchač na window i document
+// v capture fázi. Kdo přišel dřív, ten vyhrál, dvojí registrace spouštěla
+// akci dvakrát a dvě akce se stejnou kombinací se tiše přebíjely – zkratka
+// pak „nefungovala“, aniž by bylo poznat proč. Teď je posluchač jeden a
+// obrazovky do něj jen přihlašují obsluhy; při shodě rozhoduje priorita.
+
+export type ShortcutHandlerOptions = {
+  /** Vyšší číslo vyhrává. Stránky 10, modály 20; globální navigace 0. */
+  priority?: number;
+  /** Spustit i s fokusem v poli (typicky Ctrl+F). */
+  allowInInput?: boolean;
+  /** Dynamické vypnutí bez odregistrování (např. jen s otevřeným detailem). */
+  enabled?: () => boolean;
+};
+
+type Registered = {
+  id: ShortcutId;
+  run: (e: KeyboardEvent) => void;
+  priority: number;
+  allowInInput: boolean;
+  enabled?: () => boolean;
+  /** Pořadí registrace – při shodné prioritě vyhrává pozdější (modál nad stránkou). */
+  seq: number;
+};
+
+let seqCounter = 0;
+const registered = new Set<Registered>();
+
+/**
+ * Přihlásí obsluhu zkratky. Vrací funkci na odhlášení – volat v úklidu efektu.
+ */
+export function registerShortcut(
+  id: ShortcutId,
+  run: (e: KeyboardEvent) => void,
+  options: ShortcutHandlerOptions = {},
+): () => void {
+  const entry: Registered = {
+    id,
+    run,
+    priority: options.priority ?? 0,
+    allowInInput: options.allowInInput === true,
+    enabled: options.enabled,
+    seq: ++seqCounter,
+  };
+  registered.add(entry);
+  return () => {
+    registered.delete(entry);
+  };
+}
+
+/** Jen pro testy – zapomene všechny obsluhy. */
+export function resetShortcutHandlers(): void {
+  registered.clear();
+}
+
+/** Která obsluha by událost obsloužila. Exportováno kvůli testům. */
+export function pickHandler(e: KeyboardEvent, inputFocused: boolean): Registered | null {
+  let best: Registered | null = null;
+  for (const h of registered) {
+    if (inputFocused && !h.allowInInput) continue;
+    if (h.enabled && !h.enabled()) continue;
+    if (!comboMatchesEvent(e, getShortcut(h.id))) continue;
+    if (!best || h.priority > best.priority || (h.priority === best.priority && h.seq > best.seq)) {
+      best = h;
+    }
+  }
+  return best;
+}
+
+/** Události, které už dispečink obsloužil (posluchač visí na window i document). */
+const handled = new WeakSet<KeyboardEvent>();
+
+/**
+ * Spustí jediný posluchač zkratek. Vrací funkci na úklid.
+ *
+ * `isBlocked` vypne zkratky dočasně – když je otevřená nápověda nebo když se
+ * na stránce Klávesové zkratky zrovna nahrává nová kombinace.
+ */
+export function startShortcutDispatcher(isBlocked?: () => boolean): () => void {
+  const onKey = (e: KeyboardEvent) => {
+    if (handled.has(e)) return;
+    if (typeof e.key !== "string") return;
+    if (isBlocked?.()) return;
+    // Pojistka pro stránku Klávesové zkratky, která si klávesy nahrává sama.
+    if (typeof document !== "undefined" && document.body?.dataset?.jobsheetShortcutsConfig === "true") return;
+    const best = pickHandler(e, isInputFocused());
+    if (!best) return;
+    handled.add(e);
+    e.preventDefault();
+    e.stopPropagation();
+    best.run(e);
+  };
+  // window i document: v Tauri/Electron nemusí událost dojít na obojí.
+  window.addEventListener("keydown", onKey, true);
+  document.addEventListener("keydown", onKey, true);
+  return () => {
+    window.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("keydown", onKey, true);
+  };
+}
+
+/**
+ * Kombinace přiřazené víc než jedné akci. Dvě akce na stejné klávese jsou
+ * hlavní důvod, proč zkratka „přestane fungovat“ – proto to Nastavení hlásí.
+ */
+export function shortcutConflicts(): Map<string, ShortcutId[]> {
+  const byCombo = new Map<string, ShortcutId[]>();
+  for (const id of ALL_SHORTCUT_IDS) {
+    const combo = getShortcut(id).trim().toLowerCase();
+    if (!combo) continue;
+    const list = byCombo.get(combo) ?? [];
+    list.push(id);
+    byCombo.set(combo, list);
+  }
+  const out = new Map<string, ShortcutId[]>();
+  for (const [combo, ids] of byCombo) {
+    if (ids.length > 1) out.set(combo, ids);
+  }
+  return out;
+}
+
+/** Které jiné akce už tuhle kombinaci používají. */
+export function shortcutIdsUsing(combo: string, except?: ShortcutId): ShortcutId[] {
+  const needle = combo.trim().toLowerCase();
+  return ALL_SHORTCUT_IDS.filter((id) => id !== except && getShortcut(id).trim().toLowerCase() === needle);
 }
