@@ -60,13 +60,13 @@
     "tauri:build:universal:signed": "bash scripts/build-universal-signed.sh",
     "tauri:dev:check": "concurrently \"npm run tauri dev\" \"tsc --noEmit --watch\"",
     "test": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
-    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx"
   },
   "type": "module",
-  "version": "0.3.2"
+  "version": "0.4.0"
 }
