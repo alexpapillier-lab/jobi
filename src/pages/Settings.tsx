@@ -156,6 +156,8 @@ type UIConfig = {
     fabNewOrderEnabled: boolean;
     uiScale: number;
     reducedEffects?: boolean;
+    /** Řádek kroků v detailu zakázky. Pomáhá novým lidem; zkušení si ho vypnou. */
+    postupZakazky?: boolean;
   };
   sidebar: {
     position: SidebarPosition;
@@ -188,7 +190,7 @@ function defaultReducedEffects(): boolean {
 
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects() },
+    app: { fabNewOrderEnabled: true, uiScale: 1, reducedEffects: defaultReducedEffects(), postupZakazky: true },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
@@ -223,6 +225,7 @@ function safeLoadUIConfig(): UIConfig {
           typeof parsed?.app?.reducedEffects === "boolean"
             ? parsed.app.reducedEffects
             : d.app.reducedEffects,
+        postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -823,7 +826,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu"] },
+        { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu", "asistent postupu", "postup zakázky", "kroky"] },
         { key: "appearance_theme", label: "Vzhled", keywords: ["tmavý", "světlý", "barva", "motiv", "téma", "akcent", "vzhled", "logo", "ikona", "podle systému", "dark mode", "předvolby"] },
         { key: "appearance_shortcuts", label: "Klávesové zkratky", keywords: ["klávesové zkratky", "zkratky", "klávesnice", "hotkey"] },
         { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul"] },
@@ -1788,6 +1791,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     type="checkbox"
                     checked={uiCfg.app.fabNewOrderEnabled}
                     onChange={(e) => updateUi({ ...uiCfg, app: { ...uiCfg.app, fabNewOrderEnabled: e.target.checked } }, hintFab)}
+                  />
+                }
+              />
+              <SettingRow
+                clickable
+                label="Asistent postupu v detailu zakázky"
+                description="Řádek kroků od přijetí po předání s tlačítkem na další krok. Hodí se, když se s aplikací seznamujete; až postup znáte, vypněte ho a detail bude kratší."
+                control={
+                  <input
+                    type="checkbox"
+                    checked={uiCfg.app.postupZakazky !== false}
+                    onChange={(e) => updateUi({ ...uiCfg, app: { ...uiCfg.app, postupZakazky: e.target.checked } }, hintFab)}
                   />
                 }
               />

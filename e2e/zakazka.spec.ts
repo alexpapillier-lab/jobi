@@ -36,8 +36,27 @@ test("zakázka je v seznamu i po novém přihlášení", async ({ page }) => {
   await expect(page.getByText(zakaznik).first()).toBeVisible({ timeout: 30_000 });
 });
 
+/** Zapne asistenta postupu. Předvolba se ukládá na server k účtu, takže
+ *  po spadlém běhu by zůstal vypnutý i pro další běhy testů. */
+async function zapniAsistenta(page: import("@playwright/test").Page) {
+  try {
+    await page.evaluate(() => {
+      const klic = "jobsheet_ui_settings_v1";
+      const raw = localStorage.getItem(klic);
+      const cfg = raw ? JSON.parse(raw) : {};
+      cfg.app = { ...(cfg.app ?? {}), postupZakazky: true };
+      localStorage.setItem(klic, JSON.stringify(cfg));
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    });
+    await page.waitForTimeout(1500);
+  } catch {
+    /* stránka už je zavřená (timeout testu) – napraví to další běh */
+  }
+}
+
 test("v detailu jde přidat provedenou opravu a asistent postupu se posune", async ({ page }) => {
   await prihlasSe(page);
+  await zapniAsistenta(page);
   await page.getByText(zakaznik).first().click();
 
   // Nová zakázka bez oprav: asistent nabízí jako další krok opravy.
@@ -55,4 +74,38 @@ test("v detailu jde přidat provedenou opravu a asistent postupu se posune", asy
   // Krok Opravy je hotový, dalším povinným krokem je dokončení.
   await expect(asistent).toHaveAttribute("aria-label", /hotovo 2 z 6/);
   await expect(asistent).toContainText("Přepněte stav v hlavičce");
+});
+
+test("asistent postupu jde skrýt křížkem a zapnout v Nastavení", async ({ page }) => {
+  // Tři přechody mezi stránkami; ve výchozí minutě se to při pomalé síti nestihne.
+  test.setTimeout(120_000);
+  await prihlasSe(page);
+  await zapniAsistenta(page);
+  await page.getByText(zakaznik).first().click();
+  const asistent = page.getByRole("group", { name: /Postup zakázky/ });
+  await expect(asistent).toBeVisible({ timeout: 20_000 });
+
+  try {
+    await asistent.getByRole("button", { name: "Skrýt asistenta postupu" }).click();
+    await expect(asistent).toBeHidden();
+
+    // Znovu zapnout: Nastavení → Aplikace → Rozhraní → Chování.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
+    const hledani = page.getByPlaceholder("Hledat v nastavení…");
+    await expect(hledani).toBeVisible({ timeout: 20_000 });
+    await hledani.fill("asistent postupu");
+    await page.getByRole("button", { name: /Rozhraní/ }).first().click();
+    await hledani.fill("");
+    const prepinac = page.getByRole("checkbox", { name: /Asistent postupu/ });
+    await expect(prepinac).not.toBeChecked({ timeout: 20_000 });
+    await prepinac.check();
+    await expect(prepinac).toBeChecked();
+    await page.waitForTimeout(1500);
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders" } })));
+    await page.getByText(zakaznik).first().click();
+    await expect(page.getByRole("group", { name: /Postup zakázky/ })).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await zapniAsistenta(page);
+  }
 });

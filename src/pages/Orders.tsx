@@ -101,7 +101,7 @@ type ClaimsSubGroup = "all" | "active" | "final";
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
 type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number };
+  app: { fabNewOrderEnabled: boolean; uiScale: number; postupZakazky?: boolean };
   sidebar: { position: "left" | "right" | "bottom" };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
   orders: { displayMode: DisplayMode; pageSize: number; customerPhoneRequired: boolean; statusGroupedOrder?: string[]; zvyrazneniStavu?: ZvyrazneniStavu };
@@ -266,7 +266,7 @@ const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-
 
 function defaultUIConfig(): UIConfig {
   return {
-    app: { fabNewOrderEnabled: true, uiScale: 1 },
+    app: { fabNewOrderEnabled: true, uiScale: 1, postupZakazky: true },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
     orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
@@ -295,6 +295,7 @@ function safeLoadUIConfig(): UIConfig {
       app: {
         fabNewOrderEnabled: typeof fab === "boolean" ? !!fab : d.app.fabNewOrderEnabled,
         uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
+        postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
       },
       sidebar: {
         position: (["left", "right", "bottom"] as const).includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -315,6 +316,23 @@ function safeLoadUIConfig(): UIConfig {
     };
   } catch {
     return defaultUIConfig();
+  }
+}
+
+/**
+ * Křížek na asistentovi postupu: vypne ho v osobních předvolbách, stejně jako
+ * přepínač v Nastavení → Rozhraní. Zapisuje se přímo do uloženého JSON, aby se
+ * nepřepsaly předvolby, které tahle stránka nečte (např. reducedEffects).
+ */
+function skrytPostupZakazky(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const next = { ...parsed, app: { ...(parsed?.app ?? {}), postupZakazky: false } };
+    localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+  } catch {
+    /* předvolby se neuložily – asistent zůstane, nic horšího se nestane */
   }
 }
 
@@ -5737,8 +5755,9 @@ export default function Orders({
           <>
             {!isEditing ? (
               <>
-                {/* Kde zakázka je a co je na řadě. Kroky se čtou z dat, nic se neukládá. */}
-                {(() => {
+                {/* Kde zakázka je a co je na řadě. Kroky se čtou z dat, nic se neukládá.
+                    Zkušený člověk si řádek skryje křížkem nebo v Nastavení → Rozhraní. */}
+                {uiCfg.app.postupZakazky !== false && (() => {
                   const t = detailedTicket;
                   const maFotky = (t.diagnosticPhotosBefore?.length ?? 0) + (t.diagnosticPhotos?.length ?? 0) > 0;
                   const maOpravy = (t.performedRepairs ?? []).some((r) => !!r.name);
@@ -5748,6 +5767,7 @@ export default function Orders({
                   return (
                     <div style={{ marginTop: 16 }}>
                       <PostupZakazky
+                        onSkryt={skrytPostupZakazky}
                         kroky={[
                           { id: "prijato", label: "Přijato", hotovo: true },
                           { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaKartu("detail-diagnostika") },

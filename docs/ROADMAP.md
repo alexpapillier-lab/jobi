@@ -176,9 +176,9 @@ Co převzít, podle přínosu:
 - `[x]` **Asistent postupu v detailu zakázky** (5. 9., `PostupZakazky.tsx`) – řádek kroků (přijato → fotky →
   opravy → nabídka → hotovo → faktura → předáno) se zvýrazněným dalším krokem
   a tlačítkem, které tam skočí. Nový člověk u pultu nemusí nic vědět.
-- `[ ]` **Jedna časová osa komunikace u zakázky** – SMS, poznámky týmu a události
-  portálu v jednom proudu, s rozlišením „vidí zákazník / jen tým". Dnes jsou
-  komentáře a SMS zvlášť.
+- ~~Jedna časová osa komunikace u zakázky~~ – **zamítnuto 5. 9.**: majitel
+  chce SMS chat se zákazníkem a interní komentáře oddělené, ať se neplete,
+  co zákazník vidí. Nevracet se k tomu.
 - `[ ]` **Zálohové faktury a dobropisy** – záloha na drahý díl je běžná; dobropis
   při reklamaci faktury.
 - `[ ]` **Hodinová práce jako položka** se sazbou a technikem (dnes jen opravy

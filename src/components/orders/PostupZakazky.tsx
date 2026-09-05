@@ -28,7 +28,11 @@ export type KrokPostupu = {
   poznamka?: string;
 };
 
-export function PostupZakazky({ kroky }: { kroky: KrokPostupu[] }) {
+export function PostupZakazky({ kroky, onSkryt }: {
+  kroky: KrokPostupu[];
+  /** Křížek vpravo: uživatel už asistenta nepotřebuje. Vypíná ho natrvalo (předvolba), ne jen pro tuhle zakázku. */
+  onSkryt?: () => void;
+}) {
   const hotovych = kroky.filter((k) => k.hotovo).length;
   const dalsi = kroky.find((k) => !k.hotovo && !k.volitelny);
   // Všechno povinné hotové: asistent už nemá co radit a jen by zabíral místo.
@@ -99,6 +103,30 @@ export function PostupZakazky({ kroky }: { kroky: KrokPostupu[] }) {
           <Button size="sm" variant="primary" onClick={dalsi.onAkce}>{dalsi.akce}</Button>
         ) : (
           <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{dalsi.poznamka ?? dalsi.label}</span>
+        )}
+        {onSkryt && (
+          <button
+            type="button"
+            onClick={onSkryt}
+            aria-label="Skrýt asistenta postupu"
+            title="Skrýt asistenta postupu (znovu zapnete v Nastavení → Rozhraní)"
+            style={{
+              marginLeft: 4,
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              border: "none",
+              background: "transparent",
+              color: "var(--muted)",
+              cursor: "pointer",
+              fontSize: 16,
+              lineHeight: 1,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            ×
+          </button>
         )}
       </div>
     </div>
