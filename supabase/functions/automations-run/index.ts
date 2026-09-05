@@ -82,6 +82,7 @@ type RunResult = "ok" | "skipped" | "error";
 type TicketRow = {
   id: string;
   service_id: string;
+  branch_id?: string | null;
   code: string | null;
   status: string;
   notes: string | null;
@@ -104,7 +105,7 @@ type TicketRow = {
 const TICKET_COLUMNS =
   "id, service_id, code, status, notes, created_at, updated_at, deleted_at, expected_completion_at, " +
   "customer_name, customer_phone, customer_email, device_label, device_brand, device_model, " +
-  "performed_repairs, discount_type, discount_value, portal_token";
+  "performed_repairs, discount_type, discount_value, portal_token, branch_id";
 
 type StatusInfo = { key: string; label: string; is_final: boolean };
 
@@ -115,6 +116,8 @@ type ServiceCtx = {
   serviceName: string;
   servicePhone: string;
   serviceEmail: string;
+  /** Kontakty poboček – telefon pobočky má v šablonách přednost před firemním. */
+  branches: Map<string, { phone: string; email: string }>;
   /** null = ještě nezjišťováno */
   smsEntitled: boolean | null;
   twilioNumber: string | null | undefined; // undefined = ještě nezjišťováno
@@ -249,11 +252,16 @@ function hoursBetween(from: Date, to: Date): number {
 // Kontext servisu
 
 async function loadServiceCtx(svc: SupabaseClient, serviceId: string): Promise<ServiceCtx> {
-  const [statusRes, settingsRes, serviceRes] = await Promise.all([
+  const [statusRes, settingsRes, serviceRes, branchesRes] = await Promise.all([
     svc.from("service_statuses").select("key, label, is_final").eq("service_id", serviceId),
     svc.from("service_settings").select("config").eq("service_id", serviceId).maybeSingle(),
     svc.from("services").select("name").eq("id", serviceId).maybeSingle(),
+    svc.from("branches").select("id, phone, email").eq("service_id", serviceId),
   ]);
+  const branches = new Map<string, { phone: string; email: string }>();
+  for (const b of (branchesRes.data ?? []) as { id: string; phone: string | null; email: string | null }[]) {
+    branches.set(b.id, { phone: strOrNull(b.phone) ?? "", email: strOrNull(b.email) ?? "" });
+  }
 
   const statuses = new Map<string, StatusInfo>();
   for (const s of (statusRes.data ?? []) as StatusInfo[]) {
@@ -271,6 +279,7 @@ async function loadServiceCtx(svc: SupabaseClient, serviceId: string): Promise<S
     serviceName: strOrNull(cd.name) ?? strOrNull(serviceRes.data?.name) ?? "",
     servicePhone: strOrNull(cd.phone) ?? "",
     serviceEmail: strOrNull(cd.email) ?? "",
+    branches,
     smsEntitled: null,
     twilioNumber: undefined,
   };
@@ -385,7 +394,7 @@ async function buildVars(
     days: String(days),
     portal_url: portalUrl,
     service_name: ctx.serviceName,
-    service_phone: ctx.servicePhone,
+    service_phone: (ticket.branch_id && ctx.branches.get(ticket.branch_id)?.phone) || ctx.servicePhone,
   };
 }
 

@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useEntitlements } from "../hooks/useEntitlements";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { useBranches } from "../context/BranchContext";
 import { STORAGE_KEYS, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import {
@@ -378,6 +379,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const { has: maModul } = useEntitlements(activeServiceId);
   /* Přepínač viditelnosti dává smysl jen když servis sklad ven vůbec posílá. */
   const ukazatViditelnost = maModul("api_inventory");
+  // Pobočka z lišty: v Produktech se ukazují jen sklady té pobočky; ve Správě skladu jde sklad pobočce přiřadit.
+  const { activeBranchId, isMulti: hasBranches, branches, branchById } = useBranches();
   const canAdjustInventoryQuantity = hasCapability("can_adjust_inventory_quantity");
 
   const [data, setData] = useState<InventoryData>(EMPTY_INVENTORY);
@@ -1497,6 +1500,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     };
   }, [produktyPredZasobou]);
 
+  const skladyPobocky = useMemo(
+    () => (activeBranchId ? data.warehouses.filter((w) => !w.branchId || w.branchId === activeBranchId) : data.warehouses),
+    [data.warehouses, activeBranchId],
+  );
   const filteredProducts = useMemo(
     () => produktyPredZasobou.filter(PODMINKA_ZASOBY[productStockFilter]),
     [produktyPredZasobou, productStockFilter],
@@ -2170,16 +2177,16 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                   style={{ paddingLeft: "calc(var(--space-3) + 22px)" }}
                 />
               </div>
-              {data.warehouses.length > 1 && data.warehouses.length <= 4 && (
+              {skladyPobocky.length > 1 && skladyPobocky.length <= 4 && (
                 <Segmented
                   size="sm"
                   ariaLabel="Který sklad ukazovat"
                   value={warehouseFilter}
-                  options={[{ value: "all", label: "Všechny sklady" }, ...data.warehouses.map((w) => ({ value: w.id, label: w.name }))]}
+                  options={[{ value: "all", label: "Všechny sklady" }, ...skladyPobocky.map((w) => ({ value: w.id, label: w.name }))]}
                   onChange={setWarehouseFilter}
                 />
               )}
-              {data.warehouses.length > 4 && (
+              {skladyPobocky.length > 4 && (
                 <select
                   className="ui-input"
                   aria-label="Který sklad ukazovat"
@@ -2188,7 +2195,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                   style={{ width: "auto", padding: "6px var(--space-3)", fontSize: "var(--text-sm)" }}
                 >
                   <option value="all">Všechny sklady</option>
-                  {data.warehouses.map((w) => (
+                  {skladyPobocky.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>
@@ -2579,7 +2586,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               </div>
                               <StockCell
                                 product={p}
-                                warehouses={data.warehouses}
+                                warehouses={skladyPobocky}
                                 filterId={warehouseFilter}
                                 onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
                               />
@@ -2674,7 +2681,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                               <div style={{ marginTop: 6 }}>
                                 <StockCell
                                   product={p}
-                                  warehouses={data.warehouses}
+                                  warehouses={skladyPobocky}
                                   filterId={warehouseFilter}
                                   dense={productDisplayMode === "compact"}
                                   onAdjust={(wid, delta) => adjustStock(p.id, wid, delta)}
@@ -2883,8 +2890,24 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                             </div>
                             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                               {kusy} ks{ukazatViditelnost ? (w.publicVisible ? " · ve veřejné dostupnosti" : " · mimo veřejnou dostupnost") : ""}
+                              {hasBranches && w.branchId && branchById(w.branchId) ? ` · ${branchById(w.branchId)!.name}` : ""}
                             </div>
                           </div>
+                          {hasBranches && (
+                            <select
+                              className="ui-input"
+                              aria-label="Pobočka skladu"
+                              title="Ke které pobočce sklad patří"
+                              value={w.branchId ?? ""}
+                              onChange={(e) => updateWarehouse(w.id, { branchId: e.target.value || null })}
+                              style={{ width: "auto", padding: "4px 8px", fontSize: 11 }}
+                            >
+                              <option value="">Bez pobočky</option>
+                              {branches.map((b) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
+                            </select>
+                          )}
                           {!w.isDefault && (
                             <Button
                               variant="ghost"

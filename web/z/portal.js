@@ -74,6 +74,7 @@
     mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 7L2 7"/></svg>',
     pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   };
   function icon(name) { return h('span', { class: 'ico', html: ICON[name] || '' }); }
 
@@ -238,11 +239,16 @@
   /* ===================== Hlavička a patička ===================== */
 
   function renderHeader(service) {
-    el.svcName.textContent = service.name || 'Servis';
-    el.topbarName.textContent = service.name || 'Servis';
+    // Pobočka zakázky (když servis má víc míst) se ukáže za názvem servisu.
+    const fullName = service.name ? (service.branch ? service.name + ' · ' + service.branch : service.name) : 'Servis';
+    el.svcName.textContent = fullName;
+    el.topbarName.textContent = fullName;
     document.title = (service.name ? service.name + ' – ' : '') + 'Stav zakázky';
 
     clear(el.svcContacts);
+    if (service.openingHours) {
+      el.svcContacts.appendChild(h('span', { class: 'contact' }, [icon('clock'), h('span', { text: service.openingHours })]));
+    }
     if (service.phone) {
       el.svcContacts.appendChild(h('a', { class: 'contact', href: telHref(service.phone) }, [icon('phone'), h('span', { text: service.phone })]));
       el.topbarPhone.href = telHref(service.phone);

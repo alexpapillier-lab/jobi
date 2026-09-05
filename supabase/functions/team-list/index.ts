@@ -72,7 +72,7 @@ serve(async (req) => {
     const rootOwnerId = Deno.env.get("ROOT_OWNER_ID")?.trim() || null;
     const isRootOwner = !!rootOwnerId && userId.toLowerCase() === rootOwnerId.toLowerCase();
 
-    let memberships: { user_id: string; service_id: string; role: string; created_at: string; capabilities: unknown }[] | null = null;
+    let memberships: { user_id: string; service_id: string; role: string; created_at: string; capabilities: unknown; home_branch_id?: string | null }[] | null = null;
     let membersError: { message: string } | null = null;
 
     if (isRootOwner) {
@@ -81,7 +81,7 @@ serve(async (req) => {
       const adminClient = createClient(supabaseUrl, serviceKey);
       const res = await adminClient
         .from("service_memberships")
-        .select("user_id, service_id, role, created_at, capabilities")
+        .select("user_id, service_id, role, created_at, capabilities, home_branch_id")
         .eq("service_id", serviceId)
         .order("created_at", { ascending: true });
       memberships = res.data;
@@ -111,7 +111,7 @@ serve(async (req) => {
 
       const res = await supabase
         .from("service_memberships")
-        .select("user_id, service_id, role, created_at, capabilities")
+        .select("user_id, service_id, role, created_at, capabilities, home_branch_id")
         .eq("service_id", serviceId)
         .order("created_at", { ascending: true });
       memberships = res.data;

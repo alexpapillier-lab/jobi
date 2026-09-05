@@ -9,6 +9,7 @@ import { useStatuses } from "../state/StatusesStore";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import type { WarrantyClaimRow } from "./Orders/hooks/useWarrantyClaims";
+import { useBranches, filterByBranch } from "../context/BranchContext";
 import { Agenda } from "./Calendar/Agenda";
 import { Timeline } from "./Calendar/Timeline";
 import {
@@ -58,8 +59,14 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim }:
     [statusKeysSet, fallbackKey, statusesLoading, statuses.length]
   );
 
-  const [tickets, setTickets] = useState<TicketEx[]>([]);
-  const [claims, setClaims] = useState<WarrantyClaimRow[]>([]);
+  const [allTickets, setTickets] = useState<TicketEx[]>([]);
+  const [allClaims, setClaims] = useState<WarrantyClaimRow[]>([]);
+  const { activeBranchId } = useBranches();
+  const tickets = useMemo(() => filterByBranch(allTickets, activeBranchId), [allTickets, activeBranchId]);
+  const claims = useMemo(
+    () => (activeBranchId ? allClaims.filter((c) => !(c as any).branch_id || (c as any).branch_id === activeBranchId) : allClaims),
+    [allClaims, activeBranchId],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

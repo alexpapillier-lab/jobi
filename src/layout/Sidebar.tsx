@@ -11,6 +11,7 @@ import { devLog } from "../lib/devLog";
 import { assetUrl } from "../lib/assetUrl";
 import { JobiDocsStatus } from "../components/JobiDocsStatus";
 import { isDesktop } from "../lib/platform";
+import { useBranches } from "../context/BranchContext";
 import { getShortcut, formatShortcutForDisplay, SHORTCUTS_CHANGED_EVENT, type ShortcutId } from "../lib/keyboardShortcuts";
 
 export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "settings";
@@ -270,6 +271,18 @@ export function Sidebar({
     | null
   >(null);
 
+  /* Pobočky: přepínač pod servisem, jen když jich servis má víc. */
+  const branchCtx = useBranches();
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchMenuPosition, setBranchMenuPosition] = useState<
+    | { anchor: "top"; top: number; left: number; maxHeight: number }
+    | { anchor: "bottom"; bottom: number; left: number; maxHeight: number }
+    | null
+  >(null);
+  const branchMenuRef = useRef<HTMLDivElement>(null);
+  const branchMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const branchMenuDropdownRef = useRef<HTMLDivElement>(null);
+
   const PREFERRED_DROPDOWN_MAX = 280;
   const MIN_HEIGHT_BELOW_TO_OPEN_DOWN = 120; // otevřít nahoru jen když dole není aspoň tolik místa
   const computeServiceDropdownPosition = (rect: DOMRect) => {
@@ -359,7 +372,8 @@ export function Sidebar({
   const displayName = (userProfile?.nickname?.trim() || userEmail?.split("@")[0] || "Admin").trim() || "Admin";
   const avatarUrl = userProfile?.avatarUrl?.trim() || null;
   const roleLabel = activeService?.role ? ROLE_LABELS[activeService.role] ?? null : null;
-  const profileSubtitle = roleLabel ? `${serviceName} · ${roleLabel}` : serviceName;
+  const activeBranchName = branchCtx.isMulti ? (branchCtx.activeBranch?.name ?? "Všechny pobočky") : null;
+  const profileSubtitle = [serviceName, activeBranchName, roleLabel].filter(Boolean).join(" · ");
   const badgeCountFor = (key: NavKey): number => {
     if (key === "sms") return smsUnreadCount;
     if (key === "settings" && updateAvailable) return 1;
@@ -392,8 +406,24 @@ export function Sidebar({
   // Dokud je nabídka otevřená, lišta se nesmí sbalit – jinak se nabídka
   // zavře cestou myši k ní.
   useEffect(() => {
-    onServiceMenuOpenChange?.(serviceMenuOpen);
-  }, [serviceMenuOpen, onServiceMenuOpenChange]);
+    onServiceMenuOpenChange?.(serviceMenuOpen || branchMenuOpen);
+  }, [serviceMenuOpen, branchMenuOpen, onServiceMenuOpenChange]);
+
+  // Zavřít nabídku poboček klikem mimo.
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (branchMenuRef.current?.contains(target) || branchMenuButtonRef.current?.contains(target) || branchMenuDropdownRef.current?.contains(target)) return;
+      setBranchMenuOpen(false);
+      setBranchMenuPosition(null);
+    };
+    const timeoutId = setTimeout(() => document.addEventListener("mousedown", handleClickOutside, true), 100);
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener("mousedown", handleClickOutside, true);
+    };
+  }, [branchMenuOpen]);
 
   // Update service menu position on scroll/resize
   useEffect(() => {
@@ -1193,6 +1223,95 @@ export function Sidebar({
                     </MenuItem>
                   ))
                 )}
+              </div>,
+              document.body
+            )}
+          </div>
+        )}
+
+        {/* Výběr pobočky – jen když jich servis má víc. „Všechny“ = bez filtru. */}
+        {expanded && branchCtx.isMulti && (
+          <div ref={branchMenuRef} style={{ position: "relative", padding: "0 4px" }}>
+            <button
+              ref={branchMenuButtonRef}
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={branchMenuOpen}
+              aria-label={`Pobočka: ${activeBranchName ?? ""}`}
+              title="Pobočka – filtr zakázek, kalendáře, skladu a statistik"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (branchMenuButtonRef.current) {
+                  setBranchMenuPosition(computeServiceDropdownPosition(branchMenuButtonRef.current.getBoundingClientRect()));
+                }
+                setBranchMenuOpen((prev) => !prev);
+              }}
+              style={{
+                background: branchCtx.activeBranch ? "var(--accent-soft)" : "var(--panel-2)",
+                border: "1px solid var(--border)",
+                color: branchCtx.activeBranch ? "var(--accent)" : "var(--text)",
+                fontSize: "var(--text-xs)",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                cursor: "pointer",
+                padding: "5px 10px",
+                borderRadius: "var(--radius-xs)",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                width: "100%",
+                textAlign: "left",
+                transition: "background 0.2s",
+              }}
+            >
+              <span aria-hidden style={{ display: "flex", flexShrink: 0 }}>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              </span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{activeBranchName}</span>
+              <span style={{ color: "var(--muted)", display: "flex", flexShrink: 0 }}><ChevronDownIcon size={12} /></span>
+            </button>
+            {branchMenuOpen && branchMenuPosition && createPortal(
+              <div
+                ref={branchMenuDropdownRef}
+                role="listbox"
+                style={{
+                  position: "fixed",
+                  ...(branchMenuPosition.anchor === "top" ? { top: branchMenuPosition.top } : { bottom: branchMenuPosition.bottom }),
+                  left: branchMenuPosition.left,
+                  background: "var(--panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-md)",
+                  boxShadow: "var(--shadow)",
+                  zIndex: 10000,
+                  minWidth: 200,
+                  maxWidth: 300,
+                  maxHeight: branchMenuPosition.maxHeight,
+                  overflowX: "hidden",
+                  overflowY: "auto",
+                  pointerEvents: "auto",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {[{ id: null as string | null, name: "Všechny pobočky" }, ...branchCtx.branches.map((b) => ({ id: b.id as string | null, name: b.name }))].map((opt) => (
+                  <MenuItem
+                    layout="row"
+                    selected={opt.id === branchCtx.activeBranchId}
+                    key={opt.id ?? "all"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      branchCtx.setActiveBranchId(opt.id);
+                      setBranchMenuOpen(false);
+                      setBranchMenuPosition(null);
+                    }}
+                  >
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{opt.name}</span>
+                    {opt.id === branchCtx.activeBranchId && <span style={{ fontSize: "var(--text-sm)" }}>✓</span>}
+                  </MenuItem>
+                ))}
               </div>,
               document.body
             )}

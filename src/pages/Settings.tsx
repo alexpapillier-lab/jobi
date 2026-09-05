@@ -27,6 +27,7 @@ import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettings
 import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
 import { AutomationsSection } from "./Settings/Automations/AutomationsSection";
+import { BranchesSettings } from "./Settings/BranchesSettings";
 import { LogoPresetButton } from "./Settings/components/LogoPresetButton";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { isDesktop } from "../lib/platform";
@@ -53,7 +54,7 @@ import { useAuth } from "../auth/AuthProvider";
  */
 type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_billing" | "service_sms" | "service_team" | "service_owner" | "service_api"
+  | "service_basic" | "service_contact" | "service_billing" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
@@ -67,7 +68,7 @@ type SettingsSection = {
 
 /** Do které skupiny podsekce patří – ať hluboký odkaz nemusí znát skupinu. */
 const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
-  service_basic: "company", service_contact: "company", service_billing: "company", service_owner: "company",
+  service_basic: "company", service_contact: "company", service_billing: "company", service_branches: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders",
   orders_tisk_dokumentu: "documents",
@@ -751,6 +752,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "service_basic", label: "Údaje firmy", keywords: ["firma", "servis", "název", "ičo", "dič", "adresa", "zkratka", "jazyk", "předvolba", "základní údaje", "město", "psč"] },
         ...(canManageDocuments ? [{ key: "service_contact" as const, label: "Kontakty", keywords: ["kontakt", "telefon", "e-mail", "email", "web", "banka", "bankovní účet", "číslo účtu", "iban", "swift"] }] : []),
         { key: "service_billing", label: "Fakturace a DPH", keywords: ["dph", "faktura", "fakturace", "sazba", "plátce", "ceny s dph", "veřejné api", "adresa api", "slug"] },
+        ...(isAdmin ? [{ key: "service_branches" as const, label: "Pobočky", keywords: ["pobočka", "pobočky", "provozovna", "adresa", "sklad", "zkratka", "více míst"] }] : []),
         ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner", keywords: ["owner", "majitel", "servisy", "moduly", "licence", "vytvořit servis", "smazat servis"] }] : []),
       ],
     },
@@ -847,7 +849,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "service_branches") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -1247,6 +1249,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* KOMUNIKACE - AUTOMATIZACE */}
       {section.subsection === "communication_automations" && activeServiceId && (
         <AutomationsSection activeServiceId={activeServiceId} />
+      )}
+
+      {/* FIRMA - POBOČKY */}
+      {section.subsection === "service_branches" && activeServiceId && isAdmin && (
+        <BranchesSettings activeServiceId={activeServiceId} abbreviation={companyData.abbreviation} />
       )}
 
       {/* SERVIS - TÝM / PŘÍSTUPY */}

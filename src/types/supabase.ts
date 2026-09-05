@@ -98,6 +98,7 @@ export type Database = {
         Row: {
           id: string
           service_id: string
+          branch_id: string | null
           title: string
           status: string
           notes: string
@@ -140,6 +141,7 @@ export type Database = {
         Insert: {
           id?: string
           service_id: string
+          branch_id?: string | null
           title?: string
           status?: string
           notes?: string
@@ -227,6 +229,7 @@ export type Database = {
         Row: {
           id: string
           service_id: string
+          branch_id: string | null
           source_ticket_id: string | null
           code: string
           status: string
@@ -262,6 +265,7 @@ export type Database = {
         Insert: {
           id?: string
           service_id: string
+          branch_id?: string | null
           source_ticket_id?: string | null
           code: string
           status?: string
@@ -432,6 +436,7 @@ export type Database = {
         Row: {
           id: string
           service_id: string
+          branch_id: string | null
           customer_id: string | null
           ticket_id: string | null
           number: string
@@ -471,6 +476,7 @@ export type Database = {
         Insert: {
           id?: string
           service_id: string
+          branch_id?: string | null
           customer_id?: string | null
           ticket_id?: string | null
           number: string

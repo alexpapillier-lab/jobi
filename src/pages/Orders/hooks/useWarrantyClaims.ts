@@ -74,7 +74,9 @@ function ticketToClaimPayload(
     device_serial: ticket.serialOrImei ?? null,
     device_imei: (ticket as any).deviceImei ?? null,
     device_passcode: ticket.devicePasscode ?? null,
-  };
+    // Reklamace zůstává na pobočce původní zakázky.
+    ...(ticket.branchId ? { branch_id: ticket.branchId } : {}),
+  } as WarrantyClaimInsert;
 }
 
 export function useWarrantyClaims(activeServiceId: string | null) {

@@ -56,10 +56,11 @@ async function loadServiceSettingsForCode(
 async function makeCode(
   cloudTickets: TicketEx[],
   supabase: any,
-  activeServiceId: string | null
+  activeServiceId: string | null,
+  branchCode = ""
 ): Promise<string> {
-  // Load and normalize prefix from DB
-  const prefix = await loadServiceSettingsForCode(supabase, activeServiceId);
+  // Load and normalize prefix from DB; zkratka pobočky (jen A–Z) jde hned za zkratku servisu.
+  const prefix = (await loadServiceSettingsForCode(supabase, activeServiceId)) + branchCode.replace(/[^A-Z]/g, "").slice(0, 3);
   
   // Get year (YY)
   const year = new Date().getFullYear().toString().slice(-2);
@@ -229,6 +230,8 @@ type UseOrderActionsDeps = {
 
 type CreateTicketParams = {
   newDraft: any;
+  /** Pobočka nové zakázky (zkratka do čísla, branch_id). Bez hodnoty doplní DB výchozí pobočku. */
+  branch?: { id: string; code: string } | null;
   customerMatchDecision: "undecided" | "accepted" | "rejected";
   onSuccess: (tickets: TicketEx[]) => void;
   /** Token z draft capture (QR bez vytvoření zakázky); po vytvoření zakázky se fotky claimnou do první zakázky */
@@ -256,7 +259,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   } = deps;
 
   const createTicket = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
-    const { newDraft, customerMatchDecision, onSuccess, draftCaptureToken } = params;
+    const { newDraft, branch, customerMatchDecision, onSuccess, draftCaptureToken } = params;
 
     if (!activeServiceId || !supabase) {
       showToast("Vytváření zakázek vyžaduje přihlášení a aktivní službu", "error");
@@ -313,10 +316,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       for (let i = 0; i < devices.length; i++) {
         const dev = devices[i] as any;
         const issueShort = (dev.requestedRepair || "").trim() || "—";
-        const code = await makeCode(accumulatedTickets, supabase, activeServiceId);
+        const code = await makeCode(accumulatedTickets, supabase, activeServiceId, branch?.code ?? "");
 
         const payload = {
           service_id: activeServiceId,
+          branch_id: branch?.id ?? null,
           code,
           title: (dev.deviceLabel || "").trim() || "Nová zakázka",
           status: statusKey,

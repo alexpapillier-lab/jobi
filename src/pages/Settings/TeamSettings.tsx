@@ -11,6 +11,8 @@ import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
 import { useServiceOnlinePresence } from "../../lib/presence";
 import { CheckIcon } from "../../components/icons";
+import { useBranches } from "../../context/BranchContext";
+import { setMemberHomeBranch } from "../../lib/branches";
 
 /** Šipka rozbalovací nabídky – nahrazuje textové ▼, které se v každém systému kreslilo jinak. */
 function ChevronDownIcon() {
@@ -112,7 +114,20 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   const isRootOwner = useIsRootOwner();
   const rootOwnerId = getRootOwnerId();
   const onlineUserIds = useServiceOnlinePresence(activeServiceId, session?.user?.id ?? null);
+  const { isMulti: hasBranches, branches } = useBranches();
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  /** Domovská pobočka člena: výchozí filtr a výchozí pobočka nové zakázky. */
+  const changeHomeBranch = async (member: { user_id: string; service_id: string }, branchId: string | null) => {
+    const prev = teamMembers;
+    setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, home_branch_id: branchId } : m)));
+    const res = await setMemberHomeBranch(member.service_id, member.user_id, branchId);
+    if (res.error) {
+      setTeamMembers(prev);
+      showToast(`Pobočku se nepodařilo uložit: ${res.error}`, "error");
+    } else {
+      showToast("Domovská pobočka uložena", "success");
+    }
+  };
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -770,8 +785,23 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     {memberProfiles[member.user_id]?.nickname?.trim() && member.email && (
                       <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{member.email}</div>
                     )}
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                      {member.role === "owner" ? "Owner" : member.role === "admin" ? "Administrátor" : "Člen"}
+                    <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span>{member.role === "owner" ? "Owner" : member.role === "admin" ? "Administrátor" : "Člen"}</span>
+                      {hasBranches && (
+                        <select
+                          className="ui-input"
+                          aria-label="Domovská pobočka"
+                          title="Domovská pobočka – výchozí filtr a pobočka nových zakázek tohoto člena"
+                          value={member.home_branch_id ?? ""}
+                          onChange={(e) => void changeHomeBranch(member, e.target.value || null)}
+                          style={{ width: "auto", padding: "2px 6px", fontSize: 11 }}
+                        >
+                          <option value="">Všechny pobočky</option>
+                          {branches.map((b) => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -215,3 +215,20 @@ export function sortMarginRows(rows: MarginRow[], sort: MarginSort): MarginRow[]
   }
   return sorted;
 }
+
+/** Srovnání poboček: zakázky, příjem, náklady a marže na pobočku. */
+export function marginByBranch(tickets: TicketEx[], sources: CostSources, nameOf: (branchId: string) => string): MarginRow[] {
+  const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
+  for (const t of tickets) {
+    const key = t.branchId ?? "";
+    const m = ticketMargin(t, sources);
+    const g = groups.get(key) ?? { name: key ? nameOf(key) : "Bez pobočky", count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
+    g.count += 1;
+    g.revenue += m.revenue;
+    g.cost += m.cost;
+    g.margin += m.margin;
+    g.withCost += m.entriesWithoutCost < (t.performedRepairs?.length ?? 0) ? 1 : 0;
+    groups.set(key, g);
+  }
+  return [...groups.entries()].map(([key, g]) => finishRow({ key, ...g })).sort((a, b) => b.revenue - a.revenue);
+}

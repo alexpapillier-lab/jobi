@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { NavKey } from "./Sidebar";
+import { useBranches } from "../context/BranchContext";
 
 /**
  * Spodní navigace pro úzké obrazovky (webová verze na telefonu).
@@ -63,10 +64,16 @@ export function BottomNav({
 }: BottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const [branchesOpen, setBranchesOpen] = useState(false);
+  /* Pobočky: na telefonu není boční lišta, tak přepínač bydlí tady u servisu. */
+  const branchCtx = useBranches();
 
   // Zavřený panel si nemá pamatovat, že v něm byl rozbalený seznam servisů.
   useEffect(() => {
-    if (!moreOpen) setServicesOpen(false);
+    if (!moreOpen) {
+      setServicesOpen(false);
+      setBranchesOpen(false);
+    }
   }, [moreOpen]);
 
   const secondary: Tab[] = [
@@ -281,6 +288,45 @@ export function BottomNav({
                     {s.service_id === activeServiceId && <span style={{ flex: "0 0 auto" }}>✓</span>}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* Pobočka – jen když jich servis má víc. „Všechny“ = bez filtru. */}
+            {branchCtx.isMulti && (
+              <button
+                type="button"
+                aria-expanded={branchesOpen}
+                onClick={() => setBranchesOpen((v) => !v)}
+                style={{ ...rowStyle, background: "var(--panel-2)", cursor: "pointer" }}
+              >
+                <span style={{ color: "var(--muted)", flex: "0 0 auto" }}>Pobočka</span>
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {branchCtx.activeBranch?.name ?? "Všechny pobočky"}
+                </span>
+                <span style={{ fontSize: 10, color: "var(--muted)", flex: "0 0 auto" }}>{branchesOpen ? "▲" : "▼"}</span>
+              </button>
+            )}
+
+            {branchesOpen && branchCtx.isMulti && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {[{ id: null as string | null, name: "Všechny pobočky" }, ...branchCtx.branches.map((b) => ({ id: b.id as string | null, name: b.name }))].map((opt) => {
+                  const selected = opt.id === branchCtx.activeBranchId;
+                  return (
+                    <button
+                      key={opt.id ?? "all"}
+                      type="button"
+                      onClick={() => {
+                        branchCtx.setActiveBranchId(opt.id);
+                        setBranchesOpen(false);
+                        setMoreOpen(false);
+                      }}
+                      style={{ ...rowStyle, paddingLeft: 18, color: selected ? "var(--accent)" : "var(--text)", fontWeight: selected ? 700 : 500 }}
+                    >
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.name}</span>
+                      {selected && <span style={{ flex: "0 0 auto" }}>✓</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
 

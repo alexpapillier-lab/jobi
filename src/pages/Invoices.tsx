@@ -18,6 +18,7 @@ import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/we
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
 import { InvoiceList } from "./Invoices/InvoiceList";
+import { useBranches } from "../context/BranchContext";
 import { InvoiceEditor, type InvoiceCustomerMatch } from "./Invoices/InvoiceEditor";
 import { InvoiceDetail } from "./Invoices/InvoiceDetail";
 import {
@@ -53,6 +54,8 @@ type Props = {
     customerIco?: string;
     customerDic?: string;
     customerAddress?: string;
+    /** Pobočka zakázky – faktura zůstane na stejné pobočce. */
+    branchId?: string | null;
     items?: InvoiceLineItem[];
   } | null;
   onPrefillConsumed?: () => void;
@@ -88,6 +91,7 @@ function snapshot(inv: Partial<Invoice>, items: EditorLineItem[]): string {
  */
 export default function Invoices({ activeServiceId, prefillFromTicket, onPrefillConsumed, openInvoiceId, onOpenInvoiceIdConsumed, onOpenTicket }: Props) {
   const dph = useServiceVat(activeServiceId);
+  const { activeBranchId, branchForNew } = useBranches();
   /** Sazba pro nové položky – neplátce DPH má 0. */
   const sazbaNoveVPolozky = sazbaProNovouPolozku(dph);
   const { session } = useAuth();
@@ -204,6 +208,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         customer_address: prefill?.customerAddress || "",
         ticket_id: prefill?.ticketId || null,
         customer_id: prefill?.customerId || null,
+        branch_id: prefill?.branchId ?? branchForNew?.id ?? null,
       };
       const items: EditorLineItem[] = prefill?.items?.length ? prefill.items.map((i) => ({ ...i })) : [emptyLineItem(sazbaNoveVPolozky)];
       setEditorInvoice(inv);
@@ -892,7 +897,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   return (
     <>
       <InvoiceList
-        invoices={invoices}
+        invoices={activeBranchId ? invoices.filter((i) => !i.branch_id || i.branch_id === activeBranchId) : invoices}
         loading={loading}
         filter={filter}
         onFilterChange={setFilter}

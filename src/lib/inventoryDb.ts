@@ -20,6 +20,8 @@ export type Warehouse = {
   isDefault: boolean;
   /** Počítat do dostupnosti ve veřejném ceníku a API? */
   publicVisible: boolean;
+  /** Pobočka, ke které sklad patří (null = bez pobočky / starší záznam). */
+  branchId?: string | null;
   createdAt: string;
 };
 
@@ -151,6 +153,7 @@ function mapWarehouseRow(r: {
   name: string;
   is_default: boolean;
   public_visible: boolean;
+  branch_id?: string | null;
   created_at: string;
 }): Warehouse {
   return {
@@ -158,6 +161,7 @@ function mapWarehouseRow(r: {
     name: r.name,
     isDefault: r.is_default === true,
     publicVisible: r.public_visible !== false,
+    branchId: typeof r.branch_id === "string" ? r.branch_id : null,
     createdAt: r.created_at,
   };
 }
@@ -231,7 +235,7 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
 
   const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
   const productsRes = await vybratProdukty(supabase, serviceId);
-  const warehousesRes = await (supabase.from("inventory_warehouses") as any).select("id, name, is_default, public_visible, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
+  const warehousesRes = await (supabase.from("inventory_warehouses") as any).select("id, name, is_default, public_visible, branch_id, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
   const stockRes = await (supabase.from("inventory_stock") as any).select("product_id, warehouse_id, quantity").eq("service_id", serviceId);
 
   if (categoriesRes.error || productsRes.error || warehousesRes.error || stockRes.error) {
@@ -306,6 +310,8 @@ export function radekSkladu(w: Warehouse, serviceId: string, i: number) {
     name: w.name,
     is_default: w.isDefault === true,
     public_visible: w.publicVisible !== false,
+    // undefined = sloupec se při upsertu nedotkne (DB doplní výchozí pobočku u nového skladu).
+    ...(w.branchId !== undefined ? { branch_id: w.branchId } : {}),
     order_index: i,
     created_at: w.createdAt,
   };

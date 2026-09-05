@@ -46,6 +46,7 @@ import {
 import { useSmsEnabled } from "./hooks/useSmsEnabled";
 import { useEntitlements } from "./hooks/useEntitlements";
 import { useAppUpdate } from "./context/AppUpdateContext";
+import { BranchProvider } from "./context/BranchContext";
 import { setAppIconFromPreset } from "./lib/setAppIcon";
 import { startPersonalPreferencesSync } from "./lib/personalPreferencesSync";
 import {
@@ -1112,6 +1113,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     <ThemeProvider>
       <OnlineGate>
         <StatusesProvider activeServiceId={activeServiceId}>
+        <BranchProvider serviceId={activeServiceId} userId={presenceUserId}>
         <AppTourOverlay
           active={isTourActive}
           stepIndex={tourStep}
@@ -1533,6 +1535,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             )}
           </AppLayout>
           <ToastContainer />
+        </BranchProvider>
         </StatusesProvider>
       </OnlineGate>
     </ThemeProvider>

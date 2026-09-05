@@ -22,6 +22,8 @@ import { MonthlyChart, type MonthStat } from "./Statistics/MonthlyChart";
 import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
+import { useBranches, filterByBranch } from "../context/BranchContext";
+import { marginByBranch } from "./Statistics/margin";
 import {
   EMPTY_COST_SOURCES,
   marginByDevice,
@@ -392,19 +394,22 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const compareActive = compareWithPrevious && compareAvailable;
 
   // Zakázky ve vybraném období
+  // Pobočka z lišty: filtr zakázek; při „Všechny pobočky“ přibude srovnání poboček.
+  const { activeBranchId, isMulti: hasBranches, branches } = useBranches();
+  const branchTickets = useMemo(() => filterByBranch(allTickets, activeBranchId), [allTickets, activeBranchId]);
   const tickets = useMemo(() => {
     const range = periodRange(periodType, customStartDate, customEndDate, new Date());
-    if (!range) return allTickets;
-    return allTickets.filter((t) => inRange(t, range));
-  }, [allTickets, periodType, customStartDate, customEndDate]);
+    if (!range) return branchTickets;
+    return branchTickets.filter((t) => inRange(t, range));
+  }, [branchTickets, periodType, customStartDate, customEndDate]);
 
   // Zakázky v předchozím období (jen pro porovnání)
   const previousPeriodTickets = useMemo(() => {
     if (!compareActive) return [];
     const range = previousPeriodRange(periodType, new Date());
     if (!range) return [];
-    return allTickets.filter((t) => inRange(t, range));
-  }, [allTickets, periodType, compareActive]);
+    return branchTickets.filter((t) => inRange(t, range));
+  }, [branchTickets, periodType, compareActive]);
 
   // Drill-down: kliknutím na stav / měsíc / opravu / zařízení
   const filteredTickets = useMemo(
@@ -454,6 +459,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
 
   const marginRepairRows = useMemo(() => marginByRepair(facetTickets("repair"), costSources), [facetTickets, costSources]);
   const marginDeviceRows = useMemo(() => marginByDevice(facetTickets("device"), costSources), [facetTickets, costSources]);
+  const branchNames = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
+  const marginBranchRows = useMemo(
+    () => (hasBranches && !activeBranchId ? marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky") : []),
+    [hasBranches, activeBranchId, filteredTickets, costSources, branchNames],
+  );
 
   const monthlyStats = useMemo<MonthStat[]>(() => {
     const list = facetTickets("month");
@@ -613,6 +623,20 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
 
   const marginSection = (
     <>
+      {hasBranches && !activeBranchId && (
+        <Card style={{ padding: "var(--pad-24)" }}>
+          <SectionHeading icon={<StatusIcon size={18} />}>Pobočky vedle sebe</SectionHeading>
+          <MarginList
+            rows={marginBranchRows}
+            limit={20}
+            countLabel="Zakázek"
+            selected={null}
+            onSelect={() => {}}
+            emptyText="Ve vybraném období nejsou žádné zakázky."
+            titlePrefix="Pobočka"
+          />
+        </Card>
+      )}
       <Card style={{ padding: "var(--pad-24)" }}>
         <SectionHeading icon={<WrenchIcon size={18} />}>Marže podle oprav</SectionHeading>
         <MarginList

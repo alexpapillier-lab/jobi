@@ -62,6 +62,7 @@ function prekrocenLimit(token: string): boolean {
 type TicketRow = {
   id: string;
   service_id: string;
+  branch_id?: string | null;
   code: string | null;
   status: string;
   notes: string | null;
@@ -92,7 +93,7 @@ const TICKET_COLUMNS =
   "device_label, device_brand, device_model, estimated_price, performed_repairs, " +
   "diagnostic_photos, diagnostic_photos_before, discount_type, discount_value, " +
   "handoff_method, handback_method, quote_amount, quote_note, quote_status, " +
-  "quote_sent_at, quote_decided_at, intake_signature_url, intake_signed_at";
+  "quote_sent_at, quote_decided_at, intake_signature_url, intake_signed_at, branch_id";
 
 type Repair = { name: string; price: number };
 
@@ -170,7 +171,7 @@ async function loadTicket(svc: SupabaseClient, token: string): Promise<TicketRow
 // Sestavení odpovědi pro zákazníka
 
 async function buildPayload(svc: SupabaseClient, t: TicketRow) {
-  const [statusRes, settingsRes, serviceRes] = await Promise.all([
+  const [statusRes, settingsRes, serviceRes, branchRes] = await Promise.all([
     svc
       .from("service_statuses")
       .select("key, label, bg, fg, is_final")
@@ -179,7 +180,15 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
       .maybeSingle(),
     svc.from("service_settings").select("config").eq("service_id", t.service_id).maybeSingle(),
     svc.from("services").select("name").eq("id", t.service_id).maybeSingle(),
+    // Pobočka zakázky: její adresa, telefon a e-mail mají v portálu přednost před firemními.
+    t.branch_id
+      ? svc.from("branches").select("name, phone, email, address_street, address_city, address_zip, opening_hours, is_default").eq("id", t.branch_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  const branch = (branchRes?.data ?? null) as
+    | { name: string; phone: string | null; email: string | null; address_street: string | null; address_city: string | null; address_zip: string | null; opening_hours: string | null; is_default: boolean }
+    | null;
+  const branchHasAddress = !!(branch && (strOrNull(branch.address_street) || strOrNull(branch.address_city) || strOrNull(branch.address_zip)));
 
   const st = statusRes.data as { key: string; label: string; bg: string | null; fg: string | null; is_final: boolean } | null;
   // Zákazníkovi jde jen „uzavřeno / neuzavřeno“; interní název a barva
@@ -196,12 +205,15 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
 
   const service = {
     name: serviceName,
-    phone: strOrNull(cd.phone),
-    email: strOrNull(cd.email),
+    // Název pobočky jen u vedlejších poboček – u výchozí („Hlavní pobočka“) by za názvem servisu jen překážel.
+    branch: branch && !branch.is_default ? strOrNull(branch.name) : null,
+    openingHours: branch ? strOrNull(branch.opening_hours) : null,
+    phone: (branch && strOrNull(branch.phone)) ?? strOrNull(cd.phone),
+    email: (branch && strOrNull(branch.email)) ?? strOrNull(cd.email),
     website: strOrNull(cd.website),
-    addressStreet: strOrNull(cd.addressStreet),
-    addressCity: strOrNull(cd.addressCity),
-    addressZip: strOrNull(cd.addressZip),
+    addressStreet: branchHasAddress ? strOrNull(branch!.address_street) : strOrNull(cd.addressStreet),
+    addressCity: branchHasAddress ? strOrNull(branch!.address_city) : strOrNull(cd.addressCity),
+    addressZip: branchHasAddress ? strOrNull(branch!.address_zip) : strOrNull(cd.addressZip),
     bankAccount: strOrNull(cd.bankAccount),
     iban: strOrNull(cd.iban),
   };

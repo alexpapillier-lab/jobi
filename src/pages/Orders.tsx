@@ -40,6 +40,9 @@ import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon
 import { type PerformedRepair } from "../components/orders/types";
 import { PortalCard } from "../components/orders/PortalCard";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
+import { useBranches, filterByBranch } from "../context/BranchContext";
+import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
+import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import {
   type DevicesData,
@@ -133,6 +136,7 @@ type OrdersProps = {
     customerIco?: string;
     customerDic?: string;
     customerAddress?: string;
+    branchId?: string | null;
     items?: { name: string; qty: number; unit: string; unit_price: number; vat_rate: number }[];
   }) => void;
   /** When ticket already has an invoice, open that invoice (navigate to Faktury and open editor). */
@@ -212,6 +216,8 @@ export type TicketEx = Ticket & {
   
   expectedDoneAt?: string; // předpokládané dokončení (ISO)
   version?: number; // optimistic locking version
+  /** Pobočka, kde zakázka leží (null = bez pobočky / starší záznam). */
+  branchId?: string | null;
 } & PortalTicketFields; // zákaznický portál: portalToken, quoteAmount, quoteNote, quoteStatus, quoteSentAt, quoteDecidedAt, quoteDecisionMeta, intakeSignatureUrl, intakeSignedAt, portalLastOpenedAt
 
 type DeviceRow = {
@@ -247,6 +253,8 @@ type NewOrderDraft = {
   devices: DeviceRow[];
 
   diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
+  /** Pobočka nové zakázky; bez hodnoty se použije aktivní / domovská / výchozí. */
+  branchId?: string | null;
 };
 
 // ========================
@@ -576,6 +584,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     discountType: supabaseTicket.discount_type ?? null,
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
+    branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
     // Portálové sloupce: v hlavních selectech nejsou (migrace může chybět), přijdou z realtime nebo z PortalCard.
     ...mapPortalTicketFields(supabaseTicket),
   };
@@ -593,7 +602,9 @@ type DocMode = "print" | "export";
 function ticketDocData(ticket: TicketEx, docType: DocTypeForPrint): DocumentData {
   const t = ticket as TicketEx & { completed_at?: string | null };
   const completedAt = t.completed_at ?? (docType === "zarucni_list" ? new Date().toISOString() : undefined);
-  return ticketDocumentData(ticket, safeLoadCompanyData(), { completedAt });
+  // Adresa, telefon a e-mail pobočky mají na dokumentu přednost před firemními.
+  const branch = getCachedBranch((ticket as any).service_id, ticket.branchId);
+  return ticketDocumentData(ticket, companyDataForBranch(safeLoadCompanyData(), branch), { completedAt });
 }
 
 async function runWebDocument(mode: DocMode, docType: WebPrintDocType, sid: string, data: DocumentData) {
@@ -915,7 +926,7 @@ export default function Orders({
         const { data, error } = await fetchAllPages((from, to) =>
           (supabase!
             .from("tickets") as any)
-            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
             .eq("service_id", activeServiceId)
             .is("deleted_at", null)
             .order("created_at", { ascending: false })
@@ -1296,9 +1307,9 @@ export default function Orders({
   }, [activeServiceId, isEditing, detailId]);
 
   // Cloud mode only: show only cloud tickets
-  const tickets = useMemo(() => {
-      return cloudTickets;
-  }, [cloudTickets]);
+  const { activeBranchId, isMulti: hasBranches, branches, branchById, branchForNew } = useBranches();
+  const [moveBranchOpen, setMoveBranchOpen] = useState(false);
+  const tickets = useMemo(() => filterByBranch(cloudTickets, activeBranchId), [cloudTickets, activeBranchId]);
 
   const [activeGroup, setActiveGroup] = useState<GroupKey>("active");
   const [activeStatusKey, setActiveStatusKey] = useState<string | null>(null);
@@ -2181,11 +2192,16 @@ export default function Orders({
     );
   }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
+  /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
+  const claimsInBranch = useMemo(
+    () => (activeBranchId ? cloudClaims.filter((c) => !(c as any).branch_id || (c as any).branch_id === activeBranchId) : cloudClaims),
+    [cloudClaims, activeBranchId],
+  );
   const filteredClaims = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = !q
-      ? cloudClaims
-      : cloudClaims.filter(
+      ? claimsInBranch
+      : claimsInBranch.filter(
           (c) =>
             (c.code?.toLowerCase().includes(q)) ||
             (c.customer_name?.toLowerCase().includes(q)) ||
@@ -2198,7 +2214,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     );
-  }, [cloudClaims, query]);
+  }, [claimsInBranch, query]);
 
   const filteredClaimsForTab = useMemo(() => {
     if (activeGroup !== "reklamace") return filteredClaims;
@@ -2242,15 +2258,15 @@ export default function Orders({
       else final += 1;
     }
     if (ordersShowClaimsInList) {
-      for (const c of cloudClaims) {
+      for (const c of claimsInBranch) {
         const st = normalizeStatus((c.status as string) ?? "");
         all += 1;
         if (st === null || !isFinal(st)) active += 1;
         else final += 1;
       }
     }
-    return { all, active, final, reklamace: cloudClaims.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, cloudClaims]);
+    return { all, active, final, reklamace: claimsInBranch.length };
+  }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, claimsInBranch]);
 
   const groupLabel = (label: string, count: number) => (
     <>
@@ -3249,8 +3265,10 @@ export default function Orders({
       return;
     }
 
+    const chosenBranch = branchById(newDraft.branchId) ?? branchForNew;
     createTicketAction({
       newDraft,
+      branch: chosenBranch ? { id: chosenBranch.id, code: chosenBranch.code } : null,
       customerMatchDecision,
       draftCaptureToken: draftCaptureTokenRef.current ?? undefined,
       onSuccess: async (tickets) => {
@@ -4048,6 +4066,20 @@ export default function Orders({
               </div>
             )}
           </div>
+          {hasBranches && (
+            <select
+              className="ui-input"
+              aria-label="Pobočka nové zakázky"
+              title="Pobočka – určí zkratku v čísle zakázky a údaje na dokumentech"
+              value={newDraft.branchId ?? branchForNew?.id ?? ""}
+              onChange={(e) => setNewDraft((p) => ({ ...p, branchId: e.target.value || null }))}
+              style={{ width: "auto", maxWidth: 200, padding: "6px 10px", fontSize: 12, fontWeight: 600 }}
+            >
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          )}
           <Button variant="soft" iconOnly icon={<XIcon size={16} />} aria-label="Zavřít" title="Zavřít (rozpracované údaje zůstanou uložené)" onClick={closeNewOrder} />
         </div>
 
@@ -4935,6 +4967,20 @@ export default function Orders({
               {!detailedClaim && ticketViewers.length > 0 && (
                 <span style={{ marginLeft: 4, display: "inline-flex" }}><PresenceAvatars viewers={ticketViewers} /></span>
               )}
+              {!detailedClaim && detailedTicket && hasBranches && (() => {
+                const b = branchById(detailedTicket.branchId);
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMoveBranchOpen(true); }}
+                    title="Pobočka zakázky – kliknutím přesunout"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--muted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    <PinIcon size={11} />
+                    {b?.name ?? "Bez pobočky"}
+                  </button>
+                );
+              })()}
             </div>
             <div style={{ color: "var(--muted)", marginTop: 4 }}>
               {detailedClaim ? (
@@ -5135,6 +5181,7 @@ export default function Orders({
                           customerPhone: t.customerPhone || undefined,
                           customerIco: t.customerIco || undefined,
                           customerAddress: [t.customerAddressStreet, t.customerAddressCity, t.customerAddressZip].filter(Boolean).join(", ") || undefined,
+                          branchId: t.branchId ?? null,
                           items: repairs.length > 0 ? repairs.map((r) => ({
                             name: r.name,
                             qty: 1,
@@ -5158,6 +5205,7 @@ export default function Orders({
                     ariaLabel="Další akce"
                     items={[
                       { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setTicketHistoryModalOpen(true) },
+                      ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
                       {
                         label: "Smazat zakázku",
                         icon: <TrashIcon size={14} />,
@@ -7130,6 +7178,26 @@ export default function Orders({
       )}
 
       {/* Claim history modal */}
+      <BranchPickerDialog
+        open={moveBranchOpen && !!detailedTicket}
+        branches={branches}
+        currentId={detailedTicket?.branchId ?? null}
+        onClose={() => setMoveBranchOpen(false)}
+        onSelect={(b: Branch) => {
+          const t = detailedTicket;
+          if (!t) return;
+          const prev = t.branchId ?? null;
+          setCloudTickets((list) => list.map((x) => (x.id === t.id ? { ...x, branchId: b.id } : x)));
+          void setTicketBranch(t.id, b.id).then((res) => {
+            if (res.error) {
+              setCloudTickets((list) => list.map((x) => (x.id === t.id ? { ...x, branchId: prev } : x)));
+              showToast(`Přesun se nepodařil: ${res.error}`, "error");
+            } else {
+              showToast(`Zakázka přesunuta na pobočku ${b.name}`, "success");
+            }
+          });
+        }}
+      />
       {claimHistoryModalOpen && createPortal(
         <div
           role="dialog"

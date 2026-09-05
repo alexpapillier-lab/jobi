@@ -21,9 +21,12 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 4. `[x]` **Díly od dodavatele až po marži** (nasazeno 5. 9.: dodavatelé, objednávky, minimum, rezervace ze zakázky, marže ve Statistikách) – objednávky dílů u dodavatelů,
    rezervace dílu na zakázku, doobjednání pod minimem, marže na opravu
    a na technika. Sklad a vazba díl↔oprava existují, chybí nákupní strana.
-5. `[ ]` **Více poboček a lidé** – pobočky s vlastními sklady a číselnou
-   řadou, role, čas na opravě, vytížení techniků v Kalendáři, KPI
-   (počet, marže, reklamovanost).
+5. `[~]` **Více poboček a lidé** (pobočky nasazeny 5. 9.: tabulka `branches`,
+   výchozí pobočka na servis, zkratka v čísle zakázky, adresa a telefon
+   pobočky na dokumentech a v portálu, filtr v Zakázkách / Kalendáři /
+   Skladu / Statistikách / Fakturách, domovská pobočka člena, srovnání
+   poboček ve Statistikách; chybí: omezení přístupu jen na pobočku, čas na
+   opravě, vytížení techniků v Kalendáři, KPI techniků).
 6. `[ ]` **Online rezervace** termínu s výběrem opravy z ceníku a předběžnou
    cenou, vložitelná na web servisu (veřejný ceník přes API už je).
 7. `[ ]` **Účetnictví a pokladna** – export Pohoda / Money / iDoklad /
