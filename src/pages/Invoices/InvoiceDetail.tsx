@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/ui";
+import { PROVIDER_LABELS, type IntegrationProvider } from "../../lib/integrations";
 import { CheckIcon, EditIcon, LinkIcon, MailIcon, TrashIcon, XIcon } from "../../components/icons";
 import { OverflowMenu, type OverflowMenuItem } from "../../components/orders/OverflowMenu";
 import { formatCurrency } from "../../lib/invoiceMath";
@@ -43,6 +44,9 @@ export function InvoiceDetail({
   onCancelInvoice,
   onDelete,
   onOpenTicket,
+  exportProviders = [],
+  onExportTo,
+  exporting = false,
 }: {
   invoice: Invoice;
   items: InvoiceItem[];
@@ -59,6 +63,10 @@ export function InvoiceDetail({
   onCancelInvoice: () => void;
   onDelete: () => void;
   onOpenTicket?: () => void;
+  /** Zapnutá propojení (iDoklad…) – tlačítko „Odeslat do …“. */
+  exportProviders?: IntegrationProvider[];
+  onExportTo?: (provider: IntegrationProvider) => void;
+  exporting?: boolean;
 }) {
   const status = asStatus(inv.status);
   const isDraft = status === "draft";
@@ -136,6 +144,31 @@ export function InvoiceDetail({
             <Button variant="soft" icon={<MailIcon size={16} />} onClick={onSend} title={isDraft ? "Koncept lze odeslat až po vystavení" : undefined} disabled={isDraft}>
               Odeslat e-mailem
             </Button>
+            {inv.external_provider ? (
+              <a
+                href={inv.external_url ?? undefined}
+                target="_blank"
+                rel="noopener"
+                title={inv.exported_at ? `Odesláno ${formatDate(inv.exported_at)}` : undefined}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "var(--accent-soft)", color: "var(--accent)", fontSize: "var(--text-sm)", fontWeight: 600, textDecoration: "none", pointerEvents: inv.external_url ? "auto" : "none" }}
+              >
+                <CheckIcon size={14} />
+                {PROVIDER_LABELS[inv.external_provider as IntegrationProvider] ?? inv.external_provider}
+                {inv.external_number ? ` č. ${inv.external_number}` : ""}
+              </a>
+            ) : (
+              exportProviders.map((p) => (
+                <Button
+                  key={p}
+                  variant="soft"
+                  onClick={() => onExportTo?.(p)}
+                  disabled={isDraft || exporting}
+                  title={isDraft ? "Koncept lze odeslat až po vystavení" : `Vytvoří fakturu v ${PROVIDER_LABELS[p]} včetně odběratele a položek`}
+                >
+                  {exporting ? "Odesílám…" : `Odeslat do ${PROVIDER_LABELS[p]}`}
+                </Button>
+              ))
+            )}
             <OverflowMenu items={menuItems} />
           </div>
         </div>

@@ -472,6 +472,11 @@ export type Database = {
           created_at: string
           updated_at: string | null
           deleted_at: string | null
+          external_provider: string | null
+          external_id: string | null
+          external_number: string | null
+          external_url: string | null
+          exported_at: string | null
         }
         Insert: {
           id?: string
@@ -512,6 +517,11 @@ export type Database = {
           created_at?: string
           updated_at?: string | null
           deleted_at?: string | null
+          external_provider?: string | null
+          external_id?: string | null
+          external_number?: string | null
+          external_url?: string | null
+          exported_at?: string | null
         }
         Update: {
           id?: string
@@ -551,6 +561,11 @@ export type Database = {
           created_at?: string
           updated_at?: string | null
           deleted_at?: string | null
+          external_provider?: string | null
+          external_id?: string | null
+          external_number?: string | null
+          external_url?: string | null
+          exported_at?: string | null
         }
         Relationships: []
       }

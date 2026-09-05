@@ -19,6 +19,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
 import { InvoiceList } from "./Invoices/InvoiceList";
 import { useBranches } from "../context/BranchContext";
+import { exportInvoice, loadActiveProviders, type IntegrationProvider } from "../lib/integrations";
 import { InvoiceEditor, type InvoiceCustomerMatch } from "./Invoices/InvoiceEditor";
 import { InvoiceDetail } from "./Invoices/InvoiceDetail";
 import {
@@ -112,6 +113,29 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // Detail
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
+  // Propojené fakturační aplikace (iDoklad…) – jen kvůli tlačítku v detailu.
+  const [exportProviders, setExportProviders] = useState<IntegrationProvider[]>([]);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => {
+    if (!activeServiceId) { setExportProviders([]); return; }
+    let cancelled = false;
+    void loadActiveProviders(activeServiceId).then((p) => { if (!cancelled) setExportProviders(p); });
+    return () => { cancelled = true; };
+  }, [activeServiceId]);
+  const exportTo = useCallback(async (inv: Invoice, provider: IntegrationProvider) => {
+    if (!activeServiceId) return;
+    setExporting(true);
+    const res = await exportInvoice(activeServiceId, inv.id, provider);
+    setExporting(false);
+    if (!res.ok) {
+      showToast(`Odeslání do ${provider === "idoklad" ? "iDokladu" : provider} selhalo: ${res.error ?? "neznámá chyba"}`, "error");
+      return;
+    }
+    showToast(res.already ? `Faktura už v ${provider === "idoklad" ? "iDokladu" : provider} je (č. ${res.external_number ?? "?"})` : `Faktura odeslána do ${provider === "idoklad" ? "iDokladu" : provider}${res.external_number ? ` jako č. ${res.external_number}` : ""}`, "success");
+    const patch = { external_provider: provider, external_id: res.external_id ?? null, external_number: res.external_number ?? null, external_url: res.external_url ?? null, exported_at: new Date().toISOString() };
+    setDetailInvoice((d) => (d && d.id === inv.id ? { ...d, ...patch } : d));
+    loadInvoices();
+  }, [activeServiceId]);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
   const [detailEvents, setDetailEvents] = useState<InvoiceEvent[]>([]);
   const [showDetail, setShowDetail] = useState(false);
@@ -921,6 +945,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           onIssue={() => issueFromDetail(detailInvoice)}
           onMarkPaid={() => updateStatus(detailInvoice, "paid")}
           onDuplicate={() => duplicateInvoice(detailInvoice)}
+          exportProviders={exportProviders}
+          exporting={exporting}
+          onExportTo={(p) => void exportTo(detailInvoice, p)}
           onCancelInvoice={() =>
             setConfirm({
               title: "Stornovat fakturu",

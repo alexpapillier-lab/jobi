@@ -17,6 +17,7 @@ import { TeamSettings } from "./Settings/TeamSettings";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
+import { IntegrationsSettings } from "./Settings/IntegrationsSettings";
 import { ApiNastaveni } from "./Settings/ApiNastaveni";
 import { useEntitlements } from "../hooks/useEntitlements";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -1068,7 +1069,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {/* FIRMA - FAKTURACE A DPH */}
       {section.subsection === "service_billing" && (
-        <DphNastaveni activeServiceId={activeServiceId} />
+        <>
+          <DphNastaveni activeServiceId={activeServiceId} />
+          {activeServiceId && isAdmin && maModul("invoices") && <IntegrationsSettings activeServiceId={activeServiceId} />}
+        </>
       )}
 
       {/* KOMUNIKACE - SMS */}

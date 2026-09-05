@@ -29,8 +29,10 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    opravě, vytížení techniků v Kalendáři, KPI techniků).
 6. `[ ]` **Online rezervace** termínu s výběrem opravy z ceníku a předběžnou
    cenou, vložitelná na web servisu (veřejný ceník přes API už je).
-7. `[ ]` **Účetnictví a pokladna** – export Pohoda / Money / iDoklad /
-   Fakturoid, platební terminál (SumUp, GoPay), denní uzávěrka.
+7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad – Nastavení → Fakturace a DPH →
+   Propojení, tlačítko Odeslat do iDokladu v detailu faktury; edge funkce
+   `invoice-export`, tabulka `service_integrations`) – zbývá Fakturoid, Pohoda,
+   Money, platební terminál (SumUp, GoPay), denní uzávěrka.
 8. `[ ]` **Apple a telefonní specifika** – kontrola IMEI a záruky při příjmu,
    Find My, historie zařízení napříč servisy, checklist příjmu s fotkou.
 9. `[ ]` **AI, kde šetří minuty** – z fotky a popisu navrhnout opravu a cenu
