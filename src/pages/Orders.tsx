@@ -9,7 +9,7 @@ import { type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
-import { reportSilent } from "../lib/reportError";
+import { reportSilent, reportError } from "../lib/reportError";
 import { isJobiDocsRunning, printDocument, exportDocument, formatJobiDocsErrorForUser, type DocTypeForPrint } from "../lib/jobidocs";
 import { ticketDocumentData, claimDocumentData, type DocumentData } from "../lib/documentData";
 import { normalizeError } from "../utils/errorNormalizer";
@@ -775,6 +775,8 @@ export default function Orders({
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
   const [commentsByTicket, setCommentsByTicket] = useState<Record<string, TicketComment[]>>({});
+  /** Živé profily autorů komentářů (fotka a přezdívka) – viz TicketComments. */
+  const [commentAuthorProfiles, setCommentAuthorProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
 
   const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
 
@@ -3446,6 +3448,45 @@ export default function Orders({
     setCommentsByTicket((p) => ({ ...p, [ticketId]: [...(p[ticketId] ?? []), c] }));
   };
 
+  const editComment = async (ticketId: string, commentId: string, text: string) => {
+    if (!supabase) return;
+    const prev = commentsByTicket[ticketId]?.find((c) => c.id === commentId);
+    if (!prev || prev.text === text) return;
+    setCommentsByTicket((p) => ({
+      ...p,
+      [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, text } : c)),
+    }));
+    const { error } = await (supabase.from("ticket_comments") as any).update({ content: text }).eq("id", commentId);
+    if (error) {
+      setCommentsByTicket((p) => ({
+        ...p,
+        [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, text: prev.text } : c)),
+      }));
+      reportError({ code: "orders.comment_edit_failed", error, userMessage: "Komentář se nepodařilo upravit.", source: "Orders.editComment", serviceId: activeServiceId });
+    }
+  };
+
+  // Fotky a přezdívky autorů komentářů z aktuálních profilů (komentář má
+  // jen snímek z doby uložení – kdo si fotku přidal později, byl bez ní).
+  const commentAuthorIdsKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const list of Object.values(commentsByTicket)) for (const c of list) if (c.author_id) ids.add(c.author_id);
+    return [...ids].sort().join(",");
+  }, [commentsByTicket]);
+  useEffect(() => {
+    if (!supabase || !commentAuthorIdsKey) return;
+    const ids = commentAuthorIdsKey.split(",");
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await (supabase.from("profiles") as any).select("id, nickname, avatar_url").in("id", ids);
+      if (cancelled || error || !Array.isArray(data)) return;
+      const map: Record<string, { nickname: string | null; avatarUrl: string | null }> = {};
+      for (const p of data) map[p.id] = { nickname: p.nickname ?? null, avatarUrl: p.avatar_url ?? null };
+      setCommentAuthorProfiles(map);
+    })();
+    return () => { cancelled = true; };
+  }, [commentAuthorIdsKey]);
+
   const togglePin = async (ticketId: string, commentId: string) => {
     if (!supabase) return;
     const current = commentsByTicket[ticketId]?.find((c) => c.id === commentId);
@@ -5594,6 +5635,9 @@ export default function Orders({
                 onDraftChange={handleCommentDraftChange}
                 onAdd={addComment}
                 onTogglePin={togglePin}
+                onEdit={editComment}
+                currentUserId={session?.user?.id ?? null}
+                authorProfiles={commentAuthorProfiles}
                 card={card}
                 baseFieldTextArea={baseFieldTextArea}
               />
@@ -6734,6 +6778,9 @@ export default function Orders({
               onDraftChange={handleCommentDraftChange}
               onAdd={addComment}
               onTogglePin={togglePin}
+              onEdit={editComment}
+              currentUserId={session?.user?.id ?? null}
+              authorProfiles={commentAuthorProfiles}
               card={card}
               baseFieldTextArea={baseFieldTextArea}
             />

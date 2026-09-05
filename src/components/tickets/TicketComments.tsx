@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "../ui";
 import { SectionHeading } from "../SectionHeading";
 import { ChatIcon } from "../icons";
@@ -13,6 +13,16 @@ type Props = {
   onDraftChange: (ticketId: string, value: string) => void;
   onAdd: (ticketId: string) => void;
   onTogglePin: (ticketId: string, commentId: string) => void;
+  /** Uložení upraveného textu vlastního komentáře. */
+  onEdit?: (ticketId: string, commentId: string, text: string) => void | Promise<void>;
+  /** Přihlášený uživatel – upravovat jde jen vlastní komentáře. */
+  currentUserId?: string | null;
+  /**
+   * Aktuální profily autorů (podle author_id). Komentář si při uložení
+   * pamatuje jméno a fotku z té doby; když si člověk fotku přidá později,
+   * starší komentáře by zůstaly bez ní. Tady má přednost živý profil.
+   */
+  authorProfiles?: Record<string, { nickname: string | null; avatarUrl: string | null }>;
   card: React.CSSProperties;
   baseFieldTextArea: React.CSSProperties;
 };
@@ -24,9 +34,25 @@ export function TicketComments({
   onDraftChange,
   onAdd,
   onTogglePin,
+  onEdit,
+  currentUserId,
+  authorProfiles,
   card,
   baseFieldTextArea,
 }: Props) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const startEdit = (c: TicketComment) => {
+    setEditingId(c.id);
+    setEditText(c.text);
+  };
+  const saveEdit = async () => {
+    if (!editingId || !onEdit) return;
+    const text = editText.trim();
+    if (!text) return;
+    await onEdit(ticketId, editingId, text);
+    setEditingId(null);
+  };
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <SectionHeading icon={<ChatIcon size={16} />} size="sm">
@@ -35,8 +61,11 @@ export function TicketComments({
 
       <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
         {comments.map((c) => {
-          const commentAuthorName = c.author_nickname ?? c.author ?? "Servis";
-          const commentAvatarUrl = c.author_avatar_url?.trim() || null;
+          const live = c.author_id ? authorProfiles?.[c.author_id] : undefined;
+          const commentAuthorName = live?.nickname?.trim() || c.author_nickname || c.author || "Servis";
+          const commentAvatarUrl = live?.avatarUrl?.trim() || c.author_avatar_url?.trim() || null;
+          const isOwn = !!currentUserId && c.author_id === currentUserId;
+          const isEditing = editingId === c.id;
           return (
             <div
               key={c.id}
@@ -95,7 +124,7 @@ export function TicketComments({
                         color: "var(--muted)",
                       }}
                     >
-                      PINNED
+                      Připnuto
                     </div>
                   )}
                 </div>
@@ -116,12 +145,40 @@ export function TicketComments({
                     }}
                     title={c.pinned ? "Odepnout" : "Připnout"}
                   >
-                    {c.pinned ? "Unpin" : "Pin"}
+                    {c.pinned ? "Odepnout" : "Připnout"}
                   </button>
+                  {isOwn && onEdit && !isEditing && (
+                    <button
+                      onClick={() => startEdit(c)}
+                      style={{ padding: "8px 10px", borderRadius: 12, border, background: "var(--panel)", color: "var(--text)", fontWeight: 950, cursor: "pointer", fontFamily: "inherit" }}
+                      title="Upravit komentář"
+                    >
+                      Upravit
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
+              {isEditing ? (
+                <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    style={{ ...baseFieldTextArea, minHeight: 80 }}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setEditingId(null);
+                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void saveEdit(); }
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <Button variant="soft" size="sm" onClick={() => setEditingId(null)}>Zrušit</Button>
+                    <Button variant="primary" size="sm" onClick={() => void saveEdit()} disabled={!editText.trim()}>Uložit</Button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.text}</div>
+              )}
             </div>
           );
         })}

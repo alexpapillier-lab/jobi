@@ -269,17 +269,13 @@
   function renderStatus(ticket) {
     const card = el.cardStatus;
     clear(card);
+    // Interní stav zakázky (Přijato, V opravě, …) zákazníkovi neukazujeme –
+    // je to pracovní členění servisu. Zákazník vidí termín, nabídku a cenu.
     const status = ticket.status || {};
-    const colors = pillColors(status.color);
 
-    const pill = h('span', { class: 'pill', text: status.label || 'Neznámý stav' });
-    pill.style.background = colors.bg;
-    pill.style.color = colors.fg;
-
-    card.appendChild(h('h2', { class: 'sr-only', id: 'statusTitle', text: 'Stav zakázky' }));
+    card.appendChild(h('h2', { class: 'sr-only', id: 'statusTitle', text: 'Zakázka' }));
     card.appendChild(h('div', { class: 'status-head' }, [
       h('span', { class: 'code', text: ticket.code ? 'Zakázka ' + ticket.code : 'Zakázka' }),
-      pill,
     ]));
 
     const dl = h('dl', { class: 'dl' });
@@ -298,9 +294,6 @@
     if (!hasPrice && num(ticket.estimatedPrice) > 0) add('Odhad ceny', fmtMoney(ticket.estimatedPrice));
     card.appendChild(dl);
 
-    if (status.isFinal) {
-      card.appendChild(h('div', { class: 'final-note', text: 'Zakázka je uzavřená. Děkujeme, že jste využili naše služby.' }));
-    }
   }
 
   /* ===================== Karta: cenová nabídka ===================== */

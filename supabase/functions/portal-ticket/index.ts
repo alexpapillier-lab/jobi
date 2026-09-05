@@ -182,10 +182,9 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
   ]);
 
   const st = statusRes.data as { key: string; label: string; bg: string | null; fg: string | null; is_final: boolean } | null;
+  // Zákazníkovi jde jen „uzavřeno / neuzavřeno“; interní název a barva
+  // stavu jsou pracovní členění servisu a na portál nepatří.
   const status = {
-    key: t.status,
-    label: st?.label || t.status,
-    color: st?.bg ?? null,
     isFinal: st?.is_final === true,
   };
 
