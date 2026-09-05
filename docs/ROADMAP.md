@@ -117,8 +117,12 @@ První tři měsíce: body 1, 2, 4.
   stable / beta, JobiDocs zvlášť.
 - `[~]` Windows build (workflow existuje) – otestovat instalaci, tisk přes
   JobiDocs a aktualizace na Windows.
-- `[ ]` Verze pro tablet / telefon: web funguje, ověřit celé flow příjmu
-  na telefonu včetně fotek.
+- `[~]` Verze pro tablet / telefon – celé flow příjmu projito na 375 px
+  i 768 px. Opraveno: průsvitná patička okna Nová zakázka, pruh pod ní,
+  kde prosvítal obsah, a rozpis cenové nabídky. Zbývá ověřit na skutečném
+  iPhonu (napovídače počítají s `window.innerHeight`, který se po vysunutí
+  klávesnice na iOS nezmenší) a rozhodnout o umístění hlášek, které na
+  telefonu překryjí křížek okna.
 - `[ ]` Ověřit v desktopu po 0.2.8: tisk s vypnutým JobiDocs, aktualizace
   na pozadí, presence s druhým uživatelem, migrace firemních údajů.
 - `[~]` E2E testy hlavních cest – Playwright, `npm run test:e2e`, v CI
@@ -126,8 +130,9 @@ První tři měsíce: body 1, 2, 4.
   založení zakázky s kontrolou čísla a přidání provedené opravy. Jezdí
   v samostatném servisu pod účtem e2e@jobi.test, viz `e2e/README.md`.
   Zbývá tisk a vystavení faktury.
-- `[ ]` Výkon: Statistiky počítají z všech zakázek v prohlížeči – přesunout
-  agregace na server dřív, než servis přesáhne ~10 000 zakázek.
+- `[x]` Výkon: Statistiky se počítají na serveru (funkce `statistiky_prehled`,
+  migrace 20260907120000). Odpověď pro největší servis 273 kB místo 1,65 MB
+  a neroste s počtem zakázek. Zakázky se stahují jen pro režim Tabulka.
 
 ### Web, podpora, prodej
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
