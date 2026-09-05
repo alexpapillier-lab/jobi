@@ -107,7 +107,10 @@ První tři měsíce: body 1, 2, 4.
   Padesát servisů se do plánu Pro vejde i po třech letech, první účet nad
   25 USD až kolem pátého roku. Dřív než cena praskne počítání Statistik
   v prohlížeči.
-- `[ ]` Tajemství a klíče: rotace, kde leží, kdo má přístup.
+- `[~]` Tajemství a klíče – soupis v `docs/TAJEMSTVI.md`: co kde leží
+  (Supabase secrets, Vault, GitHub, počítač), kdo se k čemu dostane a jak
+  se co vyměňuje, když unikne. Zbývá pravidelná rotace a záložní přístup
+  pro druhého člověka.
 
 ### Aplikace a vydávání
 - `[x]` Podepsané a notarizované macOS buildy, OTA aktualizace, kanály
