@@ -66,7 +66,26 @@ async function makeCode(
   const year = new Date().getFullYear().toString().slice(-2);
   const prefixYear = `${prefix}${year}`;
   
-  // Find existing codes with same prefix + year
+  // Číslo přiděluje databáze. Dva lidé zakládající zakázku ve stejnou chvíli
+  // jinak dostanou stejné číslo – klient si ho počítal jako „nejvyšší + 1"
+  // a o tom druhém nevěděl. V produkci se to už stalo.
+  if (supabase && activeServiceId) {
+    try {
+      const { data, error } = await (supabase as any).rpc("dalsi_cislo_zakazky", {
+        p_service_id: activeServiceId,
+        p_prefix: prefixYear,
+      });
+      if (!error && typeof data === "number" && data > 0) {
+        return `${prefixYear}${String(data).padStart(6, "0")}`;
+      }
+      console.error("[makeCode] dalsi_cislo_zakazky selhalo, počítám číslo lokálně:", error);
+    } catch (err) {
+      console.error("[makeCode] dalsi_cislo_zakazky nedostupné, počítám číslo lokálně:", err);
+    }
+  }
+
+  // Záložní cesta pro případ, že RPC není k dispozici (stará databáze nebo
+  // výpadek). Nechrání před souběhem, ale je lepší než zakázku nezaložit.
   let existingCodes: string[] = [];
   
   if (cloudTickets.length > 0) {
