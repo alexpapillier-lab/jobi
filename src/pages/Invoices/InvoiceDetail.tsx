@@ -2,13 +2,15 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/ui";
 import { PROVIDER_LABELS, type IntegrationProvider } from "../../lib/integrations";
-import { CheckIcon, EditIcon, LinkIcon, MailIcon, TrashIcon, XIcon } from "../../components/icons";
+import { CheckIcon, DocumentIcon, EditIcon, LinkIcon, MailIcon, TrashIcon, XIcon } from "../../components/icons";
 import { OverflowMenu, type OverflowMenuItem } from "../../components/orders/OverflowMenu";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { InvoicePrintMenu } from "./InvoicePrintMenu";
-import { StatusPill } from "./InvoiceList";
+import { KindPill, StatusPill } from "./InvoiceList";
 import {
+  KIND_LABELS,
   STATUS_LABELS,
+  asKind,
   asStatus,
   daysOverdue,
   formatDate,
@@ -44,6 +46,10 @@ export function InvoiceDetail({
   onCancelInvoice,
   onDelete,
   onOpenTicket,
+  related = [],
+  onOpenRelated,
+  onVystavitDobropis,
+  onVyuctovatZalohu,
   exportProviders = [],
   onExportTo,
   exporting = false,
@@ -63,19 +69,33 @@ export function InvoiceDetail({
   onCancelInvoice: () => void;
   onDelete: () => void;
   onOpenTicket?: () => void;
+  /** Související doklady: původní faktura / záloha a doklady z tohoto odvozené. */
+  related?: Invoice[];
+  onOpenRelated?: (inv: Invoice) => void;
+  /** Dobropis k vystavené či zaplacené faktuře. */
+  onVystavitDobropis?: () => void;
+  /** Vyúčtovací faktura k zaplacené záloze. */
+  onVyuctovatZalohu?: () => void;
   /** Zapnutá propojení (iDoklad…) – tlačítko „Odeslat do …“. */
   exportProviders?: IntegrationProvider[];
   onExportTo?: (provider: IntegrationProvider) => void;
   exporting?: boolean;
 }) {
   const status = asStatus(inv.status);
+  const kind = asKind(inv);
   const isDraft = status === "draft";
   const awaitingPayment = status === "issued" || status === "sent" || status === "overdue";
   const overdueDays = status === "overdue" ? daysOverdue(inv.due_date) : 0;
+  // Zálohu lze vyúčtovat jednou; stornované vyúčtování cestu znovu otevře.
+  const maVyuctovani = related.some((r) => r.related_invoice_id === inv.id && asKind(r) === "invoice" && r.status !== "cancelled");
 
   const menuItems: OverflowMenuItem[] = [];
   if (isDraft) menuItems.push({ label: "Upravit", icon: <EditIcon size={15} />, onSelect: onEdit });
-  menuItems.push({ label: "Duplikovat", onSelect: onDuplicate });
+  // Dobropis bez vazby na fakturu nedává smysl – ten se neduplikuje.
+  if (kind !== "credit_note") menuItems.push({ label: "Duplikovat", onSelect: onDuplicate });
+  if (kind === "invoice" && (awaitingPayment || status === "paid") && onVystavitDobropis) {
+    menuItems.push({ label: "Vystavit dobropis", onSelect: onVystavitDobropis });
+  }
   if (onOpenTicket) menuItems.push({ label: "Přejít na zakázku", icon: <LinkIcon size={15} />, onSelect: onOpenTicket });
   // Koncept nikdy nebyl vystaven – ten se maže, ne stornuje.
   if (!isDraft && status !== "cancelled" && status !== "paid") {
@@ -90,7 +110,7 @@ export function InvoiceDetail({
       <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
       <div
         role="dialog"
-        aria-label={`Faktura ${inv.number}`}
+        aria-label={`${KIND_LABELS[kind]} ${inv.number}`}
         style={{
           width: 520,
           maxWidth: "92vw",
@@ -107,6 +127,7 @@ export function InvoiceDetail({
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
                 <h2 style={{ margin: 0, fontSize: "var(--text-xl)", fontWeight: 800, color: "var(--text)" }}>{inv.number}</h2>
+                {kind !== "invoice" && <KindPill kind={kind} />}
                 <StatusPill status={status} />
               </div>
               <div style={{ marginTop: 4, fontSize: "var(--text-base)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -141,6 +162,11 @@ export function InvoiceDetail({
                 Označit zaplacenou
               </Button>
             )}
+            {kind === "proforma" && status === "paid" && !maVyuctovani && onVyuctovatZalohu && (
+              <Button variant="primary" icon={<DocumentIcon size={16} />} onClick={onVyuctovatZalohu} title="Vytvoří koncept faktury se stejnými položkami a odečtem uhrazené zálohy">
+                Vyúčtovat zálohu
+              </Button>
+            )}
             <InvoicePrintMenu onPrint={onPrint} onExport={onExport} onPreview={onPreview} />
             <Button variant="soft" icon={<MailIcon size={16} />} onClick={onSend} title={isDraft ? "Koncept lze odeslat až po vystavení" : undefined} disabled={isDraft}>
               Odeslat e-mailem
@@ -157,7 +183,8 @@ export function InvoiceDetail({
                 {PROVIDER_LABELS[inv.external_provider as IntegrationProvider] ?? inv.external_provider}
                 {inv.external_number ? ` č. ${inv.external_number}` : ""}
               </a>
-            ) : (
+            ) : kind !== "invoice" ? null : (
+              // Do účetnictví se posílají jen běžné faktury; zálohy a dobropisy mají jiné číselné řady a účtování.
               exportProviders.map((p) => (
                 <Button
                   key={p}
@@ -192,6 +219,30 @@ export function InvoiceDetail({
             <DetailRow label="Variabilní symbol" value={inv.variable_symbol} />
             <DetailRow label="Měna" value={inv.currency} />
           </DetailSection>
+
+          {related.length > 0 && (
+            <DetailSection title="Související doklady">
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                {related.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onOpenRelated?.(r)}
+                    style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-3)", alignItems: "center", padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--panel-2)", color: "var(--text)", cursor: "pointer", textAlign: "left", fontFamily: "inherit", fontSize: "var(--text-sm)" }}
+                  >
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontWeight: 700 }}>{KIND_LABELS[asKind(r)]} {r.number}</span>
+                      <span style={{ color: "var(--muted)" }}> · {popisVazby(inv, r)}</span>
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+                      <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{formatCurrency(r.total, r.currency)}</span>
+                      <StatusPill status={r.status} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </DetailSection>
+          )}
 
           <DetailSection title="Položky">
             <div style={{ overflowX: "auto" }}>
@@ -283,6 +334,8 @@ function describeEvent(ev: InvoiceEvent): string {
   const p = (ev.payload && typeof ev.payload === "object" && !Array.isArray(ev.payload) ? ev.payload : {}) as Record<string, unknown>;
   switch (ev.type) {
     case "created":
+      if (typeof p.credit_note_for_number === "string") return `Vytvořeno jako dobropis k faktuře ${p.credit_note_for_number}`;
+      if (typeof p.settles_proforma_number === "string") return `Vytvořeno vyúčtováním zálohy ${p.settles_proforma_number}`;
       return p.duplicated_from ? "Vytvořeno duplikací" : "Vytvořeno";
     case "updated":
       return "Upraveno";
@@ -297,6 +350,12 @@ function describeEvent(ev: InvoiceEvent): string {
     default:
       return ev.type;
   }
+}
+
+/** Jak související doklad k tomuto patří – z pohledu otevřeného dokladu. */
+function popisVazby(inv: Invoice, r: Invoice): string {
+  if (r.id === inv.related_invoice_id) return asKind(inv) === "credit_note" ? "původní faktura" : "uhrazená záloha";
+  return asKind(r) === "credit_note" ? "dobropis k tomuto dokladu" : "vyúčtování této zálohy";
 }
 
 // ─── Drobné části ────────────────────────────────────────────

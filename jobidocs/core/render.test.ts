@@ -15,6 +15,16 @@ describe("render", () => {
     });
   }
 
+  it("nadpis z dat přebíjí název typu i text v šabloně", () => {
+    const tpl = defaultTemplate("faktura");
+    const args = { template: tpl, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+    const bezNadpisu = renderDocument({ ...args, data: sampleData("faktura", "short") });
+    expect(bezNadpisu).toContain('<div class="doc-kind">Faktura</div>');
+    const dobropis = renderDocument({ ...args, data: { ...sampleData("faktura", "short"), title: "Dobropis" } });
+    expect(dobropis).toContain('<div class="doc-kind">Dobropis</div>');
+    expect(dobropis).toContain("<title>Dobropis");
+  });
+
   it("prázdná data skryjí řádky bez hodnot a bloky s when=notEmpty", () => {
     const html = renderDocument({ template: defaultTemplate("zarucni_list"), data: sampleData("zarucni_list", "empty"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
     expect(html).not.toContain("Provedená oprava");

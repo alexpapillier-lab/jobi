@@ -24,16 +24,27 @@ import { exportInvoice, loadActiveProviders, type IntegrationProvider } from "..
 import { InvoiceEditor, type InvoiceCustomerMatch } from "./Invoices/InvoiceEditor";
 import { InvoiceDetail } from "./Invoices/InvoiceDetail";
 import {
+  KIND_ACCUSATIVE,
+  KIND_LABELS,
+  KIND_PREFIX,
   STATUS_LABELS,
   addDaysIso,
+  asKind,
+  formatDate,
   todayIso,
+  vystavenoText,
   type EditorLineItem,
   type Invoice,
   type InvoiceEvent,
   type InvoiceItem,
+  type InvoiceKind,
   type InvoiceStatus,
+  type KindFilter,
   type ListFilter,
 } from "./Invoices/types";
+
+/** Název souboru PDF bez diakritiky – Downloads na cizím počítači ji nemusí unést. */
+const KIND_FILENAME: Record<InvoiceKind, string> = { invoice: "Faktura", proforma: "Zalohova_faktura", credit_note: "Dobropis" };
 
 type View = "list" | "editor";
 
@@ -92,7 +103,36 @@ function toValidationData(inv: Partial<Invoice>) {
     customer_name: inv.customer_name ?? undefined,
     supplier_name: inv.supplier_name ?? undefined,
     status: inv.status ?? undefined,
+    kind: inv.kind ?? undefined,
   };
+}
+
+/** Hlavička odvozeného dokladu: dodavatel i odběratel se berou z původního, ne z nastavení. */
+function hlavickaZDokladu(zdroj: Invoice) {
+  return {
+    branch_id: zdroj.branch_id,
+    currency: zdroj.currency,
+    supplier_name: zdroj.supplier_name,
+    supplier_ico: zdroj.supplier_ico,
+    supplier_dic: zdroj.supplier_dic,
+    supplier_address: zdroj.supplier_address,
+    supplier_email: zdroj.supplier_email,
+    supplier_phone: zdroj.supplier_phone,
+    supplier_bank_account: zdroj.supplier_bank_account,
+    supplier_iban: zdroj.supplier_iban,
+    supplier_swift: zdroj.supplier_swift,
+    customer_name: zdroj.customer_name,
+    customer_ico: zdroj.customer_ico,
+    customer_dic: zdroj.customer_dic,
+    customer_address: zdroj.customer_address,
+    customer_email: zdroj.customer_email,
+    customer_phone: zdroj.customer_phone,
+    customer_id: zdroj.customer_id,
+  };
+}
+
+function radekZPolozky(it: InvoiceItem): InvoiceLineItem {
+  return { name: it.name, qty: it.qty, unit: it.unit, unit_price: it.unit_price, vat_rate: it.vat_rate };
 }
 
 /** Otisk editoru pro zjištění neuložených změn. */
@@ -119,6 +159,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // Filtr seznamu
   const [filter, setFilter] = useState<ListFilter>("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [filterSearch, setFilterSearch] = useState("");
 
   // Editor
@@ -154,6 +195,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   }, [activeServiceId]);
   const [detailItems, setDetailItems] = useState<InvoiceItem[]>([]);
   const [detailEvents, setDetailEvents] = useState<InvoiceEvent[]>([]);
+  // Související doklady: původní faktura dobropisu / záloha, nebo naopak doklady odvozené z tohoto.
+  const [detailRelated, setDetailRelated] = useState<Invoice[]>([]);
   const [showDetail, setShowDetail] = useState(false);
 
   // Odeslání e-mailem
@@ -227,6 +270,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       const inv: Partial<Invoice> = {
         number: "",
         variable_symbol: "",
+        kind: "invoice",
+        related_invoice_id: null,
         status: "draft",
         issue_date: today,
         due_date: addDaysIso(today, 14),
@@ -281,12 +326,15 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const openDetail = useCallback(async (inv: Invoice) => {
     setDetailInvoice(inv);
     setShowDetail(true);
-    const [itemsRes, eventsRes] = await Promise.all([
+    const vazba = inv.related_invoice_id ? `id.eq.${inv.related_invoice_id},related_invoice_id.eq.${inv.id}` : `related_invoice_id.eq.${inv.id}`;
+    const [itemsRes, eventsRes, relatedRes] = await Promise.all([
       typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order"),
       typedSupabase.from("invoice_events").select("*").eq("invoice_id", inv.id).order("created_at", { ascending: false }),
+      typedSupabase.from("invoices").select("*").or(vazba).is("deleted_at", null).order("created_at", { ascending: true }),
     ]);
     setDetailItems(itemsRes.data || []);
     setDetailEvents(eventsRes.data || []);
+    setDetailRelated(relatedRes.data || []);
   }, []);
 
   // Předvyplnění ze zakázky
@@ -365,11 +413,16 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
       setSaving(true);
       try {
-        const cislo = bezCisla ? await generateInvoiceNumber(activeServiceId) : editorInvoice.number!.trim();
+        const kind = asKind(editorInvoice);
+        // Každý druh má vlastní řadu (FV / ZF / DB), aby dobropisy nedělaly díry ve fakturách.
+        const cislo = bezCisla ? await generateInvoiceNumber(activeServiceId, KIND_PREFIX[kind]) : editorInvoice.number!.trim();
         const faktura: Partial<Invoice> = {
           ...editorInvoice,
+          kind,
           number: cislo,
           variable_symbol: editorInvoice.variable_symbol?.trim() || invoiceNumberToVS(cislo),
+          // Záloha není zdanitelné plnění – DUZP nemá.
+          taxable_date: kind === "proforma" ? null : editorInvoice.taxable_date ?? null,
         };
 
         // Číslo si lze přepsat ručně – dvě faktury se stejným číslem účetnictví nepřijme.
@@ -382,16 +435,20 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           .limit(2);
         if (kolizeErr) throw kolizeErr;
         if ((stejne ?? []).some((r) => r.id !== editingId)) {
-          showToast(`Faktura s číslem ${cislo} už existuje.`, "error");
+          showToast(`Doklad s číslem ${cislo} už existuje.`, "error");
           return;
         }
 
         const totals = computeTotals(editorItems);
         const wasDraft = (faktura.status || "draft") === "draft";
         const nextStatus = issue && wasDraft ? "issued" : faktura.status || "draft";
-        const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, ...rest } = faktura;
+        // Sloupce kind a related_invoice_id přidává migrace 20260907150000; u běžné
+        // faktury se výchozí hodnoty neposílají, aby uložení šlo i před jejím nasazením.
+        const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, kind: _k, related_invoice_id: _r, ...rest } = faktura;
         const payload = {
           ...rest,
+          ...(kind !== "invoice" ? { kind } : {}),
+          ...(faktura.related_invoice_id ? { related_invoice_id: faktura.related_invoice_id } : {}),
           service_id: activeServiceId,
           status: nextStatus,
           subtotal: totals.subtotal,
@@ -440,7 +497,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           await logEvent(invoiceId, "status_changed", { from: "draft", to: "issued" });
         }
 
-        showToast(issue && wasDraft ? `Faktura ${cislo} vystavena` : editingId ? "Faktura uložena" : "Koncept uložen", "success");
+        showToast(issue && wasDraft ? vystavenoText(kind, cislo) : editingId ? (kind === "credit_note" ? "Dobropis uložen" : `${KIND_LABELS[kind]} uložena`) : "Koncept uložen", "success");
         setEditorInvoice(faktura);
         setEditorBaseline(snapshot(faktura, editorItems));
         setView("list");
@@ -597,46 +654,54 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     [logEvent, loadInvoices, showDetail, detailInvoice],
   );
 
-  /** Vytvoří koncept se stejným obsahem a otevře ho v editoru. */
-  const duplicateInvoice = useCallback(
-    async (inv: Invoice) => {
+  /**
+   * Založí koncept odvozený z jiného dokladu (duplikát, dobropis, vyúčtování
+   * zálohy): hlavičku převezme, položky dostane od volajícího, číslo přidělí
+   * v řadě daného druhu, součty spočítá znovu a otevře editor. Číslo se tu
+   * bere hned, protože koncept vzniká v databázi – uživatel ho vidí v seznamu.
+   */
+  const zalozOdvozenyDoklad = useCallback(
+    async (
+      zdroj: Invoice,
+      kind: InvoiceKind,
+      volby: {
+        relatedInvoiceId: string | null;
+        ticketId: string | null;
+        notes: string | null;
+        polozky: (puvodni: InvoiceItem[]) => InvoiceLineItem[];
+        udalost: Record<string, unknown>;
+        hlaska: (cislo: string) => string;
+        chyba: { code: string; userMessage: string; source: string };
+      },
+    ) => {
       if (!activeServiceId) return;
       try {
-        const number = await generateInvoiceNumber(activeServiceId);
+        const number = await generateInvoiceNumber(activeServiceId, KIND_PREFIX[kind]);
         const today = todayIso();
 
-        const { data: items } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+        const { data: puvodni, error: itemsLoadErr } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", zdroj.id).order("sort_order");
+        if (itemsLoadErr) throw itemsLoadErr;
+        const polozky = volby.polozky(puvodni ?? []);
+        const totals = computeTotals(polozky);
 
         const newInv = {
+          ...hlavickaZDokladu(zdroj),
           service_id: activeServiceId,
+          // Stejně jako v persistEditor: výchozí hodnoty nových sloupců se neposílají.
+          ...(kind !== "invoice" ? { kind } : {}),
+          ...(volby.relatedInvoiceId ? { related_invoice_id: volby.relatedInvoiceId } : {}),
+          ticket_id: volby.ticketId,
           number,
           variable_symbol: invoiceNumberToVS(number),
           status: "draft",
           issue_date: today,
           due_date: addDaysIso(today, 14),
-          taxable_date: today,
-          currency: inv.currency,
-          subtotal: inv.subtotal,
-          vat_amount: inv.vat_amount,
-          total: inv.total,
-          rounding: inv.rounding,
-          supplier_name: inv.supplier_name,
-          supplier_ico: inv.supplier_ico,
-          supplier_dic: inv.supplier_dic,
-          supplier_address: inv.supplier_address,
-          supplier_email: inv.supplier_email,
-          supplier_phone: inv.supplier_phone,
-          supplier_bank_account: inv.supplier_bank_account,
-          supplier_iban: inv.supplier_iban,
-          supplier_swift: inv.supplier_swift,
-          customer_name: inv.customer_name,
-          customer_ico: inv.customer_ico,
-          customer_dic: inv.customer_dic,
-          customer_address: inv.customer_address,
-          customer_email: inv.customer_email,
-          customer_phone: inv.customer_phone,
-          customer_id: inv.customer_id,
-          notes: inv.notes,
+          taxable_date: kind === "proforma" ? null : today,
+          subtotal: totals.subtotal,
+          vat_amount: totals.vat_amount,
+          total: totals.total_rounded,
+          rounding: totals.rounding,
+          notes: volby.notes,
         };
 
         const { data: created, error } = await typedSupabase
@@ -646,8 +711,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           .single();
         if (error) throw error;
 
-        if (items && items.length > 0) {
-          const newItems = items.map((it, idx) => ({
+        if (polozky.length > 0) {
+          const newItems = polozky.map((it, idx) => ({
             invoice_id: created!.id,
             sort_order: idx,
             name: it.name,
@@ -655,26 +720,87 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
             unit: it.unit,
             unit_price: it.unit_price,
             vat_rate: it.vat_rate,
-            line_total: it.line_total,
+            line_total: Math.round(it.qty * it.unit_price * 100) / 100,
           }));
           const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(newItems);
           if (itemsErr) throw itemsErr;
         }
 
-        await logEvent(created!.id, "created", { duplicated_from: inv.id, number });
-        showToast(`Vytvořen koncept ${number}`, "success");
+        await logEvent(created!.id, "created", { ...volby.udalost, number });
+        showToast(volby.hlaska(number), "success");
         loadInvoices();
         await openEditInvoice(created as Invoice);
       } catch (err) {
         reportError({
-          code: "invoices.duplicate_failed",
+          ...volby.chyba,
           error: err,
-          userMessage: "Fakturu se nepodařilo duplikovat: " + (err instanceof Error ? err.message : String(err)),
-          source: "Invoices.duplicateInvoice",
+          userMessage: volby.chyba.userMessage + ": " + (err instanceof Error ? err.message : String(err)),
         });
       }
     },
     [activeServiceId, logEvent, loadInvoices, openEditInvoice],
+  );
+
+  /** Vytvoří koncept se stejným obsahem a otevře ho v editoru. */
+  const duplicateInvoice = useCallback(
+    (inv: Invoice) =>
+      zalozOdvozenyDoklad(inv, asKind(inv), {
+        relatedInvoiceId: null,
+        ticketId: null,
+        notes: inv.notes,
+        polozky: (p) => p.map(radekZPolozky),
+        udalost: { duplicated_from: inv.id },
+        hlaska: (n) => `Vytvořen koncept ${n}`,
+        chyba: { code: "invoices.duplicate_failed", userMessage: "Fakturu se nepodařilo duplikovat", source: "Invoices.duplicateInvoice" },
+      }),
+    [zalozOdvozenyDoklad],
+  );
+
+  /** Dobropis k vystavené či zaplacené faktuře: stejné položky se záporným množstvím. */
+  const vystavitDobropis = useCallback(
+    (inv: Invoice) =>
+      zalozOdvozenyDoklad(inv, "credit_note", {
+        relatedInvoiceId: inv.id,
+        // Zakázku dobropis nenese – v Zakázkách by se pak nabízel jako „faktura zakázky“.
+        ticketId: null,
+        notes: `Dobropis k faktuře ${inv.number} ze dne ${formatDate(inv.issue_date)}`,
+        polozky: (p) => p.map((it) => ({ ...radekZPolozky(it), qty: -it.qty })),
+        udalost: { credit_note_for: inv.id, credit_note_for_number: inv.number },
+        hlaska: (n) => `Vytvořen koncept dobropisu ${n}`,
+        chyba: { code: "invoices.credit_note_failed", userMessage: "Dobropis se nepodařilo vytvořit", source: "Invoices.vystavitDobropis" },
+      }),
+    [zalozOdvozenyDoklad],
+  );
+
+  /**
+   * Vyúčtování zaplacené zálohy: běžná faktura se stejnými položkami a odečtem
+   * zálohy. Odečet jde po sazbách DPH (základ se zápornou cenou), aby se
+   * odečetla i daň – jeden řádek se sazbou 0 by DPH nechal v plné výši.
+   */
+  const vyuctovatZalohu = useCallback(
+    (zaloha: Invoice) =>
+      zalozOdvozenyDoklad(zaloha, "invoice", {
+        relatedInvoiceId: zaloha.id,
+        ticketId: zaloha.ticket_id,
+        notes: `Vyúčtování zálohové faktury ${zaloha.number}`,
+        polozky: (p) => {
+          const kopie = p.map(radekZPolozky);
+          const rozpis = computeTotals(kopie).vat_breakdown;
+          const uhrazeno = formatDate(zaloha.paid_at) || formatDate(zaloha.issue_date);
+          const odecty: InvoiceLineItem[] = rozpis.map((r) => ({
+            name: `Uhrazená záloha ${zaloha.number} ze dne ${uhrazeno}${rozpis.length > 1 ? ` (základ DPH ${r.rate} %)` : ""}`,
+            qty: 1,
+            unit: "ks",
+            unit_price: -r.base,
+            vat_rate: r.rate,
+          }));
+          return [...kopie, ...odecty];
+        },
+        udalost: { settles_proforma: zaloha.id, settles_proforma_number: zaloha.number },
+        hlaska: (n) => `Vytvořen koncept vyúčtovací faktury ${n}`,
+        chyba: { code: "invoices.settle_proforma_failed", userMessage: "Vyúčtování zálohy se nepodařilo vytvořit", source: "Invoices.vyuctovatZalohu" },
+      }),
+    [zalozOdvozenyDoklad],
   );
 
   // ─── Tisk, PDF, náhled ─────────────────────────────────────
@@ -684,12 +810,25 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     return data || [];
   }, []);
 
+  /** Data dokladu pro tisk – položky a číslo souvisejícího dokladu (u dobropisu původní faktura). */
+  const dataProTisk = useCallback(
+    async (inv: Invoice) => {
+      const items = await loadItemsFor(inv);
+      let souvisejici: string | undefined;
+      if (inv.related_invoice_id) {
+        const { data } = await typedSupabase.from("invoices").select("number").eq("id", inv.related_invoice_id).maybeSingle();
+        souvisejici = data?.number ?? undefined;
+      }
+      return invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer, undefined, souvisejici);
+    },
+    [loadItemsFor, dph.vatPayer],
+  );
+
   const handlePrint = useCallback(
     async (inv: Invoice) => {
       if (isWeb()) {
         try {
-          const items = await loadItemsFor(inv);
-          await printDocumentInBrowser("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+          await printDocumentInBrowser("faktura", activeServiceId, await dataProTisk(inv));
         } catch (err) {
           reportError({
             code: "invoices.handle_print_failed",
@@ -711,8 +850,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         return;
       }
       try {
-        const items = await loadItemsFor(inv);
-        const result = await printDocument("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        const result = await printDocument("faktura", activeServiceId!, await dataProTisk(inv));
         if (result.ok) {
           showToast("Tisk odeslán", "success");
         } else {
@@ -732,16 +870,15 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         });
       }
     },
-    [activeServiceId, dph.vatPayer, loadItemsFor],
+    [activeServiceId, dataProTisk],
   );
 
   const handleExport = useCallback(
     async (inv: Invoice) => {
       if (isWeb()) {
         try {
-          const items = await loadItemsFor(inv);
           showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-          await printDocumentInBrowser("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+          await printDocumentInBrowser("faktura", activeServiceId, await dataProTisk(inv));
         } catch (err) {
           reportError({
             code: "invoices.handle_export_failed",
@@ -763,8 +900,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         return;
       }
       try {
-        const items = await loadItemsFor(inv);
-        const filename = `Faktura_${inv.number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
+        const filename = `${KIND_FILENAME[asKind(inv)]}_${inv.number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
         let downloadDir = "";
         try {
           const { desktopDir, downloadDir: dl } = await import("@tauri-apps/api/path");
@@ -773,7 +909,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           downloadDir = "/tmp";
         }
         const targetPath = `${downloadDir}/${filename}`;
-        const result = await exportDocument("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer), targetPath);
+        const result = await exportDocument("faktura", activeServiceId!, await dataProTisk(inv), targetPath);
         if (result.ok) {
           showToast(`PDF uložen: ${filename}`, "success");
         } else {
@@ -793,7 +929,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         });
       }
     },
-    [activeServiceId, dph.vatPayer, loadItemsFor],
+    [activeServiceId, dataProTisk],
   );
 
   const showPreview = useCallback((url: string) => {
@@ -810,8 +946,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     async (inv: Invoice) => {
       if (isWeb()) {
         try {
-          const items = await loadItemsFor(inv);
-          const url = await buildDocumentPreviewUrlForWeb("faktura", activeServiceId, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+          const url = await buildDocumentPreviewUrlForWeb("faktura", activeServiceId, await dataProTisk(inv));
           showPreview(url);
         } catch (err) {
           reportError({
@@ -834,8 +969,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         return;
       }
       try {
-        const items = await loadItemsFor(inv);
-        const result = await renderPdf("faktura", activeServiceId!, invoiceDocumentData(inv, items, safeLoadCompanyData(), dph.vatPayer));
+        const result = await renderPdf("faktura", activeServiceId!, await dataProTisk(inv));
         if (result.ok && result.data) {
           const blob = new Blob([result.data], { type: "application/pdf" });
           showPreview(URL.createObjectURL(blob));
@@ -856,16 +990,17 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         });
       }
     },
-    [activeServiceId, dph.vatPayer, loadItemsFor, showPreview],
+    [activeServiceId, dataProTisk, showPreview],
   );
 
   // ─── E-mail ────────────────────────────────────────────────
 
   const openSendModal = useCallback(
     (inv: Invoice) => {
+      const kind = asKind(inv);
       setSendEmail(inv.customer_email || "");
-      setSendSubject(`Faktura ${inv.number}`);
-      setSendBody(`Dobrý den,\n\nv příloze zasíláme fakturu č. ${inv.number}.\n\nS pozdravem\n${companyData.name || "Váš servis"}`);
+      setSendSubject(`${KIND_LABELS[kind]} ${inv.number}`);
+      setSendBody(`Dobrý den,\n\nv příloze zasíláme ${KIND_ACCUSATIVE[kind]} č. ${inv.number}.\n\nS pozdravem\n${companyData.name || "Váš servis"}`);
       setDetailInvoice(inv);
       setSendModalOpen(true);
     },
@@ -967,6 +1102,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         loading={loading}
         filter={filter}
         onFilterChange={setFilter}
+        kindFilter={kindFilter}
+        onKindFilterChange={setKindFilter}
         search={filterSearch}
         onSearchChange={setFilterSearch}
         onNew={() => openNewInvoice()}
@@ -978,6 +1115,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           invoice={detailInvoice}
           items={detailItems}
           events={detailEvents}
+          related={detailRelated}
+          onOpenRelated={(r) => void openDetail(r)}
+          onVystavitDobropis={() => vystavitDobropis(detailInvoice)}
+          onVyuctovatZalohu={() => vyuctovatZalohu(detailInvoice)}
           onClose={() => setShowDetail(false)}
           onEdit={() => openEditInvoice(detailInvoice)}
           onPrint={() => handlePrint(detailInvoice)}
@@ -992,8 +1133,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           onExportTo={(p) => void exportTo(detailInvoice, p)}
           onCancelInvoice={() =>
             setConfirm({
-              title: "Stornovat fakturu",
-              message: `Faktura ${detailInvoice.number} bude označena jako stornovaná. Tuto akci nelze vrátit.`,
+              title: `Stornovat ${KIND_ACCUSATIVE[asKind(detailInvoice)]}`,
+              message: `Doklad ${detailInvoice.number} bude označen jako stornovaný. Tuto akci nelze vrátit.`,
               confirmLabel: "Stornovat",
               variant: "danger",
               onConfirm: () => updateStatus(detailInvoice, "cancelled"),

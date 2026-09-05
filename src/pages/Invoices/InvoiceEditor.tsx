@@ -1,11 +1,17 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { Button, Card, Input, Label, MenuItem } from "../../components/ui";
+import { Button, Card, Input, Label, MenuItem, Segmented } from "../../components/ui";
 import { SectionHeading } from "../../components/SectionHeading";
 import { ChevronDownIcon, DocumentIcon, PlusIcon, UserIcon, XIcon } from "../../components/icons";
 import { CustomerAutocomplete, type CustomerMatch } from "../../components/orders/CustomerAutocomplete";
 import { emptyLineItem, formatCurrency, type InvoiceLineItem, type InvoiceTotals } from "../../lib/invoiceMath";
-import { StatusPill } from "./InvoiceList";
-import { formatDate, type EditorLineItem, type Invoice } from "./types";
+import { KindPill, StatusPill } from "./InvoiceList";
+import { KIND_LABELS, asKind, formatDate, type EditorLineItem, type Invoice, type InvoiceKind } from "./types";
+
+/** Druhy, mezi kterými se u nového dokladu přepíná; dobropis vzniká jen z faktury. */
+const DRUHY_NOVEHO: { value: InvoiceKind; label: string }[] = [
+  { value: "invoice", label: "Faktura" },
+  { value: "proforma", label: "Zálohová faktura" },
+];
 
 /** Zákazník z našeptávače včetně údajů, které faktura potřebuje navíc. */
 export type InvoiceCustomerMatch = CustomerMatch & {
@@ -55,6 +61,9 @@ export function InvoiceEditor({
   onCancel: () => void;
 }) {
   const isDraft = (invoice.status || "draft") === "draft";
+  const kind = asKind(invoice);
+  // Přepínač druhu jen u čerstvého dokladu – odvozené (dobropis, vyúčtování) mají druh daný.
+  const lzePrepnoutDruh = isNew && kind !== "credit_note" && !invoice.related_invoice_id;
   const [customerMode, setCustomerMode] = useState<"card" | "form">(invoice.customer_name ? "card" : "form");
 
   const updateField = <K extends keyof Invoice>(field: K, value: Invoice[K]) => {
@@ -67,6 +76,11 @@ export function InvoiceEditor({
   };
 
   const addItem = () => setItems([...items, emptyLineItem(vatRate)]);
+
+  /** Záloha není zdanitelné plnění – při přepnutí na proformu DUZP zmizí, zpět se vrátí k datu vystavení. */
+  const zmenDruh = (k: InvoiceKind) => {
+    setInvoice({ ...invoice, kind: k, taxable_date: k === "proforma" ? null : invoice.taxable_date ?? invoice.issue_date ?? null });
+  };
 
   const removeItem = (index: number) => {
     if (items.length <= 1) {
@@ -102,7 +116,7 @@ export function InvoiceEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [dirty, saving, onSave]);
 
-  const title = isNew ? "Nová faktura" : `Faktura ${invoice.number || ""}`;
+  const title = isNew ? (kind === "proforma" ? "Nová zálohová faktura" : "Nová faktura") : `${KIND_LABELS[kind]} ${invoice.number || ""}`;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -123,6 +137,8 @@ export function InvoiceEditor({
           {title}
         </h2>
         {!isNew && invoice.status && <StatusPill status={invoice.status} />}
+        {!lzePrepnoutDruh && kind !== "invoice" && <KindPill kind={kind} />}
+        {lzePrepnoutDruh && <Segmented size="sm" ariaLabel="Druh dokladu" value={kind} options={DRUHY_NOVEHO} onChange={zmenDruh} />}
         {dirty && (
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "var(--space-2)", fontSize: "var(--text-sm)", color: "var(--muted)", whiteSpace: "nowrap" }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "var(--radius-pill)", background: "var(--warning)" }} />
@@ -226,7 +242,7 @@ export function InvoiceEditor({
                             aria-label="Množství"
                             style={{ ...cellInput, textAlign: "right" }}
                             step="0.001"
-                            min="0"
+                            min={kind === "credit_note" ? undefined : "0"}
                           />
                         </td>
                         <td style={tdStyle}>
@@ -246,7 +262,7 @@ export function InvoiceEditor({
                             aria-label="Cena za jednotku"
                             style={{ ...cellInput, textAlign: "right" }}
                             step="0.01"
-                            min="0"
+                            min={kind === "credit_note" ? undefined : "0"}
                             onKeyDown={(e) => {
                               // Enter na poslední ceně přidá další řádek – jako v tabulce.
                               if (e.key === "Enter" && idx === items.length - 1) {
@@ -325,7 +341,7 @@ export function InvoiceEditor({
             <FieldGrid columns={3}>
               <Field label="Datum vystavení" type="date" value={invoice.issue_date || ""} onChange={(v) => updateField("issue_date", v)} />
               <Field label="Datum splatnosti" type="date" value={invoice.due_date || ""} onChange={(v) => updateField("due_date", v)} />
-              <Field label="DUZP" type="date" value={invoice.taxable_date || ""} onChange={(v) => updateField("taxable_date", v)} />
+              {kind !== "proforma" && <Field label="DUZP" type="date" value={invoice.taxable_date || ""} onChange={(v) => updateField("taxable_date", v)} />}
             </FieldGrid>
             <FieldGrid>
               <Field label="Měna" value={invoice.currency || "CZK"} onChange={(v) => updateField("currency", v.toUpperCase())} />
@@ -354,7 +370,7 @@ export function InvoiceEditor({
           {/* Poznámky */}
           <Card>
             <SectionHeading>Poznámky</SectionHeading>
-            <Label>Text na faktuře</Label>
+            <Label>Text na dokladu</Label>
             <textarea
               value={invoice.notes || ""}
               onChange={(e) => updateField("notes", e.target.value)}

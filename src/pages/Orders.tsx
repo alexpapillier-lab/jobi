@@ -1733,17 +1733,25 @@ export default function Orders({
       try {
         const { data } = await typedSupabase
           .from("invoices")
-          .select("id, ticket_id")
+          .select("id, ticket_id, kind")
           .eq("service_id", activeServiceId)
           .not("ticket_id", "is", null)
           .is("deleted_at", null)
           // Stornovaná faktura zakázku neblokuje – jinak by po stornu šlo
           // jen „Přejít na fakturu“ a novou by z zakázky nebylo jak vystavit.
-          .neq("status", "cancelled");
+          .neq("status", "cancelled")
+          // Dobropis není faktura zakázky; záloha (proforma) se ukáže jen
+          // dokud k zakázce není běžná faktura – ta má přednost.
+          .neq("kind", "credit_note");
         if (cancelled || !data) return;
         const map: Record<string, string> = {};
-        for (const row of data) {
-          if (row.ticket_id) map[row.ticket_id] = row.id;
+        const druh: Record<string, string> = {};
+        for (const row of data as Array<{ id: string; ticket_id: string | null; kind: string | null }>) {
+          if (!row.ticket_id) continue;
+          const uz = druh[row.ticket_id];
+          if (uz === "invoice" && row.kind !== "invoice") continue;
+          map[row.ticket_id] = row.id;
+          druh[row.ticket_id] = row.kind ?? "invoice";
         }
         setInvoiceIdByTicketId(map);
       } catch {

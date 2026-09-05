@@ -155,15 +155,36 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
   };
 }
 
-/** Faktura. */
-export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: CompanyData, vatPayer = true, ticketCode?: string): DocumentData {
+type InvoiceKind = "invoice" | "proforma" | "credit_note";
+
+/** Nadpis dokladu podle druhu; „daňový doklad“ smí na fakturu psát jen plátce DPH. */
+export function nadpisDokladu(kind: InvoiceKind, vatPayer: boolean): string {
+  if (kind === "proforma") return "Zálohová faktura";
+  if (kind === "credit_note") return "Dobropis";
+  return vatPayer ? "Faktura – daňový doklad" : "Faktura";
+}
+
+/**
+ * Faktura, zálohová faktura nebo dobropis (podle inv.kind).
+ *
+ * `souvisejiciCislo` je číslo původní faktury u dobropisu, resp. zálohy
+ * u vyúčtovací faktury – jde do textu dokladu a do {{extra.souvisejiciDoklad}}.
+ */
+export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: CompanyData, vatPayer = true, ticketCode?: string, souvisejiciCislo?: string): DocumentData {
+  const kind: InvoiceKind = inv.kind === "proforma" || inv.kind === "credit_note" ? inv.kind : "invoice";
   const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
   // QR platba chce IBAN; když servis vyplnil jen číslo účtu, odvodí se z něj.
   const iban = (inv.supplier_iban || cd.iban || "").replace(/\s/g, "") || ibanZCislaUctu(inv.supplier_bank_account ?? cd.bankAccount) || "";
-  const spayd = iban
-    ? ["SPD*1.0", `ACC:${iban}`, `AM:${inv.total.toFixed(2)}`, `CC:${inv.currency || "CZK"}`, inv.variable_symbol ? `X-VS:${inv.variable_symbol}` : "", `MSG:Faktura ${inv.number}`].filter(Boolean).join("*")
+  // SPAYD jen pro kladnou částku – dobropis (a vyúčtování na nulu) nikdo neplatí.
+  const spayd = iban && inv.total > 0
+    ? ["SPD*1.0", `ACC:${iban}`, `AM:${inv.total.toFixed(2)}`, `CC:${inv.currency || "CZK"}`, inv.variable_symbol ? `X-VS:${inv.variable_symbol}` : "", `MSG:${kind === "proforma" ? "Zaloha" : "Faktura"} ${inv.number}`].filter(Boolean).join("*")
     : undefined;
+  // Vazba na původní doklad musí být na dobropisu vždy, i když si uživatel poznámku přepsal.
+  const vazba = kind === "credit_note" && souvisejiciCislo ? `Dobropis k faktuře ${souvisejiciCislo}` : undefined;
+  const poznamka = s(inv.notes);
+  const note = vazba && !poznamka?.includes(souvisejiciCislo!) ? [vazba, poznamka].filter(Boolean).join("\n") : poznamka ?? vazba;
   return {
+    title: nadpisDokladu(kind, vatPayer),
     number: inv.number,
     relatedNumber: ticketCode,
     service: {
@@ -183,10 +204,11 @@ export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: Comp
       email: s(inv.customer_email),
       phone: s(inv.customer_phone),
     },
-    dates: { issued: inv.issue_date, due: inv.due_date, taxable: s(inv.taxable_date) },
+    // Záloha není zdanitelné plnění – DUZP na ní být nesmí.
+    dates: { issued: inv.issue_date, due: inv.due_date, taxable: kind === "proforma" ? undefined : s(inv.taxable_date) },
     items: sorted.map((it) => ({ name: it.name, qty: it.qty, unit: it.unit, unitPrice: it.unit_price, vatRate: it.vat_rate, total: it.line_total })),
     totals: { subtotal: inv.subtotal, vat: inv.vat_amount, total: inv.total, rounding: inv.rounding || undefined, currency: inv.currency || "CZK", vatPayer },
-    note: s(inv.notes),
+    note,
     payment: {
       account: s(inv.supplier_bank_account) ?? s(cd.bankAccount),
       iban: s(inv.supplier_iban) ?? s(cd.iban),
@@ -194,5 +216,6 @@ export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: Comp
       vs: s(inv.variable_symbol),
       spayd,
     },
+    extra: { druhDokladu: kind, souvisejiciDoklad: souvisejiciCislo ?? "" },
   };
 }

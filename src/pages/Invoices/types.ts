@@ -7,6 +7,46 @@ export type InvoiceEvent = Database["public"]["Tables"]["invoice_events"]["Row"]
 
 export type InvoiceStatus = "draft" | "issued" | "sent" | "paid" | "overdue" | "cancelled";
 
+/** Druh dokladu – sloupec invoices.kind. */
+export type InvoiceKind = "invoice" | "proforma" | "credit_note";
+
+export const KIND_LABELS: Record<InvoiceKind, string> = {
+  invoice: "Faktura",
+  proforma: "Zálohová faktura",
+  credit_note: "Dobropis",
+};
+
+/** Druh ve 4. pádě – „zasíláme fakturu / zálohovou fakturu / dobropis“. */
+export const KIND_ACCUSATIVE: Record<InvoiceKind, string> = {
+  invoice: "fakturu",
+  proforma: "zálohovou fakturu",
+  credit_note: "dobropis",
+};
+
+/** Předpona číselné řady; řady drží next_invoice_number() zvlášť pro každou předponu. */
+export const KIND_PREFIX: Record<InvoiceKind, string> = {
+  invoice: "FV",
+  proforma: "ZF",
+  credit_note: "DB",
+};
+
+export const KIND_COLORS: Record<InvoiceKind, { bg: string; fg: string }> = {
+  invoice: { bg: "var(--panel-2)", fg: "var(--muted)" },
+  proforma: { bg: "rgba(245,158,11,0.15)", fg: "#b45309" },
+  credit_note: { bg: "rgba(236,72,153,0.15)", fg: "#be185d" },
+};
+
+/** Druh dokladu; starší řádky bez sloupce se berou jako faktura. */
+export function asKind(inv: Pick<Partial<Invoice>, "kind"> | null | undefined): InvoiceKind {
+  const k = inv?.kind;
+  return (k && k in KIND_LABELS ? k : "invoice") as InvoiceKind;
+}
+
+/** „Faktura FV2026-1 vystavena“ / „Dobropis DB2026-1 vystaven“. */
+export function vystavenoText(kind: InvoiceKind, number: string): string {
+  return `${KIND_LABELS[kind]} ${number} ${kind === "credit_note" ? "vystaven" : "vystavena"}`;
+}
+
 /** Řádek položky v editoru – u existující faktury nese i id z databáze. */
 export type EditorLineItem = InvoiceLineItem & { id?: string };
 
@@ -15,6 +55,9 @@ export type EditorLineItem = InvoiceLineItem & { id?: string };
  * uživatele je to jedna hromádka „čeká na zaplacení“.
  */
 export type ListFilter = "all" | "draft" | "issued" | "paid" | "overdue" | "cancelled";
+
+/** Filtr druhu dokladu v seznamu. */
+export type KindFilter = "all" | InvoiceKind;
 
 export const STATUS_LABELS: Record<InvoiceStatus, string> = {
   draft: "Koncept",
@@ -45,6 +88,10 @@ export function matchesFilter(inv: Invoice, filter: ListFilter): boolean {
   if (filter === "all") return true;
   if (filter === "issued") return inv.status === "issued" || inv.status === "sent";
   return inv.status === filter;
+}
+
+export function matchesKind(inv: Invoice, filter: KindFilter): boolean {
+  return filter === "all" || asKind(inv) === filter;
 }
 
 /** Dnešní datum jako YYYY-MM-DD (lokální čas). */

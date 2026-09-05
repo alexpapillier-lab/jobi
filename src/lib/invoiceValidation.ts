@@ -1,4 +1,4 @@
-import type { InvoiceLineItem } from "./invoiceMath";
+import { computeTotals, type InvoiceLineItem } from "./invoiceMath";
 
 export type ValidationError = {
   field: string;
@@ -12,6 +12,8 @@ export type InvoiceData = {
   customer_name?: string;
   supplier_name?: string;
   status?: string;
+  /** Druh dokladu (invoices.kind); bez hodnoty se bere jako faktura. */
+  kind?: string;
 };
 
 export function validateInvoiceForSave(
@@ -35,6 +37,15 @@ export function validateInvoiceForSave(
   const hasValidItem = items.some((it) => it.name.trim().length > 0);
   if (!hasValidItem) {
     errors.push({ field: "items", message: "Alespoň jedna položka musí mít název" });
+  }
+
+  // Znaménko částky určuje druh dokladu: záporná faktura je ve skutečnosti
+  // dobropis a kladný dobropis nedává smysl – účetnictví by je nepřijalo.
+  const total = computeTotals(items).total;
+  if (invoice.kind === "credit_note") {
+    if (total > 0) errors.push({ field: "items", message: "Dobropis musí mít zápornou nebo nulovou částku" });
+  } else if (total < 0) {
+    errors.push({ field: "items", message: "Faktura nemůže mít zápornou částku – vystavte dobropis" });
   }
 
   return errors;

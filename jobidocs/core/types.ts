@@ -67,6 +67,12 @@ export type LineItem = {
 };
 
 export type DocumentData = {
+  /**
+   * Nadpis dokladu, když se liší od názvu typu – „Faktura – daňový doklad“,
+   * „Zálohová faktura“, „Dobropis“. Má přednost před textem v šabloně,
+   * protože o druhu dokladu rozhodují data, ne vzhled.
+   */
+  title?: string;
   /** Číslo dokumentu: kód zakázky, reklamace nebo faktury. */
   number?: string;
   /** Související číslo (u reklamace původní zakázka, u faktury zakázka). */

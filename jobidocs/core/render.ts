@@ -308,7 +308,9 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
   const d = ctx.data;
   switch (item.type) {
     case "title": {
-      const kind = titleOverride ?? (item.text?.trim() ? sub(ctx, item.text) : DOC_TYPE_LABELS[ctx.template.docType]);
+      // Nadpis z dat (druh faktury) přebíjí text ze šablony – jinak by dobropis
+      // vyšel s nadpisem „Faktura“; v editoru šablony data nadpis nemají.
+      const kind = titleOverride ?? (d.title?.trim() || (item.text?.trim() ? sub(ctx, item.text) : DOC_TYPE_LABELS[ctx.template.docType]));
       const number = ctx.placeholders ? "⟨Číslo dokumentu⟩" : d.number ?? "";
       const dateRaw = d.dates?.issued ?? d.dates?.received;
       const date = ctx.placeholders ? "⟨Datum⟩" : dateRaw ? formatDate(dateRaw) : "";
@@ -754,7 +756,7 @@ export function renderDocument(input: RenderInput): string {
 <html lang="cs">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(DOC_TYPE_LABELS[template.docType])}${data.number ? " " + escapeHtml(data.number) : ""}</title>
+<title>${escapeHtml(data.title?.trim() || DOC_TYPE_LABELS[template.docType])}${data.number ? " " + escapeHtml(data.number) : ""}</title>
 ${fontLink}
 <style>${css(template, theme, editor)}</style>
 </head>

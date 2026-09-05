@@ -99,6 +99,14 @@ serve(async (req) => {
       );
     }
 
+    // Druh dokladu (invoices.kind): zálohová faktura a dobropis mají vlastní
+    // nadpis, předmět i název přílohy; starší řádky bez sloupce jsou faktura.
+    const kind: string = inv.kind === "proforma" || inv.kind === "credit_note" ? inv.kind : "invoice";
+    const druhNazev = kind === "proforma" ? "Zálohová faktura" : kind === "credit_note" ? "Dobropis" : "Faktura";
+    const druhAkuzativ = kind === "proforma" ? "zálohovou fakturu" : kind === "credit_note" ? "dobropis" : "fakturu";
+    const druhSoubor = kind === "proforma" ? "Zalohova_faktura" : kind === "credit_note" ? "Dobropis" : "Faktura";
+    const druhNadpis = kind === "invoice" ? "" : druhNazev;
+
     // Load items
     const { data: items } = await svc
       .from("invoice_items")
@@ -114,6 +122,8 @@ serve(async (req) => {
       const variables: Record<string, string> = {};
       const inv = invoice as Record<string, any>;
       variables.inv_number = inv.number || "";
+      // Nadpis dokladu podle druhu; u běžné faktury se nechá výchozí text šablony.
+      if (druhNadpis) variables.inv_title = druhNadpis;
       variables.inv_vs = inv.variable_symbol || "";
       variables.inv_issue_date = inv.issue_date || "";
       variables.inv_due_date = inv.due_date || "";
@@ -192,8 +202,8 @@ serve(async (req) => {
 
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
     const inv = invoice as Record<string, any>;
-    const emailSubject = subject || `Faktura ${inv.number}`;
-    const plainText = emailBody || `Dobrý den,\n\nv příloze zasíláme fakturu č. ${inv.number}.\n\nS pozdravem`;
+    const emailSubject = subject || `${druhNazev} ${inv.number}`;
+    const plainText = emailBody || `Dobrý den,\n\nv příloze zasíláme ${druhAkuzativ} č. ${inv.number}.\n\nS pozdravem`;
 
     const escapeHtml = (s: string) =>
       String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -205,7 +215,7 @@ serve(async (req) => {
       '<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif;background:#f9fafb">',
       '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:24px 16px"><tr><td align="center">',
       '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);overflow:hidden"><tr><td style="padding:32px 24px">',
-      `<h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827">Faktura ${safeNumber}</h1>`,
+      `<h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827">${escapeHtml(druhNazev)} ${safeNumber}</h1>`,
       `<p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6">${safeBody}</p>`,
       '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;border-radius:8px;margin:16px 0"><tr><td style="padding:16px">',
       `<p style="margin:0 0 4px;font-size:12px;color:#6b7280">Celkem k úhradě</p>`,
@@ -229,7 +239,7 @@ serve(async (req) => {
     if (pdfBase64) {
       resendPayload.attachments = [
         {
-          filename: `Faktura_${(inv.number || "").replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`,
+          filename: `${druhSoubor}_${(inv.number || "").replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`,
           content: pdfBase64,
         },
       ];

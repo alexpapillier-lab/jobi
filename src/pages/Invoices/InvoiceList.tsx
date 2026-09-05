@@ -3,21 +3,34 @@ import { Button, Card, Input, PageHeader, Pill, Segmented, Toolbar } from "../..
 import { DocumentIcon, PlusIcon } from "../../components/icons";
 import { formatCurrency } from "../../lib/invoiceMath";
 import {
+  KIND_COLORS,
+  KIND_LABELS,
   STATUS_COLORS,
   STATUS_LABELS,
   UNPAID_STATUSES,
   addDaysIso,
+  asKind,
   asStatus,
   daysOverdue,
   formatDate,
   matchesFilter,
+  matchesKind,
   pluralDny,
   pluralFaktury,
   todayIso,
   type Invoice,
+  type InvoiceKind,
   type InvoiceStatus,
+  type KindFilter,
   type ListFilter,
 } from "./types";
+
+const KIND_FILTER_OPTIONS: { value: KindFilter; label: string }[] = [
+  { value: "all", label: "Vše" },
+  { value: "invoice", label: "Faktury" },
+  { value: "proforma", label: "Zálohové" },
+  { value: "credit_note", label: "Dobropisy" },
+];
 
 /**
  * Seznam faktur: hlavička, přehledové dlaždice, filtr a řádky.
@@ -31,6 +44,8 @@ export function InvoiceList({
   loading,
   filter,
   onFilterChange,
+  kindFilter,
+  onKindFilterChange,
   search,
   onSearchChange,
   onNew,
@@ -40,6 +55,8 @@ export function InvoiceList({
   loading: boolean;
   filter: ListFilter;
   onFilterChange: (f: ListFilter) => void;
+  kindFilter: KindFilter;
+  onKindFilterChange: (f: KindFilter) => void;
   search: string;
   onSearchChange: (q: string) => void;
   onNew: () => void;
@@ -76,7 +93,7 @@ export function InvoiceList({
   }, [invoices, today]);
 
   const filtered = useMemo(() => {
-    let list = invoices.filter((i) => matchesFilter(i, filter));
+    let list = invoices.filter((i) => matchesFilter(i, filter) && matchesKind(i, kindFilter));
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -87,9 +104,11 @@ export function InvoiceList({
       );
     }
     return list;
-  }, [invoices, filter, search]);
+  }, [invoices, filter, kindFilter, search]);
 
   const hasAny = invoices.length > 0;
+  // Filtr druhu se ukáže, teprve když servis zálohy nebo dobropisy skutečně používá.
+  const maDruhy = invoices.some((i) => asKind(i) !== "invoice");
 
   const filterOptions: { value: ListFilter; label: ReactNode }[] = (
     [
@@ -178,6 +197,7 @@ export function InvoiceList({
                 />
               </div>
               <Segmented size="sm" ariaLabel="Filtr podle stavu" value={filter} options={filterOptions} onChange={onFilterChange} />
+              {maDruhy && <Segmented size="sm" ariaLabel="Filtr podle druhu" value={kindFilter} options={KIND_FILTER_OPTIONS} onChange={onKindFilterChange} />}
             </Toolbar>
           </>
         )}
@@ -196,6 +216,7 @@ export function InvoiceList({
               size="sm"
               onClick={() => {
                 onFilterChange("all");
+                onKindFilterChange("all");
                 onSearchChange("");
               }}
             >
@@ -296,8 +317,19 @@ export function StatusPill({ status }: { status: string }) {
   );
 }
 
+/** Štítek druhu dokladu – u běžné faktury se nezobrazuje, ta je výchozí. */
+export function KindPill({ kind }: { kind: InvoiceKind }) {
+  const c = KIND_COLORS[kind];
+  return (
+    <Pill color={c.fg} style={{ background: c.bg, borderColor: "transparent" }}>
+      {KIND_LABELS[kind]}
+    </Pill>
+  );
+}
+
 function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: string; onOpen: () => void }) {
   const status: InvoiceStatus = asStatus(inv.status);
+  const kind = asKind(inv);
   const overdueDays = status === "overdue" ? daysOverdue(inv.due_date, today) : 0;
   const isOverdue = status === "overdue";
 
@@ -320,10 +352,11 @@ function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: 
   };
 
   return (
-    <button type="button" onClick={onOpen} style={rowStyle} aria-label={`Faktura ${inv.number}`}>
+    <button type="button" onClick={onOpen} style={rowStyle} aria-label={`${KIND_LABELS[kind]} ${inv.number}`}>
       <div style={{ flex: "1 1 180px", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: 2, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700, fontSize: "var(--text-base)", whiteSpace: "nowrap" }}>{inv.number}</span>
+          {kind !== "invoice" && <KindPill kind={kind} />}
           <StatusPill status={status} />
         </div>
         <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

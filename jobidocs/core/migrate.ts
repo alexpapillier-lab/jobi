@@ -237,6 +237,8 @@ export function variablesToDocumentData(variables: Record<string, string> | unde
       vatPayer,
     },
     diagnostic: g("diagnostic_text"),
+    // Druh faktury posílá server (e-mail s PDF) jako inv_title; bez něj platí název typu.
+    title: g("inv_title", "doc_title"),
     note: g("inv_notes", "note"),
     photos: parseJsonArray(v.photo_urls).filter((u): u is string => typeof u === "string" && u.trim().length > 0),
     warranty: g("warranty_until") ? { until: g("warranty_until") } : undefined,

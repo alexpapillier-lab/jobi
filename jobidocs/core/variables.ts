@@ -30,6 +30,7 @@ const G = {
 };
 
 export const VARIABLES: VariableDef[] = [
+  { key: "title", label: "Nadpis dokladu (Faktura / Zálohová faktura / Dobropis)", group: G.doc, sample: "Faktura – daňový doklad" },
   { key: "number", label: "Číslo dokumentu (zakázky)", group: G.doc, sample: "Z26000123" },
   { key: "relatedNumber", label: "Číslo původní zakázky", group: G.doc, sample: "Z26000098" },
   { key: "pin", label: "PIN zakázky", group: G.doc, sample: "9398" },
@@ -145,6 +146,8 @@ export const LEGACY_ALIASES: Record<string, string> = {
   warranty_until: "warranty.until",
   diagnostic_text: "diagnostic",
   inv_notes: "note",
+  inv_title: "title",
+  doc_title: "title",
   inv_vs: "payment.vs",
   inv_supplier_bank: "payment.account",
   inv_supplier_iban: "payment.iban",
@@ -223,6 +226,7 @@ export function resolveVariable(key: string, data: DocumentData): string {
   const k = LEGACY_ALIASES[key] ?? key;
   const currency = data.totals?.currency ?? "CZK";
   switch (k) {
+    case "title": return data.title ?? "";
     case "number": return data.number ?? "";
     case "relatedNumber": return data.relatedNumber ?? "";
     case "pin": return data.pin ?? "";
