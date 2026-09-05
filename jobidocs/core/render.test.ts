@@ -15,6 +15,17 @@ describe("render", () => {
     });
   }
 
+  it("kontrola po opravě: shrnutí a řádky, bez kontroly prázdné", () => {
+    const data = { ...sampleData("diagnosticky_protokol"), checklist: { title: "Telefon", items: [
+      { text: "Displej", status: "ok" as const },
+      { text: "Tlačítka", status: "fail" as const, note: "vibrace slabší" },
+      { text: "Kamera", status: null },
+    ] } };
+    expect(substitute("{{checklist.summary}}", data)).toBe("Ověřeno 2 z 3, 1 s chybou");
+    expect(substitute("{{checklist.list}}", data)).toBe("✓ Displej\n✗ Tlačítka – vibrace slabší\n– Kamera");
+    expect(substitute("{{checklist.summary}}", sampleData("diagnosticky_protokol"))).toBe("");
+  });
+
   it("nadpis z dat přebíjí název typu i text v šabloně", () => {
     const tpl = defaultTemplate("faktura");
     const args = { template: tpl, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };

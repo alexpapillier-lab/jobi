@@ -128,6 +128,18 @@ export function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: R
     diagnostic_text: ticket.diagnosticText ?? "",
     note: (ticket as { notes?: string }).notes ?? "",
     repair_items: repairItems,
+    // Kontrola po opravě – shrnutí a řádky; bez kontroly prázdné, šablona blok skryje.
+    checklist_summary: (() => {
+      const polozky = ticket.testChecklist?.polozky ?? [];
+      if (polozky.length === 0) return "";
+      const overeno = polozky.filter((p) => p.stav).length;
+      const chyb = polozky.filter((p) => p.stav === "chyba").length;
+      const zaklad = `Ověřeno ${overeno} z ${polozky.length}`;
+      return chyb > 0 ? `${zaklad}, ${chyb} s chybou` : overeno === polozky.length ? `${zaklad}, vše v pořádku` : zaklad;
+    })(),
+    checklist_list: (ticket.testChecklist?.polozky ?? [])
+      .map((p) => `${p.stav === "ok" ? "✓" : p.stav === "chyba" ? "✗" : "–"} ${p.text}${p.poznamka?.trim() ? ` – ${p.poznamka.trim()}` : ""}`)
+      .join("\n"),
     photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
     complaint_code: "",
     reclamation_code: "",

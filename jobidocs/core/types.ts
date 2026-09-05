@@ -121,6 +121,8 @@ export type DocumentData = {
     estimated?: number;
   };
   diagnostic?: string;
+  /** Kontrola po opravě: co technik ověřil před předáním (ok / fail / skipped). */
+  checklist?: { title?: string; items: Array<{ text: string; status?: "ok" | "fail" | "skipped" | null; note?: string }> };
   note?: string;
   /** URL fotek (https nebo data URL). */
   photos?: string[];

@@ -85,6 +85,8 @@ export const VARIABLES: VariableDef[] = [
   { key: "items.count", label: "Počet položek", group: G.price, sample: "1" },
 
   { key: "diagnostic", label: "Text diagnostiky", group: G.other, sample: "Telefon přijat s nefunkční dotykovou vrstvou…" },
+  { key: "checklist.summary", label: "Kontrola po opravě – shrnutí", group: G.other, sample: "Ověřeno 8 z 8, vše v pořádku" },
+  { key: "checklist.list", label: "Kontrola po opravě – položky po řádcích", group: G.other, sample: "✓ Displej a dotyk po celé ploše\n✓ Nabíjení a přenos dat\n✗ Tlačítka a vibrace – vibrace slabší" },
   { key: "note", label: "Poznámka", group: G.other, sample: "" },
   { key: "warranty.months", label: "Záruka (měsíce)", group: G.other, sample: "12" },
   { key: "warranty.until", label: "Záruka do", group: G.other, sample: "3. 9. 2027" },
@@ -145,6 +147,8 @@ export const LEGACY_ALIASES: Record<string, string> = {
   inv_vat_amount: "totals.vat",
   warranty_until: "warranty.until",
   diagnostic_text: "diagnostic",
+  checklist_summary: "checklist.summary",
+  checklist_list: "checklist.list",
   inv_notes: "note",
   inv_title: "title",
   doc_title: "title",
@@ -248,6 +252,20 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "warranty.until": return formatDate(data.warranty?.until);
     case "warranty.text": return data.warranty?.text ?? "";
     case "diagnostic": return data.diagnostic ?? "";
+    case "checklist.summary": {
+      const items = data.checklist?.items ?? [];
+      if (items.length === 0) return "";
+      const overeno = items.filter((i) => i.status).length;
+      const chyb = items.filter((i) => i.status === "fail").length;
+      const zaklad = `Ověřeno ${overeno} z ${items.length}`;
+      return chyb > 0 ? `${zaklad}, ${chyb} s chybou` : overeno === items.length ? `${zaklad}, vše v pořádku` : zaklad;
+    }
+    case "checklist.list": {
+      const items = data.checklist?.items ?? [];
+      return items
+        .map((i) => `${i.status === "ok" ? "✓" : i.status === "fail" ? "✗" : "–"} ${i.text}${i.note ? ` – ${i.note}` : ""}`)
+        .join("\n");
+    }
     case "note": return data.note ?? "";
   }
   if (k.startsWith("dates.")) {

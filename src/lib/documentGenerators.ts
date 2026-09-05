@@ -1105,6 +1105,14 @@ export function generateDiagnosticProtocolHTML(ticket: TicketEx, companyData: an
         
         <div class="divider"></div>
         ` : ""}
+
+        ${ticket.testChecklist && ticket.testChecklist.polozky.length > 0 ? `
+        <div class="section">
+          <div class="section-title">Kontrola po opravě – ${escapeHtmlText(ticket.testChecklist.sablonaNazev)}</div>
+          <div class="diagnostic-text">${ticket.testChecklist.polozky.map((p) => `${p.stav === "ok" ? "✓" : p.stav === "chyba" ? "✗" : "–"} ${escapeHtmlText(p.text)}${p.poznamka?.trim() ? ` – ${escapeHtmlText(p.poznamka.trim())}` : ""}`).join("<br/>")}</div>
+        </div>
+        <div class="divider"></div>
+        ` : ""}
         
         ${documentsConfig.diagnosticProtocol.includePhotos && ticket.diagnosticPhotosBefore && ticket.diagnosticPhotosBefore.length > 0 ? `
           <div class="section">
@@ -1830,4 +1838,9 @@ export function generatePrijetiReklamaceHTML(claim: WarrantyClaimRow, _companyDa
     </body>
     </html>
   `;
+}
+
+/** Text z databáze do HTML dokumentu – položky kontroly píše člověk, může v nich být „<“. */
+function escapeHtmlText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

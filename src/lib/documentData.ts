@@ -39,6 +39,16 @@ function addressOf(street?: string | null, city?: string | null, zip?: string | 
   return out || undefined;
 }
 
+/** Kontrola po opravě pro tisk; bez založené kontroly se blok v šabloně nevykreslí. */
+function kontrolaDoDokumentu(kontrola: TicketEx["testChecklist"]): DocumentData["checklist"] {
+  if (!kontrola || kontrola.polozky.length === 0) return undefined;
+  const stav = { ok: "ok", chyba: "fail", neoverovano: "skipped" } as const;
+  return {
+    title: kontrola.sablonaNazev,
+    items: kontrola.polozky.map((p) => ({ text: p.text, status: p.stav ? stav[p.stav] : null, note: p.poznamka?.trim() || undefined })),
+  };
+}
+
 function repairsToItems(ticket: TicketEx): LineItem[] {
   return (ticket.performedRepairs ?? [])
     .filter((r) => r && (r.name ?? "").trim())
@@ -103,6 +113,7 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
       currency: "CZK",
     },
     diagnostic: s(ticket.diagnosticText),
+    checklist: kontrolaDoDokumentu(ticket.testChecklist),
     note: s(t.notes),
     photos: (ticket.diagnosticPhotos ?? []).filter((u) => typeof u === "string" && u.trim()),
     warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : undefined,

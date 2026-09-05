@@ -212,12 +212,14 @@ Co převzít, podle přínosu:
   a dokumenty jde jako hodiny × Kč/h. Výchozí sazba servisu v Nastavení →
   Zakázky → Hodinová práce (`service_settings.config.hodinova_sazba`).
 - `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
-- `[~]` **Kontrola po opravě** (5. 9., migrace 20260907170000): karta v detailu
+- `[x]` **Kontrola po opravě** (5. 9., migrace 20260907170000): karta v detailu
   zakázky, šablona podle názvu zařízení (telefon / počítač / obecná, vlastní
   v Nastavení → Zakázky → Kontrola po opravě), položky OK / Chyba / Neověřeno
   s poznámkou, ukládá se hned (`tickets.test_checklist`), krok v asistentovi.
-  **Zbývá propsat do protokolu** (proměnná pro JobiDocs a webový tisk) – čekalo,
-  než agent dokončí úpravy v `jobidocs/core` a `documentData.ts`.
+  Do dokumentů: JobiDocs proměnné `{{checklist.summary}}` a `{{checklist.list}}`
+  (blok se skryje, když kontrola není), webový diagnostický protokol má sekci
+  „Kontrola po opravě“. Šablony JobiDocs si proměnnou musí přidat (výchozí
+  šablona protokolu ji zatím nemá).
 - `[x]` **Otázky při stornu zakázky** (5. 9., `StornoDialog.tsx`): při přepnutí do
   stavu, který je storno (podle klíče `cancelled`/`storno` nebo názvu Zrušeno,
   Storno, Neopraveno…), dialog s důvodem a poznámkou; zapisuje se do historie
