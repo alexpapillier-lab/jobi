@@ -10,15 +10,15 @@ Stav: `[ ]` nezačato · `[~]` rozděláno · `[x]` hotovo
 
 Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 
-1. `[~]` **Zákaznický portál** (kód hotový 4. 9., čeká na nasazení migrace a edge funkce) – odkaz v SMS: stav zakázky, fotky z příjmu,
+1. `[x]` **Zákaznický portál** (nasazeno 4. 9.; chybí platební brána, QR platba je) – odkaz v SMS: stav zakázky, fotky z příjmu,
    cenová nabídka ke schválení jedním klikem s časovým razítkem, podpis
    příjemky prstem, platba předem (QR / brána), potvrzení vyzvednutí.
-2. `[~]` **Stavebnice automatizací** (kód hotový 4. 9., čeká na nasazení migrace a funkce) – pravidla „když stav X → šablona Y“ pro
+2. `[x]` **Stavebnice automatizací** (nasazeno 4. 9.; WhatsApp zatím ne) – pravidla „když stav X → šablona Y“ pro
    SMS, e-mail, WhatsApp; upomínky „čeká 7 dní na vyzvednutí“, skladné,
    žádost o recenzi po vydání. Základ (SMS podle stavu) existuje.
 3. `[ ]` **Cenová nabídka a schválení** jako první krok opravy – z ceníku,
    odeslat, schválit online, pak práce. Dnes jen „předschválená cena“ v textu.
-4. `[~]` **Díly od dodavatele až po marži** (dodavatelé, objednávky, minimum a rezervace hotové 4. 9.; chybí marže ve Statistikách a rezervace z detailu zakázky) – objednávky dílů u dodavatelů,
+4. `[x]` **Díly od dodavatele až po marži** (nasazeno 5. 9.: dodavatelé, objednávky, minimum, rezervace ze zakázky, marže ve Statistikách) – objednávky dílů u dodavatelů,
    rezervace dílu na zakázku, doobjednání pod minimem, marže na opravu
    a na technika. Sklad a vazba díl↔oprava existují, chybí nákupní strana.
 5. `[ ]` **Více poboček a lidé** – pobočky s vlastními sklady a číselnou
