@@ -15,6 +15,25 @@ async function makeWarrantyClaimCode(
   if (!activeServiceId) return "R25000001";
   const year = new Date().getFullYear().toString().slice(-2);
   const prefix = `R${year}`;
+
+  // Číslo přiděluje databáze (dalsi_cislo_reklamace) – dvě reklamace založené
+  // naráz by si jinak spočítaly stejný kód. Záložní výpočet níž zůstává pro
+  // případ, že RPC není k dispozici.
+  if (supabase) {
+    try {
+      const { data, error } = await (supabase as any).rpc("dalsi_cislo_reklamace", {
+        p_service_id: activeServiceId,
+        p_prefix: prefix,
+      });
+      if (!error && typeof data === "number" && data > 0) {
+        return `${prefix}${String(data).padStart(6, "0")}`;
+      }
+      console.error("[reklamace] dalsi_cislo_reklamace selhalo, počítám kód lokálně:", error);
+    } catch (err) {
+      console.error("[reklamace] dalsi_cislo_reklamace nedostupné, počítám kód lokálně:", err);
+    }
+  }
+
   let existingCodes: string[] = existingClaims
     .map((c) => c.code || "")
     .filter((code) => code.startsWith(prefix));

@@ -38,6 +38,7 @@ import { isWeb } from "../lib/platform";
 import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
+import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
@@ -51,7 +52,6 @@ import {
   type DeviceRepair,
   type DeviceModel,
   safeLoadDevicesData,
-  safeLoadInventoryData,
 } from "../lib/catalogStorage";
 import {
   reserveForRepair,
@@ -1775,7 +1775,40 @@ export default function Orders({
       if (channel && supabase) void supabase.removeChannel(channel);
     };
   }, [activeServiceId]);
-  const inventoryData: InventoryData = useMemo(() => safeLoadInventoryData(), []);
+  /**
+   * Produkty skladu pro výběr dílů u provedených oprav. Čtou se z databáze –
+   * starší kopie v localStorage vzniká jen na stránce Sklad a na jiném
+   * počítači je prázdná, takže výběr dílů nic nenabízel. Načítá se při
+   * otevření detailu, aby stav skladu odpovídal.
+   */
+  const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
+  useEffect(() => {
+    if (!activeServiceId || !detailId) return;
+    let zruseno = false;
+    void loadInventoryFromDb(activeServiceId).then((res) => {
+      if (zruseno || res.error) return;
+      setInventoryData({
+        brands: [],
+        categories: [],
+        models: [],
+        products: res.data.products.map((p) => ({
+          id: p.id,
+          name: p.name,
+          modelIds: p.modelIds,
+          stock: p.stock,
+          price: p.price,
+          sku: p.sku,
+          description: p.description,
+          imageUrl: p.imageUrl,
+          repairIds: p.repairIds,
+          createdAt: p.createdAt,
+        })),
+      });
+    });
+    return () => {
+      zruseno = true;
+    };
+  }, [activeServiceId, detailId]);
 
   const modelsWithHierarchy: ModelWithHierarchy[] = useMemo(() => {
     if (!devicesData || !Array.isArray(devicesData.models)) return [];
@@ -6517,6 +6550,7 @@ export default function Orders({
                     onAdd={(repair) => addPerformedRepair(detailedTicket.id, repair)}
                     deviceLabel={detailedTicket.deviceLabel}
                     devicesData={devicesData}
+                    inventoryData={inventoryData}
                     onAddToModel={(repairData) => {
                       // Add repair to model in Devices
                       const currentDevices = safeLoadDevicesData();

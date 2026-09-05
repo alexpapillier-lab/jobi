@@ -153,11 +153,10 @@ První tři měsíce: body 1, 2, 4.
     opravy se ukládají do databáze hned při přidání a odebrání, úpravy ceny
     s odkladem 400 ms; realtime nepřepíše místní opravy, dokud zápis běží.
     E2E „oprava přidaná majitelem přežije změnu stavu od technika“.
-  - `[ ]` Detail zakázky bere produkty z legacy localStorage
-    (`safeLoadInventoryData`), ne z DB – výběr dílů u opravy je prázdný.
-  - `[ ]` Kód reklamace vzniká na klientu jako max+1 (souběh → duplicita);
-    použít počítadlo jako `dalsi_cislo_zakazky`. Unikátní index na
-    `invoices(service_id, number)`.
+  - `[x]` Detail zakázky bere produkty ze skladu v databázi (5. 9.); výběr
+    dílů u ruční opravy nabídne celý sklad, když se model nepozná.
+  - `[x]` Kód reklamace přiděluje databáze (`dalsi_cislo_reklamace`, migrace
+    20260907140000) + unikátní indexy na kód reklamace a číslo faktury (5. 9.).
   - `[ ]` QR platba jen z IBAN – odvodit CZ IBAN z čísla účtu.
   - `[ ]` Kosmetika: Stornovat u konceptu, „vystaveno“ u konceptu v seznamu,
     množství „1.5 ks“, historie ukazuje id místo jména bez přezdívky, cena

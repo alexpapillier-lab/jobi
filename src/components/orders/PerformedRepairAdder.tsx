@@ -8,12 +8,15 @@ export function PerformedRepairAdder({
   onAdd,
   deviceLabel,
   devicesData,
+  inventoryData: inventoryDataProp,
   onAddToModel,
 }: {
   availableRepairs: DeviceRepair[];
   onAdd: (repair: { name: string; type: "selected" | "manual"; repairId?: string }) => void;
   deviceLabel?: string;
   devicesData?: DevicesData;
+  /** Produkty skladu z databáze; bez nich se sáhne do starší kopie v localStorage. */
+  inventoryData?: InventoryData;
   onAddToModel?: (repairData: { name: string; modelId: string; price?: number; costs?: number; estimatedTime?: number; productIds?: string[] }) => void;
 }) {
   const [mode, setMode] = useState<"select" | "manual">("select");
@@ -25,8 +28,9 @@ export function PerformedRepairAdder({
   const [manualRepairProductIds, setManualRepairProductIds] = useState<string[]>([]);
   const [manualRepairProductSearch, setManualRepairProductSearch] = useState<string>("");
   
-  // Load inventory data for product selection
-  const [inventoryData] = useState<InventoryData>(() => safeLoadInventoryData());
+  // Produkty pro výběr dílů: z databáze (prop), záložně ze starší kopie v localStorage.
+  const [lokalniInventar] = useState<InventoryData>(() => safeLoadInventoryData());
+  const inventoryData = inventoryDataProp ?? lokalniInventar;
   
   // Find matching model
   const matchingModel = deviceLabel && devicesData ? (() => {
@@ -37,8 +41,15 @@ export function PerformedRepairAdder({
     return matchingModels.length > 0 ? matchingModels[0] : null;
   })() : null;
   
-  // Get available products for matching model
-  const availableProducts = matchingModel ? inventoryData.products.filter((p) => p.modelIds.includes(matchingModel.id)) : [];
+  // Díly k výběru: přednostně ty navázané na rozpoznaný model; když se model
+  // nepozná nebo na něj nic navázané není, celý sklad. Prázdný výběr by
+  // nutil díl vybírat až později v editaci opravy.
+  const availableProducts = (() => {
+    const vse = inventoryData.products;
+    if (!matchingModel) return vse;
+    const proModel = vse.filter((p) => p.modelIds.includes(matchingModel.id));
+    return proModel.length > 0 ? proModel : vse;
+  })();
 
   const handleAdd = () => {
     if (mode === "select" && selectedRepairId) {

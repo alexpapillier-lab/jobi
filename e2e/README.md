@@ -53,6 +53,7 @@ Kdyby jich bylo moc, smazat je jde jedním dotazem:
 
 ```sql
 delete from tickets where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
+delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
 ```
 
 ## Na co si dát pozor
@@ -61,6 +62,16 @@ delete from tickets where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
 - **Napovídač zařízení leží přes tlačítko Vytvořit zakázku.** Zavře se
   vyplněním dalšího pole; Escape zavře celé okno, ne jen napovídač.
 - **Okno je široké 1440×1000.** V menším se spodní lišta překrývá s obsahem.
+- **Osobní předvolby se ukládají k účtu** (`user_preferences`), ne jen do
+  prohlížeče. Test, který předvolbu přepne a spadne, ji nechá přepnutou pro
+  všechny další běhy – proto si `zakazka.spec.ts` asistenta postupu na začátku
+  vždy zapne. Hledání v Nastavení jde přes klíčová slova podsekcí v
+  `Settings.tsx`, nový přepínač tam musí mít slovo, jinak ho hledání nenajde.
+- **Escape zavře celý detail zakázky.** Rozbalenou nabídku (např. hledání
+  produktu) skryjte smazáním textu, ne Escapem.
+- **Testovací servis potřebuje produkty ve skladu** („Displej AUDIT“) – test
+  výběru dílů u opravy je hledá. Kdyby zmizely, založte libovolný produkt se
+  slovem AUDIT v názvu.
 
 ## Ukázkový servis pro snímky na web
 

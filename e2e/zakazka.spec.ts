@@ -71,6 +71,19 @@ test("v detailu jde přidat provedenou opravu a asistent postupu se posune", asy
   await page.getByRole("button", { name: "Přidat opravu" }).first().click();
 
   await expect(page.getByText("Výměna konektoru (E2E)").first()).toBeVisible();
+
+  // Díly k opravě se nabízejí ze skladu v databázi (dřív jen z místní kopie,
+  // která na jiném počítači neexistovala). V testovacím servisu je „Displej AUDIT“.
+  // Tlačítko Upravit té konkrétní opravy – v hlavičce detailu je jiné „Upravit zakázku“.
+  const radekOpravy = page
+    .getByText("Výměna konektoru (E2E)", { exact: true })
+    .first()
+    .locator("xpath=ancestor::div[.//button[normalize-space()='Upravit']][1]");
+  await radekOpravy.getByRole("button", { name: "Upravit", exact: true }).click();
+  await page.getByPlaceholder("Hledat produkt…").first().fill("AUDIT");
+  await expect(page.getByText("Displej AUDIT").first()).toBeVisible({ timeout: 15_000 });
+  // Escape by zavřel celý detail; nabídku stačí smazáním hledaného textu skrýt.
+  await page.getByPlaceholder("Hledat produkt…").first().fill("");
   // Krok Opravy je hotový, dalším povinným krokem je dokončení.
   await expect(asistent).toHaveAttribute("aria-label", /hotovo 2 z 6/);
   await expect(asistent).toContainText("Přepněte stav v hlavičce");
