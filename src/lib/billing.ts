@@ -114,6 +114,7 @@ export const MODUL_POPIS: Record<string, string> = {
   branches: "Pobočky",
   api_catalog: "Veřejné API – ceník",
   api_inventory: "Veřejné API – sklad",
+  consolidated: "Statistiky přes všechny servisy",
 };
 
 export const STATUS_LABELS: Record<string, string> = {

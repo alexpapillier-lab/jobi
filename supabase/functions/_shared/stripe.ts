@@ -136,7 +136,7 @@ export type PlanDef = {
 
 const ZAKLAD = ["access", "invoices"];
 const BUSINESS = [...ZAKLAD, "accounting", "sms", "branches"];
-const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory"];
+const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory", "consolidated"];
 
 export const PLANS: Record<string, PlanDef> = {
   jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "month", tier: "starter" },

@@ -23,7 +23,8 @@ import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { marginByBranch } from "./Statistics/margin";
+import { marginByBranch, marginByService } from "./Statistics/margin";
+import { useEntitlements } from "../hooks/useEntitlements";
 import {
   EMPTY_COST_SOURCES,
   marginByDevice,
@@ -295,6 +296,35 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   /** Ceník a nákupní ceny dílů – záložní zdroj nákladů. Při chybě zůstane prázdný. */
   const [costSources, setCostSources] = useState<CostSources>(EMPTY_COST_SOURCES);
   const [costSourcesError, setCostSourcesError] = useState<string | null>(null);
+  /**
+   * Konsolidované statistiky (Enterprise): čísla přes všechny servisy, které
+   * uživatel spravuje, ne jen přes pobočky jednoho. Servisy si dotáhne sám –
+   * stránka dostává jen ten aktivní.
+   */
+  const { has: maModul } = useEntitlements(activeServiceId);
+  const [konsolidovane, setKonsolidovane] = useState(false);
+  const [mojeServisy, setMojeServisy] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    if (!supabase || !activeServiceId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data: user } = await supabase!.auth.getUser();
+      const uid = user?.user?.id;
+      if (!uid) return;
+      const { data: clenstvi } = await (supabase!.from("service_memberships") as any)
+        .select("service_id")
+        .eq("user_id", uid);
+      const ids = ((clenstvi ?? []) as Array<{ service_id: string }>).map((m) => m.service_id);
+      if (ids.length === 0) return;
+      const { data: servisy } = await (supabase!.from("services") as any).select("id, name").in("id", ids);
+      if (!cancelled && Array.isArray(servisy)) setMojeServisy(servisy.map((x: any) => ({ id: String(x.id), name: String(x.name ?? "Servis") })));
+    })();
+    return () => { cancelled = true; };
+  }, [activeServiceId]);
+
+  const lzeKonsolidovat = maModul("consolidated") && mojeServisy.length > 1;
+  useEffect(() => { if (!lzeKonsolidovat) setKonsolidovane(false); }, [lzeKonsolidovat]);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -309,11 +339,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     setTicketsError(null);
     (async () => {
       try {
+        const idsServisu = konsolidovane ? mojeServisy.map((x) => x.id) : [activeServiceId];
         const { data, error } = await fetchAllPages((from, to) =>
           client
             .from("tickets")
             .select(TICKETS_SELECT)
-            .eq("service_id", activeServiceId)
+            .in("service_id", idsServisu)
             .is("deleted_at", null)
             .order("created_at", { ascending: false })
             .order("id", { ascending: false })
@@ -333,7 +364,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     return () => {
       cancelled = true;
     };
-  }, [activeServiceId, reloadToken]);
+  }, [activeServiceId, reloadToken, konsolidovane, mojeServisy]);
 
   // Ceník oprav a nákupní ceny dílů – jednou za servis. Když se nenačtou,
   // marže se počítá jen z `costs` u provedených oprav a poznámka pod KPI to řekne.
@@ -460,6 +491,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const marginRepairRows = useMemo(() => marginByRepair(facetTickets("repair"), costSources), [facetTickets, costSources]);
   const marginDeviceRows = useMemo(() => marginByDevice(facetTickets("device"), costSources), [facetTickets, costSources]);
   const branchNames = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
+  const jmenaServisu = useMemo(() => new Map(mojeServisy.map((x) => [x.id, x.name])), [mojeServisy]);
+  const marginServiceRows = useMemo(
+    () => (konsolidovane ? marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis") : []),
+    [konsolidovane, filteredTickets, costSources, jmenaServisu],
+  );
   const marginBranchRows = useMemo(
     () => (hasBranches && !activeBranchId ? marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky") : []),
     [hasBranches, activeBranchId, filteredTickets, costSources, branchNames],
@@ -623,7 +659,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
 
   const marginSection = (
     <>
-      {hasBranches && !activeBranchId && (
+      {konsolidovane && (
+        <Card style={{ padding: "var(--pad-24)" }}>
+          <SectionHeading icon={<StatusIcon size={18} />}>Servisy vedle sebe</SectionHeading>
+          <MarginList
+            rows={marginServiceRows}
+            limit={20}
+            countLabel="Zakázek"
+            selected={null}
+            onSelect={() => {}}
+            emptyText="Ve vybraném období nejsou žádné zakázky."
+            titlePrefix="Servis"
+          />
+        </Card>
+      )}
+      {!konsolidovane && hasBranches && !activeBranchId && (
         <Card style={{ padding: "var(--pad-24)" }}>
           <SectionHeading icon={<StatusIcon size={18} />}>Pobočky vedle sebe</SectionHeading>
           <MarginList
@@ -726,6 +776,23 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             { value: "charts", label: "Grafy", dataTour: "statistics-view-charts" },
           ]}
         />
+
+        {/* Konsolidované statistiky: čísla za všechny servisy, které spravuju. */}
+        {lzeKonsolidovat && (
+          <>
+            <Segmented<"servis" | "vse">
+              ariaLabel="Rozsah statistik"
+              size="sm"
+              value={konsolidovane ? "vse" : "servis"}
+              onChange={(next) => setKonsolidovane(next === "vse")}
+              options={[
+                { value: "servis", label: "Tento servis" },
+                { value: "vse", label: `Všechny servisy (${mojeServisy.length})` },
+              ]}
+            />
+            <span aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 var(--space-1)" }} />
+          </>
+        )}
 
         <span aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 var(--space-1)" }} />
 

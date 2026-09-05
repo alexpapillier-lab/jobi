@@ -14,7 +14,7 @@ import { supabase } from "../lib/supabaseClient";
  * viz has_entitlement() v sms-send, sms-provision a invoice-send-email.
  */
 
-export type ModuleName = "access" | "sms" | "invoices" | "api_catalog" | "api_inventory" | "branches" | "accounting";
+export type ModuleName = "access" | "sms" | "invoices" | "api_catalog" | "api_inventory" | "branches" | "accounting" | "consolidated";
 
 type State = {
   /** Které moduly má servis aktivní. */

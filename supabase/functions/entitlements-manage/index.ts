@@ -24,7 +24,7 @@ const corsHeaders = {
 };
 
 /** Moduly, které lze prodávat. Nový modul se přidá sem. */
-const KNOWN_MODULES = ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting"] as const;
+const KNOWN_MODULES = ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting", "consolidated"] as const;
 
 /** Moduly, které se prodávají po kusech – u nich má smysl `quota`. */
 const QUOTA_MODULES = ["branches", "sms"];

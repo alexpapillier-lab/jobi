@@ -27,8 +27,9 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    výchozí pobočka na servis, zkratka v čísle zakázky, adresa a telefon
    pobočky na dokumentech a v portálu, filtr v Zakázkách / Kalendáři /
    Skladu / Statistikách / Fakturách, domovská pobočka člena, srovnání
-   poboček ve Statistikách; chybí: omezení přístupu jen na pobočku, čas na
-   opravě, vytížení techniků v Kalendáři, KPI techniků).
+   poboček ve Statistikách, konsolidované statistiky přes všechny servisy
+   majitele jako modul `consolidated`; chybí: omezení přístupu jen na pobočku,
+   čas na opravě, vytížení techniků v Kalendáři, KPI techniků).
 6. `[ ]` **Online rezervace** termínu s výběrem opravy z ceníku a předběžnou
    cenou, vložitelná na web servisu (veřejný ceník přes API už je).
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →
