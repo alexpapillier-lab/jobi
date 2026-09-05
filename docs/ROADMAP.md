@@ -49,7 +49,10 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Registrace a přihlášení včetně onboardingu (5. 9.: zákazník si servis
   založí sám přes `service-create`, karta První kroky v Zakázkách vede
   k vyplnění firmy a první zakázce, ukázková data na jedno kliknutí i s úklidem).
-- `[ ]` Zkušební období (30 dní) a jeho konec: co se stane, když neplatí.
+- `[~]` Zkušební období (5. 9.: nový servis dostane na 30 dní faktury, napojení
+  na účetnictví, pobočky a veřejné API; po vypršení se samy vypnou, proužek to
+  poslední týden hlásí. Jádro – zakázky, sklad, zákazníci, kalendář, statistiky –
+  běží dál i po vypršení, tvrdý zámek přijde až s platební bránou).
 - `[~]` Placené moduly – tabulka `service_entitlements` a Owner panel jsou;
   chybí napojení na platební bránu (Stripe / GoPay) a automatické zapnutí
   a vypnutí po platbě, faktury za předplatné.
