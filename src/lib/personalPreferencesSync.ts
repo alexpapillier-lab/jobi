@@ -111,13 +111,12 @@ function naplanujOdeslani() {
  * Zapne sync pro dobu, po kterou je uživatel přihlášený. Vrací funkci na
  * úklid (odregistrování posluchačů) – volat při odhlášení/odmontování.
  *
- * Po pullu se navíc jednou pošle push toho, co je PRÁVĚ TEĎ v localStorage
- * – ne proto, aby se posílalo to, co se zrovna stáhlo (to už tam je),
- * ale kvůli tomu, co se stihlo změnit lokálně BĚHEM čekání na pull (dvě
- * otevřená zařízení, na jednom se něco přepne přesně v okamžiku, kdy
- * druhé po startu appky ještě stahuje). Bez týhle "smiřovací" zprávy by
- * taková změna zůstala jen lokálně, dokud by uživatel nezměnil ještě
- * něco dalšího.
+ * Po pullu se schválně NEposílá nic zpátky. Dřív se to dělalo kvůli změnám,
+ * které se stihly udělat během stahování, jenže to mělo horší následek: druhá
+ * otevřená aplikace (desktop vedle webu) po svém startu poslala na server svůj
+ * starý stav a přepsala tím čerstvou změnu z prvního zařízení. Projevilo se to
+ * tak, že se zobrazení zakázek vracelo na mřížku. Na server se teď píše jen
+ * tehdy, když uživatel opravdu něco změní.
  */
 export function startPersonalPreferencesSync(): () => void {
   let zruseno = false;
@@ -127,7 +126,6 @@ export function startPersonalPreferencesSync(): () => void {
 
   pullPersonalPreferences().finally(() => {
     if (zruseno) return;
-    naplanujOdeslani();
     for (const ev of events) window.addEventListener(ev, handler);
   });
 
