@@ -24,6 +24,16 @@ Heslo je v GitHub secrets jako `E2E_PASSWORD`. Bez něj testy nejedou –
 schválně nemají tichý fallback: test, který se bez přihlášení tváří, že
 prošel, je horší než žádný.
 
+Heslo nikde jinde není. Pro místní spuštění si ho nastavte nové:
+
+```sql
+update auth.users
+   set encrypted_password = crypt('<nové heslo>', gen_salt('bf'))
+ where email = 'e2e@jobi.test';
+```
+
+a pak `gh secret set E2E_PASSWORD --repo alexpapillier-lab/jobi`.
+
 Servis má nároky nastavené jako **trvalé**, ne zkušební, aby testy nepřestaly
 fungovat po třiceti dnech. Zkratka `E2E` je v `service_settings.config`
 na dvou místech (`abbreviation` i `companyData.abbreviation`), protože
