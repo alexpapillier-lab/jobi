@@ -17,7 +17,7 @@ kdykoli změnit bez zásahu do aplikace.
 | Starter ročně | 6 012 Kč / rok | `jobi_starter_yearly` |
 | Business měsíčně | 1 490 Kč / měsíc | `jobi_business_monthly` |
 | Business ročně | 15 198 Kč / rok | `jobi_business_yearly` |
-| Enterprise měsíčně | 2 490 Kč / měsíc | `jobi_enterprise_monthly` |
+| Enterprise měsíčně | od 2 490 Kč / měsíc (u větších sítí dohodou) | `jobi_enterprise_monthly` |
 | Enterprise ročně | 25 398 Kč / rok | `jobi_enterprise_yearly` |
 | SMS k Starteru měsíčně | 199 Kč / měsíc | `jobi_sms_addon_monthly` |
 | SMS k Starteru ročně | roční částka | `jobi_sms_addon_yearly` |
@@ -26,7 +26,7 @@ kdykoli změnit bez zásahu do aplikace.
 
 Co který tarif zapíná, je v `supabase/functions/_shared/stripe.ts` (`PLANS`):
 Starter zakázky a faktury, Business navíc SMS, pobočky a napojení na
-účetnictví, Enterprise navíc veřejné API a dvě pobočky v ceně. Ceny se
+účetnictví, Enterprise navíc veřejné API a dvě pobočky v ceně. SMS v ceně: Starter 0 (balíček 100 za příplatek, násobí se množstvím), Business 300, Enterprise 600 zpráv měsíčně – po vyčerpání se neodesílá, nic se nedoúčtovává. Ceny se
 v aplikaci nikde neopisují – obrazovka Předplatné si je bere ze Stripe
 (funkce `billing-prices`).
 

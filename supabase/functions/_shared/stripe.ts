@@ -143,8 +143,8 @@ export const PLANS: Record<string, PlanDef> = {
   jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "year", tier: "starter" },
   jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "month", tier: "business" },
   jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "year", tier: "business" },
-  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 1000, interval: "month", tier: "enterprise" },
-  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 1000, interval: "year", tier: "enterprise" },
+  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, interval: "month", tier: "enterprise" },
+  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, interval: "year", tier: "enterprise" },
 };
 
 /**

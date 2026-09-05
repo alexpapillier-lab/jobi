@@ -1313,3 +1313,15 @@ section#stazeni {
   .pricing-motto { padding: 16px 20px; }
   .pricing-table th, .pricing-table td { padding: 10px 12px; font-size: 13px; }
 }
+
+/* Odkaz pod tlačítkem u Enterprise – cena se u větších sítí domlouvá. */
+.pricing-contact {
+  display: block;
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pricing-contact:hover { color: rgba(255, 255, 255, 0.85); }
