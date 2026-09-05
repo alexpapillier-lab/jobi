@@ -14,6 +14,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** Jak dlouho smí prohlížeč držet nahraný soubor. Cesty jsou neměnné, tak rok. */
+const ROK_V_SEKUNDACH = 31536000;
+
 const BUCKET = "product-images";
 
 /** Delší strana výsledku. Na náhled i detail produktu bohatě stačí. */
@@ -72,6 +75,8 @@ export async function nahrajObrazekProduktu(
 
   const { error } = await supabase.storage.from(BUCKET).upload(cesta, blob, {
     contentType: blob.type || "image/jpeg",
+    // Cesta obsahuje náhodné UUID, obsah se nemění – viz diagnosticPhotosStorage.
+    cacheControl: `${ROK_V_SEKUNDACH}`,
     upsert: false,
   });
   if (error) throw error;

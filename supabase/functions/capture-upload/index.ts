@@ -164,6 +164,9 @@ serve(async (req) => {
       .from(BUCKET)
       .upload(path, bytes, {
         contentType: mime,
+        // Náhodné UUID v cestě znamená neměnný obsah; bez tohohle jde ven
+        // no-cache a stejná fotka se stahuje při každém zobrazení znovu.
+        cacheControl: "31536000",
         upsert: false,
       });
 

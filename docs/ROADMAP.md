@@ -102,8 +102,11 @@ První tři měsíce: body 1, 2, 4.
   Veřejné API a SMS je měly, doplněno nahrávání fotek (počet, rychlost,
   velikost a kontrola, že jde opravdu o obrázek), hlášení chyb a zákaznický
   portál včetně limitu na volajícího, který jediný chrání před hádáním tokenů.
-- `[ ]` Supabase plán a limity (řádky, storage fotek, realtime spojení)
-  spočítat na 50 servisů.
+- `[x]` Supabase plán a limity spočítané na 50 servisů – `docs/KAPACITA.md`.
+  Naměřeno na ostrých datech: 12,4 kB databáze a 1,9 fotky na zakázku.
+  Padesát servisů se do plánu Pro vejde i po třech letech, první účet nad
+  25 USD až kolem pátého roku. Dřív než cena praskne počítání Statistik
+  v prohlížeči.
 - `[ ]` Tajemství a klíče: rotace, kde leží, kdo má přístup.
 
 ### Aplikace a vydávání

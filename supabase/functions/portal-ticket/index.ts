@@ -458,7 +458,8 @@ serve(async (req) => {
       const path = `signatures/${ticket.id}-${Date.now()}.png`;
       const { error: uploadErr } = await svc.storage
         .from(BUCKET)
-        .upload(path, bytes, { contentType: "image/png", upsert: false });
+        // Podpis se už nemění, ať se netahá při každém otevření portálu znovu.
+        .upload(path, bytes, { contentType: "image/png", cacheControl: "31536000", upsert: false });
       if (uploadErr) {
         console.error("[portal-ticket] signature upload error:", uploadErr);
         return json({ error: "Nepodařilo se uložit podpis." }, 500);

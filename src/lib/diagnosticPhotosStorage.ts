@@ -6,6 +6,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addWatermarkToImageBlob } from "./diagnosticPhotoWatermark";
 
+/** Jak dlouho smí prohlížeč držet nahraný soubor. Cesty jsou neměnné, tak rok. */
+const ROK_V_SEKUNDACH = 31536000;
+
 const BUCKET = "diagnostic-photos";
 
 function getExt(file: File): string {
@@ -34,6 +37,10 @@ export async function uploadDiagnosticPhoto(
   const path = `${serviceId}/${ticketId}/${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type || `image/${ext}`,
+    // Soubor má v názvu náhodné UUID, takže se jeho obsah nikdy nezmění.
+    // Bez tohohle se posílá no-cache a prohlížeč tahá stejnou fotku znovu
+    // při každém otevření zakázky.
+    cacheControl: `${ROK_V_SEKUNDACH}`,
     upsert: false,
   });
   if (error) throw error;
