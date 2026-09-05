@@ -123,7 +123,7 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
         id: "jobidocs",
         label: "Nainstalujte JobiDocs pro tisk dokumentů",
         popis: isDesktop()
-          ? "Zakázkový a záruční list se tisknou jedním kliknutím, bez dialogu. Bez JobiDocs se tiskne přes prohlížeč."
+          ? "Zakázkový a záruční list se tisknou jedním kliknutím, bez dialogu. Webová verze na appjobi.com je pak doplněk, třeba na tabletu u příjmu."
           : "Tisk dokumentů funguje v desktopové aplikaci s doplňkem JobiDocs. V prohlížeči dokumenty nevytisknete.",
         hotovo: jobiDocsBezi,
         cil: isDesktop() ? "orders_tisk_dokumentu" : undefined,

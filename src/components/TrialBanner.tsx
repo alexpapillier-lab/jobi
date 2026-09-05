@@ -46,15 +46,22 @@ export function TrialBanner({ activeServiceId }: { activeServiceId: string | nul
     >
       <span>
         {skoncilo
-          ? "Zkušební období skončilo. Vyberte si plán, ať můžete pokračovat."
-          : `Zkušební období končí za ${dny(trialDaysLeft)}. Pak si vyberte plán, jinak se aplikace zamkne. Data zůstanou uložená.`}
+          ? "Zkušební období skončilo. Vyberte si tarif, ať můžete pokračovat."
+          : `Zkušební období končí za ${dny(trialDaysLeft)}. Pak si vyberte tarif, jinak se aplikace zamkne. Data zůstanou uložená.`}
       </span>
-      <a
-        href="mailto:podpora@appjobi.com?subject=Jobi%20%E2%80%93%20pokra%C4%8Dov%C3%A1n%C3%AD%20po%20zku%C5%A1ebn%C3%ADm%20obdob%C3%AD"
-        style={{ color: "inherit", fontWeight: 800, textDecoration: "underline" }}
+      {/* Dřív tu byl e-mail na podporu. Obrazovka Předplatné už existuje,
+          tak vede odkaz rovnou tam – člověk si tarif vybere sám. */}
+      <button
+        type="button"
+        onClick={() =>
+          window.dispatchEvent(
+            new CustomEvent("jobsheet:navigate", { detail: { page: "settings", subsection: "service_subscription" } }),
+          )
+        }
+        style={{ border: "none", background: "transparent", padding: 0, color: "inherit", fontWeight: 800, textDecoration: "underline", cursor: "pointer", font: "inherit" }}
       >
-        Vybrat plán
-      </a>
+        Vybrat tarif
+      </button>
     </div>
   );
 }
