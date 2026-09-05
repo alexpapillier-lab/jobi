@@ -9,17 +9,32 @@ export function PerformedRepairAdder({
   deviceLabel,
   devicesData,
   inventoryData: inventoryDataProp,
+  vychoziSazba,
+  vychoziTechnik,
   onAddToModel,
 }: {
   availableRepairs: DeviceRepair[];
-  onAdd: (repair: { name: string; type: "selected" | "manual"; repairId?: string }) => void;
+  onAdd: (repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string }) => void;
+  /** Hodinová sazba servisu (Nastavení → Zakázky → Hodinová práce). */
+  vychoziSazba?: number;
+  /** Přezdívka přihlášeného – kdo práci nejspíš odvedl. */
+  vychoziTechnik?: string;
   deviceLabel?: string;
   devicesData?: DevicesData;
   /** Produkty skladu z databáze; bez nich se sáhne do starší kopie v localStorage. */
   inventoryData?: InventoryData;
   onAddToModel?: (repairData: { name: string; modelId: string; price?: number; costs?: number; estimatedTime?: number; productIds?: string[] }) => void;
 }) {
-  const [mode, setMode] = useState<"select" | "manual">("select");
+  const [mode, setMode] = useState<"select" | "manual" | "hourly">("select");
+  // Hodinová práce: hodiny × sazba. Sazba se předvyplní ze servisu, ale jde
+  // ji pro konkrétní práci přepsat (expresní příplatek, sleva).
+  const [praceNazev, setPraceNazev] = useState("Práce technika");
+  const [praceHodiny, setPraceHodiny] = useState("1");
+  const [praceSazba, setPraceSazba] = useState(vychoziSazba && vychoziSazba > 0 ? String(vychoziSazba) : "");
+  const [praceTechnik, setPraceTechnik] = useState(vychoziTechnik ?? "");
+  const hodinyCislo = parseFloat(praceHodiny.replace(",", ".")) || 0;
+  const sazbaCislo = parseFloat(praceSazba.replace(",", ".")) || 0;
+  const praceCena = Math.round(hodinyCislo * sazbaCislo * 100) / 100;
   const [selectedRepairId, setSelectedRepairId] = useState<string>("");
   const [manualRepairName, setManualRepairName] = useState("");
   const [manualRepairPrice, setManualRepairPrice] = useState<string>("");
@@ -61,6 +76,15 @@ export function PerformedRepairAdder({
     } else if (mode === "manual" && manualRepairName.trim()) {
       onAdd({ name: manualRepairName.trim(), type: "manual" });
       setManualRepairName("");
+    } else if (mode === "hourly" && hodinyCislo > 0 && sazbaCislo > 0) {
+      onAdd({
+        name: praceNazev.trim() || "Práce technika",
+        type: "hourly",
+        hodiny: hodinyCislo,
+        sazba: sazbaCislo,
+        technik: praceTechnik.trim() || undefined,
+      });
+      setPraceHodiny("1");
     }
   };
 
@@ -76,6 +100,7 @@ export function PerformedRepairAdder({
         options={[
           { value: "select", label: "Vybrat z katalogu" },
           { value: "manual", label: "Manuálně zadat" },
+          { value: "hourly", label: "Hodinová práce" },
         ]}
       />
 
@@ -115,6 +140,71 @@ export function PerformedRepairAdder({
               Pro toto zařízení nejsou v katalogu žádné opravy. Použijte manuální zadání.
             </div>
           )}
+        </div>
+      )}
+
+      {mode === "hourly" && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <input
+            type="text"
+            value={praceNazev}
+            onChange={(e) => setPraceNazev(e.target.value)}
+            placeholder="Popis práce (např. Diagnostika, Čištění)"
+            aria-label="Popis práce"
+            style={{ padding: "10px 12px", borderRadius: 10, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%" }}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+              Hodiny
+              <input
+                type="number"
+                min={0}
+                step={0.25}
+                value={praceHodiny}
+                onChange={(e) => setPraceHodiny(e.target.value)}
+                style={{ padding: "10px 12px", borderRadius: 10, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+              Sazba (Kč/h)
+              <input
+                type="number"
+                min={0}
+                step={10}
+                value={praceSazba}
+                onChange={(e) => setPraceSazba(e.target.value)}
+                placeholder={vychoziSazba ? String(vychoziSazba) : "např. 800"}
+                style={{ padding: "10px 12px", borderRadius: 10, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+              Technik
+              <input
+                type="text"
+                value={praceTechnik}
+                onChange={(e) => setPraceTechnik(e.target.value)}
+                placeholder="Kdo pracoval"
+                style={{ padding: "10px 12px", borderRadius: 10, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%" }}
+              />
+            </label>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              {hodinyCislo > 0 && sazbaCislo > 0
+                ? `${hodinyCislo.toLocaleString("cs-CZ")} h × ${sazbaCislo.toLocaleString("cs-CZ")} Kč = ${praceCena.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`
+                : !vychoziSazba
+                  ? "Výchozí sazbu nastavíte v Nastavení → Zakázky → Hodinová práce."
+                  : "Zadejte hodiny a sazbu."}
+            </span>
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={!(hodinyCislo > 0 && sazbaCislo > 0)}
+              style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: hodinyCislo > 0 && sazbaCislo > 0 ? "pointer" : "not-allowed", opacity: hodinyCislo > 0 && sazbaCislo > 0 ? 1 : 0.6 }}
+            >
+              Přidat práci
+            </button>
+          </div>
         </div>
       )}
 

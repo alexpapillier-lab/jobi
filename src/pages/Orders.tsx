@@ -921,6 +921,7 @@ export default function Orders({
       .maybeSingle()
       .then(({ data }: any) => {
         setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
+        setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
       })
       .catch(() => setOrdersShowClaimsInList(false));
   }, [activeServiceId]);
@@ -933,6 +934,7 @@ export default function Orders({
         .maybeSingle()
         .then(({ data }: any) => {
           setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
+          setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
         })
         .catch(() => {});
     };
@@ -1439,6 +1441,8 @@ export default function Orders({
   const [ticketHistoryModalOpen, setTicketHistoryModalOpen] = useState(false);
   const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
   const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
+  /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
+  const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -2759,7 +2763,7 @@ export default function Orders({
   );
 
   const addPerformedRepair = useCallback(
-    (ticketId: string, repair: { name: string; type: "selected" | "manual"; repairId?: string }) => {
+    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string }) => {
       // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
       let repairPrice: number | undefined = undefined;
       let repairCosts: number | undefined = undefined;
@@ -2784,6 +2788,14 @@ export default function Orders({
         });
       }
 
+      // Hodinová práce: cena a čas se počítají z hodin a sazby.
+      if (repair.type === "hourly") {
+        const hodiny = repair.hodiny ?? 0;
+        const sazba = repair.sazba ?? 0;
+        repairPrice = Math.round(hodiny * sazba * 100) / 100;
+        repairTime = Math.round(hodiny * 60);
+      }
+
       const newRepair: PerformedRepair = {
         id: entryId,
         name: repair.name,
@@ -2793,6 +2805,7 @@ export default function Orders({
         costs: repairCosts,
         estimatedTime: repairTime,
         productIds: repairProductIds,
+        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik } : {}),
       };
       upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
@@ -2813,6 +2826,10 @@ export default function Orders({
 
   const updatePerformedRepairProducts = useCallback((ticketId: string, repairId: string, productIds: string[]) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
+  }, [upravProvedeneOpravy]);
+
+  const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, ...fields } : r)), false);
   }, [upravProvedeneOpravy]);
 
   const removePerformedRepair = useCallback((ticketId: string, repairId: string) => {
@@ -5353,10 +5370,11 @@ export default function Orders({
                           customerAddress: [t.customerAddressStreet, t.customerAddressCity, t.customerAddressZip].filter(Boolean).join(", ") || undefined,
                           branchId: t.branchId ?? null,
                           items: repairs.length > 0 ? repairs.map((r) => ({
-                            name: r.name,
-                            qty: 1,
-                            unit: "ks",
-                            unit_price: r.price ?? 0,
+                            // Hodinová práce jde na fakturu jako hodiny × sazba, ne 1 ks.
+                            name: r.type === "hourly" && r.technik ? `${r.name} (${r.technik})` : r.name,
+                            qty: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? r.hodiny! : 1,
+                            unit: r.type === "hourly" ? "h" : "ks",
+                            unit_price: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? (r.sazba ?? 0) : (r.price ?? 0),
                             // Neplátce DPH má 0; dřív tu bylo napevno 21 %.
                             vat_rate: sazbaProNovouPolozku(dph),
                           })) : undefined,
@@ -6507,6 +6525,7 @@ export default function Orders({
                             onUpdateCosts={(repairId, costs) => updatePerformedRepairCosts(detailedTicket.id, repairId, costs)}
                             onUpdateTime={(repairId, time) => updatePerformedRepairTime(detailedTicket.id, repairId, time)}
                             onUpdateProducts={(repairId, productIds) => updatePerformedRepairProducts(detailedTicket.id, repairId, productIds)}
+                            onUpdateFields={(repairId, fields) => updatePerformedRepairFields(detailedTicket.id, repairId, fields)}
                             devicesData={devicesData}
                             inventoryData={inventoryData}
                           />
@@ -6602,6 +6621,8 @@ export default function Orders({
                     deviceLabel={detailedTicket.deviceLabel}
                     devicesData={devicesData}
                     inventoryData={inventoryData}
+                    vychoziSazba={hodinovaSazba ?? undefined}
+                    vychoziTechnik={userProfile?.nickname ?? undefined}
                     onAddToModel={(repairData) => {
                       // Add repair to model in Devices
                       const currentDevices = safeLoadDevicesData();

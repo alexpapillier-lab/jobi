@@ -26,7 +26,11 @@ export type QuoteItem = {
   estimatedTime?: number;
   repairId?: string;
   productIds?: string[];
-  type?: "selected" | "manual";
+  type?: "selected" | "manual" | "hourly";
+  /** Hodinová práce v nabídce: hodiny × sazba (price je jejich součin). */
+  hodiny?: number;
+  sazba?: number;
+  technik?: string;
 };
 
 export type QuoteDecisionMeta = {

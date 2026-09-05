@@ -200,8 +200,10 @@ Co převzít, podle přínosu:
   co zákazník vidí. Nevracet se k tomu.
 - `[ ]` **Zálohové faktury a dobropisy** – záloha na drahý díl je běžná; dobropis
   při reklamaci faktury.
-- `[ ]` **Hodinová práce jako položka** se sazbou a technikem (dnes jen opravy
-  z ceníku nebo ruční položka).
+- `[x]` **Hodinová práce jako položka** (5. 9.): třetí režim v přidávání opravy –
+  hodiny × sazba + technik; cena a čas se dopočítají, jde upravit. Na fakturu
+  a dokumenty jde jako hodiny × Kč/h. Výchozí sazba servisu v Nastavení →
+  Zakázky → Hodinová práce (`service_settings.config.hodinova_sazba`).
 - `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
 - `[ ]` **Testovací checklisty po opravě** podle typu zařízení, propsané do protokolu.
 - `[x]` **Otázky při stornu zakázky** (5. 9., `StornoDialog.tsx`): při přepnutí do

@@ -91,13 +91,16 @@ export function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: R
   const serviceAddr = [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ");
   const repairItems = ticket.performedRepairs?.length
     ? JSON.stringify(
-        ticket.performedRepairs.map((r) => ({
-          name: r.name ?? "",
-          price: r.price != null ? `${r.price} Kč` : "",
-          quantity: 1,
-          unit: "ks",
-          total: r.price != null ? `${r.price} Kč` : "",
-        }))
+        ticket.performedRepairs.map((r) => {
+          const hodinova = r.type === "hourly" && (r.hodiny ?? 0) > 0;
+          return {
+            name: hodinova && r.technik ? `${r.name} (${r.technik})` : (r.name ?? ""),
+            price: hodinova ? `${r.sazba ?? 0} Kč` : r.price != null ? `${r.price} Kč` : "",
+            quantity: hodinova ? r.hodiny! : 1,
+            unit: hodinova ? "h" : "ks",
+            total: r.price != null ? `${r.price} Kč` : "",
+          };
+        })
       )
     : "[]";
   return {

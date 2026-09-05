@@ -12,6 +12,7 @@ export function PerformedRepairItem({
   onUpdateCosts,
   onUpdateTime,
   onUpdateProducts,
+  onUpdateFields,
   devicesData,
   inventoryData,
 }: {
@@ -21,6 +22,8 @@ export function PerformedRepairItem({
   onUpdateCosts: (repairId: string, costs: number) => void;
   onUpdateTime: (repairId: string, estimatedTime: number) => void;
   onUpdateProducts: (repairId: string, productIds: string[]) => void;
+  /** Hodinová práce: hodiny, sazba a technik se ukládají naráz (cena se z nich počítá). */
+  onUpdateFields?: (repairId: string, fields: Partial<PerformedRepair>) => void;
   devicesData?: DevicesData;
   inventoryData?: InventoryData;
 }) {
@@ -68,6 +71,12 @@ export function PerformedRepairItem({
           {repair.type === "selected" && (
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Z katalogu</div>
           )}
+          {repair.type === "hourly" && (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+              Hodinová práce · {(repair.hodiny ?? 0).toLocaleString("cs-CZ")} h × {(repair.sazba ?? 0).toLocaleString("cs-CZ")} Kč/h
+              {repair.technik ? ` · ${repair.technik}` : ""}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {!isEditing && (
@@ -104,7 +113,17 @@ export function PerformedRepairItem({
           </button>
         </div>
       </div>
-      {isEditing ? (
+      {isEditing && repair.type === "hourly" ? (
+        <HodinovaPraceUprava
+          repair={repair}
+          onUlozit={(fields) => {
+            onUpdateFields?.(repair.id, fields);
+            setIsEditing(false);
+            showToast("Uloženo", "success");
+          }}
+          onZrusit={() => setIsEditing(false)}
+        />
+      ) : isEditing ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Price */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -438,3 +457,57 @@ export function PerformedRepairItem({
 // ========================
 // PerformedRepairAdder Component
 // ========================
+
+/** Úprava hodinové práce: hodiny, sazba, technik; cena a čas se dopočítají. */
+function HodinovaPraceUprava({
+  repair,
+  onUlozit,
+  onZrusit,
+}: {
+  repair: PerformedRepair;
+  onUlozit: (fields: Partial<PerformedRepair>) => void;
+  onZrusit: () => void;
+}) {
+  const [hodiny, setHodiny] = useState(String(repair.hodiny ?? 1));
+  const [sazba, setSazba] = useState(String(repair.sazba ?? 0));
+  const [technik, setTechnik] = useState(repair.technik ?? "");
+  const h = parseFloat(hodiny.replace(",", ".")) || 0;
+  const sz = parseFloat(sazba.replace(",", ".")) || 0;
+  const cena = Math.round(h * sz * 100) / 100;
+  const border = "1px solid var(--border)";
+  const input: React.CSSProperties = { padding: "8px 10px", borderRadius: 8, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%" };
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 120px), 1fr))", gap: 8 }}>
+        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+          Hodiny
+          <input type="number" min={0} step={0.25} value={hodiny} onChange={(e) => setHodiny(e.target.value)} style={input} />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+          Sazba (Kč/h)
+          <input type="number" min={0} step={10} value={sazba} onChange={(e) => setSazba(e.target.value)} style={input} />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
+          Technik
+          <input type="text" value={technik} onChange={(e) => setTechnik(e.target.value)} style={input} />
+        </label>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>= {formatCurrency(cena)}</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => onUlozit({ hodiny: h, sazba: sz, technik: technik.trim() || undefined, price: cena, estimatedTime: Math.round(h * 60) })}
+            disabled={!(h > 0 && sz > 0)}
+            style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+          >
+            Uložit
+          </button>
+          <button type="button" onClick={onZrusit} style={{ padding: "6px 12px", borderRadius: 8, border, background: "transparent", color: "var(--text)", fontSize: 12, cursor: "pointer" }}>
+            Zrušit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

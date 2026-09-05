@@ -123,6 +123,24 @@ test("asistent postupu jde skrýt křížkem a zapnout v Nastavení", async ({ p
   }
 });
 
+test("hodinová práce se přidá jako hodiny × sazba", async ({ page }) => {
+  await prihlasSe(page);
+  await page.getByText(zakaznik).first().click();
+  await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Hodinová práce" }).first().click();
+  await page.getByLabel("Popis práce").fill("Diagnostika a čištění (E2E)");
+  await page.getByLabel("Hodiny").fill("1.5");
+  await page.getByLabel("Sazba (Kč/h)").fill("800");
+  await page.getByLabel("Technik").fill("Technik E2E");
+  await page.getByRole("button", { name: "Přidat práci" }).click();
+
+  // Položka ukazuje hodiny × sazbu a technika; cena je jejich součin.
+  await expect(page.getByText("Diagnostika a čištění (E2E)").first()).toBeVisible();
+  await expect(page.getByText(/Hodinová práce · 1,5 h × 800 Kč\/h · Technik E2E/).first()).toBeVisible();
+  await expect(page.getByText("1 200,00 Kč").first()).toBeVisible();
+});
+
 test("při stornu se servis zeptá na důvod a zapíše ho do historie", async ({ page }) => {
   await prihlasSe(page);
   await page.getByText(zakaznik).first().click();

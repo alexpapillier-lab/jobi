@@ -56,7 +56,7 @@ export type SettingsCategory = "company" | "orders" | "documents" | "communicati
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations"
-  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
   | "about_app" | "about_updates" | "about_help";
@@ -70,7 +70,7 @@ type SettingsSection = {
 const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
-  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders",
+  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders",
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication",
   service_team: "people", service_api: "people",
@@ -420,6 +420,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       });
     }
     setOrdersShowClaimsInList(!!config.orders_show_claims_in_list);
+    setHodinovaSazbaText(typeof config.hodinova_sazba === "number" ? String(config.hodinova_sazba) : "");
   }, []);
 
   // Load service_settings from DB when activeServiceId changes
@@ -555,6 +556,25 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     }).catch(() => { if (!cancelled) setAutoPrintFormLoading(false); });
     return () => { cancelled = true; };
   }, [section.subsection, activeServiceId]);
+
+  /** Hodinová sazba servisu (Kč/h) – výchozí pro položku „Hodinová práce“ v zakázce. */
+  const [hodinovaSazbaText, setHodinovaSazbaText] = useState("");
+  const saveHodinovaSazba = useCallback(async (text: string) => {
+    if (!activeServiceId || !supabase) return;
+    const cislo = parseFloat(text.replace(",", "."));
+    const hodnota = Number.isFinite(cislo) && cislo > 0 ? Math.round(cislo * 100) / 100 : null;
+    try {
+      await (supabase as any).rpc("update_service_settings", {
+        p_service_id: activeServiceId,
+        p_patch: { config: { hodinova_sazba: hodnota } },
+      });
+      setHodinovaSazbaText(hodnota == null ? "" : String(hodnota));
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    } catch (err) {
+      console.error("[Settings] saveHodinovaSazba", err);
+      showToast("Sazbu se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId]);
 
   const saveOrdersShowClaimsInList = useCallback(async (value: boolean) => {
     if (!activeServiceId || !supabase) return;
@@ -706,6 +726,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const hintStrankovani = useSavedHint();
   const hintFiltry = useSavedHint();
   const hintReklamace = useSavedHint();
+  const hintSazba = useSavedHint();
   const hintPovinne = useSavedHint();
   const hintTisk = useSavedHint();
   const hintTema = useSavedHint();
@@ -775,6 +796,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "orders_device_options", label: "Stavy zařízení a příslušenství", keywords: ["zařízení", "příslušenství", "stav zařízení", "kryt", "nabíječka", "poškození"] },
         { key: "orders_handoff_options", label: "Převzetí a předání", keywords: ["převzetí", "předání", "osobně", "pošta", "kurýr", "způsob"] },
         { key: "orders_reklamace", label: "Reklamace", keywords: ["reklamace", "seznam", "aktivní", "vše"] },
+        { key: "orders_prace", label: "Hodinová práce", keywords: ["hodinová", "sazba", "práce", "technik", "hodina", "kč/h", "hodinovka"] },
         { key: "orders_filters", label: "Filtry a stránkování", keywords: ["filtry", "rychlé filtry", "stránkování", "počet zakázek", "stránka", "na stránce"] },
         { key: "orders_deleted", label: "Koš smazaných zakázek", keywords: ["koš", "smazané", "smazaná zakázka", "obnovit", "obnova"] },
       ],
@@ -2145,6 +2167,39 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   checked={ordersShowClaimsInList}
                   onChange={(e) => { void saveOrdersShowClaimsInList(e.target.checked).then(() => hintReklamace.show()); }}
                 />
+              }
+            />
+          </SettingRows>
+        </Card>
+      )}
+
+      {/* ZAKÁZKY - HODINOVÁ PRÁCE */}
+      {section.subsection === "orders_prace" && (
+        <Card>
+          <CardHeader
+            title="Hodinová práce"
+            description="V zakázce jde k opravám přidat položku „Hodinová práce“: hodiny × sazba, s technikem. Na fakturu a dokumenty jde jako hodiny × Kč/h."
+            right={hintSazba.node}
+          />
+          <SettingRows>
+            <SettingRow
+              label="Výchozí hodinová sazba"
+              description="Předvyplní se u každé nové hodinové práce; u konkrétní zakázky ji lze přepsat. Prázdné = sazbu zadává technik pokaždé."
+              control={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={hodinovaSazbaText}
+                    onChange={(e) => setHodinovaSazbaText(e.target.value)}
+                    onBlur={(e) => { void saveHodinovaSazba(e.target.value).then(() => hintSazba.show()); }}
+                    placeholder="např. 800"
+                    aria-label="Výchozí hodinová sazba v Kč za hodinu"
+                    style={{ width: 120 }}
+                  />
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>Kč/h</span>
+                </span>
               }
             />
           </SettingRows>

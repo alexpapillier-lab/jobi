@@ -262,6 +262,11 @@ export function PortalCard({
       productIds: r.productIds,
       repairId: r.repairId,
       type: r.type,
+      // Hodinová práce si hodiny a sazbu nese i přes nabídku, aby se po
+      // schválení vrátila do oprav jako hodinová, ne jako pevná cena.
+      hodiny: r.hodiny,
+      sazba: r.sazba,
+      technik: r.technik,
     }));
     if (zOprav.length > 0) return zOprav;
     const odhad = ticket.estimatedPrice ?? 0;

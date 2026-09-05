@@ -42,7 +42,12 @@ function addressOf(street?: string | null, city?: string | null, zip?: string | 
 function repairsToItems(ticket: TicketEx): LineItem[] {
   return (ticket.performedRepairs ?? [])
     .filter((r) => r && (r.name ?? "").trim())
-    .map((r) => ({ name: r.name, qty: 1, unit: "ks", unitPrice: r.price ?? undefined, total: r.price ?? undefined }));
+    .map((r) =>
+      // Hodinová práce: hodiny × sazba, aby zákazník viděl, za co platí.
+      r.type === "hourly" && (r.hodiny ?? 0) > 0
+        ? { name: r.technik ? `${r.name} (${r.technik})` : r.name, qty: r.hodiny!, unit: "h", unitPrice: r.sazba ?? undefined, total: r.price ?? undefined }
+        : { name: r.name, qty: 1, unit: "ks", unitPrice: r.price ?? undefined, total: r.price ?? undefined },
+    );
 }
 
 /** Zakázkový list, záruční list, diagnostika. */
