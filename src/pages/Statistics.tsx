@@ -15,6 +15,7 @@ import {
 } from "../components/icons";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
+import { nactiStatistiky, type StatistikyPrehled } from "../lib/statistikyServer";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
 import { KpiTile, KpiTileSkeleton } from "./Statistics/KpiTile";
@@ -23,7 +24,7 @@ import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { marginByBranch, marginByService } from "./Statistics/margin";
+import { marginByBranch, marginByService, type MarginRow } from "./Statistics/margin";
 import { useEntitlements } from "../hooks/useEntitlements";
 import {
   EMPTY_COST_SOURCES,
@@ -240,6 +241,41 @@ function formatDuration(days: number): string {
   return dny(Number(days.toFixed(1)));
 }
 
+/**
+ * Doplní do měsíční řady prázdné měsíce.
+ *
+ * Osa jde od začátku období (nebo od první zakázky) po dnešek (nebo konec
+ * období) – prázdné měsíce jsou informace sama o sobě a bez nich by graf
+ * tvářil, že se pracovalo pořád stejně.
+ */
+function doplnPrazdneMesice(
+  sData: MonthStat[],
+  minTime: number,
+  maxTime: number,
+  range: DateRange | null,
+  now: Date
+): MonthStat[] {
+  if (sData.length === 0 || !Number.isFinite(minTime)) return [];
+  const byMonth = new Map(sData.map((m) => [`${m.year}-${m.monthIndex}`, m]));
+
+  const firstData = new Date(minTime);
+  const startSource = range && range.start < firstData ? range.start : firstData;
+  const endCandidate = range && range.end < now ? range.end : now;
+  const lastData = new Date(maxTime);
+  const endSource = lastData > endCandidate ? lastData : endCandidate;
+
+  const result: MonthStat[] = [];
+  const cursor = new Date(startSource.getFullYear(), startSource.getMonth(), 1);
+  const end = new Date(endSource.getFullYear(), endSource.getMonth(), 1);
+  while (cursor <= end && result.length < 240) {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+    result.push(byMonth.get(`${y}-${m}`) ?? { year: y, monthIndex: m, count: 0, revenue: 0, margin: 0 });
+    cursor.setMonth(m + 1);
+  }
+  return result;
+}
+
 function matchesDrill(t: TicketEx, d: Exclude<DrillDown, null>): boolean {
   switch (d.type) {
     case "status":
@@ -304,6 +340,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const { has: maModul } = useEntitlements(activeServiceId);
   const [konsolidovane, setKonsolidovane] = useState(false);
   const [mojeServisy, setMojeServisy] = useState<Array<{ id: string; name: string }>>([]);
+  /**
+   * Hotové agregace ze serveru. Dokud dorazí, stránka nemusí stahovat žádnou
+   * zakázku – ty se načítají jen pro tabulku a export, kde jde o jednotlivé
+   * řádky, a jako záloha, když RPC selže.
+   */
+  const [serverStats, setServerStats] = useState<StatistikyPrehled | null>(null);
+  const [serverLoading, setServerLoading] = useState(true);
+  const [serverNedostupny, setServerNedostupny] = useState(false);
 
   useEffect(() => {
     if (!supabase || !activeServiceId) return;
@@ -326,10 +370,31 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const lzeKonsolidovat = maModul("consolidated") && mojeServisy.length > 1;
   useEffect(() => { if (!lzeKonsolidovat) setKonsolidovane(false); }, [lzeKonsolidovat]);
 
+  // Přes text, ne pole: `mojeServisy` se dotahují až po prvním vykreslení a
+  // nové pole se stejnými id by jinak znovu spustilo všechna načítání.
+  const klicServisu = konsolidovane
+    ? [...mojeServisy.map((x) => x.id)].sort().join(",")
+    : activeServiceId ?? "";
+  const idsServisu = useMemo(() => (klicServisu ? klicServisu.split(",") : []), [klicServisu]);
+
+  /**
+   * Jednotlivé zakázky jsou potřeba jen pro tabulku a její export – a jako
+   * záloha, když serverové agregace selžou. Pro karty a grafy se nestahují.
+   */
+  const potrebujeZakazky = viewMode === "table" || serverNedostupny;
+
   useEffect(() => {
     if (!activeServiceId || !supabase) {
       setAllTickets([]);
       setTicketsLoading(false);
+      setTicketsError(null);
+      return;
+    }
+    if (!potrebujeZakazky) {
+      // Zůstat v „načítá se“: po přepnutí na tabulku se tak rovnou ukáže
+      // kostra místo hlášky, že v období nejsou žádné zakázky.
+      setAllTickets([]);
+      setTicketsLoading(true);
       setTicketsError(null);
       return;
     }
@@ -339,7 +404,6 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     setTicketsError(null);
     (async () => {
       try {
-        const idsServisu = konsolidovane ? mojeServisy.map((x) => x.id) : [activeServiceId];
         const { data, error } = await fetchAllPages((from, to) =>
           client
             .from("tickets")
@@ -364,12 +428,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     return () => {
       cancelled = true;
     };
-  }, [activeServiceId, reloadToken, konsolidovane, mojeServisy]);
+  }, [activeServiceId, reloadToken, idsServisu, potrebujeZakazky]);
 
   // Ceník oprav a nákupní ceny dílů – jednou za servis. Když se nenačtou,
   // marže se počítá jen z `costs` u provedených oprav a poznámka pod KPI to řekne.
+  // Potřeba jen pro výpočet v prohlížeči; serverové agregace si ceník načtou samy.
   useEffect(() => {
-    if (!activeServiceId || !supabase) {
+    if (!activeServiceId || !supabase || !potrebujeZakazky) {
       setCostSources(EMPTY_COST_SOURCES);
       setCostSourcesError(null);
       return;
@@ -419,28 +484,78 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     return () => {
       cancelled = true;
     };
-  }, [activeServiceId, reloadToken]);
+  }, [activeServiceId, reloadToken, potrebujeZakazky]);
 
   const compareAvailable = COMPARABLE_PERIODS.includes(periodType);
   const compareActive = compareWithPrevious && compareAvailable;
 
+  // Hranice období počítá stránka – zná časové pásmo i to, co má uživatel
+  // vybrané v liště. Server dostane hotové „od–do“.
+  const obdobi = useMemo(
+    () => periodRange(periodType, customStartDate, customEndDate, new Date()),
+    [periodType, customStartDate, customEndDate]
+  );
+  const predchoziObdobi = useMemo(
+    () => (compareActive ? previousPeriodRange(periodType, new Date()) : null),
+    [periodType, compareActive]
+  );
+
   // Zakázky ve vybraném období
   // Pobočka z lišty: filtr zakázek; při „Všechny pobočky“ přibude srovnání poboček.
   const { activeBranchId, isMulti: hasBranches, branches } = useBranches();
+
+  // Agregace ze serveru. Když RPC selže (stará databáze, výpadek), stránka to
+  // zapíše do konzole a spočítá čísla postaru ze stažených zakázek.
+  useEffect(() => {
+    if (!supabase || idsServisu.length === 0) {
+      setServerStats(null);
+      setServerLoading(false);
+      return;
+    }
+    const client = supabase;
+    let cancelled = false;
+    setServerLoading(true);
+    (async () => {
+      try {
+        const data = await nactiStatistiky(client, {
+          serviceIds: idsServisu,
+          od: obdobi?.start ?? null,
+          do: obdobi?.end ?? null,
+          branchId: activeBranchId,
+          drill: drillDown,
+          prevOd: predchoziObdobi?.start ?? null,
+          prevDo: predchoziObdobi?.end ?? null,
+        });
+        if (cancelled) return;
+        setServerStats(data);
+        setServerNedostupny(false);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[Statistics] statistiky_prehled selhalo, počítám v prohlížeči:", err);
+        setServerStats(null);
+        // Ať mezi selháním RPC a začátkem stahování zakázek neproblikne prázdná stránka.
+        setTicketsLoading(true);
+        setServerNedostupny(true);
+      } finally {
+        if (!cancelled) setServerLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idsServisu, obdobi, predchoziObdobi, activeBranchId, drillDown, reloadToken]);
+
   const branchTickets = useMemo(() => filterByBranch(allTickets, activeBranchId), [allTickets, activeBranchId]);
   const tickets = useMemo(() => {
-    const range = periodRange(periodType, customStartDate, customEndDate, new Date());
-    if (!range) return branchTickets;
-    return branchTickets.filter((t) => inRange(t, range));
-  }, [branchTickets, periodType, customStartDate, customEndDate]);
+    if (!obdobi) return branchTickets;
+    return branchTickets.filter((t) => inRange(t, obdobi));
+  }, [branchTickets, obdobi]);
 
   // Zakázky v předchozím období (jen pro porovnání)
   const previousPeriodTickets = useMemo(() => {
-    if (!compareActive) return [];
-    const range = previousPeriodRange(periodType, new Date());
-    if (!range) return [];
-    return branchTickets.filter((t) => inRange(t, range));
-  }, [branchTickets, periodType, compareActive]);
+    if (!predchoziObdobi) return [];
+    return branchTickets.filter((t) => inRange(t, predchoziObdobi));
+  }, [branchTickets, predchoziObdobi]);
 
   // Drill-down: kliknutím na stav / měsíc / opravu / zařízení
   const filteredTickets = useMemo(
@@ -458,54 +573,96 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     [drillDown, tickets, filteredTickets]
   );
 
-  const kpis = useMemo(() => computeKpis(filteredTickets, costSources), [filteredTickets, costSources]);
-  const prevKpis = useMemo(() => computeKpis(previousPeriodTickets, costSources), [previousPeriodTickets, costSources]);
+  const kpis = useMemo(
+    () => serverStats?.kpi ?? computeKpis(filteredTickets, costSources),
+    [serverStats, filteredTickets, costSources]
+  );
+  const prevKpis = useMemo(
+    () => serverStats?.kpiPredchozi ?? computeKpis(previousPeriodTickets, costSources),
+    [serverStats, previousPeriodTickets, costSources]
+  );
+
+  /**
+   * Načítání a chyba se hlásí jen za tu cestu, kterou se čísla opravdu berou.
+   * Když serverové agregace dorazí a jsme v kartách, o žádné zakázky se
+   * nečeká – a chyba jejich stahování se ani nemůže objevit.
+   */
+  const nacitani = serverLoading || (potrebujeZakazky && ticketsLoading);
+  const chybaNacteni = potrebujeZakazky ? ticketsError : null;
+
+  // Počty zakázek do popisků – ze serveru, jinak z toho, co je v paměti.
+  const pocetVObdobi = serverStats ? serverStats.pocetVObdobi : tickets.length;
+  const pocetVeVyberu = serverStats ? serverStats.pocetVeVyberu : filteredTickets.length;
+  const pocetPredchozi = serverStats ? serverStats.pocetPredchozi : previousPeriodTickets.length;
 
   const statusItems = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const t of facetTickets("status")) {
-      const key = t.status || "unknown";
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return Object.entries(counts)
-      .sort(([, a], [, b]) => b - a)
-      .map(([key, count]) => ({ key, label: nazevStavu(key), count, color: getByKey(key)?.bg }));
-  }, [facetTickets, nazevStavu, getByKey]);
+    const zdroj =
+      serverStats?.stavy ??
+      (() => {
+        const counts: Record<string, number> = {};
+        for (const t of facetTickets("status")) {
+          const key = t.status || "unknown";
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        return Object.entries(counts)
+          .sort(([, a], [, b]) => b - a)
+          .map(([key, count]) => ({ key, count }));
+      })();
+    return zdroj.map(({ key, count }) => ({ key, label: nazevStavu(key), count, color: getByKey(key)?.bg }));
+  }, [serverStats, facetTickets, nazevStavu, getByKey]);
 
   const topRepairs = useMemo(() => {
+    if (serverStats) return serverStats.topOpravy;
     const counts: Record<string, number> = {};
     for (const t of facetTickets("repair")) {
       for (const r of t.performedRepairs || []) counts[r.name] = (counts[r.name] || 0) + 1;
     }
     return topCounts(counts, 5);
-  }, [facetTickets]);
+  }, [serverStats, facetTickets]);
 
   const topDevices = useMemo(() => {
+    if (serverStats) return serverStats.topZarizeni;
     const counts: Record<string, number> = {};
     for (const t of facetTickets("device")) {
       if (t.deviceLabel) counts[t.deviceLabel] = (counts[t.deviceLabel] || 0) + 1;
     }
     return topCounts(counts, 5);
-  }, [facetTickets]);
+  }, [serverStats, facetTickets]);
 
-  const marginRepairRows = useMemo(() => marginByRepair(facetTickets("repair"), costSources), [facetTickets, costSources]);
-  const marginDeviceRows = useMemo(() => marginByDevice(facetTickets("device"), costSources), [facetTickets, costSources]);
+  const marginRepairRows = useMemo<MarginRow[]>(
+    () => serverStats?.marzeOpravy.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByRepair(facetTickets("repair"), costSources),
+    [serverStats, facetTickets, costSources]
+  );
+  const marginDeviceRows = useMemo<MarginRow[]>(
+    () => serverStats?.marzeZarizeni.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByDevice(facetTickets("device"), costSources),
+    [serverStats, facetTickets, costSources]
+  );
   const branchNames = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
   const jmenaServisu = useMemo(() => new Map(mojeServisy.map((x) => [x.id, x.name])), [mojeServisy]);
-  const marginServiceRows = useMemo(
-    () => (konsolidovane ? marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis") : []),
-    [konsolidovane, filteredTickets, costSources, jmenaServisu],
-  );
-  const marginBranchRows = useMemo(
-    () => (hasBranches && !activeBranchId ? marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky") : []),
-    [hasBranches, activeBranchId, filteredTickets, costSources, branchNames],
-  );
+  const marginServiceRows = useMemo<MarginRow[]>(() => {
+    if (!konsolidovane) return [];
+    // Server vrací jen id servisu; jméno zná stránka ze seznamu členství.
+    if (serverStats) return serverStats.marzeServisy.map((r) => ({ ...r, name: jmenaServisu.get(r.key) ?? "Servis" }));
+    return marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis");
+  }, [konsolidovane, serverStats, filteredTickets, costSources, jmenaServisu]);
+  const marginBranchRows = useMemo<MarginRow[]>(() => {
+    if (!hasBranches || activeBranchId) return [];
+    if (serverStats) {
+      return serverStats.marzePobocky.map((r) => ({ ...r, name: r.key ? branchNames.get(r.key) ?? "Bez pobočky" : "Bez pobočky" }));
+    }
+    return marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky");
+  }, [hasBranches, activeBranchId, serverStats, filteredTickets, costSources, branchNames]);
 
   const monthlyStats = useMemo<MonthStat[]>(() => {
+    const now = new Date();
+    if (serverStats) {
+      // Server posílá jen měsíce s daty; mezery mezi nimi dokreslíme tady.
+      if (serverStats.mesice.length === 0 || serverStats.mesicOd === null || serverStats.mesicDo === null) return [];
+      return doplnPrazdneMesice(serverStats.mesice, serverStats.mesicOd, serverStats.mesicDo, obdobi, now);
+    }
+
     const list = facetTickets("month");
     if (list.length === 0) return [];
-    const now = new Date();
-    const range = periodRange(periodType, customStartDate, customEndDate, now);
 
     let minTime = Infinity;
     let maxTime = -Infinity;
@@ -524,27 +681,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       entry.margin += m.margin;
       byMonth.set(key, entry);
     }
-    if (!Number.isFinite(minTime)) return [];
-
-    // Rozsah osy: od začátku období (nebo první zakázky) po dnešek (nebo konec
-    // období), aby byly vidět i prázdné měsíce – ty jsou informace sama o sobě.
-    const firstData = new Date(minTime);
-    const startSource = range && range.start < firstData ? range.start : firstData;
-    const endCandidate = range && range.end < now ? range.end : now;
-    const lastData = new Date(maxTime);
-    const endSource = lastData > endCandidate ? lastData : endCandidate;
-
-    const result: MonthStat[] = [];
-    const cursor = new Date(startSource.getFullYear(), startSource.getMonth(), 1);
-    const end = new Date(endSource.getFullYear(), endSource.getMonth(), 1);
-    while (cursor <= end && result.length < 240) {
-      const y = cursor.getFullYear();
-      const m = cursor.getMonth();
-      result.push(byMonth.get(`${y}-${m}`) ?? { year: y, monthIndex: m, count: 0, revenue: 0, margin: 0 });
-      cursor.setMonth(m + 1);
-    }
-    return result;
-  }, [facetTickets, periodType, customStartDate, customEndDate, costSources]);
+    return doplnPrazdneMesice([...byMonth.values()], minTime, maxTime, obdobi, now);
+  }, [serverStats, facetTickets, obdobi, costSources]);
 
   const toggleStatus = useCallback((key: string) => {
     setDrillDown((prev) => (prev?.type === "status" && prev.value === key ? null : { type: "status", value: key }));
@@ -864,7 +1002,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             style={{ padding: "4px var(--space-1) 4px var(--space-3)", fontSize: "var(--text-sm)", background: "var(--accent-soft)", gap: "var(--space-1)" }}
           >
             <span>{drillLabel}</span>
-            <span style={{ color: "var(--muted)", fontWeight: 500 }}>· {zakazky(filteredTickets.length)}</span>
+            <span style={{ color: "var(--muted)", fontWeight: 500 }}>· {zakazky(pocetVeVyberu)}</span>
             <button
               type="button"
               onClick={() => setDrillDown(null)}
@@ -891,7 +1029,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         )}
       </Toolbar>
 
-      {ticketsLoading && (
+      {nacitani && (
         <>
           <style>{`@keyframes stats-skeleton-pulse{0%,100%{opacity:.55}50%{opacity:1}}.stats-skeleton{animation:stats-skeleton-pulse 1.4s ease-in-out infinite}`}</style>
           <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
@@ -911,7 +1049,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         </>
       )}
 
-      {!ticketsLoading && ticketsError && (
+      {!nacitani && chybaNacteni && (
         <Card
           role="alert"
           style={{
@@ -926,7 +1064,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         >
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontWeight: 700, color: "var(--danger-text)", marginBottom: "var(--space-1)" }}>Statistiky se nepodařilo načíst</div>
-            <div style={{ fontSize: "var(--text-base)", color: "var(--text)", overflowWrap: "anywhere" }}>{ticketsError}</div>
+            <div style={{ fontSize: "var(--text-base)", color: "var(--text)", overflowWrap: "anywhere" }}>{chybaNacteni}</div>
           </div>
           <Button variant="primary" size="sm" onClick={() => setReloadToken((t) => t + 1)}>
             Zkusit znovu
@@ -934,7 +1072,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         </Card>
       )}
 
-      {!ticketsLoading && !ticketsError && (
+      {!nacitani && !chybaNacteni && (
         <>
           {/* Klíčová čísla */}
           {viewMode !== "charts" && (
@@ -1170,9 +1308,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {viewMode !== "table" && (
             <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
               {drillDown
-                ? `Ve výběru je ${zakazky(filteredTickets.length)} z ${celeCislo(tickets.length)} v období.`
-                : `V období je ${zakazky(tickets.length)}.`}
-              {compareActive && ` Předchozí období: ${zakazky(previousPeriodTickets.length)}.`}
+                ? `Ve výběru je ${zakazky(pocetVeVyberu)} z ${celeCislo(pocetVObdobi)} v období.`
+                : `V období je ${zakazky(pocetVObdobi)}.`}
+              {compareActive && ` Předchozí období: ${zakazky(pocetPredchozi)}.`}
               {kpis.averageTicketDurationDays > 0 &&
                 ` Průměrná doba zakázky vychází z dokončených zakázek (${cislo(kpis.averageTicketDurationDays)} dne).`}
             </div>
