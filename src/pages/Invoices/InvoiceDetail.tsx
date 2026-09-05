@@ -77,7 +77,8 @@ export function InvoiceDetail({
   if (isDraft) menuItems.push({ label: "Upravit", icon: <EditIcon size={15} />, onSelect: onEdit });
   menuItems.push({ label: "Duplikovat", onSelect: onDuplicate });
   if (onOpenTicket) menuItems.push({ label: "Přejít na zakázku", icon: <LinkIcon size={15} />, onSelect: onOpenTicket });
-  if (status !== "cancelled" && status !== "paid") {
+  // Koncept nikdy nebyl vystaven – ten se maže, ne stornuje.
+  if (!isDraft && status !== "cancelled" && status !== "paid") {
     menuItems.push({ label: "Stornovat", danger: true, dividerBefore: true, onSelect: onCancelInvoice });
   }
   if (isDraft) {
@@ -209,7 +210,7 @@ export function InvoiceDetail({
                     <tr key={it.id} style={{ borderBottom: "1px solid var(--border)" }}>
                       <td style={{ padding: "6px 4px 6px 0", color: "var(--text)" }}>{it.name}</td>
                       <td style={numCell}>
-                        {it.qty} {it.unit}
+                        {new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 3 }).format(it.qty)} {it.unit}
                       </td>
                       <td style={numCell}>{formatCurrency(it.unit_price, inv.currency)}</td>
                       <td style={{ ...numCell, color: "var(--muted)" }}>{it.vat_rate} %</td>

@@ -157,11 +157,11 @@ První tři měsíce: body 1, 2, 4.
     dílů u ruční opravy nabídne celý sklad, když se model nepozná.
   - `[x]` Kód reklamace přiděluje databáze (`dalsi_cislo_reklamace`, migrace
     20260907140000) + unikátní indexy na kód reklamace a číslo faktury (5. 9.).
-  - `[ ]` QR platba jen z IBAN – odvodit CZ IBAN z čísla účtu.
-  - `[ ]` Kosmetika: Stornovat u konceptu, „vystaveno“ u konceptu v seznamu,
-    množství „1.5 ks“, historie ukazuje id místo jména bez přezdívky, cena
-    opravy „1249.9 Kč“; „Přejít na zakázku“ u smazané zakázky bez hlášky;
-    návrat z Dokončeno nevrací díly a neřekne to.
+  - `[x]` QR platba i z čísla účtu – IBAN se odvodí (`src/lib/banka.ts`, 5. 9.).
+  - `[x]` Kosmetika (5. 9.): Stornovat jen u vystavené faktury, koncept má
+    v seznamu „koncept z …“, množství česky, historie bez surového id, ceny
+    oprav formátované, hláška u odkazu na smazanou zakázku a při návratu
+    z Dokončeno (díly se nevrací).
 
 ### Web, podpora, prodej
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období

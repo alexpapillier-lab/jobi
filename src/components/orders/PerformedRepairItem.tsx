@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatCurrency } from "../../lib/invoiceMath";
 import { showToast } from "../Toast";
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { type DevicesData, type InventoryData, safeLoadDevicesData } from "../../lib/catalogStorage";
@@ -396,13 +397,13 @@ export function PerformedRepairItem({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Cena:</span>
             <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
-              {repair.price !== undefined ? `${repair.price} Kč` : "Neuvedeno"}
+              {repair.price !== undefined ? formatCurrency(repair.price) : "Neuvedeno"}
             </span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Náklady:</span>
             <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
-              {repair.costs !== undefined ? `${repair.costs} Kč` : "Neuvedeno"}
+              {repair.costs !== undefined ? formatCurrency(repair.costs) : "Neuvedeno"}
             </span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

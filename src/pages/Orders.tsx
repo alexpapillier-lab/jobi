@@ -39,6 +39,7 @@ import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
+import { formatCurrency } from "../lib/invoiceMath";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
@@ -1696,6 +1697,9 @@ export default function Orders({
       returnToCustomerIdRef.current = undefined;
       // Consume when load has finished: either we have data, or we've seen loading complete (ref set when ticketsLoading was true).
       if (!ticketsLoading && (tickets.length > 0 || ticketsLoadHasRunRef.current)) {
+        // Odkaz z faktury nebo zákazníka na zakázku, která už není (smazaná,
+        // jiná pobočka) – bez hlášky by kliknutí vypadalo, že nic neudělalo.
+        if ((mode ?? "detail") === "detail") showToast("Zakázka nebyla nalezena – nejspíš byla smazána.", "info");
         onOpenTicketIntentConsumed();
       }
     }
@@ -3036,6 +3040,14 @@ export default function Orders({
             }
             if (res.consumed > 0) void refreshTicketReservations(ticketId);
           });
+        }
+        // Zpět z koncového stavu: odečtené díly zůstávají odečtené. Ať to
+        // člověk ví hned, ne až při inventuře.
+        if (
+          prevStatus && isFinal(String(prevStatus)) && !isFinal(next) &&
+          ticketReservations.ticketId === ticketId && ticketReservations.rows.some((r) => r.status === "consumed")
+        ) {
+          showToast("Díly odečtené ze skladu se vrácením stavu nevracejí – případně je naskladněte ručně.", "info");
         }
 
         const config = await loadDocumentsConfigFromDB(activeServiceId);
@@ -7221,7 +7233,7 @@ export default function Orders({
                   if (key === "status") return getByKey(String(val))?.label ?? String(val);
                   if (key === "estimated_price" && typeof val === "number") return `${val} Kč`;
                   if (key === "performed_repairs" && Array.isArray(val)) {
-                    return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${r.price} Kč)` : ""}`).join(", ") || "—";
+                    return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${formatCurrency(r.price)})` : ""}`).join(", ") || "—";
                   }
                   if (key === "discount" && val && typeof val === "object" && !Array.isArray(val)) {
                     const o = val as { type?: string; value?: number };
@@ -7270,7 +7282,7 @@ export default function Orders({
                   <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                     {ticketHistoryEntries.map((e) => {
                       const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action;
-                      const who = e.nickname || (e.changed_by ? `${String(e.changed_by).slice(0, 8)}…` : "Systém");
+                      const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
                       const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
                       const statusChange = changes.find((c) => c.label === "Stav");
                       const isExpanded = ticketHistoryExpandedId === e.id;
@@ -7409,7 +7421,7 @@ export default function Orders({
                 <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {claimHistoryEntries.map((e) => {
                     const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "status_changed" ? "Změna stavu" : e.action === "updated" ? "Upravena" : e.action;
-                    const who = e.nickname || (e.changed_by ? `${String(e.changed_by).slice(0, 8)}…` : "Systém");
+                    const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
                     const details = (e.details || {}) as Record<string, unknown>;
                     const statusOld = details.status_old;
                     const statusNew = details.status_new;

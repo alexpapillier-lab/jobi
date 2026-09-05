@@ -6,6 +6,7 @@
  * i ve webové verzi.
  */
 import type { DocumentData, LineItem, Party } from "../../jobidocs/core/types";
+import { ibanZCislaUctu } from "./banka";
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
 import type { CompanyData } from "./companyData";
@@ -152,7 +153,8 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
 /** Faktura. */
 export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: CompanyData, vatPayer = true, ticketCode?: string): DocumentData {
   const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
-  const iban = (inv.supplier_iban || cd.iban || "").replace(/\s/g, "");
+  // QR platba chce IBAN; když servis vyplnil jen číslo účtu, odvodí se z něj.
+  const iban = (inv.supplier_iban || cd.iban || "").replace(/\s/g, "") || ibanZCislaUctu(inv.supplier_bank_account ?? cd.bankAccount) || "";
   const spayd = iban
     ? ["SPD*1.0", `ACC:${iban}`, `AM:${inv.total.toFixed(2)}`, `CC:${inv.currency || "CZK"}`, inv.variable_symbol ? `X-VS:${inv.variable_symbol}` : "", `MSG:Faktura ${inv.number}`].filter(Boolean).join("*")
     : undefined;

@@ -329,7 +329,7 @@ function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: 
         <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {inv.customer_name || "Bez odběratele"}
           <span aria-hidden="true"> · </span>
-          vystaveno {formatDate(inv.issue_date)}
+          {status === "draft" ? `koncept z ${formatDate(inv.created_at ?? inv.issue_date)}` : `vystaveno ${formatDate(inv.issue_date)}`}
         </div>
       </div>
 
