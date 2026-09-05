@@ -50,8 +50,8 @@ import { useAuth } from "../auth/AuthProvider";
  * se schválně NEMĚNÍ, i když už neodpovídají skupinám – vedou na ně hluboké
  * odkazy z App.tsx (průvodce, toast aktualizace) a data-tour kotvy.
  */
-type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
-type SettingsSubsection = 
+export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
+export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"

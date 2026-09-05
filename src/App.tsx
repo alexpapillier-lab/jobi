@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsNarrow } from "./hooks/useIsNarrow";
 import { createPortal } from "react-dom";
 import Orders from "./pages/Orders";
-import Settings from "./pages/Settings";
+import Settings, { type SettingsCategory, type SettingsSubsection } from "./pages/Settings";
 import Customers from "./pages/Customers";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
@@ -185,7 +185,7 @@ export default function App() {
     });
   }, [activePage]);
   /** Když uživatel klikne „Jít do nastavení“ v toastu aktualizace, otevřeme Settings na této subsekci */
-  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: "app"; subsection: "about_updates" } | null>(null);
+  const [openSettingsToSubsection, setOpenSettingsToSubsection] = useState<{ category: SettingsCategory; subsection: SettingsSubsection } | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
@@ -844,11 +844,16 @@ export default function App() {
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {
     const onNav = (e: Event) => {
-      const ev = e as CustomEvent<{ page: NavKey }>;
+      const ev = e as CustomEvent<{ page: NavKey; subsection?: string }>;
       const page = ev.detail?.page;
       if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         setActivePage(page);
+        // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
+        const sub = ev.detail?.subsection;
+        if (page === "settings" && typeof sub === "string" && sub) {
+          setOpenSettingsToSubsection({ category: "company" as SettingsCategory, subsection: sub as SettingsSubsection });
+        }
       }
     };
     window.addEventListener("jobsheet:navigate" as any, onNav);

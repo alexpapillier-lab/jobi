@@ -83,6 +83,7 @@ import { safeLoadCompanyData } from "../lib/companyData";
 import { trackDocumentAction } from "../lib/documentTelemetry";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
+import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
   safeLoadDocumentsConfig,
@@ -775,7 +776,7 @@ export default function Orders({
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
   const { profile: userProfile } = useUserProfile();
-  const { hasCapability } = useActiveRole(activeServiceId);
+  const { hasCapability, isAdmin } = useActiveRole(activeServiceId);
   const canPrintExport = hasCapability("can_print_export");
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
@@ -3665,6 +3666,10 @@ export default function Orders({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* První kroky nového servisu – jen pro majitele a správce, sám zmizí. */}
+      {activeServiceId && isAdmin && (
+        <OnboardingChecklist activeServiceId={activeServiceId} ticketCount={cloudTickets.length} />
+      )}
       {/* Header */}
       <div>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zakázky</div>
