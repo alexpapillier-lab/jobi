@@ -1,8 +1,10 @@
 # Jobi – roadmapa a checklist k prodeji
 
 Sepsáno 4. 9. 2026 po srovnání s MyRepair.app (390–6 990 Kč/měs plus příplatky)
-a ZakázkovýList.cz (499 Kč/měs, jen evidence). Cíl: jeden tarif se vším,
-1 490–1 990 Kč/měs za servis, bez příplatků za API, uživatele a podporu.
+a ZakázkovýList.cz (499 Kč/měs, jen evidence). Ceník (5. 9.): Starter 590,
+Business 1 490, Enterprise od 2 490 Kč/měs za servis, ročně o 15 % levněji,
+bez příplatků za uživatele. Příplatky jen za pobočku navíc (490) a balíček
+SMS (199 za 100 zpráv).
 
 Stav: `[ ]` nezačato · `[~]` rozděláno · `[x]` hotovo
 
@@ -102,8 +104,9 @@ První tři měsíce: body 1, 2, 4.
   agregace na server dřív, než servis přesáhne ~10 000 zakázek.
 
 ### Web, podpora, prodej
-- `[~]` appjobi.com – marketingový web existuje; doplnit ceník s jedním
-  tarifem, srovnání s konkurencí, screenshoty nové verze, video.
+- `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
+  a aktuální funkce hotové (5. 9.); zbývá srovnání s konkurencí, screenshoty
+  nové verze a video.
 - `[ ]` Nápověda: 10 krátkých článků (příjem, tisk, JobiDocs, SMS, faktury,
   import, tým, API) a odkaz „Nápověda“ v aplikaci.
 - `[ ]` Podpora: e-mail, reakční doba, kdo ji drží; formulář „Nahlásit chybu“
