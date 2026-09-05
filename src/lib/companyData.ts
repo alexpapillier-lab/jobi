@@ -38,6 +38,33 @@ export function defaultCompanyData(): CompanyData {
   };
 }
 
+/**
+ * Kterému servisu patří firemní údaje uložené v prohlížeči.
+ *
+ * Bez toho si nově založený servis převzal zkratku posledního otevřeného
+ * servisu – a kdo pak dal Uložit, zapsal si cizí zkratku do čísel zakázek.
+ */
+const COMPANY_OWNER_KEY = "jobsheet_company_owner_v1";
+
+export function setCompanyCacheOwner(serviceId: string | null): void {
+  try {
+    if (serviceId) localStorage.setItem(COMPANY_OWNER_KEY, serviceId);
+    else localStorage.removeItem(COMPANY_OWNER_KEY);
+  } catch {
+    /* prohlížeč bez úložiště */
+  }
+}
+
+/** Patří uložená kopie tomuhle servisu? U neznámého původu vrací false. */
+export function companyCacheBelongsTo(serviceId: string | null): boolean {
+  if (!serviceId) return false;
+  try {
+    return localStorage.getItem(COMPANY_OWNER_KEY) === serviceId;
+  } catch {
+    return false;
+  }
+}
+
 export function safeLoadCompanyData(): CompanyData {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.COMPANY);

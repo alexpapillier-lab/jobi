@@ -10,7 +10,7 @@ import { useTheme, splitTheme, themeFor, type ThemeMode, type ThemeAccent, type 
 import { STATUS_COLOR_PALETTE, getContrastText } from "../utils/statusColors";
 import { supabase, supabaseUrl, supabaseFetch } from "../lib/supabaseClient";
 import { getTypedSupabaseClient } from "../lib/typedSupabase";
-import { safeLoadCompanyData } from "../lib/companyData";
+import { safeLoadCompanyData, defaultCompanyData, companyCacheBelongsTo, setCompanyCacheOwner } from "../lib/companyData";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
@@ -396,6 +396,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
    * ukazovalo čerstvá data, ale vygenerovaná faktura by pořád použila
    * starou lokální kopii.
    */
+  /** Aktuální servis pro callbacky s prázdnými závislostmi (applyServiceConfig). */
+  const activeServiceIdRef = useRef(activeServiceId);
+  useEffect(() => { activeServiceIdRef.current = activeServiceId; }, [activeServiceId]);
+
   const applyServiceConfig = useCallback((config: ServiceConfig) => {
     if (config.abbreviation || config.companyData) {
       setCompanyData((prev) => {
@@ -405,6 +409,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           abbreviation: config.abbreviation || prev.abbreviation,
         };
         localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(next));
+        setCompanyCacheOwner(activeServiceIdRef.current);
         companySavedRef.current = next;
         return next;
       });
@@ -422,6 +427,17 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
     setServiceSettingsLoading(true);
     setServiceSettingsError(null);
+
+    // Kopie firemních údajů v prohlížeči patří vždycky jednomu servisu.
+    // Po přepnutí (nebo u čerstvě založeného servisu) se musí zahodit, jinak
+    // se do formuláře propíše zkratka a adresa cizího servisu.
+    if (!companyCacheBelongsTo(activeServiceId)) {
+      const prazdne = defaultCompanyData();
+      setCompanyData(prazdne);
+      companySavedRef.current = prazdne;
+      try { localStorage.removeItem(STORAGE_KEYS.COMPANY); } catch { /* ignore */ }
+      setCompanyCacheOwner(activeServiceId);
+    }
 
     const loadServiceSettings = async () => {
       if (!supabase) {

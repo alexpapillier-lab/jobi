@@ -9,11 +9,13 @@ export async function loadDocumentsConfigRawFromDB(
 ): Promise<{ config: any; version: number } | null> {
   if (!supabase || !serviceId) return null;
   try {
+    // maybeSingle, ne single: nový servis řádek s nastavením dokumentů ještě
+    // nemá a `single` vrací 406, takže konzole nového zákazníka svítí červeně.
     const { data, error } = await supabase
       .from("service_document_settings")
       .select("config, version")
       .eq("service_id", serviceId)
-      .single();
+      .maybeSingle();
     if (error || !data) return null;
     const config = (data as any).config;
     const version = typeof (data as any).version === "number" ? (data as any).version : 1;

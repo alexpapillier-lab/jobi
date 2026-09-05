@@ -191,7 +191,7 @@ export async function loadDocumentsConfigFromDB(serviceId: string | null): Promi
       .from("service_document_settings")
       .select("config")
       .eq("service_id", serviceId)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 
