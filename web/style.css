@@ -1379,9 +1379,36 @@ section#stazeni {
   padding: 0 12px 4px;
 }
 
-/* Portál je snímek z telefonu – na výšku, uprostřed, ne přes celou šířku. */
+/* Portál je snímek z telefonu – zákazník ho otevře z SMS nebo QR kódu
+   v ruce, ne na počítači. Aby to bylo poznat i mezi desktopovými snímky,
+   sedí v obrysu telefonu: tmavý rámeček, zaoblené rohy a výřez nahoře. */
 .ukazka-mobil img {
   width: auto;
-  max-width: min(100%, 320px);
+  max-width: min(100%, 300px);
   margin: 0 auto;
+  padding: 14px 12px;
+  border-radius: 44px;
+  background: #0b0d14;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 0 0 1px rgba(0, 0, 0, 0.6) inset,
+    0 30px 70px rgba(0, 0, 0, 0.55);
+  position: relative;
+}
+.ukazka-mobil {
+  position: relative;
+  align-items: center;
+}
+/* Výřez pro kameru – jediný detail, který obrys telefonu potřebuje. */
+.ukazka-mobil::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 92px;
+  height: 22px;
+  border-radius: 999px;
+  background: #0b0d14;
+  z-index: 1;
 }
