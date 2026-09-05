@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Jobi – software pro servisy elektroniky. Zakázky, zákazníci, sklad, faktury a zákaznický portál na jednom místě. 30 dní zdarma." />
-  <meta property="og:title" content="Jobi – Servisní evidence pro servisy" />
-  <meta property="og:description" content="Zakázky, zákazníci, sklad, faktury i portál pro zákazníka. Tisk na jeden klik. 30 dní zdarma." />
+  <meta name="description" content="Jobi – software pro servisy elektroniky. Zakázky, zákazníci, sklad, faktury a zákaznický portál na jednom místě. 30&nbsp;dní zdarma." />
+  <meta property="og:title" content="Jobi – evidence servisních zakázek" />
+  <meta property="og:description" content="Zakázky, zákazníci, sklad, faktury i zákaznický portál. Dokumenty se tisknou jedním kliknutím. 30&nbsp;dní zdarma." />
   <meta property="og:type" content="website" />
-  <title>Jobi – Servisní evidence pro servisy</title>
+  <title>Jobi – evidence servisních zakázek</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="logo.svg" />
-  <link rel="stylesheet" href="style.css?v=202609021349" />
+  <link rel="stylesheet" href="style.css?v=202609051811" />
 </head>
 <body>
   <!-- Loading screen -->
@@ -37,6 +37,7 @@
         <span>Jobi</span>
       </a>
       <nav class="nav-links" aria-label="Hlavní navigace">
+        <a href="#prubeh">Jak to chodí</a>
         <a href="#vyhody">Co umí</a>
         <a href="#cenik">Ceník</a>
         <a href="/napoveda">Nápověda</a>
@@ -60,20 +61,20 @@
         <div class="hero-content">
           <div class="hero-badge">Pro servisy elektroniky · macOS, Windows i prohlížeč</div>
           <h1 class="hero-title">
-            <span class="hero-title-line">Servisní evidence,</span>
-            <span class="hero-title-line">která dává smysl</span>
+            <span class="hero-title-line">Evidence servisních zakázek</span>
+            <span class="hero-title-line">od příjmu po výdej</span>
           </h1>
           <p class="hero-lead">
-            Zakázky, zákazníci, sklad a dokumenty na jednom místě. Tisk na jeden klik a odkaz, na kterém zákazník vidí, jak jeho oprava pokračuje.
+            Zakázky, zákazníci, sklad a dokumenty na jednom místě. Dokumenty se tisknou jedním kliknutím. Zákazník sleduje stav opravy přes odkaz.
           </p>
           <div class="hero-actions">
-            <a href="/servis/" class="btn btn-primary">Vyzkoušet 30 dní zdarma</a>
+            <a href="/servis/" class="btn btn-primary">Vyzkoušet 30&nbsp;dní zdarma</a>
             <a href="#stazeni" class="btn btn-ghost btn-download-hero">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               <span id="hero-download-label">Stáhnout pro macOS</span>
             </a>
           </div>
-          <p class="hero-sub">Bez zadávání karty · macOS, Windows i prohlížeč · tisk přes JobiDocs</p>
+          <p class="hero-sub">Bez zadávání karty · tisk přes doplněk JobiDocs</p>
         </div>
 
         <!-- App mockup -->
@@ -118,7 +119,7 @@
                 <div class="mockup-filters">
                   <div class="mf-pill">Vše</div>
                   <div class="mf-pill mf-active">Aktivní</div>
-                  <div class="mf-pill">Final</div>
+                  <div class="mf-pill">Dokončené</div>
                 </div>
                 <div class="mockup-orders">
                   <div class="mo mo-repair">
@@ -181,52 +182,87 @@
     </section>
 
     <!-- FEATURES / CO UMÍ JOBI -->
+    <!-- JAK TO CHODÍ – průchod jednou zakázkou. Karty s funkcemi říkají, co
+         aplikace umí; tohle říká, jak vypadá běžný den u pultu. -->
+    <section id="prubeh" class="section section-alt" aria-labelledby="prubeh-heading">
+      <div class="section-eyebrow reveal">Jedna zakázka od začátku do konce</div>
+      <h2 id="prubeh-heading" class="section-title reveal">Jak to chodí u pultu</h2>
+      <p class="section-desc reveal">Tři kroky, mezi kterými se nic nepřepisuje ručně.</p>
+
+      <ol class="kroky">
+        <li class="krok reveal">
+          <div class="krok-cislo">1</div>
+          <div class="krok-telo">
+            <h3>Zákazník přinese zařízení</h3>
+            <p>Vyplníte jeden formulář. Zákazníka i zařízení Jobi napoví z těch, které už máte, a k opravě rovnou nabídne cenu z ceníku. Stav při převzetí vyfotíte telefonem přes QR kód.</p>
+            <p class="krok-vysledek">Vyjede zakázkový list s číslem zakázky a QR kódem na sledování stavu.</p>
+          </div>
+        </li>
+        <li class="krok reveal">
+          <div class="krok-cislo">2</div>
+          <div class="krok-telo">
+            <h3>Technik opravuje</h3>
+            <p>V zakázce vidí, co se se zařízením dělo minule. Díl vybere ze skladu a ten se na zakázku rezervuje. Když je oprava dražší, než se čekalo, pošle zákazníkovi rozpis ke schválení a čeká na odpověď.</p>
+            <p class="krok-vysledek">Zákazník schválí cenu online, položky se propíšou do zakázky.</p>
+          </div>
+        </li>
+        <li class="krok reveal">
+          <div class="krok-cislo">3</div>
+          <div class="krok-telo">
+            <h3>Zařízení jde zpátky</h3>
+            <p>Změna stavu na Hotovo umí sama poslat SMS. Faktura se sestaví z provedených oprav, takže se nemůže rozejít s tím, na čem jste se dohodli. Zákazník podepíše převzetí na displeji.</p>
+            <p class="krok-vysledek">Odchází se záručním listem, vy máte marži v přehledu.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
     <section id="vyhody" class="section" aria-labelledby="vyhody-heading">
       <div class="section-eyebrow reveal">Co umí Jobi</div>
       <h2 id="vyhody-heading" class="section-title reveal">Jedna aplikace pro celý servis</h2>
-      <p class="section-desc reveal">Od příjmu po vyzvednutí, včetně toho, co zákazník vidí a co vám zůstane v kase.</p>
+      <p class="section-desc reveal">Od příjmu zakázky po vyzvednutí zařízení, včetně zákaznického portálu a přehledu marží.</p>
       <div class="features-grid">
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           </div>
           <h3>Zakázky od příjmu po výdej</h3>
-          <p>Založte zakázku za minutu, sledujte stav, fotky připojte rovnou z mobilu přes QR kód.</p>
+          <p>Zakázku založíte v jednom formuláři a sledujete její stav v seznamu. Fotky připojíte z mobilu přes QR kód.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <h3>Zákazníci a jejich historie</h3>
-          <p>Každá oprava, kontakt i dokument u jednoho jména. Podruhé už víte, co s přístrojem bylo.</p>
+          <p>Každá oprava, kontakt i dokument jsou u jednoho zákazníka. Při další návštěvě vidíte, co se se zařízením dělo.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </div>
           <h3>Sklad, díly a objednávky</h3>
-          <p>Díl se rezervuje na zakázku a odepíše při dokončení. Pod minimem zásoby vám Jobi poradí, co doobjednat u dodavatele.</p>
+          <p>Díl se rezervuje na zakázku a odepíše se, až je zakázka v konečném stavu. Když počet klesne pod nastavené minimum, Jobi díl označí k objednání u dodavatele.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           </div>
           <h3>Tisknutelné dokumenty</h3>
-          <p>Zakázkový list, záruční list i diagnostický protokol jedním kliknutím, ve vlastní grafice a s QR kódem na stav zakázky.</p>
+          <p>Zakázkový list, záruční list i diagnostický protokol vytisknete jedním kliknutím. Dokumenty jsou ve vaší grafice a nesou QR kód na stav zakázky.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </div>
           <h3>SMS a automatické zprávy</h3>
-          <p>Píšete zákazníkům přímo z aplikace. Pravidla „když je hotovo, pošli SMS“ si nastavíte sami, bez programátora.</p>
+          <p>SMS zákazníkům píšete přímo z aplikace. Pravidlo „když se zakázka dostane do stavu Hotovo, pošli SMS“ si nastavíte sami.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <h3>Tým a oprávnění</h3>
-          <p>Kolegů přidejte, kolik chcete, platíte za servis. Každý smí jen to, co mu povolíte.</p>
+          <p>Počet uživatelů není omezený, platí se za servis. Každý člen týmu smí jen to, co mu povolíte.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
@@ -240,21 +276,21 @@
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h8"/><path d="M8 16h4"/></svg>
           </div>
           <h3>Faktury a účetnictví</h3>
-          <p>Fakturu vystavíte ze zakázky jedním klikem a pošlete ji do iDokladu nebo Fakturoidu, ať ji účetní nepřepisuje.</p>
+          <p>Fakturu vystavíte přímo ze zakázky, položky se převezmou z provedených oprav. Odtud ji odešlete do iDokladu nebo Fakturoidu, takže se nikde nepřepisuje.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           </div>
           <h3>Zákaznický portál</h3>
-          <p>Zákazník si přes odkaz nebo QR kód otevře stav zakázky, fotky z příjmu, schválí cenovou nabídku a podepíše převzetí. Volání „už je to hotové?“ ubude.</p>
+          <p>Zákazník si přes odkaz nebo QR kód otevře stav zakázky a fotky z příjmu. Ve stejném okně schválí cenovou nabídku a podepíše převzetí.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           </div>
           <h3>Statistiky a marže</h3>
-          <p>Kolik vydělává která oprava a které zařízení. Nákup dílu se odečte od ceny opravy, takže vidíte čistý zisk, ne jen obrat.</p>
+          <p>Vidíte, kolik vydělává která oprava a které zařízení. Nákupní cena dílu se odečte od ceny opravy, takže je vidět marže, ne jen obrat.</p>
         </article>
       </div>
     </section>
@@ -263,10 +299,10 @@
     <section id="cenik" class="section section-pricing" aria-labelledby="cenik-heading">
       <div class="section-eyebrow reveal">Ceník</div>
       <h2 id="cenik-heading" class="section-title reveal">Jednoduchá cena</h2>
-      <p class="section-desc reveal">Prvních 30 dní zdarma, bez zadávání karty. Pak platíte měsíčně nebo ročně – roční předplatné je o 15&nbsp;% výhodnější. Ceny jsou konečné, nejsme plátci DPH.</p>
+      <p class="section-desc reveal">Prvních 30&nbsp;dní zdarma, bez zadávání karty. Pak se platí měsíčně, nebo ročně o 15&nbsp;% levněji. Ceny jsou konečné, nejsme plátci DPH.</p>
 
       <div class="pricing-motto reveal">
-        <p>Průměrný servis ztrácí hodiny týdně na papírování a hledání. Jobi to mění: příjem zakázky do minuty, dokumenty jedním klikem, přehled vždy po ruce. Čas zpátky tam, kde skutečně vydělává.</p>
+        <p>Platí se za servis, ne za jednotlivé uživatele. Tarify se liší jen rozsahem modulů, srovnání je v tabulce níže.</p>
       </div>
 
       <div class="pricing-toggle-wrap reveal">
@@ -274,79 +310,80 @@
         <button type="button" class="pricing-toggle" id="pricing-toggle" role="switch" aria-checked="false" aria-label="Přepnout mezi měsíční a roční cenou">
           <span class="pricing-toggle-thumb"></span>
         </button>
-        <span class="pricing-toggle-label" data-period="yearly">Ročně <span class="pricing-toggle-badge">−15 %</span></span>
+        <span class="pricing-toggle-label" data-period="yearly">Ročně <span class="pricing-toggle-badge">−15&nbsp;%</span></span>
       </div>
 
       <div class="pricing-grid">
         <article class="pricing-card reveal" data-plan="starter">
           <div class="pricing-card-inner">
             <h3 class="pricing-name">Starter</h3>
-            <p class="pricing-desc">Pro malé servisy a živnostníky.</p>
+            <p class="pricing-desc">Pro jeden servis, který chce mít pořádek v zakázkách a fakturách.</p>
             <div class="pricing-price">
-              <span class="pricing-amount pricing-monthly">590 Kč</span>
-              <span class="pricing-amount pricing-yearly" hidden>6 012 Kč</span>
+              <span class="pricing-amount pricing-monthly">590&nbsp;Kč</span>
+              <span class="pricing-amount pricing-yearly" hidden>6&nbsp;012&nbsp;Kč</span>
               <span class="pricing-period pricing-monthly">/měsíc</span>
               <span class="pricing-period pricing-yearly" hidden>/rok</span>
-              <div class="pricing-savings pricing-yearly" hidden>Ušetříte 1 068 Kč/rok</div>
+              <div class="pricing-savings pricing-yearly" hidden>O 1&nbsp;068&nbsp;Kč méně než při měsíční platbě</div>
             </div>
             <ul class="pricing-features">
               <li>Zakázky, zákazníci, sklad</li>
-              <li>JobiDocs, Capture</li>
+              <li>Tisk přes JobiDocs a focení z mobilu</li>
               <li>Faktury v ceně</li>
               <li>Neomezený počet uživatelů</li>
-              <li>SMS <span class="pricing-addon">+199 Kč/měs za 100 zpráv</span></li>
+              <li>SMS <span class="pricing-addon">+199&nbsp;Kč/měs za 100&nbsp;zpráv</span></li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30 dní zdarma</a>
+            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
           </div>
         </article>
         <article class="pricing-card pricing-card-popular reveal" data-plan="business">
           <div class="pricing-badge">Doporučeno</div>
           <div class="pricing-card-inner">
             <h3 class="pricing-name">Business</h3>
-            <p class="pricing-desc">Pro rostoucí servisy, které chtějí psát zákazníkům.</p>
+            <p class="pricing-desc">Pro servisy, které posílají zákazníkům SMS a fakturují přes iDoklad nebo Fakturoid.</p>
             <div class="pricing-price">
-              <span class="pricing-amount pricing-monthly">1 490 Kč</span>
-              <span class="pricing-amount pricing-yearly" hidden>15 198 Kč</span>
+              <span class="pricing-amount pricing-monthly">1&nbsp;490&nbsp;Kč</span>
+              <span class="pricing-amount pricing-yearly" hidden>15&nbsp;198&nbsp;Kč</span>
               <span class="pricing-period pricing-monthly">/měsíc</span>
               <span class="pricing-period pricing-yearly" hidden>/rok</span>
-              <div class="pricing-savings pricing-yearly" hidden>Ušetříte 2 682 Kč/rok</div>
+              <div class="pricing-savings pricing-yearly" hidden>O 2&nbsp;682&nbsp;Kč méně než při měsíční platbě</div>
             </div>
             <ul class="pricing-features">
-              <li>Vše ze Starter</li>
-              <li>300 SMS měsíčně v ceně</li>
+              <li>Vše z tarifu Starter</li>
+              <li>300&nbsp;SMS měsíčně v ceně</li>
               <li>Napojení na iDoklad a Fakturoid</li>
-              <li>Pobočka v ceně, další <span class="pricing-addon">490 Kč/měs</span></li>
+              <li>Pobočka v ceně, další <span class="pricing-addon">490&nbsp;Kč/měs</span></li>
               <li>Sklad napříč pobočkami</li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30 dní zdarma</a>
+            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
           </div>
         </article>
         <article class="pricing-card reveal" data-plan="enterprise">
           <div class="pricing-card-inner">
             <h3 class="pricing-name">Enterprise</h3>
-            <p class="pricing-desc">Pro servisy s několika pobočkami. Cena vychází z jejich počtu.</p>
+            <p class="pricing-desc">Pro víc poboček, veřejné API a přehled přes všechny servisy. Cena vychází z počtu poboček.</p>
             <div class="pricing-price">
-              <span class="pricing-amount pricing-monthly">od 2 490 Kč</span>
-              <span class="pricing-amount pricing-yearly" hidden>od 25 398 Kč</span>
+              <span class="pricing-amount pricing-monthly">od 2&nbsp;490&nbsp;Kč</span>
+              <span class="pricing-amount pricing-yearly" hidden>od 25&nbsp;398&nbsp;Kč</span>
               <span class="pricing-period pricing-monthly">/měsíc</span>
               <span class="pricing-period pricing-yearly" hidden>/rok</span>
-              <div class="pricing-savings pricing-yearly" hidden>Ušetříte 4 482 Kč/rok</div>
+              <div class="pricing-savings pricing-yearly" hidden>O 4&nbsp;482&nbsp;Kč méně než při měsíční platbě</div>
             </div>
             <ul class="pricing-features">
-              <li>Vše z Business, 600 SMS měsíčně</li>
-              <li>Dvě pobočky v ceně, další <span class="pricing-addon">490 Kč/měs</span></li>
+              <li>Vše z tarifu Business</li>
+              <li>600&nbsp;SMS měsíčně v ceně</li>
+              <li>Dvě pobočky v ceně, další <span class="pricing-addon">490&nbsp;Kč/měs</span></li>
               <li>Statistiky přes všechny vaše servisy</li>
               <li>Veřejné API pro web servisu</li>
               <li>Prioritní podpora</li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30 dní zdarma</a>
-            <a class="pricing-contact" href="mailto:info@appjobi.com?subject=Jobi%20Enterprise%20%E2%80%93%20nab%C3%ADdka%20pro%20s%C3%AD%C5%A5%20pobo%C4%8Dek">Napište si o nabídku pro svou síť poboček</a>
+            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
+            <a class="pricing-contact" href="mailto:info@appjobi.com?subject=Jobi%20Enterprise%20%E2%80%93%20nab%C3%ADdka%20pro%20s%C3%AD%C5%A5%20pobo%C4%8Dek">Nabídka pro víc poboček na vyžádání</a>
           </div>
         </article>
       </div>
 
       <div class="pricing-table-wrap reveal">
-        <h3 class="pricing-table-title">Co se liší mezi plány</h3>
+        <h3 class="pricing-table-title">Co se liší mezi tarify</h3>
         <div class="pricing-table-scroll">
           <table class="pricing-table">
             <thead>
@@ -359,14 +396,14 @@
             </thead>
             <tbody>
               <tr><td>Zakázky, zákazníci, sklad</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
-              <tr><td>JobiDocs, Capture</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
-              <tr><td>SMS zákazníkům</td><td><span class="pricing-addon-cell">+199 Kč/měs za 100</span></td><td>300 měsíčně</td><td>600 měsíčně</td></tr>
+              <tr><td>Tisk přes JobiDocs a focení z mobilu</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
+              <tr><td>SMS zákazníkům</td><td><span class="pricing-addon-cell">+199&nbsp;Kč/měs za 100&nbsp;zpráv</span></td><td>300&nbsp;zpráv měsíčně</td><td>600&nbsp;zpráv měsíčně</td></tr>
               <tr><td>Faktury</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Neomezený počet uživatelů</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Zákaznický portál a QR na zakázkovém listu</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Napojení na iDoklad a Fakturoid</td><td>—</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Pobočky v ceně</td><td>1</td><td>1</td><td>2</td></tr>
-              <tr><td>Pobočka navíc</td><td>—</td><td><span class="pricing-addon-cell">490 Kč/měs</span></td><td><span class="pricing-addon-cell">490 Kč/měs</span></td></tr>
+              <tr><td>Pobočka navíc</td><td>—</td><td><span class="pricing-addon-cell">490&nbsp;Kč/měs</span></td><td><span class="pricing-addon-cell">490&nbsp;Kč/měs</span></td></tr>
               <tr><td>Sklad napříč pobočkami</td><td>—</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Veřejné API (ceník a sklad na web servisu)</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Statistiky přes všechny vaše servisy</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
@@ -376,7 +413,7 @@
         </div>
       </div>
 
-      <p class="pricing-note reveal">Účtujeme za servis, ne za člověka – kolegů si přidejte, kolik potřebujete. Předplatné je na dobu neurčitou, zrušit ho jde kdykoli ke konci zaplaceného období. SMS se počítají po zprávách za kalendářní měsíc a nevyčerpané se nepřevádějí. Když balíček dojde, Jobi další zprávy neodešle, takže vám nepřijde účet, se kterým nepočítáte; balíček jde kdykoli zvětšit. K odesílání je potřeba telefonní číslo, které servisu přidělíme. Máte dotazy k ceně nebo nasazení? Napište na <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
+      <p class="pricing-note reveal">Platí se za servis, ne za jednotlivé uživatele. Předplatné je na dobu neurčitou a zrušit ho jde kdykoli ke konci zaplaceného období. SMS se počítají po zprávách za kalendářní měsíc a nevyčerpané se nepřevádějí do dalšího měsíce. Když balíček dojde, Jobi další zprávy neodešle a nic se nedoúčtuje; balíček jde kdykoli zvětšit. K odesílání je potřeba telefonní číslo, které servisu přidělíme. Dotazy k ceně a nasazení posílejte na <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
     </section>
 
     <!-- DOWNLOAD -->
@@ -390,7 +427,7 @@
           <img src="logo.svg" class="download-logo" alt="" width="64" height="64" />
           <h2 id="stazeni-heading" class="download-title">Stáhnout</h2>
           <p class="download-desc">
-            Nejnovější vydání z GitHubu. Stáhněte Jobi (hlavní aplikace) nebo JobiDocs (tisk a PDF) zvlášť.
+            Nejnovější vydání z GitHubu. Jobi (hlavní aplikace) a JobiDocs (tisk a PDF) se stahují zvlášť.
           </p>
           <div class="download-os-switch" role="group" aria-label="Vyberte systém">
             <button type="button" class="download-os-btn is-active" id="os-mac" aria-pressed="true">
@@ -415,7 +452,7 @@
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Stáhnout JobiDocs
               </button>
-              <span class="download-option-desc">Tisk a PDF – doplněk pro tisk dokumentů</span>
+              <span class="download-option-desc">Doplněk pro tisk dokumentů a export do PDF</span>
             </div>
           </div>
           <span class="download-loading" id="download-loading" hidden aria-live="polite">Načítám…</span>
@@ -448,12 +485,12 @@
         <a href="/napoveda">Nápověda</a>
         <a href="/obchodni-podminky">Obchodní podmínky</a>
         <a href="/ochrana-osobnich-udaju">Ochrana osobních údajů</a>
-        <a href="/zpracovani-udaju">Zpracování údajů</a>
+        <a href="/zpracovani-udaju">Zpracování osobních údajů</a>
         <a href="mailto:info@appjobi.com">Kontakt</a>
       </div>
     </div>
   </footer>
 
-  <script src="app.js?v=202609030730"></script>
+  <script src="app.js?v=202609051811"></script>
 </body>
 </html>

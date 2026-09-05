@@ -479,6 +479,132 @@ section#stazeni {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* ---------------------------------------------------------------
+   Průchod zakázkou (sekce „Jak to chodí u pultu")
+
+   Stránka byla jedna dlouhá tmavá plocha, na které se sekce slévaly
+   dohromady. Tahle má vlastní odstín pozadí přes celou šířku okna, aby
+   šlo poznat, že příběh zakázky je něco jiného než výčet funkcí.
+   --------------------------------------------------------------- */
+.section-alt {
+  position: relative;
+  max-width: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    radial-gradient(1200px 400px at 50% 0%, rgba(59, 130, 246, 0.07), transparent 70%),
+    rgba(255, 255, 255, 0.018);
+}
+.section-alt > * {
+  max-width: var(--content-max);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.kroky {
+  list-style: none;
+  margin: 48px auto 0;
+  padding: 0;
+  display: grid;
+  gap: 20px;
+  counter-reset: krok;
+}
+
+.krok {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 20px;
+  align-items: start;
+  align-content: start;
+  padding: 24px 24px 24px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 20px);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Svislá linka mezi kroky – ať je vidět, že jde o posloupnost, ne o tři
+   nesouvisející karty. U posledního kroku nikam nepokračuje. */
+.krok:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 47px;
+  top: 76px;
+  bottom: -20px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent-soft), rgba(255, 255, 255, 0.04));
+}
+
+.krok-cislo {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.krok-telo h3 {
+  margin: 12px 0 8px;
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+}
+
+.krok-telo p {
+  margin: 0 0 8px;
+  color: rgba(232, 237, 255, 0.72);
+  line-height: 1.65;
+}
+
+/* Výsledek kroku – to hmatatelné, co z něj vypadne. */
+.krok-vysledek {
+  display: inline-block;
+  margin: 4px 0 0 !important;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  color: rgba(232, 237, 255, 0.9) !important;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+@media (min-width: 900px) {
+  .kroky {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+  .krok {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 28px;
+  }
+  /* Karty mají různě dlouhý text; bez tohohle končí odrážka s výsledkem
+     u každé jinde a řádek se opticky rozpadne. */
+  .krok-telo {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .krok-vysledek {
+    margin-top: auto !important;
+    align-self: flex-start;
+  }
+  /* Na šířku vede linka vodorovně mezi kolečky. */
+  .krok:not(:last-child)::after {
+    left: auto;
+    right: -28px;
+    top: 55px;
+    bottom: auto;
+    width: 28px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.55), rgba(59, 130, 246, 0.12));
+  }
+}
+
 .section-eyebrow {
   font-size: 12px;
   font-weight: 700;
