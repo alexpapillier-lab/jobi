@@ -24,6 +24,37 @@ type Row = {
 
 type Service = { service_id: string; service_name: string };
 
+/** Stav předplatného servisu (ze Stripe přes billing-webhook). */
+type BillingRow = {
+  service_id: string;
+  status: string | null;
+  plan: string | null;
+  branches_quantity: number;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  stripe_customer_id: string | null;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  trialing: "zkušební období",
+  active: "aktivní",
+  past_due: "po splatnosti",
+  canceled: "zrušeno",
+  unpaid: "nezaplaceno",
+  incomplete: "nedokončeno",
+};
+
+const PLAN_LABELS: Record<string, string> = {
+  jobi_plan_monthly: "měsíční tarif",
+  jobi_plan_yearly: "roční tarif",
+};
+
+const PROVIDER_LABELS: Record<string, string> = { idoklad: "iDoklad", fakturoid: "Fakturoid" };
+
+function datum(v: string | null | undefined): string {
+  return v ? new Date(v).toLocaleDateString("cs-CZ") : "";
+}
+
 const MODULE_LABELS: Record<string, string> = {
   access: "Přístup do aplikace",
   sms: "SMS",
@@ -37,7 +68,7 @@ const MODULE_LABELS: Record<string, string> = {
 /** Popisek jednotky u modulů prodávaných po kusech. */
 const QUOTA_UNIT: Record<string, string> = { branches: "poboček" };
 
-async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[]; quotaModules?: string[]; branchCounts?: Record<string, number> }> {
+async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[]; quotaModules?: string[]; branchCounts?: Record<string, number>; billing?: Record<string, BillingRow>; integrations?: Record<string, string[]> }> {
   const client = supabase;
   if (!client || !supabaseUrl || !supabaseAnonKey) throw new Error("Chybí konfigurace Supabase.");
   // refreshSession: v desktopu getSession() často vrací prošlý token -> 401
@@ -66,6 +97,8 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
   const [modules, setModules] = useState<string[]>([]);
   const [quotaModules, setQuotaModules] = useState<string[]>(["branches"]);
   const [branchCounts, setBranchCounts] = useState<Record<string, number>>({});
+  const [billing, setBilling] = useState<Record<string, BillingRow>>({});
+  const [integrations, setIntegrations] = useState<Record<string, string[]>>({});
   /** Rozepsaný limit, než ho uživatel potvrdí (Enter / opuštění pole). */
   const [quotaDraft, setQuotaDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -81,6 +114,8 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       setModules(data.modules ?? ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting"]);
       setQuotaModules(data.quotaModules ?? ["branches"]);
       setBranchCounts(data.branchCounts ?? {});
+      setBilling(data.billing ?? {});
+      setIntegrations(data.integrations ?? {});
       setQuotaDraft({});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -204,8 +239,37 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
               border: "1px solid var(--border)", background: "var(--panel)",
             }}
           >
-            <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)" }}>
-              {s.service_name}
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 200, flex: "1 1 220px" }}>
+              <span style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)" }}>
+                {s.service_name}
+              </span>
+              {/* Souhrn: na čem servis jede, aniž by se chodilo do Stripe. */}
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+                {(() => {
+                  const b = billing[s.service_id];
+                  const casti: string[] = [];
+                  if (b?.status) {
+                    const stav = STATUS_LABELS[b.status] ?? b.status;
+                    const plan = b.plan ? PLAN_LABELS[b.plan] ?? b.plan : null;
+                    casti.push(plan ? `${plan}, ${stav}` : stav);
+                    if (b.current_period_end) {
+                      casti.push(`${b.cancel_at_period_end ? "končí" : "platí do"} ${datum(b.current_period_end)}`);
+                    }
+                  } else {
+                    // Bez předplatného: rozhoduje platnost nároku na přístup.
+                    const pristup = rows.find((x) => x.service_id === s.service_id && x.module === "access");
+                    if (!pristup || !pristup.active) casti.push("bez přístupu do aplikace");
+                    else if (pristup.valid_until) casti.push(`zkušební období do ${datum(pristup.valid_until)}`);
+                    else casti.push("trvalý přístup, bez předplatného");
+                  }
+                  const limit = rows.find((x) => x.service_id === s.service_id && x.module === "branches")?.quota;
+                  const ma = branchCounts[s.service_id] ?? 0;
+                  if (ma > 1 || (limit ?? 0) > 1) casti.push(`pobočky ${ma}${limit ? ` z ${limit}` : ""}`);
+                  const fakturace = integrations[s.service_id] ?? [];
+                  if (fakturace.length > 0) casti.push(fakturace.map((p) => PROVIDER_LABELS[p] ?? p).join(", "));
+                  return casti.join(" · ");
+                })()}
+              </span>
             </span>
             <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
               {modules.map((m) => {

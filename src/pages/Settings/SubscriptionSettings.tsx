@@ -19,6 +19,8 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [platbyVypnute, setPlatbyVypnute] = useState(false);
+  const [obdobi, setObdobi] = useState<"mesicne" | "rocne">("mesicne");
+  const [pobockyNavic, setPobockyNavic] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,7 +31,10 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
 
   const koupit = async () => {
     setBusy("checkout");
-    const res = await startCheckout(activeServiceId);
+    const res = await startCheckout(activeServiceId, {
+      plan: obdobi === "rocne" ? "jobi_plan_yearly" : "jobi_plan_monthly",
+      branches: pobockyNavic,
+    });
     setBusy(null);
     if (res.url) { window.location.href = res.url; return; }
     if (res.notConfigured) { setPlatbyVypnute(true); return; }
@@ -97,6 +102,47 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
               a plán vám zapneme ručně.
             </div>
           ) : (
+            <>
+            {!maPredplatne && (
+              <div style={{ display: "grid", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)" }}>Platit</span>
+                  {([["mesicne", "měsíčně"], ["rocne", "ročně"]] as const).map(([hodnota, popis]) => (
+                    <button
+                      key={hodnota}
+                      type="button"
+                      onClick={() => setObdobi(hodnota)}
+                      style={{
+                        padding: "5px 14px",
+                        borderRadius: 999,
+                        border: `1px solid ${obdobi === hodnota ? "var(--accent)" : "var(--border)"}`,
+                        background: obdobi === hodnota ? "var(--accent-soft)" : "var(--panel)",
+                        color: obdobi === hodnota ? "var(--accent)" : "var(--text)",
+                        fontSize: "var(--text-sm)",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {popis}
+                    </button>
+                  ))}
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                  Pobočky navíc
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={pobockyNavic}
+                    onChange={(e) => setPobockyNavic(Math.max(0, Math.min(50, Number(e.target.value) || 0)))}
+                    className="ui-input"
+                    style={{ width: 70, padding: "4px 8px", textAlign: "center" }}
+                  />
+                  <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>tarif zahrnuje jednu</span>
+                </label>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {maPredplatne ? (
                 <Button variant="primary" onClick={() => void spravovat()} disabled={busy !== null}>
@@ -111,6 +157,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
                 Ceník
               </Button>
             </div>
+            </>
           )}
         </div>
       )}

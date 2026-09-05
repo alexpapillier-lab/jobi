@@ -76,6 +76,24 @@ serve(async (req) => {
         for (const s of services ?? []) names[s.id as string] = (s.name as string) ?? "";
       }
 
+      // Předplatné a napojení na fakturaci – ať je v Owner panelu vidět,
+      // na čem servis jede, aniž by se muselo chodit do Stripe.
+      const billing: Record<string, unknown> = {};
+      const { data: billingRows } = await svc
+        .from("service_billing")
+        .select("service_id, status, plan, branches_quantity, current_period_end, cancel_at_period_end, stripe_customer_id");
+      for (const b of billingRows ?? []) billing[b.service_id as string] = b;
+
+      const integrations: Record<string, string[]> = {};
+      const { data: integRows } = await svc
+        .from("service_integrations")
+        .select("service_id, provider, active, last_error");
+      for (const i of integRows ?? []) {
+        if (i.active === false) continue;
+        const id = i.service_id as string;
+        integrations[id] = [...(integrations[id] ?? []), i.provider as string];
+      }
+
       // Kolik poboček servisy opravdu mají – ať je u limitu vidět „3 z 5“.
       const branchCounts: Record<string, number> = {};
       const { data: branchRows } = await svc.from("branches").select("service_id");
@@ -89,6 +107,8 @@ serve(async (req) => {
         modules: KNOWN_MODULES,
         quotaModules: QUOTA_MODULES,
         branchCounts,
+        billing,
+        integrations,
         entitlements: (rows ?? []).map((r) => ({ ...r, service_name: names[r.service_id] ?? null })),
       });
     }
