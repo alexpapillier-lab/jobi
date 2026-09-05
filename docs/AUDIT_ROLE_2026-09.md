@@ -187,7 +187,9 @@ Probe skript rozšířený na 120 dotazů (`scripts/rls-probe.sql`), spouští s
 Po opravě: 120 probe, 0 neshod s očekáváním. Celá E2E sada (14 testů) prochází,
 klient žádný chráněný sloupec nepíše přímo.
 
-**Zbývá:** revize toho, co veřejné funkce `portal-ticket` a `capture-*` vracejí
-zákazníkovi bez přihlášení (telefon, e-mail, IMEI, heslo k zařízení, interní
-poznámky, nákupní ceny tam být nesmí) – kód to podle hlavičky funkce filtruje,
-ale nikdo to po posledních změnách (quote_items) znovu neprošel.
+**Revize dat z `portal-ticket` (5. 9. večer):** zákazník dostane číslo zakázky,
+termíny, název zařízení, požadovanou opravu, fotky, provedené opravy jen jako
+název a cenu (`parseRepairs` nic dalšího nepropustí, platí i pro `quote_items`),
+nabídku, stav podpisu a kontaktní údaje servisu včetně účtu pro QR platbu.
+Telefon, e-mail, IMEI, heslo k zařízení, interní poznámky ani náklady v odpovědi
+nejsou. `capture-*` vrací jen stav nahrání a odkazy na fotky daného tokenu.

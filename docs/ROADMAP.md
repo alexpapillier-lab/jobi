@@ -95,8 +95,10 @@ První tři měsíce: body 1, 2, 4.
 - `[~]` Audit RLS – druhé kolo 5. 9. večer (správce, člen bez práv, anon): 120
   probe, 6 děr opraveno migrací 20260907130000, mezi nimi mazání libovolného
   servisu anon klíčem a posouvání cizí číselné řady faktur. Detail v
-  `docs/AUDIT_ROLE_2026-09.md`. Zbývá revize dat, která vrací portal-ticket a
-  capture-* bez přihlášení.
+  `docs/AUDIT_ROLE_2026-09.md`. Data vracená portálem zákazníkovi
+  zkontrolována: číslo, termíny, zařízení, závada, fotky, opravy jen s názvem
+  a cenou, nabídka, podpis, kontakt servisu – žádný telefon, e-mail, IMEI,
+  heslo k zařízení, poznámka ani náklad.
 - `[~]` (původní zápis) Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
   veřejné API, capture-upload, invoice-send-email). 5. 9.: proběhlo první
   kolo z účtu technika (`scripts/rls-probe.sql`, 45 testů). Opraveno mazání
