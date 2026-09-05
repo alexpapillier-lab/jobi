@@ -771,10 +771,13 @@ section#stazeni {
   background-position: center;
 }
 
+/* Příplatek u položky tarifu. `white-space: nowrap` proto, že „490 Kč/měs"
+   se jinak láme uprostřed a částka skončí sama na dalším řádku. */
 .pricing-addon {
   font-size: 12px;
   color: var(--muted);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .pricing-cta {
@@ -1315,13 +1318,23 @@ section#stazeni {
 }
 
 /* Odkaz pod tlačítkem u Enterprise – cena se u větších sítí domlouvá. */
+/* Druhý odkaz pod hlavním tlačítkem karty.
+   Byl to podtržený šedý text přes dva řádky, což pod plnou modrou tlačítkou
+   vypadalo jako hyperlink z devadesátek. Teď je to tichá druhá volba:
+   bez podtržení, na jednom řádku, podtrhne se až najetím myší. */
 .pricing-contact {
   display: block;
-  margin-top: 10px;
+  margin-top: 12px;
   text-align: center;
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.pricing-contact:hover {
+  color: rgba(255, 255, 255, 0.9);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.pricing-contact:hover { color: rgba(255, 255, 255, 0.85); }
