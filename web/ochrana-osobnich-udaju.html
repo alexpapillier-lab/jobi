@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ochrana osobních údajů | Jobi</title>
+  <meta name="description" content="Jak Jobi nakládá s osobními údaji návštěvníků webu a uživatelů aplikace." />
+  <meta name="robots" content="index,follow" />
+  <link rel="icon" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0b0d14; --panel: #12151f; --border: rgba(255,255,255,0.08);
+      --text: #e8eaf2; --muted: rgba(232,234,242,0.6); --accent: #5b7cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.7; font-size: 16px;
+    }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 40px; flex-wrap: wrap; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; }
+    .brand img { width: 26px; height: 26px; }
+    .top nav { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; }
+    .top nav a { color: var(--muted); text-decoration: none; }
+    .top nav a:hover, .top nav a[aria-current] { color: var(--text); }
+    h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 8px; }
+    .lead { color: var(--muted); margin: 0 0 8px; }
+    .updated { color: var(--muted); font-size: 0.85rem; margin: 0 0 32px; }
+    h2 { font-size: 1.15rem; margin: 36px 0 10px; }
+    h3 { font-size: 1rem; margin: 24px 0 8px; }
+    p, li { color: rgba(232,234,242,0.88); }
+    ul, ol { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 20px 0; }
+    .todo { border-color: rgba(250,204,21,0.4); background: rgba(250,204,21,0.07); }
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="top">
+      <a class="brand" href="/"><img src="logo.svg" alt="" width="26" height="26" />Jobi</a>
+      <nav>
+        <a href="/obchodni-podminky.html">Obchodní podmínky</a>
+        <a href="/zpracovani-udaju.html">Zpracování osobních údajů</a>
+        <a href="/ochrana-osobnich-udaju.html" aria-current="page">Ochrana osobních údajů</a>
+        <a href="/#cenik">Ceník</a>
+      </nav>
+    </div>
+
+
+    <h1>Ochrana osobních údajů</h1>
+    <p class="lead">Jak nakládáme s údaji návštěvníků webu a uživatelů Jobi.</p>
+    <p class="updated">Účinné od [doplňte datum] · verze 1.0</p>
+
+    <div class="box todo">
+      <strong>Než texty zveřejníte:</strong> doplňte v hranatých závorkách údaje provozovatele
+      (jméno nebo firmu, IČO, sídlo) a nechte dokumenty projít právníkem. Jsou psané na míru tomu,
+      jak Jobi opravdu funguje, ale nejsou právní radou.
+    </div>
+
+
+    <h2>Kdo je správce</h2>
+    <p>Správcem údajů popsaných na této stránce je [doplňte jméno / obchodní firmu], IČO [doplňte], se sídlem [doplňte adresu],
+      zapsaný v [živnostenském rejstříku / obchodním rejstříku – doplňte], e-mail
+      <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
+    <p>Údaje, které do Jobi vkládají servisy o svých zákaznících, spravuje daný servis;
+      my jsme u nich pouze zpracovatelem, viz
+      <a href="/zpracovani-udaju.html">zpracovatelská smlouva</a>.</p>
+
+    <h2>Co zpracováváme</h2>
+    <table>
+      <thead><tr><th>Údaj</th><th>Proč</th><th>Právní základ</th><th>Jak dlouho</th></tr></thead>
+      <tbody>
+        <tr><td>E-mail, jméno nebo přezdívka, profilová fotografie</td><td>zřízení a provoz účtu</td><td>plnění smlouvy</td><td>po dobu účtu a 30 dní poté</td></tr>
+        <tr><td>Fakturační údaje a historie plateb</td><td>vystavení dokladů</td><td>právní povinnost</td><td>10 let podle zákona o účetnictví</td></tr>
+        <tr><td>Technické záznamy o chybách aplikace</td><td>hledání a oprava chyb</td><td>oprávněný zájem na funkčnosti</td><td>30 dní</td></tr>
+        <tr><td>E-mailová komunikace s podporou</td><td>vyřízení dotazu</td><td>oprávněný zájem</td><td>2 roky</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Cookies a měření</h2>
+    <p>Na appjobi.com neběží žádná analytika ani reklamní nástroje a web neukládá cookies.
+      Aplikace na <a href="/servis/">appjobi.com/servis</a> ukládá do prohlížeče jen to,
+      co potřebuje k provozu: přihlášení a osobní nastavení vzhledu. Nejde o sledování
+      a souhlas se pro ně nevyžaduje.</p>
+
+    <h2>Komu údaje předáváme</h2>
+    <p>Jen dodavatelům, bez kterých by služba nefungovala: Supabase (databáze a přihlašování,
+      Evropská unie), Cloudflare (provoz webu), Resend (e-maily), Twilio (SMS) a Stripe
+      (platby). Údaje neprodáváme a nepředáváme pro marketing třetích stran.</p>
+
+    <h2>Vaše práva</h2>
+    <ul>
+      <li>Přístup k údajům, které o vás vedeme, a jejich kopii.</li>
+      <li>Opravu nepřesných údajů.</li>
+      <li>Výmaz, pokud pominul důvod zpracování a nebrání tomu zákon.</li>
+      <li>Omezení zpracování a námitku proti zpracování z oprávněného zájmu.</li>
+      <li>Přenositelnost údajů, které jste nám poskytli.</li>
+      <li>Stížnost u Úřadu pro ochranu osobních údajů (<a href="https://www.uoou.cz" target="_blank" rel="noopener">uoou.cz</a>).</li>
+    </ul>
+    <p>Žádosti vyřizujeme do 30 dní na
+      <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
+
+    <h2>Jste zákazník servisu, který používá Jobi?</h2>
+    <p>Pak se svými právy obraťte na daný servis. My mu s vyřízením pomůžeme, ale sami
+      o vašich údajích nerozhodujeme.</p>
+
+
+    <footer>
+      <span>© 2026 Jobi</span>
+      <span><a href="mailto:info@appjobi.com">info@appjobi.com</a></span>
+    </footer>
+
+  </div>
+</body>
+</html>

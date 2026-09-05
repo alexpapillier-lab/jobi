@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Obchodní podmínky | Jobi</title>
+  <meta name="description" content="Podmínky používání servisního software Jobi." />
+  <meta name="robots" content="index,follow" />
+  <link rel="icon" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0b0d14; --panel: #12151f; --border: rgba(255,255,255,0.08);
+      --text: #e8eaf2; --muted: rgba(232,234,242,0.6); --accent: #5b7cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.7; font-size: 16px;
+    }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 40px; flex-wrap: wrap; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; }
+    .brand img { width: 26px; height: 26px; }
+    .top nav { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; }
+    .top nav a { color: var(--muted); text-decoration: none; }
+    .top nav a:hover, .top nav a[aria-current] { color: var(--text); }
+    h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 8px; }
+    .lead { color: var(--muted); margin: 0 0 8px; }
+    .updated { color: var(--muted); font-size: 0.85rem; margin: 0 0 32px; }
+    h2 { font-size: 1.15rem; margin: 36px 0 10px; }
+    h3 { font-size: 1rem; margin: 24px 0 8px; }
+    p, li { color: rgba(232,234,242,0.88); }
+    ul, ol { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 20px 0; }
+    .todo { border-color: rgba(250,204,21,0.4); background: rgba(250,204,21,0.07); }
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="top">
+      <a class="brand" href="/"><img src="logo.svg" alt="" width="26" height="26" />Jobi</a>
+      <nav>
+        <a href="/obchodni-podminky.html" aria-current="page">Obchodní podmínky</a>
+        <a href="/zpracovani-udaju.html">Zpracování osobních údajů</a>
+        <a href="/ochrana-osobnich-udaju.html">Ochrana osobních údajů</a>
+        <a href="/#cenik">Ceník</a>
+      </nav>
+    </div>
+
+
+    <h1>Obchodní podmínky</h1>
+    <p class="lead">Podmínky používání služby Jobi.</p>
+    <p class="updated">Účinné od [doplňte datum] · verze 1.0</p>
+
+    <div class="box todo">
+      <strong>Než texty zveřejníte:</strong> doplňte v hranatých závorkách údaje provozovatele
+      (jméno nebo firmu, IČO, sídlo) a nechte dokumenty projít právníkem. Jsou psané na míru tomu,
+      jak Jobi opravdu funguje, ale nejsou právní radou.
+    </div>
+
+
+    <h2>1. Kdo službu poskytuje</h2>
+    <p>Službu Jobi poskytuje [doplňte jméno / obchodní firmu], IČO [doplňte], se sídlem [doplňte adresu],
+      zapsaný v [živnostenském rejstříku / obchodním rejstříku – doplňte], e-mail
+      <a href="mailto:info@appjobi.com">info@appjobi.com</a> (dále jen „poskytovatel“).</p>
+    <p>Uživatelem je podnikatel, který si Jobi zřídí pro svůj servis (dále jen „zákazník“).
+      Jobi je určené k podnikání, nikoli spotřebitelům; ustanovení o spotřebitelských smlouvách
+      se proto neuplatní.</p>
+
+    <h2>2. Co je Jobi</h2>
+    <p>Jobi je software pro evidenci servisních zakázek: zakázky, zákazníci, sklad, dokumenty,
+      faktury, komunikace se zákazníkem a navazující funkce podle zvoleného tarifu. Běží
+      v prohlížeči a jako aplikace pro macOS a Windows; tisk zajišťuje doplněk JobiDocs.</p>
+
+    <h2>3. Vznik smlouvy a zkušební období</h2>
+    <ul>
+      <li>Smlouva vzniká registrací zákazníka a založením servisu v aplikaci.</li>
+      <li>Prvních 30 dní je Jobi zdarma a v plném rozsahu, bez zadání platební karty.</li>
+      <li>Po skončení zkušebního období se aplikace uzamkne, dokud si zákazník nezvolí tarif.
+        Data zůstávají uložená a po zaplacení jsou opět přístupná.</li>
+      <li>Poskytovatel může zkušební období prodloužit; nárok na to není.</li>
+    </ul>
+
+    <h2>4. Tarify, ceny a platba</h2>
+    <ul>
+      <li>Aktuální tarify a ceny jsou na <a href="/#cenik">appjobi.com</a>. Rozhodná je cena
+        platná v okamžiku objednávky.</li>
+      <li>Poskytovatel [je / není – doplňte] plátcem DPH. Uvedené ceny jsou konečné.</li>
+      <li>Platí se předem na období (měsíc nebo rok) platební kartou přes Stripe. Doklad
+        vystaví poskytovatel nebo platební brána a zákazník ho najde ve svém účtu.</li>
+      <li>Předplatné se automaticky obnovuje na další období, dokud ho zákazník nezruší.</li>
+      <li>Příplatkové položky (pobočka navíc, balíček SMS) se účtují ve stejném období jako tarif.</li>
+      <li>Balíček SMS je měsíční limit odeslaných zpráv. Po jeho vyčerpání se zprávy neodesílají
+        a nedoúčtovávají; limit se nepřevádí do dalšího měsíce.</li>
+      <li>Při prodlení s platbou může poskytovatel po předchozím upozornění přístup pozastavit.</li>
+    </ul>
+
+    <h2>5. Trvání a ukončení</h2>
+    <ul>
+      <li>Smlouva se uzavírá na dobu neurčitou.</li>
+      <li>Zákazník může předplatné kdykoli zrušit ve svém účtu; končí uplynutím zaplaceného
+        období, poměrná část se nevrací.</li>
+      <li>Poskytovatel může smlouvu vypovědět s výpovědní dobou dvou měsíců, nebo okamžitě,
+        pokud zákazník službu zneužívá nebo porušuje tyto podmínky.</li>
+      <li>Po skončení má zákazník 30 dní na export dat. Poté je poskytovatel smaže; zálohy
+        se přemazávají nejpozději do dalších 30 dní.</li>
+    </ul>
+
+    <h2>6. Povinnosti zákazníka</h2>
+    <ul>
+      <li>Uvádět pravdivé údaje a udržovat je aktuální.</li>
+      <li>Chránit přístupové údaje; za jednání osob, kterým dá přístup, odpovídá zákazník.</li>
+      <li>Nepoužívat Jobi k rozesílání nevyžádaných sdělení ani k nezákonnému obsahu.</li>
+      <li>Mít vyřešený právní základ pro zpracování údajů svých zákazníků; poskytovatel
+        je pouze zpracovatelem, viz <a href="/zpracovani-udaju.html">zpracovatelská smlouva</a>.</li>
+      <li>Nezasahovat do technického řešení, nezatěžovat službu neúměrně a nepokoušet se
+        obejít omezení tarifu.</li>
+    </ul>
+
+    <h2>7. Dostupnost a podpora</h2>
+    <ul>
+      <li>Poskytovatel usiluje o nepřetržitou dostupnost, negarantuje ji však. Plánovanou
+        odstávku oznámí předem, je-li to možné.</li>
+      <li>Podpora se poskytuje e-mailem na <a href="mailto:info@appjobi.com">info@appjobi.com</a>
+        v pracovní dny. Tarif s přednostní podporou má kratší reakční dobu podle ceníku.</li>
+      <li>Poskytovatel službu průběžně vyvíjí. Funkce mohou přibývat i se měnit; podstatné
+        omezení funkcí oznámí předem.</li>
+    </ul>
+
+    <h2>8. Data zákazníka a zálohy</h2>
+    <ul>
+      <li>Data zůstávají zákazníkovi. Poskytovatel je používá jen k provozu služby.</li>
+      <li>Zákazník si může data kdykoli exportovat z aplikace.</li>
+      <li>Poskytovatel provádí pravidelné zálohy, nenahrazují však vlastní zálohy zákazníka.</li>
+    </ul>
+
+    <h2>9. Odpovědnost</h2>
+    <ul>
+      <li>Poskytovatel odpovídá za škodu způsobenou porušením svých povinností do výše
+        částky zaplacené zákazníkem za posledních 12 měsíců.</li>
+      <li>Neodpovídá za ušlý zisk, nepřímé škody ani za výpadky způsobené třetími stranami
+        (poskytovatel serverů, platební brána, operátoři) či vyšší mocí.</li>
+      <li>Neodpovídá za obsah, který do Jobi vloží zákazník, ani za jeho soulad s právem.</li>
+    </ul>
+
+    <h2>10. Změny podmínek</h2>
+    <p>Poskytovatel může podmínky změnit. Změnu oznámí e-mailem nebo v aplikaci nejméně
+      30 dní předem. Pokud zákazník se změnou nesouhlasí, může do dne účinnosti předplatné
+      zrušit; pokračováním v používání změnu přijímá. Cena už zaplaceného období se nemění.</p>
+
+    <h2>11. Závěrečná ustanovení</h2>
+    <ul>
+      <li>Vztah se řídí českým právem. Spory rozhodují české soudy.</li>
+      <li>Je-li některé ustanovení neplatné, ostatní zůstávají v platnosti.</li>
+      <li>Nedílnou součástí je <a href="/zpracovani-udaju.html">zpracovatelská smlouva</a>.</li>
+    </ul>
+
+
+    <footer>
+      <span>© 2026 Jobi</span>
+      <span><a href="mailto:info@appjobi.com">info@appjobi.com</a></span>
+    </footer>
+
+  </div>
+</body>
+</html>
