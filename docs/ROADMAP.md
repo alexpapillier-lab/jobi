@@ -46,8 +46,9 @@ První tři měsíce: body 1, 2, 4.
 ## B. Checklist do první produkční fáze „na prodej“
 
 ### Účet, registrace, platby
-- `[~]` Registrace a přihlášení (existuje; chybí onboarding: založení servisu,
-  průvodce prvními kroky, demo data, pozvání kolegy).
+- `[x]` Registrace a přihlášení včetně onboardingu (5. 9.: zákazník si servis
+  založí sám přes `service-create`, karta První kroky v Zakázkách vede
+  k vyplnění firmy a první zakázce, ukázková data na jedno kliknutí i s úklidem).
 - `[ ]` Zkušební období (30 dní) a jeho konec: co se stane, když neplatí.
 - `[~]` Placené moduly – tabulka `service_entitlements` a Owner panel jsou;
   chybí napojení na platební bránu (Stripe / GoPay) a automatické zapnutí
