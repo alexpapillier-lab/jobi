@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState, msSinceSupabaseResponse } from "../lib/supabaseClient";
+import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState, msSinceSupabaseResponse } from "../lib/supabaseClient";
 
 type OnlineGateProps = {
   children: React.ReactNode;
@@ -36,6 +36,16 @@ function getConnectionErrorMessage(err: unknown): string {
     return "Nelze se připojit k cloudu. Zkontrolujte připojení k internetu a zkuste to znovu.";
   }
   return "Cloud je nedostupný. Zkuste to za chvíli nebo zkontrolujte připojení k internetu.";
+}
+
+/** Drží se realtime spojení? Pak je Supabase dosažitelné, ať kontrola dopadne jakkoli. */
+function realtimeConnected(): boolean {
+  try {
+    const rt = (supabase as unknown as { realtime?: { isConnected?: () => boolean } } | null)?.realtime;
+    return rt?.isConnected?.() === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -106,7 +116,13 @@ export function OnlineGate({ children }: OnlineGateProps) {
             ),
           ]);
 
-          if (res.ok) {
+          // Jakákoli odpověď znamená, že cloud odpověděl. Kontrolní endpoint
+          // umí vrátit 401 (klíč, rate limit) nebo 429, aniž by to o dostupnosti
+          // dat cokoli říkalo – hlásit kvůli tomu výpadek byl planý poplach.
+          // Skutečný výpadek pozná jen 5xx (projekt se obnovuje) nebo to, že
+          // spojení vůbec nevznikne.
+          if (res.status < 500) {
+            if (!res.ok) console.warn(`[OnlineGate] health vrátil HTTP ${res.status} – server ale odpovídá, beru jako online`);
             everOnlineRef.current = true;
             failStreakRef.current = 0;
             setIsOnline(true);
@@ -123,6 +139,16 @@ export function OnlineGate({ children }: OnlineGateProps) {
             continue;
           }
           failStreakRef.current += 1;
+          // Živé realtime spojení je důkaz, že se k Supabase dostaneme –
+          // v desktopu se umí zaseknout HTTP klient, zatímco WebSocket běží dál.
+          if (realtimeConnected()) {
+            console.warn("[OnlineGate] kontrola selhala, ale realtime spojení běží – neohlašuji výpadek");
+            everOnlineRef.current = true;
+            failStreakRef.current = 0;
+            setIsOnline(true);
+            setError(null);
+            return;
+          }
           // Poslední kontrola: mezitím mohl projít běžný dotaz aplikace.
           if (msSinceSupabaseResponse() < RECENT_TRAFFIC_MS) {
             everOnlineRef.current = true;
@@ -219,7 +245,7 @@ export function OnlineGate({ children }: OnlineGateProps) {
             boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
           }}
         >
-          <span>Připojení k cloudu se nedaří. {error ?? ""} Změny se mohou neuložit.</span>
+          <span>Připojení k cloudu se nedaří. {error ?? ""} Rozdělaná práce zůstane, ale změny se nemusí uložit.</span>
           <button
             type="button"
             onClick={retry}
