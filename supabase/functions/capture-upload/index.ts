@@ -14,6 +14,40 @@ const corsHeaders = {
 
 const BUCKET = "diagnostic-photos";
 
+/**
+ * Limity. Funkce běží bez přihlášení, stačí odkaz z QR kódu – bez stropů by
+ * kdokoli s odkazem mohl nahrát libovolně velký soubor libovolněkrát a platil
+ * by to servis.
+ */
+const MAX_BAJTU = 8 * 1024 * 1024;
+const MAX_FOTEK_NA_TOKEN = 40;
+const MAX_ZA_MINUTU = 20;
+
+/**
+ * Poznat obrázek podle prvních bajtů. Přípona ani hlavička od klienta nic
+ * neznamenají a bucket je veřejný, takže se do něj nemá dostat nic jiného
+ * než obrázek.
+ */
+function typObrazku(b: Uint8Array): string | null {
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  const ascii = (od: number, delka: number) => String.fromCharCode(...b.slice(od, od + delka));
+  if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") return "image/webp";
+  if (ascii(4, 4) === "ftyp") {
+    const znacka = ascii(8, 4);
+    if (znacka.startsWith("hei") || znacka.startsWith("hev") || znacka === "mif1") return "image/heic";
+  }
+  return null;
+}
+
+const PRIPONY: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -65,6 +99,24 @@ serve(async (req) => {
 
     const serviceId = row.service_id;
 
+    // Limit se počítá hned po ověření tokenu, ještě před dekódováním – base64
+    // desítek megabajtů se nemá vůbec rozbalovat.
+    const { data: zaMinutu } = await svc.rpc("zapocitej_udalost", { p_kanal: "capture-upload", p_klic: row.id });
+    if (typeof zaMinutu === "number" && zaMinutu > MAX_ZA_MINUTU) {
+      return new Response(
+        JSON.stringify({ error: "Fotky se posílají moc rychle. Zkuste to za chvíli." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } }
+      );
+    }
+
+    // Base64 je o třetinu delší než data; ověřuje se dřív, než se rozbalí.
+    if (image.length > MAX_BAJTU * 1.4) {
+      return new Response(
+        JSON.stringify({ error: "Fotka je moc velká. Pošlete ji v menším rozlišení." }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Dekódování base64
     let bytes: Uint8Array;
     try {
@@ -77,16 +129,41 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    if (bytes.length > MAX_BAJTU) {
+      return new Response(
+        JSON.stringify({ error: "Fotka je moc velká. Pošlete ji v menším rozlišení." }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const mime = typObrazku(bytes);
+    if (!mime) {
+      return new Response(
+        JSON.stringify({ error: "Tohle není obrázek. Podporujeme JPEG, PNG, WebP a HEIC." }),
+        { status: 415, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Kolik fotek už z tohohle odkazu přišlo. Jeden příjem zakázky se do
+    // desítek fotek vejde; víc znamená, že odkaz někdo zneužívá.
+    const { data: dosud } = await svc.rpc("pocet_udalosti", { p_kanal: "capture-upload", p_klic: row.id, p_minut: 60 * 24 * 7 });
+    if (typeof dosud === "number" && dosud > MAX_FOTEK_NA_TOKEN) {
+      return new Response(
+        JSON.stringify({ error: `Z tohoto odkazu už bylo nahráno ${MAX_FOTEK_NA_TOKEN} fotek. Vygenerujte v Jobi nový QR kód.` }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const uuid = crypto.randomUUID();
+    const pripona = PRIPONY[mime] ?? "jpg";
     const path = isDraftToken
-      ? `${serviceId}/draft/${row.id}/${uuid}.jpg`
-      : `${serviceId}/${ticketId}/${uuid}.jpg`;
+      ? `${serviceId}/draft/${row.id}/${uuid}.${pripona}`
+      : `${serviceId}/${ticketId}/${uuid}.${pripona}`;
 
     const { error: uploadErr } = await svc.storage
       .from(BUCKET)
       .upload(path, bytes, {
-        contentType: "image/jpeg",
+        contentType: mime,
         upsert: false,
       });
 

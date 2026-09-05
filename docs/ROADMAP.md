@@ -98,7 +98,10 @@ První tři měsíce: body 1, 2, 4.
   zákazníků bez práva, přepis a mazání cizích komentářů a vystavování faktur
   bez zaplaceného modulu. Zbývá projet totéž z role správce a projít veřejné
   API a capture funkce.
-- `[ ]` Rate limity a kvóty na veřejném API a SMS.
+- `[x]` Rate limity a kvóty na veřejných rozhraních – přehled v `docs/LIMITY.md`.
+  Veřejné API a SMS je měly, doplněno nahrávání fotek (počet, rychlost,
+  velikost a kontrola, že jde opravdu o obrázek), hlášení chyb a zákaznický
+  portál včetně limitu na volajícího, který jediný chrání před hádáním tokenů.
 - `[ ]` Supabase plán a limity (řádky, storage fotek, realtime spojení)
   spočítat na 50 servisů.
 - `[ ]` Tajemství a klíče: rotace, kde leží, kdo má přístup.

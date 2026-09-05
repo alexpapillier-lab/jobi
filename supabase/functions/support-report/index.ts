@@ -19,6 +19,8 @@ const corsHeaders = {
 
 const PODPORA = Deno.env.get("SUPPORT_EMAIL")?.trim() || "podpora@appjobi.com";
 const MAX_ZPRAVA = 4000;
+/** Kolik hlášení smí jeden účet poslat za hodinu, ať se z formuláře nestane odesílač spamu. */
+const MAX_ZA_HODINU = 5;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -42,6 +44,14 @@ serve(async (req) => {
     const platform = String(body.platform ?? "").slice(0, 40) || null;
 
     const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Limit se počítá i pro požadavky, které skončí chybou – jinak by šlo
+    // posílat nesmysly donekonečna.
+    await svc.rpc("zapocitej_udalost", { p_kanal: "support-report", p_klic: user.id });
+    const { data: zaHodinu } = await svc.rpc("pocet_udalosti", { p_kanal: "support-report", p_klic: user.id, p_minut: 60 });
+    if (typeof zaHodinu === "number" && zaHodinu > MAX_ZA_HODINU) {
+      return json({ error: "Hlášení jste poslali několikrát po sobě. Zkuste to prosím za hodinu, nebo nám napište e-mailem." }, 429);
+    }
 
     // Servis se ověřuje, ne přebírá – jinak by šlo do hlášení napsat cizí id
     // a vytáhnout tak cizí chyby.

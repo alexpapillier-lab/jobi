@@ -12,6 +12,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildSpayd } from "../_shared/spayd.ts";
+import { otiskKlienta } from "../_shared/limity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,7 +38,15 @@ function json(body: unknown, status = 200): Response {
 const neplatnyOdkaz = () => json({ error: "Odkaz není platný." }, 404);
 
 // ---------------------------------------------------------------------------
-// Lehký rate-limit (per instance, best effort – instance edge funkce nesdílí paměť)
+// Limity.
+//
+// Per token to hlídá paměť instance – rychlé, ale instance ji nesdílejí a
+// hlavně to nechrání před hádáním tokenů: každý pokus má jiný token, takže
+// se limit na token nikdy nespustí. Proto je k tomu ještě trvalý limit na
+// otisk volajícího, který se počítá v databázi a platí napříč instancemi.
+
+const LIMIT_NA_KLIENTA_CTENI = 120;
+const LIMIT_NA_KLIENTA_AKCE = 30;
 
 const limity = new Map<string, { od: number; pocet: number }>();
 
@@ -54,6 +63,23 @@ function prekrocenLimit(token: string): boolean {
   }
   z.pocet += 1;
   return z.pocet > RATE_LIMIT_PER_MIN;
+}
+
+/** Trvalý limit na volajícího. IP se neukládá, jen otisk solený dnem. */
+async function prekrocenLimitKlienta(
+  svc: ReturnType<typeof createClient>,
+  req: Request,
+  strop: number,
+): Promise<boolean> {
+  try {
+    const klic = await otiskKlienta(req);
+    const { data } = await svc.rpc("zapocitej_udalost", { p_kanal: "portal-ticket", p_klic: klic });
+    return typeof data === "number" && data > strop;
+  } catch {
+    // Když počítadlo selže, portál se kvůli tomu nezavře – zákazník by přišel
+    // o jedinou cestu, jak se k zakázce dostat.
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +387,9 @@ serve(async (req) => {
       const token = (url.searchParams.get("t") ?? "").trim();
       if (!token || token.length > 64) return neplatnyOdkaz();
       if (prekrocenLimit(token)) return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+      if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_CTENI)) {
+        return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+      }
 
       const ticket = await loadTicket(svc, token);
       if (!ticket) return neplatnyOdkaz();
@@ -380,6 +409,9 @@ serve(async (req) => {
     const token = typeof body?.t === "string" ? body.t.trim() : "";
     if (!token || token.length > 64) return neplatnyOdkaz();
     if (prekrocenLimit(token)) return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+    if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_AKCE)) {
+      return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+    }
 
     const action = typeof body?.action === "string" ? body.action : "";
     if (!["approve", "reject", "sign", "pickup"].includes(action)) {
