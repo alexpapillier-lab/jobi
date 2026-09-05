@@ -800,6 +800,17 @@ export default function Orders({
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
   const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
+  /**
+   * Aktuální zakázky mimo React – pro úpravy provedených oprav, které se
+   * ukládají hned do databáze. Několik změn za sebou v jednom kliknutí
+   * (cena, náklady, čas, díly) musí vidět výsledek té předchozí, a ne stav
+   * z posledního vykreslení.
+   */
+  const cloudTicketsRef = useRef<TicketEx[]>([]);
+  cloudTicketsRef.current = cloudTickets;
+  /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
+  const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
+  const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
@@ -1291,8 +1302,15 @@ export default function Orders({
                 }
                 
                 if (existing) {
-                  // Update existing
-                  return prev.map((t) => (t.id === newTicket.id ? newTicket : t));
+                  // Provedené opravy se ukládají hned; dokud zápis běží (nebo čeká
+                  // na odklad), drží se místní verze. Jinak by změna stavu od
+                  // kolegy vrátila opravy z databáze, které jsou o krok pozadu,
+                  // a ve skladu by zůstala rezervace na opravu, kterou nikdo nevidí.
+                  const zapisBezi =
+                    (rozpracovaneZapisyOpravRef.current.get(newTicket.id) ?? 0) > 0 ||
+                    odlozeneZapisyOpravRef.current.has(newTicket.id);
+                  const sloucena = zapisBezi ? { ...newTicket, performedRepairs: existing.performedRepairs } : newTicket;
+                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
                 } else {
                   // Add new - insert in correct position based on created_at
                   const sorted = [...prev, newTicket].sort((a, b) => {
@@ -2626,10 +2644,82 @@ export default function Orders({
     []
   );
 
+  /**
+   * Zápis provedených oprav do databáze.
+   *
+   * Dřív se opravy ukládaly až při zavření detailu, ale rezervace dílů ve
+   * skladu vznikaly okamžitě. Když mezitím někdo změnil stav zakázky,
+   * realtime přepsal rozepsané opravy verzí z databáze: rezervace zůstaly
+   * bez opravy a při Dokončeno se odečetl díl za opravu, kterou zakázka
+   * neměla. Teď jde přidání a odebrání do databáze hned; úpravy ceny,
+   * nákladů a času (několik volání z jednoho tlačítka Uložit) s krátkým
+   * odkladem, aby se poslal jeden zápis. Při chybě zůstane příznak
+   * rozpracovanosti a opravy se uloží při zavření detailu jako dřív.
+   */
+  const zapisProvedeneOpravy = useCallback((ticketId: string, repairs: PerformedRepair[], hned: boolean) => {
+    if (!supabase) {
+      setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+      return;
+    }
+    const odlozene = odlozeneZapisyOpravRef.current;
+    const cekajici = odlozene.get(ticketId);
+    if (cekajici) {
+      clearTimeout(cekajici.casovac);
+      odlozene.delete(ticketId);
+    }
+    const proved = () => {
+      odlozene.delete(ticketId);
+      const pocty = rozpracovaneZapisyOpravRef.current;
+      pocty.set(ticketId, (pocty.get(ticketId) ?? 0) + 1);
+      void (async () => {
+        try {
+          const { error } = await (supabase!.from("tickets") as any)
+            .update({ performed_repairs: repairs })
+            .eq("id", ticketId);
+          if (error) throw error;
+        } catch (err) {
+          devLog("[opravy] zápis selhal, uloží se při zavření detailu", err);
+          setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+        } finally {
+          const n = (pocty.get(ticketId) ?? 1) - 1;
+          if (n <= 0) pocty.delete(ticketId);
+          else pocty.set(ticketId, n);
+        }
+      })();
+    };
+    if (hned) proved();
+    else odlozene.set(ticketId, { casovac: setTimeout(proved, 400), proved });
+  }, []);
+
+  /** Odložené zápisy oprav pošle hned – před zavřením detailu a při odchodu ze stránky. */
+  const dokoncitOdlozeneZapisyOprav = useCallback(() => {
+    for (const { casovac, proved } of odlozeneZapisyOpravRef.current.values()) {
+      clearTimeout(casovac);
+      proved();
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
+    return () => window.removeEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
+  }, [dokoncitOdlozeneZapisyOprav]);
+
+  /** Upraví provedené opravy zakázky v místním stavu i v databázi. */
+  const upravProvedeneOpravy = useCallback(
+    (ticketId: string, uprava: (repairs: PerformedRepair[]) => PerformedRepair[], hned: boolean) => {
+      const ticket = cloudTicketsRef.current.find((t) => t.id === ticketId);
+      if (!ticket) return;
+      const next = uprava(ticket.performedRepairs ?? []);
+      // Do ref hned, aby další volání ve stejném kliknutí stavělo na tomhle výsledku.
+      cloudTicketsRef.current = cloudTicketsRef.current.map((t) => (t.id === ticketId ? { ...t, performedRepairs: next } : t));
+      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, performedRepairs: next } : t)));
+      zapisProvedeneOpravy(ticketId, next, hned);
+    },
+    [zapisProvedeneOpravy]
+  );
+
   const addPerformedRepair = useCallback(
     (ticketId: string, repair: { name: string; type: "selected" | "manual"; repairId?: string }) => {
-      // Mark performed repairs as dirty
-      setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
       // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
       let repairPrice: number | undefined = undefined;
       let repairCosts: number | undefined = undefined;
@@ -2654,106 +2744,44 @@ export default function Orders({
         });
       }
 
-      setCloudTickets((prev) =>
-        prev.map((t) => {
-          if (t.id !== ticketId) return t;
-          const newRepair: PerformedRepair = {
-            id: entryId,
-            name: repair.name,
-            type: repair.type,
-            repairId: repair.repairId,
-            price: repairPrice,
-            costs: repairCosts,
-            estimatedTime: repairTime,
-            productIds: repairProductIds,
-          };
-          return {
-            ...t,
-            performedRepairs: [...(t.performedRepairs ?? []), newRepair],
-          };
-        })
-      );
+      const newRepair: PerformedRepair = {
+        id: entryId,
+        name: repair.name,
+        type: repair.type,
+        repairId: repair.repairId,
+        price: repairPrice,
+        costs: repairCosts,
+        estimatedTime: repairTime,
+        productIds: repairProductIds,
+      };
+      upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
-    [devicesData, reserveEntryProducts, toastReserveShortages]
+    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy]
   );
 
   const updatePerformedRepairPrice = useCallback((ticketId: string, repairId: string, price: number) => {
-    setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-    setCloudTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== ticketId) return t;
-        return {
-          ...t,
-          performedRepairs: (t.performedRepairs ?? []).map((r) =>
-            r.id === repairId ? { ...r, price } : r
-          ),
-        };
-      })
-    );
-  }, []);
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, price } : r)), false);
+  }, [upravProvedeneOpravy]);
 
   const updatePerformedRepairCosts = useCallback((ticketId: string, repairId: string, costs: number) => {
-    setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-    setCloudTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== ticketId) return t;
-        return {
-          ...t,
-          performedRepairs: (t.performedRepairs ?? []).map((r) =>
-            r.id === repairId ? { ...r, costs } : r
-          ),
-        };
-      })
-    );
-  }, []);
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, costs } : r)), false);
+  }, [upravProvedeneOpravy]);
 
   const updatePerformedRepairTime = useCallback((ticketId: string, repairId: string, estimatedTime: number) => {
-    setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-    setCloudTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== ticketId) return t;
-        return {
-          ...t,
-          performedRepairs: (t.performedRepairs ?? []).map((r) =>
-            r.id === repairId ? { ...r, estimatedTime } : r
-          ),
-        };
-      })
-    );
-  }, []);
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, estimatedTime } : r)), false);
+  }, [upravProvedeneOpravy]);
 
   const updatePerformedRepairProducts = useCallback((ticketId: string, repairId: string, productIds: string[]) => {
-    setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-    setCloudTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== ticketId) return t;
-        return {
-          ...t,
-          performedRepairs: (t.performedRepairs ?? []).map((r) =>
-            r.id === repairId ? { ...r, productIds } : r
-          ),
-        };
-      })
-    );
-  }, []);
-
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
+  }, [upravProvedeneOpravy]);
 
   const removePerformedRepair = useCallback((ticketId: string, repairId: string) => {
-    setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-    setCloudTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== ticketId) return t;
-        return {
-          ...t,
-          performedRepairs: (t.performedRepairs ?? []).filter((r) => r.id !== repairId),
-        };
-      })
-    );
+    upravProvedeneOpravy(ticketId, (repairs) => repairs.filter((r) => r.id !== repairId), true);
     // Odebraná oprava už díly nedrží – rezervace se uvolní (tiché, když RPC chybí).
     void releaseReservations(ticketId, repairId).then((released) => {
       if (released) void refreshTicketReservations(ticketId);
     });
-  }, [refreshTicketReservations]);
+  }, [refreshTicketReservations, upravProvedeneOpravy]);
 
   const border = "1px solid var(--border)";
   const borderError = "1px solid rgba(239,68,68,0.9)";
@@ -3065,6 +3093,9 @@ export default function Orders({
       return;
     }
 
+    // Odložený zápis oprav (cena, náklady) nesmí čekat, až se detail zavře.
+    dokoncitOdlozeneZapisyOprav();
+
     const hasDirtyAutoSave = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
     if (hasDirtyAutoSave) {
       try {
@@ -3090,7 +3121,7 @@ export default function Orders({
     if (page && onReturnToPage) {
       onReturnToPage(page, customerId);
     }
-  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags, isEditing, editedTicket, isEditingClaim, editedClaim]);
+  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags, isEditing, editedTicket, isEditingClaim, editedClaim, dokoncitOdlozeneZapisyOprav]);
 
   // Escape: zavřít detail/modal; v capture phase + preventDefault, aby v fullscreen neukončil fullscreen
   useEffect(() => {

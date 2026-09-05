@@ -50,6 +50,42 @@ test("změna stavu od jednoho se propíše druhému", async ({ page, browser }) 
   }
 });
 
+test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ page, browser }) => {
+  // Dřív se opravy ukládaly až při zavření detailu. Když mezitím technik
+  // změnil stav, realtime přepsal rozepsané opravy verzí z databáze a ve
+  // skladu zůstala rezervace na opravu, kterou zakázka už neměla.
+  await prihlasSe(page, "owner");
+  const technik = await druhyClovek(browser, "technik");
+  try {
+    const kod = await zalozZakazku(page, { zakaznik: testovaciJmeno("Oprava"), zarizeni: "Tablet (souběh)" });
+    await expect(technik.getByText(kod, { exact: true })).toBeVisible({ timeout: 30_000 });
+
+    // Majitel otevře detail a přidá opravu; detail nechá otevřený.
+    await page.getByText(kod, { exact: true }).click();
+    await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Manuálně zadat" }).first().click();
+    await page.getByPlaceholder("Napište název opravy...").first().fill("Výměna skla (souběh)");
+    await page.getByRole("button", { name: "Přidat opravu" }).first().click();
+    await expect(page.getByText("Výměna skla (souběh)").first()).toBeVisible();
+
+    // Technik mezitím změní stav ze seznamu.
+    await radekZakazky(technik, kod).getByRole("button", { name: /Přijato/ }).first().click();
+    await technik.getByRole("button", { name: "Diagnostika", exact: true }).first().click();
+    await expect(radekZakazky(technik, kod).getByRole("button", { name: /Diagnostika/ })).toBeVisible({ timeout: 20_000 });
+
+    // Majiteli přišla změna stavu, ale oprava nezmizela.
+    await expect(page.getByRole("button", { name: /Diagnostika/ }).first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(1500);
+    await expect(page.getByText("Výměna skla (souběh)").first()).toBeVisible();
+
+    // A je i v databázi: technik ji vidí, když si detail otevře.
+    await technik.getByText(kod, { exact: true }).click();
+    await expect(technik.getByText("Výměna skla (souběh)").first()).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await technik.context().close();
+  }
+});
+
 test("dva lidé zakládají zakázky naráz a čísla se nesrazí", async ({ page, browser }) => {
   await prihlasSe(page, "owner");
   const technik = await druhyClovek(browser, "technik");

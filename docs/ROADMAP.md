@@ -149,12 +149,10 @@ První tři měsíce: body 1, 2, 4.
   zakázka po stornu faktury nabídne novou, Sklad (ks) při úpravě produktu se
   ukládá do skladů, potvrzení před smazáním produktu, import katalogu bez
   `---` a mapování PRODUKTY: na id. Zbývá:
-  - `[ ]` **Rezervace dílů vs. neuložené opravy (vysoká):** rezervace se zapisují
-    hned, provedené opravy až při zavření detailu; změna stavu vyvolá realtime
-    upsert, který neuložené opravy přepíše, rezervace zůstanou a při Dokončeno
-    se odečte díl za opravu, která v zakázce není. Řešení: ukládat
-    `performed_repairs` hned (jako `applyQuoteRepairs`) nebo v RT merge
-    zachovat lokálně rozepsaná pole. `Orders.tsx` ~ř. 2350, `addPerformedRepair`.
+  - `[x]` **Rezervace dílů vs. neuložené opravy** (opraveno 5. 9.): provedené
+    opravy se ukládají do databáze hned při přidání a odebrání, úpravy ceny
+    s odkladem 400 ms; realtime nepřepíše místní opravy, dokud zápis běží.
+    E2E „oprava přidaná majitelem přežije změnu stavu od technika“.
   - `[ ]` Detail zakázky bere produkty z legacy localStorage
     (`safeLoadInventoryData`), ne z DB – výběr dílů u opravy je prázdný.
   - `[ ]` Kód reklamace vzniká na klientu jako max+1 (souběh → duplicita);
