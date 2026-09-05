@@ -17,7 +17,8 @@ export type DocType =
   | "diagnosticky_protokol"
   | "prijemka_reklamace"
   | "vydejka_reklamace"
-  | "faktura";
+  | "faktura"
+  | "smlouva_zapujcka";
 
 export const DOC_TYPES: DocType[] = [
   "zakazkovy_list",
@@ -26,6 +27,7 @@ export const DOC_TYPES: DocType[] = [
   "prijemka_reklamace",
   "vydejka_reklamace",
   "faktura",
+  "smlouva_zapujcka",
 ];
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -35,6 +37,7 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   prijemka_reklamace: "Příjemka reklamace",
   vydejka_reklamace: "Výdejka reklamace",
   faktura: "Faktura",
+  smlouva_zapujcka: "Smlouva o zápůjčce",
 };
 
 // ---------------------------------------------------------------------------
@@ -127,6 +130,8 @@ export type DocumentData = {
   /** URL fotek (https nebo data URL). */
   photos?: string[];
   warranty?: { months?: number; until?: string; text?: string };
+  /** Náhradní zařízení půjčené zákazníkovi na dobu opravy (smlouva o zápůjčce). */
+  loaner?: { name?: string; serial?: string; accessories?: string; deposit?: number; lentAt?: string; returnedAt?: string; note?: string };
   payment?: { account?: string; iban?: string; swift?: string; vs?: string; spayd?: string };
   /** Cokoli dalšího, na co se dá v textu odkázat přes {{extra.klic}}. */
   extra?: Record<string, string>;

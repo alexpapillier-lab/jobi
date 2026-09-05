@@ -15,6 +15,17 @@ describe("render", () => {
     });
   }
 
+  it("smlouva o zápůjčce má výchozí šablonu a proměnné náhradního zařízení", () => {
+    const data = sampleData("smlouva_zapujcka");
+    const html = renderDocument({ template: defaultTemplate("smlouva_zapujcka"), data, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
+    expect(html).toContain("Smlouva o zápůjčce");
+    expect(html).toContain("iPhone SE 2020");
+    // Formát měny odděluje tisíce nezlomitelnou mezerou.
+    expect(html).toMatch(/2\u00a0000,00/);
+    expect(substitute("{{loaner.deposit}}", { ...data, loaner: { ...data.loaner, deposit: 0 } })).toBe("bez kauce");
+    expect(substitute("{{loaner.name}}", sampleData("zakazkovy_list"))).toBe("");
+  });
+
   it("kontrola po opravě: shrnutí a řádky, bez kontroly prázdné", () => {
     const data = { ...sampleData("diagnosticky_protokol"), checklist: { title: "Telefon", items: [
       { text: "Displej", status: "ok" as const },

@@ -18,6 +18,7 @@ const V1_SECTION_KEYS: Record<DocType, string> = {
   prijemka_reklamace: "prijemkaReklamace",
   vydejka_reklamace: "vydejkaReklamace",
   faktura: "faktura",
+  smlouva_zapujcka: "smlouvaZapujcka",
 };
 
 type Rec = Record<string, unknown>;
@@ -105,6 +106,7 @@ export function migrateV1Config(v1: Rec): DocumentsV2 {
       prijemka_reklamace: v1.qrOnPrijemka,
       vydejka_reklamace: v1.qrOnVydejka,
       faktura: false,
+      smlouva_zapujcka: false,
     };
     if (docs.brand.reviewUrl && qrFlag[docType] === true) {
       t.slots.bottomCenter.push({ id: newId("s"), type: "qr", size: 22 });

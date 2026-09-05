@@ -114,6 +114,18 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     },
     diagnostic: s(ticket.diagnosticText),
     checklist: kontrolaDoDokumentu(ticket.testChecklist),
+    // Náhradní zařízení – tiskne se ve smlouvě o zápůjčce.
+    loaner: ticket.loaner
+      ? {
+          name: s(ticket.loaner.nazev),
+          serial: s(ticket.loaner.seriove),
+          accessories: s(ticket.loaner.prislusenstvi),
+          deposit: ticket.loaner.kauce && ticket.loaner.kauce > 0 ? ticket.loaner.kauce : undefined,
+          lentAt: s(ticket.loaner.pujceno),
+          returnedAt: s(ticket.loaner.vraceno),
+          note: s(ticket.loaner.poznamka),
+        }
+      : undefined,
     note: s(t.notes),
     photos: (ticket.diagnosticPhotos ?? []).filter((u) => typeof u === "string" && u.trim()),
     warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : undefined,

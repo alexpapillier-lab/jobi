@@ -16,7 +16,7 @@ const JOBIDOCS_API = "http://127.0.0.1:3847";
 /** URL pro stažení JobiDocs – stránka appjobi s sekcí Stáhnout (Jobi + JobiDocs zvlášť). */
 export const JOBIDOCS_DOWNLOAD_URL = "https://appjobi.com/#stazeni";
 
-export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura";
+export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura" | "smlouva_zapujcka";
 
 /** Otevře URL v prohlížeči (v Tauri přes plugin-opener, jinak window.open). */
 export async function openJobiDocsDownload(): Promise<void> {

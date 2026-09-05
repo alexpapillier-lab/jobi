@@ -41,6 +41,8 @@ import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
+import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
+import { type ZapujckaData } from "../lib/zapujcka";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { PortalCard } from "../components/orders/PortalCard";
@@ -217,6 +219,8 @@ export type TicketEx = Ticket & {
   performedRepairs?: PerformedRepair[];
   /** Kontrola po opravě (tickets.test_checklist). */
   testChecklist?: KontrolaPoOpraveData;
+  /** Náhradní zařízení půjčené zákazníkovi (tickets.loaner). */
+  loaner?: ZapujckaData;
   
   diagnosticText?: string; // text diagnostiky
   diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
@@ -605,6 +609,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     estimatedPrice: supabaseTicket.estimated_price || undefined,
     performedRepairs: supabaseTicket.performed_repairs || [],
     testChecklist: supabaseTicket.test_checklist || undefined,
+    loaner: supabaseTicket.loaner || undefined,
     diagnosticText: supabaseTicket.diagnostic_text || undefined,
     diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
     diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
@@ -692,6 +697,7 @@ const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = {
   zakazkovy_list: "zakazka",
   zarucni_list: "zarucni-list",
   diagnosticky_protokol: "diagnostika",
+  smlouva_zapujcka: "zapujcka",
 };
 
 async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null) {
@@ -730,6 +736,14 @@ async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: strin
 
 async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
   return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId);
+}
+
+async function printZapujcku(ticket: TicketEx, serviceId?: string | null) {
+  return runTicketDocument("print", "smlouva_zapujcka", ticket, serviceId);
+}
+
+async function exportZapujckuToPDF(ticket: TicketEx, serviceId?: string | null) {
+  return runTicketDocument("export", "smlouva_zapujcka", ticket, serviceId);
 }
 
 async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
@@ -968,7 +982,7 @@ export default function Orders({
         const { data, error } = await fetchAllPages((from, to) =>
           (supabase!
             .from("tickets") as any)
-            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
+            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
             .eq("service_id", activeServiceId)
             .is("deleted_at", null)
             .order("created_at", { ascending: false })
@@ -2200,7 +2214,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -2845,6 +2859,17 @@ export default function Orders({
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
   }, [upravProvedeneOpravy]);
 
+  /** Náhradní zařízení se ukládá hned – smlouva se tiskne vzápětí a data musí být v DB. */
+  const ulozZapujcku = useCallback(async (ticketId: string, zapujcka: ZapujckaData | null) => {
+    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: zapujcka ?? undefined } : t)));
+    if (!supabase) return;
+    const { error } = await (supabase.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId);
+    if (error) {
+      devLog("[zapujcka] zápis selhal", error);
+      showToast("Půjčení zařízení se nepodařilo uložit", "error");
+    }
+  }, []);
+
   /** Kontrola po opravě se ukládá hned – stejný důvod jako u provedených oprav. */
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
@@ -3069,21 +3094,24 @@ export default function Orders({
   const potvrdStorno = async (odpoved: { duvod: string; poznamka: string }) => {
     if (!stornoDotaz) return;
     const { ticketId, next } = stornoDotaz;
+    // Důvod se zapíše dřív než stav: změna stavu se v UI projeví hned
+    // (optimisticky) a kdo si vzápětí otevře historii, má důvod už vidět.
+    if (supabase && activeServiceId) {
+      try {
+        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+        await (supabase.from("ticket_history") as any).insert({
+          ticket_id: ticketId,
+          service_id: activeServiceId,
+          action: "cancel_reason",
+          changed_by: uid,
+          details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
+        });
+      } catch (err) {
+        devLog("[storno] důvod se do historie nezapsal", err);
+      }
+    }
     await provedZmenuStavu(ticketId, next);
     setStornoDotaz(null);
-    if (!supabase || !activeServiceId) return;
-    try {
-      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-      await (supabase.from("ticket_history") as any).insert({
-        ticket_id: ticketId,
-        service_id: activeServiceId,
-        action: "cancel_reason",
-        changed_by: uid,
-        details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
-      });
-    } catch (err) {
-      devLog("[storno] důvod se do historie nezapsal", err);
-    }
   };
 
   const provedZmenuStavu = async (ticketId: string, next: string) => {
@@ -5333,6 +5361,15 @@ export default function Orders({
                         onPrint: () => { printWarranty(detailedTicket, activeServiceId); },
                         onExport: () => { exportWarrantyToPDF(detailedTicket, activeServiceId); },
                       },
+                      ...(detailedTicket.loaner
+                        ? [{
+                            key: "zapujcka",
+                            label: "Smlouva o zápůjčce",
+                            icon: <DeviceIcon size={14} />,
+                            onPrint: () => { printZapujcku(detailedTicket, activeServiceId); },
+                            onExport: () => { exportZapujckuToPDF(detailedTicket, activeServiceId); },
+                          }]
+                        : []),
                     ]}
                   />
                 )}
@@ -7080,6 +7117,15 @@ export default function Orders({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div id="detail-zapujcka" style={{ ...card, marginTop: 16 }}>
+                  <SectionHeading icon={<DeviceIcon size={16} />}>Náhradní zařízení</SectionHeading>
+                  <ZapujckaKarta
+                    zapujcka={detailedTicket.loaner}
+                    onChange={(z) => void ulozZapujcku(detailedTicket.id, z)}
+                    onTisk={() => void printZapujcku(detailedTicket, activeServiceId)}
+                  />
                 </div>
 
                 <div id="detail-kontrola" style={{ ...card, marginTop: 16 }}>

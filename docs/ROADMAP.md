@@ -211,7 +211,12 @@ Co převzít, podle přínosu:
   hodiny × sazba + technik; cena a čas se dopočítají, jde upravit. Na fakturu
   a dokumenty jde jako hodiny × Kč/h. Výchozí sazba servisu v Nastavení →
   Zakázky → Hodinová práce (`service_settings.config.hodinova_sazba`).
-- `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
+- `[x]` **Půjčení náhradního zařízení** (5. 9., migrace 20260907180000): karta
+  v detailu zakázky (zařízení, sériové číslo, příslušenství, kauce, půjčeno,
+  vráceno, poznámka; `tickets.loaner`), stav „U zákazníka“ / „Vráceno“, nový
+  typ dokumentu **Smlouva o zápůjčce** v JobiDocs (`smlouva_zapujcka`, výchozí
+  šablona s právním textem a podpisy, proměnné `{{loaner.*}}`) i ve webovém
+  tisku; v nabídce Tisk, jen když je něco půjčeno. **JobiDocs přebuildovat.**
 - `[x]` **Kontrola po opravě** (5. 9., migrace 20260907170000): karta v detailu
   zakázky, šablona podle názvu zařízení (telefon / počítač / obecná, vlastní
   v Nastavení → Zakázky → Kontrola po opravě), položky OK / Chyba / Neověřeno

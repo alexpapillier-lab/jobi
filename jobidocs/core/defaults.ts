@@ -46,6 +46,8 @@ export const LEGAL_TEXTS: Partial<Record<DocType, string>> = {
   prijemka_reklamace:
     "Servis převzal zařízení k posouzení reklamace. O výsledku bude zákazník informován nejpozději do 30 dnů; uznaná reklamace se řeší opravou nebo výměnou dílu bezplatně.",
   vydejka_reklamace: "Zákazník podpisem potvrzuje převzetí zařízení po vyřízení reklamace a seznámení s jejím výsledkem.",
+  smlouva_zapujcka:
+    "Servis půjčuje zákazníkovi výše uvedené náhradní zařízení bezplatně na dobu opravy zakázky {{number}}. Zákazník zařízení převzal funkční a bez viditelného poškození, zavazuje se s ním zacházet šetrně, nepředávat ho třetí osobě a vrátit ho při vyzvednutí své opravy, nejpozději však do 3 dnů od výzvy servisu, ve stavu, v jakém ho převzal, včetně příslušenství. Za poškození, ztrátu nebo odcizení odpovídá zákazník v plné výši; servis je oprávněn započíst škodu proti složené kauci {{loaner.deposit}}. Kauce se vrací při vrácení nepoškozeného zařízení. Zákazník před vrácením odstraní své účty a data; servis zařízení po vrácení uvede do továrního nastavení.",
 };
 
 function row(label: string, value: string): FieldRow {
@@ -195,6 +197,31 @@ function faktura(): Template {
   return t;
 }
 
+function zapujcka(): Template {
+  const t = base("smlouva_zapujcka");
+  t.blocks = [
+    fields([row("Jméno", "{{customer.name}}"), row("Telefon", "{{customer.phone}}"), row("E-mail", "{{customer.email}}"), row("Adresa", "{{customer.address}}")], "Zákazník"),
+    fields(
+      [
+        row("Zařízení", "{{loaner.name}}"),
+        row("Sériové číslo / IMEI", "{{loaner.serial}}"),
+        row("Příslušenství", "{{loaner.accessories}}"),
+        row("Kauce", "{{loaner.deposit}}"),
+        row("Půjčeno dne", "{{loaner.lentAt}}"),
+        row("Vráceno dne", "{{loaner.returnedAt}}"),
+      ],
+      "Náhradní zařízení"
+    ),
+    fields([row("Zakázka", "{{number}}"), row("Zařízení v opravě", "{{device.name}}"), row("Předpokládané dokončení", "{{dates.eta}}")], "Souvisí s opravou"),
+    text("{{loaner.note}}", { title: "Poznámka", when: "notEmpty" }),
+    text(LEGAL_TEXTS.smlouva_zapujcka!, { size: "small", align: "justify", columns: 2 }),
+  ];
+  t.slots.bottomLeft = [signatureSlot("Zákazník – převzetí zařízení")];
+  t.slots.bottomCenter = [stampSlot("Za servis")];
+  t.slots.bottomRight = [signatureSlot("Zákazník – vrácení zařízení")];
+  return t;
+}
+
 const BUILDERS: Record<DocType, () => Template> = {
   zakazkovy_list: zakazkovyList,
   zarucni_list: zarucniList,
@@ -202,6 +229,7 @@ const BUILDERS: Record<DocType, () => Template> = {
   prijemka_reklamace: prijemka,
   vydejka_reklamace: vydejka,
   faktura,
+  smlouva_zapujcka: zapujcka,
 };
 
 /** Výchozí šablona dokumentu. Vždy nová instance (dá se bez obav upravovat). */

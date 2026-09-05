@@ -85,6 +85,13 @@ export const VARIABLES: VariableDef[] = [
   { key: "items.count", label: "Počet položek", group: G.price, sample: "1" },
 
   { key: "diagnostic", label: "Text diagnostiky", group: G.other, sample: "Telefon přijat s nefunkční dotykovou vrstvou…" },
+  { key: "loaner.name", label: "Náhradní zařízení", group: G.device, sample: "iPhone SE 2020, černý" },
+  { key: "loaner.serial", label: "Náhradní zařízení – sériové číslo / IMEI", group: G.device, sample: "DNPZK0ABCD12" },
+  { key: "loaner.accessories", label: "Náhradní zařízení – příslušenství", group: G.device, sample: "Nabíječka, kryt" },
+  { key: "loaner.deposit", label: "Náhradní zařízení – kauce", group: G.price, sample: "2 000,00 Kč" },
+  { key: "loaner.lentAt", label: "Náhradní zařízení – půjčeno dne", group: G.dates, sample: "1. 9. 2026" },
+  { key: "loaner.returnedAt", label: "Náhradní zařízení – vráceno dne", group: G.dates, sample: "4. 9. 2026" },
+  { key: "loaner.note", label: "Náhradní zařízení – poznámka", group: G.other, sample: "Drobné škrábance na krytu." },
   { key: "checklist.summary", label: "Kontrola po opravě – shrnutí", group: G.other, sample: "Ověřeno 8 z 8, vše v pořádku" },
   { key: "checklist.list", label: "Kontrola po opravě – položky po řádcích", group: G.other, sample: "✓ Displej a dotyk po celé ploše\n✓ Nabíjení a přenos dat\n✗ Tlačítka a vibrace – vibrace slabší" },
   { key: "note", label: "Poznámka", group: G.other, sample: "" },
@@ -252,6 +259,13 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "warranty.until": return formatDate(data.warranty?.until);
     case "warranty.text": return data.warranty?.text ?? "";
     case "diagnostic": return data.diagnostic ?? "";
+    case "loaner.name": return data.loaner?.name ?? "";
+    case "loaner.serial": return data.loaner?.serial ?? "";
+    case "loaner.accessories": return data.loaner?.accessories ?? "";
+    case "loaner.deposit": return data.loaner?.deposit ? formatMoney(data.loaner.deposit, data.totals?.currency) : data.loaner ? "bez kauce" : "";
+    case "loaner.lentAt": return formatDate(data.loaner?.lentAt);
+    case "loaner.returnedAt": return formatDate(data.loaner?.returnedAt);
+    case "loaner.note": return data.loaner?.note ?? "";
     case "checklist.summary": {
       const items = data.checklist?.items ?? [];
       if (items.length === 0) return "";

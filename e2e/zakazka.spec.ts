@@ -166,6 +166,36 @@ test("kontrola po opravě se načte podle zařízení a odškrtává", async ({ 
   await expect(page.getByLabel("Poznámka – Tlačítka a vibrace")).toHaveValue("Vibrace slabší (E2E)");
 });
 
+test("půjčení náhradního zařízení se zapíše a jde označit jako vrácené", async ({ page }) => {
+  await prihlasSe(page);
+  await page.getByText(zakaznik).first().click();
+  await page.getByRole("button", { name: "Půjčit náhradní zařízení" }).click();
+  // „Zařízení“ má v detailu i pole zakázky, proto přes nápovědu v poli.
+  await page.getByPlaceholder("např. iPhone SE 2020, černý").fill("iPhone SE náhradní (E2E)");
+  await page.getByLabel("Sériové číslo / IMEI").fill("E2E-SN-001");
+  await page.getByLabel("Kauce (Kč)").fill("2000");
+  await page.getByRole("button", { name: "Uložit půjčení" }).click();
+
+  await expect(page.getByText("iPhone SE náhradní (E2E)").first()).toBeVisible();
+  const karta = page.locator("#detail-zapujcka");
+  await expect(karta).toContainText("kauce 2");
+  await expect(karta).toContainText("půjčeno");
+  await expect(page.getByText("U zákazníka", { exact: true })).toBeVisible();
+  // Smlouva je v nabídce tisku.
+  await expect(page.getByRole("button", { name: "Smlouva o zápůjčce" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Vráceno", exact: true }).click();
+  await expect(page.getByText("Vráceno", { exact: true })).toBeVisible();
+
+  // Uloženo hned – po obnovení drží i vrácení.
+  await page.waitForTimeout(1500);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByText(zakaznik).first().click();
+  await expect(page.getByText("iPhone SE náhradní (E2E)").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Vráceno", { exact: true })).toBeVisible();
+});
+
 test("při stornu se servis zeptá na důvod a zapíše ho do historie", async ({ page }) => {
   await prihlasSe(page);
   await page.getByText(zakaznik).first().click();

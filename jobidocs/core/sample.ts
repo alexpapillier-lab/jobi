@@ -85,6 +85,19 @@ export function sampleData(docType: DocType, kind: SampleKind = "short", service
     warranty: { months: 12, until: "2027-09-03" },
     payment: { account: "19-2000145399/0800", iban: "CZ65 0800 0000 1920 0014 5399", swift: "GIBACZPX", vs: "2026000042", spayd: "SPD*1.0*ACC:CZ6508000000192000145399*AM:5990.00*CC:CZK*X-VS:2026000042*MSG:Faktura FV-2026-0042" },
   };
+  if (docType === "smlouva_zapujcka") {
+    common.loaner = {
+      name: "iPhone SE 2020, 64 GB, černý",
+      serial: "DNPZK0ABCD12",
+      accessories: long ? "Nabíjecí kabel, adaptér 20 W, průhledný kryt" : "Nabíjecí kabel",
+      deposit: 2000,
+      lentAt: "2026-09-01",
+      returnedAt: long ? "2026-09-04" : undefined,
+      note: long ? "Drobné škrábance na zadním krytu, displej bez vad." : undefined,
+    };
+    common.items = [];
+    common.totals = { currency: "CZK" };
+  }
   if (docType === "zakazkovy_list") {
     // Na zakázkovém listu ještě nejsou provedené opravy.
     common.items = [];
