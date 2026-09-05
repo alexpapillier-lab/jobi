@@ -48,8 +48,16 @@ import {
   type DeviceModel,
   safeLoadDevicesData,
   safeLoadInventoryData,
-  safeSaveInventoryData,
 } from "../lib/catalogStorage";
+import {
+  reserveForRepair,
+  releaseReservations,
+  consumeTicketReservations,
+  loadTicketReservations,
+  jenUuid,
+  type TicketReservation,
+  type ReserveShortage,
+} from "../lib/purchaseOrders";
 import {
   PerformedRepairItem,
   PerformedRepairAdder,
@@ -1083,6 +1091,48 @@ export default function Orders({
     setPresenceTicket(detailId);
     return () => setPresenceTicket(null);
   }, [detailId]);
+
+  // Rezervace dílů otevřené zakázky (řádek „Díly: …“ pod provedenými opravami).
+  // Klíčované id zakázky, aby pozdní odpověď nepřepsala data jiné zakázky.
+  const [ticketReservations, setTicketReservations] = useState<{ ticketId: string | null; rows: TicketReservation[] }>({ ticketId: null, rows: [] });
+  const refreshTicketReservations = useCallback(async (ticketId: string) => {
+    const rows = await loadTicketReservations(ticketId);
+    if (!rows) return;
+    // Volá se po vlastní akci na otevřené zakázce; render si stejně hlídá shodu ticketId.
+    setTicketReservations({ ticketId, rows });
+  }, []);
+  useEffect(() => {
+    if (!detailId) return;
+    let cancelled = false;
+    void loadTicketReservations(detailId).then((rows) => {
+      if (cancelled || !rows) return;
+      setTicketReservations({ ticketId: detailId, rows });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailId]);
+
+  /** Jedno upozornění na díly, které po rezervaci nejsou skladem. Není to chyba – zakázka jde dál. */
+  const toastReserveShortages = useCallback((shortages: ReserveShortage[]) => {
+    if (shortages.length === 0) return;
+    const text = shortages
+      .map((s) => `Díl „${s.name}“ není skladem (rezervováno ${s.reservedTotal}, skladem ${s.stock})`)
+      .join("; ");
+    showToast(text, "info");
+  }, []);
+
+  /** Zarezervuje díly jedné opravy na zakázce; tiché, když RPC na serveru není. */
+  const reserveEntryProducts = useCallback(
+    async (ticketId: string, entryId: string, productIds: string[] | undefined) => {
+      const ids = jenUuid(productIds);
+      if (ids.length === 0) return null;
+      const res = await reserveForRepair(ticketId, entryId, ids);
+      if (res && res.reserved > 0) void refreshTicketReservations(ticketId);
+      return res;
+    },
+    [refreshTicketReservations]
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
   const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
@@ -1345,9 +1395,6 @@ export default function Orders({
   const [claimHistoryError, setClaimHistoryError] = useState<string | null>(null);
   const [deleteClaimDialogOpen, setDeleteClaimDialogOpen] = useState(false);
   const [deleteClaimId, setDeleteClaimId] = useState<string | null>(null);
-  const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false);
-  const [lowStockProducts, setLowStockProducts] = useState<string[]>([]);
-  const [lowStockCallback, setLowStockCallback] = useState<(() => void) | null>(null);
   const [smsPanelOpen, setSmsPanelOpen] = useState(false);
   const [smsUnreadCount, setSmsUnreadCount] = useState(0);
   const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
@@ -2502,7 +2549,7 @@ export default function Orders({
     (ticketId: string, repair: { name: string; type: "selected" | "manual"; repairId?: string }) => {
       // Mark performed repairs as dirty
       setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-      // If repair has repairId, check for linked products and reduce stock, and get price, costs, time, products
+      // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
       let repairPrice: number | undefined = undefined;
       let repairCosts: number | undefined = undefined;
       let repairTime: number | undefined = undefined;
@@ -2515,43 +2562,22 @@ export default function Orders({
           repairTime = repairData.estimatedTime;
           repairProductIds = repairData.productIds;
         }
-        
-        const currentInventory = safeLoadInventoryData();
-        const productsToReduce = currentInventory.products.filter(
-          (p) => p.repairIds && p.repairIds.includes(repair.repairId!)
-        );
+      }
 
-        if (productsToReduce.length > 0) {
-          const lowStockProducts: string[] = [];
-          const updatedProducts = currentInventory.products.map((p) => {
-            if (p.repairIds && p.repairIds.includes(repair.repairId!)) {
-              const newStock = p.stock - 1;
-              if (newStock < 1) {
-                lowStockProducts.push(p.name);
-              }
-              return { ...p, stock: Math.max(0, newStock) };
-            }
-            return p;
-          });
+      const entryId = `${Date.now()}_${Math.random()}`;
 
-          if (lowStockProducts.length > 0) {
-            setLowStockProducts(lowStockProducts);
-            setLowStockCallback(() => () => {
-              safeSaveInventoryData({ ...currentInventory, products: updatedProducts });
-            });
-            setLowStockDialogOpen(true);
-            return;
-          }
-
-          safeSaveInventoryData({ ...currentInventory, products: updatedProducts });
-        }
+      // Díly se rezervují ve skladu (DB); ze skladu se odečtou až v koncovém stavu zakázky.
+      if (repairProductIds && repairProductIds.length > 0) {
+        void reserveEntryProducts(ticketId, entryId, repairProductIds).then((res) => {
+          if (res) toastReserveShortages(res.shortages);
+        });
       }
 
       setCloudTickets((prev) =>
         prev.map((t) => {
           if (t.id !== ticketId) return t;
           const newRepair: PerformedRepair = {
-            id: `${Date.now()}_${Math.random()}`,
+            id: entryId,
             name: repair.name,
             type: repair.type,
             repairId: repair.repairId,
@@ -2567,7 +2593,7 @@ export default function Orders({
         })
       );
     },
-    [devicesData]
+    [devicesData, reserveEntryProducts, toastReserveShortages]
   );
 
   const updatePerformedRepairPrice = useCallback((ticketId: string, repairId: string, price: number) => {
@@ -2642,7 +2668,11 @@ export default function Orders({
         };
       })
     );
-  }, []);
+    // Odebraná oprava už díly nedrží – rezervace se uvolní (tiché, když RPC chybí).
+    void releaseReservations(ticketId, repairId).then((released) => {
+      if (released) void refreshTicketReservations(ticketId);
+    });
+  }, [refreshTicketReservations]);
 
   const border = "1px solid var(--border)";
   const borderError = "1px solid rgba(239,68,68,0.9)";
@@ -2851,6 +2881,19 @@ export default function Orders({
         if (error) {
           console.error("[change_ticket_status] rpc error", error);
           throw error;
+        }
+
+        // Koncový stav: rezervované díly se odečtou ze skladu. Zpět z koncového
+        // stavu se nic nevrací – odečtené zůstává odečtené.
+        if (isFinal(next)) {
+          void consumeTicketReservations(ticketId).then((res) => {
+            if (!res) return;
+            if (res.shortages.length > 0) {
+              const chybelo = res.shortages.map((s) => `${s.name} ×${s.missing}`).join(", ");
+              showToast(`Odečteno ze skladu, chybělo: ${chybelo}`, "info");
+            }
+            if (res.consumed > 0) void refreshTicketReservations(ticketId);
+          });
         }
 
         const config = await loadDocumentsConfigFromDB(activeServiceId);
@@ -3236,6 +3279,18 @@ export default function Orders({
         if (activeServiceId) {
           for (const t of tickets) void runTicketCreatedAutomations(activeServiceId, t.id);
         }
+        // Opravy vybrané už při příjmu: díly se rezervují po vzniku zakázky.
+        void (async () => {
+          const shortages = new Map<string, ReserveShortage>();
+          for (const t of tickets) {
+            for (const r of t.performedRepairs ?? []) {
+              if (!r.productIds || r.productIds.length === 0) continue;
+              const res = await reserveEntryProducts(t.id, r.id, r.productIds);
+              for (const s of res?.shortages ?? []) shortages.set(s.productId, s);
+            }
+          }
+          toastReserveShortages(Array.from(shortages.values()));
+        })();
       },
     });
   };
@@ -6135,19 +6190,34 @@ export default function Orders({
                   <SectionHeading icon={<WrenchIcon size={16} />}>Provedené opravy</SectionHeading>
 
                   <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                    {(detailedTicket.performedRepairs ?? []).map((repair) => (
-                      <PerformedRepairItem
-                        key={repair.id}
-                        repair={repair}
-                        onRemove={(repairId) => removePerformedRepair(detailedTicket.id, repairId)}
-                        onUpdatePrice={(repairId, price) => updatePerformedRepairPrice(detailedTicket.id, repairId, price)}
-                        onUpdateCosts={(repairId, costs) => updatePerformedRepairCosts(detailedTicket.id, repairId, costs)}
-                        onUpdateTime={(repairId, time) => updatePerformedRepairTime(detailedTicket.id, repairId, time)}
-                        onUpdateProducts={(repairId, productIds) => updatePerformedRepairProducts(detailedTicket.id, repairId, productIds)}
-                        devicesData={devicesData}
-                        inventoryData={inventoryData}
-                      />
-                    ))}
+                    {(detailedTicket.performedRepairs ?? []).map((repair) => {
+                      // Rezervované/odečtené díly této opravy; uvolněné se neukazují.
+                      const dily = ticketReservations.ticketId === detailedTicket.id
+                        ? ticketReservations.rows.filter((r) => r.repairEntryId === repair.id && r.status !== "released")
+                        : [];
+                      return (
+                        <div key={repair.id} style={{ display: "grid", gap: 2 }}>
+                          <PerformedRepairItem
+                            repair={repair}
+                            onRemove={(repairId) => removePerformedRepair(detailedTicket.id, repairId)}
+                            onUpdatePrice={(repairId, price) => updatePerformedRepairPrice(detailedTicket.id, repairId, price)}
+                            onUpdateCosts={(repairId, costs) => updatePerformedRepairCosts(detailedTicket.id, repairId, costs)}
+                            onUpdateTime={(repairId, time) => updatePerformedRepairTime(detailedTicket.id, repairId, time)}
+                            onUpdateProducts={(repairId, productIds) => updatePerformedRepairProducts(detailedTicket.id, repairId, productIds)}
+                            devicesData={devicesData}
+                            inventoryData={inventoryData}
+                          />
+                          {dily.length > 0 && (
+                            <div style={{ color: "var(--muted)", fontSize: 12, paddingLeft: 12 }}>
+                              Díly:{" "}
+                              {dily
+                                .map((r) => `${r.productName} ×${r.qty} (${r.status === "consumed" ? "odečteno" : "rezervováno"})`)
+                                .join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     {(detailedTicket.performedRepairs ?? []).length === 0 && (
                       <div style={{ color: "var(--muted)", fontSize: 13, padding: 12, textAlign: "center" }}>
                         Zatím nebyly přidány žádné opravy
@@ -6759,6 +6829,8 @@ export default function Orders({
           }
           
           showToast("Zakázka smazána", "success");
+          // Smazaná zakázka díly nedrží.
+          void releaseReservations(deleteTicketId);
 
           // Reuse returnTo navigation logic from "Zavřít" button
           const page = returnToPage;
@@ -7248,29 +7320,6 @@ export default function Orders({
         </div>,
         document.body
       )}
-
-      {/* ConfirmDialog for low stock warning */}
-      <ConfirmDialog
-        open={lowStockDialogOpen}
-        title="Upozornění na sklad"
-        message={`Produkty ${lowStockProducts.join(", ")} budou mít počet na skladě menší než 1. Chcete pokračovat?`}
-        confirmLabel="Pokračovat"
-        cancelLabel="Zrušit"
-        variant="default"
-        onConfirm={() => {
-          if (lowStockCallback) {
-            lowStockCallback();
-            setLowStockCallback(null);
-          }
-          setLowStockDialogOpen(false);
-          setLowStockProducts([]);
-        }}
-        onCancel={() => {
-          setLowStockDialogOpen(false);
-          setLowStockProducts([]);
-          setLowStockCallback(null);
-        }}
-      />
 
       {canPrintExport && openQuickPrintTicket && quickPrintDropdownRect && (() => {
         const dropdownWidth = 200;

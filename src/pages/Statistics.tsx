@@ -21,6 +21,15 @@ import { KpiTile, KpiTileSkeleton } from "./Statistics/KpiTile";
 import { MonthlyChart, type MonthStat } from "./Statistics/MonthlyChart";
 import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
+import { MarginList } from "./Statistics/MarginList";
+import {
+  EMPTY_COST_SOURCES,
+  marginByDevice,
+  marginByRepair,
+  marginPercent,
+  ticketMargin,
+  type CostSources,
+} from "./Statistics/margin";
 import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
 
 const TICKETS_SELECT =
@@ -148,48 +157,47 @@ function inRange(t: TicketEx, range: DateRange): boolean {
 // Výpočty
 // ========================
 
-function ticketGross(t: TicketEx): number {
-  return (t.performedRepairs || []).reduce((sum, r) => sum + (r.price || 0), 0);
-}
-
-function ticketDiscount(t: TicketEx): number {
-  const gross = ticketGross(t);
-  if (t.discountType === "percentage") return (gross * (t.discountValue || 0)) / 100;
-  if (t.discountType === "amount") return t.discountValue || 0;
-  return 0;
-}
-
-function ticketRevenue(t: TicketEx): number {
-  return Math.max(0, ticketGross(t) - ticketDiscount(t));
-}
-
-function ticketCosts(t: TicketEx): number {
-  return (t.performedRepairs || []).reduce((sum, r) => sum + (r.costs || 0), 0);
-}
-
+/**
+ * Náklady a marže zakázky podle definice v `Statistics/margin.ts`:
+ * náklady oprav (vlastní, jinak z ceníku) + nákupní ceny navázaných dílů.
+ */
 type Kpis = {
   totalTickets: number;
   totalRevenue: number;
   totalCosts: number;
   totalDiscounts: number;
+  /** Marže v Kč = Σ(příjem − náklady) − slevy. */
   profit: number;
+  /** Marže v % z příjmu. */
+  marginPct: number;
+  /** Provedené opravy bez jakéhokoli zdroje nákladů. */
+  entriesWithoutCost: number;
+  /** Provedené opravy, u kterých některý díl nemá nákupní cenu. */
+  entriesMissingPurchasePrice: number;
   averageTicketPrice: number;
   averageTicketDurationDays: number;
 };
 
-function computeKpis(list: TicketEx[]): Kpis {
+function computeKpis(list: TicketEx[], sources: CostSources): Kpis {
   let totalRevenue = 0;
   let totalCosts = 0;
   let totalDiscounts = 0;
+  let profit = 0;
+  let entriesWithoutCost = 0;
+  let entriesMissingPurchasePrice = 0;
   let paidCount = 0;
   let durationSum = 0;
   let durationCount = 0;
 
   for (const t of list) {
-    const rev = ticketRevenue(t);
+    const m = ticketMargin(t, sources);
+    const rev = m.revenue;
     totalRevenue += rev;
-    totalCosts += ticketCosts(t);
-    totalDiscounts += ticketDiscount(t);
+    totalCosts += m.cost;
+    totalDiscounts += m.discount;
+    profit += m.margin;
+    entriesWithoutCost += m.entriesWithoutCost;
+    entriesMissingPurchasePrice += m.entriesMissingPurchasePrice;
     if (rev > 0) paidCount += 1;
 
     const completedAt = (t as TicketWithCompletion).completed_at;
@@ -207,7 +215,10 @@ function computeKpis(list: TicketEx[]): Kpis {
     totalRevenue,
     totalCosts,
     totalDiscounts,
-    profit: totalRevenue - totalCosts,
+    profit,
+    marginPct: marginPercent(profit, totalRevenue),
+    entriesWithoutCost,
+    entriesMissingPurchasePrice,
     averageTicketPrice: paidCount > 0 ? totalRevenue / paidCount : 0,
     averageTicketDurationDays: durationCount > 0 ? durationSum / durationCount : 0,
   };
@@ -279,6 +290,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [drillDown, setDrillDown] = useState<DrillDown>(null);
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
+  /** Ceník a nákupní ceny dílů – záložní zdroj nákladů. Při chybě zůstane prázdný. */
+  const [costSources, setCostSources] = useState<CostSources>(EMPTY_COST_SOURCES);
+  const [costSourcesError, setCostSourcesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -319,6 +333,61 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     };
   }, [activeServiceId, reloadToken]);
 
+  // Ceník oprav a nákupní ceny dílů – jednou za servis. Když se nenačtou,
+  // marže se počítá jen z `costs` u provedených oprav a poznámka pod KPI to řekne.
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setCostSources(EMPTY_COST_SOURCES);
+      setCostSourcesError(null);
+      return;
+    }
+    const client = supabase;
+    let cancelled = false;
+    (async () => {
+      type ProductRow = { id: string; purchase_price: number | string | null };
+      type RepairRow = { id: string; costs: number | string | null; product_ids: string[] | null };
+      const [productsRes, repairsRes] = await Promise.all([
+        fetchAllPages<ProductRow>((from, to) =>
+          client.from("inventory_products").select("id, purchase_price").eq("service_id", activeServiceId).order("id").range(from, to)
+        ),
+        fetchAllPages<RepairRow>((from, to) =>
+          client.from("repairs").select("id, costs, product_ids").eq("service_id", activeServiceId).order("id").range(from, to)
+        ),
+      ]);
+      if (cancelled) return;
+      const err = productsRes.error || repairsRes.error;
+      if (err) {
+        console.warn("[Statistics] Ceník/sklad se nenačetl, marže jen z nákladů oprav:", err);
+        setCostSources(EMPTY_COST_SOURCES);
+        setCostSourcesError((err as { message?: string })?.message ?? "Ceník a sklad se nepodařilo načíst.");
+        return;
+      }
+      const purchasePrices = new Map<string, number | null>();
+      for (const p of productsRes.data) {
+        const n = p.purchase_price === null || p.purchase_price === undefined ? null : Number(p.purchase_price);
+        purchasePrices.set(p.id, n !== null && Number.isFinite(n) ? n : null);
+      }
+      const repairs = new Map<string, { costs?: number; productIds?: string[] }>();
+      for (const r of repairsRes.data) {
+        const c = r.costs === null || r.costs === undefined ? undefined : Number(r.costs);
+        repairs.set(r.id, {
+          costs: c !== undefined && Number.isFinite(c) ? c : undefined,
+          productIds: Array.isArray(r.product_ids) && r.product_ids.length > 0 ? r.product_ids : undefined,
+        });
+      }
+      setCostSources({ repairs, purchasePrices });
+      setCostSourcesError(null);
+    })().catch((err: unknown) => {
+      if (cancelled) return;
+      console.warn("[Statistics] Ceník/sklad se nenačetl:", err);
+      setCostSources(EMPTY_COST_SOURCES);
+      setCostSourcesError(err instanceof Error ? err.message : "Ceník a sklad se nepodařilo načíst.");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeServiceId, reloadToken]);
+
   const compareAvailable = COMPARABLE_PERIODS.includes(periodType);
   const compareActive = compareWithPrevious && compareAvailable;
 
@@ -353,8 +422,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     [drillDown, tickets, filteredTickets]
   );
 
-  const kpis = useMemo(() => computeKpis(filteredTickets), [filteredTickets]);
-  const prevKpis = useMemo(() => computeKpis(previousPeriodTickets), [previousPeriodTickets]);
+  const kpis = useMemo(() => computeKpis(filteredTickets, costSources), [filteredTickets, costSources]);
+  const prevKpis = useMemo(() => computeKpis(previousPeriodTickets, costSources), [previousPeriodTickets, costSources]);
 
   const statusItems = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -383,6 +452,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     return topCounts(counts, 5);
   }, [facetTickets]);
 
+  const marginRepairRows = useMemo(() => marginByRepair(facetTickets("repair"), costSources), [facetTickets, costSources]);
+  const marginDeviceRows = useMemo(() => marginByDevice(facetTickets("device"), costSources), [facetTickets, costSources]);
+
   const monthlyStats = useMemo<MonthStat[]>(() => {
     const list = facetTickets("month");
     if (list.length === 0) return [];
@@ -399,9 +471,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       minTime = Math.min(minTime, time);
       maxTime = Math.max(maxTime, time);
       const key = `${d.getFullYear()}-${d.getMonth()}`;
-      const entry = byMonth.get(key) ?? { year: d.getFullYear(), monthIndex: d.getMonth(), count: 0, revenue: 0 };
+      const entry = byMonth.get(key) ?? { year: d.getFullYear(), monthIndex: d.getMonth(), count: 0, revenue: 0, margin: 0 };
+      const m = ticketMargin(t, costSources);
       entry.count += 1;
-      entry.revenue += ticketRevenue(t);
+      entry.revenue += m.revenue;
+      entry.margin += m.margin;
       byMonth.set(key, entry);
     }
     if (!Number.isFinite(minTime)) return [];
@@ -420,11 +494,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     while (cursor <= end && result.length < 240) {
       const y = cursor.getFullYear();
       const m = cursor.getMonth();
-      result.push(byMonth.get(`${y}-${m}`) ?? { year: y, monthIndex: m, count: 0, revenue: 0 });
+      result.push(byMonth.get(`${y}-${m}`) ?? { year: y, monthIndex: m, count: 0, revenue: 0, margin: 0 });
       cursor.setMonth(m + 1);
     }
     return result;
-  }, [facetTickets, periodType, customStartDate, customEndDate]);
+  }, [facetTickets, periodType, customStartDate, customEndDate, costSources]);
 
   const toggleStatus = useCallback((key: string) => {
     setDrillDown((prev) => (prev?.type === "status" && prev.value === key ? null : { type: "status", value: key }));
@@ -458,15 +532,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   }, [drillDown, nazevStavu]);
 
   const exportCsv = useCallback(() => {
-    const header = ["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)"];
-    const rows = filteredTickets.map((t) => [
-      t.code ?? "",
-      t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "",
-      t.customerName || "",
-      t.deviceLabel || "",
-      t.status ? nazevStavu(t.status) : "",
-      ticketRevenue(t).toFixed(2).replace(".", ","),
-    ]);
+    const header = ["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)", "Náklady (Kč)", "Marže (Kč)"];
+    const castka = (n: number) => n.toFixed(2).replace(".", ",");
+    const rows = filteredTickets.map((t) => {
+      const m = ticketMargin(t, costSources);
+      return [
+        t.code ?? "",
+        t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "",
+        t.customerName || "",
+        t.deviceLabel || "",
+        t.status ? nazevStavu(t.status) : "",
+        castka(m.revenue),
+        castka(m.cost),
+        castka(m.margin),
+      ];
+    });
     // BOM, aby Excel poznal UTF-8 a nerozbil diakritiku.
     const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -479,7 +559,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [filteredTickets, nazevStavu]);
+  }, [filteredTickets, nazevStavu, costSources]);
 
   if (!activeServiceId) {
     return (
@@ -530,6 +610,60 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       </Card>
     </div>
   );
+
+  const marginSection = (
+    <>
+      <Card style={{ padding: "var(--pad-24)" }}>
+        <SectionHeading icon={<WrenchIcon size={18} />}>Marže podle oprav</SectionHeading>
+        <MarginList
+          rows={marginRepairRows}
+          limit={15}
+          countLabel="Provedeno"
+          selected={drillDown?.type === "repair" ? drillDown.value : null}
+          onSelect={toggleRepair}
+          emptyText="Ve vybraném období nejsou žádné provedené opravy."
+          titlePrefix="Filtrovat opravu"
+        />
+      </Card>
+      <Card style={{ padding: "var(--pad-24)" }}>
+        <SectionHeading icon={<DeviceIcon size={18} />}>Marže podle zařízení</SectionHeading>
+        <MarginList
+          rows={marginDeviceRows}
+          limit={10}
+          countLabel="Zakázek"
+          selected={drillDown?.type === "device" ? drillDown.value : null}
+          onSelect={toggleDevice}
+          emptyText="Ve vybraném období nejsou žádná zařízení."
+          titlePrefix="Filtrovat zařízení"
+        />
+      </Card>
+    </>
+  );
+
+  /**
+   * Poznámka k nákladům pod KPI: co se do nich počítá a kolika opravám
+   * náklady chybí. Když se ceník/sklad nenačetl, řekne to rovnou – jinak by
+   * vysoká marže vypadala jako dobrá zpráva.
+   */
+  const costsFootnote = (() => {
+    const parts: string[] = [];
+    if (costSourcesError) {
+      parts.push("Ceník a sklad se nepodařilo načíst – náklady jsou jen z nákladů uložených u oprav, bez nákupních cen dílů.");
+    } else {
+      parts.push("Náklady = náklady oprav + nákupní ceny dílů z ceníku.");
+    }
+    if (kpis.entriesWithoutCost > 0) {
+      const n = kpis.entriesWithoutCost;
+      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} chybí náklady.`);
+    } else {
+      parts.push("Všechny provedené opravy mají náklady.");
+    }
+    if (kpis.entriesMissingPurchasePrice > 0) {
+      const n = kpis.entriesMissingPurchasePrice;
+      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} nemá některý díl nákupní cenu (počítá se jako 0 Kč).`);
+    }
+    return parts.join(" ");
+  })();
 
   const monthlySection = (
     <Card style={{ padding: "var(--pad-24)" }}>
@@ -672,8 +806,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
             Načítání zakázek…
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: "var(--space-3)" }}>
-            {Array.from({ length: 7 }, (_, i) => (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
+            {Array.from({ length: 8 }, (_, i) => (
               <KpiTileSkeleton key={i} />
             ))}
           </div>
@@ -713,7 +847,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <>
           {/* Klíčová čísla */}
           {viewMode !== "charts" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: "var(--space-3)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
               <KpiTile
                 title="Celkem zakázek"
                 value={celeCislo(kpis.totalTickets)}
@@ -739,6 +873,23 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                 delta={
                   compareActive
                     ? { current: kpis.profit, previous: prevKpis.profit, formatAbsolute: formatCurrencyRounded, absolute: prevKpis.profit <= 0 }
+                    : undefined
+                }
+              />
+              <KpiTile
+                title="Marže"
+                value={`${cislo(kpis.marginPct, Math.abs(kpis.marginPct) < 10 ? 1 : 0)} %`}
+                subtitle={`${formatCurrencyRounded(kpis.profit)} z ${formatCurrencyRounded(kpis.totalRevenue)}`}
+                icon={<TrendIcon size={16} />}
+                delta={
+                  compareActive
+                    ? {
+                        current: kpis.marginPct,
+                        previous: prevKpis.marginPct,
+                        // Rozdíl v procentních bodech, ne procento z procenta.
+                        formatAbsolute: (n) => `${cislo(n, n < 10 ? 1 : 0)} p. b.`,
+                        absolute: true,
+                      }
                     : undefined
                 }
               />
@@ -773,10 +924,17 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             </div>
           )}
 
+          {viewMode !== "charts" && (
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", fontVariantNumeric: "tabular-nums", marginTop: "calc(-1 * var(--space-2))" }}>
+              {costsFootnote}
+            </div>
+          )}
+
           {viewMode === "cards" && (
             <>
               {statusSection}
               {rankSection}
+              {marginSection}
               {monthlySection}
             </>
           )}
@@ -786,6 +944,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               {monthlySection}
               {statusSection}
               {rankSection}
+              {marginSection}
             </>
           )}
 
@@ -821,7 +980,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "var(--text-base)" }}>
                     <thead>
                       <tr>
-                        {(["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem"] as const).map((label, i) => (
+                        {(["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem", "Náklady", "Marže"] as const).map((label, i) => (
                           <th
                             key={label}
                             scope="col"
@@ -834,7 +993,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                               WebkitBackdropFilter: "var(--blur)",
                               borderBottom: "1px solid var(--border)",
                               padding: "var(--space-2) var(--space-3)",
-                              textAlign: i === 5 ? "right" : "left",
+                              textAlign: i >= 5 ? "right" : "left",
                               color: "var(--muted)",
                               fontWeight: 600,
                               fontSize: "var(--text-sm)",
@@ -848,7 +1007,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     </thead>
                     <tbody>
                       {filteredTickets.slice(0, 100).map((t) => {
-                        const finalPrice = ticketRevenue(t);
+                        const m = ticketMargin(t, costSources);
+                        const finalPrice = m.revenue;
                         const cell = { padding: "var(--space-2) var(--space-3)", borderBottom: "1px solid var(--border)", color: "var(--text)" } as const;
                         return (
                           <tr
@@ -889,6 +1049,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                             </td>
                             <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                               {finalPrice > 0 ? formatCurrencyRounded(finalPrice) : "—"}
+                            </td>
+                            <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "var(--muted)" }}>
+                              {m.cost > 0 ? formatCurrencyRounded(m.cost) : "—"}
+                            </td>
+                            <td
+                              style={{
+                                ...cell,
+                                textAlign: "right",
+                                fontWeight: 600,
+                                fontVariantNumeric: "tabular-nums",
+                                whiteSpace: "nowrap",
+                                color: m.margin < 0 ? "var(--danger-text)" : "var(--text)",
+                              }}
+                            >
+                              {finalPrice > 0 || m.cost > 0 ? formatCurrencyRounded(m.margin) : "—"}
                             </td>
                           </tr>
                         );

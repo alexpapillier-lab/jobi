@@ -82,12 +82,15 @@ export function KpiTile({
   value,
   icon,
   delta,
+  subtitle,
 }: {
   title: string;
   value: string | number;
   icon: ReactNode;
   /** Zobrazí se jen při zapnutém porovnání. */
   delta?: KpiDelta;
+  /** Doplněk pod hodnotou (např. absolutní částka u procentní marže). */
+  subtitle?: string;
 }) {
   // Částka se nesmí zalomit uprostřed ("8 200 334 K / č"), tak se místo
   // zalamování zmenšuje písmo podle délky textu.
@@ -127,6 +130,22 @@ export function KpiTile({
       >
         {value}
       </div>
+      {subtitle && (
+        <div
+          style={{
+            marginTop: "var(--space-1)",
+            fontSize: "var(--text-sm)",
+            color: "var(--muted)",
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+          title={subtitle}
+        >
+          {subtitle}
+        </div>
+      )}
       {delta && (
         <div style={{ marginTop: "auto" }}>
           <DeltaChip delta={delta} />

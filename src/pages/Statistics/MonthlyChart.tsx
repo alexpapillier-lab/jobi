@@ -14,9 +14,13 @@ export type MonthStat = {
   monthIndex: number;
   count: number;
   revenue: number;
+  /** Marže podle definice v `margin.ts` (příjem − náklady − sleva). Může být záporná. */
+  margin: number;
 };
 
-type Metric = "count" | "revenue";
+type Metric = "count" | "revenue" | "margin";
+
+const METRIC_LABEL: Record<Metric, string> = { count: "Počet zakázek", revenue: "Příjem", margin: "Marže" };
 type Range = "12" | "all";
 
 const CHART_HEIGHT = 240;
@@ -69,10 +73,12 @@ export function MonthlyChart({
     [months, range]
   );
 
-  const valueOf = (m: MonthStat) => (metric === "count" ? m.count : m.revenue);
+  const valueOf = (m: MonthStat) => (metric === "count" ? m.count : metric === "revenue" ? m.revenue : m.margin);
   const formatShort = (v: number) => (metric === "count" ? celeCislo(v) : formatCurrencyCompact(v));
 
-  const max = Math.max(1, ...visible.map(valueOf));
+  // Záporná marže se kreslí jako pruh pod základnou; osa jde od −min do max.
+  const max = Math.max(1, ...visible.map((m) => Math.max(0, valueOf(m))));
+  const minNeg = Math.min(0, ...visible.map((m) => Math.min(0, valueOf(m))));
   const n = visible.length;
 
   // Geometrie
@@ -86,13 +92,19 @@ export function MonthlyChart({
   const svgWidth = axisWidth + plotSlot * n;
   const barWidth = Math.min(40, Math.max(12, Math.round(plotSlot * 0.62)));
   const plotHeight = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const baselineY = PAD_TOP + plotHeight;
+  // Část výšky pro záporné hodnoty (jen u marže, když nějaká záporná je).
+  const negShare = minNeg < 0 ? Math.min(0.4, Math.abs(minNeg) / (Math.abs(minNeg) + max)) : 0;
+  const negHeight = Math.round(plotHeight * negShare);
+  const posHeight = plotHeight - negHeight;
+  const baselineY = PAD_TOP + posHeight;
+  const scaleY = (v: number) => (v >= 0 ? (v / max) * posHeight : negHeight > 0 ? (v / minNeg) * negHeight : 0);
 
   const isSelected = (m: MonthStat) => !!selected && selected.year === m.year && selected.monthIndex === m.monthIndex;
   const selectedOutsideRange =
     !!selected && range === "12" && months.length > 12 && !visible.some(isSelected) && months.some(isSelected);
 
   const yTicks = labelsFit ? [] : [0, 0.5, 1].map((f) => ({ f, value: max * f }));
+  const isMargin = metric === "margin";
 
   if (months.length === 0) {
     return <div style={{ color: "var(--muted)", fontSize: "var(--text-base)" }}>Žádná data pro vybrané období.</div>;
@@ -110,8 +122,9 @@ export function MonthlyChart({
           value={metric}
           onChange={setMetric}
           options={[
-            { value: "count", label: "Počet zakázek" },
-            { value: "revenue", label: "Příjem" },
+            { value: "count", label: METRIC_LABEL.count },
+            { value: "revenue", label: METRIC_LABEL.revenue },
+            { value: "margin", label: METRIC_LABEL.margin, title: "Příjem po slevě minus náklady oprav a nákupní ceny dílů" },
           ]}
         />
         {months.length > 12 && (
@@ -147,13 +160,13 @@ export function MonthlyChart({
             height={CHART_HEIGHT}
             viewBox={svgWidth ? `0 0 ${svgWidth} ${CHART_HEIGHT}` : undefined}
             role="img"
-            aria-label={`${metric === "count" ? "Počet zakázek" : "Příjem"} po měsících`}
+            aria-label={`${METRIC_LABEL[metric]} po měsících`}
             style={{ display: "block", fontFamily: "inherit", fontVariantNumeric: "tabular-nums" }}
             onMouseLeave={() => setHover(null)}
           >
             {/* Osa Y – jen když se hodnoty nevejdou nad sloupce */}
             {yTicks.map((t) => {
-              const y = baselineY - t.f * plotHeight;
+              const y = baselineY - t.f * posHeight;
               return (
                 <g key={t.f}>
                   <line x1={axisWidth} x2={svgWidth} y1={y} y2={y} stroke="var(--border)" strokeWidth={1} />
@@ -175,10 +188,11 @@ export function MonthlyChart({
 
             {visible.map((m, i) => {
               const v = valueOf(m);
-              const h = v > 0 ? Math.max(3, Math.round((v / max) * plotHeight)) : 0;
+              const h = v !== 0 ? Math.max(3, Math.round(Math.abs(scaleY(v)))) : 0;
               const cx = axisWidth + i * plotSlot + plotSlot / 2;
               const x = cx - barWidth / 2;
-              const y = baselineY - h;
+              const y = v >= 0 ? baselineY - h : baselineY;
+              const barFill = isMargin ? (v < 0 ? "var(--danger)" : "var(--success)") : "var(--accent)";
               const sel = isSelected(m);
               const dim = !!selected && !sel && months.some(isSelected);
               const isHover = hover === i;
@@ -189,7 +203,7 @@ export function MonthlyChart({
                   role="button"
                   tabIndex={0}
                   aria-pressed={sel}
-                  aria-label={`${label}: ${zakazky(m.count)}, ${formatCurrencyRounded(m.revenue)}. Kliknutím zúžíte výběr.`}
+                  aria-label={`${label}: ${zakazky(m.count)}, příjem ${formatCurrencyRounded(m.revenue)}, marže ${formatCurrencyRounded(m.margin)}. Kliknutím zúžíte výběr.`}
                   style={{ cursor: "pointer", outline: "none" }}
                   onClick={() => onSelect(m.year, m.monthIndex)}
                   onKeyDown={(e) => {
@@ -222,17 +236,17 @@ export function MonthlyChart({
                       width={barWidth}
                       height={h}
                       rx={Math.min(6, barWidth / 3)}
-                      fill="var(--accent)"
+                      fill={barFill}
                       opacity={sel ? 1 : dim ? 0.35 : isHover ? 1 : 0.8}
                       style={{ transition: "opacity 0.15s ease" }}
                     />
                   ) : (
                     <rect x={x} y={baselineY - 2} width={barWidth} height={2} fill="var(--border)" />
                   )}
-                  {labelsFit && v > 0 && (
+                  {labelsFit && v !== 0 && (
                     <text
                       x={cx}
-                      y={y - 6}
+                      y={v >= 0 ? y - 6 : baselineY + h + 12}
                       textAnchor="middle"
                       fontSize={LABEL_FONT}
                       fontWeight={sel ? 800 : 600}
@@ -243,7 +257,7 @@ export function MonthlyChart({
                   )}
                   <text
                     x={cx}
-                    y={baselineY + 18}
+                    y={PAD_TOP + plotHeight + 18}
                     textAnchor="middle"
                     fontSize={LABEL_FONT}
                     fontWeight={sel ? 800 : 500}
@@ -267,7 +281,7 @@ export function MonthlyChart({
                   Math.max(0, axisWidth + hover * plotSlot + plotSlot / 2 - 90),
                   Math.max(0, svgWidth - 180)
                 ),
-                top: Math.max(0, baselineY - Math.round((valueOf(hovered) / max) * plotHeight) - 62),
+                top: Math.max(0, baselineY - Math.round(Math.max(0, scaleY(valueOf(hovered)))) - 76),
                 width: 180,
                 pointerEvents: "none",
                 background: "var(--panel)",
@@ -292,6 +306,10 @@ export function MonthlyChart({
                 <span style={{ color: "var(--muted)" }}>Příjem</span>
                 <span>{formatCurrencyRounded(hovered.revenue)}</span>
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)" }}>
+                <span style={{ color: "var(--muted)" }}>Marže</span>
+                <span style={{ color: hovered.margin < 0 ? "var(--danger-text)" : undefined }}>{formatCurrencyRounded(hovered.margin)}</span>
+              </div>
             </div>
           )}
         </div>
@@ -313,6 +331,7 @@ export function MonthlyChart({
                 <th style={thStyle("left")}>Měsíc</th>
                 <th style={thStyle("right")}>Zakázky</th>
                 <th style={thStyle("right")}>Příjem</th>
+                <th style={thStyle("right")}>Marže</th>
                 <th style={thStyle("right")}>Průměr na zakázku</th>
               </tr>
             </thead>
@@ -333,6 +352,9 @@ export function MonthlyChart({
                     </td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>{celeCislo(m.count)}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>{formatCurrencyRounded(m.revenue)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right", color: m.margin < 0 ? "var(--danger-text)" : undefined }}>
+                      {formatCurrencyRounded(m.margin)}
+                    </td>
                     <td style={{ ...tdStyle, textAlign: "right", color: "var(--muted)" }}>
                       {m.count > 0 ? formatCurrencyRounded(m.revenue / m.count) : "—"}
                     </td>

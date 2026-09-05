@@ -10,6 +10,7 @@
  */
 
 import { getSupabaseClient } from "./supabaseClient";
+import { reportSilent } from "./reportError";
 
 export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled";
 
@@ -547,4 +548,187 @@ export function textObjednavky(
   const hlava = [`Objednávka ${order.number}`, supplier ? `Dodavatel: ${supplier.name}` : null].filter(Boolean);
   const pata = order.note ? ["", `Poznámka: ${order.note}`] : [];
   return [...hlava, "", ...radky, ...pata].join("\n");
+}
+
+/* ---------- rezervace dílů ze zakázky ---------- */
+/*
+ * RPC inventory_reserve_for_repair / inventory_release_reservations /
+ * inventory_consume_ticket (migrace 20260905100000). Volá se z detailu
+ * zakázky vedle úprav oprav a změny stavu, proto všechno selhává měkce:
+ * `null` = nepodařilo se (chybějící funkce na serveru se ani nehlásí),
+ * ostatní chyby jdou tiše do reportSilent. Zakázku to nikdy nezablokuje.
+ */
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Jen platná uuid – produkt z lokálního katalogu s jiným id by RPC shodil (22P02). */
+export function jenUuid(ids: readonly string[] | undefined | null): string[] {
+  return Array.from(new Set((ids ?? []).filter((x) => typeof x === "string" && UUID_RE.test(x))));
+}
+
+export type ReserveShortage = {
+  productId: string;
+  name: string;
+  /** Aktuální stav skladu (součet skladů). */
+  stock: number;
+  /** Součet živých rezervací tohoto produktu přes všechny zakázky. */
+  reservedTotal: number;
+};
+
+export type ReserveResult = { reserved: number; shortages: ReserveShortage[] };
+
+export type ConsumeShortage = {
+  productId: string;
+  name: string;
+  requested: number;
+  consumed: number;
+  missing: number;
+};
+
+export type ConsumeResult = { consumed: number; shortages: ConsumeShortage[] };
+
+export type TicketReservation = Reservation & {
+  repairEntryId: string | null;
+  productName: string;
+  createdAt: string;
+};
+
+function tichaChyba(code: string, source: string, err: DbChyba) {
+  if (jeChybaChybejicihoObjektu(err)) return;
+  reportSilent({ code, error: err, source });
+}
+
+/**
+ * Zarezervuje díly opravy pro zakázku (jeden řádek na produkt).
+ * `repairEntryId` je `id` položky v performed_repairs.
+ */
+export async function reserveForRepair(
+  ticketId: string,
+  repairEntryId: string,
+  productIds: readonly string[],
+  qty = 1,
+): Promise<ReserveResult | null> {
+  const supabase = getSupabaseClient();
+  const ids = jenUuid(productIds);
+  if (!supabase || !ticketId || ids.length === 0) return null;
+  try {
+    const res = await (supabase as any).rpc("inventory_reserve_for_repair", {
+      p_ticket_id: ticketId,
+      p_repair_entry_id: repairEntryId,
+      p_product_ids: ids,
+      p_qty: qty,
+    });
+    if (res.error) {
+      tichaChyba("inventory.reserve_failed", "purchaseOrders.reserveForRepair", res.error);
+      return null;
+    }
+    const d = (res.data ?? {}) as { reserved?: unknown; shortages?: unknown };
+    const shortages = Array.isArray(d.shortages) ? d.shortages : [];
+    return {
+      reserved: cislo(d.reserved, 0),
+      shortages: shortages.map((s: any) => ({
+        productId: String(s?.product_id ?? ""),
+        name: String(s?.name ?? "Díl"),
+        stock: cislo(s?.stock, 0),
+        reservedTotal: cislo(s?.reserved_total, 0),
+      })),
+    };
+  } catch (e) {
+    tichaChyba("inventory.reserve_failed", "purchaseOrders.reserveForRepair", { message: (e as Error)?.message });
+    return null;
+  }
+}
+
+/** Uvolní rezervace zakázky; s `repairEntryId` jen rezervace jedné opravy. Vrací počet uvolněných řádků. */
+export async function releaseReservations(ticketId: string, repairEntryId?: string | null): Promise<number | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !ticketId) return null;
+  try {
+    const res = await (supabase as any).rpc("inventory_release_reservations", {
+      p_ticket_id: ticketId,
+      p_repair_entry_id: repairEntryId ?? null,
+    });
+    if (res.error) {
+      tichaChyba("inventory.release_failed", "purchaseOrders.releaseReservations", res.error);
+      return null;
+    }
+    return cislo((res.data as { released?: unknown } | null)?.released, 0);
+  } catch (e) {
+    tichaChyba("inventory.release_failed", "purchaseOrders.releaseReservations", { message: (e as Error)?.message });
+    return null;
+  }
+}
+
+/** Odečte živé rezervace zakázky ze skladu (koncový stav zakázky). Nikdy nejde pod nulu – chybějící kusy jsou v `shortages`. */
+export async function consumeTicketReservations(ticketId: string, warehouseId?: string | null): Promise<ConsumeResult | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !ticketId) return null;
+  try {
+    const res = await (supabase as any).rpc("inventory_consume_ticket", {
+      p_ticket_id: ticketId,
+      p_warehouse_id: warehouseId ?? null,
+    });
+    if (res.error) {
+      tichaChyba("inventory.consume_failed", "purchaseOrders.consumeTicketReservations", res.error);
+      return null;
+    }
+    const d = (res.data ?? {}) as { consumed?: unknown; shortages?: unknown };
+    const shortages = Array.isArray(d.shortages) ? d.shortages : [];
+    return {
+      consumed: cislo(d.consumed, 0),
+      shortages: shortages.map((s: any) => ({
+        productId: String(s?.product_id ?? ""),
+        name: String(s?.name ?? "Díl"),
+        requested: cislo(s?.requested, 0),
+        consumed: cislo(s?.consumed, 0),
+        missing: cislo(s?.missing, 0),
+      })),
+    };
+  } catch (e) {
+    tichaChyba("inventory.consume_failed", "purchaseOrders.consumeTicketReservations", { message: (e as Error)?.message });
+    return null;
+  }
+}
+
+/** Rezervace jedné zakázky (všechny stavy) s názvy produktů. */
+export async function loadTicketReservations(ticketId: string): Promise<TicketReservation[] | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !ticketId) return null;
+  try {
+    const res = await (supabase.from("inventory_reservations") as any)
+      .select("id, service_id, product_id, ticket_id, repair_entry_id, qty, status, created_at")
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: true });
+    if (res.error) {
+      tichaChyba("inventory.reservations_load_failed", "purchaseOrders.loadTicketReservations", res.error);
+      return null;
+    }
+    type Row = {
+      id: string; service_id: string; product_id: string; ticket_id: string | null;
+      repair_entry_id: string | null; qty: number | string; status: Reservation["status"]; created_at: string;
+    };
+    const rows = (res.data ?? []) as Row[];
+    const productIds = Array.from(new Set(rows.map((r) => r.product_id)));
+    const names = new Map<string, string>();
+    if (productIds.length > 0) {
+      const pr = await (supabase.from("inventory_products") as any).select("id, name").in("id", productIds);
+      if (!pr.error) {
+        for (const p of (pr.data ?? []) as { id: string; name: string }[]) names.set(p.id, p.name);
+      }
+    }
+    return rows.map((r) => ({
+      id: r.id,
+      serviceId: r.service_id,
+      productId: r.product_id,
+      ticketId: r.ticket_id,
+      qty: cislo(r.qty, 1),
+      status: r.status,
+      repairEntryId: r.repair_entry_id ?? null,
+      productName: names.get(r.product_id) ?? "Neznámý díl",
+      createdAt: r.created_at,
+    }));
+  } catch (e) {
+    tichaChyba("inventory.reservations_load_failed", "purchaseOrders.loadTicketReservations", { message: (e as Error)?.message });
+    return null;
+  }
 }
