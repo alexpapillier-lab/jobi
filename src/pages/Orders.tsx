@@ -40,6 +40,8 @@ import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
+import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
+import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
@@ -213,6 +215,8 @@ export type TicketEx = Ticket & {
   externalId?: string;
   estimatedPrice?: number;
   performedRepairs?: PerformedRepair[];
+  /** Kontrola po opravě (tickets.test_checklist). */
+  testChecklist?: KontrolaPoOpraveData;
   
   diagnosticText?: string; // text diagnostiky
   diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
@@ -600,6 +604,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     externalId: supabaseTicket.external_id || undefined,
     estimatedPrice: supabaseTicket.estimated_price || undefined,
     performedRepairs: supabaseTicket.performed_repairs || [],
+    testChecklist: supabaseTicket.test_checklist || undefined,
     diagnosticText: supabaseTicket.diagnostic_text || undefined,
     diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
     diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
@@ -922,6 +927,7 @@ export default function Orders({
       .then(({ data }: any) => {
         setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
         setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
+        setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
       })
       .catch(() => setOrdersShowClaimsInList(false));
   }, [activeServiceId]);
@@ -935,6 +941,7 @@ export default function Orders({
         .then(({ data }: any) => {
           setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
           setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
+          setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
         })
         .catch(() => {});
     };
@@ -961,7 +968,7 @@ export default function Orders({
         const { data, error } = await fetchAllPages((from, to) =>
           (supabase!
             .from("tickets") as any)
-            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
+            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
             .eq("service_id", activeServiceId)
             .is("deleted_at", null)
             .order("created_at", { ascending: false })
@@ -1443,6 +1450,8 @@ export default function Orders({
   const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
   /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
   const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
+  /** Šablony kontroly po opravě (service_settings.config.kontrolniSeznamy, jinak výchozí). */
+  const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -2191,7 +2200,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -2835,6 +2844,17 @@ export default function Orders({
   const updatePerformedRepairProducts = useCallback((ticketId: string, repairId: string, productIds: string[]) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
   }, [upravProvedeneOpravy]);
+
+  /** Kontrola po opravě se ukládá hned – stejný důvod jako u provedených oprav. */
+  const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
+    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
+    if (!supabase) return;
+    const { error } = await (supabase.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId);
+    if (error) {
+      devLog("[kontrola] zápis selhal", error);
+      showToast("Kontrolu se nepodařilo uložit", "error");
+    }
+  }, []);
 
   const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, ...fields } : r)), false);
@@ -5916,6 +5936,7 @@ export default function Orders({
                           { id: "prijato", label: "Přijato", hotovo: true },
                           { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaKartu("detail-diagnostika") },
                           { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
+                          { id: "kontrola", label: "Kontrola po opravě", hotovo: shrnutiKontroly(t.testChecklist).dokonceno, volitelny: true, akce: "Přejít na kontrolu", onAkce: () => sjetNaKartu("detail-kontrola") },
                           {
                             id: "nabidka",
                             label: "Nabídka zákazníkovi",
@@ -7059,6 +7080,16 @@ export default function Orders({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div id="detail-kontrola" style={{ ...card, marginTop: 16 }}>
+                  <SectionHeading icon={<CheckIcon size={16} />}>Kontrola po opravě</SectionHeading>
+                  <KontrolaPoOprave
+                    kontrola={detailedTicket.testChecklist}
+                    sablony={kontrolniSeznamy}
+                    nazevZarizeni={detailedTicket.deviceLabel}
+                    onChange={(k) => void ulozKontrolu(detailedTicket.id, k)}
+                  />
                 </div>
               </>
             )}

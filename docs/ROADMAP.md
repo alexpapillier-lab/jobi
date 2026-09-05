@@ -198,14 +198,26 @@ Co převzít, podle přínosu:
 - ~~Jedna časová osa komunikace u zakázky~~ – **zamítnuto 5. 9.**: majitel
   chce SMS chat se zákazníkem a interní komentáře oddělené, ať se neplete,
   co zákazník vidí. Nevracet se k tomu.
-- `[ ]` **Zálohové faktury a dobropisy** – záloha na drahý díl je běžná; dobropis
-  při reklamaci faktury.
+- `[x]` **Zálohové faktury a dobropisy** (5. 9., migrace 20260907150000): druh
+  dokladu `invoices.kind` (faktura / zálohová ZF / dobropis DB), vlastní číselné
+  řady, „Vystavit dobropis“ z vystavené faktury (záporné položky), „Vyúčtovat
+  zálohu“ ze zaplacené proformy (odečet po sazbách DPH), související doklady
+  s prokliky, filtr druhu v seznamu, nadpis dokladu z dat (`{{title}}`), e-mail
+  podle druhu. Do iDokladu jdou jen běžné faktury. **Zbývá: přebuildovat
+  JobiDocs** (změna v `jobidocs/core`) a ověřit v ostrém: proforma bez DUZP,
+  vyúčtování na 0 Kč, dobropis bez QR, e-mail s předmětem „Dobropis DB…“.
+  Volitelně „Zálohová faktura ze zakázky“ (tlačítko v detailu).
 - `[x]` **Hodinová práce jako položka** (5. 9.): třetí režim v přidávání opravy –
   hodiny × sazba + technik; cena a čas se dopočítají, jde upravit. Na fakturu
   a dokumenty jde jako hodiny × Kč/h. Výchozí sazba servisu v Nastavení →
   Zakázky → Hodinová práce (`service_settings.config.hodinova_sazba`).
 - `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
-- `[ ]` **Testovací checklisty po opravě** podle typu zařízení, propsané do protokolu.
+- `[~]` **Kontrola po opravě** (5. 9., migrace 20260907170000): karta v detailu
+  zakázky, šablona podle názvu zařízení (telefon / počítač / obecná, vlastní
+  v Nastavení → Zakázky → Kontrola po opravě), položky OK / Chyba / Neověřeno
+  s poznámkou, ukládá se hned (`tickets.test_checklist`), krok v asistentovi.
+  **Zbývá propsat do protokolu** (proměnná pro JobiDocs a webový tisk) – čekalo,
+  než agent dokončí úpravy v `jobidocs/core` a `documentData.ts`.
 - `[x]` **Otázky při stornu zakázky** (5. 9., `StornoDialog.tsx`): při přepnutí do
   stavu, který je storno (podle klíče `cancelled`/`storno` nebo názvu Zrušeno,
   Storno, Neopraveno…), dialog s důvodem a poznámkou; zapisuje se do historie

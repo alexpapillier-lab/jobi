@@ -26,6 +26,7 @@ import { useIsNarrow } from "../hooks/useIsNarrow";
 import { DeletedTicketsSettings } from "./Settings/DeletedTicketsSettings";
 import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
+import { KontrolniSeznamySettingsSection } from "./Settings/KontrolniSeznamySettingsSection";
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
 import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
@@ -56,7 +57,7 @@ export type SettingsCategory = "company" | "orders" | "documents" | "communicati
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations"
-  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
   | "about_app" | "about_updates" | "about_help";
@@ -70,7 +71,7 @@ type SettingsSection = {
 const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
-  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders",
+  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders",
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication",
   service_team: "people", service_api: "people",
@@ -797,6 +798,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "orders_handoff_options", label: "Převzetí a předání", keywords: ["převzetí", "předání", "osobně", "pošta", "kurýr", "způsob"] },
         { key: "orders_reklamace", label: "Reklamace", keywords: ["reklamace", "seznam", "aktivní", "vše"] },
         { key: "orders_prace", label: "Hodinová práce", keywords: ["hodinová", "sazba", "práce", "technik", "hodina", "kč/h", "hodinovka"] },
+        { key: "orders_kontrola", label: "Kontrola po opravě", keywords: ["kontrola", "checklist", "kontrolní seznam", "test", "po opravě", "šablona", "protokol"] },
         { key: "orders_filters", label: "Filtry a stránkování", keywords: ["filtry", "rychlé filtry", "stránkování", "počet zakázek", "stránka", "na stránce"] },
         { key: "orders_deleted", label: "Koš smazaných zakázek", keywords: ["koš", "smazané", "smazaná zakázka", "obnovit", "obnova"] },
       ],
@@ -2097,6 +2099,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {section.subsection === "orders_device_options" && (
         <DeviceOptionsSettingsSection activeServiceId={activeServiceId} />
+      )}
+      {section.subsection === "orders_kontrola" && (
+        <KontrolniSeznamySettingsSection activeServiceId={activeServiceId} />
       )}
       {section.subsection === "orders_handoff_options" && (
         <HandoffOptionsSettingsSection activeServiceId={activeServiceId} />

@@ -62,7 +62,7 @@ test("v detailu jde přidat provedenou opravu a asistent postupu se posune", asy
   // Nová zakázka bez oprav: asistent nabízí jako další krok opravy.
   const asistent = page.getByRole("group", { name: /Postup zakázky/ });
   await expect(asistent).toBeVisible({ timeout: 20_000 });
-  await expect(asistent).toHaveAttribute("aria-label", /hotovo 1 z 6/);
+  await expect(asistent).toHaveAttribute("aria-label", /hotovo 1 z 7/);
   await expect(asistent.getByRole("button", { name: "Přejít na opravy" })).toBeVisible();
 
   await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
@@ -85,7 +85,7 @@ test("v detailu jde přidat provedenou opravu a asistent postupu se posune", asy
   // Escape by zavřel celý detail; nabídku stačí smazáním hledaného textu skrýt.
   await page.getByPlaceholder("Hledat produkt…").first().fill("");
   // Krok Opravy je hotový, dalším povinným krokem je dokončení.
-  await expect(asistent).toHaveAttribute("aria-label", /hotovo 2 z 6/);
+  await expect(asistent).toHaveAttribute("aria-label", /hotovo 2 z 7/);
   await expect(asistent).toContainText("Přepněte stav v hlavičce");
 });
 
@@ -139,6 +139,31 @@ test("hodinová práce se přidá jako hodiny × sazba", async ({ page }) => {
   await expect(page.getByText("Diagnostika a čištění (E2E)").first()).toBeVisible();
   await expect(page.getByText(/Hodinová práce · 1,5 h × 800 Kč\/h · Technik E2E/).first()).toBeVisible();
   await expect(page.getByText("1 200,00 Kč").first()).toBeVisible();
+});
+
+test("kontrola po opravě se načte podle zařízení a odškrtává", async ({ page }) => {
+  await prihlasSe(page);
+  await page.getByText(zakaznik).first().click();
+  await expect(page.getByText("Kontrola po opravě").first()).toBeVisible({ timeout: 20_000 });
+
+  // iPhone → šablona pro telefon a tablet.
+  await expect(page.getByLabel("Šablona kontroly")).toHaveValue("telefon");
+  await page.getByRole("button", { name: "Načíst kontrolní seznam" }).click();
+  await expect(page.getByText(/Telefon a tablet · ověřeno 0 z 8/).first()).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "OK – Displej a dotyk po celé ploše" }).click();
+  await expect(page.getByText(/ověřeno 1 z 8/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Chyba – Tlačítka a vibrace" }).click();
+  await page.getByLabel("Poznámka – Tlačítka a vibrace").fill("Vibrace slabší (E2E)");
+  await expect(page.getByText(/ověřeno 2 z 8 · 1 s chybou/).first()).toBeVisible();
+
+  // Uloženo hned – po obnovení stránky kontrola drží.
+  await page.waitForTimeout(1500);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByText(zakaznik).first().click();
+  await expect(page.getByText(/ověřeno 2 z 8 · 1 s chybou/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel("Poznámka – Tlačítka a vibrace")).toHaveValue("Vibrace slabší (E2E)");
 });
 
 test("při stornu se servis zeptá na důvod a zapíše ho do historie", async ({ page }) => {
