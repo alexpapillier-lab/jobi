@@ -4,6 +4,8 @@ import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig, type Ser
 import { CheckIcon, XIcon } from "./icons";
 import { demoStopa, smazatDemoData, vytvoritDemoData } from "../lib/demoData";
 import { showToast } from "./Toast";
+import { isDesktop } from "../lib/platform";
+import { isJobiDocsRunning, JOBIDOCS_DOWNLOAD_URL } from "../lib/jobidocs";
 
 /**
  * První kroky nového servisu.
@@ -22,6 +24,8 @@ type Krok = {
   hotovo: boolean;
   /** Kam odskočit; podsekce Nastavení. */
   cil?: string;
+  /** Externí odkaz místo odskoku do Nastavení (stažení JobiDocs z webu). */
+  odkaz?: string;
   akce?: string;
   volitelny?: boolean;
 };
@@ -36,6 +40,20 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
   const [skryto, setSkryto] = useState(false);
   const [maDemo, setMaDemo] = useState(false);
   const [demoBezi, setDemoBezi] = useState(false);
+  const [jobiDocsBezi, setJobiDocsBezi] = useState(false);
+
+  // Tisk dokumentů jde jen přes JobiDocs a nový servis o něm nemá jak vědět –
+  // první tisk zakázkového listu pak skončí u dialogu prohlížeče. Krok se
+  // odškrtne sám, jakmile JobiDocs běží. Ve webové verzi se dotaz na
+  // localhost přeskakuje (viz jobidocs.ts), takže tam zůstane nesplněný.
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let cancelled = false;
+    const zjisti = () => { void isJobiDocsRunning().then((ok) => { if (!cancelled) setJobiDocsBezi(ok); }); };
+    zjisti();
+    const t = window.setInterval(zjisti, 15_000);
+    return () => { cancelled = true; window.clearInterval(t); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +120,19 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
         akce: "Doplnit kontakt",
       },
       {
+        id: "jobidocs",
+        label: "Nainstalujte JobiDocs pro tisk dokumentů",
+        popis: isDesktop()
+          ? "Zakázkový a záruční list se tisknou jedním kliknutím, bez dialogu. Bez JobiDocs se tiskne přes prohlížeč."
+          : "Tisk dokumentů funguje v desktopové aplikaci s doplňkem JobiDocs. V prohlížeči dokumenty nevytisknete.",
+        hotovo: jobiDocsBezi,
+        cil: isDesktop() ? "orders_tisk_dokumentu" : undefined,
+        odkaz: isDesktop() ? undefined : JOBIDOCS_DOWNLOAD_URL,
+        akce: isDesktop() ? "Nastavit tisk" : "Stáhnout aplikaci",
+        // V prohlížeči se splnit nedá; kdyby byl povinný, seznam by se nikdy nezavřel sám.
+        volitelny: !isDesktop(),
+      },
+      {
         id: "zakazka",
         label: "Založte první zakázku",
         popis: "Vyzkoušejte si příjem i tisk, než přijde první zákazník.",
@@ -117,7 +148,7 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
         volitelny: true,
       },
     ];
-  }, [config, ticketCount, clenu]);
+  }, [config, ticketCount, clenu, jobiDocsBezi]);
 
   const hotovych = kroky.filter((k) => k.hotovo).length;
   const vsePovinneHotovo = kroky.every((k) => k.hotovo || k.volitelny);
@@ -197,10 +228,10 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
               </span>
               <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>{k.popis}</span>
             </span>
-            {!k.hotovo && k.cil && (
+            {!k.hotovo && (k.cil || k.odkaz) && (
               <button
                 type="button"
-                onClick={() => jdi(k.cil)}
+                onClick={() => (k.odkaz ? window.open(k.odkaz, "_blank", "noopener") : jdi(k.cil))}
                 style={{ flex: "0 0 auto", padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--panel)", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >
                 {k.akce ?? "Otevřít"}

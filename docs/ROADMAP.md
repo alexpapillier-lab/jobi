@@ -115,6 +115,9 @@ První tři měsíce: body 1, 2, 4.
 ### Aplikace a vydávání
 - `[x]` Podepsané a notarizované macOS buildy, OTA aktualizace, kanály
   stable / beta, JobiDocs zvlášť.
+- `[x]` Onboarding připomíná JobiDocs: karta První kroky má krok „Nainstalujte
+  JobiDocs pro tisk dokumentů" – na desktopu se odškrtne sám, když JobiDocs
+  běží, v prohlížeči vede ke stažení aplikace a je nepovinný.
 - `[~]` Windows build (workflow existuje) – otestovat instalaci, tisk přes
   JobiDocs a aktualizace na Windows.
 - `[~]` Verze pro tablet / telefon – celé flow příjmu projito na 375 px
