@@ -1155,6 +1155,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       <ThemeProvider>
         <OnlineGate>
           <TrialEnded
+            serviceId={activeServiceId}
             serviceName={aktivni?.service_name ?? "Servis"}
             services={services}
             onSwitchService={(id) => setActiveServiceId(id)}

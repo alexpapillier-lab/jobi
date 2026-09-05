@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ThemeLogo } from "./ThemeLogo";
+import { startCheckout, PODPORA_EMAIL } from "../lib/billing";
 
 /**
  * Konec zkušebního období: aplikace se zamkne, dokud si servis nevybere plán.
@@ -9,17 +11,33 @@ import { ThemeLogo } from "./ThemeLogo";
  * Přístup do aplikace).
  */
 export function TrialEnded({
+  serviceId,
   serviceName,
   services,
   onSwitchService,
   onSignOut,
 }: {
+  serviceId: string;
   serviceName: string;
   services: Array<{ service_id: string; service_name: string }>;
   onSwitchService: (serviceId: string) => void;
   onSignOut: () => void;
 }) {
   const jine = services.filter((s) => s.service_name !== serviceName);
+  const [busy, setBusy] = useState(false);
+  const [platbyVypnute, setPlatbyVypnute] = useState(false);
+  const [chyba, setChyba] = useState<string | null>(null);
+
+  const vybratPlan = async () => {
+    setBusy(true);
+    setChyba(null);
+    const res = await startCheckout(serviceId);
+    setBusy(false);
+    if (res.url) { window.location.href = res.url; return; }
+    // Než budou platby spuštěné, plán zapíná majitel aplikace ručně.
+    if (res.notConfigured) { setPlatbyVypnute(true); return; }
+    setChyba(res.error ?? "Platbu se nepodařilo otevřít.");
+  };
   return (
     <div style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", background: "var(--bg)", padding: 24, overflow: "auto" }}>
       <div style={{ width: "100%", maxWidth: 480, background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 20, padding: 28, boxShadow: "var(--shadow-soft)", textAlign: "center" }}>
@@ -35,12 +53,24 @@ export function TrialEnded({
           Zakázky, zákazníci i sklad zůstávají uložené. Jakmile bude plán aktivní, najdete všechno přesně tak, jak jste to nechali.
         </p>
 
-        <a
-          href="mailto:podpora@appjobi.com?subject=Jobi%20%E2%80%93%20v%C3%BDb%C4%9Br%20plánu&body=Dobr%C3%BD%20den%2C%20chceme%20pokra%C4%8Dovat%20v%20Jobi."
-          style={{ display: "block", padding: "12px 16px", borderRadius: 12, background: "var(--accent)", color: "#fff", fontWeight: 800, fontSize: 15, textDecoration: "none" }}
-        >
-          Vybrat plán
-        </a>
+        {platbyVypnute ? (
+          <a
+            href={`mailto:${PODPORA_EMAIL}?subject=Jobi%20%E2%80%93%20v%C3%BDb%C4%9Br%20pl%C3%A1nu`}
+            style={{ display: "block", padding: "12px 16px", borderRadius: 12, background: "var(--accent)", color: "#fff", fontWeight: 800, fontSize: 15, textDecoration: "none" }}
+          >
+            Napsat nám o plán
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void vybratPlan()}
+            disabled={busy}
+            style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "none", background: busy ? "var(--muted)" : "var(--accent)", color: "#fff", fontWeight: 800, fontSize: 15, cursor: busy ? "wait" : "pointer" }}
+          >
+            {busy ? "Otevírám…" : "Vybrat plán"}
+          </button>
+        )}
+        {chyba && <div style={{ marginTop: 10, fontSize: 12, color: "var(--danger-text)" }}>{chyba}</div>}
 
         {jine.length > 0 && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>

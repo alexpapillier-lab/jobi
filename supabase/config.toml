@@ -459,3 +459,7 @@ verify_jwt = false
 
 [functions.automations-run]
 verify_jwt = false
+
+# Stripe volá webhook bez přihlášení Jobi; identitu ověřuje podpis v hlavičce.
+[functions.billing-webhook]
+verify_jwt = false

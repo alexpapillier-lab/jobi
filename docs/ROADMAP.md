@@ -54,10 +54,13 @@ První tři měsíce: body 1, 2, 4.
   zamkne obrazovkou „Vyberte si plán“ – data zůstávají, jen se do nich nedá.
   Root owner projde vždy, plán se zapíná v Owner → Placené moduly. Zatím jen
   v klientovi; serverová kontrola zápisů přijde s platební bránou).
-- `[~]` Placené moduly – tabulka `service_entitlements` a Owner panel jsou;
-  chybí napojení na platební bránu (Stripe / GoPay) a automatické zapnutí
-  a vypnutí po platbě, faktury za předplatné.
-- `[ ]` Stránka Předplatné v Nastavení: tarif, další platba, karta, faktury.
+- `[~]` Placené moduly – `service_entitlements` a Owner panel hotové. Napojení
+  na Stripe je předpřipravené (5. 9.: tabulka `service_billing`, edge funkce
+  `billing-checkout`, `billing-portal`, `billing-webhook` s ověřením podpisu,
+  mapování cena → moduly přes lookup key). Chybí jen účet u Stripe – postup
+  v `docs/STRIPE.md`. Faktury za předplatné vystaví Stripe nebo Fakturoid.
+- `[x]` Stránka Předplatné v Nastavení (5. 9.): stav, konec zkušebního období,
+  další platba, počet poboček, odkaz do Stripe Checkout a zákaznického portálu.
 
 ### Právní
 - `[ ]` Obchodní podmínky a smlouva o zpracování osobních údajů (GDPR) –
