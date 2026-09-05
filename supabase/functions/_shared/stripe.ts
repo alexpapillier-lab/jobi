@@ -127,6 +127,8 @@ export type PlanDef = {
   modules: string[];
   /** Kolik poboček je v ceně; další jsou příplatek. */
   branchesIncluded: number;
+  /** Kolik SMS měsíčně je v ceně. 0 = modul SMS není součástí tarifu. */
+  smsIncluded: number;
   interval: "month" | "year";
   /** Stupeň tarifu – kvůli řazení a přepínači měsíčně/ročně. */
   tier: "starter" | "business" | "enterprise";
@@ -137,18 +139,21 @@ const BUSINESS = [...ZAKLAD, "accounting", "sms", "branches"];
 const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory"];
 
 export const PLANS: Record<string, PlanDef> = {
-  jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, interval: "month", tier: "starter" },
-  jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, interval: "year", tier: "starter" },
-  jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, interval: "month", tier: "business" },
-  jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, interval: "year", tier: "business" },
-  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, interval: "month", tier: "enterprise" },
-  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, interval: "year", tier: "enterprise" },
+  jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "month", tier: "starter" },
+  jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "year", tier: "starter" },
+  jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "month", tier: "business" },
+  jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "year", tier: "business" },
+  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 1000, interval: "month", tier: "enterprise" },
+  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 1000, interval: "year", tier: "enterprise" },
 };
 
-/** Příplatky. `branches` se násobí množstvím u položky předplatného. */
-export const ADDONS: Record<string, { modules?: string[]; branches?: number }> = {
-  jobi_sms_addon_monthly: { modules: ["sms"] },
-  jobi_sms_addon_yearly: { modules: ["sms"] },
+/**
+ * Příplatky. `branches` a `sms` se násobí množstvím u položky předplatného,
+ * takže dva balíčky SMS znamenají dvojnásobný měsíční strop.
+ */
+export const ADDONS: Record<string, { modules?: string[]; branches?: number; sms?: number }> = {
+  jobi_sms_addon_monthly: { modules: ["sms"], sms: 100 },
+  jobi_sms_addon_yearly: { modules: ["sms"], sms: 100 },
   jobi_branch_addon_monthly: { branches: 1 },
   jobi_branch_addon_yearly: { branches: 1 },
 };

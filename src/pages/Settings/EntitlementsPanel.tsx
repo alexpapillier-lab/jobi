@@ -66,7 +66,7 @@ const MODULE_LABELS: Record<string, string> = {
 };
 
 /** Popisek jednotky u modulů prodávaných po kusech. */
-const QUOTA_UNIT: Record<string, string> = { branches: "poboček" };
+const QUOTA_UNIT: Record<string, string> = { branches: "poboček", sms: "SMS měsíčně" };
 
 async function callManage(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string; entitlements?: Row[]; modules?: string[]; quotaModules?: string[]; branchCounts?: Record<string, number>; billing?: Record<string, BillingRow>; integrations?: Record<string, string[]> }> {
   const client = supabase;
@@ -337,7 +337,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
                             color: "var(--text)", fontSize: "var(--text-xs)", fontWeight: 700, textAlign: "center",
                           }}
                         />
-                        <span style={{ fontVariantNumeric: "tabular-nums" }}>· má {used}</span>
+                        {m === "branches" && <span style={{ fontVariantNumeric: "tabular-nums" }}>· má {used}</span>}
                       </label>
                     )}
                   </span>

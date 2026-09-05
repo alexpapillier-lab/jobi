@@ -27,7 +27,7 @@ const corsHeaders = {
 const KNOWN_MODULES = ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting"] as const;
 
 /** Moduly, které se prodávají po kusech – u nich má smysl `quota`. */
-const QUOTA_MODULES = ["branches"];
+const QUOTA_MODULES = ["branches", "sms"];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

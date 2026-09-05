@@ -55,14 +55,19 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
   // Moduly = co dává tarif plus co přidávají příplatky (SMS u Starteru).
   const moduly = new Set<string>(plan?.modules ?? []);
   let pobocekNavic = 0;
+  let smsNavic = 0;
   for (const i of polozky) {
     const key = i.price?.lookup_key;
     if (!key || !(key in ADDONS)) continue;
     const addon = ADDONS[key];
     for (const m of addon.modules ?? []) moduly.add(m);
     if (addon.branches) pobocekNavic += addon.branches * (i.quantity ?? 0);
+    if (addon.sms) smsNavic += addon.sms * (i.quantity ?? 0);
   }
   const pobocekCelkem = (plan?.branchesIncluded ?? 0) + pobocekNavic;
+  // Balíček SMS: co dává tarif plus dokoupené balíčky. Je to strop na měsíc,
+  // nad něj se neodesílá (viz sms-send) – nic se nedoúčtovává.
+  const smsCelkem = (plan?.smsIncluded ?? 0) + smsNavic;
 
   const plati = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
   const konec = new Date((sub.current_period_end || 0) * 1000);
@@ -94,6 +99,7 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     };
     // Kolik poboček tarif zahrnuje plus kolik se jich dokoupilo.
     if (modul === "branches") radek.quota = Math.max(1, pobocekCelkem);
+    if (modul === "sms") radek.quota = smsCelkem > 0 ? smsCelkem : null;
     await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
   }
 }

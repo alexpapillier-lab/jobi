@@ -15,6 +15,33 @@ const corsHeaders = {
 const TWILIO_BASE = "https://api.twilio.com/2010-04-01";
 const SMS_MAX_BODY_LENGTH = 1600; // Twilio concatenated SMS limit
 
+/**
+ * SMS se posílají bez diakritiky. Znak s háčkem přepne zprávu do kódování
+ * UCS-2, kde se místo 160 znaků vejde jen 70 – běžná zpráva o hotové
+ * zakázce tak stojí dvakrát tolik. Zákazník rozdíl nepozná, účet ano.
+ */
+function bezDiakritiky(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    // Pár znaků, které rozklad NFD neřeší.
+    .replace(/[ĐđŁłØøÆæŒœß]/g, (z) => ({ "Đ": "D", "đ": "d", "Ł": "L", "ł": "l", "Ø": "O", "ø": "o", "Æ": "AE", "æ": "ae", "Œ": "OE", "œ": "oe", "ß": "ss" }[z] ?? z))
+    .normalize("NFC");
+}
+
+/** Kolik segmentů (a tedy kolik zpráv z balíčku) zpráva spotřebuje. */
+function segmentu(text: string): number {
+  const delka = text.length;
+  if (delka === 0) return 1;
+  return delka <= 160 ? 1 : Math.ceil(delka / 153);
+}
+
+/** Začátek aktuálního měsíce – balíček SMS se počítá po kalendářních měsících. */
+function zacatekMesice(): string {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+}
+
 function twilioAuthHeader(accountSid: string, authToken: string): string {
   const encoded = btoa(`${accountSid}:${authToken}`);
   return `Basic ${encoded}`;
@@ -144,6 +171,44 @@ serve(async (req) => {
       );
     }
 
+    // Balíček SMS: kolik segmentů má servis na měsíc. `quota` u nároku je
+    // strop, ne přesah – co je nad, se neodešle. Zákazník tak nemůže dostat
+    // účet, se kterým nepočítal, a my nemusíme nic doúčtovávat.
+    const { data: naroky } = await svc
+      .from("service_entitlements")
+      .select("quota")
+      .eq("service_id", serviceId)
+      .eq("module", "sms")
+      .maybeSingle();
+    const limit = typeof naroky?.quota === "number" ? naroky.quota : null;
+
+    const textBezDiakritiky = bezDiakritiky(messageBody);
+    const potreba = segmentu(textBezDiakritiky);
+
+    if (limit !== null) {
+      const { data: odeslane } = await svc
+        .from("sms_messages")
+        .select("body, conversation_id, sms_conversations!inner(service_id)")
+        .eq("direction", "outbound")
+        .eq("sms_conversations.service_id", serviceId)
+        .gte("sent_at", zacatekMesice());
+      const spotrebovano = (odeslane ?? []).reduce(
+        (soucet: number, m: { body?: string | null }) => soucet + segmentu(m.body ?? ""),
+        0,
+      );
+      if (spotrebovano + potreba > limit) {
+        return new Response(
+          JSON.stringify({
+            error: `Balíček SMS je vyčerpaný (${spotrebovano} z ${limit} za tento měsíc). Další zprávy půjdou odeslat po přechodu na vyšší tarif nebo od příštího měsíce.`,
+            quota_exceeded: true,
+            used: spotrebovano,
+            limit,
+          }),
+          { status: 402, headers: jsonHeaders },
+        );
+      }
+    }
+
     // Find or create conversation
     let conversationId: string;
     const { data: existingConv } = await svc
@@ -199,7 +264,7 @@ serve(async (req) => {
     const form = new URLSearchParams({
       From: phoneRow.twilio_number,
       To: to,
-      Body: messageBody,
+      Body: textBezDiakritiky,
     });
 
     const twilioRes = await fetch(messagesUrl, {
@@ -248,7 +313,7 @@ serve(async (req) => {
       .insert({
         conversation_id: conversationId,
         direction: "outbound",
-        body: messageBody,
+        body: textBezDiakritiky,
         twilio_sid: twilioSid,
         status: twilioData?.status ?? null,
       })
