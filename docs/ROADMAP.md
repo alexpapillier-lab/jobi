@@ -161,3 +161,34 @@ První tři měsíce: body 1, 2, 4.
 - `[ ]` Import z konkurence jako služba při přechodu (bod A10).
 - `[ ]` Pilot: 3 cizí servisy zdarma za zpětnou vazbu, teprve pak ceník.
 - `[ ]` Fakturace zákazníků Jobi (kdo vystavuje, DPH, měsíční / roční).
+
+
+## Inspirace z MyRepair (průchod jejich aplikací 5. 9. 2026)
+
+Jejich ceník: Start 390 Kč (30 zakázek, 1 uživatel), Technik 990 Kč (3 uživatelé),
+Business 2 990 Kč (10 uživatelů, 3 pobočky), Premium 6 990 Kč. Jobi s neomezenými
+uživateli za 590–1 490 Kč je pro každý servis s víc lidmi výrazně levnější – hlavní
+obchodní argument. Jejich slabina: přes padesát položek menu, Wallet program,
+newslettery, heatmapy, predikce; pro malý servis zahlcující. Jednoduchost Jobi
+držet, přebírat jen z první poloviny seznamu.
+
+Co převzít, podle přínosu:
+- `[x]` **Asistent postupu v detailu zakázky** (5. 9., `PostupZakazky.tsx`) – řádek kroků (přijato → fotky →
+  opravy → nabídka → hotovo → faktura → předáno) se zvýrazněným dalším krokem
+  a tlačítkem, které tam skočí. Nový člověk u pultu nemusí nic vědět.
+- `[ ]` **Jedna časová osa komunikace u zakázky** – SMS, poznámky týmu a události
+  portálu v jednom proudu, s rozlišením „vidí zákazník / jen tým". Dnes jsou
+  komentáře a SMS zvlášť.
+- `[ ]` **Zálohové faktury a dobropisy** – záloha na drahý díl je běžná; dobropis
+  při reklamaci faktury.
+- `[ ]` **Hodinová práce jako položka** se sazbou a technikem (dnes jen opravy
+  z ceníku nebo ruční položka).
+- `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
+- `[ ]` **Testovací checklisty po opravě** podle typu zařízení, propsané do protokolu.
+- `[ ]` **Otázky při stornu zakázky**, odpovědi do historie.
+- `[ ]` **Kontrola SPF/DMARC** u vlastní odesílací adresy e-mailů (řeší spam).
+- Kalendář a online rezervace – už bod 6.
+
+Co Jobi dělá lépe a je to argument na web: neomezení uživatelé, tisk bez dialogu
+přes JobiDocs, rezervace dílu s odpisem až v konečném stavu, marže na opravu
+a technika, rozpis nabídky propsaný po schválení do zakázky.

@@ -39,6 +39,7 @@ import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import { PortalCard } from "../components/orders/PortalCard";
+import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
@@ -5200,6 +5201,7 @@ export default function Orders({
                       Přejít na fakturu
                     </Button>
                   ) : onCreateInvoice ? (
+                    <span id="detail-vystavit-fakturu" style={{ display: "contents" }}>
                     <Button variant="soft"
                       key="create-invoice"
                       onClick={() => {
@@ -5229,6 +5231,7 @@ export default function Orders({
                     >
                       Vystavit fakturu
                     </Button>
+                    </span>
                   ) : null;
                 })()}
 
@@ -5734,6 +5737,44 @@ export default function Orders({
           <>
             {!isEditing ? (
               <>
+                {/* Kde zakázka je a co je na řadě. Kroky se čtou z dat, nic se neukládá. */}
+                {(() => {
+                  const t = detailedTicket;
+                  const maFotky = (t.diagnosticPhotosBefore?.length ?? 0) + (t.diagnosticPhotos?.length ?? 0) > 0;
+                  const maOpravy = (t.performedRepairs ?? []).some((r) => !!r.name);
+                  const nabidka = t.quoteStatus ?? "none";
+                  const maFakturu = !!invoiceIdByTicketId[t.id];
+                  const hotovo = isFinal(t.status);
+                  return (
+                    <div style={{ marginTop: 16 }}>
+                      <PostupZakazky
+                        kroky={[
+                          { id: "prijato", label: "Přijato", hotovo: true },
+                          { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaKartu("detail-diagnostika") },
+                          { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
+                          {
+                            id: "nabidka",
+                            label: "Nabídka zákazníkovi",
+                            hotovo: nabidka === "approved",
+                            volitelny: true,
+                            akce: nabidka === "sent" ? undefined : "Přejít na nabídku",
+                            onAkce: nabidka === "sent" ? undefined : () => sjetNaKartu("detail-portal"),
+                            poznamka: nabidka === "sent" ? "Čeká na schválení zákazníkem" : undefined,
+                          },
+                          {
+                            id: "faktura",
+                            label: "Faktura",
+                            hotovo: maFakturu,
+                            volitelny: true,
+                            akce: "Vystavit fakturu",
+                            onAkce: () => document.getElementById("detail-vystavit-fakturu")?.querySelector("button")?.click(),
+                          },
+                          { id: "hotovo", label: "Dokončeno a předáno", hotovo, poznamka: "Přepněte stav v hlavičce, až bude oprava hotová" },
+                        ]}
+                      />
+                    </div>
+                  );
+                })()}
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                   <div style={card}>
                     <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
@@ -6310,7 +6351,7 @@ export default function Orders({
                   </div>
                 </div>
 
-                <div style={{ ...card, marginTop: 16 }}>
+                <div id="detail-opravy" style={{ ...card, marginTop: 16 }}>
                   <SectionHeading icon={<WrenchIcon size={16} />}>Provedené opravy</SectionHeading>
 
                   <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
@@ -6453,6 +6494,7 @@ export default function Orders({
                 </div>
 
                 {activeServiceId && (
+                  <div id="detail-portal">
                   <PortalCard
                     key={detailedTicket.id}
                     ticket={detailedTicket}
@@ -6465,9 +6507,10 @@ export default function Orders({
                       setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))
                     }
                   />
+                  </div>
                 )}
 
-                <div style={{ ...card, marginTop: 16 }}>
+                <div id="detail-diagnostika" style={{ ...card, marginTop: 16 }}>
                   <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
                   
                   <div style={{ display: "grid", gap: 12 }}>
