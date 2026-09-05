@@ -117,6 +117,55 @@ export const MODUL_POPIS: Record<string, string> = {
   consolidated: "Statistiky přes všechny servisy",
 };
 
+/**
+ * Co který tarif zapíná. Ceny se v aplikaci zásadně neopisují (chodí ze
+ * Stripe), ale obsah tarifu ano – jinak by obrazovka Předplatné před spuštěním
+ * plateb ukazovala tři prázdná tlačítka a nikdo by nevěděl, co si vybírá.
+ * Zdroj pravdy je `PLANS` v supabase/functions/_shared/stripe.ts.
+ */
+export type TarifInfo = {
+  tier: "starter" | "business" | "enterprise";
+  label: string;
+  popis: string;
+  modules: string[];
+  branchesIncluded: number;
+  smsIncluded: number;
+};
+
+const ZAKLAD = ["access", "invoices"];
+const BUSINESS = [...ZAKLAD, "accounting", "sms", "branches"];
+const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory", "consolidated"];
+
+export const TARIFY: TarifInfo[] = [
+  {
+    tier: "starter",
+    label: "Starter",
+    popis: "Pro jednu dílnu, která chce mít pořádek v zakázkách a fakturách.",
+    modules: ZAKLAD,
+    branchesIncluded: 1,
+    smsIncluded: 0,
+  },
+  {
+    tier: "business",
+    label: "Business",
+    popis: "Pro servis, který posílá zákazníkům SMS a účtuje přes iDoklad nebo Fakturoid.",
+    modules: BUSINESS,
+    branchesIncluded: 1,
+    smsIncluded: 300,
+  },
+  {
+    tier: "enterprise",
+    label: "Enterprise",
+    popis: "Pro víc poboček, veřejné API a přehled přes všechny servisy dohromady.",
+    modules: ENTERPRISE,
+    branchesIncluded: 2,
+    smsIncluded: 600,
+  },
+];
+
+/** Kolik procent ušetří roční platba. Musí sedět s cenami ve Stripe. */
+export const SLEVA_ROCNE = 15;
+
 export const STATUS_LABELS: Record<string, string> = {
   trialing: "Zkušební období",
   active: "Aktivní",
