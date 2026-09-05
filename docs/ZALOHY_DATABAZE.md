@@ -115,3 +115,48 @@ Můžeš si naplánovat vlastní zálohy (např. týdně) a ukládat je mimo rep
 - **Storage:** Zálohy DB neobsahují soubory ve Storage – ty je potřeba zálohovat zvlášť, pokud na nich záleží.
 
 Plán: na Free používat ruční zálohy podle potřeby; po přechodu na Pro ($25/měsíc) spoléhat na vestavěné denní zálohy.
+
+---
+
+## 6. Automatická denní záloha (GitHub Actions)
+
+Od 5. 9. 2026 běží `.github/workflows/backup-db.yml`: každý den ve 2:30 UTC
+udělá dump, ověří ho obnovou a uloží zašifrovaný artefakt na 90 dní. Jde
+spustit i ručně (Actions → Záloha databáze → Run workflow).
+
+### Co se musí jednou nastavit
+
+V repozitáři **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Hodnota |
+|--------|---------|
+| `SUPABASE_DB_URL` | connection string i s heslem (session pooler, port 5432) – viz kapitola 1 |
+| `BACKUP_PASSPHRASE` | heslo k šifrování zálohy; **ulož si ho zvlášť**, bez něj je záloha k ničemu |
+
+Dokud secrets nejsou, workflow se ukončí hláškou, která to řekne. Nic
+nezkouší naslepo.
+
+### Co záloha obsahuje
+
+`roles.sql`, `schema.sql`, `data.sql` a `storage-soubory.csv` (seznam souborů
+v úložišti i s velikostí – **samotné soubory v záloze nejsou**, dump je nebere).
+Všechno zabalené do `zaloha-RRRRMMDD.tar.gz.gpg`, symetricky šifrované AES-256.
+
+### Zkouška obnovy
+
+Součástí běhu je krok, který zálohu nahraje do prázdného Postgresu a porovná
+počty řádků v `services`, `tickets`, `customers`, `invoices`, `repairs` a
+`service_memberships` proti ostré databázi. Když nesedí, workflow spadne.
+Smysl je jediný: o nepoužitelné záloze se má vědět hned, ne v den havárie.
+
+Na chybějících rozšířeních (pg_cron, pgjwt) a rolích Supabase krok
+nezáleží – schéma se nahrává s `ON_ERROR_STOP=0` a hlídají se data.
+
+### Rozbalení zálohy
+
+```bash
+gpg --decrypt --output zaloha.tar.gz zaloha-20260906.tar.gz.gpg
+tar -xzf zaloha.tar.gz
+```
+
+Obnova pak podle kapitoly 4.

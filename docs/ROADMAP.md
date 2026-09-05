@@ -80,10 +80,15 @@ První tři měsíce: body 1, 2, 4.
   právníkem – jsou přepsané, ne převzaté.
 
 ### Provoz a bezpečnost
-- `[~]` Zálohy DB – ruční skript existuje; potřeba automatické denní zálohy
-  mimo Supabase a vyzkoušená obnova.
-- `[ ]` Monitoring a alerting – chyby jdou do `error_logs`; chybí upozornění
-  (e-mail / Slack) a stavová stránka.
+- `[~]` Zálohy DB – hotová automatická denní záloha mimo Supabase
+  (`.github/workflows/backup-db.yml`): dump, zkouška obnovy do prázdného
+  Postgresu s porovnáním počtů řádků, šifrování AES-256 a artefakt na 90 dní.
+  Zbývá uživateli doplnit secrets `SUPABASE_DB_URL` a `BACKUP_PASSPHRASE`,
+  do té doby workflow jen napíše, co chybí. Viz `docs/ZALOHY_DATABAZE.md`.
+- `[~]` Monitoring a alerting – hotový hlídač `alerts-check` (pg_cron každou
+  hodinu, e-mail přes Resend, tlumení 6 hodin, chyby z dev serveru se
+  přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Zbývá stavová stránka a hlídání
+  zvenčí, že aplikace vůbec běží.
 - `[~]` Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
   veřejné API, capture-upload, invoice-send-email). 5. 9.: proběhlo první
   kolo z účtu technika (`scripts/rls-probe.sql`, 45 testů). Opraveno mazání

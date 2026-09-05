@@ -463,3 +463,8 @@ verify_jwt = false
 # Stripe volá webhook bez přihlášení Jobi; identitu ověřuje podpis v hlavičce.
 [functions.billing-webhook]
 verify_jwt = false
+
+# Hlídač provozu volá pg_cron, který JWT nemá – dovnitř se dostane jen se
+# sdíleným tajemstvím z Vaultu (nebo tokenem root ownera při ruční zkoušce).
+[functions.alerts-check]
+verify_jwt = false

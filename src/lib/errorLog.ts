@@ -145,7 +145,10 @@ export async function logError({ code, error, source, serviceId, context }: LogE
       message,
       stack,
       source: source ?? null,
-      context: { ...(context ?? {}), session_id: SESSION_ID },
+      // Vývojový server sype chyby, které zákazník nikdy neuvidí (hlavně
+      // „Should have a queue“ po hot reloadu). Nemažou se, jen se označí,
+      // aby je hlídač provozu nebral jako výpadek.
+      context: { ...(context ?? {}), session_id: SESSION_ID, ...(import.meta.env.DEV ? { dev: true } : {}) },
       app_version: import.meta.env.VITE_APP_VERSION ?? null,
       platform: detectPlatform(),
     });

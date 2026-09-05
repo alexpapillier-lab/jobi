@@ -1,0 +1,155 @@
+name: Záloha databáze
+
+# Supabase na Free plánu zálohy nedělá a i na Pro drží jen posledních pár dní
+# u sebe. Tohle je nezávislá denní kopie: šifrovaná, uložená mimo Supabase
+# jako artefakt téhle akce, a hned taky vyzkoušená obnovou do čistého Postgresu,
+# ať se o nepoužitelné záloze nedozvíme až v den, kdy ji budeme potřebovat.
+#
+# Potřebné secrets v repozitáři (Settings → Secrets → Actions):
+#   SUPABASE_DB_URL     connection string i s heslem (session pooler, port 5432)
+#   BACKUP_PASSPHRASE   heslo, kterým se záloha symetricky zašifruje
+# Bez nich se běh rovnou ukončí s vysvětlením.
+
+on:
+  schedule:
+    # 02:30 UTC = 04:30 v létě, 03:30 v zimě – v tu dobu nikdo nepracuje.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: zaloha-db
+  cancel-in-progress: false
+
+jobs:
+  zaloha:
+    name: Dump, šifrování a zkouška obnovy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      # Do tohohle prázdného Postgresu se záloha hned zkusí nahrát zpátky.
+      obnova:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: zkouska
+          POSTGRES_DB: obnova
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Kontrola secrets
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          HESLO: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          chybi=""
+          [ -z "$DB_URL" ] && chybi="$chybi SUPABASE_DB_URL"
+          [ -z "$HESLO" ] && chybi="$chybi BACKUP_PASSPHRASE"
+          if [ -n "$chybi" ]; then
+            echo "::error::Chybí secrets:$chybi. Nastav je v Settings → Secrets and variables → Actions. Postup je v docs/ZALOHY_DATABAZE.md."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Klient postgresql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 || sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p zaloha
+          supabase db dump --db-url "$DB_URL" -f zaloha/roles.sql --role-only
+          supabase db dump --db-url "$DB_URL" -f zaloha/schema.sql
+          supabase db dump --db-url "$DB_URL" -f zaloha/data.sql --use-copy --data-only
+          # Soubory ve Storage v dumpu nejsou – aspoň si uložíme jejich seznam,
+          # ať je po havárii vidět, co chybí.
+          psql "$DB_URL" -At -F ',' -c \
+            "select bucket_id, name, coalesce((metadata->>'size')::bigint, 0), created_at from storage.objects order by bucket_id, name" \
+            > zaloha/storage-soubory.csv
+          ls -lh zaloha
+
+      - name: Zkouška obnovy do čistého Postgresu
+        env:
+          PGPASSWORD: zkouska
+        run: |
+          set -uo pipefail
+          C="psql -h localhost -p 5432 -U postgres -d obnova -v ON_ERROR_STOP=0 -q"
+          # Supabase dump počítá s rolemi a schématy, které v holém Postgresu
+          # nejsou. Doplníme jen tolik, aby prošla data; na chybějících
+          # rozšířeních (pg_cron, pgjwt) nám při zkoušce obnovy nezáleží.
+          $C -c "
+            do \$\$ begin
+              perform 1 from pg_roles where rolname='anon'; if not found then create role anon nologin; end if;
+              perform 1 from pg_roles where rolname='authenticated'; if not found then create role authenticated nologin; end if;
+              perform 1 from pg_roles where rolname='service_role'; if not found then create role service_role nologin; end if;
+              perform 1 from pg_roles where rolname='supabase_admin'; if not found then create role supabase_admin nologin; end if;
+              perform 1 from pg_roles where rolname='supabase_auth_admin'; if not found then create role supabase_auth_admin nologin; end if;
+              perform 1 from pg_roles where rolname='supabase_storage_admin'; if not found then create role supabase_storage_admin nologin; end if;
+              perform 1 from pg_roles where rolname='authenticator'; if not found then create role authenticator nologin; end if;
+            end \$\$;"
+          $C -c "create schema if not exists auth; create schema if not exists storage; create schema if not exists extensions;"
+          $C -c "create extension if not exists pgcrypto with schema extensions; create extension if not exists \"uuid-ossp\" with schema extensions;"
+          $C -f zaloha/schema.sql > /tmp/schema.log 2>&1 || true
+          $C -f zaloha/data.sql > /tmp/data.log 2>&1 || true
+          echo "Chyby při obnově schématu: $(grep -c '^ERROR' /tmp/schema.log || true)"
+          echo "Chyby při obnově dat: $(grep -c '^ERROR' /tmp/data.log || true)"
+          tail -20 /tmp/data.log || true
+
+      - name: Kontrola obnovených dat
+        env:
+          PGPASSWORD: zkouska
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          # Záloha je k něčemu jen tehdy, když se z ní data opravdu vrátí.
+          # Porovnáme počty řádků v klíčových tabulkách proti ostré databázi.
+          TABULKY="services tickets customers invoices repairs service_memberships"
+          chyba=0
+          for t in $TABULKY; do
+            ostre=$(psql "$DB_URL" -At -c "select count(*) from public.$t")
+            obnovene=$(psql -h localhost -p 5432 -U postgres -d obnova -At -c "select count(*) from public.$t" 2>/dev/null || echo "CHYBA")
+            printf "%-22s ostré=%-8s obnovené=%s\n" "$t" "$ostre" "$obnovene"
+            if [ "$ostre" != "$obnovene" ]; then chyba=1; fi
+          done
+          if [ "$chyba" = "1" ]; then
+            echo "::error::Obnovená záloha nesedí s ostrou databází. Záloha není použitelná – podívej se na logy kroku Zkouška obnovy."
+            exit 1
+          fi
+          echo "Obnova ověřena: počty řádků sedí."
+
+      - name: Zašifrování
+        env:
+          HESLO: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          DATUM=$(date -u +%Y%m%d)
+          tar -czf "zaloha-$DATUM.tar.gz" -C zaloha .
+          # Bez šifrování by kompletní databáze zákazníků ležela v artefaktu
+          # přístupném každému, kdo se dostane do repozitáře.
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+              --passphrase "$HESLO" \
+              -o "zaloha-$DATUM.tar.gz.gpg" "zaloha-$DATUM.tar.gz"
+          rm -rf zaloha "zaloha-$DATUM.tar.gz"
+          ls -lh "zaloha-$DATUM.tar.gz.gpg"
+          echo "DATUM=$DATUM" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zaloha-db-${{ env.DATUM }}
+          path: zaloha-*.tar.gz.gpg
+          retention-days: 90
+          if-no-files-found: error
