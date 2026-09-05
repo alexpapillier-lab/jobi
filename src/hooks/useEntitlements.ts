@@ -110,6 +110,19 @@ export function useEntitlements(activeServiceId: string | null): State & {
     };
   }, [activeServiceId, tick]);
 
+  // Id servisu zůstává v localStorage i po odhlášení, takže při dalším
+  // přihlášení je známé dřív než uživatel. První dotaz na nároky pak odejde
+  // bez přihlášení, RLS vrátí prázdno a aplikace ukáže „Zkušební období
+  // skončilo“ – dokud si člověk stránku ručně neobnoví. Po přihlášení nebo
+  // odhlášení se proto nároky načtou znovu.
+  useEffect(() => {
+    if (!supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") setTick((t) => t + 1);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
   const has = useCallback((m: ModuleName) => modules.has(m), [modules]);
   const quota = useCallback((m: ModuleName) => quotas[m] ?? null, [quotas]);
   const refresh = useCallback(() => setTick((t) => t + 1), []);

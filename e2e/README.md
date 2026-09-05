@@ -61,3 +61,22 @@ delete from tickets where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
 - **Napovídač zařízení leží přes tlačítko Vytvořit zakázku.** Zavře se
   vyplněním dalšího pole; Escape zavře celé okno, ne jen napovídač.
 - **Okno je široké 1440×1000.** V menším se spodní lišta překrývá s obsahem.
+
+## Ukázkový servis pro snímky na web
+
+Kromě testovacího servisu má účet `e2e@jobi.test` ještě „Servis Novák"
+(`72de5c11-6c2d-486a-9a44-dd0a9060cf97`) s vymyšlenými, ale věrohodnými
+daty. Slouží jen k fotografování obrazovek pro appjobi.com:
+
+```bash
+E2E_PASSWORD='…' node scripts/snimky-pro-web.mjs
+```
+
+Skript se přihlásí, podstrčí aktivní servis přes `localStorage` a uloží
+sedm snímků do `web/img/`. Pak je zmenšete (`sips -Z 1600`, `pngquant`).
+Nároky servisu jsou trvalé – zkušební období by jinak po měsíci skončilo
+a snímky by ukazovaly zamykací obrazovku.
+
+Hesla testovacích účtů jsou jen v GitHub secrets. Když je potřeba spustit
+něco místně a heslo není k dispozici, nastaví se nové podle postupu výš
+a secret se přepíše – nic jiného na starém hesle nezávisí.
