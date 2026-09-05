@@ -33,8 +33,8 @@ export const PROVIDER_FIELDS: Record<IntegrationProvider, ProviderField[]> = {
 };
 
 export const PROVIDER_HELP: Record<IntegrationProvider, string> = {
-  idoklad: "V iDokladu otevřete Nastavení → Uživatel a úplně dole je sekce Nastavení API s klíči Client Id a Client Secret; když jsou prázdné, klikněte na Generovat. Karta Aplikace → API ukazuje jen připojené aplikace, klíče tam nejsou.",
-  fakturoid: "Ve Fakturoidu otevřete Nastavení → Uživatelský účet a v části pro API si vytvořte přístup typu Client Credentials. Název účtu je v adrese app.fakturoid.cz/<účet>.",
+  idoklad: "V iDokladu jsou klíče v Nastavení → Aplikace → API, sekce Klíče pro použití v API, tlačítko Vygenerovat. Ukáže se až od tarifu Oblíbený – tarify Zdarma a Základní mají API vypnuté a sekce v nich chybí.",
+  fakturoid: "Ve Fakturoidu otevřete Nastavení → Uživatelský účet a v části pro API si vytvořte přístup typu Client Credentials. Název účtu je v adrese app.fakturoid.cz/<účet>. API má i tarif zdarma.",
 };
 
 export type IntegrationRow = {
