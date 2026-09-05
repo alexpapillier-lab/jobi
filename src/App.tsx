@@ -12,6 +12,7 @@ import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { FirstServiceSetup } from "./components/FirstServiceSetup";
 import { AppLayout } from "./layout/AppLayout";
 import type { NavKey } from "./layout/Sidebar";
 import { StatusesProvider } from "./state/StatusesStore";
@@ -207,6 +208,8 @@ export default function App() {
   }, [activeServiceId, presenceUserId, presenceNickname, presenceAvatarUrl]);
   const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
+  /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
+  const [servicesLoaded, setServicesLoaded] = useState(false);
 
   // Track previous activeServiceId for service change detection
   const prevActiveServiceIdRef = useRef<string | null>(activeServiceId);
@@ -607,10 +610,12 @@ export default function App() {
         });
         if (runId !== servicesListRunRef.current) return;
         if (error || !data?.services) {
+          setServicesLoaded(true);
           return;
         }
         
         const servicesList = (data.services as Array<{ service_id: string; service_name: string; role: string }>) || [];
+        setServicesLoaded(true);
         if (servicesList.length === 0) {
           return;
         }
@@ -1105,6 +1110,27 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         <div style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", background: "var(--bg, #f5f5f5)", color: "var(--muted, #666)", fontFamily: "system-ui, -apple-system, sans-serif", fontSize: 14 }}>
           Načítám…
         </div>
+      </ThemeProvider>
+    );
+  }
+
+  /*
+   * Po registraci bez servisu: nabídnout jeho založení. Dřív se člověk díval
+   * na prázdnou aplikaci a čekal, až mu servis někdo vytvoří ručně.
+   */
+  if (servicesLoaded && services.length === 0 && session) {
+    return (
+      <ThemeProvider>
+        <OnlineGate>
+          <FirstServiceSetup
+            email={session.user?.email ?? null}
+            onCreated={(serviceId) => {
+              setActiveServiceId(serviceId);
+              void refreshServices();
+            }}
+            onSignOut={() => { void supabase?.auth.signOut(); }}
+          />
+        </OnlineGate>
       </ThemeProvider>
     );
   }
