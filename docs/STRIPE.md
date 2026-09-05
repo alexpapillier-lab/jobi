@@ -15,13 +15,13 @@ kdykoli změnit bez zásahu do aplikace.
 |---|---|---|
 | Starter měsíčně | 590 Kč / měsíc | `jobi_starter_monthly` |
 | Starter ročně | 6 012 Kč / rok | `jobi_starter_yearly` |
-| Business měsíčně | 1 190 Kč / měsíc | `jobi_business_monthly` |
-| Business ročně | 12 138 Kč / rok | `jobi_business_yearly` |
+| Business měsíčně | 1 490 Kč / měsíc | `jobi_business_monthly` |
+| Business ročně | 15 198 Kč / rok | `jobi_business_yearly` |
 | Enterprise měsíčně | 2 490 Kč / měsíc | `jobi_enterprise_monthly` |
 | Enterprise ročně | 25 398 Kč / rok | `jobi_enterprise_yearly` |
 | SMS k Starteru měsíčně | 199 Kč / měsíc | `jobi_sms_addon_monthly` |
 | SMS k Starteru ročně | roční částka | `jobi_sms_addon_yearly` |
-| Pobočka navíc měsíčně | 490 Kč / měsíc | `jobi_branch_addon_monthly` |
+| Pobočka navíc měsíčně | 490 Kč / měsíc (Business i Enterprise) | `jobi_branch_addon_monthly` |
 | Pobočka navíc ročně | roční částka | `jobi_branch_addon_yearly` |
 
 Co který tarif zapíná, je v `supabase/functions/_shared/stripe.ts` (`PLANS`):
