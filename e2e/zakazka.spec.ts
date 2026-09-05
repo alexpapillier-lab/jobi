@@ -122,3 +122,31 @@ test("asistent postupu jde skrýt křížkem a zapnout v Nastavení", async ({ p
     await zapniAsistenta(page);
   }
 });
+
+test("při stornu se servis zeptá na důvod a zapíše ho do historie", async ({ page }) => {
+  await prihlasSe(page);
+  await page.getByText(zakaznik).first().click();
+
+  // Přepínač stavu v hlavičce detailu – v seznamu za ním jsou další stejné.
+  const hlavicka = page
+    .getByText(new RegExp(`^${zakaznik} · `))
+    .first()
+    .locator("xpath=ancestor::*[.//button[contains(., 'Přijato')]][1]");
+  await hlavicka.getByRole("button", { name: /Přijato/ }).first().click();
+  await page.getByRole("button", { name: "Zrušeno", exact: true }).first().click();
+
+  // Stav se ještě nezměnil – nejdřív otázka proč.
+  const dialog = page.getByRole("dialog", { name: "Proč zakázka končí?" });
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await dialog.getByLabel("Cena byla pro zákazníka vysoká").check();
+  await dialog.getByPlaceholder(/Poznámka/).fill("Nabídka 3 500 Kč, zákazník odmítl (E2E)");
+  await dialog.getByRole("button", { name: "Potvrdit storno" }).click();
+
+  await expect(hlavicka.getByRole("button", { name: /Zrušeno/ }).first()).toBeVisible({ timeout: 20_000 });
+
+  // Důvod je v historii zakázky.
+  await page.getByRole("button", { name: "Další akce" }).first().click();
+  await page.getByText("Historie", { exact: true }).first().click();
+  await expect(page.getByText("Důvod storna").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Cena byla pro zákazníka vysoká – Nabídka 3 500 Kč/).first()).toBeVisible();
+});

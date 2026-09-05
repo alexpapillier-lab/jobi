@@ -204,8 +204,15 @@ Co převzít, podle přínosu:
   z ceníku nebo ruční položka).
 - `[ ]` **Půjčení náhradního zařízení** se smlouvou k tisku.
 - `[ ]` **Testovací checklisty po opravě** podle typu zařízení, propsané do protokolu.
-- `[ ]` **Otázky při stornu zakázky**, odpovědi do historie.
-- `[ ]` **Kontrola SPF/DMARC** u vlastní odesílací adresy e-mailů (řeší spam).
+- `[x]` **Otázky při stornu zakázky** (5. 9., `StornoDialog.tsx`): při přepnutí do
+  stavu, který je storno (podle klíče `cancelled`/`storno` nebo názvu Zrušeno,
+  Storno, Neopraveno…), dialog s důvodem a poznámkou; zapisuje se do historie
+  jako `cancel_reason` (migrace 20260907160000). Stav se změní až po potvrzení.
+- `[x]` **Kontrola SPF/DMARC** (5. 9.): appjobi.com má SPF (`include:amazonses.com`
+  na doméně i `send.` subdoméně), DKIM (`resend._domainkey`) a DMARC `p=none`.
+  E-maily jdou přes Resend (`RESEND_FROM_EMAIL`). Až bude pár týdnů provozu bez
+  problémů, zpřísnit DMARC na `p=quarantine` (a ideálně přidat `rua=` adresu pro
+  reporty).
 - Kalendář a online rezervace – už bod 6.
 
 Co Jobi dělá lépe a je to argument na web: neomezení uživatelé, tisk bez dialogu

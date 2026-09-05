@@ -15,6 +15,7 @@ import { ticketDocumentData, claimDocumentData, type DocumentData } from "../lib
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { StornoDialog } from "../components/orders/StornoDialog";
 import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
 import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
@@ -1424,6 +1425,8 @@ export default function Orders({
     performedRepairs: false,
   });
 
+  /** Otázky při stornu: na kterou zakázku a do jakého stavu se čeká na odpověď. */
+  const [stornoDotaz, setStornoDotaz] = useState<{ ticketId: string; next: string } | null>(null);
   const [commentDraftByTicket, setCommentDraftByTicket] = useState<Record<string, string>>({});
   const [openQuickPrintTicket, setOpenQuickPrintTicket] = useState<TicketEx | null>(null);
   const [quickPrintDropdownRect, setQuickPrintDropdownRect] = useState<{ top: number; left: number; right: number; height: number } | null>(null);
@@ -3002,7 +3005,43 @@ export default function Orders({
     return true;
   }, [detailedClaim, editedClaim, claimResolutionDraft, updateClaim]);
 
+  /**
+   * Stav, který vypadá jako storno – servisy si stavy pojmenovávají sami,
+   * takže se poznává podle názvu. Při přechodu do něj se servis zeptá proč
+   * (StornoDialog) a odpověď uloží do historie; stav se změní až po potvrzení.
+   */
+  const jeStornoStav = (key: string) => /cancel|storno/i.test(key) || /storn|zruš|nerealiz|neopraven|odmítn/i.test(getByKey(key)?.label ?? "");
+
   const setTicketStatus = async (ticketId: string, next: string) => {
+    const soucasny = statusById[ticketId] ?? tickets.find((t) => t.id === ticketId)?.status;
+    if (jeStornoStav(next) && !jeStornoStav(String(soucasny ?? ""))) {
+      setStornoDotaz({ ticketId, next });
+      return;
+    }
+    await provedZmenuStavu(ticketId, next);
+  };
+
+  const potvrdStorno = async (odpoved: { duvod: string; poznamka: string }) => {
+    if (!stornoDotaz) return;
+    const { ticketId, next } = stornoDotaz;
+    await provedZmenuStavu(ticketId, next);
+    setStornoDotaz(null);
+    if (!supabase || !activeServiceId) return;
+    try {
+      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+      await (supabase.from("ticket_history") as any).insert({
+        ticket_id: ticketId,
+        service_id: activeServiceId,
+        action: "cancel_reason",
+        changed_by: uid,
+        details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
+      });
+    } catch (err) {
+      devLog("[storno] důvod se do historie nezapsal", err);
+    }
+  };
+
+  const provedZmenuStavu = async (ticketId: string, next: string) => {
     // Guard: check if selectedStatusKey is valid (exists in statuses array)
     if (!statusKeysSet.has(next)) {
       showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
@@ -3175,7 +3214,7 @@ export default function Orders({
       const hasSomethingToClose = smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
       if (!hasSomethingToClose) return;
       // Otevřená nabídka (našeptávač, stavy, Tisk, ⋯) si Escape zpracuje sama – nezavírat kvůli ní celé okno.
-      if (document.querySelector('[role="listbox"], [role="menu"]')) return;
+      if (document.querySelector('[role="listbox"], [role="menu"], [data-escape-vlastni]')) return;
       e.preventDefault();
       e.stopPropagation();
       if (smsPanelOpen) {
@@ -7079,6 +7118,12 @@ export default function Orders({
       )}
 
       {/* ConfirmDialog for soft delete */}
+      <StornoDialog
+        open={!!stornoDotaz}
+        nazevStavu={stornoDotaz ? getByKey(stornoDotaz.next)?.label ?? stornoDotaz.next : ""}
+        onPotvrdit={potvrdStorno}
+        onZrusit={() => setStornoDotaz(null)}
+      />
       <ConfirmDialog
         open={deleteDialogOpen}
         title="Smazat zakázku"
@@ -7281,7 +7326,7 @@ export default function Orders({
                 return (
                   <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                     {ticketHistoryEntries.map((e) => {
-                      const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action;
+                      const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action;
                       const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
                       const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
                       const statusChange = changes.find((c) => c.label === "Stav");
@@ -7299,6 +7344,12 @@ export default function Orders({
                                 )}
                               </div>
                               <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
+                              {e.action === "cancel_reason" && (
+                                <div style={{ marginTop: 4 }}>
+                                  {String((e.details as Record<string, unknown>)?.duvod ?? "")}
+                                  {(e.details as Record<string, unknown>)?.poznamka ? ` – ${String((e.details as Record<string, unknown>).poznamka)}` : ""}
+                                </div>
+                              )}
                               {e.action === "updated" && changes.length === 0 && (
                                 // Starší záznamy vznikly před migrací s plným diffem, takže
                                 // co se změnilo, se nikam neuložilo. Bez téhle věty vidí
