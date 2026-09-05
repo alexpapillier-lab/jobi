@@ -69,13 +69,13 @@
             Zakázky, zákazníci, sklad a dokumenty na jednom místě. Dokumenty se tisknou jedním kliknutím. Zákazník sleduje stav opravy přes odkaz.
           </p>
           <div class="hero-actions">
-            <a href="/servis/" class="btn btn-primary">Vyzkoušet 30&nbsp;dní zdarma</a>
-            <a href="#stazeni" class="btn btn-ghost btn-download-hero">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span id="hero-download-label">Stáhnout pro macOS</span>
+            <a href="#stazeni" class="btn btn-primary">Vyzkoušet 30&nbsp;dní zdarma</a>
+            <a href="/servis/" class="btn btn-ghost" rel="nofollow" title="Otevřít Jobi v prohlížeči – bez tisku dokumentů">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span>Prohlédnout v prohlížeči</span>
             </a>
           </div>
-          <p class="hero-sub">Bez zadávání karty · tisk přes doplněk JobiDocs</p>
+          <p class="hero-sub">30 dní bez zadávání karty · macOS i Windows · tisk přes doplněk JobiDocs</p>
         </div>
 
         <!-- Skutečný snímek aplikace z ukázkového servisu (scripts/snimky-pro-web.mjs).
@@ -291,7 +291,7 @@
               <li>Neomezený počet uživatelů</li>
               <li>SMS <span class="pricing-addon">+199&nbsp;Kč/měs za 100&nbsp;zpráv</span></li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
+            <a href="#stazeni" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
           </div>
         </article>
         <article class="pricing-card pricing-card-popular reveal" data-plan="business">
@@ -313,7 +313,7 @@
               <li>Pobočka v ceně, další <span class="pricing-addon">490&nbsp;Kč/měs</span></li>
               <li>Sklad napříč pobočkami</li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
+            <a href="#stazeni" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
           </div>
         </article>
         <article class="pricing-card reveal" data-plan="enterprise">
@@ -335,7 +335,7 @@
               <li>Veřejné API pro web servisu</li>
               <li>Prioritní podpora</li>
             </ul>
-            <a href="/servis/" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
+            <a href="#stazeni" class="btn btn-primary pricing-cta">Vyzkoušet 30&nbsp;dní zdarma</a>
             <a class="pricing-contact" href="mailto:info@appjobi.com?subject=Jobi%20Enterprise%20%E2%80%93%20nab%C3%ADdka%20pro%20s%C3%AD%C5%A5%20pobo%C4%8Dek">Nabídka pro víc poboček na vyžádání</a>
           </div>
         </article>
@@ -387,6 +387,13 @@
           <h2 id="stazeni-heading" class="download-title">Stáhnout</h2>
           <p class="download-desc">
             Nejnovější vydání z GitHubu. Jobi (hlavní aplikace) a JobiDocs (tisk a PDF) se stahují zvlášť.
+          </p>
+          <!-- Zkušební období vede sem, ne do prohlížeče: webová verze se
+               k JobiDocs nepřipojí, takže v ní nejde tisknout dokumenty
+               a servis by zkoušel půlku produktu. -->
+          <p class="download-note">
+            Zkušební období začíná prvním přihlášením v aplikaci a trvá 30 dní, bez zadávání karty.
+            Jobi jde otevřít i <a href="/servis/" rel="nofollow">v prohlížeči</a>, ale bez JobiDocs tam nevytisknete dokumenty.
           </p>
           <div class="download-os-switch" role="group" aria-label="Vyberte systém">
             <button type="button" class="download-os-btn is-active" id="os-mac" aria-pressed="true">
