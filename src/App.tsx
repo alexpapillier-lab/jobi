@@ -12,7 +12,9 @@ import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { useIsRootOwner } from "./hooks/useIsRootOwner";
 import { FirstServiceSetup } from "./components/FirstServiceSetup";
+import { TrialEnded } from "./components/TrialEnded";
 import { AppLayout } from "./layout/AppLayout";
 import type { NavKey } from "./layout/Sidebar";
 import { StatusesProvider } from "./state/StatusesStore";
@@ -234,7 +236,9 @@ export default function App() {
   );
 
   const smsProvisioned = useSmsEnabled(activeServiceId);
-  const { has: hasModule } = useEntitlements(activeServiceId);
+  const { has: hasModule, loading: entitlementsLoading } = useEntitlements(activeServiceId);
+  /** Majitel aplikace musí dovnitř i u servisu po zkušebním období. */
+  const isRootOwnerUser = useIsRootOwner();
 
   // Modul je dostupný, jen když ho má servis ZAPLACENÝ.
   // U SMS navíc musí být zřízené telefonní číslo – nárok sám o sobě nestačí.
@@ -1133,6 +1137,27 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               setActiveServiceId(serviceId);
               void refreshServices();
             }}
+            onSignOut={() => { void supabase?.auth.signOut(); }}
+          />
+        </OnlineGate>
+      </ThemeProvider>
+    );
+  }
+
+  /*
+   * Konec zkušebního období: bez platného nároku „access“ se v aplikaci
+   * nepracuje. Majitel aplikace (root owner) projde vždycky, aby měl jak
+   * nárok prodloužit.
+   */
+  if (session && activeServiceId && !entitlementsLoading && !hasModule("access") && !isRootOwnerUser) {
+    const aktivni = services.find((s) => s.service_id === activeServiceId);
+    return (
+      <ThemeProvider>
+        <OnlineGate>
+          <TrialEnded
+            serviceName={aktivni?.service_name ?? "Servis"}
+            services={services}
+            onSwitchService={(id) => setActiveServiceId(id)}
             onSignOut={() => { void supabase?.auth.signOut(); }}
           />
         </OnlineGate>

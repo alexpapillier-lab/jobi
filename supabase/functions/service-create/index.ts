@@ -25,8 +25,12 @@ const MAX_SERVICES = 3;
 
 /** Zkušební období nového servisu. */
 const TRIAL_DAYS = 30;
-/** Co je ve zkušebním období zapnuté. SMS ne – posílají se za peníze. */
-const TRIAL_MODULES = ["invoices", "accounting", "branches", "api_catalog", "api_inventory"];
+/**
+ * Co je ve zkušebním období zapnuté. `access` = smí se v aplikaci pracovat;
+ * po vypršení si servis musí vybrat plán, nic nezůstává zdarma napořád.
+ * SMS ne – posílají se za peníze a chtějí přidělené číslo.
+ */
+const TRIAL_MODULES = ["access", "invoices", "accounting", "branches", "api_catalog", "api_inventory"];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -85,9 +89,7 @@ serve(async (req) => {
       return json({ error: `Přiřazení majitele selhalo: ${membershipErr.message}` }, 500);
     }
 
-    // Zkušební období: nový servis dostane placené moduly na 30 dní, ať si
-    // člověk vyzkouší i fakturaci a pobočky. SMS se schválně nedávají –
-    // stojí peníze za odeslané zprávy a chtějí přidělené telefonní číslo.
+    // Zkušební období: celá aplikace na 30 dní, pak si servis vybere plán.
     const konecZkusebni = new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString();
     await svc
       .from("service_entitlements")

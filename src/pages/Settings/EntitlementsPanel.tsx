@@ -25,6 +25,7 @@ type Row = {
 type Service = { service_id: string; service_name: string };
 
 const MODULE_LABELS: Record<string, string> = {
+  access: "Přístup do aplikace",
   sms: "SMS",
   invoices: "Faktury",
   api_catalog: "Veřejné API – ceník",
@@ -77,7 +78,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
     try {
       const data = await callManage({ action: "list" });
       setRows(data.entitlements ?? []);
-      setModules(data.modules ?? ["sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting"]);
+      setModules(data.modules ?? ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting"]);
       setQuotaModules(data.quotaModules ?? ["branches"]);
       setBranchCounts(data.branchCounts ?? {});
       setQuotaDraft({});

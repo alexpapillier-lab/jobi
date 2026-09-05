@@ -3,10 +3,10 @@ import { useEntitlements } from "../hooks/useEntitlements";
 /**
  * Proužek se zkušebním obdobím.
  *
- * Nový servis dostane placené moduly na 30 dní. Bez tohohle by po vypršení
- * beze slova zmizely Faktury i pobočky a nikdo by nevěděl proč. Proužek
- * proto poslední týden odpočítává a po vypršení řekne, co se stalo a co dál.
- * Servisům s trvalými nároky (tedy platícím) se neukazuje vůbec.
+ * Nový servis má celou aplikaci na 30 dní; po vypršení se zamkne (viz
+ * TrialEnded), dokud si servis nevybere plán. Aby to nepřišlo bez varování,
+ * poslední týden se odpočítává. Servisům s trvalými nároky (tedy platícím)
+ * se proužek neukazuje vůbec.
  */
 const DNY_UPOZORNENI = 7;
 
@@ -46,14 +46,14 @@ export function TrialBanner({ activeServiceId }: { activeServiceId: string | nul
     >
       <span>
         {skoncilo
-          ? "Zkušební období skončilo. Faktury, pobočky a napojení na účetnictví jsou vypnuté, zakázky a sklad fungují dál."
-          : `Zkušební období končí za ${dny(trialDaysLeft)}. Pak se vypnou Faktury, pobočky a napojení na účetnictví.`}
+          ? "Zkušební období skončilo. Vyberte si plán, ať můžete pokračovat."
+          : `Zkušební období končí za ${dny(trialDaysLeft)}. Pak si vyberte plán, jinak se aplikace zamkne. Data zůstanou uložená.`}
       </span>
       <a
         href="mailto:podpora@appjobi.com?subject=Jobi%20%E2%80%93%20pokra%C4%8Dov%C3%A1n%C3%AD%20po%20zku%C5%A1ebn%C3%ADm%20obdob%C3%AD"
         style={{ color: "inherit", fontWeight: 800, textDecoration: "underline" }}
       >
-        Chci pokračovat
+        Vybrat plán
       </a>
     </div>
   );
