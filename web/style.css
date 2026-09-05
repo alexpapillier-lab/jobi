@@ -301,7 +301,8 @@ body {
 
 .mockup-window {
   width: 100%;
-  max-width: 520px;
+  /* Skutečný snímek potřebuje víc místa než dřívější kresba, jinak je text nečitelný. */
+  max-width: 640px;
   background: #fff;
   border-radius: 12px;
   box-shadow:
@@ -1463,4 +1464,78 @@ section#stazeni {
   color: rgba(255, 255, 255, 0.9);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+
+/* ---------------------------------------------------------------
+   Ukázky – skutečné obrazovky aplikace s přepínáním záložek
+   --------------------------------------------------------------- */
+.mockup-window img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ukazky { margin-top: 40px; }
+
+.ukazky-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.ukazky-tabs [role="tab"] {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.ukazky-tabs [role="tab"]:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.2); }
+.ukazky-tabs [role="tab"][aria-selected="true"] {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+/* Rám okna. Poměr stran drží místo, ať stránka při přepínání neposkakuje. */
+.ukazky-okno {
+  position: relative;
+  border-radius: var(--radius-lg, 20px);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+.ukazky-okno figure {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+.ukazky-okno img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.ukazky-okno figcaption {
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: center;
+  padding: 0 12px 4px;
+}
+
+/* Portál je snímek z telefonu – na výšku, uprostřed, ne přes celou šířku. */
+.ukazka-mobil img {
+  width: auto;
+  max-width: min(100%, 320px);
+  margin: 0 auto;
 }

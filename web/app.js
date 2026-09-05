@@ -219,3 +219,29 @@
   if (osWinBtn) osWinBtn.addEventListener("click", function () { applyOS("win"); });
   applyOS(selectedOS);
 })();
+
+
+/* Ukázky obrazovek: přepínání záložek. Bez skriptu zůstane vidět první snímek
+   a ostatní jsou `hidden`, takže stránka funguje i tak. */
+(function () {
+  var seznam = document.querySelector(".ukazky-tabs");
+  if (!seznam) return;
+  var taby = Array.prototype.slice.call(seznam.querySelectorAll('[role="tab"]'));
+  function vyber(tab) {
+    taby.forEach(function (t) {
+      var aktivni = t === tab;
+      t.setAttribute("aria-selected", aktivni ? "true" : "false");
+      t.tabIndex = aktivni ? 0 : -1;
+      var panel = document.getElementById(t.getAttribute("aria-controls"));
+      if (panel) panel.hidden = !aktivni;
+    });
+    tab.focus();
+  }
+  taby.forEach(function (t, i) {
+    t.addEventListener("click", function () { vyber(t); });
+    t.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight") vyber(taby[(i + 1) % taby.length]);
+      if (e.key === "ArrowLeft") vyber(taby[(i - 1 + taby.length) % taby.length]);
+    });
+  });
+})();

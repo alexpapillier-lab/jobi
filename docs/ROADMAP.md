@@ -136,8 +136,10 @@ První tři měsíce: body 1, 2, 4.
 
 ### Web, podpora, prodej
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
-  a aktuální funkce hotové (5. 9.); zbývá srovnání s konkurencí, screenshoty
-  nové verze a video.
+  a aktuální funkce hotové (5. 9.). Skutečné snímky aplikace z ukázkového
+  servisu v hero i v sekci Ukázky (`scripts/snimky-pro-web.mjs`), sekce
+  Jak to chodí u pultu, revize všech textů. Zbývá srovnání s konkurencí
+  a video.
 - `[x]` Nápověda: 10 kapitol na `appjobi.com/napoveda` (první kroky, příjem,
   stavy a automatizace, tisk a JobiDocs, nabídka a portál, SMS, faktury,
   sklad, tým a pobočky, import a API). V aplikaci Nastavení → Aplikace →

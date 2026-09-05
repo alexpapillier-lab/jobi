@@ -10,7 +10,7 @@
   <title>Jobi – evidence servisních zakázek</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="logo.svg" />
-  <link rel="stylesheet" href="style.css?v=202609051811" />
+  <link rel="stylesheet" href="style.css?v=202609051852" />
 </head>
 <body>
   <!-- Loading screen -->
@@ -38,6 +38,7 @@
       </a>
       <nav class="nav-links" aria-label="Hlavní navigace">
         <a href="#prubeh">Jak to chodí</a>
+        <a href="#ukazky">Ukázky</a>
         <a href="#vyhody">Co umí</a>
         <a href="#cenik">Ceník</a>
         <a href="/napoveda">Nápověda</a>
@@ -77,105 +78,12 @@
           <p class="hero-sub">Bez zadávání karty · tisk přes doplněk JobiDocs</p>
         </div>
 
-        <!-- App mockup -->
-        <div class="hero-mockup" aria-hidden="true">
+        <!-- Skutečný snímek aplikace z ukázkového servisu (scripts/snimky-pro-web.mjs).
+             Dřív tu byla ručně nakreslená napodobenina okna; návštěvník tak
+             neviděl, jak produkt opravdu vypadá. -->
+        <div class="hero-mockup">
           <div class="mockup-window">
-            <div class="mockup-titlebar">
-              <div class="mockup-traffic">
-                <span></span><span></span><span></span>
-              </div>
-              <span class="mockup-win-title">Jobi – Zakázky</span>
-            </div>
-            <div class="mockup-body">
-              <div class="mockup-sidebar">
-                <div class="ms-item ms-active">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                </div>
-                <div class="ms-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </div>
-                <div class="ms-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                </div>
-                <div class="ms-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                </div>
-                <div class="ms-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                </div>
-                <div class="ms-sep"></div>
-                <div class="ms-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
-                </div>
-              </div>
-              <div class="mockup-main">
-                <div class="mockup-topbar">
-                  <div class="mockup-topbar-left">
-                    <div class="mockup-page-title">Zakázky</div>
-                    <div class="mockup-page-sub">Spravujte zakázky a sledujte stavy</div>
-                  </div>
-                  <div class="mockup-topbar-btn">+ Nová zakázka</div>
-                </div>
-                <div class="mockup-filters">
-                  <div class="mf-pill">Vše</div>
-                  <div class="mf-pill mf-active">Aktivní</div>
-                  <div class="mf-pill">Dokončené</div>
-                </div>
-                <div class="mockup-orders">
-                  <div class="mo mo-repair">
-                    <div class="mo-head">
-                      <span class="mo-code">J-28A99Z</span>
-                      <span class="mo-date">7. 3. 2026</span>
-                      <div class="mo-status mo-repair-status"><span class="mo-dot"></span>V opravě</div>
-                    </div>
-                    <div class="mo-body">
-                      <div class="mo-device">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-                        iPhone 14 Pro <span class="mo-cust">· Jan Novák</span>
-                      </div>
-                      <div class="mo-repair-row">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                        Výměna displeje
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mo mo-received">
-                    <div class="mo-head">
-                      <span class="mo-code">J-28A98Y</span>
-                      <span class="mo-date">6. 3. 2026</span>
-                      <div class="mo-status mo-received-status"><span class="mo-dot"></span>Přijato</div>
-                    </div>
-                    <div class="mo-body">
-                      <div class="mo-device">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-                        Samsung Galaxy S24 <span class="mo-cust">· Marie Svobodová</span>
-                      </div>
-                      <div class="mo-repair-row">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                        Výměna baterie
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mo mo-done">
-                    <div class="mo-head">
-                      <span class="mo-code">J-28A97X</span>
-                      <span class="mo-date">5. 3. 2026</span>
-                      <div class="mo-status mo-done-status"><span class="mo-dot"></span>Hotovo</div>
-                    </div>
-                    <div class="mo-body">
-                      <div class="mo-device">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-                        MacBook Pro 14&quot; <span class="mo-cust">· Petr Novotný</span>
-                      </div>
-                      <div class="mo-repair-row">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                        Čištění + pasta
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <img src="img/zakazky.png" alt="Seznam zakázek v Jobi: číslo zakázky, zařízení, zákazník, závada a barevný stav" width="1600" height="1000" loading="eager" decoding="async" />
           </div>
         </div>
       </div>
@@ -215,6 +123,57 @@
           </div>
         </li>
       </ol>
+    </section>
+
+    <!-- UKÁZKY – skutečné obrazovky. Vizuální nástroj se bez obrázků neprodá;
+         tabs jsou v app.js, bez skriptu zůstane vidět první snímek. -->
+    <section id="ukazky" class="section" aria-labelledby="ukazky-heading">
+      <div class="section-eyebrow reveal">Skutečné obrazovky</div>
+      <h2 id="ukazky-heading" class="section-title reveal">Podívejte se dovnitř</h2>
+      <p class="section-desc reveal">Snímky z ukázkového servisu, žádné kresby. Takhle to vypadá první den po instalaci.</p>
+
+      <div class="ukazky reveal">
+        <div class="ukazky-tabs" role="tablist" aria-label="Obrazovky aplikace">
+          <button role="tab" aria-selected="true" aria-controls="ukazka-zakazky" id="tab-zakazky" type="button">Zakázky</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-detail" id="tab-detail" type="button" tabindex="-1">Detail zakázky</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-nova" id="tab-nova" type="button" tabindex="-1">Příjem</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-faktury" id="tab-faktury" type="button" tabindex="-1">Faktury</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-sklad" id="tab-sklad" type="button" tabindex="-1">Sklad</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-statistiky" id="tab-statistiky" type="button" tabindex="-1">Statistiky</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-portal" id="tab-portal" type="button" tabindex="-1">Zákaznický portál</button>
+        </div>
+
+        <div class="ukazky-okno">
+          <figure id="ukazka-zakazky" role="tabpanel" aria-labelledby="tab-zakazky">
+            <img src="img/zakazky.png" alt="Seznam zakázek s barevnými stavy a cenami" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Každá zakázka má číslo, zařízení, závadu a stav. Barva řádku říká, v jaké fázi je, bez čtení.</figcaption>
+          </figure>
+          <figure id="ukazka-detail" role="tabpanel" aria-labelledby="tab-detail" hidden>
+            <img src="img/detail-zakazky.png" alt="Detail zakázky se zákazníkem, zařízením a provedenými opravami" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Zákazník, zařízení, stav při převzetí a provedené opravy s cenou i náklady. Odtud se tiskne i fakturuje.</figcaption>
+          </figure>
+          <figure id="ukazka-nova" role="tabpanel" aria-labelledby="tab-nova" hidden>
+            <img src="img/nova-zakazka.png" alt="Formulář nové zakázky: zákazník, zařízení, požadovaná oprava" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Příjem je jeden formulář. Povinné je jen zařízení a telefon, zbytek doplníte, až bude potřeba.</figcaption>
+          </figure>
+          <figure id="ukazka-faktury" role="tabpanel" aria-labelledby="tab-faktury" hidden>
+            <img src="img/faktury.png" alt="Přehled faktur s částkami po splatnosti a zaplacenými" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Faktury vznikají ze zakázek. Přehled ukáže, co je nezaplacené a co po splatnosti.</figcaption>
+          </figure>
+          <figure id="ukazka-sklad" role="tabpanel" aria-labelledby="tab-sklad" hidden>
+            <img src="img/sklad.png" alt="Sklad dílů s počty kusů, nákupními cenami a minimem" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Díly s nákupní cenou a minimem. Co klesne pod minimum, je označené k objednání.</figcaption>
+          </figure>
+          <figure id="ukazka-statistiky" role="tabpanel" aria-labelledby="tab-statistiky" hidden>
+            <img src="img/statistiky.png" alt="Statistiky: příjem, náklady, zisk, marže a zakázky podle stavu" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Příjem, náklady a marže za období. Kliknutím na stav nebo opravu se výběr zúží.</figcaption>
+          </figure>
+          <figure id="ukazka-portal" role="tabpanel" aria-labelledby="tab-portal" hidden class="ukazka-mobil">
+            <img src="img/portal-mobil.png" alt="Zákaznický portál na telefonu se stavem zakázky a cenovou nabídkou" width="416" height="900" loading="lazy" decoding="async" />
+            <figcaption>Zákazník otevře odkaz v telefonu, vidí stav opravy a schválí cenovou nabídku. Bez přihlašování.</figcaption>
+          </figure>
+        </div>
+      </div>
     </section>
 
     <section id="vyhody" class="section" aria-labelledby="vyhody-heading">
@@ -491,6 +450,6 @@
     </div>
   </footer>
 
-  <script src="app.js?v=202609051811"></script>
+  <script src="app.js?v=202609051852"></script>
 </body>
 </html>
