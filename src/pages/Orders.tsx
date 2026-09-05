@@ -4077,7 +4077,12 @@ export default function Orders({
           border,
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow)",
-          padding: "0 18px 18px",
+          /* Zdola bez odsazení: patička je lepivá a drží se dna posuvné
+             oblasti, ale to dno bylo o 18 px níž než patička. V tom pruhu
+             se pod tlačítky „Zrušit / Vytvořit zakázku" posouval formulář
+             a byl vidět. Odsazení odspodu si patička dělá sama svým
+             vlastním paddingem. */
+          padding: "0 18px",
           zIndex: 1150,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -4907,7 +4912,7 @@ export default function Orders({
         </div>
 
         {/* ===== Patička – lepivá ===== */}
-        <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: 10, justifyContent: "space-between", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: -18, marginTop: 14, padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: 10, justifyContent: "space-between", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: "14px -18px 0", padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
           {!isNarrow && <span style={{ fontSize: 12, color: "var(--muted)" }}>Rozpracované údaje se ukládají automaticky</span>}
           <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {submitAttempted && createBlockedReason && (

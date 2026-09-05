@@ -11,7 +11,9 @@ import { prihlasSe } from "./pomocnici";
 /** Nastavení → Aplikace → Rozhraní. Přes hledání, protože v levém sloupci
  *  je položka podle výšky okna pod přehybem a klik na ni nemusí projít. */
 async function otevriRozhrani(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: /Nastavení/ }).first().click();
+  // Do nastavení se skáče událostí aplikace, ne klikem do postranní lišty:
+  // ta se při najetí myší rozbalí přes obsah a tlačítko se posune jinam.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
   const hledani = page.getByPlaceholder("Hledat v nastavení…");
   await expect(hledani).toBeVisible({ timeout: 20_000 });
   await hledani.fill("zobrazení zakázek");

@@ -60,7 +60,7 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
         </div>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text)", textAlign: "center" }}>Založte si servis</h1>
         <p style={{ margin: "10px 0 22px", fontSize: 14, lineHeight: 1.6, color: "var(--muted)", textAlign: "center" }}>
-          Servis je vaše dílna: zakázky, zákazníci, sklad i ceník patří k němu. Stačí název, zbytek doplníte později v Nastavení.
+          Servis je vaše provozovna: zakázky, zákazníci, sklad i ceník patří k němu. Stačí název, zbytek doplníte později v Nastavení.
         </p>
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Název servisu</label>

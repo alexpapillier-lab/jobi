@@ -155,7 +155,17 @@ export function QuoteBuilder({
         />
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 110px auto", gap: 8 }}>
+      {/*
+        Dřív to byl grid „1fr 110px auto". Na telefonu měla cena napevno
+        110 px a tlačítko svou šířku, takže na název položky zbylo 86 px –
+        míň než na cenu, přitom se do něj píše text.
+
+        Flex se zalomením se řídí skutečně dostupnou šířkou, ne šířkou okna:
+        na úzké kartě spadne cena s tlačítkem pod název, na široké zůstanou
+        všechny tři na jednom řádku. Rozhodovat to podle useIsNarrow by
+        nešlo – na tabletu je okno úzké, ale karta má místa dost.
+      */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <input
           type="text"
           value={rucniNazev}
@@ -168,7 +178,7 @@ export function QuoteBuilder({
           }}
           placeholder="Vlastní položka"
           aria-label="Název vlastní položky"
-          style={vstup}
+          style={{ ...vstup, flex: "1 1 160px", minWidth: 0 }}
         />
         <input
           type="number"
@@ -183,7 +193,7 @@ export function QuoteBuilder({
           }}
           placeholder="Kč"
           aria-label="Cena vlastní položky"
-          style={{ ...vstup, textAlign: "right" }}
+          style={{ ...vstup, textAlign: "right", flex: "1 1 110px", minWidth: 0, maxWidth: 160 }}
         />
         <button
           type="button"

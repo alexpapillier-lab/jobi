@@ -70,12 +70,19 @@ test("dva lidé zakládají zakázky naráz a čísla se nesrazí", async ({ pag
 
 test("technik nevidí, co mu servis nedal", async ({ page }) => {
   await prihlasSe(page, "technik");
-  await page.getByRole("button", { name: /Nastavení/ }).first().click();
+  // Navigace událostí, ne klikem – postranní lišta se při najetí rozbalí
+  // přes obsah a tlačítko se posune.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
   await expect(page.getByText("Statusy zakázek").first()).toBeVisible({ timeout: 20_000 });
   // Owner panel a Předplatné patří majiteli, ne členovi týmu. Kdyby se
   // podmínka v nastavení rozbila, technik by viděl fakturační údaje servisu.
   await expect(page.getByRole("button", { name: "Owner", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Předplatné", exact: true })).toHaveCount(0);
-  // Přihlášený je opravdu technik, ne majitel.
-  await expect(page.getByText(TECHNIK.prezdivka)).toHaveCount(1);
+  // Že jsme opravdu technik a ne majitel, ověříme z přihlášené relace –
+  // přezdívka je v postranní liště, která je ve výchozím stavu sbalená.
+  const email = await page.evaluate(() => {
+    const klic = Object.keys(localStorage).find((k) => k.includes("auth-token"));
+    return klic ? JSON.parse(localStorage.getItem(klic) as string)?.user?.email : null;
+  });
+  expect(email).toBe(TECHNIK.email);
 });

@@ -58,6 +58,25 @@
   select {
     max-width: 100%;
   }
+
+  /*
+   * Lepivá hlavička a patička okna Nová zakázka měly
+   * `background: var(--panel)`, což je průsvitná barva (0,92 –
+   * u barevných motivů dokonce 0,4). Přes ně proto prosvítal formulář,
+   * který se pod nimi posouval: u tlačítek „Zrušit / Vytvořit zakázku"
+   * byl čitelný text pole Příslušenství i rozbalovátko Způsob předání.
+   *
+   * Na telefonu je to nejhorší – formulář je v jednom sloupci, takže
+   * se pod patičkou posune skoro celá zakázka.
+   *
+   * Panel se proto podloží neprůhledným pozadím stránky (--bg je ve
+   * všech motivech neprůhledné). Odstín panelu tím zůstane zachovaný,
+   * jen už jím není vidět. Čtverhranné rohy pruhu ořízne okno samo –
+   * má overflow: auto a zaoblení.
+   */
+  [style*="position: fixed"] [style*="position: sticky"][style*="background: var(--panel);"] {
+    background: linear-gradient(var(--panel), var(--panel)), var(--bg) !important;
+  }
 }
 
 /*
