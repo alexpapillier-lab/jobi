@@ -674,8 +674,15 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     let currentCategory = "";
     let currentModel = "";
     let currentRepair: any = null;
+    /* Oddělovač `---` je nepovinný: bez něj další ZNAČKA/KATEGORIE/MODEL/OPRAVA
+       rozpracovanou opravu tiše zahodila a z importu zmizely celé bloky. */
+    const flushRepair = () => {
+      if (currentRepair) preview.repairs.push(currentRepair);
+      currentRepair = null;
+    };
 
     for (const line of lines) {
+      if (/^(ZNAČKA|KATEGORIE|MODEL|OPRAVA):/.test(line)) flushRepair();
       if (line.startsWith('ZNAČKA:')) {
         const brandName = line.substring(7).trim();
         if (brandName) {
@@ -760,15 +767,11 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         currentRepair.products = products;
       } else if (line.startsWith('DETALY:') && currentRepair) {
         currentRepair.details = line.substring(7).trim();
-      } else if (line === '---' && currentRepair) {
-        preview.repairs.push(currentRepair);
-        currentRepair = null;
+      } else if (line === '---') {
+        flushRepair();
       }
     }
-    // Add last repair if exists
-    if (currentRepair) {
-      preview.repairs.push(currentRepair);
-    }
+    flushRepair();
     return preview;
   };
 
@@ -886,8 +889,19 @@ DETALY: Výměna opotřebované baterie
   const executeImport = () => {
     if (!importPreview || !activeServiceId) return;
 
+    /* PRODUKTY: v souboru jsou SKU nebo názvy, v opravě musí být id produktů –
+       jinak se na ně nenaváže sklad ani rezervace. Neznámé se vynechají. */
+    const produktPodleKlice = new Map<string, string>();
+    for (const p of inventoryData.products) {
+      if (p.sku) produktPodleKlice.set(p.sku.trim().toLowerCase(), p.id);
+      produktPodleKlice.set(p.name.trim().toLowerCase(), p.id);
+    }
+    const idProduktu = (tokens: string[] | undefined): string[] =>
+      Array.from(new Set((tokens ?? []).map((t) => produktPodleKlice.get(t.trim().toLowerCase())).filter((x): x is string => !!x)));
+
     const newData = (() => {
-      const d = { ...data };
+      // Kopie polí – `push` níže by jinak měnil pole v aktuálním stavu.
+      const d: DevicesData = { brands: [...data.brands], categories: [...data.categories], models: [...data.models], repairs: [...data.repairs] };
       const brandMap = new Map<string, string>();
       const categoryMap = new Map<string, string>();
       const modelMap = new Map<string, string>();
@@ -940,7 +954,7 @@ DETALY: Výměna opotřebované baterie
               price: repair.price,
               estimatedTime: repair.time,
               costs: repair.costs,
-              productIds: repair.products || [],
+              productIds: idProduktu(repair.products).length > 0 ? idProduktu(repair.products) : undefined,
               details: repair.details || "",
               createdAt: new Date().toISOString(),
             });
@@ -1159,7 +1173,7 @@ DETALY: Výměna opotřebované baterie
             <Button variant="primary"
               onClick={executeImport} style={{ marginTop: 16, width: "100%" }}
             >
-              Provedit import ({importPreview.brands.length} značek, {importPreview.categories.length} kategorií, {importPreview.models.length} modelů, {importPreview.repairs.length} oprav)
+              Provést import ({importPreview.brands.length} značek, {importPreview.categories.length} kategorií, {importPreview.models.length} modelů, {importPreview.repairs.length} oprav)
             </Button>
           </div>
         )}

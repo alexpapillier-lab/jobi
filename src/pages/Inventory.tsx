@@ -408,6 +408,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [editWarehouseName, setEditWarehouseName] = useState("");
   /* Mazání skladu, ve kterém ještě něco leží – kusy by zmizely, tak se ptáme. */
   const [deleteWarehouseInfo, setDeleteWarehouseInfo] = useState<{ id: string; kusy: number; onConfirm: () => void } | null>(null);
+  /* Produkt čekající na potvrzení smazání. Smazání v DB kaskádou odnese i
+     zásobu, rezervace zakázek a řádky objednávek – bez dotazu to bylo na jeden klik. */
+  const [deleteProductInfo, setDeleteProductInfo] = useState<{ id: string; name: string; kusy: number; rezervovano: number } | null>(null);
   const [newProductUnassigned, setNewProductUnassigned] = useState(false);
   const [newProductCategoryName, setNewProductCategoryName] = useState("");
 
@@ -1159,6 +1162,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     showToast("Produkt smazán", "success");
   };
 
+  const askDeleteProduct = (p: Product) => {
+    setDeleteProductInfo({ id: p.id, name: p.name, kusy: p.stock, rezervovano: reservations.get(p.id) ?? 0 });
+  };
+
   /**
    * Přidání/odebrání kusu v konkrétním skladu, přímo v seznamu. Bez
    * potvrzovacího dialogu – varování u nulového skladu má smysl při ruční
@@ -1261,7 +1268,21 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   const updateProduct = (id: string, productData: { name: string; stock: string; price: string; purchasePrice: string; minStock: string; supplierId: string; supplierSku: string; sku: string; description: string; imageUrl: string; repairIds: string[]; categoryId: string; modelIds: string[] }) => {
     const stock = parseInt(productData.stock) || 0;
-    
+    /* `stock` je jen součet přes sklady a do databáze se neposílá. Když se
+       přepsal sám, karta i DB držely starý počet, ale KPI a filtry počítaly
+       s novým. Rozdíl z formuláře proto jde do naskladňovacího skladu. */
+    const sladitStavy = (p: Product): Pick<Product, "stock" | "stockByWarehouse"> => {
+      const stavy = { ...p.stockByWarehouse };
+      const cil = restockWarehouseId || vychoziSklad(data.warehouses);
+      const rozdil = stock - celkemKusu(stavy);
+      if (rozdil !== 0 && cil) {
+        const novy = Math.max(0, (stavy[cil] ?? 0) + rozdil);
+        if (novy === 0) delete stavy[cil];
+        else stavy[cil] = novy;
+      }
+      return { stockByWarehouse: stavy, stock: celkemKusu(stavy) };
+    };
+
     // Warning if stock would be less than 1
     if (stock < 1) {
       setLowStockCallback(() => () => {
@@ -1273,7 +1294,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
                   ...p,
                   name: productData.name.trim(),
                   modelIds: productData.modelIds || [],
-                  stock,
+                  ...sladitStavy(p),
                   price: parseFloat(productData.price) || 0,
                   sku: productData.sku.trim() || undefined,
                   description: productData.description.trim() || undefined,
@@ -1303,7 +1324,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
               ...p,
               name: productData.name.trim(),
               modelIds: productData.modelIds || [],
-              stock,
+              ...sladitStavy(p),
               price: parseFloat(productData.price) || 0,
               sku: productData.sku.trim() || undefined,
               description: productData.description.trim() || undefined,
@@ -2622,7 +2643,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                   Upravit
                                 </Button>
                                 <Button variant="danger" size="sm"
-                                  onClick={() => deleteProduct(p.id)} style={{ fontSize: 11 }}
+                                  onClick={() => askDeleteProduct(p)} style={{ fontSize: 11 }}
                                 >
                                   Smazat
                                 </Button>
@@ -2720,7 +2741,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
                                 Upravit
                               </Button>
                               <Button variant="danger"
-                                onClick={() => deleteProduct(p.id)} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
+                                onClick={() => askDeleteProduct(p)} style={{ padding: productDisplayMode === "compact" ? "6px 10px" : "8px 12px", fontSize: productDisplayMode === "compact" ? 11 : 12 }}
                               >
                                 Smazat
                               </Button>
@@ -3337,6 +3358,30 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           setDeleteWarehouseInfo(null);
         }}
         onCancel={() => setDeleteWarehouseInfo(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteProductInfo !== null}
+        title={deleteProductInfo ? `Smazat produkt „${deleteProductInfo.name}“?` : ""}
+        message={
+          deleteProductInfo
+            ? [
+                deleteProductInfo.kusy > 0 ? `Skladem je ${deleteProductInfo.kusy} ks, zásoba se smaže s ním.` : "",
+                deleteProductInfo.rezervovano > 0 ? `Pro zakázky je rezervováno ${deleteProductInfo.rezervovano} ks – rezervace zaniknou.` : "",
+                "Zmizí i z objednávek u dodavatele. Akci nelze vrátit zpět.",
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : ""
+        }
+        confirmLabel="Smazat produkt"
+        cancelLabel="Zrušit"
+        variant="danger"
+        onConfirm={() => {
+          if (deleteProductInfo) deleteProduct(deleteProductInfo.id);
+          setDeleteProductInfo(null);
+        }}
+        onCancel={() => setDeleteProductInfo(null)}
       />
 
       {/* ConfirmDialog for low stock warning */}

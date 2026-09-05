@@ -310,7 +310,7 @@ export function InvoiceEditor({
           <Collapsible
             title="Údaje dokladu"
             summary={[
-              invoice.number,
+              invoice.number || "číslo se přidělí při uložení",
               invoice.issue_date ? `vystaveno ${formatDate(invoice.issue_date)}` : null,
               invoice.due_date ? `splatnost ${formatDate(invoice.due_date)}` : null,
             ]
@@ -319,7 +319,7 @@ export function InvoiceEditor({
             defaultOpen={!isNew}
           >
             <FieldGrid>
-              <Field label="Číslo faktury" value={invoice.number || ""} onChange={(v) => updateField("number", v)} />
+              <Field label="Číslo faktury" value={invoice.number || ""} onChange={(v) => updateField("number", v)} placeholder="Přidělí se při uložení" />
               <Field label="Variabilní symbol" value={invoice.variable_symbol || ""} onChange={(v) => updateField("variable_symbol", v)} />
             </FieldGrid>
             <FieldGrid columns={3}>

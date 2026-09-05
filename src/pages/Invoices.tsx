@@ -7,7 +7,8 @@ import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
-import { safeLoadCompanyData } from "../lib/companyData";
+import { safeLoadCompanyData, companyCacheBelongsTo, defaultCompanyData, type CompanyData } from "../lib/companyData";
+import { loadServiceConfig } from "../lib/serviceSettingsSync";
 import { computeTotals, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
@@ -66,6 +67,21 @@ type Props = {
   /** When user wants to go to the linked order from invoice detail. */
   onOpenTicket?: (ticketId: string) => void;
 };
+
+/**
+ * Údaje dodavatele pro novou fakturu.
+ *
+ * Kopie firmy v localStorage vzniká až návštěvou Nastavení – na novém
+ * počítači by dodavatel zůstal prázdný a „Vystavit“ by skončilo hláškou.
+ * Při prázdné nebo cizí kopii se proto sáhne rovnou do service_settings.
+ */
+async function nactiFirmuServisu(serviceId: string): Promise<CompanyData> {
+  const lokalni = safeLoadCompanyData();
+  if (lokalni.name && companyCacheBelongsTo(serviceId)) return lokalni;
+  const config = await loadServiceConfig(serviceId);
+  const zDb = (config?.companyData ?? {}) as Partial<CompanyData>;
+  return { ...defaultCompanyData(), ...zDb };
+}
 
 /** Validátor bere `undefined`, databáze vrací `null` – sjednocení. */
 function toValidationData(inv: Partial<Invoice>) {
@@ -203,13 +219,14 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const openNewInvoice = useCallback(
     async (prefill?: Props["prefillFromTicket"]) => {
       if (!activeServiceId) return;
-      const number = await generateInvoiceNumber(activeServiceId);
       const today = todayIso();
-      const cd = safeLoadCompanyData();
+      const cd = await nactiFirmuServisu(activeServiceId);
 
+      // Číslo se přiděluje až při prvním uložení – rozpracovaná a zavřená
+      // faktura by jinak v číselné řadě nechala díru.
       const inv: Partial<Invoice> = {
-        number,
-        variable_symbol: invoiceNumberToVS(number),
+        number: "",
+        variable_symbol: "",
         status: "draft",
         issue_date: today,
         due_date: addDaysIso(today, 14),
@@ -336,8 +353,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     async (issue: boolean) => {
       if (!activeServiceId || saving) return;
 
+      // Nová faktura bez ručně vyplněného čísla ho dostane až po kontrole –
+      // zamítnutý pokus o uložení nesmí spálit číslo z řady.
+      const bezCisla = !editingId && !editorInvoice.number?.trim();
       const validation = issue ? validateInvoiceForIssue : validateInvoiceForSave;
-      const errors = validation(toValidationData(editorInvoice), editorItems);
+      const errors = validation(toValidationData(bezCisla ? { ...editorInvoice, number: "auto" } : editorInvoice), editorItems);
       if (errors.length > 0) {
         showToast(errors[0].message, "error");
         return;
@@ -345,10 +365,31 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
       setSaving(true);
       try {
+        const cislo = bezCisla ? await generateInvoiceNumber(activeServiceId) : editorInvoice.number!.trim();
+        const faktura: Partial<Invoice> = {
+          ...editorInvoice,
+          number: cislo,
+          variable_symbol: editorInvoice.variable_symbol?.trim() || invoiceNumberToVS(cislo),
+        };
+
+        // Číslo si lze přepsat ručně – dvě faktury se stejným číslem účetnictví nepřijme.
+        const { data: stejne, error: kolizeErr } = await typedSupabase
+          .from("invoices")
+          .select("id")
+          .eq("service_id", activeServiceId)
+          .eq("number", cislo)
+          .is("deleted_at", null)
+          .limit(2);
+        if (kolizeErr) throw kolizeErr;
+        if ((stejne ?? []).some((r) => r.id !== editingId)) {
+          showToast(`Faktura s číslem ${cislo} už existuje.`, "error");
+          return;
+        }
+
         const totals = computeTotals(editorItems);
-        const wasDraft = (editorInvoice.status || "draft") === "draft";
-        const nextStatus = issue && wasDraft ? "issued" : editorInvoice.status || "draft";
-        const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, ...rest } = editorInvoice;
+        const wasDraft = (faktura.status || "draft") === "draft";
+        const nextStatus = issue && wasDraft ? "issued" : faktura.status || "draft";
+        const { id: _id, created_at: _c, updated_at: _u, deleted_at: _d, ...rest } = faktura;
         const payload = {
           ...rest,
           service_id: activeServiceId,
@@ -391,7 +432,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         }
 
         await logEvent(invoiceId, editingId ? "updated" : "created", {
-          number: editorInvoice.number,
+          number: cislo,
           total: totals.total_rounded,
           items_count: editorItems.length,
         });
@@ -399,8 +440,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           await logEvent(invoiceId, "status_changed", { from: "draft", to: "issued" });
         }
 
-        showToast(issue && wasDraft ? `Faktura ${editorInvoice.number} vystavena` : editingId ? "Faktura uložena" : "Koncept uložen", "success");
-        setEditorBaseline(snapshot(editorInvoice, editorItems));
+        showToast(issue && wasDraft ? `Faktura ${cislo} vystavena` : editingId ? "Faktura uložena" : "Koncept uložen", "success");
+        setEditorInvoice(faktura);
+        setEditorBaseline(snapshot(faktura, editorItems));
         setView("list");
         await loadInvoices();
 

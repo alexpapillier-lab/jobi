@@ -37,12 +37,10 @@ test("ze zakázky jde vystavit faktura", async ({ page }) => {
   await page.getByText(kod, { exact: true }).click();
   await page.getByRole("button", { name: /Vystavit fakturu/ }).first().click();
 
-  // Otevře se editor faktury s předvyplněným odběratelem a číslem z řady.
+  // Otevře se editor faktury s předvyplněným odběratelem. Číslo z řady se
+  // přidělí až při uložení – zavřený koncept by jinak v řadě nechal díru.
   await expect(page.getByText("Nová faktura")).toBeVisible({ timeout: 30_000 });
-  const cislo = page.getByText(/FV\d{4}-\d+/).first();
-  await expect(cislo).toBeVisible();
-  const cisloText = ((await cislo.textContent()) ?? "").match(/FV\d{4}-\d+/)?.[0] ?? "";
-  expect(cisloText).toMatch(/^FV\d{4}-\d+$/);
+  await expect(page.getByText("číslo se přidělí při uložení").first()).toBeVisible();
 
   // Prázdnou fakturu vystavovat nebudeme – doplníme položku a vystavíme.
   await page.getByPlaceholder("Název položky").first().fill("Oprava (E2E)");
@@ -50,6 +48,11 @@ test("ze zakázky jde vystavit faktura", async ({ page }) => {
   await expect(page.getByText("1 000,00 Kč").first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Vystavit", exact: true }).click();
-  // Po vystavení se faktura objeví v seznamu se svým číslem.
+  // Po vystavení má faktura číslo z řady a hlášení ho ukáže.
+  const hlaseni = page.getByText(/Faktura FV\d{4}-\d+ vystavena/).first();
+  await expect(hlaseni).toBeVisible({ timeout: 30_000 });
+  const cisloText = ((await hlaseni.textContent()) ?? "").match(/FV\d{4}-\d+/)?.[0] ?? "";
+  expect(cisloText).toMatch(/^FV\d{4}-\d+$/);
+  // A objeví se v seznamu faktur.
   await expect(page.getByText(cisloText).first()).toBeVisible({ timeout: 30_000 });
 });

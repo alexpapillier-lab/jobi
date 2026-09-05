@@ -1707,7 +1707,10 @@ export default function Orders({
           .select("id, ticket_id")
           .eq("service_id", activeServiceId)
           .not("ticket_id", "is", null)
-          .is("deleted_at", null);
+          .is("deleted_at", null)
+          // Stornovaná faktura zakázku neblokuje – jinak by po stornu šlo
+          // jen „Přejít na fakturu“ a novou by z zakázky nebylo jak vystavit.
+          .neq("status", "cancelled");
         if (cancelled || !data) return;
         const map: Record<string, string> = {};
         for (const row of data) {
