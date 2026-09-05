@@ -143,6 +143,28 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Výkon: Statistiky se počítají na serveru (funkce `statistiky_prehled`,
   migrace 20260907120000). Odpověď pro největší servis 273 kB místo 1,65 MB
   a neroste s počtem zakázek. Zakázky se stahují jen pro režim Tabulka.
+- `[~]` **Lov chyb 5. 9. (dva agenti, reklamace+faktury a sklad+zařízení).**
+  Opraveno (commit 376830d): číslo faktury až při uložení (díry v řadě),
+  kontrola duplicitního čísla, dodavatel nové faktury ze service_settings,
+  zakázka po stornu faktury nabídne novou, Sklad (ks) při úpravě produktu se
+  ukládá do skladů, potvrzení před smazáním produktu, import katalogu bez
+  `---` a mapování PRODUKTY: na id. Zbývá:
+  - `[ ]` **Rezervace dílů vs. neuložené opravy (vysoká):** rezervace se zapisují
+    hned, provedené opravy až při zavření detailu; změna stavu vyvolá realtime
+    upsert, který neuložené opravy přepíše, rezervace zůstanou a při Dokončeno
+    se odečte díl za opravu, která v zakázce není. Řešení: ukládat
+    `performed_repairs` hned (jako `applyQuoteRepairs`) nebo v RT merge
+    zachovat lokálně rozepsaná pole. `Orders.tsx` ~ř. 2350, `addPerformedRepair`.
+  - `[ ]` Detail zakázky bere produkty z legacy localStorage
+    (`safeLoadInventoryData`), ne z DB – výběr dílů u opravy je prázdný.
+  - `[ ]` Kód reklamace vzniká na klientu jako max+1 (souběh → duplicita);
+    použít počítadlo jako `dalsi_cislo_zakazky`. Unikátní index na
+    `invoices(service_id, number)`.
+  - `[ ]` QR platba jen z IBAN – odvodit CZ IBAN z čísla účtu.
+  - `[ ]` Kosmetika: Stornovat u konceptu, „vystaveno“ u konceptu v seznamu,
+    množství „1.5 ks“, historie ukazuje id místo jména bez přezdívky, cena
+    opravy „1249.9 Kč“; „Přejít na zakázku“ u smazané zakázky bez hlášky;
+    návrat z Dokončeno nevrací díly a neřekne to.
 
 ### Web, podpora, prodej
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
