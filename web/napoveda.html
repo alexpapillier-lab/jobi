@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nápověda | Jobi</title>
+  <meta name="description" content="Jak se v Jobi dělá příjem zakázky, tisk, cenová nabídka, SMS, faktury, sklad a tým." />
+  <meta name="robots" content="index,follow" />
+  <link rel="icon" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0d14; --panel: #12151f; --border: rgba(255,255,255,0.08);
+      --text: #e8eaf2; --muted: rgba(232,234,242,0.6); --accent: #5b7cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.7; font-size: 16px;
+    }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 40px; flex-wrap: wrap; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; }
+    .brand img { width: 26px; height: 26px; }
+    .top nav { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.9rem; }
+    .top nav a { color: var(--muted); text-decoration: none; }
+    .top nav a:hover, .top nav a[aria-current] { color: var(--text); }
+    h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 8px; }
+    .lead { color: var(--muted); margin: 0 0 32px; }
+    h2 { font-size: 1.15rem; margin: 0 0 10px; scroll-margin-top: 20px; }
+    section { margin: 36px 0; }
+    p, li { color: rgba(232,234,242,0.88); }
+    ul, ol { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--accent); }
+    b { color: var(--text); font-weight: 600; }
+    kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px;
+    }
+    .obsah { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 0 0 8px; }
+    .obsah ol { margin: 0; columns: 2; column-gap: 28px; }
+    .obsah a { text-decoration: none; }
+    .obsah a:hover { text-decoration: underline; }
+    .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 36px 0 0; }
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    footer a { color: var(--muted); }
+    @media (max-width: 560px) { .obsah ol { columns: 1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="top">
+      <a class="brand" href="/"><img src="logo.svg" alt="" width="26" height="26" />Jobi</a>
+      <nav>
+        <a href="/napoveda" aria-current="page">Nápověda</a>
+        <a href="/#funkce">Funkce</a>
+        <a href="/#cenik">Ceník</a>
+        <a href="/servis/">Přihlásit se</a>
+      </nav>
+    </div>
+
+    <h1>Nápověda</h1>
+    <p class="lead">Deset kapitol, které pokryjí většinu toho, co v Jobi budete dělat.</p>
+
+    <nav class="obsah" aria-label="Obsah nápovědy">
+      <ol>
+<li><a href="#prvni-kroky">První kroky</a></li>
+<li><a href="#prijem-zakazky">Příjem zakázky</a></li>
+<li><a href="#stavy-a-automatizace">Stavy zakázek a automatizace</a></li>
+<li><a href="#tisk-a-jobidocs">Tisk a JobiDocs</a></li>
+<li><a href="#nabidka-a-portal">Cenová nabídka a zákaznický portál</a></li>
+<li><a href="#sms">SMS zákazníkům</a></li>
+<li><a href="#faktury">Faktury a účetnictví</a></li>
+<li><a href="#sklad">Sklad, díly a marže</a></li>
+<li><a href="#tym-a-pobocky">Tým, oprávnění a pobočky</a></li>
+<li><a href="#import-a-api">Import dat a veřejné API</a></li>
+      </ol>
+    </nav>
+
+<section id="prvni-kroky">
+  <h2>1. První kroky</h2>
+<p>Po registraci si založíte servis: název, který uvidí zákazníci na dokumentech, a zkratku, ze které se skládají čísla zakázek. Obojí jde později změnit v <b>Nastavení → Firma → Údaje firmy</b>.</p>
+<p>Nad seznamem zakázek se správci ukáže karta <b>První kroky</b> s pěti body: údaje firmy, zkratka, kontaktní údaje, první zakázka a pozvání kolegy. Odškrtávají se samy, jak je plníte, a po dokončení zmizí. Křížkem je schováte i pro kolegy.</p>
+<p>Než si na Jobi zvyknete, můžete si nechat přidat <b>ukázková data</b> – značku, pár oprav s cenami a jednu zakázku. Smazat je jde stejným tlačítkem a nic dalšího to nezmění.</p>
+<p>Prvních 30 dní máte celou aplikaci bez omezení. Kolik zbývá, uvidíte v <b>Nastavení → Firma → Předplatné</b>.</p>
+</section>
+
+<section id="prijem-zakazky">
+  <h2>2. Příjem zakázky</h2>
+<p>Novou zakázku založíte tlačítkem <b>+ Nová zakázka</b> nad seznamem, nebo klávesou <kbd>n</kbd>.</p>
+<p>Zákazníka stačí začít psát a Jobi napoví z těch, které už máte. U firmy vyplňte IČO, doplní se z rejstříku. Zařízení vyberete z katalogu, nebo napíšete ručně; když je model v katalogu, nabídnou se k němu rovnou opravy i s cenami.</p>
+<p>Do jedné zakázky se vejde víc zařízení. U každého se zvlášť eviduje stav při převzetí, příslušenství a fotky.</p>
+<p><b>Fotky před opravou</b> se dají nafotit telefonem: v detailu zakázky vygenerujete odkaz, otevřete ho v mobilu a fotky se objeví v zakázce. Nemusíte nic instalovat.</p>
+<p>Které údaje jsou povinné, si nastavíte v <b>Nastavení → Zakázky → Povinná pole</b>. Doporučujeme držet povinný aspoň telefon, jinak nejde poslat SMS ani odkaz na portál.</p>
+</section>
+
+<section id="stavy-a-automatizace">
+  <h2>3. Stavy zakázek a automatizace</h2>
+<p>Stavy si servis pojmenuje sám v <b>Nastavení → Zakázky → Statusy zakázek</b>: název, barva, pořadí a jestli je stav konečný. Konečné stavy odečítají díly ze skladu a zakázka se přesune mezi dokončené.</p>
+<p>Na změnu stavu se dají navěsit zprávy. V <b>Nastavení → Komunikace → Automatizace</b> nastavíte pravidlo „když se zakázka dostane do stavu X, pošli šablonu Y“ – typicky „Oprava hotová, můžete si zařízení vyzvednout“.</p>
+<p>Kromě toho umí automatizace hlídat čas: upomínku, když zakázka čeká na vyzvednutí déle než zadaný počet dní, nebo žádost o recenzi po vydání.</p>
+<p>Historie každé změny stavu zůstává v zakázce, včetně toho, kdo ji udělal.</p>
+</section>
+
+<section id="tisk-a-jobidocs">
+  <h2>4. Tisk a JobiDocs</h2>
+<p>Jobi tiskne přes doplněk <b>JobiDocs</b>. Je to samostatná malá aplikace, která běží na pozadí a umí tisknout bez dialogového okna – na příjmu tak vyjede zakázkový list jedním kliknutím.</p>
+<p>Stáhnout a zapnout ho jde v <b>Nastavení → Dokumenty a tisk → JobiDocs a automatický tisk</b>. Tam se taky nastavuje, které dokumenty se mají tisknout samy a na jaké tiskárně.</p>
+<p>Bez JobiDocs se tiskne přes prohlížeč. Funguje to, jen se pokaždé otevře tiskový dialog.</p>
+<p>Dokumenty, které Jobi umí: zakázkový list, předávací protokol, záruční list, reklamační protokol a faktura. Hlavička se bere z údajů firmy, u poboček z údajů pobočky.</p>
+</section>
+
+<section id="nabidka-a-portal">
+  <h2>5. Cenová nabídka a zákaznický portál</h2>
+<p>Každá zakázka má odkaz na <b>zákaznický portál</b>. Zákazník na něm vidí stav opravy, fotky, cenu a může podepsat převzetí. Odkaz pošlete SMS nebo zkopírujete a pošlete jak chcete.</p>
+<p><b>Cenovou nabídku</b> sestavíte v detailu zakázky v kartě Zákaznický portál. Položky přidáte z ceníku k danému zařízení nebo ručně, ceny jdou u každé přepsat. Formulář se předvyplní tím, co už na zakázce je.</p>
+<p>Zákazník uvidí rozpis položku po položce a nabídku schválí nebo zamítne. Rozhodnutí se okamžitě objeví v zakázce i s časem.</p>
+<p>Po schválení přenesete položky jedním tlačítkem do provedených oprav, takže se faktura nemůže rozejít s tím, na čem jste se dohodli.</p>
+</section>
+
+<section id="sms">
+  <h2>6. SMS zákazníkům</h2>
+<p>SMS jsou placený modul a potřebují přidělené telefonní číslo. Zapíná se v <b>Nastavení → Komunikace → SMS</b>.</p>
+<p>Zprávy se posílají <b>bez diakritiky</b>. Není to nedbalost: zpráva s háčky se počítá po 70 znacích místo 160, takže by stála dvojnásobek. Text se převádí automaticky, psát můžete česky.</p>
+<p>Balíček je <b>strop, ne přesah</b>. Když měsíční limit vyčerpáte, další zpráva se neodešle a Jobi to řekne. Nic se nedoúčtuje. Kolik zpráv máte, vidíte v <b>Nastavení → Firma → Předplatné</b>.</p>
+<p>Odpovědi zákazníků chodí do <b>SMS chatů</b> v levém menu, takže konverzace zůstane u zakázky a nekončí v něčím soukromém telefonu.</p>
+</section>
+
+<section id="faktury">
+  <h2>7. Faktury a účetnictví</h2>
+<p>Fakturu vystavíte přímo ze zakázky, položky se převezmou z provedených oprav. Číselné řady, splatnost a údaje pro DPH nastavíte v <b>Nastavení → Firma → Fakturace a DPH</b>.</p>
+<p>Když nejste plátce DPH, nechte sazbu nulovou a do patičky faktury se doplní věta, že nejste plátce.</p>
+<p>Na faktuře může být <b>QR platba</b>, takže zákazník zaplatí telefonem a nemusíte hlídat variabilní symbol.</p>
+<p>Se zapnutým modulem účetnictví jde faktura odeslat do <b>iDokladu</b> nebo <b>Fakturoidu</b>. Napojení je ve stejné sekci; potřebujete z účetní aplikace API klíč. U iDokladu ho najdete v Nastavení → Aplikace → API, ale je dostupný až od tarifu Oblíbený.</p>
+</section>
+
+<section id="sklad">
+  <h2>8. Sklad, díly a marže</h2>
+<p>Sklad drží produkty, jejich počty a nákupní ceny. Produkt jde navázat na model zařízení i na konkrétní opravu, takže se při zadání opravy sám nabídne.</p>
+<p>Díl se na zakázce <b>rezervuje</b>, ne hned odepisuje. Ze skladu zmizí, až se zakázka dostane do konečného stavu. Do té doby je vidět, že je zamluvený, a nikdo ho nepoužije na jinou opravu.</p>
+<p>U produktu se dá nastavit <b>minimum</b>. Když počet klesne pod něj, Jobi to označí a díl můžete doobjednat u dodavatele přímo z aplikace.</p>
+<p>Nákupní ceny se propisují do <b>marže</b> ve Statistikách – uvidíte, kolik na které opravě a kterém technikovi skutečně zůstane.</p>
+</section>
+
+<section id="tym-a-pobocky">
+  <h2>9. Tým, oprávnění a pobočky</h2>
+<p>Kolegy pozvete v <b>Nastavení → Lidé a přístupy → Tým a oprávnění</b>. Přijde jim e-mail s odkazem, heslo si nastaví sami.</p>
+<p>Role jsou tři. <b>Majitel</b> může všechno včetně smazání servisu. <b>Správce</b> spravuje tým, nastavení a ceník. <b>Člen</b> dělá zakázky; co přesně smí, se zapíná po jednotlivých právech – zakládat zakázky, měnit stavy, upravovat zákazníky, vidět ceny a náklady, vystavovat faktury.</p>
+<p>Počet uživatelů není omezený a neplatí se za ně. Můžete klidně dát přístup brigádníkovi jen na příjem.</p>
+<p><b>Pobočky</b> jsou placený modul. Zakázky, sklad a faktury se dají vést odděleně po pobočkách, každá může mít vlastní IČO, bankovní účet a hlavičku dokumentů. Člověk má domovskou pobočku, ale může se přepnout na kteroukoli, ke které má přístup.</p>
+</section>
+
+<section id="import-a-api">
+  <h2>10. Import dat a veřejné API</h2>
+<p>Katalog zařízení a oprav jde nahrát hromadně: v <b>Zařízení</b> je tlačítko Import, které bere textový soubor se značkami, kategoriemi, modely a opravami. Vzorový soubor si stáhnete tamtéž a duplicity se přeskočí samy.</p>
+<p>Stejným způsobem jde nahrát <b>produkty do skladu</b> ze sekce Sklad.</p>
+<p>Přecházíte-li z jiného programu, napište nám. Převod zakázek a zákazníků děláme jako službu, ať nezačínáte s prázdnou databází.</p>
+<p><b>Veřejné API</b> (placený modul) umí vystavit váš ceník oprav nebo dostupnost skladu na vlastní web, takže se ceny nikde neopisují. Tokeny se spravují v <b>Nastavení → Lidé a přístupy → API</b>; každý token jde kdykoli odvolat.</p>
+</section>
+
+    <div class="box">
+      <strong>Nenašli jste, co potřebujete?</strong><br />
+      Napište na <a href="mailto:podpora@appjobi.com">podpora@appjobi.com</a>. Když jde o chybu v aplikaci,
+      použijte raději <b>Nahlásit chybu</b> přímo v Jobi – přiloží se technické údaje a chyba se hledá rychleji.
+    </div>
+
+    <footer>
+      <span>© Jobi</span>
+      <span>
+        <a href="/obchodni-podminky">Obchodní podmínky</a> ·
+        <a href="/ochrana-osobnich-udaju">Ochrana osobních údajů</a> ·
+        <a href="mailto:podpora@appjobi.com">podpora@appjobi.com</a>
+      </span>
+    </footer>
+
+  </div>
+</body>
+</html>

@@ -121,10 +121,14 @@ První tři měsíce: body 1, 2, 4.
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
   a aktuální funkce hotové (5. 9.); zbývá srovnání s konkurencí, screenshoty
   nové verze a video.
-- `[ ]` Nápověda: 10 krátkých článků (příjem, tisk, JobiDocs, SMS, faktury,
-  import, tým, API) a odkaz „Nápověda“ v aplikaci.
-- `[ ]` Podpora: e-mail, reakční doba, kdo ji drží; formulář „Nahlásit chybu“
-  v aplikaci s automatickým přiložením logu.
+- `[x]` Nápověda: 10 kapitol na `appjobi.com/napoveda` (první kroky, příjem,
+  stavy a automatizace, tisk a JobiDocs, nabídka a portál, SMS, faktury,
+  sklad, tým a pobočky, import a API). V aplikaci Nastavení → Aplikace →
+  Nápověda a podpora, odkazy skáčou rovnou na kapitolu.
+- `[~]` Podpora: formulář „Nahlásit chybu“ hotový (edge funkce
+  `support-report` přiloží verzi, platformu, servis a posledních 10 chyb
+  z logu, e-mail chodí na podpora@appjobi.com s reply-to na uživatele).
+  Zbývá slíbit reakční dobu a říct, kdo podporu drží.
 - `[ ]` Import z konkurence jako služba při přechodu (bod A10).
 - `[ ]` Pilot: 3 cizí servisy zdarma za zpětnou vazbu, teprve pak ceník.
 - `[ ]` Fakturace zákazníků Jobi (kdo vystavuje, DPH, měsíční / roční).

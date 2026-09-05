@@ -80,7 +80,7 @@ export function scrubPII(input: string): string {
 }
 
 /** Na jaké platformě aplikace běží. */
-function detectPlatform(): string {
+export function detectPlatform(): string {
   if (typeof window === "undefined") return "unknown";
   const isTauri = !!(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   if (!isTauri) return "web";

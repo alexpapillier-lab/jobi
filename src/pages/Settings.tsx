@@ -18,6 +18,7 @@ import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
 import { IntegrationsSettings } from "./Settings/IntegrationsSettings";
+import { HelpSupportSettings } from "./Settings/HelpSupportSettings";
 import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { ApiNastaveni } from "./Settings/ApiNastaveni";
 import { useEntitlements } from "../hooks/useEntitlements";
@@ -58,7 +59,7 @@ export type SettingsSubsection =
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
-  | "about_app" | "about_updates";
+  | "about_app" | "about_updates" | "about_help";
 
 type SettingsSection = {
   category: SettingsCategory;
@@ -73,7 +74,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication",
   service_team: "people", service_api: "people",
-  appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app",
+  appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
   profile_me: "profile",
 };
 
@@ -828,6 +829,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul"] },
         // Aktualizace jsou jen pro desktop – web je vždy aktuální.
         ...(isDesktop() ? [{ key: "about_updates" as const, label: "Aktualizace", keywords: ["aktualizace", "verze", "update", "nová verze", "nainstalovat"], badge: updateAvailable ? 1 : undefined }] : []),
+        { key: "about_help", label: "Nápověda a podpora", keywords: ["nápověda", "napoveda", "help", "podpora", "nahlásit chybu", "chyba", "nefunguje", "návod", "manuál", "kontakt"] },
         { key: "about_app", label: "O aplikaci", keywords: ["o aplikaci", "verze", "podpora", "průvodce", "id relace", "tour", "userid", "serviceid"] },
       ],
     },
@@ -2262,6 +2264,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* O APLIKACI */}
+      {section.subsection === "about_help" && <HelpSupportSettings activeServiceId={activeServiceId ?? null} />}
+
       {section.subsection === "about_app" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           <Card>
