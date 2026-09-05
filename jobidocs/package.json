@@ -43,5 +43,5 @@
     "test": "cd .. && npx vitest run jobidocs/core",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json"
   },
-  "version": "0.3.3"
+  "version": "0.3.4"
 }
