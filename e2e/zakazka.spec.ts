@@ -36,9 +36,15 @@ test("zakázka je v seznamu i po novém přihlášení", async ({ page }) => {
   await expect(page.getByText(zakaznik).first()).toBeVisible({ timeout: 30_000 });
 });
 
-test("v detailu jde přidat provedenou opravu", async ({ page }) => {
+test("v detailu jde přidat provedenou opravu a asistent postupu se posune", async ({ page }) => {
   await prihlasSe(page);
   await page.getByText(zakaznik).first().click();
+
+  // Nová zakázka bez oprav: asistent nabízí jako další krok opravy.
+  const asistent = page.getByRole("group", { name: /Postup zakázky/ });
+  await expect(asistent).toBeVisible({ timeout: 20_000 });
+  await expect(asistent).toHaveAttribute("aria-label", /hotovo 1 z 6/);
+  await expect(asistent.getByRole("button", { name: "Přejít na opravy" })).toBeVisible();
 
   await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Manuálně zadat" }).first().click();
@@ -46,4 +52,7 @@ test("v detailu jde přidat provedenou opravu", async ({ page }) => {
   await page.getByRole("button", { name: "Přidat opravu" }).first().click();
 
   await expect(page.getByText("Výměna konektoru (E2E)").first()).toBeVisible();
+  // Krok Opravy je hotový, dalším povinným krokem je dokončení.
+  await expect(asistent).toHaveAttribute("aria-label", /hotovo 2 z 6/);
+  await expect(asistent).toContainText("Přepněte stav v hlavičce");
 });
