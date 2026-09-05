@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
+import { setRememberSession } from "../lib/authStorage";
 import { ThemeLogo } from "./ThemeLogo";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
@@ -140,13 +141,13 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
         setError("Registrace úspěšná! Zkontrolujte svůj email pro potvrzení.");
         setIsLoading(false);
       } else {
+        // Volba musí platit UŽ při přihlášení – rozhoduje, kam se relace uloží
+        // (localStorage vs. sessionStorage), viz lib/authStorage.
+        setRememberSession(rememberMe);
         await signIn(email, password);
-        // Store remember me preference
         if (rememberMe) {
-          localStorage.setItem("jobsheet_remember_me", "true");
           localStorage.setItem("jobsheet_last_email", email);
         } else {
-          localStorage.removeItem("jobsheet_remember_me");
           localStorage.removeItem("jobsheet_last_email");
         }
       }
@@ -158,12 +159,10 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
 
   // Load remembered email
   useEffect(() => {
-    if (!isSignUp && localStorage.getItem("jobsheet_remember_me") === "true") {
+    if (!isSignUp && localStorage.getItem("jobsheet_remember_me") !== "false") {
       const lastEmail = localStorage.getItem("jobsheet_last_email");
-      if (lastEmail) {
-        setEmail(lastEmail);
-        setRememberMe(true);
-      }
+      if (lastEmail) setEmail(lastEmail);
+      setRememberMe(true);
     }
   }, [isSignUp]);
 

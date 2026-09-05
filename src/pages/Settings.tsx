@@ -1071,7 +1071,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {section.subsection === "service_billing" && (
         <>
           <DphNastaveni activeServiceId={activeServiceId} />
-          {activeServiceId && isAdmin && maModul("invoices") && <IntegrationsSettings activeServiceId={activeServiceId} />}
+          {activeServiceId && isAdmin && maModul("accounting") && <IntegrationsSettings activeServiceId={activeServiceId} />}
         </>
       )}
 

@@ -1,5 +1,5 @@
 /**
- * Export vystavené faktury do fakturační aplikace (dnes iDoklad).
+ * Export vystavené faktury do fakturační aplikace (iDoklad, Fakturoid).
  *
  * POST { service_id, invoice_id, provider }         → založí doklad, zapíše stopu do invoices
  * POST { service_id, provider, action: "test" }     → jen ověří přihlašovací údaje
@@ -20,6 +20,7 @@ const corsHeaders = {
 
 const IDOKLAD_TOKEN_URL = "https://identity.idoklad.cz/server/v2/connect/token";
 const IDOKLAD_API = "https://api.idoklad.cz/v3";
+const FAKTUROID_API = "https://app.fakturoid.cz/api/v3";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -179,6 +180,137 @@ async function exportToIdoklad(token: string, inv: InvoiceRow, items: ItemRow[])
   return { id: String(created.Id), number: created.DocumentNumber ?? "", url: null };
 }
 
+// ---------------------------------------------------------------------------
+// Fakturoid (API v3)
+//
+// Token: client credentials, Basic auth, platí 2 hodiny a neobnovuje se –
+// bereme si ho pro každý export znovu. Fakturoid vyžaduje hlavičku
+// User-Agent s kontaktním e-mailem, jinak odpoví 400.
+
+function fakturoidUA(cfg: Record<string, unknown>): string {
+  const mail = typeof cfg.contact_email === "string" && cfg.contact_email.trim() ? cfg.contact_email.trim() : "podpora@appjobi.com";
+  return `Jobi (${mail})`;
+}
+
+async function fakturoidToken(cfg: Record<string, unknown>): Promise<string> {
+  const clientId = typeof cfg.client_id === "string" ? cfg.client_id.trim() : "";
+  const clientSecret = typeof cfg.client_secret === "string" ? cfg.client_secret.trim() : "";
+  if (!clientId || !clientSecret) throw new IdokladError("Chybí Client ID nebo Client Secret.");
+  const basic = btoa(`${clientId}:${clientSecret}`);
+  const res = await fetch(`${FAKTUROID_API}/oauth/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": fakturoidUA(cfg),
+    },
+    body: JSON.stringify({ grant_type: "client_credentials" }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = text;
+    try { const j = JSON.parse(text); detail = j.error_description ?? j.error ?? text; } catch { /* text */ }
+    throw new IdokladError(`Fakturoid odmítl přihlášení (${res.status}): ${String(detail).slice(0, 200)}`);
+  }
+  const data = JSON.parse(text) as { access_token?: string };
+  if (!data.access_token) throw new IdokladError("Fakturoid nevrátil přístupový token.");
+  return data.access_token;
+}
+
+async function fakturoid<T>(token: string, cfg: Record<string, unknown>, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+  const slug = typeof cfg.slug === "string" ? cfg.slug.trim() : "";
+  if (!slug) throw new IdokladError("Chybí název účtu (slug) z adresy ve Fakturoidu.");
+  const res = await fetch(`${FAKTUROID_API}/accounts/${encodeURIComponent(slug)}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": fakturoidUA(cfg),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+  if (!res.ok) {
+    if (res.status === 404) throw new IdokladError(`Fakturoid nezná účet „${slug}“ nebo cestu ${path} (404). Zkontrolujte název účtu z adresy app.fakturoid.cz/<účet>.`);
+    const msg = parsed ? JSON.stringify(parsed).slice(0, 300) : text.slice(0, 200);
+    throw new IdokladError(`Fakturoid ${method} ${path} → ${res.status}: ${msg}`);
+  }
+  return parsed as T;
+}
+
+async function fakturoidSubject(token: string, cfg: Record<string, unknown>, inv: InvoiceRow): Promise<number> {
+  const ico = (inv.customer_ico ?? "").replace(/\s/g, "");
+  const name = (inv.customer_name ?? "").trim() || "Zákazník";
+  const dotaz = ico || name;
+  try {
+    const found = await fakturoid<Array<{ id: number; registration_no?: string | null; name?: string }>>(
+      token, cfg, "GET", `/subjects/search.json?query=${encodeURIComponent(dotaz)}`,
+    );
+    if (Array.isArray(found) && found.length > 0) {
+      const presne = ico ? found.find((f) => (f.registration_no ?? "").replace(/\s/g, "") === ico) : found.find((f) => (f.name ?? "").trim() === name);
+      if (presne) return presne.id;
+    }
+  } catch {
+    // Hledání není povinné – když selže, kontakt se prostě založí.
+  }
+  const addr = parseAddress(inv.customer_address);
+  const created = await fakturoid<{ id: number }>(token, cfg, "POST", "/subjects.json", {
+    name,
+    registration_no: ico || null,
+    vat_no: (inv.customer_dic ?? "").replace(/\s/g, "") || null,
+    email: inv.customer_email || null,
+    phone: inv.customer_phone || null,
+    street: addr.street || null,
+    city: addr.city || null,
+    zip: addr.zip.replace(/\s/g, "") || null,
+    country: "CZ",
+  });
+  if (!created?.id) throw new IdokladError("Fakturoid nevrátil id nového kontaktu.");
+  return created.id;
+}
+
+function dnyDoSplatnosti(issue: string, due: string): number {
+  const a = new Date(issue.slice(0, 10)).getTime();
+  const b = new Date(due.slice(0, 10)).getTime();
+  const d = Math.round((b - a) / 86_400_000);
+  return Number.isFinite(d) && d >= 0 ? d : 14;
+}
+
+async function exportToFakturoid(cfg: Record<string, unknown>, inv: InvoiceRow, items: ItemRow[]): Promise<{ id: string; number: string; url: string | null }> {
+  const token = await fakturoidToken(cfg);
+  const subjectId = await fakturoidSubject(token, cfg, inv);
+  const today = new Date().toISOString().slice(0, 10);
+  const issued = (inv.issue_date ?? today).slice(0, 10);
+  const created = await fakturoid<{ id: number; number?: string; public_html_url?: string; html_url?: string }>(
+    token, cfg, "POST", "/invoices.json",
+    {
+      subject_id: subjectId,
+      issued_on: issued,
+      due: dnyDoSplatnosti(issued, inv.due_date ?? issued),
+      taxable_fulfillment_due: (inv.taxable_date ?? issued).slice(0, 10),
+      order_number: inv.number,
+      variable_symbol: inv.variable_symbol ?? undefined,
+      note: inv.notes || undefined,
+      currency: inv.currency || "CZK",
+      // Jobi drží jednotkové ceny bez DPH.
+      vat_price_mode: "without_vat",
+      lines: [...items].sort((a, b) => a.sort_order - b.sort_order).map((it) => ({
+        name: it.name.slice(0, 200),
+        quantity: String(Number(it.qty) || 1),
+        unit_name: (it.unit || "ks").slice(0, 20),
+        unit_price: String(Number(it.unit_price) || 0),
+        vat_rate: String(Number(it.vat_rate) || 0),
+      })),
+    },
+  );
+  if (!created?.id) throw new IdokladError("Fakturoid doklad nevrátil.");
+  return { id: String(created.id), number: created.number ?? "", url: created.public_html_url ?? created.html_url ?? null };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -197,31 +329,31 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { service_id, invoice_id, provider = "idoklad", action } = body as { service_id?: string; invoice_id?: string; provider?: string; action?: string };
     if (!service_id) return json({ error: "Chybí service_id" }, 400);
-    if (provider !== "idoklad") return json({ error: `Propojení „${provider}“ zatím není podporované.` }, 400);
+    if (provider !== "idoklad" && provider !== "fakturoid") {
+      return json({ error: `Propojení „${provider}“ zatím není podporované.` }, 400);
+    }
 
     const { data: membership } = await svc.from("service_memberships").select("role").eq("service_id", service_id).eq("user_id", userId).maybeSingle();
     if (!membership) return json({ error: "Nejste členem tohoto servisu." }, 403);
 
     const { data: integ } = await svc.from("service_integrations").select("config, active").eq("service_id", service_id).eq("provider", provider).maybeSingle();
-    if (!integ || integ.active === false) return json({ error: "iDoklad není pro tento servis propojený. Nastavení → Fakturace a DPH." }, 400);
+    const jmenoSluzby = provider === "fakturoid" ? "Fakturoid" : "iDoklad";
+    if (!integ || integ.active === false) return json({ error: `${jmenoSluzby} není pro tento servis propojený. Nastavení → Fakturace a DPH.` }, 400);
     const cfg = (integ.config ?? {}) as Record<string, unknown>;
 
     const markError = async (msg: string) => {
       await svc.from("service_integrations").update({ last_error: msg.slice(0, 500) }).eq("service_id", service_id).eq("provider", provider);
     };
 
-    let apiToken: string;
-    try {
-      apiToken = await idokladToken(cfg);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await markError(msg);
-      return json({ ok: false, error: msg }, 400);
-    }
-
     if (action === "test") {
       try {
-        await idoklad(apiToken, "GET", "/IssuedInvoices/Default");
+        if (provider === "fakturoid") {
+          const t = await fakturoidToken(cfg);
+          await fakturoid(t, cfg, "GET", "/subjects.json?page=1");
+        } else {
+          const t = await idokladToken(cfg);
+          await idoklad(t, "GET", "/IssuedInvoices/Default");
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await markError(msg);
@@ -243,7 +375,9 @@ serve(async (req) => {
     if (!items || items.length === 0) return json({ error: "Faktura nemá žádné položky." }, 400);
 
     try {
-      const out = await exportToIdoklad(apiToken, invoice, items as ItemRow[]);
+      const out = provider === "fakturoid"
+        ? await exportToFakturoid(cfg, invoice, items as ItemRow[])
+        : await exportToIdoklad(await idokladToken(cfg), invoice, items as ItemRow[]);
       const exportedAt = new Date().toISOString();
       await svc.from("invoices").update({
         external_provider: provider, external_id: out.id, external_number: out.number || null, external_url: out.url, exported_at: exportedAt,

@@ -171,7 +171,7 @@ function safeLoadUIConfig(): UIConfig {
 
 export default function App() {
   const isNarrowFab = useIsNarrow();
-  const { session } = useAuth();
+  const { session, initializing: authInitializing } = useAuth();
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
   const [activePage, setActivePage] = useState<NavKey>("orders");
@@ -1093,6 +1093,21 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         : "auto";
     setAppIconFromPreset(effective, theme);
   }, []);
+
+  /*
+   * Než se z úložiště obnoví přihlášení, nesmí se ukázat přihlašovací
+   * obrazovka. Probliknutí formuláře při každém otevření webu vypadalo, že
+   * si aplikace přihlášení nepamatuje, a lidé se rovnou hlásili znovu.
+   */
+  if (authInitializing) {
+    return (
+      <ThemeProvider>
+        <div style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", background: "var(--bg, #f5f5f5)", color: "var(--muted, #666)", fontFamily: "system-ui, -apple-system, sans-serif", fontSize: 14 }}>
+          Načítám…
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   // Guard: session must exist to render app shell (Sidebar, Orders, Customers, Settings)
   if (!session) {

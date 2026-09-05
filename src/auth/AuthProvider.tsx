@@ -4,6 +4,8 @@ import type { Session } from "@supabase/supabase-js";
 
 type AuthContextType = {
   session: Session | null;
+  /** Než se z úložiště obnoví relace. Bez tohohle problikne přihlašovací obrazovka. */
+  initializing: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   configError: string | null;
@@ -13,17 +15,22 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [initializing, setInitializing] = useState(true);
   const [configError, setConfigError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase) {
       setConfigError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
+      setInitializing(false);
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+      })
+      .finally(() => setInitializing(false));
 
     const {
       data: { subscription },
@@ -33,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (session) {
         setSession(session);
+        setInitializing(false);
         return;
       }
       if (event === "SIGNED_OUT") {
@@ -54,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    setInitializing(false);
     if (!supabase) throw new Error("Supabase client není dostupný");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -66,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, signIn, signUp, configError }}>
+    <AuthContext.Provider value={{ session, initializing, signIn, signUp, configError }}>
       {children}
     </AuthContext.Provider>
   );

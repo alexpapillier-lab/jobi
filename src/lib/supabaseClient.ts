@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { devLog, devWarn } from "./devLog";
+import { authStorage } from "./authStorage";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -117,6 +118,14 @@ let supabase: ReturnType<typeof createClient> | null = null;
 if (supabaseUrl && supabaseAnonKey) {
   supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { fetch: supabaseFetch },
+    auth: {
+      // Explicitně: přihlášení se drží mezi spuštěními a token se sám obnovuje.
+      // `storage` rozhoduje podle volby „Zapamatovat přihlášení“ (viz authStorage).
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: authStorage,
+    },
   });
 } else {
   console.error(

@@ -16,6 +16,27 @@ export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   fakturoid: "Fakturoid",
 };
 
+/** Co po servisu chceme, aby propojení fungovalo. */
+export type ProviderField = { key: string; label: string; placeholder?: string; secret?: boolean; required?: boolean; hint?: string };
+
+export const PROVIDER_FIELDS: Record<IntegrationProvider, ProviderField[]> = {
+  idoklad: [
+    { key: "client_id", label: "Client ID", placeholder: "např. 1a2b3c4d-…", required: true },
+    { key: "client_secret", label: "Client Secret", secret: true, required: true },
+  ],
+  fakturoid: [
+    { key: "slug", label: "Název účtu", placeholder: "z adresy app.fakturoid.cz/<účet>", required: true },
+    { key: "client_id", label: "Client ID", required: true },
+    { key: "client_secret", label: "Client Secret", secret: true, required: true },
+    { key: "contact_email", label: "Kontaktní e-mail", placeholder: "servis@vasedomena.cz", hint: "Fakturoid ho vyžaduje u každého požadavku." },
+  ],
+};
+
+export const PROVIDER_HELP: Record<IntegrationProvider, string> = {
+  idoklad: "V iDokladu otevřete Nastavení → API → Přidat aplikaci a zvolte typ Client Credentials.",
+  fakturoid: "Ve Fakturoidu otevřete Nastavení → Uživatelský účet → API a založte aplikaci s přístupem Client Credentials.",
+};
+
 export type IntegrationRow = {
   service_id: string;
   provider: IntegrationProvider;
