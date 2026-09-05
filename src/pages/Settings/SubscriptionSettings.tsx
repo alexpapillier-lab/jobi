@@ -4,7 +4,7 @@ import { Card } from "../../lib/settingsUi";
 import { SectionHeading } from "../../components/SectionHeading";
 import { showToast } from "../../components/Toast";
 import { useEntitlements } from "../../hooks/useEntitlements";
-import { loadBilling, openPortal, startCheckout, PODPORA_EMAIL, STATUS_LABELS, type BillingRow } from "../../lib/billing";
+import { castka, loadBilling, loadCenik, openPortal, startCheckout, MODUL_POPIS, PODPORA_EMAIL, STATUS_LABELS, type BillingRow, type Plan } from "../../lib/billing";
 
 /**
  * Nastavení → Firma → Předplatné.
@@ -13,27 +13,40 @@ import { loadBilling, openPortal, startCheckout, PODPORA_EMAIL, STATUS_LABELS, t
  * spuštěné, nabídne napsat nám – aby stránka dávala smysl i teď, kdy se plán
  * zapíná ručně v Owner panelu.
  */
+/** Názvy tarifů i bez načteného ceníku (než se spustí platby). */
+const TARIF_LABELS: Record<string, string> = { starter: "Starter", business: "Business", enterprise: "Enterprise" };
+
 export function SubscriptionSettings({ activeServiceId }: { activeServiceId: string }) {
   const { trialEndsAt, trialDaysLeft, has, quota } = useEntitlements(activeServiceId);
   const [row, setRow] = useState<BillingRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [platbyVypnute, setPlatbyVypnute] = useState(false);
-  const [obdobi, setObdobi] = useState<"mesicne" | "rocne">("mesicne");
+  const [obdobi, setObdobi] = useState<"month" | "year">("month");
+  const [tarif, setTarif] = useState<"starter" | "business" | "enterprise">("business");
   const [pobockyNavic, setPobockyNavic] = useState(0);
+  const [smsNavic, setSmsNavic] = useState(false);
+  const [plany, setPlany] = useState<Plan[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     void loadBilling(activeServiceId).then((r) => { if (!cancelled) { setRow(r); setLoading(false); } });
+    void loadCenik().then((c) => { if (!cancelled && c) setPlany(c.plans); });
     return () => { cancelled = true; };
   }, [activeServiceId]);
+
+  /** Vybraný tarif ve zvoleném období – klíč posílá checkout do Stripe. */
+  const vybrany = plany.find((p) => p.tier === tarif && p.interval === obdobi);
+  const klicTarifu = vybrany?.lookup_key ?? `jobi_${tarif}_${obdobi === "year" ? "yearly" : "monthly"}`;
+  const maSmsVCene = (vybrany?.modules ?? []).includes("sms");
 
   const koupit = async () => {
     setBusy("checkout");
     const res = await startCheckout(activeServiceId, {
-      plan: obdobi === "rocne" ? "jobi_plan_yearly" : "jobi_plan_monthly",
+      plan: klicTarifu,
       branches: pobockyNavic,
+      sms: smsNavic && !maSmsVCene,
     });
     setBusy(null);
     if (res.url) { window.location.href = res.url; return; }
@@ -58,7 +71,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
     <Card>
       <SectionHeading size="sm">Předplatné</SectionHeading>
       <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: "calc(-1 * var(--space-2))" }}>
-        Jeden tarif se vším, pobočky navíc za příplatek. Platba kartou, fakturu a správu karty řeší platební brána.
+        Tarify Starter, Business a Enterprise; pobočky navíc za příplatek. Platba kartou, fakturu a správu karty řeší platební brána.
       </div>
 
       {loading ? (
@@ -106,8 +119,45 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
             {!maPredplatne && (
               <div style={{ display: "grid", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)" }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)" }}>Tarif</span>
+                  {(["starter", "business", "enterprise"] as const).map((t) => {
+                    const p = plany.find((x) => x.tier === t && x.interval === obdobi);
+                    const vybrano = tarif === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTarif(t)}
+                        title={p ? (p.modules ?? []).map((m) => MODUL_POPIS[m] ?? m).join(" · ") : undefined}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 10,
+                          border: `1px solid ${vybrano ? "var(--accent)" : "var(--border)"}`,
+                          background: vybrano ? "var(--accent-soft)" : "var(--panel)",
+                          color: vybrano ? "var(--accent)" : "var(--text)",
+                          fontSize: "var(--text-sm)",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 2,
+                        }}
+                      >
+                        <span>{p?.label ?? TARIF_LABELS[t] ?? t}</span>
+                        {p?.amount != null && (
+                          <span style={{ fontWeight: 600, fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+                            {castka(p.amount, p.currency)} / {obdobi === "year" ? "rok" : "měsíc"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)" }}>Platit</span>
-                  {([["mesicne", "měsíčně"], ["rocne", "ročně"]] as const).map(([hodnota, popis]) => (
+                  {([["month", "měsíčně"], ["year", "ročně"]] as const).map(([hodnota, popis]) => (
                     <button
                       key={hodnota}
                       type="button"
@@ -138,8 +188,21 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
                     className="ui-input"
                     style={{ width: 70, padding: "4px 8px", textAlign: "center" }}
                   />
-                  <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>tarif zahrnuje jednu</span>
+                  <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>
+                    tarif zahrnuje {vybrany?.branchesIncluded ?? 1}
+                  </span>
                 </label>
+                {!maSmsVCene && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={smsNavic} onChange={(e) => setSmsNavic(e.target.checked)} />
+                    SMS zákazníkům (příplatek)
+                  </label>
+                )}
+                {plany.length === 0 && (
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+                    Ceny se načtou z platební brány, až bude spuštěná. Aktuální ceník je na appjobi.com.
+                  </div>
+                )}
               </div>
             )}
 

@@ -35,6 +35,45 @@ export async function loadBilling(serviceId: string): Promise<BillingRow | null>
 
 type Odpoved = { url?: string; error?: string; notConfigured?: boolean };
 
+/** Tarif z ceníku – částky chodí ze Stripe, ať se nikde neopisují. */
+export type Plan = {
+  lookup_key: string;
+  label: string;
+  tier: "starter" | "business" | "enterprise";
+  interval: "month" | "year";
+  modules: string[];
+  branchesIncluded: number;
+  amount: number | null;
+  currency: string;
+};
+
+export type Cenik = { plans: Plan[]; addons: Array<{ lookup_key: string; amount: number | null; currency: string }> };
+
+/** Ceník ze Stripe. `null` = platby zatím nejsou spuštěné. */
+export async function loadCenik(): Promise<Cenik | null> {
+  if (!supabase || !supabaseUrl) return null;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    const res = await supabaseFetch(`${supabaseUrl}/functions/v1/billing-prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: "{}",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { plans: data.plans ?? [], addons: data.addons ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/** Kč z haléřů, jak je vrací Stripe. */
+export function castka(amount: number | null, currency = "czk"): string {
+  if (amount === null) return "";
+  return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: 0 }).format(amount / 100);
+}
+
 async function volat(fn: "billing-checkout" | "billing-portal", body: Record<string, unknown>): Promise<Odpoved> {
   if (!supabase || !supabaseUrl) return { error: "Aplikace není připojená ke cloudu." };
   const { data: sessionData } = await supabase.auth.getSession();
@@ -57,14 +96,25 @@ async function volat(fn: "billing-checkout" | "billing-portal", body: Record<str
 }
 
 /** Vytvoří platební sezení a vrátí adresu Stripe Checkout. */
-export function startCheckout(serviceId: string, opts?: { plan?: string; branches?: number }): Promise<Odpoved> {
-  return volat("billing-checkout", { service_id: serviceId, plan: opts?.plan, branches: opts?.branches });
+export function startCheckout(serviceId: string, opts?: { plan?: string; branches?: number; sms?: boolean }): Promise<Odpoved> {
+  return volat("billing-checkout", { service_id: serviceId, plan: opts?.plan, branches: opts?.branches, sms: opts?.sms });
 }
 
 /** Odkaz do zákaznického portálu Stripe (karta, faktury, zrušení). */
 export function openPortal(serviceId: string): Promise<Odpoved> {
   return volat("billing-portal", { service_id: serviceId });
 }
+
+/** Co který modul znamená na obrazovce Předplatné. */
+export const MODUL_POPIS: Record<string, string> = {
+  access: "Zakázky, zákazníci, sklad, tisk",
+  invoices: "Faktury",
+  accounting: "Napojení na iDoklad a Fakturoid",
+  sms: "SMS zákazníkům",
+  branches: "Pobočky",
+  api_catalog: "Veřejné API – ceník",
+  api_inventory: "Veřejné API – sklad",
+};
 
 export const STATUS_LABELS: Record<string, string> = {
   trialing: "Zkušební období",

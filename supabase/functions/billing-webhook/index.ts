@@ -13,7 +13,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { overitPodpis, stripe, BRANCH_ADDON_KEYS, GRACE_DAYS, PLAN_MODULES } from "../_shared/stripe.ts";
+import { overitPodpis, stripe, ADDONS, GRACE_DAYS, PLANS } from "../_shared/stripe.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type, stripe-signature" };
 
@@ -49,11 +49,20 @@ async function najitServis(svc: SupabaseClient, sub: Subscription): Promise<stri
 /** Předplatné → nároky. Aktivní i po splatnosti (několik dní hájení), jinak nic. */
 async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscription) {
   const polozky = sub.items?.data ?? [];
-  const planKey = polozky.map((i) => i.price?.lookup_key).find((k): k is string => !!k && k in PLAN_MODULES);
-  const moduly = planKey ? PLAN_MODULES[planKey] : [];
-  const pobocekNavic = polozky
-    .filter((i) => i.price?.lookup_key && BRANCH_ADDON_KEYS.includes(i.price.lookup_key))
-    .reduce((soucet, i) => soucet + (i.quantity ?? 0), 0);
+  const planKey = polozky.map((i) => i.price?.lookup_key).find((k): k is string => !!k && k in PLANS);
+  const plan = planKey ? PLANS[planKey] : null;
+
+  // Moduly = co dává tarif plus co přidávají příplatky (SMS u Starteru).
+  const moduly = new Set<string>(plan?.modules ?? []);
+  let pobocekNavic = 0;
+  for (const i of polozky) {
+    const key = i.price?.lookup_key;
+    if (!key || !(key in ADDONS)) continue;
+    const addon = ADDONS[key];
+    for (const m of addon.modules ?? []) moduly.add(m);
+    if (addon.branches) pobocekNavic += addon.branches * (i.quantity ?? 0);
+  }
+  const pobocekCelkem = (plan?.branchesIncluded ?? 0) + pobocekNavic;
 
   const plati = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
   const konec = new Date((sub.current_period_end || 0) * 1000);
@@ -72,7 +81,7 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     cancel_at_period_end: sub.cancel_at_period_end === true,
   }, { onConflict: "service_id" });
 
-  if (moduly.length === 0) return;
+  if (moduly.size === 0) return;
 
   for (const modul of moduly) {
     const radek: Record<string, unknown> = {
@@ -80,11 +89,11 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
       module: modul,
       active: plati,
       valid_until: platiDo,
-      note: `Předplatné ${planKey ?? ""} (${sub.status})`.trim(),
+      note: `${plan?.label ?? "Předplatné"} (${sub.status})`,
       updated_at: new Date().toISOString(),
     };
-    // Tarif zahrnuje jednu pobočku, další jsou příplatek.
-    if (modul === "branches") radek.quota = 1 + pobocekNavic;
+    // Kolik poboček tarif zahrnuje plus kolik se jich dokoupilo.
+    if (modul === "branches") radek.quota = Math.max(1, pobocekCelkem);
     await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
   }
 }

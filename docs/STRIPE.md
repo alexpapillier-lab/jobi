@@ -11,12 +11,24 @@ kód se měnit nemusí.
 `Lookup key` – kód se odkazuje na něj, ne na `price_…` id, takže cenu můžete
 kdykoli změnit bez zásahu do aplikace.
 
-| Co | Cena | Lookup key |
+| Co | Cena podle ceníku | Lookup key |
 |---|---|---|
-| Jobi – měsíčně | 1 490–1 990 Kč / měsíc, opakovaně | `jobi_plan_monthly` |
-| Jobi – ročně (volitelné) | roční částka | `jobi_plan_yearly` |
-| Pobočka navíc – měsíčně | 490 Kč / měsíc, opakovaně | `jobi_branch_addon` |
-| Pobočka navíc – ročně (volitelné) | roční částka | `jobi_branch_addon_yearly` |
+| Starter měsíčně | 590 Kč / měsíc | `jobi_starter_monthly` |
+| Starter ročně | 6 012 Kč / rok | `jobi_starter_yearly` |
+| Business měsíčně | 1 190 Kč / měsíc | `jobi_business_monthly` |
+| Business ročně | 12 138 Kč / rok | `jobi_business_yearly` |
+| Enterprise měsíčně | 2 490 Kč / měsíc | `jobi_enterprise_monthly` |
+| Enterprise ročně | 25 398 Kč / rok | `jobi_enterprise_yearly` |
+| SMS k Starteru měsíčně | 199 Kč / měsíc | `jobi_sms_addon_monthly` |
+| SMS k Starteru ročně | roční částka | `jobi_sms_addon_yearly` |
+| Pobočka navíc měsíčně | 490 Kč / měsíc | `jobi_branch_addon_monthly` |
+| Pobočka navíc ročně | roční částka | `jobi_branch_addon_yearly` |
+
+Co který tarif zapíná, je v `supabase/functions/_shared/stripe.ts` (`PLANS`):
+Starter zakázky a faktury, Business navíc SMS, pobočky a napojení na
+účetnictví, Enterprise navíc veřejné API a dvě pobočky v ceně. Ceny se
+v aplikaci nikde neopisují – obrazovka Předplatné si je bere ze Stripe
+(funkce `billing-prices`).
 
 Měnu nastavte na CZK. U pobočky navíc povolte množství (quantity), aby si
 servis mohl koupit víc než jednu.
@@ -58,7 +70,7 @@ select module, active, valid_until, quota from service_entitlements where servic
 ```
 
 Mělo by být: `status = active`, u nároků `valid_until` = konec období + 3 dny
-hájení a u `branches` limit `1 + počet zakoupených poboček`.
+hájení a u `branches` limit = pobočky v tarifu plus dokoupené.
 
 4. Ve Stripe zrušte předplatné (Customer → Subscription → Cancel) a ověřte,
    že se v Jobi zamkne obrazovka „Zkušební období skončilo“.
@@ -77,7 +89,7 @@ lookup key, přidat živý webhook a nastavit `sk_live_…` a nové `whsec_…`.
   zobrazení „platí do“ a odkazu do portálu.
 - Nárok **`access`** znamená „smí se pracovat“. Bez něj se aplikace zamkne.
 - Mapování cena → moduly je v `supabase/functions/_shared/stripe.ts`
-  (`PLAN_MODULES`, `BRANCH_ADDON_KEYS`, `GRACE_DAYS`).
+  (`PLANS`, `ADDONS`, `GRACE_DAYS`). Nový tarif = jeden řádek navíc.
 
 ## Co zbývá dořešit obchodně
 

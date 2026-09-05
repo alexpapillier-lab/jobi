@@ -116,16 +116,47 @@ export async function overitPodpis(payload: string, header: string | null, secre
 }
 
 /**
- * Co která cena zapíná. Lookup key se nastavuje ve Stripe u ceny, takže
- * přejmenování produktu ani změna částky se téhle tabulky netýká.
+ * Tarify a příplatky. Klíč je `lookup key` nastavený ve Stripe u ceny, takže
+ * změna částky ani přejmenování produktu se téhle tabulky netýká. Když
+ * přibude tarif, přidá se sem řádek a nikde jinde.
  */
-export const PLAN_MODULES: Record<string, string[]> = {
-  jobi_plan_monthly: ["access", "invoices", "accounting", "api_catalog", "api_inventory", "branches"],
-  jobi_plan_yearly: ["access", "invoices", "accounting", "api_catalog", "api_inventory", "branches"],
+export type PlanDef = {
+  /** Lidský název pro obrazovku Předplatné. */
+  label: string;
+  /** Co tarif zapíná (viz service_entitlements.module). */
+  modules: string[];
+  /** Kolik poboček je v ceně; další jsou příplatek. */
+  branchesIncluded: number;
+  interval: "month" | "year";
+  /** Stupeň tarifu – kvůli řazení a přepínači měsíčně/ročně. */
+  tier: "starter" | "business" | "enterprise";
 };
 
-/** Cena za pobočku navíc – množství se promítne do limitu poboček. */
-export const BRANCH_ADDON_KEYS = ["jobi_branch_addon", "jobi_branch_addon_yearly"];
+const ZAKLAD = ["access", "invoices"];
+const BUSINESS = [...ZAKLAD, "accounting", "sms", "branches"];
+const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory"];
+
+export const PLANS: Record<string, PlanDef> = {
+  jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, interval: "month", tier: "starter" },
+  jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, interval: "year", tier: "starter" },
+  jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, interval: "month", tier: "business" },
+  jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, interval: "year", tier: "business" },
+  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, interval: "month", tier: "enterprise" },
+  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, interval: "year", tier: "enterprise" },
+};
+
+/** Příplatky. `branches` se násobí množstvím u položky předplatného. */
+export const ADDONS: Record<string, { modules?: string[]; branches?: number }> = {
+  jobi_sms_addon_monthly: { modules: ["sms"] },
+  jobi_sms_addon_yearly: { modules: ["sms"] },
+  jobi_branch_addon_monthly: { branches: 1 },
+  jobi_branch_addon_yearly: { branches: 1 },
+};
+
+/** Lookup key příplatku ve stejném období jako tarif. */
+export function addonKey(zaklad: "jobi_sms_addon" | "jobi_branch_addon", interval: "month" | "year"): string {
+  return `${zaklad}_${interval === "year" ? "yearly" : "monthly"}`;
+}
 
 /** Kolik dní po konci období nechat přístup, než se zamkne (platba se může opozdit). */
 export const GRACE_DAYS = 3;

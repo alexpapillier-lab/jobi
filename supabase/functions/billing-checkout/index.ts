@@ -4,7 +4,7 @@
  * Vytvoří platební sezení u Stripe pro daný servis a vrátí adresu, kam
  * uživatele přesměrovat. Kartu ani částku aplikace nikdy nevidí.
  *
- * POST { service_id, plan?: "jobi_plan_monthly" | …, branches?: number, return_url }
+ * POST { service_id, plan?: lookup key tarifu, branches?: number, sms?: boolean, return_url }
  *   → { url }
  *
  * Dokud není nastavené STRIPE_SECRET_KEY, vrací 503 se srozumitelnou zprávou –
@@ -12,7 +12,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { priceIdByLookupKey, stripe, stripeReady, BRANCH_ADDON_KEYS } from "../_shared/stripe.ts";
+import { priceIdByLookupKey, stripe, stripeReady, addonKey, PLANS } from "../_shared/stripe.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,8 +44,9 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const serviceId = typeof body?.service_id === "string" ? body.service_id : "";
-    const plan = typeof body?.plan === "string" && body.plan ? body.plan : "jobi_plan_monthly";
+    const plan = typeof body?.plan === "string" && body.plan in PLANS ? body.plan : "jobi_business_monthly";
     const pobocekNavic = Number.isInteger(body?.branches) && body.branches > 0 ? Number(body.branches) : 0;
+    const chceSms = body?.sms === true;
     const returnUrl = typeof body?.return_url === "string" && body.return_url.startsWith("http")
       ? body.return_url
       : "https://appjobi.com/servis/";
@@ -67,11 +68,16 @@ serve(async (req) => {
     const planPrice = await priceIdByLookupKey(plan);
     if (!planPrice) return json({ error: `Ve Stripe chybí cena s lookup key „${plan}“.` }, 400);
 
+    const interval = PLANS[plan].interval;
     const polozky: Array<{ price: string; quantity: number }> = [{ price: planPrice, quantity: 1 }];
     if (pobocekNavic > 0) {
-      const addonKey = plan.includes("yearly") ? BRANCH_ADDON_KEYS[1] : BRANCH_ADDON_KEYS[0];
-      const addonPrice = await priceIdByLookupKey(addonKey);
-      if (addonPrice) polozky.push({ price: addonPrice, quantity: pobocekNavic });
+      const cena = await priceIdByLookupKey(addonKey("jobi_branch_addon", interval));
+      if (cena) polozky.push({ price: cena, quantity: pobocekNavic });
+    }
+    // SMS jsou v ceně od Business výš; u Starteru se přikupují.
+    if (chceSms && !PLANS[plan].modules.includes("sms")) {
+      const cena = await priceIdByLookupKey(addonKey("jobi_sms_addon", interval));
+      if (cena) polozky.push({ price: cena, quantity: 1 });
     }
 
     // Zákazník Stripe patří servisu, ne uživateli – předplatné platí za dílnu.
