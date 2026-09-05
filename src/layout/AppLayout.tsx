@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Sidebar, type NavKey, type SidebarProps } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
+import { TrialBanner } from "../components/TrialBanner";
 import { JobiDocsGuideModal } from "../components/JobiDocsGuideModal";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { BottomNav } from "./BottomNav";
@@ -292,6 +293,7 @@ export function AppLayout({
           background: "var(--bg)",
         }}
       >
+        <TrialBanner activeServiceId={activeServiceId} />
         <JobiDocsGuideModal open={showJobiDocsGuide} onClose={handleCloseJobiDocsGuide} />
         <main
           ref={mainRef}

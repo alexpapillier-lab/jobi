@@ -27,12 +27,18 @@ type Quotas = Partial<Record<ModuleName, number>>;
 
 export function useEntitlements(activeServiceId: string | null): State & {
   has: (m: ModuleName) => boolean;
+  /** Konec zkušebního období (ISO), nebo null u servisu bez časového omezení. */
+  trialEndsAt: string | null;
+  /** Zbývající dny; záporné číslo = už skončilo. */
+  trialDaysLeft: number | null;
   /** Limit počtu kusů modulu; null = bez omezení nebo modul není aktivní. */
   quota: (m: ModuleName) => number | null;
   refresh: () => void;
 } {
   const [modules, setModules] = useState<Set<ModuleName>>(new Set());
   const [quotas, setQuotas] = useState<Quotas>({});
+  /** Konec zkušebního období = nejzazší platnost mezi časově omezenými nároky. */
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
@@ -41,6 +47,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
       // Nový Set je pokaždé jiná reference – viz useActiveRole.
       setModules((prev) => (prev.size === 0 ? prev : new Set()));
       setQuotas({});
+      setTrialEndsAt(null);
       setLoading(false);
       return;
     }
@@ -68,6 +75,7 @@ export function useEntitlements(activeServiceId: string | null): State & {
         // Při chybě raději nic nezpřístupnit – server by to stejně odmítl.
         setModules(new Set());
         setQuotas({});
+        setTrialEndsAt(null);
       } else {
         const live = data.filter((r) => !r.valid_until || r.valid_until > nowIso);
         setModules(new Set(live.map((r) => r.module as ModuleName)));
@@ -76,6 +84,10 @@ export function useEntitlements(activeServiceId: string | null): State & {
           if (typeof r.quota === "number") q[r.module as ModuleName] = r.quota;
         }
         setQuotas(q);
+        // Časově omezené nároky drží i po vypršení (aplikace pak umí říct,
+        // že zkušební období skončilo, místo aby moduly beze slova zmizely).
+        const konce = data.map((r) => r.valid_until).filter((v): v is string => typeof v === "string");
+        setTrialEndsAt(konce.length > 0 ? konce.sort().slice(-1)[0] : null);
       }
       setLoading(false);
     })();
@@ -88,5 +100,19 @@ export function useEntitlements(activeServiceId: string | null): State & {
   const quota = useCallback((m: ModuleName) => quotas[m] ?? null, [quotas]);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
-  return { modules, loading, has, quota, refresh };
+  // Dny se počítají při načtení nároků, ne při každém vykreslení – Date.now()
+  // v renderu je nestabilní vstup a aplikace by se překreslovala na půlnoci.
+  const [ted, setTed] = useState(() => Date.now());
+  useEffect(() => {
+    setTed(Date.now());
+    // Jednou za hodinu stačí; zbývající dny se rychleji nemění.
+    const id = setInterval(() => setTed(Date.now()), 3_600_000);
+    return () => clearInterval(id);
+  }, [trialEndsAt]);
+
+  const trialDaysLeft = trialEndsAt
+    ? Math.ceil((new Date(trialEndsAt).getTime() - ted) / 86_400_000)
+    : null;
+
+  return { modules, loading, has, quota, trialEndsAt, trialDaysLeft, refresh };
 }

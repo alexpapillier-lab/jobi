@@ -109,6 +109,21 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
     }
   };
 
+  /** Zruší časové omezení nároku – ze zkušebního období udělá trvalý modul. */
+  const zrusitPlatnost = async (serviceId: string, module: string) => {
+    const key = `${serviceId}:${module}`;
+    setBusy(key);
+    try {
+      await callManage({ action: "grant", serviceId, module, validUntil: null });
+      showToast("Modul zapnutý natrvalo", "success");
+      await load();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   /** Uloží limit počtu kusů (prázdné = bez omezení). */
   const saveQuota = async (serviceId: string, module: string, raw: string) => {
     const key = `${serviceId}:${module}`;
@@ -218,6 +233,18 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
                     >
                       {MODULE_LABELS[m] ?? m} {on ? "✓" : "—"}
                     </button>
+                    {/* Zkušební období: nárok platí jen do data. */}
+                    {on && row?.valid_until && (
+                      <button
+                        type="button"
+                        disabled={busy === key}
+                        onClick={() => void zrusitPlatnost(s.service_id, m)}
+                        title={`Platí do ${new Date(row.valid_until).toLocaleString("cs-CZ")}. Kliknutím zapnout natrvalo.`}
+                        style={{ border: "none", background: "transparent", fontSize: "var(--text-xs)", color: "var(--warning-text)", fontWeight: 700, cursor: "pointer", padding: 0 }}
+                      >
+                        do {new Date(row.valid_until).toLocaleDateString("cs-CZ")}
+                      </button>
+                    )}
                     {/* Moduly po kusech (pobočky): kolik jich má servis zaplaceno. Prázdné = bez omezení. */}
                     {hasQuota && on && (
                       <label

@@ -23,6 +23,11 @@ const corsHeaders = {
 
 const MAX_SERVICES = 3;
 
+/** Zkušební období nového servisu. */
+const TRIAL_DAYS = 30;
+/** Co je ve zkušebním období zapnuté. SMS ne – posílají se za peníze. */
+const TRIAL_MODULES = ["invoices", "accounting", "branches", "api_catalog", "api_inventory"];
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
@@ -80,6 +85,21 @@ serve(async (req) => {
       return json({ error: `Přiřazení majitele selhalo: ${membershipErr.message}` }, 500);
     }
 
+    // Zkušební období: nový servis dostane placené moduly na 30 dní, ať si
+    // člověk vyzkouší i fakturaci a pobočky. SMS se schválně nedávají –
+    // stojí peníze za odeslané zprávy a chtějí přidělené telefonní číslo.
+    const konecZkusebni = new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString();
+    await svc
+      .from("service_entitlements")
+      .insert(TRIAL_MODULES.map((module) => ({
+        service_id: novy.id,
+        module,
+        active: true,
+        valid_until: konecZkusebni,
+        note: `Zkušební období ${TRIAL_DAYS} dní`,
+      })))
+      .then(() => {}, () => {});
+
     // Název servisu rovnou i do firemních údajů, ať se objeví na dokumentech
     // dřív, než je majitel doplní celé.
     await svc
@@ -87,7 +107,7 @@ serve(async (req) => {
       .upsert({ service_id: novy.id, config: { companyData: { name: nazev } } }, { onConflict: "service_id" })
       .then(() => {}, () => {});
 
-    return json({ ok: true, service_id: novy.id });
+    return json({ ok: true, service_id: novy.id, trial_ends_at: konecZkusebni });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
