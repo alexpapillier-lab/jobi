@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
 import { CheckIcon, XIcon } from "./icons";
+import { demoStopa, smazatDemoData, vytvoritDemoData } from "../lib/demoData";
+import { showToast } from "./Toast";
 
 /**
  * První kroky nového servisu.
@@ -32,6 +34,8 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
   const [config, setConfig] = useState<ServiceConfig | null>(null);
   const [clenu, setClenu] = useState(1);
   const [skryto, setSkryto] = useState(false);
+  const [maDemo, setMaDemo] = useState(false);
+  const [demoBezi, setDemoBezi] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +53,25 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
       .then(({ count }: { count: number | null }) => { if (!cancelled) setClenu(count ?? 1); }, () => {});
     return () => { cancelled = true; };
   }, [activeServiceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void demoStopa(activeServiceId).then((st) => { if (!cancelled) setMaDemo(!!st); });
+    return () => { cancelled = true; };
+  }, [activeServiceId, config]);
+
+  const prepnoutDemo = useCallback(async () => {
+    setDemoBezi(true);
+    const res = maDemo ? await smazatDemoData(activeServiceId) : await vytvoritDemoData(activeServiceId);
+    setDemoBezi(false);
+    if (res.error) {
+      showToast(res.error, "error");
+      return;
+    }
+    setMaDemo((p) => !p);
+    showToast(maDemo ? "Ukázková data smazána" : "Ukázková data přidána – najdete je v Zařízeních a v Zakázkách", "success");
+    // Ceník i seznam zakázek se překreslí z realtime; sklad si načte své.
+  }, [activeServiceId, maDemo]);
 
   const kroky = useMemo<Krok[]>(() => {
     const cd = (config?.companyData ?? {}) as Record<string, unknown>;
@@ -185,6 +208,22 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
             )}
           </div>
         ))}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+        <span style={{ fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 180 }}>
+          {maDemo
+            ? "Ukázkový ceník a zakázka jsou v aplikaci. Až si vše vyzkoušíte, smažte je jedním klikem."
+            : "Nechcete zkoušet na ostrých datech? Přidáme pár zařízení s cenami a jednu vzorovou zakázku."}
+        </span>
+        <button
+          type="button"
+          onClick={() => void prepnoutDemo()}
+          disabled={demoBezi}
+          style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, fontWeight: 700, cursor: demoBezi ? "wait" : "pointer" }}
+        >
+          {demoBezi ? "Pracuji…" : maDemo ? "Smazat ukázková data" : "Přidat ukázková data"}
+        </button>
       </div>
     </div>
   );
