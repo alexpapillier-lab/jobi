@@ -444,3 +444,18 @@ verify_jwt = false
 
 [functions.public-docs]
 verify_jwt = false
+
+# Volají je zvenčí bez přihlášení Jobi: zákaznický portál (token v URL),
+# Twilio webhooky a cron pro automatizace. Bez tohohle by je brána odmítla
+# hned po nasazení bez --no-verify-jwt – identitu si ověřují samy uvnitř.
+[functions.portal-ticket]
+verify_jwt = false
+
+[functions.sms-incoming]
+verify_jwt = false
+
+[functions.sms-voice]
+verify_jwt = false
+
+[functions.automations-run]
+verify_jwt = false
