@@ -5,8 +5,9 @@ name: E2E testy
 # servisu pod účtem e2e@jobi.test – RLS ho odděluje stejně jako kterékoli dva
 # zákaznické servisy, takže se nemůže dotknout cizích dat.
 #
-# Potřebuje secret E2E_PASSWORD (heslo toho účtu). Bez něj se testy přeskočí,
-# ať workflow nepadá lidem, kteří secrets nemají.
+# Potřebuje secrets E2E_PASSWORD a E2E_PASSWORD_TECHNIK (hesla dvou účtů ve
+# stejném servisu – majitel a technik; ten druhý je na testy souběžné práce).
+# Bez nich se testy přeskočí, ať workflow nepadá lidem, kteří secrets nemají.
 
 on:
   push:
@@ -33,9 +34,10 @@ jobs:
         id: secrets
         env:
           HESLO: ${{ secrets.E2E_PASSWORD }}
+          HESLO_TECHNIK: ${{ secrets.E2E_PASSWORD_TECHNIK }}
         run: |
-          if [ -z "$HESLO" ]; then
-            echo "::notice::Chybí secret E2E_PASSWORD, E2E testy se přeskočí. Postup je v e2e/README.md."
+          if [ -z "$HESLO" ] || [ -z "$HESLO_TECHNIK" ]; then
+            echo "::notice::Chybí secret E2E_PASSWORD nebo E2E_PASSWORD_TECHNIK, E2E testy se přeskočí. Postup je v e2e/README.md."
             echo "mame=ne" >> "$GITHUB_OUTPUT"
           else
             echo "mame=ano" >> "$GITHUB_OUTPUT"
@@ -59,6 +61,7 @@ jobs:
         if: steps.secrets.outputs.mame == 'ano'
         env:
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_PASSWORD_TECHNIK: ${{ secrets.E2E_PASSWORD_TECHNIK }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_ROOT_OWNER_ID: ${{ secrets.VITE_ROOT_OWNER_ID }}

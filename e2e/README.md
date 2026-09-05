@@ -7,7 +7,7 @@ hlídají výpočty, ale o rozbité obrazovce nic nevědí.
 ## Spuštění
 
 ```bash
-E2E_PASSWORD='…' npm run test:e2e
+E2E_PASSWORD='…' E2E_PASSWORD_TECHNIK='…' npm run test:e2e
 ```
 
 Vývojový server si Playwright spustí sám (`npm run dev:web` na portu 5190).
@@ -20,7 +20,12 @@ servisu** „E2E testovaci servis“. RLS ho odděluje stejně jako kterékoli d
 zákaznické servisy, takže se test nemůže dotknout cizích dat. Účet nemá
 potvrzený e-mail na skutečné doméně a nikam se s ním nedá přihlásit jinam.
 
-Heslo je v GitHub secrets jako `E2E_PASSWORD`. Bez něj testy nejedou –
+Testy souběžné práce potřebují druhý účet ve **stejném** servisu:
+`e2e-technik@jobi.test`, role člen s právy na zakázky, stavy, zákazníky a tisk.
+Bez něj by nešlo ověřit, že se změny mezi lidmi propisují a že práva platí
+i v rozhraní.
+
+Hesla jsou v GitHub secrets jako `E2E_PASSWORD` a `E2E_PASSWORD_TECHNIK`. Bez něj testy nejedou –
 schválně nemají tichý fallback: test, který se bez přihlášení tváří, že
 prošel, je horší než žádný.
 
@@ -32,7 +37,8 @@ update auth.users
  where email = 'e2e@jobi.test';
 ```
 
-a pak `gh secret set E2E_PASSWORD --repo alexpapillier-lab/jobi`.
+a pak `gh secret set E2E_PASSWORD --repo alexpapillier-lab/jobi` (u technika
+`E2E_PASSWORD_TECHNIK` a e-mail `e2e-technik@jobi.test`).
 
 Servis má nároky nastavené jako **trvalé**, ne zkušební, aby testy nepřestaly
 fungovat po třiceti dnech. Zkratka `E2E` je v `service_settings.config`
