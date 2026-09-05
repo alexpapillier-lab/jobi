@@ -24,7 +24,7 @@ function shortId(uuid: string): string {
 }
 
 /** Volá Edge Function service-manage přímo přes fetch, aby bylo vždy dostupné tělo odpovědi a skutečná chyba. */
-async function callServiceManage(body: { action: string; serviceId: string; name?: string }): Promise<void> {
+async function callServiceManage(body: { action: string; serviceId: string; name?: string }): Promise<any> {
   const client = supabase;
   if (!client) throw new Error("Supabase není k dispozici.");
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -66,6 +66,7 @@ async function callServiceManage(body: { action: string; serviceId: string; name
     throw new Error(msg);
   }
   if (data?.error) throw new Error(data.error);
+  return data;
 }
 
 export function OwnerSettings({ services, refreshServices, setActiveServiceId }: OwnerSettingsProps) {
@@ -81,6 +82,8 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
   const [editNameValue, setEditNameValue] = useState("");
   const [renameSubmitting, setRenameSubmitting] = useState(false);
   const [serviceSearch, setServiceSearch] = useState("");
+  const [exportSubmitting, setExportSubmitting] = useState(false);
+  const [exportSummary, setExportSummary] = useState<string | null>(null);
 
   const serviceSearchNorm = serviceSearch.trim().toLowerCase();
   const filteredServices =
@@ -108,6 +111,10 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
       setEditNameValue(selectedService.service_name || "");
     }
   }, [selectedService?.service_id, selectedService?.service_name]);
+
+  useEffect(() => {
+    setExportSummary(null);
+  }, [ownerSelectedServiceId]);
 
   const handleRenameService = async () => {
     if (!ownerSelectedServiceId || !supabase) return;
@@ -207,15 +214,76 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
     }
   };
 
+  /**
+   * Export všech dat servisu do JSON – přenositelnost údajů podle GDPR
+   * a zároveň to, co servisu podle obchodních podmínek dáme, když skončí.
+   * Fotky a podpisy jsou v souboru jako seznam odkazů, ne jako binárky.
+   */
+  const handleExport = async () => {
+    if (!ownerSelectedServiceId || !selectedService) return;
+    setExportSubmitting(true);
+    setExportSummary(null);
+    try {
+      const data = await callServiceManage({ action: "export", serviceId: ownerSelectedServiceId });
+      const nazev = (selectedService.service_name || "servis")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase() || "servis";
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `jobi-export-${nazev}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const pocty: Record<string, number> = data?.counts ?? {};
+      // 1 zakázka / 2 zakázky / 5 zakázek
+      const tvar = (n: number, jedna: string, dve: string, pet: string) =>
+        `${n} ${n === 1 ? jedna : n >= 2 && n <= 4 ? dve : pet}`;
+      const shrnuti = (
+        [
+          ["tickets", ["zakázka", "zakázky", "zakázek"]],
+          ["customers", ["zákazník", "zákazníci", "zákazníků"]],
+          ["invoices", ["faktura", "faktury", "faktur"]],
+          ["inventory_products", ["položka skladu", "položky skladu", "položek skladu"]],
+          ["storage_files", ["soubor", "soubory", "souborů"]],
+        ] as [string, [string, string, string]][]
+      )
+        .filter(([k]) => (pocty[k] ?? 0) > 0)
+        .map(([k, [a, b, c]]) => tvar(pocty[k], a, b, c))
+        .join(" · ");
+      const velikost = Math.round(blob.size / 1024);
+      setExportSummary(
+        `${shrnuti || "Servis je prázdný"} — soubor ${velikost >= 1024 ? `${(velikost / 1024).toFixed(1)} MB` : `${velikost} kB`}`
+      );
+      showToast("Export stažen", "success");
+    } catch (e: any) {
+      showToast(e?.message || "Export se nezdařil", "error");
+    } finally {
+      setExportSubmitting(false);
+    }
+  };
+
   const handleHardDelete = async () => {
     if (!ownerSelectedServiceId || !supabase) return;
     setManageSubmitting(true);
     try {
-      await callServiceManage({ action: "hardDelete", serviceId: ownerSelectedServiceId });
+      const res = await callServiceManage({ action: "hardDelete", serviceId: ownerSelectedServiceId });
       await refreshServices();
       setOwnerSelectedServiceId(null);
       setDeleteConfirm(false);
-      showToast("Servis smazán", "success");
+      showToast(
+        typeof res?.files_deleted === "number" && res.files_deleted > 0
+          ? `Servis smazán včetně ${res.files_deleted} souborů`
+          : "Servis smazán",
+        "success"
+      );
     } catch (e: any) {
       showToast(e?.message || "Nepodařilo se smazat", "error");
     } finally {
@@ -476,7 +544,28 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
                       >
                         Smazat (hard delete)
                       </button>
+                      <button
+                        type="button"
+                        onClick={handleExport}
+                        disabled={exportSubmitting}
+                        title="Stáhne všechna data servisu jako JSON – přenositelnost údajů podle GDPR"
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border,
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          fontWeight: 600,
+                          fontSize: 12,
+                          cursor: exportSubmitting ? "wait" : "pointer",
+                        }}
+                      >
+                        {exportSubmitting ? "Exportuji…" : "Exportovat data (JSON)"}
+                      </button>
                     </div>
+                    {exportSummary && (
+                      <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>{exportSummary}</div>
+                    )}
                   </div>
                   <TeamSettings
                     activeServiceId={ownerSelectedServiceId}
@@ -628,7 +717,7 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
       <ConfirmDialog
         open={deleteConfirm}
         title="Smazat servis natrvalo?"
-        message="Všechna data servisu (zakázky, zákazníci, členové, nastavení) budou nenávratně smazána. Tuto akci nelze vrátit."
+        message="Všechna data servisu (zakázky, zákazníci, členové, nastavení) i nahrané fotky a podpisy budou nenávratně smazány. Zálohu si nejdřív stáhněte tlačítkem Exportovat data. Tuto akci nelze vrátit."
         confirmLabel="Smazat"
         variant="danger"
         onConfirm={handleHardDelete}

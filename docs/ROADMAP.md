@@ -66,11 +66,16 @@ První tři měsíce: body 1, 2, 4.
   další platba, počet poboček, odkaz do Stripe Checkout a zákaznického portálu.
 
 ### Právní
-- `[ ]` Obchodní podmínky a smlouva o zpracování osobních údajů (GDPR) –
-  servis je správce, Jobi zpracovatel; seznam subdodavatelů (Supabase,
-  SMS brána, e-mail).
-- `[ ]` Zásady ochrany osobních údajů na webu, cookie lišta (web měří?).
-- `[ ]` Export a výmaz dat servisu na žádost (GDPR) – tlačítko v Owner.
+- `[~]` Obchodní podmínky a smlouva o zpracování osobních údajů (GDPR) –
+  napsané: `web/obchodni-podminky.html` a `web/zpracovani-udaju.html`
+  (servis je správce, Jobi zpracovatel; subdodavatelé Supabase, Cloudflare,
+  Twilio, Resend, Stripe). Zbývá doplnit identitu provozovatele místo
+  `[doplňte]` a nechat projít právníkem.
+- `[x]` Zásady ochrany osobních údajů na webu – `web/ochrana-osobnich-udaju.html`.
+  Cookie lišta netřeba, web neměří návštěvnost ani neukládá cookies.
+- `[x]` Export a výmaz dat servisu na žádost (GDPR) – v Owner panelu tlačítko
+  „Exportovat data (JSON)“ (akce `export` ve `service-manage`, kompletní obsah
+  servisu včetně seznamu souborů) a mazání, které nově uklidí i úložiště.
 - `[ ]` Právní texty na dokumentech (příjemka, záruční list) zkontrolovat
   právníkem – jsou přepsané, ne převzaté.
 
