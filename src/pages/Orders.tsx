@@ -2461,9 +2461,16 @@ export default function Orders({
     if (ordersPage >= totalOrdersPages && totalOrdersPages > 0) setOrdersPage(totalOrdersPages - 1);
   }, [ordersPage, totalOrdersPages]);
 
+  /**
+   * Otevřený detail se hledá v NEfiltrovaném seznamu.
+   *
+   * Kdyby se hledal v `tickets` (filtrované podle pobočky), zmizela by
+   * zakázka ze seznamu ve chvíli, kdy ji přesunu na jinou pobočku – a
+   * z detailu by zbylo prázdné okno s pomlčkami a tlačítkem Upravit.
+   */
   const detailedTicket: TicketEx | undefined = useMemo(
-    () => (detailId ? tickets.find((t) => t.id === detailId) : undefined),
-    [detailId, tickets]
+    () => (detailId ? cloudTickets.find((t) => t.id === detailId) : undefined),
+    [detailId, cloudTickets]
   );
 
   // After detailedTicket exists: sync ref so SMS OS notifications skip this thread when panel is open
@@ -3310,7 +3317,7 @@ export default function Orders({
       showToast("Vyberte servis pro tisk.", "error");
       return;
     }
-    const original = tickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx | undefined;
+    const original = cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx | undefined;
     const data = claimDocumentData(detailedClaim, safeLoadCompanyData(), original?.code ?? "");
     if (isWeb()) {
       await runWebDocument(action, "prijemka_reklamace", sid, data);
@@ -5220,7 +5227,7 @@ export default function Orders({
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 18 }}>
         {detailedClaim && (() => {
           const c = { ...detailedClaim, ...editedClaim };
-          const sourceTicket = detailedClaim.source_ticket_id ? tickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
+          const sourceTicket = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
           return (
           <>
           <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
