@@ -182,11 +182,11 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
     svc.from("services").select("name").eq("id", t.service_id).maybeSingle(),
     // Pobočka zakázky: její adresa, telefon a e-mail mají v portálu přednost před firemními.
     t.branch_id
-      ? svc.from("branches").select("name, phone, email, address_street, address_city, address_zip, opening_hours, is_default").eq("id", t.branch_id).maybeSingle()
+      ? svc.from("branches").select("name, phone, email, address_street, address_city, address_zip, opening_hours, is_default, company_name, ico, bank_account, iban").eq("id", t.branch_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
   const branch = (branchRes?.data ?? null) as
-    | { name: string; phone: string | null; email: string | null; address_street: string | null; address_city: string | null; address_zip: string | null; opening_hours: string | null; is_default: boolean }
+    | { name: string; phone: string | null; email: string | null; address_street: string | null; address_city: string | null; address_zip: string | null; opening_hours: string | null; is_default: boolean; company_name: string | null; ico: string | null; bank_account: string | null; iban: string | null }
     | null;
   const branchHasAddress = !!(branch && (strOrNull(branch.address_street) || strOrNull(branch.address_city) || strOrNull(branch.address_zip)));
 
@@ -201,7 +201,9 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
   const cd = (config.companyData && typeof config.companyData === "object"
     ? config.companyData
     : {}) as Record<string, unknown>;
-  const serviceName = strOrNull(cd.name) ?? strOrNull(serviceRes.data?.name) ?? "";
+  // Pobočka jako vlastní subjekt: název a účet pobočky mají přednost před firemními.
+  const serviceName = (branch && strOrNull(branch.company_name)) ?? strOrNull(cd.name) ?? strOrNull(serviceRes.data?.name) ?? "";
+  const branchHasBank = !!(branch && (strOrNull(branch.bank_account) || strOrNull(branch.iban)));
 
   const service = {
     name: serviceName,
@@ -214,8 +216,8 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
     addressStreet: branchHasAddress ? strOrNull(branch!.address_street) : strOrNull(cd.addressStreet),
     addressCity: branchHasAddress ? strOrNull(branch!.address_city) : strOrNull(cd.addressCity),
     addressZip: branchHasAddress ? strOrNull(branch!.address_zip) : strOrNull(cd.addressZip),
-    bankAccount: strOrNull(cd.bankAccount),
-    iban: strOrNull(cd.iban),
+    bankAccount: branchHasBank ? strOrNull(branch!.bank_account) : strOrNull(cd.bankAccount),
+    iban: branchHasBank ? strOrNull(branch!.iban) : strOrNull(cd.iban),
   };
 
   const repairs = parseRepairs(t.performed_repairs);

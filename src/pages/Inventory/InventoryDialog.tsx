@@ -82,7 +82,7 @@ export function InventoryDialog({
           boxShadow: "0 25px 60px rgba(0,0,0,0.3)",
           width: "100%",
           maxWidth: width,
-          maxHeight: "calc(100vh - 2 * var(--space-6))",
+          maxHeight: "calc(100vh / var(--ui-scale, 1) - 2 * var(--space-6))",
           display: "flex",
           flexDirection: "column",
           outline: "none",

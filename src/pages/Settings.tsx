@@ -28,7 +28,6 @@ import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
 import { AutomationsSection } from "./Settings/Automations/AutomationsSection";
 import { BranchesSettings } from "./Settings/BranchesSettings";
-import { LogoPresetButton } from "./Settings/components/LogoPresetButton";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { isDesktop } from "../lib/platform";
 import { showToast } from "../components/Toast";
@@ -39,9 +38,7 @@ import { loadDocumentsConfigRawFromDB, saveDocumentsConfigAutoPrint } from "../l
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { subscribeServiceConfig, mergeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
-import { LOGO_PRESETS, getLogoColors, type LogoPresetId } from "../lib/logoPresets";
-import { setAppIconFromPreset } from "../lib/setAppIcon";
-import { AppLogo } from "../components/AppLogo";
+import { ThemeLogo } from "../components/ThemeLogo";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppUpdate } from "../context/AppUpdateContext";
 import { useAuth } from "../auth/AuthProvider";
@@ -297,7 +294,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const isNarrow = useIsNarrow();
   const { session } = useAuth();
   const { statuses, fallbackKey } = useStatuses();
-  const { theme, preference, setPreference } = useTheme();
+  const { preference, setPreference } = useTheme();
   const appUpdate = useAppUpdate();
   const updateAvailable = !!(appUpdate?.update);
   const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
@@ -315,20 +312,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [section, setSection] = useState<SettingsSection>(sectionFor("service_basic"));
   const [navQuery, setNavQuery] = useState("");
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
-  const [logoPreset, setLogoPresetState] = useState<LogoPresetId>(() => {
-    try {
-      const v = localStorage.getItem(STORAGE_KEYS.LOGO_PRESET) as LogoPresetId | null;
-      return v && (v === "auto" || LOGO_PRESETS.some((p) => p.id === v)) ? v : "auto";
-    } catch {
-      return "auto";
-    }
-  });
-  const setLogoPreset = (value: LogoPresetId) => {
-    localStorage.setItem(STORAGE_KEYS.LOGO_PRESET, value);
-    setLogoPresetState(value);
-    window.dispatchEvent(new CustomEvent("jobsheet:logo-preset-changed"));
-    setAppIconFromPreset(value, theme);
-  };
 
   // Průvodce: přepnutí na správnou záložku, aby byl zvýrazněný prvek viditelný
   useEffect(() => {
@@ -704,7 +687,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const hintPovinne = useSavedHint();
   const hintTisk = useSavedHint();
   const hintTema = useSavedHint();
-  const hintLogo = useSavedHint();
 
   const updateUi = (next: UIConfig, hint?: { show: () => void }) => {
     setUiCfg(next);
@@ -752,7 +734,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "service_basic", label: "Údaje firmy", keywords: ["firma", "servis", "název", "ičo", "dič", "adresa", "zkratka", "jazyk", "předvolba", "základní údaje", "město", "psč"] },
         ...(canManageDocuments ? [{ key: "service_contact" as const, label: "Kontakty", keywords: ["kontakt", "telefon", "e-mail", "email", "web", "banka", "bankovní účet", "číslo účtu", "iban", "swift"] }] : []),
         { key: "service_billing", label: "Fakturace a DPH", keywords: ["dph", "faktura", "fakturace", "sazba", "plátce", "ceny s dph", "veřejné api", "adresa api", "slug"] },
-        ...(isAdmin ? [{ key: "service_branches" as const, label: "Pobočky", keywords: ["pobočka", "pobočky", "provozovna", "adresa", "sklad", "zkratka", "více míst"] }] : []),
+        ...(isAdmin && maModul("branches") ? [{ key: "service_branches" as const, label: "Pobočky", keywords: ["pobočka", "pobočky", "provozovna", "adresa", "sklad", "zkratka", "více míst"] }] : []),
         ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner", keywords: ["owner", "majitel", "servisy", "moduly", "licence", "vytvořit servis", "smazat servis"] }] : []),
       ],
     },
@@ -1252,7 +1234,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* FIRMA - POBOČKY */}
-      {section.subsection === "service_branches" && activeServiceId && isAdmin && (
+      {section.subsection === "service_branches" && activeServiceId && isAdmin && maModul("branches") && (
         <BranchesSettings activeServiceId={activeServiceId} abbreviation={companyData.abbreviation} />
       )}
 
@@ -1447,28 +1429,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               </details>
             </Card>
 
-            <Card>
-              <CardHeader title="Barvy loga Jobi" description="Ikona aplikace v Docku, Finderu atd." right={hintLogo.node} />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "var(--space-2)" }}>
-                <LogoPresetButton
-                  isActive={logoPreset === "auto"}
-                  label="Podle motivu"
-                  logoUrl={assetUrl(`logos/${theme}.png`)}
-                  fallbackColors={getLogoColors(theme, "auto")}
-                  onClick={() => { setLogoPreset("auto"); hintLogo.show(); }}
-                />
-                {LOGO_PRESETS.map((p) => (
-                  <LogoPresetButton
-                    key={p.id}
-                    isActive={logoPreset === p.id}
-                    label={p.label}
-                    logoUrl={assetUrl(`logos/${p.id}.png`)}
-                    fallbackColors={{ background: p.background, jInner: p.jInner, foreground: p.foreground }}
-                    onClick={() => { setLogoPreset(p.id); hintLogo.show(); }}
-                  />
-                ))}
-              </div>
-            </Card>
           </>
         );
       })()}
@@ -2281,7 +2241,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <Card>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <div style={{ width: 64, height: 64, flexShrink: 0 }}>
-                <AppLogo size={64} />
+                <ThemeLogo size={64} />
               </div>
               <div>
                 <div style={{ fontWeight: 950, fontSize: "var(--text-lg)", marginBottom: 4, color: "var(--text)" }}>Jobi</div>

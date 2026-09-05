@@ -482,7 +482,7 @@ export function CustomerDetail({
           transition: "transform 180ms ease, opacity 180ms ease",
           width: 820,
           maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100dvh - 24px)",
+          maxHeight: "calc(100dvh / var(--ui-scale, 1) - 24px)",
           overflow: "auto",
           background: "var(--panel)",
           backdropFilter: "var(--blur)",

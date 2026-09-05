@@ -194,7 +194,7 @@ export function BottomNav({
               gap: 8,
               /* Se seznamem servisů panel vyroste; ať se dá dorolovat
                  místo toho, aby zmizel za horním okrajem displeje. */
-              maxHeight: "calc(100dvh - var(--bottom-nav-h) - var(--safe-bottom) - 24px)",
+              maxHeight: "calc(100dvh / var(--ui-scale, 1) - var(--bottom-nav-h) - var(--safe-bottom) - 24px)",
               overflowY: "auto",
               zIndex: 1061,
             }}

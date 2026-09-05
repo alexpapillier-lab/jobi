@@ -1310,7 +1310,7 @@ DETALY: Výměna opotřebované baterie
               flexShrink: 0,
               position: "sticky",
               top: 0,
-              maxHeight: "calc(100dvh - var(--topbar-h) - var(--pad-24) * 2)",
+              maxHeight: "calc(100dvh / var(--ui-scale, 1) - var(--topbar-h) - var(--pad-24) * 2)",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",

@@ -95,7 +95,15 @@ function naplanujOdeslani() {
     if (!supabase) return;
     const patch = readSyncedKeys();
     if (Object.keys(patch).length === 0) return;
-    void (supabase as any).rpc("merge_user_preferences", { p_patch: patch });
+    // PostgrestBuilder je „thenable“ a požadavek odešle až při await/.then –
+    // samotné `void rpc(...)` nikdy nic neposlalo, takže se na server nikdy
+    // nedostala žádná změna a každý start appky stáhl stará nastavení
+    // (zobrazení zakázek „skákalo“ zpátky na mřížku).
+    void (supabase as any)
+      .rpc("merge_user_preferences", { p_patch: patch })
+      .then(({ error }: { error: { message?: string } | null }) => {
+        if (error) console.warn("[preferences] push selhal:", error.message);
+      }, (e: unknown) => console.warn("[preferences] push selhal:", e));
   }, 1000);
 }
 

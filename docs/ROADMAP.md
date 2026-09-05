@@ -21,7 +21,7 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 4. `[x]` **Díly od dodavatele až po marži** (nasazeno 5. 9.: dodavatelé, objednávky, minimum, rezervace ze zakázky, marže ve Statistikách) – objednávky dílů u dodavatelů,
    rezervace dílu na zakázku, doobjednání pod minimem, marže na opravu
    a na technika. Sklad a vazba díl↔oprava existují, chybí nákupní strana.
-5. `[~]` **Více poboček a lidé** (pobočky nasazeny 5. 9.: tabulka `branches`,
+5. `[~]` **Více poboček a lidé** (pobočky nasazeny 5. 9. jako placený modul `branches` zapínaný v Owner panelu: tabulka `branches`, vlastní IČO/DIČ/účet pobočky,
    výchozí pobočka na servis, zkratka v čísle zakázky, adresa a telefon
    pobočky na dokumentech a v portálu, filtr v Zakázkách / Kalendáři /
    Skladu / Statistikách / Fakturách, domovská pobočka člena, srovnání

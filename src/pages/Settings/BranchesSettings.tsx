@@ -22,6 +22,11 @@ function emptyInput(): BranchInput {
     phone: "",
     email: "",
     openingHours: "",
+    companyName: "",
+    ico: "",
+    dic: "",
+    bankAccount: "",
+    iban: "",
     defaultWarehouseId: null,
     isDefault: false,
   };
@@ -38,6 +43,11 @@ function toInput(b: Branch): BranchInput {
     phone: b.phone,
     email: b.email,
     openingHours: b.openingHours,
+    companyName: b.companyName,
+    ico: b.ico,
+    dic: b.dic,
+    bankAccount: b.bankAccount,
+    iban: b.iban,
     defaultWarehouseId: b.defaultWarehouseId,
     isDefault: b.isDefault,
     orderIndex: b.orderIndex,
@@ -142,7 +152,8 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
             <SectionHeading size="sm">Pobočky</SectionHeading>
             <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: "calc(-1 * var(--space-2))" }}>
               Pobočka doplní na dokumenty a do zákaznického portálu svou adresu a telefon, vloží zkratku do čísla zakázky
-              a v Zakázkách, Kalendáři, Skladu a Statistikách funguje jako filtr. Název, IČO a bankovní účet zůstávají firemní.
+              a v Zakázkách, Kalendáři, Skladu a Statistikách funguje jako filtr. Když je pobočka jiný subjekt, může mít
+              vlastní název, IČO, DIČ a bankovní účet; prázdná pole se berou z údajů firmy.
             </div>
           </div>
           <Button variant="primary" icon={<PlusIcon size={14} />} onClick={() => setEditing(emptyInput())}>
@@ -178,6 +189,8 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
                   <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <span>{addr || "Adresa firmy"}</span>
                     {b.phone && <span>{b.phone}</span>}
+                    {b.ico && <span>IČO {b.ico}</span>}
+                    {(b.bankAccount || b.iban) && <span>vlastní účet</span>}
                     {wh.length > 0 && <span>{wh.length === 1 ? "1 sklad" : `${wh.length} sklady`}</span>}
                     <span>Číslo zakázky: {codePreview(b.code)}</span>
                   </div>
@@ -267,6 +280,34 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--text)", marginTop: 4 }}>Vlastní subjekt pobočky</div>
+            <div style={{ color: "var(--muted)", fontSize: "var(--text-xs)", marginTop: -10 }}>
+              Vyplňte jen když pobočku provozuje jiná firma než hlavní. Na dokumentech, v portálu (QR platba) a na fakturách pak nahradí firemní údaje.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "2fr 1fr 1fr", gap: 14 }}>
+              <div>
+                <FieldLabel>Název subjektu</FieldLabel>
+                <TextInput value={editing.companyName} onChange={(e) => setEditing({ ...editing, companyName: e.target.value })} placeholder="Prázdné = název firmy" style={inputStyle} />
+              </div>
+              <div>
+                <FieldLabel>IČO</FieldLabel>
+                <TextInput value={editing.ico} onChange={(e) => setEditing({ ...editing, ico: e.target.value })} placeholder="Prázdné = IČO firmy" style={inputStyle} />
+              </div>
+              <div>
+                <FieldLabel>DIČ</FieldLabel>
+                <TextInput value={editing.dic} onChange={(e) => setEditing({ ...editing, dic: e.target.value })} placeholder="CZ…" style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr 1fr", gap: 14 }}>
+              <div>
+                <FieldLabel>Číslo účtu</FieldLabel>
+                <TextInput value={editing.bankAccount} onChange={(e) => setEditing({ ...editing, bankAccount: e.target.value })} placeholder="Prázdné = účet firmy" style={inputStyle} />
+              </div>
+              <div>
+                <FieldLabel>IBAN</FieldLabel>
+                <TextInput value={editing.iban} onChange={(e) => setEditing({ ...editing, iban: e.target.value })} placeholder="CZ…" style={inputStyle} />
               </div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)", cursor: "pointer" }}>

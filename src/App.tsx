@@ -730,6 +730,10 @@ export default function App() {
   useEffect(() => {
     const s = uiCfg.app.uiScale ?? 1;
     document.documentElement.style.setProperty("zoom", String(s));
+    // Jednotky vh/dvh zoom neškáluje, takže „100dvh“ je při 120 % o pětinu
+    // vyšší než okno a modály se ořezávají nahoře i dole. Rozvržení proto
+    // dělí výšku okna touhle proměnnou (viz calc(100dvh / var(--ui-scale))).
+    document.documentElement.style.setProperty("--ui-scale", String(s));
   }, [uiCfg.app.uiScale]);
 
   // Omezené efekty: vypne backdrop-filter napříč aplikací jedinou proměnnou.
@@ -1113,7 +1117,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     <ThemeProvider>
       <OnlineGate>
         <StatusesProvider activeServiceId={activeServiceId}>
-        <BranchProvider serviceId={activeServiceId} userId={presenceUserId}>
+        <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>
         <AppTourOverlay
           active={isTourActive}
           stepIndex={tourStep}

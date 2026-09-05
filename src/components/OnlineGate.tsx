@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
-import { showToast } from "./Toast";
 
 type OnlineGateProps = {
   children: React.ReactNode;
@@ -11,7 +10,6 @@ function getConnectionErrorMessage(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const lower = msg.toLowerCase();
 
-  // Supabase projekt obnovuje / maintenance (503, 502, service unavailable)
   if (
     lower.includes("503") ||
     lower.includes("502") ||
@@ -23,13 +21,9 @@ function getConnectionErrorMessage(err: unknown): string {
   ) {
     return "Cloud je dočasně nedostupný (pravděpodobně probíhá obnova projektu). Zkuste to za několik minut.";
   }
-
-  // Timeout kontrolního dotazu (zejména v Tauri při zavěšení)
   if (lower.includes("timeout")) {
     return "Kontrola připojení trvá příliš dlouho. Zkuste to znovu (tlačítko níže).";
   }
-
-  // Síťové chyby (offline, connection refused)
   if (
     lower.includes("fetch") ||
     lower.includes("network") ||
@@ -41,34 +35,55 @@ function getConnectionErrorMessage(err: unknown): string {
   ) {
     return "Nelze se připojit k cloudu. Zkontrolujte připojení k internetu a zkuste to znovu.";
   }
-
   return "Cloud je nedostupný. Zkuste to za chvíli nebo zkontrolujte připojení k internetu.";
 }
 
 /**
- * OnlineGate komponenta kontroluje dostupnost Supabase připojení.
- * Pokud není cloud dostupný, zobrazí chybovou zprávu místo aplikace.
+ * OnlineGate hlídá dostupnost Supabase.
+ *
+ * Blokuje jen první start: dokud se cloud aspoň jednou neozve, aplikace se
+ * nevykreslí. Jakmile byla aplikace online, při výpadku už se NEODMONTUJE –
+ * ukáže se jen tenký proužek nahoře a kontrola běží dál. Dřív každý
+ * neúspěšný kontrolní dotaz (uspané připojení, zaseknutý HTTP klient v
+ * Tauri, chvilkový výpadek) shodil celou aplikaci na obrazovku „Cloud není
+ * dostupný“ a zpátky pomohl často jen restart – přitom vlastní dotazy do
+ * databáze mezitím dál fungovaly.
  */
 export function OnlineGate({ children }: OnlineGateProps) {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const wasOnlineRef = useRef<boolean | null>(null);
+  /** Aplikace už jednou běžela online – výpadek řešit proužkem, ne odmontováním. */
+  const everOnlineRef = useRef(false);
+  const failStreakRef = useRef(0);
 
-  const CONNECTION_TIMEOUT_MS = 45_000;
+  const CONNECTION_TIMEOUT_MS = 20_000;
   const MAX_RETRIES = 2;
+  /** Kolik kontrol po sobě musí selhat, než se proužek ukáže (jedna chybějící odpověď není výpadek). */
+  const BANNER_AFTER_FAILS = 2;
 
   const checkConnection = useCallback(async () => {
     if (!supabaseUrl || !supabaseAnonKey) {
       setError("Supabase není nakonfigurován. Zkontrolujte VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY v .env souboru.");
       setIsOnline(false);
+      setIsChecking(false);
+      return;
+    }
+    // Prohlížeč / systém hlásí offline – nemá smysl čekat na timeout.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      failStreakRef.current += 1;
+      if (!everOnlineRef.current || failStreakRef.current >= BANNER_AFTER_FAILS) {
+        setError("Zařízení je offline. Zkontrolujte připojení k internetu.");
+        setIsOnline(false);
+      }
+      setIsChecking(false);
       return;
     }
 
     try {
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          // auth/health je lehký endpoint (ne-probouzí DB), vhodnější než services pro connectivity check
+          // auth/health je lehký endpoint (neprobouzí DB), vhodnější než services pro connectivity check
           const res = await Promise.race([
             supabaseFetch(`${supabaseUrl}/auth/v1/health`, {
               headers: { apikey: supabaseAnonKey },
@@ -79,26 +94,25 @@ export function OnlineGate({ children }: OnlineGateProps) {
           ]);
 
           if (res.ok) {
-            wasOnlineRef.current = true;
+            everOnlineRef.current = true;
+            failStreakRef.current = 0;
             setIsOnline(true);
             setError(null);
             return;
           }
-          const err = new Error(`HTTP ${res.status}`);
-          setError(getConnectionErrorMessage(err));
-          if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
-          setIsOnline(false);
-          return;
+          throw new Error(`HTTP ${res.status}`);
         } catch (err) {
           console.warn(`[OnlineGate] Connection check attempt ${attempt}/${MAX_RETRIES} failed:`, err);
-          if (attempt === MAX_RETRIES) {
-            setError(getConnectionErrorMessage(err));
-            if (wasOnlineRef.current === true) showToast("Připojení k cloudu ztraceno", "error");
-            setIsOnline(false);
-          }
           if (attempt < MAX_RETRIES) {
+            // V Tauri se HTTP klient umí zaseknout – před opakováním ho resetovat.
             resetTauriFetchState();
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          failStreakRef.current += 1;
+          if (!everOnlineRef.current || failStreakRef.current >= BANNER_AFTER_FAILS) {
+            setError(getConnectionErrorMessage(err));
+            setIsOnline(false);
           }
         }
       }
@@ -108,19 +122,31 @@ export function OnlineGate({ children }: OnlineGateProps) {
   }, []);
 
   useEffect(() => {
-    wasOnlineRef.current = isOnline;
-  }, [isOnline]);
-
-  useEffect(() => {
     setIsChecking(true);
     checkConnection();
     const interval = setInterval(() => {
       checkConnection();
     }, 30000);
-    return () => clearInterval(interval);
+    // Návrat online / probuzení okna: nečekat na další tik.
+    const onOnline = () => { resetTauriFetchState(); checkConnection(); };
+    const onVisible = () => { if (document.visibilityState === "visible") checkConnection(); };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [checkConnection]);
 
-  // Show loading state while checking
+  const retry = () => {
+    if (isChecking) return;
+    resetTauriFetchState();
+    setIsChecking(true);
+    checkConnection();
+  };
+
+  // První start: čekat na cloud.
   if (isOnline === null) {
     return (
       <div
@@ -144,7 +170,56 @@ export function OnlineGate({ children }: OnlineGateProps) {
     );
   }
 
-  // Show error if offline
+  // Aplikace už běžela: výpadek jen ohlásit proužkem, obsah nechat.
+  if (!isOnline && everOnlineRef.current) {
+    return (
+      <>
+        <div
+          role="alert"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 20000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: "8px 16px",
+            background: "rgba(239,68,68,0.95)",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          }}
+        >
+          <span>Připojení k cloudu se nedaří. {error ?? ""} Změny se mohou neuložit.</span>
+          <button
+            type="button"
+            onClick={retry}
+            disabled={isChecking}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.7)",
+              background: "transparent",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: isChecking ? "wait" : "pointer",
+            }}
+          >
+            {isChecking ? "Kontroluji…" : "Zkusit znovu"}
+          </button>
+        </div>
+        {children}
+      </>
+    );
+  }
+
+  // Cloud nebyl dostupný ani jednou od startu.
   if (!isOnline) {
     return (
       <div
@@ -185,48 +260,18 @@ export function OnlineGate({ children }: OnlineGateProps) {
               justifyContent: "center",
             }}
           >
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="rgba(239,68,68,0.9)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(239,68,68,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
           </div>
-          <h2
-            style={{
-              fontSize: 24,
-              fontWeight: 900,
-              color: "var(--text, #333)",
-              margin: "0 0 12px 0",
-            }}
-          >
-            Cloud není dostupný
-          </h2>
-          <p
-            style={{
-              fontSize: 15,
-              color: "var(--muted, #666)",
-              margin: "0 0 24px 0",
-              lineHeight: 1.6,
-            }}
-          >
+          <h2 style={{ fontSize: 24, fontWeight: 900, color: "var(--text, #333)", margin: "0 0 12px 0" }}>Cloud není dostupný</h2>
+          <p style={{ fontSize: 15, color: "var(--muted, #666)", margin: "0 0 24px 0", lineHeight: 1.6 }}>
             {error || "Cloud je nedostupný. Zkuste to za chvíli nebo zkontrolujte připojení k internetu."}
           </p>
           <button
-            onClick={() => {
-              if (isChecking) return;
-              resetTauriFetchState(); // reset Tauri HTTP stav před opětovným pokusem
-              setIsChecking(true);
-              checkConnection();
-            }}
+            onClick={retry}
             disabled={isChecking}
             style={{
               padding: "12px 24px",
@@ -243,15 +288,12 @@ export function OnlineGate({ children }: OnlineGateProps) {
             {isChecking ? "Kontroluji připojení…" : "Zkusit znovu"}
           </button>
           <p style={{ marginTop: 12, fontSize: 12, color: "var(--muted)" }}>
-            Připojení se kontroluje každých 30 s. Při obnovení se aplikace znovu načte automaticky.
+            Připojení se kontroluje každých 30 s. Při obnovení se aplikace načte automaticky.
           </p>
         </div>
       </div>
     );
   }
 
-  // Connection is OK, render children
   return <>{children}</>;
 }
-
-

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
-import { AppLogo } from "./AppLogo";
+import { ThemeLogo } from "./ThemeLogo";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const { signIn, signUp, configError } = useAuth();
@@ -233,7 +233,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
               getLogoColors("dark", "purple"), takže přihlašovací obrazovka
               ukazovala jinou variantu loga než zbytek aplikace.
             */}
-            <AppLogo size={72} modern />
+            <ThemeLogo size={72} />
           </div>
           <h1
             style={{

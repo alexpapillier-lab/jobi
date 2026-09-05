@@ -24,6 +24,12 @@ export type Branch = {
   phone: string;
   email: string;
   openingHours: string;
+  /** Vlastní subjekt pobočky – prázdné = údaje firmy. */
+  companyName: string;
+  ico: string;
+  dic: string;
+  bankAccount: string;
+  iban: string;
   defaultWarehouseId: string | null;
   isDefault: boolean;
   orderIndex: number;
@@ -45,6 +51,11 @@ export function mapBranchRow(r: Record<string, unknown>): Branch {
     phone: str(r.phone),
     email: str(r.email),
     openingHours: str(r.opening_hours),
+    companyName: str(r.company_name),
+    ico: str(r.ico),
+    dic: str(r.dic),
+    bankAccount: str(r.bank_account),
+    iban: str(r.iban),
     defaultWarehouseId: typeof r.default_warehouse_id === "string" ? r.default_warehouse_id : null,
     isDefault: r.is_default === true,
     orderIndex: typeof r.order_index === "number" ? r.order_index : 0,
@@ -90,6 +101,11 @@ export async function saveBranch(serviceId: string, input: BranchInput): Promise
     phone: input.phone.trim() || null,
     email: input.email.trim() || null,
     opening_hours: input.openingHours.trim() || null,
+    company_name: input.companyName.trim() || null,
+    ico: input.ico.trim() || null,
+    dic: input.dic.trim() || null,
+    bank_account: input.bankAccount.trim() || null,
+    iban: input.iban.trim() || null,
     default_warehouse_id: input.defaultWarehouseId || null,
     is_default: input.isDefault === true,
   };
@@ -161,9 +177,9 @@ function humanizeBranchError(msg: string): string {
 }
 
 /**
- * Firemní údaje pro dokument dané pobočky: adresa, telefon, e-mail
- * pobočky mají přednost, zbytek (název, IČO, DIČ, banka) zůstává firemní.
- * Výchozí pobočka bez vyplněné adresy se chová jako dřív.
+ * Firemní údaje pro dokument dané pobočky: co má pobočka vyplněné (adresa,
+ * telefon, e-mail, případně vlastní subjekt s IČO, DIČ a účtem), má přednost;
+ * zbytek zůstává firemní. Výchozí pobočka bez vyplněných polí se chová jako dřív.
  */
 export function companyDataForBranch<T extends CompanyData | Record<string, unknown>>(cd: T, branch: Branch | null | undefined): T {
   if (!branch) return cd;
@@ -176,6 +192,19 @@ export function companyDataForBranch<T extends CompanyData | Record<string, unkn
   }
   if (branch.phone.trim()) out.phone = branch.phone;
   if (branch.email.trim()) out.email = branch.email;
+  // Vlastní subjekt pobočky: název, IČO, DIČ a účet mají přednost, když jsou vyplněné.
+  if (branch.companyName.trim()) out.name = branch.companyName;
+  if (branch.ico.trim()) {
+    out.ico = branch.ico;
+    // Jiné IČO = jiný plátce; DIČ firmy by na dokladu bylo špatně i prázdné.
+    out.dic = branch.dic;
+  } else if (branch.dic.trim()) {
+    out.dic = branch.dic;
+  }
+  if (branch.bankAccount.trim() || branch.iban.trim()) {
+    out.bankAccount = branch.bankAccount;
+    out.iban = branch.iban;
+  }
   return out as T;
 }
 

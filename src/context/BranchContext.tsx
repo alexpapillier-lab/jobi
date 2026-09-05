@@ -70,7 +70,12 @@ function writeStored(serviceId: string, id: string | null) {
   }
 }
 
-export function BranchProvider({ serviceId, userId, children }: { serviceId: string | null; userId: string | null; children: React.ReactNode }) {
+/**
+ * `enabled` = servis má modul Pobočky (placený, zapíná se v Owner panelu).
+ * Bez modulu se pobočky chovají jako jedna: žádný přepínač, žádný filtr,
+ * zakázky padají do výchozí pobočky. Data zůstávají, jen se neukazují.
+ */
+export function BranchProvider({ serviceId, userId, enabled = true, children }: { serviceId: string | null; userId: string | null; enabled?: boolean; children: React.ReactNode }) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
@@ -135,7 +140,7 @@ export function BranchProvider({ serviceId, userId, children }: { serviceId: str
   const value = useMemo<BranchContextValue>(() => {
     const byId = (id: string | null | undefined) => (id ? branches.find((b) => b.id === id) ?? null : null);
     const defaultBranch = branches.find((b) => b.isDefault) ?? branches[0] ?? null;
-    const isMulti = branches.length > 1;
+    const isMulti = enabled && branches.length > 1;
     // U jediné pobočky se aktivní filtr neuplatní – všechno je „ta jedna“.
     const effectiveActive = isMulti && activeBranchId && byId(activeBranchId) ? activeBranchId : null;
     const branchForNew = byId(effectiveActive) ?? byId(homeBranchId) ?? defaultBranch;
@@ -153,7 +158,7 @@ export function BranchProvider({ serviceId, userId, children }: { serviceId: str
       branchForNew,
       reload,
     };
-  }, [branches, loading, unavailable, activeBranchId, homeBranchId, setActiveBranchId, reload]);
+  }, [branches, loading, unavailable, activeBranchId, homeBranchId, setActiveBranchId, reload, enabled]);
 
   return <BranchContext.Provider value={value}>{children}</BranchContext.Provider>;
 }
