@@ -192,6 +192,8 @@ main { padding: 16px 16px 8px; }
 
 /* ===== Nabídka ===== */
 .quote-amount { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 4px 0 2px; }
+/* Pod rozpisem je částka součtem, ne dalším řádkem – proto mezera a čára nad. */
+.price-list + .quote-amount { margin-top: 12px; }
 .quote-note { font-size: 15px; color: var(--muted); white-space: pre-wrap; margin-top: 8px; }
 .confirm {
   margin-top: 14px;

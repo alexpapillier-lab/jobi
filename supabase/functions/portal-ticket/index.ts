@@ -80,6 +80,7 @@ type TicketRow = {
   handoff_method: string | null;
   handback_method: string | null;
   quote_amount: number | string | null;
+  quote_items: unknown;
   quote_note: string | null;
   quote_status: string;
   quote_sent_at: string | null;
@@ -92,7 +93,7 @@ const TICKET_COLUMNS =
   "id, service_id, code, status, notes, created_at, expected_completion_at, " +
   "device_label, device_brand, device_model, estimated_price, performed_repairs, " +
   "diagnostic_photos, diagnostic_photos_before, discount_type, discount_value, " +
-  "handoff_method, handback_method, quote_amount, quote_note, quote_status, " +
+  "handoff_method, handback_method, quote_amount, quote_items, quote_note, quote_status, " +
   "quote_sent_at, quote_decided_at, intake_signature_url, intake_signed_at, branch_id";
 
 type Repair = { name: string; price: number };
@@ -242,6 +243,8 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
     estimatedPrice: toNumber(t.estimated_price),
     quote: {
       amount: quoteAmount,
+      // Rozpis nabídky – zákazník má vidět, za co platí, ne jen součet.
+      items: parseRepairs(t.quote_items),
       note: t.quote_note,
       status: t.quote_status ?? "none",
       sentAt: t.quote_sent_at,

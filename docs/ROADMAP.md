@@ -18,8 +18,11 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 2. `[x]` **Stavebnice automatizací** (nasazeno 4. 9.; WhatsApp zatím ne) – pravidla „když stav X → šablona Y“ pro
    SMS, e-mail, WhatsApp; upomínky „čeká 7 dní na vyzvednutí“, skladné,
    žádost o recenzi po vydání. Základ (SMS podle stavu) existuje.
-3. `[ ]` **Cenová nabídka a schválení** jako první krok opravy – z ceníku,
-   odeslat, schválit online, pak práce. Dnes jen „předschválená cena“ v textu.
+3. `[x]` **Cenová nabídka a schválení** jako první krok opravy (nasazeno 5. 9.):
+   rozpis se skládá z ceníku nebo ručně, zákazník ho vidí položku po položce
+   v portálu a schválí nebo zamítne; po schválení se položky jedním tlačítkem
+   přenesou do provedených oprav. Položky drží `tickets.quote_items`,
+   editor je `src/components/orders/QuoteBuilder.tsx`.
 4. `[x]` **Díly od dodavatele až po marži** (nasazeno 5. 9.: dodavatelé, objednávky, minimum, rezervace ze zakázky, marže ve Statistikách) – objednávky dílů u dodavatelů,
    rezervace dílu na zakázku, doobjednání pod minimem, marže na opravu
    a na technika. Sklad a vazba díl↔oprava existují, chybí nákupní strana.

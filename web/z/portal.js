@@ -312,6 +312,15 @@
     card.hidden = false;
 
     card.appendChild(h('h2', { class: 'card-title', id: 'quoteTitle', text: 'Cenová nabídka' }));
+    // Rozpis, když ho servis poslal. Starší nabídky mají jen částku.
+    var items = Array.isArray(quote.items) ? quote.items : [];
+    if (items.length) {
+      var ul = h('ul', { class: 'price-list' });
+      items.forEach(function (i) {
+        ul.appendChild(h('li', {}, [h('span', { text: str(i && i.name) || 'Položka' }), h('span', { text: fmtMoney(i && i.price) })]));
+      });
+      card.appendChild(ul);
+    }
     card.appendChild(h('div', { class: 'quote-amount', text: fmtMoney(quote.amount) }));
     if (quote.sentAt) card.appendChild(h('p', { class: 'card-note', text: 'Odesláno ' + fmtDateTime(quote.sentAt) }));
     if (quote.note) card.appendChild(h('p', { class: 'quote-note', text: str(quote.note) }));

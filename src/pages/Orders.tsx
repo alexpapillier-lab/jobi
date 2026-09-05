@@ -2574,6 +2574,36 @@ export default function Orders({
     }));
   }, []);
 
+  /**
+   * Zákazník schválil nabídku – její položky se stanou provedenými opravami.
+   * Nahrazují se, ne přidávají: schválený rozpis je to, na čem se obě strany
+   * dohodly, a dvojitý zápis by se objevil na faktuře.
+   *
+   * Zapisuje se rovnou do databáze, ne přes běžné automatické ukládání, které
+   * čeká na zavření detailu. Uživatel klikl na jednu akci a dostal hlášku, že
+   * je hotovo – to musí platit i když hned zavře okno.
+   */
+  const applyQuoteRepairs = useCallback(
+    async (ticketId: string, repairs: PerformedRepair[]) => {
+      setCloudTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, performedRepairs: repairs } : t))
+      );
+      if (!supabase) {
+        setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+        return;
+      }
+      const { error } = await (supabase.from("tickets") as any)
+        .update({ performed_repairs: repairs })
+        .eq("id", ticketId);
+      if (error) {
+        // Zůstane rozpracované – uloží se při zavření detailu jako každá jiná změna.
+        setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+        throw error;
+      }
+    },
+    []
+  );
+
   const addPerformedRepair = useCallback(
     (ticketId: string, repair: { name: string; type: "selected" | "manual"; repairId?: string }) => {
       // Mark performed repairs as dirty
@@ -6423,6 +6453,8 @@ export default function Orders({
                     ticket={detailedTicket}
                     serviceId={activeServiceId}
                     smsAvailable={smsAvailable}
+                    availableRepairs={availableRepairs}
+                    onQuoteApprovedRepairs={applyQuoteRepairs}
                     style={{ marginTop: 16 }}
                     onFieldsChange={(ticketId, fields) =>
                       setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))

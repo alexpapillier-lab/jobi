@@ -19,9 +19,12 @@ import {
   sendPortalSms,
   sendQuote,
   type PortalEvent,
+  type QuoteItem,
   type PortalTicketFields,
 } from "../../lib/portal";
 import type { PerformedRepair } from "./types";
+import type { DeviceRepair } from "../../lib/catalogStorage";
+import { QuoteBuilder, soucetPolozek } from "./QuoteBuilder";
 
 /**
  * Karta „Zákaznický portál“ v detailu zakázky.
@@ -40,6 +43,28 @@ export type PortalCardTicket = PortalTicketFields & {
 };
 
 const POLL_MS = 60_000;
+
+/** Rozpis odeslané nabídky. Bez položek ukáže aspoň částku – starší nabídky rozpis nemají. */
+function QuoteSummary({ items, amount }: { items?: QuoteItem[]; amount?: number }) {
+  const celkem = amount ?? soucetPolozek(items ?? []);
+  if ((items ?? []).length === 0) {
+    return amount === undefined ? null : <span style={{ fontWeight: 700 }}>{celkem.toLocaleString("cs-CZ")} Kč</span>;
+  }
+  return (
+    <div style={{ display: "grid", gap: 3, fontSize: "var(--text-sm)" }}>
+      {(items ?? []).map((i) => (
+        <div key={i.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ color: "var(--text)" }}>{i.name}</span>
+          <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{(Number(i.price) || 0).toLocaleString("cs-CZ")} Kč</span>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 3, fontWeight: 800 }}>
+        <span>Celkem</span>
+        <span style={{ whiteSpace: "nowrap" }}>{celkem.toLocaleString("cs-CZ")} Kč</span>
+      </div>
+    </div>
+  );
+}
 
 function hasAnyPortalField(t: PortalTicketFields): boolean {
   return (
@@ -83,6 +108,8 @@ export function PortalCard({
   ticket,
   serviceId,
   smsAvailable,
+  availableRepairs,
+  onQuoteApprovedRepairs,
   onFieldsChange,
   style,
 }: {
@@ -90,6 +117,10 @@ export function PortalCard({
   serviceId: string;
   /** SMS brána je pro servis aktivní – jinak jsou tlačítka na SMS vypnutá. */
   smsAvailable: boolean;
+  /** Ceník oprav pro zařízení zakázky – z něj se skládá rozpis nabídky. */
+  availableRepairs?: DeviceRepair[];
+  /** Přenese schválené položky do provedených oprav zakázky. */
+  onQuoteApprovedRepairs?: (ticketId: string, repairs: PerformedRepair[]) => void | Promise<void>;
   /** Promítne načtená/změněná portálová pole do stavu zakázek nadřazené stránky. */
   onFieldsChange?: (ticketId: string, fields: PortalTicketFields) => void;
   style?: React.CSSProperties;
@@ -101,9 +132,9 @@ export function PortalCard({
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenAttempt, setTokenAttempt] = useState(0);
   const [events, setEvents] = useState<PortalEvent[]>([]);
-  const [busy, setBusy] = useState<null | "sms" | "quote" | "cancel">(null);
+  const [busy, setBusy] = useState<null | "sms" | "quote" | "cancel" | "prenest">(null);
+  const [itemy, setItemy] = useState<QuoteItem[]>([]);
   const [composing, setComposing] = useState(false);
-  const [amountInput, setAmountInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
@@ -216,17 +247,33 @@ export function PortalCard({
   const quoteStatus = fields.quoteStatus ?? "none";
   const decisionNote = fields.quoteDecisionMeta?.note?.trim() || "";
 
-  const suggestedAmount = useMemo(() => {
-    const repairsSum = (ticket.performedRepairs ?? []).reduce((sum, r) => sum + (Number(r.price) || 0), 0);
-    if (repairsSum > 0) return repairsSum;
-    return ticket.estimatedPrice ?? 0;
-  }, [ticket.performedRepairs, ticket.estimatedPrice]);
+  /**
+   * Čím se formulář předvyplní: dřív poslaný rozpis, jinak opravy už zapsané
+   * na zakázce. Technik tak většinou jen zkontroluje a odešle.
+   */
+  const navrhItemu = useMemo<QuoteItem[]>(() => {
+    if ((fields.quoteItems ?? []).length > 0) return fields.quoteItems ?? [];
+    const zOprav = (ticket.performedRepairs ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      price: Number(r.price) || 0,
+      costs: r.costs,
+      estimatedTime: r.estimatedTime,
+      productIds: r.productIds,
+      repairId: r.repairId,
+      type: r.type,
+    }));
+    if (zOprav.length > 0) return zOprav;
+    const odhad = ticket.estimatedPrice ?? 0;
+    if (odhad > 0) return [{ id: "odhad", name: "Oprava", price: odhad, type: "manual" as const }];
+    return [];
+  }, [fields.quoteItems, ticket.performedRepairs, ticket.estimatedPrice]);
 
   const showQuoteForm = quoteStatus === "none" || (quoteStatus === "rejected" && composing);
 
   useEffect(() => {
     if (!showQuoteForm) return;
-    setAmountInput(suggestedAmount > 0 ? String(suggestedAmount) : "");
+    setItemy(navrhItemu);
     setNoteInput(fields.quoteNote ?? "");
     // Předvyplnit jen při otevření formuláře; další změny opravují text ručně.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,19 +304,61 @@ export function PortalCard({
     }
   };
 
+  /**
+   * Po schválení přepíše rozpis do provedených oprav. Bez toho by technik
+   * přepisoval ručně to, co zákazník právě odsouhlasil.
+   */
+  const prenestDoOprav = async () => {
+    const polozky = fields.quoteItems ?? [];
+    if (polozky.length === 0 || !onQuoteApprovedRepairs) return;
+    setBusy("prenest");
+    try {
+      await onQuoteApprovedRepairs(
+        ticketId,
+        polozky.map((i) => ({
+          id: i.id,
+          name: i.name,
+          type: i.type === "selected" ? "selected" : "manual",
+          repairId: i.repairId,
+          price: i.price,
+          costs: i.costs,
+          estimatedTime: i.estimatedTime,
+          productIds: i.productIds,
+        })),
+      );
+      showToast("Položky přeneseny do provedených oprav", "success");
+    } catch (error) {
+      reportError({
+        code: "portal.quote_transfer_failed",
+        error,
+        userMessage: "Položky se nepodařilo uložit. Zkuste to znovu.",
+        source: "PortalCard",
+        serviceId,
+        context: { ticketId },
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const submitQuote = async () => {
     if (busy) return;
-    const amount = Number(String(amountInput).replace(/\s/g, "").replace(",", "."));
+    const polozky = itemy.filter((i) => i.name.trim() !== "");
+    const amount = soucetPolozek(polozky);
+    if (polozky.length === 0) {
+      showToast("Přidejte do nabídky aspoň jednu položku", "error");
+      return;
+    }
     if (!Number.isFinite(amount) || amount <= 0) {
-      showToast("Zadejte částku nabídky", "error");
+      showToast("Nabídka musí mít cenu větší než nula", "error");
       return;
     }
     setBusy("quote");
     try {
-      const next = await sendQuote({ ticketId, amount, note: noteInput });
+      const next = await sendQuote({ ticketId, amount, note: noteInput, items: polozky });
       applyFields(next);
       setComposing(false);
-      await logPortalEvent(ticketId, serviceId, "quote_sent", { amount, note: noteInput.trim() || undefined });
+      await logPortalEvent(ticketId, serviceId, "quote_sent", { amount, items: polozky.length, note: noteInput.trim() || undefined });
       if (phoneNorm && smsAvailable && url) {
         try {
           await sendPortalSms({
@@ -372,57 +461,60 @@ export function PortalCard({
           <div style={block}>
             <SectionHeading size="sm" icon={<CoinsIcon size={14} />}>Cenová nabídka</SectionHeading>
             {quoteStatus === "sent" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <Pill color="var(--warning-text)" icon={<ClockIcon size={12} />}>
-                  Čeká na schválení{fields.quoteSentAt ? ` · odesláno ${formatPortalDateTime(fields.quoteSentAt)}` : ""}
-                </Pill>
-                {fields.quoteAmount !== undefined && <span style={{ fontWeight: 700 }}>{fields.quoteAmount} Kč</span>}
-                {fields.quoteNote && <span style={muted}>{fields.quoteNote}</span>}
-                <Button size="sm" variant="ghost" onClick={withdrawQuote} disabled={busy !== null}>
-                  {busy === "cancel" ? "Ruším…" : "Zrušit nabídku"}
-                </Button>
+              <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <Pill color="var(--warning-text)" icon={<ClockIcon size={12} />}>
+                    Čeká na schválení{fields.quoteSentAt ? ` · odesláno ${formatPortalDateTime(fields.quoteSentAt)}` : ""}
+                  </Pill>
+                  {fields.quoteNote && <span style={muted}>{fields.quoteNote}</span>}
+                  <Button size="sm" variant="ghost" onClick={withdrawQuote} disabled={busy !== null}>
+                    {busy === "cancel" ? "Ruším…" : "Zrušit nabídku"}
+                  </Button>
+                </div>
+                <QuoteSummary items={fields.quoteItems} amount={fields.quoteAmount} />
               </div>
             )}
             {quoteStatus === "approved" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <Pill color="var(--success-text)" icon={<CheckIcon size={12} />}>
-                  Schváleno{fields.quoteDecidedAt ? ` ${formatPortalDateTime(fields.quoteDecidedAt)}` : ""}
-                </Pill>
-                {fields.quoteAmount !== undefined && <span style={{ fontWeight: 700 }}>{fields.quoteAmount} Kč</span>}
-                {decisionNote && <span style={muted}>„{decisionNote}“</span>}
+              <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <Pill color="var(--success-text)" icon={<CheckIcon size={12} />}>
+                    Schváleno{fields.quoteDecidedAt ? ` ${formatPortalDateTime(fields.quoteDecidedAt)}` : ""}
+                  </Pill>
+                  {decisionNote && <span style={muted}>„{decisionNote}“</span>}
+                  {(fields.quoteItems ?? []).length > 0 && onQuoteApprovedRepairs && (
+                    <Button size="sm" variant="soft" onClick={prenestDoOprav} disabled={busy !== null}>
+                      {busy === "prenest" ? "Přenáším…" : "Přenést do provedených oprav"}
+                    </Button>
+                  )}
+                </div>
+                <QuoteSummary items={fields.quoteItems} amount={fields.quoteAmount} />
               </div>
             )}
             {quoteStatus === "rejected" && !composing && (
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <Pill color="var(--danger-text)" icon={<XIcon size={12} />}>
-                  Zamítnuto{fields.quoteDecidedAt ? ` ${formatPortalDateTime(fields.quoteDecidedAt)}` : ""}
-                </Pill>
-                {fields.quoteAmount !== undefined && <span style={{ fontWeight: 700, textDecoration: "line-through", color: "var(--muted)" }}>{fields.quoteAmount} Kč</span>}
-                {decisionNote && <span style={muted}>„{decisionNote}“</span>}
-                <Button size="sm" variant="primary" onClick={() => setComposing(true)}>
-                  Poslat novou nabídku
-                </Button>
+              <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <Pill color="var(--danger-text)" icon={<XIcon size={12} />}>
+                    Zamítnuto{fields.quoteDecidedAt ? ` ${formatPortalDateTime(fields.quoteDecidedAt)}` : ""}
+                  </Pill>
+                  {fields.quoteAmount !== undefined && <span style={{ fontWeight: 700, textDecoration: "line-through", color: "var(--muted)" }}>{fields.quoteAmount} Kč</span>}
+                  {decisionNote && <span style={muted}>„{decisionNote}“</span>}
+                  <Button size="sm" variant="primary" onClick={() => setComposing(true)}>
+                    Poslat novou nabídku
+                  </Button>
+                </div>
               </div>
             )}
             {showQuoteForm && (
-              <div style={{ display: "grid", gap: "var(--space-2)", gridTemplateColumns: "minmax(120px, 160px) 1fr auto", alignItems: "end" }}>
+              <div style={{ display: "grid", gap: "var(--space-3)" }}>
                 <div>
-                  <Label>Částka (Kč)</Label>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step={1}
-                    value={amountInput}
-                    onChange={(e) => setAmountInput(e.target.value)}
-                    placeholder="0"
-                  />
+                  <Label>Rozpis</Label>
+                  <QuoteBuilder items={itemy} onChange={setItemy} availableRepairs={availableRepairs} />
                 </div>
                 <div>
                   <Label>Poznámka pro zákazníka</Label>
-                  <Input value={noteInput} onChange={(e) => setNoteInput(e.target.value)} placeholder="Např. výměna displeje včetně práce" />
+                  <Input value={noteInput} onChange={(e) => setNoteInput(e.target.value)} placeholder="Např. displej je originální, oprava do dvou dnů" />
                 </div>
-                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
                   {quoteStatus === "rejected" && (
                     <Button size="sm" variant="ghost" onClick={() => setComposing(false)} disabled={busy !== null}>
                       Zpět

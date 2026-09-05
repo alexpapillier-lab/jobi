@@ -14,6 +14,21 @@ export const PORTAL_BASE_URL = "https://appjobi.com/z/";
 
 export type QuoteStatus = "none" | "sent" | "approved" | "rejected";
 
+/**
+ * Položka nabídky. Tvar je schválně shodný s `PerformedRepair`, aby se po
+ * schválení dala nabídka přenést do provedených oprav beze změny.
+ */
+export type QuoteItem = {
+  id: string;
+  name: string;
+  price?: number;
+  costs?: number;
+  estimatedTime?: number;
+  repairId?: string;
+  productIds?: string[];
+  type?: "selected" | "manual";
+};
+
 export type QuoteDecisionMeta = {
   ip?: string;
   userAgent?: string;
@@ -47,6 +62,7 @@ export const PORTAL_TICKET_COLUMNS = [
   "quote_sent_at",
   "quote_decided_at",
   "quote_decision_meta",
+  "quote_items",
   "intake_signature_url",
   "intake_signed_at",
   "portal_last_opened_at",
@@ -60,6 +76,7 @@ export type PortalTicketFields = {
   quoteSentAt?: string;
   quoteDecidedAt?: string;
   quoteDecisionMeta?: QuoteDecisionMeta;
+  quoteItems?: QuoteItem[];
   intakeSignatureUrl?: string;
   intakeSignedAt?: string;
   portalLastOpenedAt?: string;
@@ -119,6 +136,9 @@ export function mapPortalTicketFields(row: Record<string, unknown> | null | unde
   if ("quote_status" in row) out.quoteStatus = isQuoteStatus(row.quote_status) ? row.quote_status : "none";
   if ("quote_sent_at" in row) out.quoteSentAt = str(row.quote_sent_at);
   if ("quote_decided_at" in row) out.quoteDecidedAt = str(row.quote_decided_at);
+  if ("quote_items" in row) {
+    out.quoteItems = Array.isArray(row.quote_items) ? (row.quote_items as QuoteItem[]) : [];
+  }
   if ("quote_decision_meta" in row) {
     const m = row.quote_decision_meta;
     out.quoteDecisionMeta = m && typeof m === "object" ? (m as QuoteDecisionMeta) : undefined;
@@ -163,12 +183,13 @@ export async function loadPortalTicketFields(ticketId: string): Promise<PortalTi
 }
 
 /** Uloží nabídku a přepne ji do stavu „čeká na schválení“. Verzi zakázky zvedá trigger v DB. */
-export async function sendQuote(params: { ticketId: string; amount: number; note?: string }): Promise<PortalTicketFields> {
-  const { ticketId, amount, note } = params;
+export async function sendQuote(params: { ticketId: string; amount: number; note?: string; items?: QuoteItem[] }): Promise<PortalTicketFields> {
+  const { ticketId, amount, note, items } = params;
   const { data, error } = await client()
     .from("tickets")
     .update({
       quote_amount: amount,
+      quote_items: items ?? [],
       quote_note: note?.trim() || null,
       quote_status: "sent",
       quote_sent_at: new Date().toISOString(),
