@@ -153,3 +153,41 @@ takže se nic nerozbilo.
 
 Nezměněno zůstává `services_insert_any_authenticated` — zakládání servisu
 je otevřené každému přihlášenému záměrně, kvůli registraci.
+
+
+## Druhé kolo (5. 9. 2026 večer) – správce, člen bez práv, cizí servis, anon
+
+Probe skript rozšířený na 120 dotazů (`scripts/rls-probe.sql`), spouští se
+`NODE_OPTIONS=--dns-result-order=ipv4first npx supabase db query --linked "$(grep -v '^\s*--' scripts/rls-probe.sql)"`
+(řádky s komentáři musí pryč, jinak si je CLI vyloží jako přepínače).
+
+**Oddělení servisů v tabulkách drží** včetně nových: `branches`, `service_billing`,
+`service_integrations`, `tickets.quote_items`. Díry byly ve funkcích a v triggeru
+(opraveno migrací `20260907130000_audit2_opravneni.sql`, nasazeno a ověřeno):
+
+1. **`delete_service_for_root()` šlo zavolat s anon klíčem** přes REST a smazat
+   libovolný servis se všemi daty. Nejvážnější nález celého auditu. Funkce teď
+   pustí jen `service_role` (edge funkce service-manage, která ověřuje root
+   ownera); přihlášený uživatel i anon dostanou 42501. Ověřeno oběma cestami.
+2. `get_auth_user_id_by_email()` a `invited_email_has_any_membership()` – z anon
+   role šlo zjišťovat, které e-maily mají účet. Jen pro service_role.
+3. `next_invoice_number()` – kdokoli mohl posunout číselnou řadu faktur cizího
+   servisu (díry v číslování dokladů). Teď vyžaduje členství.
+4. Provozní funkce (úklidy, `default_branch_id`, `branches_allowed`) měly
+   EXECUTE pro PUBLIC. Odebráno.
+5. Trigger `enforce_ticket_basic_update_permissions` hlídal pevný seznam
+   sloupců: člen bez práva „Úpravy zakázek" mohl přepsat cenovou nabídku včetně
+   stavu schválení, pobočku, termín, portálový token i podpis převzetí; a při
+   změně stavu se kontrola přeskočila úplně. Teď se hlídá všechno kromě
+   výslovných výjimek (stav, completed_at, archivace, systémové sloupce);
+   podpis a rozhodnutí o nabídce smí psát jen portál (service_role), portálový
+   token jen `ensure_portal_token`.
+6. `anon` měl plné tabulkové granty na nové tabulky. Odebráno.
+
+Po opravě: 120 probe, 0 neshod s očekáváním. Celá E2E sada (14 testů) prochází,
+klient žádný chráněný sloupec nepíše přímo.
+
+**Zbývá:** revize toho, co veřejné funkce `portal-ticket` a `capture-*` vracejí
+zákazníkovi bez přihlášení (telefon, e-mail, IMEI, heslo k zařízení, interní
+poznámky, nákupní ceny tam být nesmí) – kód to podle hlavičky funkce filtruje,
+ale nikdo to po posledních změnách (quote_items) znovu neprošel.

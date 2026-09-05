@@ -92,7 +92,12 @@ První tři měsíce: body 1, 2, 4.
   hodinu, e-mail přes Resend, tlumení 6 hodin, chyby z dev serveru se
   přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Zbývá stavová stránka a hlídání
   zvenčí, že aplikace vůbec běží.
-- `[~]` Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
+- `[~]` Audit RLS – druhé kolo 5. 9. večer (správce, člen bez práv, anon): 120
+  probe, 6 děr opraveno migrací 20260907130000, mezi nimi mazání libovolného
+  servisu anon klíčem a posouvání cizí číselné řady faktur. Detail v
+  `docs/AUDIT_ROLE_2026-09.md`. Zbývá revize dat, která vrací portal-ticket a
+  capture-* bez přihlášení.
+- `[~]` (původní zápis) Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
   veřejné API, capture-upload, invoice-send-email). 5. 9.: proběhlo první
   kolo z účtu technika (`scripts/rls-probe.sql`, 45 testů). Opraveno mazání
   zákazníků bez práva, přepis a mazání cizích komentářů a vystavování faktur
