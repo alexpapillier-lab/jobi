@@ -68,8 +68,12 @@ První tři měsíce: body 1, 2, 4.
   mimo Supabase a vyzkoušená obnova.
 - `[ ]` Monitoring a alerting – chyby jdou do `error_logs`; chybí upozornění
   (e-mail / Slack) a stavová stránka.
-- `[ ]` Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
-  veřejné API, capture-upload, invoice-send-email).
+- `[~]` Audit RLS a edge funkcí před prvním cizím zákazníkem (zejména
+  veřejné API, capture-upload, invoice-send-email). 5. 9.: proběhlo první
+  kolo z účtu technika (`scripts/rls-probe.sql`, 45 testů). Opraveno mazání
+  zákazníků bez práva, přepis a mazání cizích komentářů a vystavování faktur
+  bez zaplaceného modulu. Zbývá projet totéž z role správce a projít veřejné
+  API a capture funkce.
 - `[ ]` Rate limity a kvóty na veřejném API a SMS.
 - `[ ]` Supabase plán a limity (řádky, storage fotek, realtime spojení)
   spočítat na 50 servisů.
