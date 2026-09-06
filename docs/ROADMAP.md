@@ -242,6 +242,9 @@ První tři měsíce: body 1, 2, 4.
   `support-report` přiloží verzi, platformu, servis a posledních 10 chyb
   z logu, e-mail chodí na podpora@appjobi.com s reply-to na uživatele).
   Zbývá slíbit reakční dobu a říct, kdo podporu drží.
+- `[x]` Veřejné API – zápis rozšířen (6. 9.): zakládání, úpravy a mazání produktů
+  a oprav, značky/kategorie/modely (bez mazání), vazby ověřené na servis,
+  `created_ids` v odpovědi; ověřeno živě dočasným tokenem v E2E servisu.
 - `[ ]` Import z konkurence jako služba při přechodu (bod A10).
 - `[ ]` Pilot: 3 cizí servisy zdarma za zpětnou vazbu, teprve pak ceník.
 - `[ ]` Fakturace zákazníků Jobi (kdo vystavuje, DPH, měsíční / roční).

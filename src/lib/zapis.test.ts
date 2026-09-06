@@ -6,7 +6,7 @@
  * běží v Denu a vlastní testy nemá.
  */
 import { describe, it, expect } from "vitest";
-import { zmenyProduktu, zmenyOprav, otiskTela } from "../../supabase/functions/_shared/zapis";
+import { zmenyProduktu, zmenyOprav, zmenyKatalogu, otiskTela } from "../../supabase/functions/_shared/zapis";
 
 const UUID = "0a7587f1-1111-4222-8333-444455556666";
 
@@ -17,15 +17,33 @@ describe("zmenyProduktu", () => {
     expect(v.zmeny).toEqual([{ id: undefined, sku: "BAT-6S", hodnoty: { stock: 4, price: 590 } }]);
   });
 
-  it("NEPROPUSTÍ nic jiného, ani když to klient pošle", () => {
+  it("NEPROPUSTÍ vlastnictví ani interní sloupce, ani když je klient pošle", () => {
     const v = zmenyProduktu([{
-      sku: "X", stock: 1,
-      service_id: "cizi-servis", public_visible: false, name: "přepsáno", id_: "nesmysl",
+      sku: "X", stock: 1, name: "Nový název", public_visible: false,
+      service_id: "cizi-servis", order_index: 5, repair_ids: ["x"], image_url: "http://x", id_: "nesmysl",
     }]);
-    expect(v.zmeny[0].hodnoty).toEqual({ stock: 1 });
+    expect(v.zmeny[0].hodnoty).toEqual({ stock: 1, name: "Nový název", public_visible: false });
     expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("service_id");
-    expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("public_visible");
-    expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("name");
+    expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("order_index");
+    expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("repair_ids");
+  });
+
+  it("založení a smazání produktu", () => {
+    const v = zmenyProduktu([
+      { create: true, name: "Baterie X", sku: "BAT-X", price: 590, purchase_price: 300, min_stock: 2, model_ids: [UUID] },
+      { create: true, sku: "BEZ-JMENA" },
+      { id: UUID, delete: true },
+      { sku: "BAT-X", delete: true },
+    ]);
+    expect(v.zmeny[0]).toMatchObject({ akce: "create", sku: undefined, hodnoty: { name: "Baterie X", sku: "BAT-X", price: 590, purchase_price: 300, min_stock: 2, model_ids: [UUID] } });
+    expect(v.zmeny[1]).toEqual({ id: UUID, hodnoty: {}, akce: "delete" });
+    expect(v.chyby).toEqual(["products[1]: nový produkt potřebuje name", "products[3]: mazat jde jen podle id"]);
+  });
+
+  it("vazby musí být id, ne cokoli", () => {
+    const v = zmenyProduktu([{ sku: "A", category_id: "kategorie", model_ids: ["x"] }, { sku: "B", category_id: null }]);
+    expect(v.chyby).toEqual(["products[0]: category_id musí být id nebo null", "products[0]: model_ids musí být pole id", "products[0]: není co měnit (povolené: stock, price, purchase_price, min_stock, name, description, supplier_sku, category_id, model_ids, public_visible)"]);
+    expect(v.zmeny[0].hodnoty).toEqual({ category_id: null });
   });
 
   it("chce id nebo sku", () => {
@@ -70,15 +88,29 @@ describe("zmenyOprav", () => {
     expect(v.zmeny[0].hodnoty).toEqual({ price: 1490, estimated_time: 60 });
   });
 
-  it("NEPROPUSTÍ náklady – to je marže servisu", () => {
-    const v = zmenyOprav([{ id: UUID, price: 100, costs: 1 }]);
-    expect(Object.keys(v.zmeny[0].hodnoty)).not.toContain("costs");
+  it("náklady, název, popis a vazby jdou měnit; service_id ne", () => {
+    const v = zmenyOprav([{ id: UUID, price: 100, costs: 1, name: "Displej", details: "originál", product_ids: [UUID], service_id: "x" }]);
+    expect(v.zmeny[0].hodnoty).toEqual({ price: 100, costs: 1, name: "Displej", details: "originál", product_ids: [UUID] });
   });
 
-  it("nedá se adresovat názvem, jen id", () => {
-    const v = zmenyOprav([{ name: "Výměna displeje", price: 1 }]);
-    expect(v.zmeny).toEqual([]);
-    expect(v.chyby[0]).toMatch(/platné id/);
+  it("úprava bez id neprojde; založení bez id chce name a model_ids", () => {
+    expect(zmenyOprav([{ price: 1 }]).chyby[0]).toMatch(/platné id/);
+    const bezModelu = zmenyOprav([{ name: "Výměna displeje", price: 1 }]);
+    expect(bezModelu.zmeny).toEqual([]);
+    expect(bezModelu.chyby[0]).toMatch(/model_ids/);
+    const nova = zmenyOprav([{ name: "Výměna displeje", price: 1490, model_ids: [UUID, UUID] }]);
+    expect(nova.zmeny[0]).toEqual({ id: undefined, akce: "create", hodnoty: { name: "Výměna displeje", price: 1490, model_ids: [UUID] } });
+    expect(zmenyOprav([{ id: UUID, delete: true }]).zmeny[0]).toEqual({ id: UUID, hodnoty: {}, akce: "delete" });
+  });
+});
+
+describe("zmenyKatalogu", () => {
+  it("značky, kategorie a modely: založit nebo přejmenovat, mazat ne", () => {
+    expect(zmenyKatalogu([{ name: "Apple" }], "brands").zmeny[0]).toEqual({ hodnoty: { name: "Apple" }, akce: "create" });
+    expect(zmenyKatalogu([{ name: "Telefony" }], "categories").chyby[0]).toMatch(/brand_id/);
+    expect(zmenyKatalogu([{ name: "iPhone 15", category_id: UUID }], "models").zmeny[0]).toEqual({ hodnoty: { name: "iPhone 15", category_id: UUID }, akce: "create" });
+    expect(zmenyKatalogu([{ id: UUID, name: "Apple Inc." }], "brands").zmeny[0]).toEqual({ id: UUID, hodnoty: { name: "Apple Inc." } });
+    expect(zmenyKatalogu([{ id: UUID, delete: true }], "models").chyby[0]).toMatch(/jen v aplikaci/);
   });
 });
 

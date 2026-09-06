@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { otisk, PREFIX, type Rozsah } from "../_shared/tokeny.ts";
-import { zmenyProduktu, zmenyOprav, otiskTela } from "../_shared/zapis.ts";
+import { zmenyProduktu, zmenyOprav, zmenyKatalogu, otiskTela, type DruhKatalogu } from "../_shared/zapis.ts";
 
 /**
  * Zápis přes veřejné API. Na rozdíl od čtení vyžaduje token.
@@ -13,9 +13,12 @@ import { zmenyProduktu, zmenyOprav, otiskTela } from "../_shared/zapis.ts";
  *   { "products": [{ "sku": "BAT-6S", "stock": 4 }],
  *     "repairs":  [{ "id": "…", "price": 1490 }] }
  *
- * Schválně se dá měnit jen to, co se v praxi mění zvenčí – počty kusů,
- * ceny a odhadovaný čas. Názvy, popisy ani vazby na modely ne: to je
- * úprava katalogu a patří do aplikace, kde je vidět souvislost.
+ * Od 6. 9. jde přes API i zakládat, přejmenovávat a mazat produkty
+ * a opravy a spravovat značky, kategorie a modely (`brands`, `categories`,
+ * `models`; ty se nemažou – kaskáda přes celý katalog patří do aplikace).
+ * Vazby (category_id, model_ids, product_ids, brand_id) se přijmou jen na
+ * záznamy téhož servisu; cizí id se tiše vynechá, aby přes API nešlo
+ * zjišťovat, co existuje jinde.
  *
  * Limit 30 zápisů za minutu na token. Čtení se limituje na CDN, ne tady
  * (viz docs/ZADANI_API.md, kapitola Limity).
@@ -103,104 +106,164 @@ serve(async (req) => {
 
   const vysledek: Record<string, unknown> = {};
   const chyby: string[] = [];
+  const sid = zaznam.service_id;
 
-  // --- produkty ---
-  if (Array.isArray((telo as any).products)) {
-    if (!rozsahy.includes("inventory:write")) {
-      return json({ error: "Token nemá rozsah inventory:write" }, 403);
+  /** Id z dané tabulky, která patří servisu – cizí a neexistující se vynechají. */
+  const vlastni = async (tabulka: string, ids: string[]): Promise<Set<string>> => {
+    if (ids.length === 0) return new Set();
+    const { data } = await svc.from(tabulka).select("id").eq("service_id", sid).in("id", ids);
+    return new Set(((data ?? []) as { id: string }[]).map((x) => x.id));
+  };
+  /** Vazby v hodnotách ořízne na záznamy servisu. */
+  const overVazby = async (hodnoty: Record<string, unknown>, prefix: string) => {
+    for (const [klic, tabulka] of [["model_ids", "device_models"], ["product_ids", "inventory_products"]] as const) {
+      if (Array.isArray(hodnoty[klic])) {
+        const ok = await vlastni(tabulka, hodnoty[klic] as string[]);
+        const vynechano = (hodnoty[klic] as string[]).filter((x) => !ok.has(x));
+        if (vynechano.length) chyby.push(`${prefix}: ${klic} – neznámé id vynecháno: ${vynechano.join(", ")}`);
+        hodnoty[klic] = (hodnoty[klic] as string[]).filter((x) => ok.has(x));
+      }
     }
-    const { zmeny, chyby: ch } = zmenyProduktu((telo as any).products);
+    for (const [klic, tabulka] of [["category_id", null], ["brand_id", "device_brands"]] as const) {
+      if (typeof hodnoty[klic] === "string") {
+        // category_id znamená u produktu kategorii skladu, u modelu kategorii zařízení – rozliší volající.
+        const t = tabulka ?? (hodnoty.__kategorieTabulka as string);
+        const ok = await vlastni(t, [hodnoty[klic] as string]);
+        if (ok.size === 0) { chyby.push(`${prefix}: ${klic} ${hodnoty[klic]} v tomhle servisu není`); delete hodnoty[klic]; }
+      }
+    }
+    delete hodnoty.__kategorieTabulka;
+  };
+  type Pocty = { updated: number; created: number; deleted: number; not_found: string[]; created_ids: string[] };
+  const pocty = (): Pocty => ({ updated: 0, created: 0, deleted: 0, not_found: [], created_ids: [] });
+
+  // --- značky, kategorie, modely (v tomhle pořadí, ať nová kategorie může odkazovat na novou značku v dalším požadavku) ---
+  const KATALOG: Record<DruhKatalogu, string> = { brands: "device_brands", categories: "device_categories", models: "device_models" };
+  for (const druh of ["brands", "categories", "models"] as DruhKatalogu[]) {
+    if (!Array.isArray((telo as any)[druh])) continue;
+    if (!rozsahy.includes("catalog:write")) return json({ error: "Token nemá rozsah catalog:write" }, 403);
+    const { zmeny, chyby: ch } = zmenyKatalogu((telo as any)[druh], druh);
     chyby.push(...ch);
-    let upraveno = 0;
-    const nenalezeno: string[] = [];
-
-    // Sklady servisu se načtou jednou, ne u každé položky.
-    const { data: sklady } = await svc
-      .from("inventory_warehouses")
-      .select("id, name, is_default")
-      .eq("service_id", zaznam.service_id)
-      .order("order_index");
-    const seznamSkladu = (sklady ?? []) as { id: string; name: string; is_default: boolean }[];
-    const vychoziSkladId = seznamSkladu.find((w) => w.is_default)?.id ?? seznamSkladu[0]?.id ?? null;
-
-    for (const z of zmeny) {
-      // `stock` už není sloupec produktu, ale množství v konkrétním skladu.
-      const { stock, ...sloupceProduktu } = z.hodnoty;
-
-      // Nejdřív najít produkt – u zápisu podle SKU jinak neznáme jeho id.
-      const hledani = svc.from("inventory_products").select("id").eq("service_id", zaznam.service_id);
-      const { data: nalezene, error: chybaHledani } = z.id
-        ? await hledani.eq("id", z.id)
-        : await hledani.eq("sku", z.sku!);
-      if (chybaHledani) {
-        chyby.push(`${z.id ?? z.sku}: ${chybaHledani.message}`);
+    const p = pocty();
+    for (const [i, z] of zmeny.entries()) {
+      const prefix = `${druh}[${i}]`;
+      if (druh === "models") z.hodnoty.__kategorieTabulka = "device_categories";
+      await overVazby(z.hodnoty, prefix);
+      if (z.akce === "create") {
+        const rodic = druh === "categories" ? "brand_id" : druh === "models" ? "category_id" : null;
+        if (rodic && !z.hodnoty[rodic]) { chyby.push(`${prefix}: bez platného ${rodic} nejde založit`); continue; }
+        const { data, error } = await svc.from(KATALOG[druh]).insert({ ...z.hodnoty, service_id: sid }).select("id").single();
+        if (error) chyby.push(`${prefix}: ${error.message}`);
+        else { p.created += 1; p.created_ids.push((data as { id: string }).id); }
         continue;
       }
-      if (!nalezene || nalezene.length === 0) {
-        nenalezeno.push(z.id ?? z.sku!);
-        continue;
-      }
-
-      let selhalo = false;
-      if (Object.keys(sloupceProduktu).length > 0) {
-        const { error } = await svc
-          .from("inventory_products")
-          .update(sloupceProduktu)
-          .in("id", nalezene.map((p: { id: string }) => p.id));
-        if (error) { chyby.push(`${z.id ?? z.sku}: ${error.message}`); selhalo = true; }
-      }
-
-      if (!selhalo && stock !== undefined) {
-        const cil = z.sklad
-          ? seznamSkladu.find((w) => w.id === z.sklad || w.name === z.sklad)?.id ?? null
-          : vychoziSkladId;
-        if (!cil) {
-          chyby.push(`${z.id ?? z.sku}: sklad „${z.sklad ?? "výchozí"}“ neexistuje`);
-          selhalo = true;
-        } else {
-          for (const p of nalezene as { id: string }[]) {
-            // Nula znamená smazat řádek, ne uložit nulu – stejně jako v aplikaci.
-            const { error } = stock === 0
-              ? await svc.from("inventory_stock").delete().eq("product_id", p.id).eq("warehouse_id", cil)
-              : await svc.from("inventory_stock").upsert(
-                  { product_id: p.id, warehouse_id: cil, service_id: zaznam.service_id, quantity: stock },
-                  { onConflict: "product_id,warehouse_id" },
-                );
-            if (error) { chyby.push(`${z.id ?? z.sku}: ${error.message}`); selhalo = true; break; }
-          }
-        }
-      }
-
-      if (!selhalo) upraveno += nalezene.length;
+      if (Object.keys(z.hodnoty).length === 0) continue;
+      const { data, error } = await svc.from(KATALOG[druh]).update(z.hodnoty).eq("service_id", sid).eq("id", z.id!).select("id");
+      if (error) chyby.push(`${prefix}: ${error.message}`);
+      else if (!data || data.length === 0) p.not_found.push(z.id!);
+      else p.updated += data.length;
     }
-    vysledek.products = { updated: upraveno, not_found: nenalezeno };
+    vysledek[druh] = p;
   }
 
   // --- opravy ---
   if (Array.isArray((telo as any).repairs)) {
-    if (!rozsahy.includes("catalog:write")) {
-      return json({ error: "Token nemá rozsah catalog:write" }, 403);
-    }
+    if (!rozsahy.includes("catalog:write")) return json({ error: "Token nemá rozsah catalog:write" }, 403);
     const { zmeny, chyby: ch } = zmenyOprav((telo as any).repairs);
     chyby.push(...ch);
-    let upraveno = 0;
-    const nenalezeno: string[] = [];
-    for (const z of zmeny) {
-      const { data, error } = await svc
-        .from("repairs")
-        .update(z.hodnoty)
-        .eq("service_id", zaznam.service_id)
-        .eq("id", z.id!)
-        .select("id");
-      if (error) chyby.push(`${z.id}: ${error.message}`);
-      else if (!data || data.length === 0) nenalezeno.push(z.id!);
-      else upraveno += data.length;
+    const p = pocty();
+    for (const [i, z] of zmeny.entries()) {
+      const prefix = `repairs[${i}]`;
+      if (z.akce === "delete") {
+        const { data, error } = await svc.from("repairs").delete().eq("service_id", sid).eq("id", z.id!).select("id");
+        if (error) chyby.push(`${prefix}: ${error.message}`);
+        else if (!data || data.length === 0) p.not_found.push(z.id!);
+        else p.deleted += data.length;
+        continue;
+      }
+      await overVazby(z.hodnoty, prefix);
+      if (z.akce === "create") {
+        if (!Array.isArray(z.hodnoty.model_ids) || (z.hodnoty.model_ids as string[]).length === 0) { chyby.push(`${prefix}: žádný z model_ids v servisu není`); continue; }
+        const { data, error } = await svc.from("repairs").insert({ price: 0, estimated_time: 0, details: "", ...z.hodnoty, service_id: sid }).select("id").single();
+        if (error) chyby.push(`${prefix}: ${error.message}`);
+        else { p.created += 1; p.created_ids.push((data as { id: string }).id); }
+        continue;
+      }
+      if (Object.keys(z.hodnoty).length === 0) continue;
+      const { data, error } = await svc.from("repairs").update(z.hodnoty).eq("service_id", sid).eq("id", z.id!).select("id");
+      if (error) chyby.push(`${prefix}: ${error.message}`);
+      else if (!data || data.length === 0) p.not_found.push(z.id!);
+      else p.updated += data.length;
     }
-    vysledek.repairs = { updated: upraveno, not_found: nenalezeno };
+    vysledek.repairs = p;
+  }
+
+  // --- produkty ---
+  if (Array.isArray((telo as any).products)) {
+    if (!rozsahy.includes("inventory:write")) return json({ error: "Token nemá rozsah inventory:write" }, 403);
+    const { zmeny, chyby: ch } = zmenyProduktu((telo as any).products);
+    chyby.push(...ch);
+    const p = pocty();
+    // Sklady servisu se načtou jednou, ne u každé položky.
+    const { data: sklady } = await svc.from("inventory_warehouses").select("id, name, is_default").eq("service_id", sid).order("order_index");
+    const seznamSkladu = (sklady ?? []) as { id: string; name: string; is_default: boolean }[];
+    const vychoziSkladId = seznamSkladu.find((w) => w.is_default)?.id ?? seznamSkladu[0]?.id ?? null;
+    const zapisStock = async (productIds: string[], stock: number, sklad: string | undefined, prefix: string): Promise<boolean> => {
+      const cil = sklad ? seznamSkladu.find((w) => w.id === sklad || w.name === sklad)?.id ?? null : vychoziSkladId;
+      if (!cil) { chyby.push(`${prefix}: sklad „${sklad ?? "výchozí"}“ neexistuje`); return false; }
+      for (const pid of productIds) {
+        // Nula znamená smazat řádek, ne uložit nulu – stejně jako v aplikaci.
+        const { error } = stock === 0
+          ? await svc.from("inventory_stock").delete().eq("product_id", pid).eq("warehouse_id", cil)
+          : await svc.from("inventory_stock").upsert({ product_id: pid, warehouse_id: cil, service_id: sid, quantity: stock }, { onConflict: "product_id,warehouse_id" });
+        if (error) { chyby.push(`${prefix}: ${error.message}`); return false; }
+      }
+      return true;
+    };
+    for (const [i, z] of zmeny.entries()) {
+      const prefix = `products[${i}]`;
+      if (z.akce === "delete") {
+        const { data, error } = await svc.from("inventory_products").delete().eq("service_id", sid).eq("id", z.id!).select("id");
+        if (error) chyby.push(`${prefix}: ${error.message}`);
+        else if (!data || data.length === 0) p.not_found.push(z.id!);
+        else p.deleted += data.length;
+        continue;
+      }
+      z.hodnoty.__kategorieTabulka = "inventory_product_categories";
+      await overVazby(z.hodnoty, prefix);
+      // `stock` není sloupec produktu, ale množství v konkrétním skladu.
+      const { stock, ...sloupce } = z.hodnoty as Record<string, unknown> & { stock?: number };
+      if (z.akce === "create") {
+        if (typeof sloupce.sku === "string") {
+          const { data: dup } = await svc.from("inventory_products").select("id").eq("service_id", sid).eq("sku", sloupce.sku).limit(1);
+          if (dup && dup.length) { chyby.push(`${prefix}: sku ${sloupce.sku} už existuje`); continue; }
+        }
+        const { data, error } = await svc.from("inventory_products").insert({ price: 0, ...sloupce, service_id: sid }).select("id").single();
+        if (error) { chyby.push(`${prefix}: ${error.message}`); continue; }
+        const nid = (data as { id: string }).id;
+        p.created += 1; p.created_ids.push(nid);
+        if (typeof stock === "number" && stock > 0) await zapisStock([nid], stock, z.sklad, prefix);
+        continue;
+      }
+      // Nejdřív najít produkt – u zápisu podle SKU jinak neznáme jeho id.
+      const hledani = svc.from("inventory_products").select("id").eq("service_id", sid);
+      const { data: nalezene, error: chybaHledani } = z.id ? await hledani.eq("id", z.id) : await hledani.eq("sku", z.sku!);
+      if (chybaHledani) { chyby.push(`${prefix}: ${chybaHledani.message}`); continue; }
+      if (!nalezene || nalezene.length === 0) { p.not_found.push(z.id ?? z.sku!); continue; }
+      const ids = (nalezene as { id: string }[]).map((x) => x.id);
+      let selhalo = false;
+      if (Object.keys(sloupce).length > 0) {
+        const { error } = await svc.from("inventory_products").update(sloupce).in("id", ids);
+        if (error) { chyby.push(`${prefix}: ${error.message}`); selhalo = true; }
+      }
+      if (!selhalo && typeof stock === "number") selhalo = !(await zapisStock(ids, stock, z.sklad, prefix));
+      if (!selhalo) p.updated += ids.length;
+    }
+    vysledek.products = p;
   }
 
   if (Object.keys(vysledek).length === 0) {
-    return json({ error: "Tělo neobsahuje ani products, ani repairs" }, 400);
+    return json({ error: "Tělo neobsahuje products, repairs, brands, categories ani models" }, 400);
   }
 
   const odpoved = { ok: chyby.length === 0, ...vysledek, ...(chyby.length ? { errors: chyby } : {}) };

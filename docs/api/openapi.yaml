@@ -149,11 +149,17 @@ paths:
 
   /write:
     post:
-      summary: Zápis cen, časů a počtu kusů
+      summary: Zápis do skladu a ceníku
       description: |
-        Mění se jen vyjmenované hodnoty. Názvy, popisy ani vazby na modely
-        přes API měnit nejdou – to je úprava katalogu a patří do aplikace.
+        Produkty a opravy jde upravovat, zakládat (`create: true` u produktu;
+        oprava bez `id` se založí) i mazat (`delete: true`, jen podle `id`).
+        Značky, kategorie a modely (`brands`, `categories`, `models`) jde
+        zakládat a přejmenovávat; mazání katalogu zůstává v aplikaci, protože
+        kaskádou odnese modely i opravy. Vazby (`category_id`, `model_ids`,
+        `product_ids`, `brand_id`) se přijmou jen na záznamy téhož servisu,
+        cizí id se vynechá a oznámí v `errors`. Nová id jsou v `created_ids`.
 
+        Pořadí zpracování: brands → categories → models → repairs → products.
         Limit 30 zápisů za minutu na token.
       security: [{ TokenApi: [] }]
       parameters:
@@ -178,6 +184,15 @@ paths:
               cena:
                 summary: Změna ceny opravy
                 value: { repairs: [{ id: "0a7587f1-1111-4222-8333-444455556666", price: 1490 }] }
+              katalog:
+                summary: Nový model a oprava k němu
+                value: { models: [{ name: "iPhone 16", category_id: "0a7587f1-1111-4222-8333-444455556666" }] }
+              novy_produkt:
+                summary: Založení dílu ve skladu
+                value: { products: [{ create: true, name: "Baterie iPhone 16", sku: "BAT-16", price: 990, purchase_price: 450, min_stock: 2, stock: 5 }] }
+              smazani:
+                summary: Smazání opravy
+                value: { repairs: [{ id: "0a7587f1-1111-4222-8333-444455556666", delete: true }] }
       responses:
         "200":
           description: Provedeno
@@ -361,24 +376,78 @@ components:
           maxItems: 200
           items:
             type: object
-            description: Adresuje se přes `id` nebo `sku`; aspoň jedno je povinné.
+            description: |
+              Úprava se adresuje přes `id` nebo `sku`. `create: true` založí nový
+              produkt (`name` povinné, `sku` volitelné, `stock` jde rovnou do skladu).
+              `delete: true` smaže produkt podle `id` včetně zásoby a rezervací.
             properties:
               id: { type: string, format: uuid }
               sku: { type: string }
+              create: { type: boolean }
+              delete: { type: boolean }
+              name: { type: string, maxLength: 200 }
+              description: { type: string, maxLength: 2000 }
               stock: { type: integer, minimum: 0 }
+              warehouse: { type: string, description: Id nebo název skladu pro `stock`; bez něj výchozí sklad }
               price: { type: number, minimum: 0 }
+              purchase_price: { type: number, minimum: 0 }
+              min_stock: { type: integer, minimum: 0 }
+              supplier_sku: { type: string, maxLength: 80 }
+              category_id: { type: string, format: uuid, nullable: true, description: Kategorie skladu }
+              model_ids: { type: array, items: { type: string, format: uuid } }
+              public_visible: { type: boolean }
         repairs:
           type: array
           maxItems: 200
           items:
             type: object
             description: |
-              Adresuje se jen přes `id`. Názvem to nejde – „Výměna displeje“
-              má servis u každého modelu jinou.
+              Úprava se adresuje jen přes `id` – „Výměna displeje“ má servis
+              u každého modelu jinou. Bez `id` a s `name` se založí nová oprava
+              (`model_ids` povinné). `delete: true` smaže opravu podle `id`.
             properties:
               id: { type: string, format: uuid }
+              delete: { type: boolean }
+              name: { type: string, maxLength: 200 }
+              details: { type: string, maxLength: 2000 }
               price: { type: number, minimum: 0 }
+              costs: { type: number, minimum: 0 }
               estimated_time: { type: integer, minimum: 0 }
+              model_ids: { type: array, items: { type: string, format: uuid } }
+              product_ids: { type: array, items: { type: string, format: uuid } }
+              public_visible: { type: boolean }
+        brands:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            description: Bez `id` se založí, s `id` přejmenuje. Mazání jen v aplikaci.
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string, maxLength: 120 }
+              public_visible: { type: boolean }
+        categories:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            description: Kategorie zařízení pod značkou (`brand_id` povinné u nové).
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string, maxLength: 120 }
+              brand_id: { type: string, format: uuid }
+              public_visible: { type: boolean }
+        models:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            description: Model pod kategorií (`category_id` povinné u nového).
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string, maxLength: 160 }
+              category_id: { type: string, format: uuid }
+              public_visible: { type: boolean }
 
     VysledekZapisu:
       type: object
@@ -386,6 +455,9 @@ components:
         ok: { type: boolean }
         products: { $ref: "#/components/schemas/PocetZmen" }
         repairs: { $ref: "#/components/schemas/PocetZmen" }
+        brands: { $ref: "#/components/schemas/PocetZmen" }
+        categories: { $ref: "#/components/schemas/PocetZmen" }
+        models: { $ref: "#/components/schemas/PocetZmen" }
         errors:
           type: array
           items: { type: string }
@@ -395,6 +467,12 @@ components:
       type: object
       properties:
         updated: { type: integer }
+        created: { type: integer }
+        deleted: { type: integer }
+        created_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: Id nově založených záznamů v pořadí, v jakém byly v požadavku.
         not_found:
           type: array
           items: { type: string }

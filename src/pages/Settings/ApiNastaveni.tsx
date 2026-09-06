@@ -603,15 +603,16 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
       <div style={nadpis}>Zápis – tokeny</div>
       <p style={popis}>
-        Čtení je veřejné, zápis vyžaduje token. Hodí se, když ceny nebo počty kusů
-        udržuje jiný systém – pokladna, e-shop. Token vydává jen majitel nebo admin
-        servisu.
+        Čtení je veřejné, zápis vyžaduje token. Hodí se, když sklad nebo ceník
+        udržuje jiný systém – pokladna, e-shop, vlastní rozhraní na sklad. Token
+        vydává jen majitel nebo admin servisu.
       </p>
       <p style={popis}>
-        Měnit jde <strong style={{ color: "var(--text)" }}>počty kusů a ceny produktů</strong> a
-        {" "}<strong style={{ color: "var(--text)" }}>ceny a časy oprav</strong>. Nic jiného –
-        názvy, popisy ani vazby na modely se přes API přepsat nedají, to je úprava
-        katalogu a patří do aplikace.
+        Přes zápis jde <strong style={{ color: "var(--text)" }}>zakládat, upravovat a mazat produkty i opravy</strong>
+        {" "}(názvy, popisy, ceny, náklady, časy, počty kusů, minimum, vazby na modely a díly)
+        a <strong style={{ color: "var(--text)" }}>zakládat a přejmenovávat značky, kategorie a modely</strong>.
+        Mazání značek, kategorií a modelů zůstává v aplikaci – kaskádou by odneslo celý katalog pod nimi.
+        Vazby se přijmou jen na záznamy tohoto servisu. Přesný tvar je v dokumentaci níže.
       </p>
 
       {cerstvyToken && (

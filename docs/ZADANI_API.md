@@ -95,6 +95,8 @@ webu navíc často lžou – mezi prodejem a přegenerováním stránky je prodl
 
 ## 5. Zápis
 
+> **Doplněno 6. 9.:** zápis umí i zakládat/mazat produkty a opravy a zakládat/přejmenovávat značky, kategorie a modely – viz `docs/api/openapi.yaml` (`/write`). Původní omezení „jen počty a ceny“ padlo na přání majitele (vlastní rozhraní na sklad).
+
 Čtení je veřejné (bez tokenu). **Zápis vyžaduje token.**
 
 ```sql
