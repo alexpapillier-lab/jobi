@@ -122,3 +122,23 @@ test("technik nevidí, co mu servis nedal", async ({ page }) => {
   });
   expect(email).toBe(TECHNIK.email);
 });
+
+test("kalendář ukáže zakázku založenou mezitím v Zakázkách", async ({ page }) => {
+  // Kalendář zůstává po první návštěvě připojený; bez realtime a obnovení
+  // při zobrazení ukazoval stav z chvíle, kdy se poprvé otevřel.
+  await prihlasSe(page, "owner");
+  const skupinaBezTerminu = page.locator("[data-agenda-group-toggle]").first();
+  const naKalendar = () => page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "calendar" } })));
+
+  await naKalendar();
+  await expect(skupinaBezTerminu).toBeVisible({ timeout: 30_000 });
+  const pocet = async () => Number(((await skupinaBezTerminu.innerText()).match(/\d+/) ?? ["0"])[0]);
+  const pred = await pocet();
+
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders" } })));
+  await zalozZakazku(page, { zakaznik: testovaciJmeno("Kalendář"), zarizeni: "Notebook (kalendář)" });
+
+  await naKalendar();
+  // Nová zakázka nemá termín, patří do skupiny „Bez termínu“ – ta musí povyrůst.
+  await expect.poll(pocet, { timeout: 30_000 }).toBeGreaterThan(pred);
+});

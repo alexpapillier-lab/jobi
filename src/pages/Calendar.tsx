@@ -106,6 +106,62 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
     }
   }, [statuses]);
 
+  /**
+   * Kalendář zůstává po první návštěvě připojený (App ho jen schová), takže
+   * bez tohohle ukazoval stav z okamžiku, kdy se poprvé otevřel: zakázka
+   * založená v Zakázkách se v něm objevila až po přepnutí servisu nebo
+   * restartu. Data se proto načtou znovu, když se kalendář zobrazí a mezitím
+   * se něco změnilo (realtime na zakázkách a reklamacích servisu).
+   */
+  const korenRef = useRef<HTMLDivElement | null>(null);
+  const zastaraleRef = useRef(false);
+  const posledniNacteniRef = useRef(0);
+  /** Po zobrazení načíst znovu, když je stav starší než tohle – realtime umí zprávu ztratit. */
+  const STARE_PO_MS = 5_000;
+  const jePotrebaObnovit = () => zastaraleRef.current || Date.now() - posledniNacteniRef.current > STARE_PO_MS;
+  const [obnovaToken, setObnovaToken] = useState(0);
+  const obnov = useCallback(() => {
+    zastaraleRef.current = false;
+    setObnovaToken((t) => t + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    const client = supabase;
+    const oznac = () => {
+      // Když je kalendář zrovna vidět, načti hned; jinak až se zobrazí.
+      if (korenRef.current?.offsetParent != null && document.visibilityState === "visible") obnov();
+      else zastaraleRef.current = true;
+    };
+    const kanal = client
+      .channel(`calendar:${activeServiceId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tickets", filter: `service_id=eq.${activeServiceId}` }, oznac)
+      .on("postgres_changes", { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` }, oznac)
+      .subscribe();
+    return () => {
+      void client.removeChannel(kanal);
+    };
+  }, [activeServiceId, obnov]);
+
+  useEffect(() => {
+    // Kontrola místo IntersectionObserver: ten se při prvním vykreslení neuchytil,
+    // protože kořen kalendáře ještě nebyl v DOM (stránka byla ve stavu „načítám“).
+    // Čtení offsetParent je levné a stav se ověří i po ztrátě realtime zprávy.
+    const zkus = () => {
+      if (document.visibilityState !== "visible") return;
+      if (korenRef.current?.offsetParent == null) return;
+      if (jePotrebaObnovit()) obnov();
+    };
+    const id = window.setInterval(zkus, 2000);
+    document.addEventListener("visibilitychange", zkus);
+    window.addEventListener("focus", zkus);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", zkus);
+      window.removeEventListener("focus", zkus);
+    };
+  }, [obnov]);
+
   useEffect(() => {
     if (!activeServiceId || !supabase) {
       setTickets([]);
@@ -141,6 +197,8 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
 
         setTickets((tData || []).map((r: any) => mapSupabaseTicketToTicketEx(r)));
         setClaims((cData || []) as WarrantyClaimRow[]);
+        posledniNacteniRef.current = Date.now();
+        zastaraleRef.current = false;
       } catch (e: any) {
         setError(e?.message || "Chyba při načítání");
       } finally {
@@ -148,7 +206,7 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
       }
     };
     load();
-  }, [activeServiceId]);
+  }, [activeServiceId, obnovaToken]);
 
   /* ---------- Položky ---------- */
 
@@ -326,6 +384,7 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
 
   return (
     <div
+      ref={korenRef}
       style={{
         display: "flex",
         flexDirection: "column",
