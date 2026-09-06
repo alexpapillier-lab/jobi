@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { zalozServis } from "../lib/servisy";
 import { ThemeLogo } from "./ThemeLogo";
@@ -20,6 +20,31 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Servis, který provozovatel vypnul, zmizí ze seznamu úplně – zákazník pak
+   * viděl „Založte si servis“ a vypadalo to, že o dílnu přišel. Přitom jeho
+   * data jsou na místě a stačí servis zase zapnout. Tady se to řekne nahlas.
+   */
+  const [vypnutychServisu, setVypnutychServisu] = useState(0);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let zruseno = false;
+    void (async () => {
+      const { data: uzivatel } = await supabase!.auth.getUser();
+      const uid = uzivatel?.user?.id;
+      if (!uid || zruseno) return;
+      const { data } = await supabase!
+        .from("service_memberships")
+        .select("service_id, services!inner(active)")
+        .eq("user_id", uid);
+      if (zruseno) return;
+      const vypnute = ((data ?? []) as Array<{ services?: { active?: boolean } | null }>)
+        .filter((r) => r.services && r.services.active === false).length;
+      setVypnutychServisu(vypnute);
+    })();
+    return () => { zruseno = true; };
+  }, []);
 
   const create = async () => {
     const nazev = name.trim();
@@ -54,6 +79,26 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
         <p style={{ margin: "10px 0 22px", fontSize: 14, lineHeight: 1.6, color: "var(--muted)", textAlign: "center" }}>
           Servis je vaše provozovna: zakázky, zákazníci, sklad i ceník patří k němu. Stačí název, zbytek doplníte později v Nastavení. Prvních 30 dní máte celou aplikaci bez omezení a bez karty, pak si vyberete tarif.
         </p>
+
+        {vypnutychServisu > 0 && (
+          <div
+            role="status"
+            style={{
+              margin: "0 0 20px",
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--warning-border, #f59e0b)",
+              background: "var(--warning-bg, #fffbeb)",
+              color: "var(--warning-text, #92400e)",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            {vypnutychServisu === 1
+              ? "Váš servis je dočasně vypnutý provozovatelem Jobi. Data jsou v pořádku uložená a vrátí se, jakmile se servis zase zapne – nezakládejte kvůli tomu nový. Napište nám na podpora@appjobi.com."
+              : `Máte ${vypnutychServisu} dočasně vypnuté servisy. Data zůstávají uložená; napište nám na podpora@appjobi.com.`}
+          </div>
+        )}
 
         <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Název servisu</label>
         <input
