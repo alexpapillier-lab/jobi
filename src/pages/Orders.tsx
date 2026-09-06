@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
@@ -10,7 +10,7 @@ import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExt
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
 import { reportSilent, reportError } from "../lib/reportError";
-import { isJobiDocsRunning, printDocument, exportDocument, formatJobiDocsErrorForUser, type DocTypeForPrint } from "../lib/jobidocs";
+import { isJobiDocsRunning, printDocument, exportDocument, type DocTypeForPrint } from "../lib/jobidocs";
 import { ticketDocumentData, claimDocumentData, type DocumentData } from "../lib/documentData";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
@@ -86,6 +86,7 @@ import {
   type CustomerMatch,
 } from "../components/orders";
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
+import { spustDesktopovyDokument, spustWebovyDokument, type ZavislostiDokumentu } from "../lib/tiskDokumentu";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
@@ -110,6 +111,16 @@ type GroupKey = "all" | "active" | "final" | "reklamace";
 type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
+
+/**
+ * Kolik zakázek se natáhne v prvním kole.
+ *
+ * Odpovídá největší nastavitelné velikosti stránky, takže se z první odpovědi
+ * dá vykreslit celá první stránka seznamu, ať má uživatel nastavené cokoli.
+ * Zbytek dojede na pozadí – bez toho čeká i ten, kdo chce jen otevřít první
+ * zakázku shora.
+ */
+const PRVNI_DAVKA_ZAKAZEK = 200;
 type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 type UIConfig = {
   app: { fabNewOrderEnabled: boolean; uiScale: number; postupZakazky?: boolean };
@@ -655,58 +666,35 @@ function ticketDocData(ticket: TicketEx, docType: DocTypeForPrint): DocumentData
   });
 }
 
-async function runWebDocument(mode: DocMode, docType: WebPrintDocType, sid: string, data: DocumentData) {
-  const start = performance.now();
-  try {
-    if (mode === "export") showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-    await printDocumentInBrowser(docType, sid, data);
-    trackDocumentAction({ action: mode, docType, result: "success", durationMs: Math.round(performance.now() - start) });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    trackDocumentAction({ action: mode, docType, result: "error", durationMs: Math.round(performance.now() - start), errorMessage: msg });
-    showToast(`${mode === "print" ? "Tisk" : "Export"} se nezdařil: ${msg}`, "error");
-  }
+/**
+ * Skutečné napojení na okolí (JobiDocs, nativní dialog, hlášky).
+ * Vlastní logika je v src/lib/tiskDokumentu.ts, aby šla otestovat – tady
+ * zůstává jen to, co se v testu stejně nahradit nedá.
+ */
+const zavislostiDokumentu: ZavislostiDokumentu = {
+  jobiDocsBezi: isJobiDocsRunning,
+  tisk: printDocument,
+  exportPdf: exportDocument,
+  vyberCilovySoubor: async (vychoziNazev) => {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    return save({
+      defaultPath: vychoziNazev,
+      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
+    });
+  },
+  tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
+  hlaska: showToast,
+  hotovyExport: showExportSuccessToast,
+  telemetrie: trackDocumentAction,
+  ted: () => performance.now(),
+};
+
+async function runWebDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData) {
+  return spustWebovyDokument(mode, docType, sid, data, zavislostiDokumentu);
 }
 
 async function runDesktopDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData, defaultFileName: string) {
-  if (!(await isJobiDocsRunning())) {
-    showToast(mode === "print" ? "Spusťte JobiDocs pro tisk." : "Spusťte JobiDocs pro export do PDF.", "error");
-    return;
-  }
-  const start = performance.now();
-  try {
-    if (mode === "print") {
-      const res = await printDocument(docType, sid, data);
-      const durationMs = Math.round(performance.now() - start);
-      if (res.ok) {
-        trackDocumentAction({ action: "print", docType, result: "success", durationMs });
-        showToast("Úloha odeslána do fronty", "success");
-      } else {
-        trackDocumentAction({ action: "print", docType, result: "error", durationMs, errorMessage: res.error });
-        showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
-      }
-      return;
-    }
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const filePath = await save({
-      defaultPath: defaultFileName,
-      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
-    });
-    if (!filePath) return;
-    const res = await exportDocument(docType, sid, data, filePath);
-    const durationMs = Math.round(performance.now() - start);
-    if (res.ok) {
-      trackDocumentAction({ action: "export", docType, result: "success", durationMs });
-      showExportSuccessToast(filePath);
-    } else {
-      trackDocumentAction({ action: "export", docType, result: "error", durationMs, errorMessage: res.error });
-      showToast(`JobiDocs: ${formatJobiDocsErrorForUser(res.error)}`, "error");
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    trackDocumentAction({ action: mode, docType, result: "error", durationMs: Math.round(performance.now() - start), errorMessage: msg });
-    showToast(`Chyba ${mode === "print" ? "tisku" : "exportu"}: ${msg}`, "error");
-  }
+  return spustDesktopovyDokument(mode, docType, sid, data, defaultFileName, zavislostiDokumentu);
 }
 
 const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = {
@@ -851,6 +839,8 @@ export default function Orders({
   /** Odložené zápisy kontroly po opravě – psaní poznámky jinak posílá zápis na každou klávesu. */
   const odlozenaKontrolaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
   const [ticketsLoading, setTicketsLoading] = useState(false);
+  /** Seznam už jde používat, ale ještě není celý – dotahuje se zbytek stránek. */
+  const [ticketsPartial, setTicketsPartial] = useState(false);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
@@ -988,10 +978,17 @@ export default function Orders({
   }, [activeServiceId, pouzijConfigServisu]);
 
   // Load tickets from cloud when activeServiceId changes
+  //
+  // Načítá se ve dvou kolech. První dotaz vezme jen PRVNI_DAVKA_ZAKAZEK
+  // nejnovějších zakázek – tolik, že první stránka seznamu je z čeho vykreslit –
+  // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím seznam
+  // objevil za 0,4 s místo 3,2 s (měřeno 6. 9. 2026, viz docs/ZATEZ.md).
+  // Servis pod dvě stě zakázek pošle pořád jen jeden dotaz.
   useEffect(() => {
     if (!activeServiceId || !supabase) {
         setCloudTickets([]);
       setTicketsLoading(false);
+      setTicketsPartial(false);
         setTicketsError(null);
       return;
     }
@@ -999,37 +996,52 @@ export default function Orders({
     const myReqId = ++ticketsReqIdRef.current;
 
     setTicketsLoading(true);
+    setTicketsPartial(false);
     setTicketsError(null);
+
+    const stranka = (from: number, to: number) =>
+      (supabase!
+        .from("tickets") as any)
+        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
+        .eq("service_id", activeServiceId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
 
     const loadTickets = async () => {
       try {
-        const { data, error } = await fetchAllPages((from, to) =>
-          (supabase!
-            .from("tickets") as any)
-            .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
-            .eq("service_id", activeServiceId)
-            .is("deleted_at", null)
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: false })
-            .range(from, to)
-        );
+        const { data: prvni, error: chybaPrvni } = await stranka(0, PRVNI_DAVKA_ZAKAZEK - 1);
 
         // Check if this request is still valid
         if (myReqId !== ticketsReqIdRef.current) {
           return; // This request is stale, ignore it
         }
+        if (chybaPrvni) throw chybaPrvni;
 
-        if (error) {
-          throw error;
-        }
-
-        if (data) {
-          const mapped = data.map(mapSupabaseTicketToTicketEx);
-          setCloudTickets(mapped);
-        } else {
-          setCloudTickets([]);
-        }
+        const prvniRadky: any[] = prvni ?? [];
+        setCloudTickets(prvniRadky.map(mapSupabaseTicketToTicketEx));
         setTicketsLoading(false);
+
+        // Kratší odpověď = servis nemá víc zakázek, druhé kolo nemá co dotáhnout.
+        if (prvniRadky.length < PRVNI_DAVKA_ZAKAZEK) {
+          setTicketsPartial(false);
+          return;
+        }
+
+        // Seznam je od téhle chvíle použitelný, ale ještě není celý – hledání
+        // a počty by na neúplných datech lhaly, proto se to dá poznat zvenčí.
+        setTicketsPartial(true);
+        const { data, error } = await fetchAllPages((from, to) =>
+          stranka(PRVNI_DAVKA_ZAKAZEK + from, PRVNI_DAVKA_ZAKAZEK + to)
+        );
+
+        if (myReqId !== ticketsReqIdRef.current) return;
+        if (error) throw error;
+
+        const zbytek: any[] = data ?? [];
+        setCloudTickets([...prvniRadky, ...zbytek].map(mapSupabaseTicketToTicketEx));
+        setTicketsPartial(false);
       } catch (err) {
         // Check if this request is still valid before setting error
         if (myReqId !== ticketsReqIdRef.current) {
@@ -1039,11 +1051,12 @@ export default function Orders({
         setTicketsError(normalizeError(err) || "Neznámá chyba při načítání zakázek");
         setCloudTickets([]);
         setTicketsLoading(false);
+        setTicketsPartial(false);
       }
     };
 
     loadTickets();
-    
+
     return () => {
       ticketsReqIdRef.current++;
     };
@@ -1089,18 +1102,20 @@ export default function Orders({
   }, [activeServiceId, supabase]);
 
   // Interní komentáře (chat) k zakázkám – dřív jen v localStorage, teď sdílená
-  // tabulka ticket_comments. Načtou se všechny najednou pro aktivní servis a
-  // seskupí podle ticket_id, stejně jako u tickets/claims výše.
-  const refetchComments = useCallback(async () => {
-    if (!activeServiceId || !supabase) {
-      setCommentsByTicket({});
-      return;
-    }
+  // tabulka ticket_comments.
+  //
+  // Dřív se natáhly komentáře **celého servisu** a seskupily podle ticket_id.
+  // Vidět je přitom vždycky jen ten jeden otevřený detail: u zátěžového servisu
+  // to bylo 6 664 řádků v sedmi kolech po síti (~1,4 s a přes megabajt) kvůli
+  // pár řádkům, které si někdo přečte. Načítají se proto ke konkrétní zakázce.
+  const nactiKomentare = useCallback(async (ticketIds: string[]) => {
+    if (!activeServiceId || !supabase || ticketIds.length === 0) return;
     const myReqId = ++commentsReqIdRef.current;
     const { data, error } = await fetchAllPages<SupabaseTicketCommentRow>((from, to) =>
       (supabase!.from("ticket_comments") as any)
         .select("id,ticket_id,author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
         .eq("service_id", activeServiceId)
+        .in("ticket_id", ticketIds)
         .order("created_at", { ascending: true })
         .range(from, to)
     );
@@ -1109,18 +1124,27 @@ export default function Orders({
       console.error("[Orders] Error loading ticket comments:", error);
       return;
     }
+    // Prázdné pole pro každou dotázanou zakázku: bez něj by se u zakázky, ze
+    // které někdo poslední komentář smazal, ukazoval starý obsah z paměti.
     const grouped: Record<string, TicketComment[]> = {};
+    for (const id of ticketIds) grouped[id] = [];
     for (const row of data) {
       const c = mapSupabaseCommentRow(row);
       (grouped[c.ticketId] ??= []).push(c);
     }
-    setCommentsByTicket(grouped);
+    setCommentsByTicket((prev) => ({ ...prev, ...grouped }));
   }, [activeServiceId, supabase]);
 
+  /** Zakázky, jejichž komentáře jsou zrovna na obrazovce – kvůli realtime obnově. */
+  const otevreneKomentareRef = useRef<string[]>([]);
+
+  // Přepnutí servisu musí komentáře zahodit, jinak by v novém servisu chvíli
+  // svítily cizí. (Dřív to zařizovalo hromadné načtení celého servisu.)
   useEffect(() => {
-    void refetchComments();
+    setCommentsByTicket({});
+    otevreneKomentareRef.current = [];
     return () => { commentsReqIdRef.current++; };
-  }, [refetchComments]);
+  }, [activeServiceId]);
 
   // Realtime subscription for ticket_comments – ať se nové/připnuté komentáře
   // objeví u všech kolegů na všech zařízeních, ne jen tam, kde vznikly.
@@ -1133,13 +1157,13 @@ export default function Orders({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ticket_comments", filter: `service_id=eq.${activeServiceId}` },
-        () => void refetchComments()
+        () => void nactiKomentare(otevreneKomentareRef.current)
       )
       .subscribe();
     return () => {
       if (client) client.removeChannel(channel);
     };
-  }, [activeServiceId, supabase, refetchComments]);
+  }, [activeServiceId, supabase, nactiKomentare]);
 
   const refetchClaims = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
@@ -1407,6 +1431,15 @@ export default function Orders({
   const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
 
   const [query, setQuery] = useState("");
+  /**
+   * Text, podle kterého se opravdu filtruje.
+   *
+   * Přefiltrovat 4 800 zakázek a překreslit seznam trvá kolem sta milisekund;
+   * když to visí na úhozu, políčko se při psaní zadrhává. `useDeferredValue`
+   * nechá políčko překreslit hned a seznam dopočítá až v další, přerušitelné
+   * vlně – naměřeno 118 ms → 12 ms na úhoz (6. 9. 2026).
+   */
+  const hledanyText = useDeferredValue(query);
   const [statusById, setStatusById] = useState<Record<string, string>>({});
 
   const [isNewOpen, setIsNewOpen] = useState(false);
@@ -1758,7 +1791,10 @@ export default function Orders({
       setReturnToPage(null);
       returnToCustomerIdRef.current = undefined;
       // Consume when load has finished: either we have data, or we've seen loading complete (ref set when ticketsLoading was true).
-      if (!ticketsLoading && (tickets.length > 0 || ticketsLoadHasRunRef.current)) {
+      // `ticketsPartial` je tu podstatné: seznam se od 6. 9. 2026 vykresluje už
+      // po první stovce zakázek, takže bez téhle podmínky by odkaz na starší
+      // zakázku hlásil „nebyla nalezena“, přestože se zrovna dotahuje.
+      if (!ticketsLoading && !ticketsPartial && (tickets.length > 0 || ticketsLoadHasRunRef.current)) {
         // Odkaz z faktury nebo zákazníka na zakázku, která už není (smazaná,
         // jiná pobočka) – bez hlášky by kliknutí vypadalo, že nic neudělalo.
         if ((mode ?? "detail") === "detail") showToast("Zakázka nebyla nalezena – nejspíš byla smazána.", "info");
@@ -1766,7 +1802,7 @@ export default function Orders({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTicketIntent, tickets, ticketsLoading]);
+  }, [openTicketIntent, tickets, ticketsLoading, ticketsPartial]);
 
   useEffect(() => {
     if (!openClaimIntent || !onOpenClaimIntentConsumed) return;
@@ -1839,7 +1875,11 @@ export default function Orders({
     const channel = supabase
       ? supabase
           .channel(`orders-devices:${activeServiceId}`)
-          .on("postgres_changes", { event: "*", schema: "public", table: "device_repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
+          // Tabulka se jmenuje `repairs`; pod názvem „device_repairs“ žádná
+          // neexistuje, takže se odběr tiše navázal a nikdy nic neposlal –
+          // změna ceníku se v otevřené zakázce neprojevila až do načtení
+          // stránky znovu. Supabase na neznámou tabulku nijak neupozorní.
+          .on("postgres_changes", { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
           .on("postgres_changes", { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
           .subscribe()
       : null;
@@ -2340,7 +2380,7 @@ export default function Orders({
   }, [activeStatusKey, statusKeysSet]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = hledanyText.trim().toLowerCase();
     const qDigits = q.replace(/\D/g, "");
 
     const base = tickets
@@ -2384,7 +2424,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     );
-  }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
+  }, [tickets, activeGroup, hledanyText, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
   /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
   const claimsInBranch = useMemo(
@@ -2392,7 +2432,7 @@ export default function Orders({
     [cloudClaims, activeBranchId],
   );
   const filteredClaims = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = hledanyText.trim().toLowerCase();
     const base = !q
       ? claimsInBranch
       : claimsInBranch.filter(
@@ -2408,7 +2448,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     );
-  }, [claimsInBranch, query]);
+  }, [claimsInBranch, hledanyText]);
 
   const filteredClaimsForTab = useMemo(() => {
     if (activeGroup !== "reklamace") return filteredClaims;
@@ -2683,6 +2723,24 @@ export default function Orders({
     () => (detailClaimId ? cloudClaims.find((c) => c.id === detailClaimId) : undefined),
     [detailClaimId, cloudClaims]
   );
+
+  /**
+   * Komentáře se dotahují k tomu, co je zrovna otevřené: k detailu zakázky
+   * a u reklamace i k zakázce, ze které vznikla (její diagnostika i komentáře
+   * se v reklamaci zobrazují).
+   */
+  const komentareProZakazky = useMemo(() => {
+    const ids: string[] = [];
+    if (detailId) ids.push(detailId);
+    const zdroj = detailedClaim?.source_ticket_id;
+    if (zdroj && !ids.includes(zdroj)) ids.push(zdroj);
+    return ids;
+  }, [detailId, detailedClaim?.source_ticket_id]);
+
+  useEffect(() => {
+    otevreneKomentareRef.current = komentareProZakazky;
+    if (komentareProZakazky.length > 0) void nactiKomentare(komentareProZakazky);
+  }, [komentareProZakazky, nactiKomentare]);
 
   // Save originalTicketRef when detailId changes and reset dirty flags
   useEffect(() => {
@@ -3216,7 +3274,7 @@ export default function Orders({
         c.id === claimId ? { ...c, status: next, ...(completedAt ? { completed_at: completedAt } : {}) } : c
       )
     );
-    const ok = await updateClaimStatus(claimId, next, completedAt ?? undefined);
+    const ok = await updateClaimStatus(claimId, next, completedAt ?? undefined, prev?.code ?? undefined);
     if (!ok && prev) {
       setCloudClaims((p) => p.map((c) => (c.id === claimId ? { ...c, status: prev.status } : c)));
     }
@@ -3255,13 +3313,13 @@ export default function Orders({
     async (claimId: string, items: ClaimResolutionItem[]): Promise<boolean> => {
       const filtered = items.filter((x) => (x.name || "").trim());
       const payload = { resolution_summary: filtered.length > 0 ? serializeClaimResolutionItems(filtered) : null };
-      const updated = await updateClaim(claimId, payload as any);
+      const updated = await updateClaim(claimId, payload as any, cloudClaims.find((c) => c.id === claimId)?.code ?? undefined);
       if (!updated) return false;
       setCloudClaims((prev) => prev.map((cl) => (cl.id === claimId ? { ...cl, ...updated } : cl)));
       setClaimResolutionDraft(null);
       return true;
     },
-    [updateClaim]
+    [updateClaim, cloudClaims]
   );
 
   const saveClaimChanges = useCallback(async (): Promise<boolean> => {
@@ -3295,7 +3353,7 @@ export default function Orders({
     if (c.notes !== undefined) payload.notes = c.notes || "";
     if (c.status !== undefined) payload.status = c.status;
     if ("expected_completion_at" in c && (c as any).expected_completion_at !== undefined) payload.expected_completion_at = (c as any).expected_completion_at;
-    const updated = await updateClaim(detailedClaim.id, payload as any);
+    const updated = await updateClaim(detailedClaim.id, payload as any, detailedClaim.code ?? undefined);
     if (!updated) return false;
     setCloudClaims((prev) => prev.map((cl) => (cl.id === detailedClaim.id ? { ...cl, ...updated } : cl)));
     setIsEditingClaim(false);
@@ -3502,6 +3560,14 @@ export default function Orders({
           diagnosticPhotos: false,
           performedRepairs: false,
         });
+      },
+      /* Souběžná úprava: zakázka se načte znovu (kvůli `version`, jinak by
+         každé další uložení narazilo na stejný konflikt), ale režim úprav
+         zůstává a rozepsané změny s ním. Dřív se tu volal `onSuccess`, který
+         je zahodil – uživatel dostal hlášku „zkontrolujte a uložte znovu“
+         nad formulářem, kde už jeho práce nebyla. */
+      onConflict: (refreshedTicket) => {
+        originalTicketRef.current = JSON.parse(JSON.stringify(refreshedTicket));
       },
     });
   }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
@@ -4269,6 +4335,14 @@ export default function Orders({
       {ticketsLoading && (
         <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
           Načítání zakázek...
+        </div>
+      )}
+      {/* Seznam je vidět dřív, než dojedou všechny zakázky. Bez téhle věty by
+          se počty u záložek beze slova změnily pod rukama a hledání by chvíli
+          tvrdilo, že starší zakázka neexistuje. */}
+      {!ticketsLoading && ticketsPartial && (
+        <div style={{ padding: "4px 2px 8px", fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+          Načítají se starší zakázky – počty a hledání zatím nemusí být úplné.
         </div>
       )}
       {ticketsError && activeGroup !== "reklamace" && (
