@@ -81,6 +81,70 @@ paths:
             application/javascript:
               schema: { type: string }
 
+  /booking:
+    get:
+      summary: Nastavení online rezervací
+      description: Otevírací dny a hodiny pro formulář rezervace. 404, když servis rezervace nemá zapnuté.
+      parameters:
+        - $ref: "#/components/parameters/Service"
+      responses:
+        "200":
+          description: Nastavení formuláře
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: { type: string, description: Název servisu }
+                  dny: { type: array, items: { type: integer, minimum: 1, maximum: 7 }, description: "1 = pondělí … 7 = neděle" }
+                  od: { type: string, example: "09:00" }
+                  do: { type: string, example: "17:00" }
+                  krokMin: { type: integer, example: 30 }
+                  uvod: { type: string }
+        "404": { $ref: "#/components/responses/Nedostupne" }
+    post:
+      summary: Nová rezervace
+      description: |
+        Nezávazná rezervace termínu. Bez tokenu; chrání ji limit 5 rezervací za hodinu
+        z jedné adresy a 60 za hodinu na servis (429) a skryté pole `web`, které musí
+        zůstat prázdné. Servis dostane e-mail a rezervaci vidí v Jobi v Kalendáři.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service, name, phone, device]
+              properties:
+                service: { type: string, description: Slug servisu }
+                name: { type: string, maxLength: 120 }
+                phone: { type: string, maxLength: 40 }
+                email: { type: string, format: email }
+                device: { type: string, maxLength: 160, description: Zařízení (např. iPhone 13) }
+                repair: { type: string, maxLength: 200, description: Co je potřeba opravit }
+                preferred_at: { type: string, format: date-time, description: Přání termínu; prázdné = kdykoliv }
+                note: { type: string, maxLength: 1000 }
+                web: { type: string, description: Skryté pole proti robotům – nechte prázdné }
+      responses:
+        "201": { description: Rezervace přijata, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+        "400": { description: Chybí nebo je špatně jméno, telefon, zařízení, e-mail nebo termín }
+        "404": { $ref: "#/components/responses/Nedostupne" }
+        "429": { description: Příliš mnoho rezervací; hlavička Retry-After }
+
+  /booking.js:
+    get:
+      summary: Hotový formulář rezervace k vložení na web
+      description: |
+        `<div id="jobi-rezervace"></div>` a `<script src="…/booking.js?service=slug"></script>`.
+        Skript vykreslí formulář, po odeslání zavolá `POST /booking` a ukáže poděkování.
+      parameters:
+        - $ref: "#/components/parameters/Service"
+      responses:
+        "200":
+          description: JavaScript
+          content:
+            application/javascript: { schema: { type: string } }
+
   /write:
     post:
       summary: Zápis cen, časů a počtu kusů

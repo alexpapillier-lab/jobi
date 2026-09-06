@@ -12,6 +12,8 @@ import type { WarrantyClaimRow } from "./Orders/hooks/useWarrantyClaims";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { Agenda } from "./Calendar/Agenda";
 import { Timeline } from "./Calendar/Timeline";
+import { RezervacePanel } from "./Calendar/Rezervace";
+import type { Rezervace } from "../lib/rezervace";
 import {
   addDays,
   computeTimelineRange,
@@ -40,6 +42,8 @@ type CalendarProps = {
   activeServiceId: string | null;
   onOpenTicket: (ticketId: string) => void;
   onOpenClaim: (claimId: string) => void;
+  /** Rezervace z webu → nová zakázka s předvyplněnými údaji. */
+  onZalozitZakazku?: (rezervace: Rezervace) => void;
 };
 
 function toDate(v: unknown): Date | null {
@@ -48,7 +52,7 @@ function toDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim }: CalendarProps) {
+export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, onZalozitZakazku }: CalendarProps) {
   const { statuses, loading: statusesLoading, getByKey, isFinal, fallbackKey } = useStatuses();
   const statusKeysSet = useMemo(() => new Set(statuses.map((s) => s.key)), [statuses]);
   const normalizeStatus = useCallback(
@@ -421,6 +425,12 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim }:
       </div>
 
       {/* Obsah */}
+      <RezervacePanel
+        activeServiceId={activeServiceId}
+        onOpenTicket={onOpenTicket}
+        onZalozitZakazku={(r) => onZalozitZakazku?.(r)}
+      />
+
       {mainView === "agenda" ? (
         <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
           <Agenda items={filteredItems} now={now} isNarrow={isNarrow} onOpen={openItem} onReschedule={rescheduleItem} />

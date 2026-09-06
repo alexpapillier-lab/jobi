@@ -10,6 +10,8 @@ import { expect, type Page } from "@playwright/test";
 export const SERVIS = {
   email: "e2e@jobi.test",
   nazev: "E2E testovaci servis",
+  /** Id servisu v databázi – účet je i v ukázkovém servisu pro snímky na web, aktivní musí být tenhle. */
+  id: "882beee7-4564-4d10-8ac6-16dc19240b57",
   /** Zkratka servisu – čísla zakázek začínají tímhle. */
   zkratka: "E2E",
 };
@@ -32,6 +34,12 @@ export function heslo(kdo: "owner" | "technik" = "owner"): string {
 }
 
 export async function prihlasSe(page: Page, kdo: "owner" | "technik" = "owner"): Promise<void> {
+  // Účet e2e@jobi.test je i v ukázkovém servisu „Servis Novák“; bez téhle
+  // volby aplikace vezme první servis ze seznamu a test skončí v cizích datech.
+  await page.addInitScript(
+    ([klic, id]) => { if (!localStorage.getItem(klic)) localStorage.setItem(klic, id); },
+    ["jobsheet_active_service_id_v1", SERVIS.id],
+  );
   await page.goto("/");
   const email = page.locator('input[type="email"]').first();
   await expect(email).toBeVisible();

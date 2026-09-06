@@ -18,6 +18,8 @@ const MAPA = {
   "/v1/catalog": "/functions/v1/public-catalog",
   "/v1/inventory": "/functions/v1/public-inventory",
   "/v1/embed.js": "/functions/v1/public-embed",
+  "/v1/booking": "/functions/v1/public-booking",
+  "/v1/booking.js": "/functions/v1/public-booking/embed.js",
   "/v1/write": "/functions/v1/api-write",
   "/v1/openapi.json": "/functions/v1/public-docs",
 };

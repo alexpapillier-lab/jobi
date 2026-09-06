@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Rezervace } from "./lib/rezervace";
 import { useIsNarrow } from "./hooks/useIsNarrow";
 import { createPortal } from "react-dom";
 import Orders from "./pages/Orders";
@@ -262,7 +263,7 @@ export default function App() {
   const [openCustomerIntent, setOpenCustomerIntent] = useState<OpenCustomerIntent | null>(null);
 
   // create new order intent (prefill)
-  const [newOrderPrefill, setNewOrderPrefill] = useState<{ customerId?: string } | null>(null);
+  const [newOrderPrefill, setNewOrderPrefill] = useState<{ customerId?: string; rezervace?: Rezervace } | null>(null);
   const [invoicePrefill, setInvoicePrefill] = useState<any>(null);
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
 
@@ -1327,6 +1328,10 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             <div style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
               <Calendar
                 activeServiceId={activeServiceId}
+                onZalozitZakazku={(rezervace) => {
+                  setNewOrderPrefill({ rezervace });
+                  setActivePage("orders");
+                }}
                 onOpenTicket={(ticketId) => {
                   setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "calendar" });
                   setActivePage("orders");

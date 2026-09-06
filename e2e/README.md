@@ -69,6 +69,12 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   `Settings.tsx`, nový přepínač tam musí mít slovo, jinak ho hledání nenajde.
 - **Escape zavře celý detail zakázky.** Rozbalenou nabídku (např. hledání
   produktu) skryjte smazáním textu, ne Escapem.
+- **Přihlášení pevně volí testovací servis** (`SERVIS.id` v `pomocnici.ts`): účet
+  e2e@jobi.test je i v ukázkovém servisu pro snímky na web a aplikace by jinak
+  vzala první servis ze seznamu.
+- **Online rezervace:** testovací servis má `public_slug = e2e-servis` a v
+  `service_settings.config.rezervace` zapnuté rezervace; `rezervace.spec.ts`
+  volá edge funkci `public-booking` napřímo.
 - **Testovací servis potřebuje produkty ve skladu** („Displej AUDIT“) – test
   výběru dílů u opravy je hledá. Kdyby zmizely, založte libovolný produkt se
   slovem AUDIT v názvu.

@@ -44,6 +44,7 @@ import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type ZapujckaData } from "../lib/zapujcka";
 import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
+import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { PortalCard } from "../components/orders/PortalCard";
@@ -125,7 +126,7 @@ type OpenTicketIntent = {
 type OrdersProps = {
   activeServiceId: string | null;
   smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
-  newOrderPrefill: { customerId?: string } | null;
+  newOrderPrefill: { customerId?: string; rezervace?: Rezervace } | null;
   onNewOrderPrefillConsumed: () => void;
 
   openTicketIntent: OpenTicketIntent | null;
@@ -268,6 +269,8 @@ type NewOrderDraft = {
   diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
   /** Pobočka nové zakázky; bez hodnoty se použije aktivní / domovská / výchozí. */
   branchId?: string | null;
+  /** Rezervace z webu, ze které zakázka vzniká – po založení se označí jako převedená. */
+  rezervaceId?: string;
 };
 
 // ========================
@@ -1901,6 +1904,24 @@ export default function Orders({
   useEffect(() => {
     if (!newOrderPrefill) return;
     setShouldOpenNew(true);
+    // Rezervace z webu: údaje zákazníka a zařízení rovnou do formuláře.
+    const r = newOrderPrefill.rezervace;
+    if (r) {
+      setNewDraft((prev) => ({
+        ...defaultDraft(),
+        branchId: prev.branchId,
+        customerName: r.customer_name,
+        customerPhone: r.customer_phone,
+        customerEmail: r.customer_email ?? "",
+        devices: [{
+          ...defaultDraft().devices[0],
+          deviceLabel: r.device_label,
+          requestedRepair: r.repair_name ?? "",
+          deviceNote: r.note ? `Z rezervace: ${r.note}` : "",
+        }],
+        rezervaceId: r.id,
+      }));
+    }
     if (!newOrderPrefill.customerId) onNewOrderPrefillConsumed();
   }, [newOrderPrefill, onNewOrderPrefillConsumed]);
 
@@ -3520,6 +3541,7 @@ export default function Orders({
     }
 
     const chosenBranch = branchById(newDraft.branchId) ?? branchForNew;
+    const rezervaceId = newDraft.rezervaceId;
     createTicketAction({
       newDraft,
       branch: chosenBranch ? { id: chosenBranch.id, code: chosenBranch.code } : null,
@@ -3543,6 +3565,11 @@ export default function Orders({
         window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
         const first = tickets[0];
         if (first) setDetailId(first.id);
+        if (first && rezervaceId) {
+          nastavStavRezervace(rezervaceId, "converted", first.id)
+            .then(() => window.dispatchEvent(new CustomEvent("jobsheet:rezervace-zmena")))
+            .catch((e) => devLog("[rezervace] označení převedené selhalo", e));
+        }
         const config = await loadDocumentsConfigFromDB(activeServiceId);
         if (first && config?.autoPrint?.ticketListOnCreate) {
           printTicket(first, activeServiceId).then(() => {});

@@ -3,6 +3,8 @@ import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib
 import { useEntitlements } from "../../hooks/useEntitlements";
 import { showToast } from "../../components/Toast";
 import { CheckIcon } from "../../components/icons";
+import { loadServiceConfig, mergeServiceConfig } from "../../lib/serviceSettingsSync";
+import { VYCHOZI_NASTAVENI_REZERVACI, nastaveniRezervaciZConfigu, type NastaveniRezervaci } from "../../lib/rezervace";
 
 type Rezim = "hidden" | "boolean" | "exact";
 
@@ -10,6 +12,8 @@ type Rezim = "hidden" | "boolean" | "exact";
    Adresy na …supabase.co/functions/v1/… fungují dál, ale ven se rozdává
    tahle – jde přes cache a dá se v budoucnu přesměrovat jinam. */
 const VEREJNE_API = "https://api.appjobi.com/v1";
+/** Formulář rezervace se načítá přímo z edge funkce – funguje bez ohledu na cache Workeru. */
+const REZERVACE_SKRIPT = `${supabaseUrl}/functions/v1/public-booking/embed.js`;
 
 type TokenRadek = {
   id: string;
@@ -91,6 +95,28 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
   const maCenik = has("api_catalog");
   const maSklad = has("api_inventory");
+
+  /* Online rezervace: nastavení žije v service_settings.config.rezervace,
+     čte ho edge funkce public-booking. */
+  const [rezervace, setRezervace] = useState<NastaveniRezervaci>(VYCHOZI_NASTAVENI_REZERVACI);
+  useEffect(() => {
+    if (!activeServiceId) return;
+    let zruseno = false;
+    loadServiceConfig(activeServiceId).then((config) => {
+      if (!zruseno) setRezervace(nastaveniRezervaciZConfigu(config?.rezervace));
+    });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+  const ulozRezervace = useCallback(async (next: NastaveniRezervaci) => {
+    setRezervace(next);
+    if (!activeServiceId) return;
+    try {
+      await mergeServiceConfig(activeServiceId, { rezervace: next });
+    } catch (e) {
+      console.error("[ApiNastaveni] rezervace", e);
+      showToast("Nastavení rezervací se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId]);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -423,6 +449,76 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
             ve Skladu, štítkem u položky.
           </p>
         </>
+      )}
+
+      <div style={nadpis}>Online rezervace</div>
+      <p style={popis}>
+        Formulář na váš web: zákazník napíše, co má za zařízení, co je potřeba opravit a kdy
+        by chtěl přijít. Rezervace přistane v Jobi v <strong style={{ color: "var(--text)" }}>Kalendáři</strong>,
+        kde ji potvrdíte nebo z ní jedním kliknutím založíte zakázku. Na e-mail firmy přijde upozornění.
+      </p>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
+        <input type="checkbox" checked={rezervace.zapnuto} onChange={(e) => void ulozRezervace({ ...rezervace, zapnuto: e.target.checked })} />
+        Přijímat rezervace z webu
+      </label>
+      {rezervace.zapnuto && (
+        <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+            <span style={{ color: "var(--muted)" }}>Dny:</span>
+            {["Po", "Út", "St", "Čt", "Pá", "So", "Ne"].map((d, i) => {
+              const den = i + 1;
+              const aktivni = rezervace.dny.includes(den);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={aktivni}
+                  onClick={() => void ulozRezervace({ ...rezervace, dny: aktivni ? rezervace.dny.filter((x) => x !== den) : [...rezervace.dny, den].sort() })}
+                  style={{ padding: "4px 10px", borderRadius: 999, border: `1px solid ${aktivni ? "var(--accent)" : "var(--border)"}`, background: aktivni ? "var(--accent-soft)" : "transparent", color: aktivni ? "var(--accent)" : "var(--muted)", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                >
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              Od <input type="time" value={rezervace.od} onChange={(e) => void ulozRezervace({ ...rezervace, od: e.target.value || rezervace.od })} style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit" }} />
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              Do <input type="time" value={rezervace.do} onChange={(e) => void ulozRezervace({ ...rezervace, do: e.target.value || rezervace.do })} style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit" }} />
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              Krok
+              <select value={rezervace.krokMin} onChange={(e) => void ulozRezervace({ ...rezervace, krokMin: Number(e.target.value) })} style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit" }}>
+                {[15, 30, 60].map((k) => <option key={k} value={k}>{k} min</option>)}
+              </select>
+            </label>
+          </div>
+          <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+            <span style={{ color: "var(--muted)" }}>Text nad formulářem (nepovinné)</span>
+            <input
+              type="text"
+              defaultValue={rezervace.uvod}
+              onBlur={(e) => { if (e.target.value !== rezervace.uvod) void ulozRezervace({ ...rezervace, uvod: e.target.value.slice(0, 400) }); }}
+              placeholder="např. Rezervace je nezávazná, ozveme se s potvrzením."
+              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}
+            />
+          </label>
+          <p style={popis}>
+            Na web vložte:
+            <code style={{ display: "block", marginTop: 6, padding: 10, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {`<div id="jobi-rezervace"></div>\n<script src="${REZERVACE_SKRIPT}?service=${slug ?? "vas-slug"}"></script>`}
+            </code>
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Tlacitko onClick={() => zkopiruj(`<div id="jobi-rezervace"></div>\n<script src="${REZERVACE_SKRIPT}?service=${slug ?? ""}"></script>`)}>Kopírovat kód</Tlacitko>
+          </div>
+          <p style={popis}>
+            Ochrana proti robotům a limit 5 rezervací za hodinu z jedné adresy jsou součástí. Formulář
+            přebírá písmo a barvy vašeho webu; kdo chce vlastní vzhled, může volat <code>POST /booking</code> podle dokumentace níže.
+          </p>
+        </div>
       )}
 
       <div style={nadpis}>Dokumentace pro webaře</div>

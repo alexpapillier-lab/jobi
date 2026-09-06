@@ -1,0 +1,261 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { otiskKlienta } from "../_shared/limity.ts";
+
+/**
+ * Online rezervace z webu servisu.
+ *
+ *   GET  /v1/booking?service=<slug>      → nastavení formuláře (otevírací doba, text)
+ *   POST /v1/booking                      → nová rezervace {service, name, phone, email?, device, repair?, preferred_at?, note?}
+ *   GET  /v1/booking.js?service=<slug>    → hotový formulář k vložení na web
+ *
+ * Servis musí mít modul veřejného API (api_catalog) a rezervace zapnuté
+ * v Nastavení → Veřejné API. Neexistující servis, vypnutý modul a vypnuté
+ * rezervace vracejí totéž, aby se přes endpoint nedaly hádat slugy.
+ *
+ * Ochrana: limit 5 rezervací za hodinu z jedné adresy (otisk IP solený
+ * dnem, viz limity.ts), 60 za hodinu na servis, skryté pole proti robotům.
+ */
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+const json = (telo: unknown, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(telo), { status, headers: { ...cors, "Content-Type": "application/json; charset=utf-8", ...extra } });
+
+const LIMIT_NA_KLIENTA_HOD = 5;
+const LIMIT_NA_SERVIS_HOD = 60;
+
+type Nastaveni = {
+  zapnuto: boolean;
+  /** Dny v týdnu 1 = pondělí … 7 = neděle. */
+  dny: number[];
+  od: string;
+  do: string;
+  krokMin: number;
+  uvod: string;
+};
+
+const VYCHOZI: Nastaveni = { zapnuto: false, dny: [1, 2, 3, 4, 5], od: "09:00", do: "17:00", krokMin: 30, uvod: "" };
+
+function nastaveniZConfigu(raw: unknown): Nastaveni {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const cas = (v: unknown, def: string) => (typeof v === "string" && /^\d{1,2}:\d{2}$/.test(v) ? v.padStart(5, "0") : def);
+  return {
+    zapnuto: r.zapnuto === true,
+    dny: Array.isArray(r.dny) ? r.dny.filter((d): d is number => typeof d === "number" && d >= 1 && d <= 7) : VYCHOZI.dny,
+    od: cas(r.od, VYCHOZI.od),
+    do: cas(r.do, VYCHOZI.do),
+    krokMin: typeof r.krokMin === "number" && r.krokMin >= 10 && r.krokMin <= 120 ? r.krokMin : VYCHOZI.krokMin,
+    uvod: typeof r.uvod === "string" ? r.uvod.slice(0, 400) : "",
+  };
+}
+
+type Servis = { id: string; name: string | null; nastaveni: Nastaveni; email: string | null };
+
+/** Servis podle slugu, včetně kontroly modulu a zapnutých rezervací. */
+async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): Promise<Servis | null> {
+  if (!slug) return null;
+  const { data: servis } = await svc.from("services").select("id, name").eq("public_slug", slug).maybeSingle();
+  if (!servis) return null;
+  const { data: modul } = await svc.from("service_entitlements").select("active, valid_until").eq("service_id", servis.id).eq("module", "api_catalog").maybeSingle();
+  const platny = modul?.active === true && (!modul.valid_until || new Date(modul.valid_until).getTime() > Date.now());
+  if (!platny) return null;
+  const { data: nast } = await svc.from("service_settings").select("config").eq("service_id", servis.id).maybeSingle();
+  const config = (nast?.config ?? {}) as Record<string, unknown>;
+  const nastaveni = nastaveniZConfigu(config.rezervace);
+  if (!nastaveni.zapnuto) return null;
+  const firma = (config.companyData ?? {}) as Record<string, unknown>;
+  return { id: servis.id, name: servis.name, nastaveni, email: typeof firma.email === "string" && firma.email.includes("@") ? firma.email : null };
+}
+
+const s = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+async function pocet(svc: ReturnType<typeof createClient>, kanal: string, klic: string, minut: number): Promise<number> {
+  const { data } = await svc.rpc("pocet_udalosti", { p_kanal: kanal, p_klic: klic, p_minut: minut });
+  return typeof data === "number" ? data : 0;
+}
+
+/** Oznámení servisu e-mailem – best effort, rezervace v Jobi je i bez něj. */
+async function oznamServisu(servis: Servis, r: { customer_name: string; customer_phone: string; customer_email: string | null; device_label: string; repair_name: string | null; preferred_at: string | null; note: string | null }) {
+  const key = Deno.env.get("RESEND_API_KEY")?.trim();
+  if (!key || !servis.email) return;
+  const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const kdy = r.preferred_at ? new Date(r.preferred_at).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", dateStyle: "medium", timeStyle: "short" }) : "kdykoliv";
+  const radky = [
+    ["Zákazník", r.customer_name], ["Telefon", r.customer_phone], ["E-mail", r.customer_email ?? "—"],
+    ["Zařízení", r.device_label], ["Oprava", r.repair_name ?? "—"], ["Termín", kdy], ["Poznámka", r.note ?? "—"],
+  ];
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;color:#111"><h2 style="margin:0 0 12px">Nová rezervace z webu</h2><table cellpadding="6">${radky.map(([k, v]) => `<tr><td style="color:#666">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join("")}</table><p style="color:#666;margin-top:16px">Rezervaci najdete v Jobi v Kalendáři – tam ji potvrdíte nebo z ní jedním kliknutím založíte zakázku.</p></div>`;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [servis.email], subject: `Nová rezervace: ${r.customer_name} – ${r.device_label}`, html }),
+    });
+  } catch (e) {
+    console.warn("[public-booking] e-mail servisu se neposlal", e);
+  }
+}
+
+function embedSkript(slug: string): string {
+  // Přímo edge funkce, ne api.appjobi.com: rezervací je pár denně, cache
+  // Workeru tu nic nepřinese a formulář funguje, i když Worker nemá cestu.
+  const api = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
+  return `(function () {
+  "use strict";
+  var SLUG = ${JSON.stringify(slug)};
+  var API = ${JSON.stringify(api)};
+  var cil = document.getElementById("jobi-rezervace");
+  if (!cil) { return; }
+  function el(tag, attrs, deti) {
+    var e = document.createElement(tag);
+    for (var k in (attrs || {})) { if (k === "text") { e.textContent = attrs[k]; } else { e.setAttribute(k, attrs[k]); } }
+    (deti || []).forEach(function (d) { e.appendChild(d); });
+    return e;
+  }
+  function pole(nazev, name, typ, povinne, placeholder) {
+    var input = el(typ === "textarea" ? "textarea" : "input", { name: name, placeholder: placeholder || "" });
+    if (typ !== "textarea") { input.type = typ; }
+    if (povinne) { input.required = true; }
+    input.style.cssText = "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(0,0,0,.2);border-radius:8px;font:inherit;background:transparent;color:inherit";
+    var lab = el("label", {}, [el("span", { text: nazev + (povinne ? " *" : "") }), input]);
+    lab.style.cssText = "display:grid;gap:4px;font-size:.9em";
+    return { lab: lab, input: input };
+  }
+  fetch(API + "/public-booking?service=" + encodeURIComponent(SLUG))
+    .then(function (r) { if (!r.ok) { throw new Error("nedostupné"); } return r.json(); })
+    .then(function (n) {
+      var form = el("form", { novalidate: "" });
+      form.style.cssText = "display:grid;gap:12px;max-width:560px;font:inherit;color:inherit";
+      if (n.uvod) { var p = el("p", { text: n.uvod }); p.style.margin = "0"; form.appendChild(p); }
+      var jmeno = pole("Jméno a příjmení", "name", "text", true, "Jan Novák");
+      var telefon = pole("Telefon", "phone", "tel", true, "+420 777 123 456");
+      var email = pole("E-mail", "email", "email", false, "jan@email.cz");
+      var zarizeni = pole("Zařízení", "device", "text", true, "např. iPhone 13, notebook Lenovo");
+      var oprava = pole("Co je potřeba opravit", "repair", "text", false, "prasklý displej, nedrží baterie…");
+      var datum = pole("Kdy byste chtěli přijít", "date", "date", false, "");
+      var cas = el("select", { name: "time" });
+      cas.style.cssText = zarizeni.input.style.cssText;
+      cas.appendChild(el("option", { value: "", text: "Kdykoliv během otevírací doby" }));
+      (function () {
+        var od = n.od.split(":"), doo = n.do.split(":");
+        var m = parseInt(od[0], 10) * 60 + parseInt(od[1], 10), konec = parseInt(doo[0], 10) * 60 + parseInt(doo[1], 10);
+        for (; m < konec; m += n.krokMin) {
+          var t = (Math.floor(m / 60) < 10 ? "0" : "") + Math.floor(m / 60) + ":" + (m % 60 < 10 ? "0" : "") + (m % 60);
+          cas.appendChild(el("option", { value: t, text: t }));
+        }
+      })();
+      var casLab = el("label", {}, [el("span", { text: "Čas" }), cas]);
+      casLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
+      var pozn = pole("Poznámka", "note", "textarea", false, "");
+      var past = el("input", { name: "web", type: "text", tabindex: "-1", autocomplete: "off" });
+      past.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;opacity:0";
+      var radek = el("div", {}, [datum.lab, casLab]);
+      radek.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px";
+      var tlacitko = el("button", { type: "submit", text: "Odeslat rezervaci" });
+      tlacitko.style.cssText = "padding:12px 18px;border:none;border-radius:8px;background:#0e7c86;color:#fff;font:inherit;font-weight:700;cursor:pointer";
+      var zprava = el("div", {}); zprava.style.cssText = "font-size:.9em";
+      [jmeno.lab, telefon.lab, email.lab, zarizeni.lab, oprava.lab, radek, pozn.lab, past, tlacitko, zprava].forEach(function (x) { form.appendChild(x); });
+      var dnyTxt = ["", "Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
+      var info = el("p", { text: "Otevřeno: " + n.dny.map(function (d) { return dnyTxt[d]; }).join(", ") + " " + n.od + "–" + n.do + ". Rezervace je nezávazná, ozveme se vám s potvrzením." });
+      info.style.cssText = "margin:0;font-size:.85em;opacity:.75";
+      form.appendChild(info);
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        if (!jmeno.input.value.trim() || !telefon.input.value.trim() || !zarizeni.input.value.trim()) { zprava.textContent = "Vyplňte prosím jméno, telefon a zařízení."; zprava.style.color = "#b91c1c"; return; }
+        var preferred = null;
+        // Místní čas návštěvníka → ISO s časovou zónou, ať se termín neposune o offset.
+        if (datum.input.value) { var dt = new Date(datum.input.value + "T" + (cas.value || n.od) + ":00"); preferred = isNaN(dt.getTime()) ? null : dt.toISOString(); }
+        tlacitko.disabled = true; zprava.textContent = "Odesílám…"; zprava.style.color = "";
+        fetch(API + "/public-booking", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          service: SLUG, name: jmeno.input.value, phone: telefon.input.value, email: email.input.value, device: zarizeni.input.value,
+          repair: oprava.input.value, preferred_at: preferred, note: pozn.input.value, web: past.value }) })
+          .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
+          .then(function (res) {
+            if (!res.ok) { throw new Error(res.b && res.b.error ? res.b.error : "Odeslání se nezdařilo"); }
+            form.innerHTML = "";
+            var ok = el("p", { text: "Děkujeme, rezervaci máme. Ozveme se vám na uvedený telefon nebo e-mail s potvrzením termínu." });
+            ok.style.cssText = "margin:0;padding:12px 14px;border-radius:8px;background:rgba(14,124,134,.1)";
+            form.appendChild(ok);
+          })
+          .catch(function (e) { tlacitko.disabled = false; zprava.textContent = e.message; zprava.style.color = "#b91c1c"; });
+      });
+      cil.innerHTML = ""; cil.appendChild(form);
+    })
+    .catch(function () { cil.textContent = "Online rezervace momentálně není dostupná. Zavolejte nám prosím."; });
+})();`;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const url = new URL(req.url);
+  const svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+  if (req.method === "GET") {
+    const slug = url.searchParams.get("service")?.trim().toLowerCase() ?? "";
+    if (url.pathname.endsWith("/embed.js")) {
+      return new Response(embedSkript(slug), { headers: { ...cors, "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=300" } });
+    }
+    const servis = await najdiServis(svc, slug);
+    if (!servis) return json({ error: "Rezervace nejsou k dispozici" }, 404);
+    const n = servis.nastaveni;
+    return json({ service: servis.name, dny: n.dny, od: n.od, do: n.do, krokMin: n.krokMin, uvod: n.uvod }, 200, { "Cache-Control": "public, max-age=300" });
+  }
+
+  if (req.method !== "POST") return json({ error: "Podporováno je GET a POST" }, 405);
+
+  let telo: Record<string, unknown>;
+  try {
+    telo = await req.json();
+  } catch {
+    return json({ error: "Tělo musí být JSON" }, 400);
+  }
+  // Skryté pole vyplní jen robot; odpovíme jako by se povedlo, ať nezkouší dál.
+  if (s(telo.web, 10)) return json({ ok: true }, 201);
+
+  const slug = s(telo.service, 80).toLowerCase();
+  const servis = await najdiServis(svc, slug);
+  if (!servis) return json({ error: "Rezervace nejsou k dispozici" }, 404);
+
+  const klic = await otiskKlienta(req);
+  const [zaKlic, zaServis] = await Promise.all([
+    pocet(svc, "booking", klic, 60),
+    pocet(svc, "booking", `servis:${servis.id}`, 60),
+  ]);
+  if (zaKlic >= LIMIT_NA_KLIENTA_HOD || zaServis >= LIMIT_NA_SERVIS_HOD) {
+    return json({ error: "Příliš mnoho rezervací, zkuste to prosím později." }, 429, { "Retry-After": "3600" });
+  }
+
+  const name = s(telo.name, 120);
+  const phone = s(telo.phone, 40);
+  const email = s(telo.email, 160);
+  const device = s(telo.device, 160);
+  const repair = s(telo.repair, 200);
+  const note = s(telo.note, 1000);
+  if (name.length < 2) return json({ error: "Vyplňte jméno" }, 400);
+  if (phone.replace(/\D/g, "").length < 9) return json({ error: "Vyplňte platný telefon" }, 400);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "E-mail nevypadá platně" }, 400);
+  if (device.length < 2) return json({ error: "Vyplňte zařízení" }, 400);
+  let preferred: string | null = null;
+  const p = s(telo.preferred_at, 40);
+  if (p) {
+    const d = new Date(p);
+    if (Number.isNaN(d.getTime())) return json({ error: "Termín nevypadá platně" }, 400);
+    preferred = d.toISOString();
+  }
+
+  await Promise.all([svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: klic }), svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: `servis:${servis.id}` })]);
+
+  const radek = { service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null, device_label: device, repair_name: repair || null, note: note || null, preferred_at: preferred, source: "web" };
+  const { error } = await svc.from("bookings").insert(radek);
+  if (error) {
+    console.error("[public-booking] insert", error);
+    return json({ error: "Rezervaci se nepodařilo uložit" }, 500);
+  }
+  await oznamServisu(servis, radek);
+  return json({ ok: true }, 201);
+});
