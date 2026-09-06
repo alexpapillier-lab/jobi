@@ -114,6 +114,12 @@ for f in $(ls "$MIGRATIONS_DIR"/*.sql | sort); do
     printf 'CHYBA %s\n%s\n\n' "$name" "$err" >> "$REPORT"
     echo "CHYBA $name"
     echo "$err" | sed 's/^/      /'
+    # Dál se nepokračuje: následující migrace by běžely nad rozbitým schématem
+    # a jejich „OK" by nic neznamenalo – nebo by spadly lavinou chyb, ve které
+    # se ta první ztratí. Opravuje se vždycky ta první.
+    echo ""
+    echo "Zastaveno u první selhané migrace – další by běžely nad rozbitým schématem."
+    break
   fi
 done
 
@@ -196,11 +202,25 @@ end $$;
 -- Realtime: bez tabulky v publikaci supabase_realtime se aplikace přihlásí
 -- k odběru, ale žádná změna jí nikdy nepřijde – a nic se přitom nerozbije
 -- viditelně. Zakázky a Kalendář na tom stojí, proto se to kontroluje.
+--
+-- Seznam je úplný soupis tabulek, které si aplikace nechává posílat přes
+-- `postgres_changes`. Kontrolovaly se dřív jen čtyři a přesně proto se
+-- přehlédlo, že `customers` a `service_document_settings` v publikaci
+-- nejsou (docs/MIGRACE_NA_CISTO.md, „Nález mimo migrace“) – seznam odběrů
+-- se rozrůstal, kontrola ne. Když přibude nový odběr, přidej tabulku sem;
+-- co aplikace odebírá, vypíše:
+--   grep -rn -A12 postgres_changes src | grep -oE 'table: *.[a-z_]+.'
 do $$
 declare chybi text;
 begin
   select string_agg(t, ', ') into chybi
-    from unnest(array['tickets','service_statuses','ticket_comments','bookings']) as t
+    from unnest(array[
+      'bookings','branches','customers','device_brands','device_categories',
+      'device_models','inventory_product_categories','inventory_products',
+      'repairs','service_document_settings','service_settings',
+      'service_statuses','sms_messages','ticket_comments',
+      'ticket_portal_events','ticket_work_sessions','tickets','warranty_claims'
+    ]) as t
    where not exists (
      select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
