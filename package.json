@@ -71,8 +71,10 @@
     "zatez:db": "node scripts/zatez/db-dotazy.mjs",
     "zatez:limity": "node scripts/zatez/limity.mjs",
     "zatez:prohlizec": "node scripts/zatez/prohlizec.mjs",
+    "zatez:appka": "node scripts/zatez/appka.mjs",
     "test:migrace": "bash scripts/test-migrace-na-cisto.sh",
-    "test:e2e:servisy": "playwright test -c playwright.servisy.config.ts"
+    "test:e2e:servisy": "playwright test -c playwright.servisy.config.ts",
+    "test:e2e:prohlizece": "playwright test -c playwright.prohlizece.config.ts"
   },
   "type": "module",
   "version": "0.5.1"

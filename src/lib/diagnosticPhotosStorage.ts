@@ -6,6 +6,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addWatermarkToImageBlob } from "./diagnosticPhotoWatermark";
 
+/**
+ * Náhodné id souboru. `crypto.randomUUID` je až od Safari 15.4, a starší
+ * iPhone by na něm při nahrávání fotky tiše spadl – build se přitom hlásí
+ * k Safari 14. Stejná pojistka je i na ostatních místech v aplikaci.
+ */
+function nahodneId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+
 /** Jak dlouho smí prohlížeč držet nahraný soubor. Cesty jsou neměnné, tak rok. */
 const ROK_V_SEKUNDACH = 31536000;
 
@@ -34,7 +44,7 @@ export async function uploadDiagnosticPhoto(
 ): Promise<string> {
   if (!supabase) throw new Error("Supabase není k dispozici");
   const ext = getExt(file);
-  const path = `${serviceId}/${ticketId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${serviceId}/${ticketId}/${nahodneId()}.${ext}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type || `image/${ext}`,
     // Soubor má v názvu náhodné UUID, takže se jeho obsah nikdy nezmění.

@@ -79,3 +79,5 @@ scripts/import-zakazkovylist/import_katalog.sql
 # Playwright
 test-results/
 playwright-report/
+# Build webové verze jen pro sadu prohlizece.spec.ts (nesmí přepsat dist-web)
+dist-web-prohlizece/

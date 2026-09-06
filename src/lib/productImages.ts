@@ -14,6 +14,16 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/**
+ * Náhodné id souboru. `crypto.randomUUID` je až od Safari 15.4, a starší
+ * iPhone by na něm při nahrávání fotky tiše spadl – build se přitom hlásí
+ * k Safari 14. Stejná pojistka je i na ostatních místech v aplikaci.
+ */
+function nahodneId(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+
 /** Jak dlouho smí prohlížeč držet nahraný soubor. Cesty jsou neměnné, tak rok. */
 const ROK_V_SEKUNDACH = 31536000;
 
@@ -71,7 +81,7 @@ export async function nahrajObrazekProduktu(
   if (!supabase) throw new Error("Supabase není k dispozici");
   const blob = await zmensiObrazek(file);
   const pripona = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
-  const cesta = `${serviceId}/${productId}/${crypto.randomUUID()}.${pripona}`;
+  const cesta = `${serviceId}/${productId}/${nahodneId()}.${pripona}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(cesta, blob, {
     contentType: blob.type || "image/jpeg",

@@ -21,6 +21,8 @@ takový test neuspokojí.
 | `statistiky.spec.ts` | čísla odpovídají tomu, co se stalo |
 | `kalendar.spec.ts` | slíbený termín dokončení |
 | `soubezna-prace.spec.ts` | dva lidé naráz, práva technika |
+| `servisy.spec.ts` | založení servisu, zkratka v číslech zakázek, pozvánky, smazání servisu |
+| `prohlizece.spec.ts` | hlavní cesty v Safari a Firefoxu, portál v mobilním Safari |
 | `zakaznici*.spec.ts`, `hledani`, `nastaveni`, `reklamace`, `rezervace`, `prihlaseni` | zbytek |
 
 ## Spuštění
@@ -31,6 +33,38 @@ E2E_PASSWORD='…' E2E_PASSWORD_TECHNIK='…' npm run test:e2e
 
 Vývojový server si Playwright spustí sám (`npm run dev:web` na portu 5190).
 Pro krokování a prohlížení snímků slouží `npm run test:e2e:ui`.
+
+## Safari a Firefox
+
+Hlavní sada schválně jede jen v Chromiu – běží v CI po každém pushi a tři
+prohlížeče by ji ztrojnásobily. Malá sada pro ostatní prohlížeče má vlastní
+config a pouští se zvlášť:
+
+```bash
+E2E_PASSWORD='…' npm run test:e2e:prohlizece
+```
+
+Projdou v ní jen cesty, bez kterých se nedá pracovat: přihlášení, seznam
+a založení zakázky, hledání, faktura, tisk dokladu ve webové větvi
+(`src/lib/webPrint.ts`) a zákaznický portál. Portál se navíc otevírá v
+**mobilním Safari** (`devices["iPhone 14"]`) – zákazník ho na iPhonu jinak
+otevřít nemůže, WKWebView i Chrome pro iOS jedou na WebKitu.
+
+Na co si tu dát pozor:
+
+- **Netestuje se vývojový server, ale hotový build** (`vite build` do
+  `dist-web-prohlizece/`, pak statický server). Za prvé se tím testuje to, co
+  zákazník opravdu dostane – Vite ve vývoji posílá zdrojáky jak jsou (esnext),
+  build je přepisuje kvůli Safari 14. Za druhé vývojový server po každé úpravě
+  souboru přenačte stránku a rozjetý test tím spadne uprostřed.
+- **Portál běží ze statického serveru nad `web/`** (port 5762), ne z
+  appjobi.com. Jinak by se opravy v `web/z/` daly ověřit až po nasazení.
+- **Testy hlídají i konzoli.** Neodchycená chyba stránky nebo `console.error`
+  test shodí – přesně takhle se v Safari a Firefoxu projeví většina rozdílů.
+  Výjimky (např. cookie `__cf_bm`, kterou Firefox odmítá Cloudflare) jsou
+  v `hlidejChyby` vyjmenované i s důvodem.
+- **Podpis v portálu se testuje pixely na canvasu**, ne tím, že tam pole je.
+  Prázdné podpisové pole vypadá stejně jako rozbité.
 
 ## Testovací účet
 
@@ -117,6 +151,22 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   podle toho, že z `localStorage` zmizel klíč `jobi_sklad_neulozeno_v1`
   (u ceníku `jobi_zarizeni_neulozeno_v1`). Bez téhle kontroly test projde
   i nad hodnotou, která je jen na obrazovce.
+- **`servisy.spec.ts` potřebuje nasazenou edge funkci `service-delete-own`.**
+  Bez ní vrátí mazání 404 a servis po testu zůstane:
+  `npx supabase functions deploy service-delete-own`.
+- **`servisy.spec.ts` si zakládá vlastní servis.** Jako jediný nepracuje
+  v testovacím servisu: v prvním testu si servis založí, v posledním ho smaže
+  a `test.afterAll` po sobě uklidí i po pádu uprostřed. Mazání má pojistku –
+  smaže jen servis, jehož název začíná na „E2E servisy“, a nikdy testovací
+  servis. Uklidit se musí vždycky: **jeden účet smí mít nejvýš tři vlastní
+  servisy** (`MAX_SERVICES` v edge funkci `service-create`) a e2e@jobi.test už
+  dva má, takže jeden zapomenutý zbytek zablokuje všechny další běhy.
+  Pozvánky chodí jen na adresy `@jobi.test`; Resend je neodešle, ale pozvánka
+  v databázi vznikne a test ji po sobě zase smaže.
+- **Adresu Supabase a klíče si `servisy.spec.ts` odposlechne z požadavků**,
+  které aplikace sama dělá (`page.on("request")`). Anon klíč se do balíčku
+  zapéká při buildu a na `window` není, takže jinak by test nemohl ověřit, že
+  servis opravdu zmizel ze seznamu, ani po sobě uklidit.
 - **Testy po sobě uklízejí, co je nastavením servisu.** Náhradní zařízení,
   opravy v ceníku, produkty a koncepty faktur se na konci mažou – jinak by
   testovací servis po pár týdnech vypadal jako smetiště.

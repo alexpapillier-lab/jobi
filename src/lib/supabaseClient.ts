@@ -161,6 +161,69 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
   })();
 }
 
+/**
+ * Zámek relace pro supabase-js – vlastní, protože ten vestavěný hlásí ve
+ * Firefoxu chybu do konzole.
+ *
+ * Supabase si obnovu tokenu jistí zámkem přes Web Locks, aby dvě otevřené
+ * karty nesáhly na jeden refresh token naráz. Když zámek zrovna volný není
+ * (typicky hned po startu, kdy ho drží vlastní inicializace), vyhodí uvnitř
+ * callbacku výjimku. Chrome i Safari ji berou jako obslouženou – vnější
+ * `catch` ji chytí a obnova se jen o kolečko odloží. **Firefox ji navíc
+ * nahlásí jako neodchycenou chybu stránky**, i když ji nahoře někdo chytí;
+ * v konzoli tak při každém načtení svítí červená hláška, která nic neznamená.
+ * (Ověřeno testem: throw uvnitř `navigator.locks.request` je ve Firefoxu
+ * hlášen jako `pageerror`, v Chromiu ani WebKitu ne.)
+ *
+ * Tahle verze dělá totéž, jen z callbacku nikdy nevyhodí – výsledek i případnou
+ * chybu si odloží stranou a vyhodí je až venku. `isAcquireTimeout` je značka,
+ * podle které supabase-js pozná, že má obnovu jen přeskočit.
+ */
+async function zamekRelace<R>(nazev: string, cekatMs: number, fn: () => Promise<R>): Promise<R> {
+  const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+  // Bez Web Locks (starší Safari, nezabezpečený kontext) se jede bez zámku –
+  // stejně jako to dělá supabase-js sám.
+  if (!locks) return fn();
+
+  let ziskano = false;
+  let hotovo = false;
+  let vysledek: R | undefined;
+  let chyba: unknown;
+
+  const spust = async (lock: Lock | null) => {
+    if (!lock) return;
+    ziskano = true;
+    try {
+      vysledek = await fn();
+      hotovo = true;
+    } catch (e) {
+      chyba = e;
+    }
+  };
+
+  if (cekatMs === 0) {
+    await locks.request(nazev, { mode: "exclusive", ifAvailable: true }, spust);
+  } else if (cekatMs > 0) {
+    const rizeni = new AbortController();
+    const casovac = setTimeout(() => rizeni.abort(), cekatMs);
+    try {
+      await locks.request(nazev, { mode: "exclusive", signal: rizeni.signal }, spust);
+    } finally {
+      clearTimeout(casovac);
+    }
+  } else {
+    await locks.request(nazev, { mode: "exclusive" }, spust);
+  }
+
+  if (chyba) throw chyba;
+  if (!ziskano || !hotovo) {
+    const e = new Error(`Zámek relace „${nazev}“ nebyl hned volný.`) as Error & { isAcquireTimeout: boolean };
+    e.isAcquireTimeout = true;
+    throw e;
+  }
+  return vysledek as R;
+}
+
 let supabase: ReturnType<typeof createClient> | null = null;
 
 if (supabaseUrl && supabaseAnonKey) {
@@ -173,6 +236,7 @@ if (supabaseUrl && supabaseAnonKey) {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       storage: authStorage,
+      lock: zamekRelace,
     },
   });
 } else {
