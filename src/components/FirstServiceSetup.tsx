@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { supabase, supabaseUrl, supabaseFetch } from "../lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
+import { zalozServis } from "../lib/servisy";
 import { ThemeLogo } from "./ThemeLogo";
 import { showToast } from "./Toast";
 
@@ -26,25 +27,16 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
       setError("Zadejte název servisu.");
       return;
     }
-    if (!supabase || !supabaseUrl) {
+    if (!supabase) {
       setError("Aplikace není připojená ke cloudu.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/service-create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ name: nazev }),
-      });
-      const raw = await res.text();
-      const data = raw ? JSON.parse(raw) : {};
-      if (!res.ok || data?.error) throw new Error(data?.error || `Chyba ${res.status}`);
+      const serviceId = await zalozServis(nazev);
       showToast(`Servis „${nazev}“ je připravený`, "success");
-      onCreated(data.service_id as string);
+      onCreated(serviceId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

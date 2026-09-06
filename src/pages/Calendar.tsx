@@ -5,6 +5,7 @@ import { showToast } from "../components/Toast";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
 import { reportError } from "../lib/reportError";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
 import { useStatuses } from "../state/StatusesStore";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
@@ -316,6 +317,25 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
         if (updErr) throw updErr;
         showToast("Termín změněn");
       } catch (e) {
+        /*
+         * Výpadek spojení: termín se do teď vrátil na původní hodnotu
+         * a zůstala jen hláška. Slíbený termín přitom technik zákazníkovi
+         * řekl do telefonu – a v aplikaci po něm nebyla ani stopa. Nový
+         * termín tedy zůstává na obrazovce a fronta ho dopíše sama.
+         */
+        if (!jeTrvalaChyba(e)) {
+          ulozNaPozdeji({
+            klic: `${table}:${item.id}:termin`,
+            tabulka: table,
+            id: item.id,
+            data: { expected_completion_at: iso },
+            popis: `Termín · ${item.code || item.id}`,
+            serviceId: activeServiceId,
+            chyba: e,
+          });
+          showToast("Spojení vypadlo – termín se uloží sám, jakmile bude připojení. Neztratí se.", "info");
+          return;
+        }
         revert();
         reportError({
           code: "calendar.reschedule_failed",

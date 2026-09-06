@@ -1,0 +1,38 @@
+-- Dvojí `updated_at`: jeden trigger na tabulku stačí
+-- ============================================================================
+--
+-- PROČ: Na produkci visí na `tickets` i `customers` dva triggery, které dělají
+-- přesně totéž – oba `BEFORE UPDATE ... FOR EACH ROW EXECUTE FUNCTION
+-- public.set_updated_at()`, bez `WHEN` a bez seznamu sloupců:
+--
+--   tickets    → `tickets_set_updated_at`   (zakládá migrace 20260102182558)
+--                `set_tickets_updated_at`   (v žádné migraci není)
+--   customers  → `trg_customers_updated_at` (zakládá migrace 20260102182558)
+--                `set_customers_updated_at` (v žádné migraci není)
+--
+-- Ty druhé přidal někdo ručně v Supabase Studiu, takže při každém UPDATE
+-- zakázky nebo zákazníka běží `set_updated_at()` dvakrát. Zjistilo se to při
+-- stavbě databáze od nuly (docs/MIGRACE_NA_CISTO.md, „Rozdíly, které
+-- zůstávají“, bod 1): databáze postavená z migrací má správně po jednom,
+-- produkce jich má o dva víc.
+--
+-- CO ZŮSTÁVÁ A PROČ: ponecháváme `tickets_set_updated_at`
+-- a `trg_customers_updated_at`, tedy ty z migrací. Kdyby se smazaly ony,
+-- rozjela by se produkce s repozitářem ještě víc – čistě postavená databáze
+-- by je zakládala znovu a rozdíl by se vrátil. Mažou se proto ty ručně
+-- přidané, které v `supabase/migrations/` nikde nejsou.
+--
+-- BEZPEČNOST: `set_updated_at()` jen dělá `new.updated_at = now()` a vrací
+-- `new`. `now()` je čas transakce, takže druhý průchod zapisoval tutéž
+-- hodnotu jako první – chování se odstraněním duplicity nijak nemění, jen
+-- odpadne práce navíc. Podle pravidla 2 v docs/MIGRATIONS_SAFETY.md bylo
+-- ověřeno, že na mazané triggery nic nespoléhá: v `supabase/` ani `src/` se
+-- jména `set_tickets_updated_at` / `set_customers_updated_at` nevyskytují
+-- jinde než v komentáři migrace 20260910000000 a v dokumentaci. Aplikace
+-- s triggery pracuje jen přes sloupec `updated_at`, ne přes jejich jména.
+--
+-- NA ČISTÉ DATABÁZI je tahle migrace no-op – triggery, které maže, tam
+-- nikdy nevzniknou, proto `if exists`.
+
+drop trigger if exists set_tickets_updated_at on public.tickets;
+drop trigger if exists set_customers_updated_at on public.customers;

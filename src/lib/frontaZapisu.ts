@@ -226,6 +226,17 @@ export async function odesliFrontu(vcetneZaseknutych = false): Promise<{ odeslan
   if (odesilaSe) return { odeslano: 0, zbyva: nacti().length };
   const klient = supabase;
   if (!klient) return { odeslano: 0, zbyva: nacti().length };
+  /*
+   * Bez přihlášení se neodesílá. Odhlášený klient posílá zápis jen s anonym
+   * klíčem, RLS ho zahodí a čekající změny by se spálily proti cizímu (nebo
+   * žádnému) účtu. Fronta počká, až se přihlásí ten, komu data patří.
+   */
+  try {
+    const { data } = await klient.auth.getSession();
+    if (!data?.session) return { odeslano: 0, zbyva: nacti().length };
+  } catch {
+    return { odeslano: 0, zbyva: nacti().length };
+  }
   odesilaSe = true;
   let odeslano = 0;
   try {
@@ -242,8 +253,25 @@ export async function odesliFrontu(vcetneZaseknutych = false): Promise<{ odeslan
       if (!vcetneZaseknutych && polozka.dalsiPokusOd && polozka.dalsiPokusOd > ted) continue;
       let chyba: unknown = null;
       try {
-        const { error } = await (klient.from(polozka.tabulka) as any).update(polozka.data).eq("id", polozka.id);
+        /*
+         * `.select("id")` tu není pro data, ale pro důkaz.
+         *
+         * PostgREST na `update`, který nesedí na žádný řádek, odpoví 204 bez
+         * chyby – tedy stejně jako na povedený zápis. Fronta pak položku
+         * smazala jako uloženou, i když se nezapsalo nic: po odhlášení
+         * (RLS nepustí anonyma), po přepnutí na účet bez práv k tomu servisu
+         * nebo když zakázku mezitím někdo smazal. Přesně ta tichá ztráta,
+         * kvůli které fronta vznikla. Vrácený řádek to rozhodne: když se
+         * nevrátí, zápis se nekonal a položka zůstává (a je vidět).
+         */
+        const { data, error } = await (klient.from(polozka.tabulka) as any)
+          .update(polozka.data)
+          .eq("id", polozka.id)
+          .select("id");
         chyba = error ?? null;
+        if (!chyba && (!Array.isArray(data) || data.length === 0)) {
+          chyba = { code: "PGRST116", message: "Řádek se nezapsal – chybí právo, nebo už neexistuje." };
+        }
       } catch (err) {
         chyba = err;
       }
@@ -317,6 +345,14 @@ export function spustHlidacFronty(): void {
   naplanujOdeslani(1500);
 
   window.addEventListener("online", () => naplanujOdeslani(500));
+  /*
+   * Zavírané okno: odeslat, co ve frontě je, hned – naplánovaný `setTimeout`
+   * by se už nespustil. Dokončit se to nemusí (odcházející stránka požadavek
+   * utne), proto fronta zůstává v localStorage a dopíše se při dalším startu.
+   */
+  window.addEventListener("pagehide", () => {
+    if (nacti().some((p) => !p.zaseknuto)) void odesliFrontu();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") naplanujOdeslani(500);
   });

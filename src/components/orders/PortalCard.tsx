@@ -4,6 +4,7 @@ import { SectionHeading } from "../SectionHeading";
 import { CheckIcon, ClockIcon, CoinsIcon, EditIcon, HistoryIcon, LinkIcon, XIcon } from "../icons";
 import { showToast } from "../Toast";
 import { reportError, reportSilent } from "../../lib/reportError";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../../lib/frontaZapisu";
 import { supabase } from "../../lib/supabaseClient";
 import { normalizePhone } from "../../lib/phone";
 import {
@@ -388,6 +389,35 @@ export function PortalCard({
       }
       void refreshEvents();
     } catch (error) {
+      /*
+       * Rozpis nabídky žije jen ve stavu téhle karty. Když zápis neprojde
+       * kvůli spojení, stačilo zavřít detail zakázky a položky, které nad
+       * nimi technik seděl deset minut, byly pryč – karta si je při dalším
+       * otevření předvyplní znovu z oprav a jeho ceny jsou fuč. Fronta drží
+       * cílový stav řádku a nabídku dopíše sama; formulář zůstává otevřený,
+       * ať je do té doby vidět, co v ní je.
+       */
+      if (!jeTrvalaChyba(error)) {
+        ulozNaPozdeji({
+          klic: `tickets:${ticketId}:nabidka`,
+          tabulka: "tickets",
+          id: ticketId,
+          data: {
+            quote_amount: amount,
+            quote_items: polozky,
+            quote_note: noteInput.trim() || null,
+            quote_status: "sent",
+            quote_sent_at: new Date().toISOString(),
+            quote_decided_at: null,
+            quote_decision_meta: null,
+          },
+          popis: `Cenová nabídka · ${code}`,
+          serviceId,
+          chyba: error,
+        });
+        showToast("Spojení vypadlo – nabídka se uloží sama, jakmile bude připojení. Rozepsané položky se neztratí.", "info");
+        return;
+      }
       reportError({ code: "portal.quote_send_failed", error, userMessage: "Nabídku se nepodařilo odeslat", source: "PortalCard", serviceId, context: { ticketId } });
     } finally {
       setBusy(null);

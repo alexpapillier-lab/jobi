@@ -99,7 +99,16 @@ export function nahodnyTelefon(): string {
  */
 export async function zalozZakazku(
   page: Page,
-  udaje: { zakaznik: string; zarizeni: string; popis?: string; telefon?: string; seriove?: string; nechatOtevrene?: boolean },
+  udaje: {
+    zakaznik: string;
+    zarizeni: string;
+    popis?: string;
+    telefon?: string;
+    seriove?: string;
+    nechatOtevrene?: boolean;
+    /** Zkratka servisu, kterou má číslo začínat. Bez ní se čeká zkratka testovacího servisu. */
+    zkratka?: string;
+  },
 ): Promise<string> {
   await page.getByRole("button", { name: "+ Nová zakázka" }).click();
   await page.getByPlaceholder("Jan Novák").fill(udaje.zakaznik);
@@ -130,8 +139,9 @@ export async function zalozZakazku(
   const hlavicka = podnadpis.locator("xpath=..");
   // Číslo se v hlavičce objeví o chvíli později než jméno (zakázka se
   // nejdřív ukáže, pak dojede z databáze) – počkat, ne číst hned.
-  await expect(hlavicka).toContainText(new RegExp(`${SERVIS.zkratka}\\d{6,}`), { timeout: 15_000 });
-  const kod = ((await hlavicka.innerText()).match(new RegExp(`${SERVIS.zkratka}\\d{6,}`)) ?? [])[0];
+  const zkratka = udaje.zkratka ?? SERVIS.zkratka;
+  await expect(hlavicka).toContainText(new RegExp(`${zkratka}\\d{6,}`), { timeout: 15_000 });
+  const kod = ((await hlavicka.innerText()).match(new RegExp(`${zkratka}\\d{6,}`)) ?? [])[0];
   if (!kod) throw new Error("Zakázka se založila, ale v hlavičce detailu není číslo.");
 
   if (!udaje.nechatOtevrene) await zavriDetail(page);

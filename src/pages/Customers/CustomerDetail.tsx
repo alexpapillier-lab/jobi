@@ -210,9 +210,10 @@ export function CustomerDetail({
     setSubmitAttempted(true);
     if (!canSave) return;
 
-    const success = await saveEditFromHook(customer, editDraft, (draft) => {
-      setEditDraft(draft);
-    });
+    /* Rozepsaný formulář si drží okno samo. Hook do něj schválně nesahá ani
+       při souběžné úpravě – dřív do něj dosadil verzi ze serveru a napsané
+       údaje byly pryč. */
+    const success = await saveEditFromHook(customer, editDraft);
 
     // Only close modal if save was successful
     if (!success) {

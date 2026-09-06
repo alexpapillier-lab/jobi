@@ -102,15 +102,36 @@ export default function Customers({
 
       try {
         // ✅ Použití typovaného Supabase clientu - bez 'as any'!
-        const { data, error } = await fetchAllPages((from, to) =>
-          typedSupabase
-            .from("customers")
-            .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
-            .eq("service_id", activeServiceId)
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: false })
-            .range(from, to)
-        );
+        //
+        // Zákazníci a zakázky se tahají **současně**. Jeden na druhého nečeká –
+        // zakázky se jen rozdělují podle customer_id – a sekvenčně to u 2 000
+        // zákazníků a 4 800 zakázek znamenalo dvojnásobek cest na server.
+        const sb = supabase;
+        const [{ data, error }, { data: ticketsData, error: ticketsError }] = await Promise.all([
+          fetchAllPages((from, to) =>
+            typedSupabase
+              .from("customers")
+              .select("id,service_id,name,phone,email,company,ico,address_street,address_city,address_zip,note,created_at,updated_at,version")
+              .eq("service_id", activeServiceId)
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+              .range(from, to)
+          ),
+          // Dřív se posílal seznam všech ID zákazníků v URL (`in.(…)`):
+          // u pár tisíc zákazníků má URL desítky kB a prohlížeč požadavek
+          // odmítne (ERR_FAILED), takže se počty zakázek nenačetly vůbec.
+          // Dvě úzké kolony pro celý servis jsou levnější než ten seznam,
+          // a stránkuje se přes limit 1000 řádků.
+          fetchAllPages<{ id: string; customer_id: string | null }>((from, to) =>
+            (sb.from("tickets") as any)
+              .select("id,customer_id")
+              .eq("service_id", activeServiceId)
+              .not("customer_id", "is", null)
+              .is("deleted_at", null)
+              .order("id", { ascending: true })
+              .range(from, to)
+          ),
+        ]);
 
         if (error) {
           throw error;
@@ -118,31 +139,9 @@ export default function Customers({
 
         if (data) {
           const mapped = data.map(mapSupabaseCustomerToCustomerRecord);
-          
+
           // Load ticket IDs for each customer
           if (mapped.length > 0) {
-            if (!supabase) {
-              setCustomersError("Supabase není inicializován");
-              setCustomersLoading(false);
-              return;
-            }
-            // Dřív se posílal seznam všech ID zákazníků v URL (`in.(…)`):
-            // u pár tisíc zákazníků má URL desítky kB a prohlížeč požadavek
-            // odmítne (ERR_FAILED), takže se počty zakázek nenačetly vůbec.
-            // Dvě úzké kolony pro celý servis jsou levnější než ten seznam,
-            // a stránkuje se přes limit 1000 řádků.
-            const sb = supabase;
-            const { data: ticketsData, error: ticketsError } = await fetchAllPages<{ id: string; customer_id: string | null }>(
-              (from, to) =>
-                (sb.from("tickets") as any)
-                  .select("id,customer_id")
-                  .eq("service_id", activeServiceId)
-                  .not("customer_id", "is", null)
-                  .is("deleted_at", null)
-                  .order("id", { ascending: true })
-                  .range(from, to)
-            );
-
             if (!ticketsError && ticketsData) {
               // Group tickets by customer_id
               const ticketsByCustomerId: Record<string, string[]> = {};

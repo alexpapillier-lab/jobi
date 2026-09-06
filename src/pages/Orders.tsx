@@ -1,4 +1,4 @@
-import React, { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
@@ -1431,15 +1431,6 @@ export default function Orders({
   const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
 
   const [query, setQuery] = useState("");
-  /**
-   * Text, podle kterého se opravdu filtruje.
-   *
-   * Přefiltrovat 4 800 zakázek a překreslit seznam trvá kolem sta milisekund;
-   * když to visí na úhozu, políčko se při psaní zadrhává. `useDeferredValue`
-   * nechá políčko překreslit hned a seznam dopočítá až v další, přerušitelné
-   * vlně – naměřeno 118 ms → 12 ms na úhoz (6. 9. 2026).
-   */
-  const hledanyText = useDeferredValue(query);
   const [statusById, setStatusById] = useState<Record<string, string>>({});
 
   const [isNewOpen, setIsNewOpen] = useState(false);
@@ -2380,7 +2371,7 @@ export default function Orders({
   }, [activeStatusKey, statusKeysSet]);
 
   const filtered = useMemo(() => {
-    const q = hledanyText.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     const qDigits = q.replace(/\D/g, "");
 
     const base = tickets
@@ -2424,7 +2415,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     );
-  }, [tickets, activeGroup, hledanyText, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
+  }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
   /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
   const claimsInBranch = useMemo(
@@ -2432,7 +2423,7 @@ export default function Orders({
     [cloudClaims, activeBranchId],
   );
   const filteredClaims = useMemo(() => {
-    const q = hledanyText.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     const base = !q
       ? claimsInBranch
       : claimsInBranch.filter(
@@ -2448,7 +2439,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     );
-  }, [claimsInBranch, hledanyText]);
+  }, [claimsInBranch, query]);
 
   const filteredClaimsForTab = useMemo(() => {
     if (activeGroup !== "reklamace") return filteredClaims;

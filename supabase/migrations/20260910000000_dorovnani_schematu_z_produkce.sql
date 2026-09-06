@@ -132,8 +132,9 @@ end $$;
 -- POZNÁMKA: produkce má navíc ještě triggery `set_tickets_updated_at`
 -- a `set_customers_updated_at`. Ty tu ZÁMĚRNĚ nezakládáme – z migrací
 -- už vznikají `tickets_set_updated_at` a `trg_customers_updated_at`
--- se stejným chováním. Na produkci tak dnes běží dvojmo; přidávat tu
--- duplicitu i do čisté databáze by nedávalo smysl.
+-- se stejným chováním. Na produkci tak běžely dvojmo; přidávat tu
+-- duplicitu i do čisté databáze by nedávalo smysl. Ty dva navíc z produkce
+-- odstraňuje migrace 20260910130000_zruseni_duplicitnich_triggeru.sql.
 
 -- 2) Indexy, které jsou jen na produkci ----------------------------------------
 -- Čistě výkonové (plus dvě unikátnosti). Bez nich databáze funguje,

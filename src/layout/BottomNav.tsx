@@ -88,7 +88,9 @@ export function BottomNav({
 
   const activeService = services.find((s) => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Servis";
-  const canSwitchService = services.length > 1 && !!setActiveServiceId;
+  /* Rozbalit jde i s jediným servisem – je v tom seznamu položka „Nový
+     servis“, bez které se druhá provozovna nedá založit. */
+  const canSwitchService = services.length > 0 && !!setActiveServiceId;
 
   const displayName = userProfile?.nickname || userEmail || "Účet";
   const avatarUrl = userProfile?.avatarUrl;
@@ -288,6 +290,23 @@ export function BottomNav({
                     {s.service_id === activeServiceId && <span style={{ flex: "0 0 auto" }}>✓</span>}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setServicesOpen(false);
+                    setMoreOpen(false);
+                    // Formulář je v Nastavení → Můj profil, ať není stejná věc
+                    // ve dvou různých dialozích.
+                    window.dispatchEvent(
+                      new CustomEvent("jobsheet:navigate", { detail: { page: "settings", subsection: "profile_me" } }),
+                    );
+                  }}
+                  style={{ ...rowStyle, paddingLeft: 18, color: "var(--text)", fontWeight: 500 }}
+                >
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    + Nový servis
+                  </span>
+                </button>
               </div>
             )}
 

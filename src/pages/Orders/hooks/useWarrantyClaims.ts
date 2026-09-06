@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { reportSilent } from "../../../lib/reportError";
 import { supabase } from "../../../lib/supabaseClient";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { showToast } from "../../../components/Toast";
 import type { TicketEx } from "../../Orders";
 import type { Database } from "../../../types/supabase";
@@ -178,7 +179,7 @@ export function useWarrantyClaims(activeServiceId: string | null) {
   );
 
   const updateClaimStatus = useCallback(
-    async (claimId: string, newStatusKey: string, completedAt?: string | null): Promise<boolean> => {
+    async (claimId: string, newStatusKey: string, completedAt?: string | null, popis?: string): Promise<boolean> => {
       if (!supabase) {
         showToast("Chybí připojení.", "error");
         return false;
@@ -189,17 +190,33 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         .update(payload)
         .eq("id", claimId);
       if (error) {
+        // Výpadek spojení: stav dojde do databáze z fronty, na obrazovce
+        // zůstává nový. Rollback by tu jen vrátil ručičku zpátky a člověk by
+        // stav klikal znovu – dokud by mu to nepřestalo dávat smysl.
+        if (!jeTrvalaChyba(error)) {
+          ulozNaPozdeji({
+            klic: `warranty_claims:${claimId}:status`,
+            tabulka: "warranty_claims",
+            id: claimId,
+            data: payload,
+            popis: `Stav reklamace · ${popis || claimId}`,
+            serviceId: activeServiceId,
+            chyba: error,
+          });
+          showToast("Spojení vypadlo – stav reklamace se uloží sám, jakmile bude připojení. Neztratí se.", "info");
+          return true;
+        }
         showToast(`Chyba při změně statusu reklamace: ${error.message}`, "error");
         return false;
       }
       return true;
     },
-    []
+    [activeServiceId]
   );
 
   type ClaimUpdate = Database["public"]["Tables"]["warranty_claims"]["Update"];
   const updateClaim = useCallback(
-    async (claimId: string, payload: ClaimUpdate): Promise<WarrantyClaimRow | null> => {
+    async (claimId: string, payload: ClaimUpdate, popis?: string): Promise<WarrantyClaimRow | null> => {
       if (!supabase) {
         showToast("Chybí připojení.", "error");
         return null;
@@ -210,13 +227,34 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         .select()
         .single();
       if (error) {
+        /*
+         * Reklamace se do teď ukládala na jeden pokus: při výpadku spojení
+         * zůstal jen červený toast a všechno, co technik do detailu napsal
+         * (protokol o zákrocích, poznámka, adresa), viselo v paměti okna –
+         * po jeho zavření to bylo pryč. Fronta drží cílový stav řádku
+         * a dopíše ho sama.
+         */
+        if (!jeTrvalaChyba(error)) {
+          ulozNaPozdeji({
+            klic: `warranty_claims:${claimId}:detail`,
+            tabulka: "warranty_claims",
+            id: claimId,
+            data: payload as Record<string, unknown>,
+            popis: `Reklamace · ${popis || claimId}`,
+            serviceId: activeServiceId,
+            chyba: error,
+          });
+          showToast("Spojení vypadlo – reklamace se uloží sama, jakmile bude připojení. Neztratí se.", "info");
+          // Volající si tím doplní svůj stav; v databázi to bude z fronty.
+          return { id: claimId, ...(payload as object) } as WarrantyClaimRow;
+        }
         showToast(`Chyba při úpravě reklamace: ${error.message}`, "error");
         return null;
       }
       showToast("Reklamace upravena", "success");
       return data as WarrantyClaimRow;
     },
-    []
+    [activeServiceId]
   );
 
   const deleteClaim = useCallback(

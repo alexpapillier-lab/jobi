@@ -2,6 +2,7 @@
  * Inventory DB – načítání a ukládání kategorií produktů a produktů do Supabase.
  */
 
+import { fetchAllPages } from "./fetchAllPages";
 import { getSupabaseClient } from "./supabaseClient";
 
 export type ProductCategory = {
@@ -105,10 +106,26 @@ async function upsertProduktu(supabase: any, rows: ReturnType<typeof radekProduk
 
 const ZAKLADNI_SLOUPCE_PRODUKTU = "id, name, price, purchase_price, sku, description, image_url, category_id, model_ids, repair_ids, created_at, public_visible";
 
-/** Select produktů: nejdřív s novými sloupci, při jejich absenci bez nich. */
+/**
+ * Select produktů: nejdřív s novými sloupci, při jejich absenci bez nich.
+ *
+ * Stránkuje se: PostgREST vrátí nejvýš `max_rows` (1000) řádků a **mlčí o tom**.
+ * Servis s tisícem a jednou položkou by o tu poslední přišel – a nepoznal by to.
+ * Řadí se navíc podle `id`, protože `order_index` ani `created_at` nejsou
+ * jedinečné a bez jednoznačného pořadí by se řádky mezi stránkami opakovaly.
+ */
 async function vybratProdukty(supabase: any, serviceId: string) {
   const dotaz = (sloupce: string) =>
-    supabase.from("inventory_products").select(sloupce).eq("service_id", serviceId).order("order_index").order("created_at");
+    fetchAllPages<any>((od, doo) =>
+      supabase
+        .from("inventory_products")
+        .select(sloupce)
+        .eq("service_id", serviceId)
+        .order("order_index")
+        .order("created_at")
+        .order("id")
+        .range(od, doo),
+    );
   const prvni = await dotaz(`${ZAKLADNI_SLOUPCE_PRODUKTU}, ${NOVE_SLOUPCE_PRODUKTU.join(", ")}`);
   if (!prvni.error || !jeChybaChybejicihoSloupce(prvni.error)) return prvni;
   return dotaz(ZAKLADNI_SLOUPCE_PRODUKTU);
@@ -233,10 +250,24 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
     return { data: { productCategories: [], products: [], warehouses: [] } };
   }
 
-  const categoriesRes = await (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
-  const productsRes = await vybratProdukty(supabase, serviceId);
-  const warehousesRes = await (supabase.from("inventory_warehouses") as any).select("id, name, is_default, public_visible, branch_id, created_at").eq("service_id", serviceId).order("order_index").order("created_at");
-  const stockRes = await (supabase.from("inventory_stock") as any).select("product_id, warehouse_id, quantity").eq("service_id", serviceId);
+  // Čtyři nezávislé dotazy. Dřív se čekalo na každý zvlášť, takže se sčítaly
+  // čtyři cesty na server (naměřeno 6. 9. 2026: sklad 2,1 s); souběžně se platí
+  // jen ta nejdelší z nich.
+  const [categoriesRes, productsRes, warehousesRes, stockRes] = await Promise.all([
+    (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at"),
+    vybratProdukty(supabase, serviceId),
+    (supabase.from("inventory_warehouses") as any).select("id, name, is_default, public_visible, branch_id, created_at").eq("service_id", serviceId).order("order_index").order("created_at"),
+    // Stavy zásob taky stránkovat – u tisíce produktů ve dvou skladech je řádků
+    // dvakrát tolik a přes tisícovku se odpověď tiše ořízne.
+    fetchAllPages<{ product_id: string; warehouse_id: string; quantity: number }>((od, doo) =>
+      (supabase.from("inventory_stock") as any)
+        .select("product_id, warehouse_id, quantity")
+        .eq("service_id", serviceId)
+        .order("product_id")
+        .order("warehouse_id")
+        .range(od, doo),
+    ),
+  ]);
 
   if (categoriesRes.error || productsRes.error || warehousesRes.error || stockRes.error) {
     const err = categoriesRes.error || productsRes.error || warehousesRes.error || stockRes.error;

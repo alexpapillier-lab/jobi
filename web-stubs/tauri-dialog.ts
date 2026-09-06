@@ -1,7 +1,9 @@
 /** Stub @tauri-apps/plugin-dialog pro web – nativní dialog nahrazuje stažení souboru. */
-export async function save(): Promise<string | null> {
+import type * as Skutecny from "@tauri-apps/plugin-dialog";
+
+export const save: typeof Skutecny.save = async () => {
   throw new Error("Nativní dialog pro uložení není ve webové verzi dostupný.");
-}
-export async function open(): Promise<string | null> {
+};
+export const open: typeof Skutecny.open = async () => {
   throw new Error("Nativní dialog pro otevření není ve webové verzi dostupný.");
-}
+};

@@ -73,7 +73,7 @@ function isTauriRuntime(): boolean {
 
 /** Chybové hlášky z updateru jsou technické; tohle je to, co má smysl číst. */
 /** Síťová chyba (po probuzení z uspání, výpadek, DNS) – přechodná, má smysl to zkusit znovu. */
-function jeSitovaChyba(msg: string): boolean {
+export function jeSitovaChyba(msg: string): boolean {
   const low = msg.toLowerCase();
   return ["error sending request", "network", "fetch", "timed out", "timeout", "dns", "connect", "reset by peer", "broken pipe"].some((k) => low.includes(k));
 }
@@ -84,7 +84,7 @@ function jeSitovaChyba(msg: string): boolean {
  * opakování by to vypadalo, že aktualizace nefungují, dokud se aplikace
  * nerestartuje.
  */
-async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugin-updater").Update | null> {
+export async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugin-updater").Update | null> {
   const { check } = await import("@tauri-apps/plugin-updater");
   const pauzy = [2000, 5000];
   let posledni: unknown = null;
@@ -101,7 +101,7 @@ async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugin-updat
   throw posledni;
 }
 
-function humanizeUpdateError(err: unknown): string {
+export function humanizeUpdateError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const low = msg.toLowerCase();
   if (jeSitovaChyba(msg)) {
@@ -114,6 +114,43 @@ function humanizeUpdateError(err: unknown): string {
     return "Aplikace nemá oprávnění se přepsat. Zkuste ji spustit z složky Aplikace.";
   }
   return msg;
+}
+
+/** Co se má stát, když uživatel klikne „Stáhnout“ a my ještě nemáme objekt Update. */
+export type PripravaStazeni =
+  | { stav: "ok"; update: import("@tauri-apps/plugin-updater").Update }
+  | { stav: "zadny" }
+  | { stav: "chyba"; hlaska: string };
+
+/**
+ * Obstará objekt Update pro stahování – buď ten už známý z kontroly, nebo
+ * čerstvý ze serveru.
+ *
+ * Vyčleněno z komponenty, protože právě tady se dřív ztrácela chyba: kontrola
+ * se volala mimo `try`, takže když mezi nabídkou aktualizace a kliknutím
+ * vypadla síť, odmítnutý příslib nikdo nezachytil (oba volající ho zahazují)
+ * a tlačítko „Stáhnout“ jen tiše nic neudělalo. Návratový typ teď žádnou
+ * z možností nedovolí přejít mlčky.
+ */
+export async function pripravUpdateKeStazeni(
+  jizZname: import("@tauri-apps/plugin-updater").Update | null,
+  zkontroluj: () => Promise<import("@tauri-apps/plugin-updater").Update | null> = zkontrolujSOpakovanim
+): Promise<PripravaStazeni> {
+  if (jizZname) return { stav: "ok", update: jizZname };
+  try {
+    const update = await zkontroluj();
+    return update ? { stav: "ok", update } : { stav: "zadny" };
+  } catch (err) {
+    return { stav: "chyba", hlaska: humanizeUpdateError(err) };
+  }
+}
+
+/**
+ * Hláška, když selže restart do stažené verze. Musí uživateli říct, že o
+ * staženou verzi nepřišel – jinak by ji zkoušel stahovat znovu.
+ */
+export function hlaskaSelhaniRestartu(err: unknown): string {
+  return `Restart se nezdařil: ${humanizeUpdateError(err)} Zavřete a spusťte aplikaci ručně – stažená verze se nainstaluje sama.`;
 }
 
 export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
@@ -135,16 +172,20 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
   const downloadAndInstall = useCallback(async () => {
     if (!isTauriRuntime()) return;
     if (downloadingRef.current) return;
-    let update = pendingUpdateRef.current;
-    if (!update) {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      update = await check();
-      if (!update) {
-        setState((s) => ({ ...s, phase: "idle", update: null }));
-        return;
-      }
-      pendingUpdateRef.current = update;
+    const priprava = await pripravUpdateKeStazeni(pendingUpdateRef.current);
+    if (priprava.stav === "chyba") {
+      setState((s) => ({ ...s, phase: "error", downloading: false, error: priprava.hlaska }));
+      return;
     }
+    if (priprava.stav === "zadny") {
+      // Verze mezitím zmizela (stažené vydání). Stavový řádek se přepne na
+      // „Máte nejnovější verzi“, takže uživatel ví, proč se nic nestahuje.
+      pendingUpdateRef.current = null;
+      setState((s) => ({ ...s, phase: "idle", update: null }));
+      return;
+    }
+    const update = priprava.update;
+    pendingUpdateRef.current = update;
 
     downloadingRef.current = true;
     setState((s) => ({ ...s, phase: "downloading", downloading: true, downloadProgress: 0, error: null }));
@@ -218,8 +259,18 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
 
   const relaunch = useCallback(async () => {
     if (!isTauriRuntime()) return;
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
+    // Tlačítko „Restartovat do nové verze“ je poslední krok aktualizace.
+    // Bez odchycení by selhání (plugin se nenačetl, systém restart odmítl)
+    // skončilo jen odmítnutým příslibem v onClicku: okno zůstane stát a
+    // uživatel má za to, že se restart chystá.
+    try {
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (err) {
+      // Fáze zůstává „ready“: verze je pořád stažená a tlačítko restartu má
+      // zůstat po ruce. Chyba se ukáže vedle něj (viz AppUpdateCard).
+      setState((s) => ({ ...s, error: hlaskaSelhaniRestartu(err) }));
+    }
   }, []);
 
   const setAutoDownload = useCallback((on: boolean) => {

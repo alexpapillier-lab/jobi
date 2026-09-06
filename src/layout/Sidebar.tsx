@@ -369,13 +369,26 @@ export function Sidebar({
   const updateAvailable = !!(appUpdate?.update);
   const activeService = services.find(s => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Service desk";
-  const hasMultipleServices = services.length > 1;
-  const showServiceDropdown = hasMultipleServices || (isRootOwner && services.length === 0);
+  /* Přepínač se ukazuje i tomu, kdo má jediný servis: je v něm položka
+     „Nový servis“, a bez ní se druhá provozovna nedá v aplikaci vůbec
+     založit. */
+  const showServiceDropdown = services.length > 0 || isRootOwner;
   const displayName = (userProfile?.nickname?.trim() || userEmail?.split("@")[0] || "Admin").trim() || "Admin";
   const avatarUrl = userProfile?.avatarUrl?.trim() || null;
   const roleLabel = activeService?.role ? ROLE_LABELS[activeService.role] ?? null : null;
   const activeBranchName = branchCtx.isMulti ? (branchCtx.activeBranch?.name ?? "Všechny pobočky") : null;
   const profileSubtitle = [serviceName, activeBranchName, roleLabel].filter(Boolean).join(" · ");
+  /*
+   * Založení dalšího servisu. Formulář je v Nastavení → Můj profil vedle
+   * přidání servisu pozvánkou; přepínač na něj jen odkáže, aby stejná věc
+   * nebyla ve dvou různých dialozích.
+   */
+  const otevriZalozeniServisu = () => {
+    window.dispatchEvent(
+      new CustomEvent("jobsheet:navigate", { detail: { page: "settings", subsection: "profile_me" } }),
+    );
+  };
+
   const badgeCountFor = (key: NavKey): number => {
     if (key === "sms") return smsUnreadCount;
     if (key === "settings" && updateAvailable) return 1;
@@ -676,6 +689,16 @@ export function Sidebar({
                       </MenuItem>
                     ))
                   )}
+                  <MenuItem
+                    layout="row"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUserMenuOpen(false);
+                      otevriZalozeniServisu();
+                    }}
+                  >
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>+ Nový servis</span>
+                  </MenuItem>
                 </div>
               )}
 
@@ -1225,6 +1248,18 @@ export function Sidebar({
                     </MenuItem>
                   ))
                 )}
+                <MenuItem
+                  layout="row"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setServiceMenuOpen(false);
+                    setServiceMenuPosition(null);
+                    otevriZalozeniServisu();
+                  }}
+                >
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>+ Nový servis</span>
+                </MenuItem>
               </div>,
               document.body
             )}

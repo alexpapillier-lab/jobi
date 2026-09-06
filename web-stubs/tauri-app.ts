@@ -1,4 +1,4 @@
 /** Stub @tauri-apps/api/app pro web. */
-export async function getVersion(): Promise<string> {
-  return "web";
-}
+import type * as Skutecny from "@tauri-apps/api/app";
+
+export const getVersion: typeof Skutecny.getVersion = async () => "web";

@@ -15,6 +15,7 @@ import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumberin
 import { UzaverkaDialog, ZpusobPlatbyDialog } from "./Invoices/Uzaverka";
 import { invoiceDocumentData } from "../lib/documentData";
 import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobiDocsErrorForUser } from "../lib/jobidocs";
+import { spojCestu, vychoziSlozkaProExport } from "../lib/tiskDokumentu";
 import { isWeb } from "../lib/platform";
 import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -1020,17 +1021,14 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       }
       try {
         const filename = `${KIND_FILENAME[asKind(inv)]}_${inv.number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
-        let downloadDir = "";
-        try {
-          const { desktopDir, downloadDir: dl } = await import("@tauri-apps/api/path");
-          downloadDir = await dl().catch(() => desktopDir());
-        } catch {
-          downloadDir = "/tmp";
-        }
-        const targetPath = `${downloadDir}/${filename}`;
+        // Doklady se exportují po dávkách, proto bez dialogu – ale musí být
+        // vidět KAM. Dřív se při selhání psalo do /tmp a hlásilo se „PDF
+        // uložen“; soubor nikdo nenašel a systém ho po čase smazal.
+        const { desktopDir, downloadDir } = await import("@tauri-apps/api/path");
+        const targetPath = spojCestu(await vychoziSlozkaProExport({ downloadDir, desktopDir }), filename);
         const result = await exportDocument("faktura", activeServiceId!, await dataProTisk(inv), targetPath);
         if (result.ok) {
-          showToast(`PDF uložen: ${filename}`, "success");
+          showToast(`PDF uložen: ${targetPath}`, "success");
         } else {
           reportError({
             code: "invoices.export_failed",

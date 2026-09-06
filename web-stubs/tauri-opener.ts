@@ -1,7 +1,9 @@
 /** Stub @tauri-apps/plugin-opener pro web – odkazy se otevírají přes window.open. */
-export async function openUrl(url: string): Promise<void> {
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-export async function revealItemInDir(): Promise<void> {
+import type * as Skutecny from "@tauri-apps/plugin-opener";
+
+export const openUrl: typeof Skutecny.openUrl = async (url) => {
+  window.open(String(url), "_blank", "noopener,noreferrer");
+};
+export const revealItemInDir: typeof Skutecny.revealItemInDir = async () => {
   throw new Error("Zobrazení ve složce není ve webové verzi dostupné.");
-}
+};

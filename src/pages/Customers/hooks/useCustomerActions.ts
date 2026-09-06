@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { showToast } from "../../../components/Toast";
 import { normalizePhone } from "../../../lib/phone";
 import { type CustomerRecord } from "../CustomerList";
@@ -15,20 +16,6 @@ type EditDraft = {
   ico: string;
   info: string;
 };
-
-function draftFromCustomer(c: CustomerRecord): EditDraft {
-  return {
-    name: c.name ?? "",
-    phone: c.phone ?? "",
-    email: c.email ?? "",
-    addressStreet: c.addressStreet ?? "",
-    addressCity: c.addressCity ?? "",
-    addressZip: c.addressZip ?? "",
-    company: c.company ?? "",
-    ico: c.ico ?? "",
-    info: c.info ?? "",
-  };
-}
 
 function computeCustomerIdFromDraft(d: EditDraft) {
   const phoneDigits = d.phone.trim().replace(/[^\d]/g, "");
@@ -68,11 +55,7 @@ type UseCustomerActionsParams = {
 export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActionsParams) {
   const [isSaving, setIsSaving] = useState(false);
 
-  const saveEdit = async (
-    customer: CustomerRecord,
-    editDraft: EditDraft,
-    onUpdateEditDraft?: (draft: EditDraft) => void
-  ) => {
+  const saveEdit = async (customer: CustomerRecord, editDraft: EditDraft) => {
     if (!customer || !supabase || !activeServiceId) return;
     setIsSaving(true);
 
@@ -181,6 +164,46 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
           return false; // Don't close modal
         }
 
+        /*
+         * Spojení, ne chyba dat. Zákazník se do téhle chvíle ukládal na jeden
+         * pokus: technik dopsal adresu, vypadla wifi a po zavření okna byly
+         * údaje pryč. Fronta drží cílový stav řádku a dopíše ho sama.
+         * Kontrola verze se do fronty nepředává – opakovaný zápis by s ní
+         * neprošel už nikdy. Cizí mezikrok tak sice přepíše, ale je vidět
+         * v historii zákazníka; ztracená práce vidět není nikde.
+         */
+        if (!jeTrvalaChyba(error)) {
+          ulozNaPozdeji({
+            klic: `customers:${customer.id}:detail`,
+            tabulka: "customers",
+            id: customer.id,
+            data: payload,
+            popis: `Zákazník · ${editDraft.name.trim() || customer.name || "detail"}`,
+            serviceId: activeServiceId,
+            chyba: error,
+          });
+          showToast("Spojení vypadlo – změny zákazníka se uloží samy, jakmile bude připojení. Neztratí se.", "info");
+          // Na obrazovce ať je hned to, co člověk zadal; do databáze to dojde z fronty.
+          const nowIso = new Date().toISOString();
+          onSave(
+            {
+              ...customer,
+              name: editDraft.name.trim(),
+              phone: editDraft.phone.trim() || undefined,
+              email: editDraft.email.trim() || undefined,
+              addressStreet: editDraft.addressStreet.trim() || undefined,
+              addressCity: editDraft.addressCity.trim() || undefined,
+              addressZip: editDraft.addressZip.trim() || undefined,
+              company: editDraft.company.trim() || undefined,
+              ico: editDraft.ico.trim() || undefined,
+              info: editDraft.info.trim() || undefined,
+              updatedAt: nowIso,
+            },
+            customer.id,
+          );
+          return true; // Okno se zavře – změna není ztracená, jen čeká ve frontě.
+        }
+
         showToast("Chyba při ukládání zákazníka: " + (error.message || "Neznámá chyba"), "error");
         return false; // Don't close modal on error
       }
@@ -188,7 +211,7 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
       // Detect conflict: no error but no data returned (0 rows updated due to version mismatch)
       if (!data && expectedVersion !== undefined) {
         console.warn("[Customers] CONFLICT DETECTED - no data returned, version mismatch likely");
-        showToast("Zákazník byl mezitím upraven jinde. Načetl jsem aktuální verzi.", "error");
+        showToast("Zákazníka mezitím upravil někdo jiný. Vaše rozepsané údaje jsem nechal v okně – zkontrolujte je a uložte znovu.", "error");
 
         // Re-fetch the customer from DB
         try {
@@ -217,13 +240,14 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
               refreshedCustomer.ticketIds = ticketsData.map((t: any) => t.id);
             }
 
-            // Call onSave with refreshed customer
+            /* Do seznamu jde nová verze z databáze (kvůli `version`, jinak by
+               další uložení narazilo na stejný konflikt donekonečna).
+               Rozepsaný formulář se ale NEPŘEPISUJE: dřív se do něj dosadila
+               serverová verze, takže druhý člověk přišel o všechno, co právě
+               napsal – a hláška mu přitom tvrdila, ať to zkontroluje a uloží
+               znovu. Nebylo co. Zůstane, co napsal; po druhém uložení jeho
+               změna projde a co přepsala, je vidět v historii zákazníka. */
             onSave(refreshedCustomer, refreshedCustomer.id);
-
-            // Update edit draft if editing this customer
-            if (onUpdateEditDraft) {
-              onUpdateEditDraft(draftFromCustomer(refreshedCustomer));
-            }
           }
         } catch (refetchErr) {
           console.error("[Customers] Exception re-fetching customer after conflict:", refetchErr);

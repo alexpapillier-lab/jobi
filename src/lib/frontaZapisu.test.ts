@@ -10,17 +10,33 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const zapsano: Array<{ tabulka: string; data: unknown; id: string }> = [];
 /** Co má další zápis vrátit; `null` = úspěch. */
 let dalsiChyba: unknown = null;
+/** Kolik řádků „databáze" po zápisu vrátí. Nula = zápis nesedl na žádný řádek. */
+let dotcenychRadku = 1;
+/** Je někdo přihlášený? Odhlášený klient nesmí frontu spálit proti anonymovi. */
+let prihlasen = true;
 
 vi.mock("./supabaseClient", () => ({
   supabase: {
+    auth: {
+      async getSession() {
+        return { data: { session: prihlasen ? { user: { id: "u1" } } : null } };
+      },
+    },
     from(tabulka: string) {
       return {
         update(data: unknown) {
           return {
-            async eq(_sloupec: string, id: string) {
-              if (dalsiChyba) return { error: dalsiChyba };
-              zapsano.push({ tabulka, data, id });
-              return { error: null };
+            eq(_sloupec: string, id: string) {
+              return {
+                // `.select("id")` je důkaz, že zápis opravdu na řádek sedl –
+                // PostgREST na neúspěšný `update` odpoví bez chyby.
+                async select(_sloupce: string) {
+                  if (dalsiChyba) return { data: null, error: dalsiChyba };
+                  if (dotcenychRadku === 0) return { data: [], error: null };
+                  zapsano.push({ tabulka, data, id });
+                  return { data: [{ id }], error: null };
+                },
+              };
             },
           };
         },
@@ -49,6 +65,8 @@ beforeEach(() => {
   (globalThis as any).localStorage = pametovyStorage();
   zapsano.length = 0;
   dalsiChyba = null;
+  dotcenychRadku = 1;
+  prihlasen = true;
   vycistiFrontu();
 });
 
@@ -184,6 +202,34 @@ describe("fronta neuložených změn", () => {
     ulozNaPozdeji(polozka("tickets:t1:detail", { title: "X" }));
     odhlas();
     expect(stavy).toEqual([0, 1, 2]);
+  });
+
+  it("zápis, který nesedl na žádný řádek, se NEsmaže jako uložený", async () => {
+    /* Přesně tahle situace mazala data potichu: odhlášený uživatel (nebo
+       zakázka, kterou mezitím někdo smazal) → RLS nepustí nic, PostgREST
+       vrátí 204 bez chyby a fronta si to vyložila jako „uloženo". */
+    ulozNaPozdeji(polozka("tickets:t1:detail", { title: "Nikdy nezapsáno" }));
+    dotcenychRadku = 0;
+    const r = await odesliFrontu();
+    expect(r.odeslano).toBe(0);
+    expect(zapsano).toHaveLength(0);
+    const f = neulozeneZmeny();
+    expect(f).toHaveLength(1);
+    // Opakování tomu nepomůže, ale uživatel to musí vidět.
+    expect(f[0].zaseknuto).toBe(true);
+  });
+
+  it("bez přihlášení se fronta neodesílá a nic se nespálí", async () => {
+    ulozNaPozdeji(polozka("tickets:t1:detail", { title: "Po odhlášení" }));
+    prihlasen = false;
+    const r = await odesliFrontu(true);
+    expect(r.odeslano).toBe(0);
+    expect(zapsano).toHaveLength(0);
+    expect(neulozeneZmeny()).toHaveLength(1);
+    // Po přihlášení zpátky se dopíše sama.
+    prihlasen = true;
+    expect((await odesliFrontu(true)).odeslano).toBe(1);
+    expect(zapsano[0].data).toEqual({ title: "Po odhlášení" });
   });
 
   it("rozbitý obsah v localStorage frontu neshodí", () => {

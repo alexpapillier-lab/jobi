@@ -7,6 +7,7 @@ import { showToast } from "../../../components/Toast";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
+import { odvodZkratku } from "../../../lib/servisy";
 
 // Helper: normalize prefix for code generation
 function normalizePrefix(raw: string): string {
@@ -41,11 +42,23 @@ async function loadServiceSettingsForCode(
       return "SRV";
     }
     
-    const abbreviation = typedData.config.abbreviation;
-    if (typeof abbreviation === "string") {
-      return normalizePrefix(abbreviation);
+    /*
+     * Zkratka se v configu ukládá na dvě místa: `abbreviation` na vrcholu
+     * (odsud ji čte tenhle generátor) a `companyData.abbreviation` (odsud ji
+     * ukazuje a ukládá Nastavení). Kdo zapsal jen jedno z nich, měl zakázky
+     * číslované „SRV…“ místo své zkratky – a přečíslovat je zpětně nejde,
+     * protože číslo je na vytištěných dokladech u zákazníka. Proto se zkouší
+     * obě místa a teprve pak se zkratka odvodí z názvu firmy; „SRV“ zbude jen
+     * pro servis, který nemá vyplněné vůbec nic.
+     */
+    const config = typedData.config as { abbreviation?: unknown; companyData?: { abbreviation?: unknown; name?: unknown } };
+    const kandidati = [config.abbreviation, config.companyData?.abbreviation];
+    for (const kandidat of kandidati) {
+      if (typeof kandidat === "string" && kandidat.trim()) return normalizePrefix(kandidat);
     }
-    
+    const nazev = config.companyData?.name;
+    if (typeof nazev === "string" && nazev.trim()) return normalizePrefix(odvodZkratku(nazev));
+
     return "SRV";
   } catch (err) {
     console.error("[makeCode] Error loading service settings:", err);
@@ -262,6 +275,12 @@ type SaveTicketChangesParams = {
   detailedTicket: TicketEx;
   editedTicket: Partial<TicketEx>;
   onSuccess: (ticket: TicketEx) => void;
+  /**
+   * Zakázku mezitím změnil někdo jiný. Dostane čerstvou verzi z databáze,
+   * ale rozepsané úpravy nechává být – ty patří tomu, kdo je napsal.
+   * Bez tohohle se volal `onSuccess`, který úpravy zahodil.
+   */
+  onConflict?: (ticket: TicketEx) => void;
 };
 
 /**
@@ -478,7 +497,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
-    const { detailedTicket, editedTicket, onSuccess } = params;
+    const { detailedTicket, editedTicket, onSuccess, onConflict } = params;
 
     devLog("[Save] started", { ticketId: detailedTicket?.id });
     devLog("[SaveTicket] START", { 
@@ -646,7 +665,15 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       
       const { data, error } = await updateQuery
         .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
-        .single();
+        /* maybeSingle(), ne single(): při souběžné úpravě se neaktualizuje
+           žádný řádek (nesedí `version`) a single() by to ohlásil chybou
+           PGRST116. Tu `jeTrvalaChyba` bere jako trvalou, takže se zápis ani
+           nezařadil do fronty a uživatel viděl „Chyba při ukládání zakázky:
+           JSON object requested…“ – a protože se nenačetla nová verze,
+           další uložení selhalo úplně stejně a rozepsané změny nešlo dostat
+           do databáze vůbec. Se `maybeSingle()` se propadne do větve níž,
+           která zakázku znovu načte a řekne, co se stalo. */
+        .maybeSingle();
 
       devLog("[SaveTicket] RESULT", { data, error, expectedVersion });
 
@@ -665,14 +692,17 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       // Detect conflict: no error but no data returned (0 rows updated due to version mismatch)
       if (!data && expectedVersion !== undefined) {
         devWarn("[SaveTicket] CONFLICT DETECTED - no data returned, version mismatch likely");
-        showToast("Zakázku mezitím upravil někdo jiný. Načetl jsem novou verzi – prosím zkontrolujte změny a uložte znovu.", "error");
+        showToast("Zakázku mezitím upravil někdo jiný. Vaše rozepsané změny jsem nechal v okně – zkontrolujte je a uložte znovu.", "error");
         
         // Re-fetch the ticket from DB
         try {
           const refreshedTicket = await refetchTicketById(detailedTicket.id);
           if (refreshedTicket) {
             setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? refreshedTicket : t)));
-            onSuccess(refreshedTicket);
+            /* Jen čerstvý základ (a s ním nová `version`), ne konec úprav:
+               `onSuccess` by zavřel režim úprav a rozepsané změny smazal –
+               po hlášce „zkontrolujte je a uložte znovu“ by nebylo co. */
+            onConflict?.(refreshedTicket);
             devLog("[SaveTicket] END (conflict - refreshed)");
             return false; // Return false to indicate conflict, not success
           }

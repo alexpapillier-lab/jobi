@@ -9,7 +9,7 @@ zakládání druhého prostředí bylo potřeba.
 Tenhle dokument popisuje test, který to ověřuje, a rozdíly, které mezi
 produkcí a „čistou“ databází zbývají.
 
-Stav k 6. 9. 2026: **136 migrací ze 136 projde a databáze funguje.**
+Stav k 6. 9. 2026: **139 migrací ze 139 projde a databáze funguje.**
 
 ## Jak test spustit
 
@@ -55,7 +55,7 @@ a řekne to rovnou; cluster se zastaví přes `pg_ctl -D <datadir> stop`.
 
 ## Co test ověřil
 
-Z prázdného Postgresu + bootstrapu + 136 migrací vznikne:
+Z prázdného Postgresu + bootstrapu + 139 migrací vznikne:
 
 | | čistá DB | produkce |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ Z prázdného Postgresu + bootstrapu + 136 migrací vznikne:
 | triggery | 49 | 51 |
 | indexy | 218 | 218 |
 | constrainty | 218 | 218 |
-| tabulky v `supabase_realtime` | 23 | 23 |
+| tabulky v `supabase_realtime` | 25 | 25 |
 | granty pro anon/authenticated/service_role | 166 | 166 |
 | storage buckety a politiky | 2 / 8 | 2 / 8 |
 
@@ -77,8 +77,9 @@ Porovnání se dělalo čtecími dotazy proti ostré databázi
 čistou databází. **Na produkci se nic nespouštělo.**
 
 Ledger migrací na produkci (`supabase_migrations.schema_migrations`)
-obsahuje 135 záznamů a odpovídá souborům v repozitáři. Jediná migrace,
-která na produkci ještě neběžela, je `20260910000000_dorovnani_schematu_z_produkce.sql`.
+obsahuje 137 záznamů a odpovídá souborům v repozitáři; poslední aplikovaná
+je `20260910120000_realtime_chybejici_tabulky.sql`. Na produkci ještě
+neběžela `20260910130000_zruseni_duplicitnich_triggeru.sql`.
 
 ## Migrace 20260910000000 — dorovnání schématu z produkce
 
@@ -126,18 +127,31 @@ obnovená databáze byla proti ostré ochuzená o zamykání, indexy i FORCE RLS
 
 ## Rozdíly, které zůstávají
 
-Po dorovnání zbývají proti produkci tři rozdíly. Žádný nebrání provozu.
+Po dorovnání zbývaly proti produkci tři rozdíly. Žádný nebránil provozu;
+první z nich je od 6. 9. 2026 vyřešený samostatnou migrací.
 
-### 1. Dva triggery navíc na produkci (záměrně nekopírujeme)
+### 1. Dva triggery navíc na produkci — **vyřešeno migrací 20260910130000**
 
-Produkce má na `tickets` a `customers` triggery `set_tickets_updated_at`
+Produkce měla na `tickets` a `customers` triggery `set_tickets_updated_at`
 a `set_customers_updated_at`, které z migrací nevznikají. Dělají ale
 totéž co `tickets_set_updated_at` a `trg_customers_updated_at`, které
-z migrací vznikají — na produkci tak `set_updated_at()` běží při každém
+z migrací vznikají — na produkci tak `set_updated_at()` běžela při každém
 UPDATE dvakrát. Duplicitu do čisté databáze nepřenášíme.
 
-Zbytečnou práci navíc by šlo z produkce odstranit (`drop trigger`), ale
-to už není no-op a patří to do samostatné migrace.
+Čtecí dotaz nad `pg_get_triggerdef` potvrdil, že se všechny čtyři
+definice liší jen jménem: `BEFORE UPDATE ON <tabulka> FOR EACH ROW
+EXECUTE FUNCTION set_updated_at()`, bez `WHEN` a bez seznamu sloupců,
+všechny zapnuté. Funkce jen dělá `new.updated_at = now()`, a protože
+`now()` je čas transakce, druhý průchod zapisoval tutéž hodnotu — šlo
+tedy čistě o práci navíc, ne o rozdíl v chování.
+
+Migrace `supabase/migrations/20260910130000_zruseni_duplicitnich_triggeru.sql`
+ty dva ručně přidané triggery dropuje (`drop trigger if exists`).
+Zůstávají ty z migrací, aby se produkce s repozitářem naopak sblížila.
+Na čisté databázi je migrace no-op — triggery, které maže, tam nikdy
+nevzniknou —, takže `npm run test:migrace` zůstává zelený a počet
+triggerů v čisté databázi je dál 49. Na produkci se rozdíl (49 vs. 51)
+srovná až tím, že migrace opravdu proběhne; **zatím nepushnuto**.
 
 ### 2. `prevent_root_owner_change()` je na produkci `SECURITY DEFINER`
 
@@ -173,18 +187,37 @@ ve schématu `extensions`.
   vzniknou samy — jen se to v tomhle testu neověří.
 - **Data.** Test staví prázdné schéma, ne obsah.
 
-## Nález mimo migrace: tři tabulky chybí v realtime i na produkci
+## Nález mimo migrace: tři tabulky chyběly v realtime i na produkci — vyřešeno
 
-Aplikace se přes `postgres_changes` přihlašuje k odběru tabulek
+Aplikace se přes `postgres_changes` přihlašovala k odběru tabulek
 `customers` (`src/pages/Customers.tsx`), `device_repairs`
 (`src/pages/Orders.tsx`) a `service_document_settings`
-(`src/pages/Orders.tsx`), ale ani jedna z nich není v publikaci
-`supabase_realtime` — **ani na produkci**. Odběr se tiše naváže a nikdy
-nic nepřijde; seznam se aktualizuje až po ručním obnovení.
+(`src/pages/Orders.tsx`), ale žádná z nich nebyla v publikaci
+`supabase_realtime` — **ani na produkci**. Odběr se tiše navázal a nikdy
+nic nepřišlo; seznam se aktualizoval až po ručním obnovení.
 
-Není to regrese obnovy, je to existující chyba provozu. Oprava znamená
-přidat je do publikace, což už není no-op, takže patří do samostatné
-migrace.
+Nebyla to regrese obnovy, byla to existující chyba provozu. Vyřešilo se to
+takto:
+
+- `customers` a `service_document_settings` přidává do publikace migrace
+  `20260910120000_realtime_chybejici_tabulky.sql`, která je **na produkci
+  aplikovaná**. Odběr obou dává smysl: chodí filtrovaný na `service_id`,
+  posílají se jen změněné řádky (velikost `customers` na zátěž nemá vliv)
+  a obě obrazovky na živé změně stojí — jinak kolegovi nepřibude právě
+  založený zákazník a nepropíše se změněné nastavení dokladů.
+- `device_repairs` v databázi vůbec neexistuje, správně je `repairs` —
+  opraveno v aplikaci (`src/pages/Orders.tsx`). Supabase na odběr neznámé
+  tabulky nijak neupozorní, takže tohle je přesně ten typ chyby, kterou
+  najde jen porovnání odběrů proti publikaci.
+
+Ověřeno čtecím dotazem nad `pg_publication_tables` proti produkci:
+v publikaci je všech 18 tabulek, které aplikace odebírá, a čistě postavená
+databáze má stejný seznam.
+
+Aby se totéž nepřehlédlo znovu, kontroluje kouřová zkouška
+v `scripts/test-migrace-na-cisto.sh` celý soupis odebíraných tabulek, ne
+jen čtyři vybrané. Když v aplikaci přibude nový odběr, patří tabulka i do
+toho seznamu.
 
 ## Co by bylo potřeba pro plnou obnovu ze zálohy
 

@@ -1,8 +1,9 @@
 # Zátěžové a výkonnostní měření
 
 Naměřeno 6. 9. 2026 proti **ostrému** Supabase projektu, ale výhradně proti
-testovacím servisům (E2E testovací servis, ukázkový Servis Novák). Majitel to
-výslovně povolil – aplikaci nikdo nepoužívá a nikdo za ni neplatí.
+testovacím servisům (E2E testovací servis, ukázkový Servis Novák a zátěžový
+servis založený jen k měření, oddíl 5). Majitel to výslovně povolil –
+aplikaci nikdo nepoužívá a nikdo za ni neplatí.
 
 `docs/KAPACITA.md` počítá, kolik místa a peněz padesát servisů spotřebuje.
 Tenhle dokument říká něco jiného: **jak rychle to odpovídá a kdy to přestane
@@ -16,6 +17,7 @@ npm run zatez              # veřejná rozhraní, rampa 1 → 5 → 20 → 50
 npm run zatez:limity       # po kolikátém požadavku přijde 429 a kdy se pustí
 npm run zatez:prohlizec    # načtení aplikace v prohlížeči (Playwright)
 E2E_PASSWORD='…' npm run zatez:db   # databázové dotazy aplikace
+E2E_PASSWORD='…' npm run zatez:appka   # odezva appky po přihlášení (viz oddíl 5)
 ```
 
 Skripty jsou v `scripts/zatez/`. `k6` na stroji není, generátor je vlastní
@@ -314,6 +316,145 @@ z druhé strany, ze zdrojáku. Statistiky mají serverovou agregaci
 (`statistiky_prehled`) a stahování všech zakázek už je u nich jen záložní
 cesta, ale seznam zakázek ji nemá.
 
+## 5. Aplikace nad servisem s hodně daty (6. 9. 2026)
+
+Předchozí měření (oddíl 4) šla přímo na PostgREST a říkala, jak rychle odpoví
+databáze. Tohle měří něco jiného: **kolik času uplyne mezi kliknutím a tím,
+než je na obrazovce to, kvůli čemu tam člověk šel.** Včetně toho, co k tomu
+přidá React a kolik dotazů si aplikace pošle, aniž by o tom kdo věděl.
+
+Měřilo se na zátěžovém servisu založeném jen k tomuhle: **4 800 zakázek**
+(+200 v koši), 2 000 zákazníků, 500 faktur, 1 000 skladových položek, 6 664
+komentářů a 200 reklamací. Po měření byl servis smazaný – účet smí mít nejvýš
+tři servisy a tenhle blokoval ostatní testy.
+
+```sh
+npm run build:web && npx vite preview --config vite.config.web.ts --port 5194
+E2E_PASSWORD='…' npm run zatez:appka -- --url http://localhost:5194/
+```
+
+Skript je `scripts/zatez/appka.mjs`. Měří se na **produkčním balíku**, ne na
+dev serveru: React v dev režimu je znatelně pomalejší a Vite posílá stovky
+nezabalených modulů, takže by čísla neodpovídala ničemu skutečnému. Čas se
+bere z `performance.now()` uvnitř stránky a čeká se na konkrétní prvek, ne na
+`networkidle` – „stránka dojela" a „je vidět seznam" jsou dvě různé chvíle.
+
+### Před a po
+
+Medián ze tří běhů, každý v čistém kontextu prohlížeče. Stroj i síť stejné,
+mezi oběma sadami se měnil jen kód aplikace (indexy z migrace
+`20260906150000_indexy_vykon_seznamu.sql` **v číslech nejsou** – ta se zatím
+jen napsala, nepustila).
+
+| Co se měří | před | po | rozdíl |
+|---|---:|---:|---|
+| zakázky – kostra stránky | 215 ms | 209 ms | – |
+| **zakázky – první řádek seznamu** | **2 505 ms** | **520 ms** | **−79 %** |
+| **zakázky – konec načítání** | **6 444 ms** | **2 044 ms** | **−68 %** |
+| zakázky – dotazů do databáze | 48 | 40 | −8 |
+| zakázky – staženo | 8 845 kB | 6 593 kB | −25 % |
+| hledání – nejdelší úhoz | 34 ms | 33 ms | – |
+| hledání – vykreslení výsledku | 3 ms | 2 ms | – |
+| filtr „Dokončené" | 47 ms | 34 ms | – |
+| detail – otevření | 52 ms | 54 ms | – |
+| detail – konec načítání | 1 282 ms | 1 082 ms | −16 % |
+| **zákazníci – konec načítání** | **2 717 ms** | **1 844 ms** | **−32 %** |
+| zákazníci – kostra stránky | 29 ms | 30 ms | – |
+| sklad – konec načítání | 1 375 ms | 1 262 ms | −8 % |
+| faktury – konec načítání | 1 150 ms | 1 106 ms | – |
+| statistiky – konec načítání | 1 880 ms | 1 394 ms | −26 % |
+| návrat na zakázky | 131 ms | 116 ms | – |
+
+### Co bylo pomalé a proč
+
+**Seznam zakázek čekal, až dojedou úplně všechny zakázky.** `fetchAllPages`
+tahal stránky po tisíci **jednu po druhé**: pět kol po ~700 ms, a celou tu
+dobu byla na obrazovce hláška „Načítání zakázek…“. Přitom se na první
+obrazovku vejde padesát řádků. Teď se první dávka (200 zakázek) vezme zvlášť
+a vykreslí hned; zbytek dojíždí na pozadí. Servis pod dvě stě zakázek pošle
+pořád jediný dotaz, takže se pro malé servisy nezměnilo nic.
+
+**Zbylé stránky se navíc tahaly zbytečně za sebou.** `fetchAllPages` teď od
+druhé stránky posílá čtyři dotazy najednou. Z pěti kol po síti jsou dvě.
+První stránka jde dál sama – z její velikosti se pozná, jestli má smysl
+posílat další, takže malý servis tím nic neplatí.
+
+**Komentáře se načítaly za celý servis.** 6 664 řádků v sedmi kolech
+(~1,4 s a přes megabajt) – kvůli komentářům u jedné otevřené zakázky.
+Nikde jinde než v detailu se nezobrazují; teď se natáhnou až k tomu, co je
+otevřené. Na seznamu zakázek tím zmizelo sedm dotazů z osmačtyřiceti.
+
+**Sklad se ptal čtyřikrát za sebou** na čtyři nezávislé věci (kategorie,
+produkty, sklady, stavy zásob). Teď naráz. Vedle toho se ukázalo, že se
+produkty a stavy zásob tahaly **bez stránkování**: PostgREST vrátí nejvýš
+1 000 řádků a mlčí o tom, takže servis s tisícem a jednou položkou by o tu
+poslední tiše přišel. Zátěžový servis měl přesně 1 000 produktů, tedy
+na hraně. Opraveno stránkováním.
+
+**Zákazníci čekali dvakrát.** Nejdřív se natáhli zákazníci, pak (a teprve
+pak) dvě úzké kolony zakázek, ze kterých se počítá „kolik má kdo zakázek“.
+Jedno na druhém nezávisí, takže se to teď tahá souběžně.
+
+### Co dělá databáze
+
+Žádný z měřených dotazů nebyl sám o sobě pomalý – nejdelší `explain analyze`
+skončil pod 20 ms. Zajímavé je, **jak** se k výsledku dostávaly:
+
+| Dotaz | plán před opravou | co s tím |
+|---|---|---|
+| seznam zakázek, stránka | index podle `service_id` → **Sort přes všech 4 800 řádků**, a to při každé stránce zvlášť | `idx_tickets_service_created_id` |
+| zakázky zákazníků (2 kolony) | **Index Scan přes `tickets_pkey`**, tedy přes zakázky *všech* servisů – filtr zahodil 1 178 cizích řádků na každou tisícovku vlastních | `idx_tickets_service_customer_scan` s `include (customer_id)` |
+| adresář zákazníků | Sort přes všech 2 000 zákazníků, opět pro každou stránku | `idx_customers_service_created_id` |
+| seznam faktur | Sort přes všechny faktury servisu | `idx_invoices_service_created` |
+| komentáře | index na `created_at` **napříč servisy**, filtr zahodil 1 145 cizích řádků | `idx_ticket_comments_ticket_created` |
+
+Ten druhý řádek je z nich nejnepříjemnější: jeho cena neroste s daty *tohohle*
+servisu, ale s daty **všech servisů dohromady**. U padesáti zákazníků na jedné
+databázi by se stránka Zákazníci zpomalovala každému kvůli všem ostatním.
+
+Migrace `supabase/migrations/20260906150000_indexy_vykon_seznamu.sql` tyhle
+indexy přidává. **Není pouštěná** – jen přidává indexy, nic nemaže a nemění,
+ale do produkce ji má pustit člověk.
+
+### Co zůstalo pomalé
+
+**Aplikace pořád stahuje všechny zakázky.** 6,6 MB JSONu na seznamu zakázek
+(po opravě; před ní 8,8). Uživatele to už nebrzdí – seznam je vidět za půl
+vteřiny a zbytek dojíždí na pozadí – ale objem dat se tím nezmenšil, jen
+schoval. Roste lineárně s počtem zakázek a při 10 000 to bude přes 13 MB.
+Dvě cesty, obě zatím neudělané:
+
+- **Ubrat sloupce.** Do seznamu se tahá 37 sloupců včetně diagnostiky,
+  kontrolních seznamů a fotek – v seznamu se z nich zobrazuje osm. Samotné
+  názvy sloupců dělají v JSONu asi 500 B na řádek. Detail by si zbytek
+  dotáhl podle `id` (`refetchTicketById` už existuje). Je to ale změna,
+  která se dotkne celého detailu zakázky, a ta se dělat naslepo nemá.
+- **Filtrovat a stránkovat na serveru.** To, co doporučuje bod 8 níž.
+  Znamená to přesunout hledání, počty u záložek a seskupení podle stavu do
+  databáze; hotové stránkování v prohlížeči by se zahodilo.
+
+**Zobrazení „seskupení podle stavu“ vykresluje celý seznam.** Ostatní režimy
+respektují stránkování po padesáti, tenhle vykreslí všechny zakázky naráz a
+navíc si pro každou z nich žádá odznak nepřečtených SMS (dotazy po 180 kusech,
+tedy u 4 800 zakázek zhruba 27 dotazů). Neměřeno – přepnutí režimu se ukládá
+do `user_preferences` testovacího účtu a to by rozhodilo ostatní testy. Ale
+z kódu je to vidět a je to jediné místo, kde se počet dotazů odvíjí od počtu
+zakázek.
+
+**Statistiky mají 1,2 s do první dlaždice**, i když samotná agregace v databázi
+trvá ~200 ms. Zbytek je čekání na nastavení servisu a na dva RPC za sebou.
+
+**Na seznamu zakázek se stejná nastavení tahají několikrát.** `service_settings`
+pětkrát, `service_memberships` čtyřikrát, `service_document_settings` třikrát,
+`invoices` pětkrát – různé komponenty se ptají na totéž nezávisle na sobě.
+Jsou to malé a souběžné dotazy (v součtu ~100 ms), takže to nikoho nebrzdí,
+ale je to dvacet zbytečných dotazů z celkových čtyřiceti.
+
+### Co po měření zbylo v datech
+
+Zátěžový servis je smazaný i se vším, co k němu patřilo. Jediná stopa jinde
+jsou řádky v `api_read_hits` (počítadlo limitů), které denně uklízí pg_cron.
+
 ## Co provoz tlumí a co ne
 
 Všechna čísla výš jsou z **originu**. Skutečný provoz jde přes
@@ -415,6 +556,12 @@ u 10 000 to bude znát – a to je při 937 zakázkách ročně (číslo
 z `docs/KAPACITA.md`) zhruba desátý rok, u rušnějšího servisu dřív. Není to
 na teď, ale je to jediné místo, kde náklady rostou s objemem dat.
 
+*Doplněno 6. 9. 2026 (oddíl 5):* nejhorší část je pryč i bez serverového
+filtru – seznam se vykresluje z první stránky a zbytek dojíždí na pozadí,
+takže na data nikdo nečeká. **Objem přenesených dat ale zůstal** (6,6 MB při
+4 800 zakázkách) a roste dál lineárně. Až bude potřeba to řešit, začíná se
+ubráním sloupců, ne přepisem filtrování.
+
 **9. Co zvyšovat nemusíš.** Limity 60/min na IP a 600/min na servis se
 ukázaly jako přiměřené: běžný návštěvník se k funkci vůbec nedostane (cache)
 a kdo se dostane, ten 60 dotazů za minutu z jedné adresy legitimně nepotřebuje.
@@ -423,8 +570,12 @@ ten na IP. Zvyšovat je zatím nevidím důvod.
 
 ## Co zůstalo nezměřené
 
-- **Databázové dotazy aplikace** a **čas do seznamu zakázek v prohlížeči** –
-  chybělo `E2E_PASSWORD`. Skripty jsou hotové, stačí je pustit s heslem.
+- ~~**Databázové dotazy aplikace** a **čas do seznamu zakázek v prohlížeči**~~ –
+  doměřeno 6. 9. 2026, viz oddíly 4 a 5.
+- **Zobrazení „seskupení podle stavu“ nad velkým servisem** – přepnutí režimu
+  se ukládá do `user_preferences` testovacího účtu, takže by měření rozhodilo
+  ostatní testy. Z kódu je vidět, že tenhle režim jako jediný vykresluje
+  všechny zakázky naráz (viz oddíl 5).
 - **Chování více servisů najednou.** Měřilo se vždycky proti jednomu servisu.
   Jestli si edge funkce padesáti servisů navzájem berou výkon, se z jednoho
   stroje a jedné IP zjistit nedá.

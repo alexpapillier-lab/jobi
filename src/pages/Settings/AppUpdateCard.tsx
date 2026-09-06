@@ -80,6 +80,17 @@ export function AppUpdateCard() {
         </div>
       </div>
 
+      {/* Chyba mimo chybovou fázi – např. selhaný restart, kdy verze zůstává
+          stažená a tlačítko restartu má zůstat na místě. Bez tohohle řádku by
+          se taková hláška nikam nevešla a uživatel by koukal na tlačítko,
+          které „nic nedělá“. */}
+      {error && phase !== "error" && (
+        <div role="alert" style={{ display: "flex", gap: "var(--space-2)", alignItems: "flex-start", color: "var(--danger-text)", fontSize: "var(--text-sm)" }}>
+          <WarningIcon size={16} />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Průběh stahování */}
       {phase === "downloading" && (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>

@@ -25,8 +25,18 @@ export function NeulozeneZmeny() {
       data-neulozene-zmeny={polozky.length}
       style={{
         position: "fixed",
-        left: 16,
-        bottom: 16,
+        /*
+         * Uprostřed a nad spodní lištou.
+         *
+         * Vlevo dole proužek ležel přes tlačítko účtu – tedy přes přepnutí
+         * servisu a odhlášení. Zrovna když něco čeká na uložení, se k nim
+         * člověk musí dostat; místo toho mu kliknutí spolklo hlášení
+         * o neuložených změnách. Vpravo dole sedí kulaté tlačítko Nová
+         * zakázka, vlevo v širokém okně postranní lišta – zbývá střed.
+         */
+        left: "50%",
+        transform: "translateX(-50%)",
+        bottom: "calc(var(--bottom-nav-h, 0px) + var(--safe-bottom, 0px) + 16px)",
         zIndex: 9000,
         maxWidth: 380,
         borderRadius: 12,
