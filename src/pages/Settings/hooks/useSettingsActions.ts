@@ -53,6 +53,19 @@ export function useSettingsActions({ activeServiceId }: UseSettingsActionsParams
       }
 
       try {
+        // Status používaný zakázkami nemazat – zakázky by zůstaly s neexistujícím
+        // klíčem a v seznamu by spadly do fallbacku bez varování.
+        const { count, error: countError } = await supabase
+          .from("tickets")
+          .select("id", { count: "exact", head: true })
+          .eq("service_id", activeServiceId)
+          .eq("status", key)
+          .is("deleted_at", null);
+        if (countError) throw countError;
+        if ((count ?? 0) > 0) {
+          showToast(`Status používá ${count} zakázek – nejdřív je přeřaďte na jiný status.`, "error");
+          return;
+        }
         const { error } = await (supabase.from("service_statuses") as any).delete().eq("service_id", activeServiceId).eq("key", key);
 
         if (error) {
