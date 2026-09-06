@@ -170,10 +170,10 @@ test("půjčení náhradního zařízení se zapíše a jde označit jako vráce
   await prihlasSe(page);
   await page.getByText(zakaznik).first().click();
   await page.getByRole("button", { name: "Půjčit náhradní zařízení" }).click();
-  // „Zařízení“ má v detailu i pole zakázky, proto přes nápovědu v poli.
-  await page.getByPlaceholder("např. iPhone SE 2020, černý").fill("iPhone SE náhradní (E2E)");
-  await page.getByLabel("Sériové číslo / IMEI").fill("E2E-SN-001");
-  await page.getByLabel("Kauce (Kč)").fill("2000");
+  // Testovací servis má v Nastavení seznam náhradních zařízení – výběr vyplní formulář.
+  await page.getByLabel("Vybrat ze seznamu servisu").selectOption({ label: "iPhone SE náhradní (E2E) · E2E-SN-001" });
+  await expect(page.getByPlaceholder("např. iPhone SE 2020, černý")).toHaveValue("iPhone SE náhradní (E2E)");
+  await expect(page.getByLabel("Kauce (Kč)")).toHaveValue("2000");
   await page.getByRole("button", { name: "Uložit půjčení" }).click();
 
   await expect(page.getByText("iPhone SE náhradní (E2E)").first()).toBeVisible();

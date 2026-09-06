@@ -75,6 +75,9 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
 - **Online rezervace:** testovací servis má `public_slug = e2e-servis` a v
   `service_settings.config.rezervace` zapnuté rezervace; `rezervace.spec.ts`
   volá edge funkci `public-booking` napřímo.
+- **Náhradní zařízení:** v `service_settings.config.nahradniZarizeni` testovacího
+  servisu je položka „iPhone SE náhradní (E2E)“ se sériovým číslem E2E-SN-001 a
+  kaucí 2 000 – test zápůjčky ji vybírá ze seznamu.
 - **Testovací servis potřebuje produkty ve skladu** („Displej AUDIT“) – test
   výběru dílů u opravy je hledá. Kdyby zmizely, založte libovolný produkt se
   slovem AUDIT v názvu.

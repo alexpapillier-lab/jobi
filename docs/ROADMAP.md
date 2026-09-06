@@ -57,8 +57,9 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    (překlep je vidět hned). `src/lib/zarizeniHistorie.ts`. Zbývá: záruka a
    aktivační zámek u Apple (bez oficiálního API; jen odkaz na checkcoverage),
    IMEI databáze blacklistu (placené API).
-9. `[ ]` **AI, kde šetří minuty** – z fotky a popisu navrhnout opravu a cenu
-   z ceníku, napsat SMS zákazníkovi, shrnout historii zařízení.
+9. ~~**AI, kde šetří minuty**~~ – **vyřazeno 6. 9.** po dohodě s majitelem: pro
+   malý servis komplikace navíc a platba za API u každé zakázky, přínos
+   nejistý. Nevracet se, dokud o to neřeknou sami zákazníci.
 10. `[ ]` **Migrace jedním klikem** ze Zakázkového listu i MyRepair včetně
     zákazníků, historie a ceníku (import ze Zakázkového listu existuje
     ve `scripts/import-zakazkovylist`).
@@ -237,6 +238,8 @@ Co převzít, podle přínosu:
   typ dokumentu **Smlouva o zápůjčce** v JobiDocs (`smlouva_zapujcka`, výchozí
   šablona s právním textem a podpisy, proměnné `{{loaner.*}}`) i ve webovém
   tisku; v nabídce Tisk, jen když je něco půjčeno. **JobiDocs přebuildovat.**
+  Od 6. 9. stálý seznam zařízení v Nastavení → Zakázky → Náhradní zařízení:
+  v zakázce se jen vybere a u půjčeného je vidět, ve které zakázce je.
 - `[x]` **Kontrola po opravě** (5. 9., migrace 20260907170000): karta v detailu
   zakázky, šablona podle názvu zařízení (telefon / počítač / obecná, vlastní
   v Nastavení → Zakázky → Kontrola po opravě), položky OK / Chyba / Neověřeno

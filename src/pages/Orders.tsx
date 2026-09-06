@@ -42,7 +42,7 @@ import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
-import { type ZapujckaData } from "../lib/zapujcka";
+import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
 import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
 import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
@@ -946,6 +946,7 @@ export default function Orders({
         setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
         setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
         setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
+        setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
       })
       .catch(() => setOrdersShowClaimsInList(false));
   }, [activeServiceId]);
@@ -960,6 +961,7 @@ export default function Orders({
           setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
           setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
           setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
+          setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
         })
         .catch(() => {});
     };
@@ -1474,6 +1476,8 @@ export default function Orders({
   const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
   /** Šablony kontroly po opravě (service_settings.config.kontrolniSeznamy, jinak výchozí). */
   const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
+  /** Stálý seznam náhradních zařízení servisu (service_settings.config.nahradniZarizeni). */
+  const [nahradniZarizeni, setNahradniZarizeni] = useState<NahradniZarizeni[]>([]);
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -7216,6 +7220,16 @@ export default function Orders({
                     zapujcka={detailedTicket.loaner}
                     onChange={(z) => void ulozZapujcku(detailedTicket.id, z)}
                     onTisk={() => void printZapujcku(detailedTicket, activeServiceId)}
+                    katalog={nahradniZarizeni}
+                    pujcenaJinde={(() => {
+                      // Které zařízení ze seznamu je právě u jiného zákazníka.
+                      const out: Record<string, string> = {};
+                      for (const t of cloudTickets) {
+                        if (t.id === detailedTicket.id || !t.loaner?.katalogId || t.loaner.vraceno) continue;
+                        out[t.loaner.katalogId] = t.code ?? "jiná zakázka";
+                      }
+                      return out;
+                    })()}
                   />
                 </div>
 
