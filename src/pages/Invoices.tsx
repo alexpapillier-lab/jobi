@@ -259,11 +259,23 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // ─── Otevření editoru / detailu ────────────────────────────
 
+  /**
+   * Který „nový doklad“ je právě v editoru. Dodavatel se dohledává až po
+   * otevření (viz níže) a smí se doplnit jen do téhož konceptu – jinak by
+   * opožděná odpověď přepsala to, co už člověk mezitím napsal.
+   */
+  const novyDokladTokenRef = useRef(0);
+
   const openNewInvoice = useCallback(
-    async (prefill?: Props["prefillFromTicket"]) => {
+    (prefill?: Props["prefillFromTicket"]) => {
       if (!activeServiceId) return;
       const today = todayIso();
-      const cd = await nactiFirmuServisu(activeServiceId);
+      // Editor se otevře hned s tím, co je po ruce (kopie firmy v prohlížeči);
+      // chybějící dodavatel se doplní z databáze na pozadí. Dřív se čekalo na
+      // databázi a dvě volání za sebou (např. dvakrát spuštěný efekt) po
+      // dokončení smazala rozepsané položky.
+      const cd = safeLoadCompanyData();
+      const token = ++novyDokladTokenRef.current;
 
       // Číslo se přiděluje až při prvním uložení – rozpracovaná a zavřená
       // faktura by jinak v číselné řadě nechala díru.
@@ -303,6 +315,33 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       setEditingId(null);
       setShowDetail(false);
       setView("editor");
+
+      if (!(cd.name && companyCacheBelongsTo(activeServiceId))) {
+        void nactiFirmuServisu(activeServiceId).then((firma) => {
+          if (novyDokladTokenRef.current !== token) return;
+          const dodavatel: Partial<Invoice> = {
+            supplier_name: firma.name,
+            supplier_ico: firma.ico,
+            supplier_dic: firma.dic,
+            supplier_address: [firma.addressStreet, firma.addressCity, firma.addressZip].filter(Boolean).join(", "),
+            supplier_email: firma.email,
+            supplier_phone: firma.phone,
+            supplier_bank_account: firma.bankAccount,
+            supplier_iban: firma.iban,
+            supplier_swift: firma.swift,
+          };
+          setEditorInvoice((prev) => ({ ...prev, ...dodavatel }));
+          setEditorBaseline((prev) => {
+            // Doplnění dodavatele není změna od uživatele – lišta „Neuložené změny“ se kvůli němu neukáže.
+            try {
+              const z = JSON.parse(prev) as [Partial<Invoice>, EditorLineItem[]];
+              return Array.isArray(z) && z[0] ? snapshot({ ...z[0], ...dodavatel }, z[1] ?? []) : prev;
+            } catch {
+              return prev;
+            }
+          });
+        });
+      }
     },
     [activeServiceId, sazbaNoveVPolozky],
   );
@@ -337,9 +376,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     setDetailRelated(relatedRes.data || []);
   }, []);
 
-  // Předvyplnění ze zakázky
+  // Předvyplnění ze zakázky. Stejný prefill se zpracuje jen jednou – ve vývoji
+  // React efekt spouští dvakrát a druhé otevření by smazalo rozepsané položky.
+  const zpracovanyPrefillRef = useRef<Props["prefillFromTicket"] | null>(null);
   useEffect(() => {
     if (!prefillFromTicket || !activeServiceId) return;
+    if (zpracovanyPrefillRef.current === prefillFromTicket) return;
+    zpracovanyPrefillRef.current = prefillFromTicket;
     openNewInvoice(prefillFromTicket);
     onPrefillConsumed?.();
     // openNewInvoice se mění s aktivním servisem; spouštět jen při novém prefillu.
