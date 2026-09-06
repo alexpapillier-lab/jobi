@@ -30,6 +30,21 @@ export const KIND_PREFIX: Record<InvoiceKind, string> = {
   credit_note: "DB",
 };
 
+/**
+ * Úvodní číslice variabilního symbolu podle druhu dokladu.
+ *
+ * Číselné řady běží zvlášť pro každý druh, takže FV2026-0001 a ZF2026-0001
+ * mají stejné číslice. Variabilní symbol se odvozuje právě z číslic, takže
+ * by na výpisu z účtu byly dvě platby k nerozeznání a banka je nespárovala.
+ * Číslice vpředu je rozliší a čísla dokladů přitom zůstanou taková, jaká
+ * je zákazníci znají.
+ */
+export const KIND_VS_PREFIX: Record<InvoiceKind, string> = {
+  invoice: "1",
+  proforma: "2",
+  credit_note: "3",
+};
+
 export const KIND_COLORS: Record<InvoiceKind, { bg: string; fg: string }> = {
   invoice: { bg: "var(--panel-2)", fg: "var(--muted)" },
   proforma: { bg: "rgba(245,158,11,0.15)", fg: "#b45309" },

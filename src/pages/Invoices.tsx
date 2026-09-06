@@ -524,7 +524,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           ...editorInvoice,
           kind,
           number: cislo,
-          variable_symbol: editorInvoice.variable_symbol?.trim() || invoiceNumberToVS(cislo),
+          variable_symbol: editorInvoice.variable_symbol?.trim() || invoiceNumberToVS(cislo, kind),
           // Záloha není zdanitelné plnění – DUZP nemá.
           taxable_date: kind === "proforma" ? null : editorInvoice.taxable_date ?? null,
         };
@@ -805,7 +805,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           ...(volby.relatedInvoiceId ? { related_invoice_id: volby.relatedInvoiceId } : {}),
           ticket_id: volby.ticketId,
           number,
-          variable_symbol: invoiceNumberToVS(number),
+          variable_symbol: invoiceNumberToVS(number, kind),
           status: "draft",
           issue_date: today,
           due_date: addDaysIso(today, 14),

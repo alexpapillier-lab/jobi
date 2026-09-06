@@ -94,19 +94,32 @@ describe("přidělení čísla, když server nefunguje", () => {
 
 describe("variabilní symbol z čísla dokladu", () => {
   it("obsahuje jen číslice – banka písmena z předpony nespáruje", () => {
-    expect(invoiceNumberToVS("FV2026-0042")).toBe("20260042");
-    expect(invoiceNumberToVS("DB2026-7")).toBe("20267");
+    expect(invoiceNumberToVS("FV2026-0042")).toBe("120260042");
     expect(/^\d*$/.test(invoiceNumberToVS("FV/2026/0042"))).toBe(true);
   });
 
-  it("nikdy není delší než deset číslic, které banka na VS připouští", () => {
-    expect(invoiceNumberToVS("FV2026-000000123456789")).toBe("2026000000");
-    expect(invoiceNumberToVS("FV2026-000000123456789").length).toBe(10);
+  it("druh dokladu je vpředu, takže se symboly z různých řad nepotkají", () => {
+    // Řady běží zvlášť, takže faktura i záloha mají číslo 0001. Bez rozlišení
+    // by na výpisu z účtu byly dvě platby k nerozeznání.
+    expect(invoiceNumberToVS("FV2026-0001", "invoice")).toBe("120260001");
+    expect(invoiceNumberToVS("ZF2026-0001", "proforma")).toBe("220260001");
+    expect(invoiceNumberToVS("DB2026-0001", "credit_note")).toBe("320260001");
+    const vsechny = new Set([
+      invoiceNumberToVS("FV2026-0001", "invoice"),
+      invoiceNumberToVS("ZF2026-0001", "proforma"),
+      invoiceNumberToVS("DB2026-0001", "credit_note"),
+    ]);
+    expect(vsechny.size).toBe(3);
   });
 
-  it("z čísla bez číslic vyjde prázdno, ne písmena", () => {
-    expect(invoiceNumberToVS("KONCEPT")).toBe("");
-    expect(invoiceNumberToVS("")).toBe("");
+  it("nikdy není delší než deset číslic, které banka na VS připouští", () => {
+    expect(invoiceNumberToVS("FV2026-000000123456789").length).toBe(10);
+    expect(invoiceNumberToVS("FV2026-000000123456789")).toBe("1202600000");
+  });
+
+  it("z čísla bez číslic zůstane aspoň druh dokladu, ne písmena", () => {
+    expect(invoiceNumberToVS("KONCEPT")).toBe("1");
+    expect(invoiceNumberToVS("", "proforma")).toBe("2");
   });
 });
 

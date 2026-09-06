@@ -1,4 +1,5 @@
 import { typedSupabase } from "./typedSupabase";
+import { KIND_VS_PREFIX, type InvoiceKind } from "../pages/Invoices/types";
 
 /**
  * Atomically generates the next invoice number via a DB function.
@@ -32,11 +33,13 @@ export async function generateInvoiceNumber(
 /**
  * Variabilní symbol z čísla dokladu.
  *
- * Bere jen číslice, takže „FV2026-0001" dá „20260001". Pozor: číselné řady
- * běží zvlášť pro faktury, zálohy a dobropisy, takže „ZF2026-0001" dá stejný
- * symbol. Na výpisu z účtu jsou pak dvě platby k nerozeznání – jestli to má
- * být jinak, je to rozhodnutí o účetní konvenci, ne o kódu.
+ * Bere jen číslice a vpředu přidá číslici druhu dokladu, protože číselné řady
+ * běží zvlášť: bez ní by „FV2026-0001" i „ZF2026-0001" daly „20260001" a banka
+ * by dvě platby nerozeznala. Symbol smí mít nejvýš deset číslic, proto se
+ * číslo v krajním případě zkracuje zprava – rozlišení druhu je důležitější
+ * než poslední číslice pořadí.
  */
-export function invoiceNumberToVS(invoiceNumber: string): string {
-  return invoiceNumber.replace(/[^0-9]/g, "").slice(0, 10);
+export function invoiceNumberToVS(invoiceNumber: string, kind: InvoiceKind = "invoice"): string {
+  const cislice = invoiceNumber.replace(/[^0-9]/g, "");
+  return `${KIND_VS_PREFIX[kind]}${cislice}`.slice(0, 10);
 }
