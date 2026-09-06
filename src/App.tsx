@@ -871,7 +871,10 @@ export default function App() {
     const onNav = (e: Event) => {
       const ev = e as CustomEvent<{ page: NavKey; subsection?: string }>;
       const page = ev.detail?.page;
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "statistics", "settings"].includes(page)) {
+      // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
+      // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
+      // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
