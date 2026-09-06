@@ -12,6 +12,7 @@ import { loadServiceConfig } from "../lib/serviceSettingsSync";
 import { computeTotals, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
+import { UzaverkaDialog, ZpusobPlatbyDialog } from "./Invoices/Uzaverka";
 import { invoiceDocumentData } from "../lib/documentData";
 import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobiDocsErrorForUser } from "../lib/jobidocs";
 import { isWeb } from "../lib/platform";
@@ -86,6 +87,21 @@ type Props = {
  * počítači by dodavatel zůstal prázdný a „Vystavit“ by skončilo hláškou.
  * Při prázdné nebo cizí kopii se proto sáhne rovnou do service_settings.
  */
+/** Pole dodavatele na dokladu z údajů firmy. */
+function dodavatelZFirmy(cd: CompanyData): Partial<Invoice> {
+  return {
+    supplier_name: cd.name,
+    supplier_ico: cd.ico,
+    supplier_dic: cd.dic,
+    supplier_address: [cd.addressStreet, cd.addressCity, cd.addressZip].filter(Boolean).join(", "),
+    supplier_email: cd.email,
+    supplier_phone: cd.phone,
+    supplier_bank_account: cd.bankAccount,
+    supplier_iban: cd.iban,
+    supplier_swift: cd.swift,
+  };
+}
+
 async function nactiFirmuServisu(serviceId: string): Promise<CompanyData> {
   const lokalni = safeLoadCompanyData();
   if (lokalni.name && companyCacheBelongsTo(serviceId)) return lokalni;
@@ -164,7 +180,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // Editor
   const [editorInvoice, setEditorInvoice] = useState<Partial<Invoice>>({});
+  /** Stejná hodnota pod jiným jménem – persistEditor si ji doplní o dodavatele, který teprve dojíždí. */
+  const editorInvoiceStav = editorInvoice;
   const [editorItems, setEditorItems] = useState<EditorLineItem[]>([emptyLineItem(sazbaNoveVPolozky)]);
+  /** Označení Zaplaceno se ptá na způsob platby (do uzávěrky). */
+  const [platbaDialog, setPlatbaDialog] = useState<Invoice | null>(null);
+  const [uzaverkaOpen, setUzaverkaOpen] = useState(false);
   const [editorBaseline, setEditorBaseline] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -265,6 +286,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
    * opožděná odpověď přepsala to, co už člověk mezitím napsal.
    */
   const novyDokladTokenRef = useRef(0);
+  /** Běžící dohledání dodavatele pro nový doklad – Vystavit na něj počká. */
+  const dodavatelNacitaniRef = useRef<Promise<Partial<Invoice>> | null>(null);
 
   const openNewInvoice = useCallback(
     (prefill?: Props["prefillFromTicket"]) => {
@@ -289,15 +312,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         due_date: addDaysIso(today, 14),
         taxable_date: today,
         currency: "CZK",
-        supplier_name: cd.name,
-        supplier_ico: cd.ico,
-        supplier_dic: cd.dic,
-        supplier_address: [cd.addressStreet, cd.addressCity, cd.addressZip].filter(Boolean).join(", "),
-        supplier_email: cd.email,
-        supplier_phone: cd.phone,
-        supplier_bank_account: cd.bankAccount,
-        supplier_iban: cd.iban,
-        supplier_swift: cd.swift,
+        ...dodavatelZFirmy(cd),
         customer_name: prefill?.customerName || "",
         customer_email: prefill?.customerEmail || "",
         customer_phone: prefill?.customerPhone || "",
@@ -316,20 +331,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       setShowDetail(false);
       setView("editor");
 
+      dodavatelNacitaniRef.current = null;
       if (!(cd.name && companyCacheBelongsTo(activeServiceId))) {
-        void nactiFirmuServisu(activeServiceId).then((firma) => {
+        const nacitani = nactiFirmuServisu(activeServiceId).then((firma) => dodavatelZFirmy(firma));
+        dodavatelNacitaniRef.current = nacitani;
+        void nacitani.then((dodavatel) => {
           if (novyDokladTokenRef.current !== token) return;
-          const dodavatel: Partial<Invoice> = {
-            supplier_name: firma.name,
-            supplier_ico: firma.ico,
-            supplier_dic: firma.dic,
-            supplier_address: [firma.addressStreet, firma.addressCity, firma.addressZip].filter(Boolean).join(", "),
-            supplier_email: firma.email,
-            supplier_phone: firma.phone,
-            supplier_bank_account: firma.bankAccount,
-            supplier_iban: firma.iban,
-            supplier_swift: firma.swift,
-          };
+          dodavatelNacitaniRef.current = null;
           setEditorInvoice((prev) => ({ ...prev, ...dodavatel }));
           setEditorBaseline((prev) => {
             // Doplnění dodavatele není změna od uživatele – lišta „Neuložené změny“ se kvůli němu neukáže.
@@ -443,6 +451,17 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const persistEditor = useCallback(
     async (issue: boolean) => {
       if (!activeServiceId || saving) return;
+
+      // Dodavatel se u nového dokladu dohledává na pozadí; kdo klikne Vystavit
+      // dřív, než dorazí, dostal „Dodavatel je povinný“. Počká se na něj.
+      let editorInvoice = editorInvoiceStav;
+      if (!editorInvoice.supplier_name?.trim() && dodavatelNacitaniRef.current) {
+        try {
+          editorInvoice = { ...editorInvoice, ...(await dodavatelNacitaniRef.current) };
+        } catch {
+          /* validace níž řekne, co chybí */
+        }
+      }
 
       // Nová faktura bez ručně vyplněného čísla ho dostane až po kontrole –
       // zamítnutý pokus o uložení nesmí spálit číslo z řady.
@@ -562,7 +581,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         setSaving(false);
       }
     },
-    [activeServiceId, saving, editorInvoice, editorItems, editingId, logEvent, loadInvoices, openDetail],
+    [activeServiceId, saving, editorInvoiceStav, editorItems, editingId, logEvent, loadInvoices, openDetail],
   );
 
   const saveDraft = useCallback(() => persistEditor(false), [persistEditor]);
@@ -638,9 +657,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   // ─── Akce nad fakturou ─────────────────────────────────────
 
   const updateStatus = useCallback(
-    async (inv: Invoice, newStatus: InvoiceStatus) => {
+    async (inv: Invoice, newStatus: InvoiceStatus, extra: Partial<Invoice> = {}) => {
       try {
-        const updates: Partial<Invoice> = { status: newStatus };
+        const updates: Partial<Invoice> = { status: newStatus, ...extra };
         if (newStatus === "paid") updates.paid_at = new Date().toISOString();
         if (newStatus === "sent") updates.sent_at = new Date().toISOString();
         const { error } = await typedSupabase.from("invoices").update(updates).eq("id", inv.id);
@@ -1140,7 +1159,19 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   return (
     <>
+      <ZpusobPlatbyDialog
+        open={!!platbaDialog}
+        cislo={platbaDialog?.number ?? ""}
+        onVybrat={(z) => {
+          const inv = platbaDialog;
+          setPlatbaDialog(null);
+          if (inv) void updateStatus(inv, "paid", { payment_method: z });
+        }}
+        onZrusit={() => setPlatbaDialog(null)}
+      />
+      <UzaverkaDialog open={uzaverkaOpen} onClose={() => setUzaverkaOpen(false)} invoices={invoices} />
       <InvoiceList
+        onUzaverka={() => setUzaverkaOpen(true)}
         invoices={activeBranchId ? invoices.filter((i) => !i.branch_id || i.branch_id === activeBranchId) : invoices}
         loading={loading}
         filter={filter}
@@ -1169,7 +1200,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           onPreview={() => handlePreview(detailInvoice)}
           onSend={() => openSendModal(detailInvoice)}
           onIssue={() => issueFromDetail(detailInvoice)}
-          onMarkPaid={() => updateStatus(detailInvoice, "paid")}
+          onMarkPaid={() => setPlatbaDialog(detailInvoice)}
           onDuplicate={() => duplicateInvoice(detailInvoice)}
           exportProviders={exportProviders}
           exporting={exporting}

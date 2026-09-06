@@ -56,3 +56,32 @@ test("ze zakázky jde vystavit faktura", async ({ page }) => {
   const cisloText = ((await cislo.textContent()) ?? "").match(/FV\d{4}-\d{4}/)?.[0] ?? "";
   expect(cisloText).toMatch(/^FV\d{4}-\d{4}$/);
 });
+
+test("zaplacení se ptá na způsob platby a faktura je v denní uzávěrce", async ({ page }) => {
+  await prihlasSe(page);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "invoices" } })));
+  await expect(page.getByRole("button", { name: "Uzávěrka" })).toBeVisible({ timeout: 30_000 });
+
+  // Poslední vystavená faktura (z předchozího testu) – otevřít detail a označit zaplacenou hotově.
+  // Filtr má v názvu i počet („Vystavené 22“).
+  await page.getByRole("button", { name: /^Vystavené/ }).click();
+  const prvni = page.getByText(/^FV\d{4}-\d{4}$/).first();
+  await expect(prvni).toBeVisible({ timeout: 20_000 });
+  const cislo = (await prvni.textContent())!.trim();
+  await prvni.click();
+  await page.getByRole("button", { name: "Označit zaplacenou" }).click();
+  const dotaz = page.getByRole("dialog", { name: new RegExp(`Jak zákazník zaplatil ${cislo}`) });
+  await expect(dotaz).toBeVisible();
+  await dotaz.getByRole("button", { name: "Hotově" }).click();
+  await expect(page.getByText("Stav změněn na: Zaplaceno").first()).toBeVisible({ timeout: 20_000 });
+
+  // Detail je panel přes seznam – zavřít, jinak klik na Uzávěrku skončí na kulise.
+  await page.getByRole("button", { name: "Zavřít" }).last().click();
+  // Uzávěrka dnešního dne ji má v řádku Hotově.
+  await page.getByRole("button", { name: "Uzávěrka" }).click();
+  const uzaverka = page.getByRole("dialog", { name: "Denní uzávěrka" });
+  await expect(uzaverka).toBeVisible();
+  await expect(uzaverka).toContainText(cislo);
+  await expect(uzaverka.locator("tfoot")).toContainText("Hotově");
+});
+

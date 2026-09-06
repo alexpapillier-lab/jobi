@@ -479,6 +479,7 @@ export type Database = {
           exported_at: string | null
           kind: string
           related_invoice_id: string | null
+          payment_method: string | null
         }
         Insert: {
           id?: string
@@ -526,6 +527,7 @@ export type Database = {
           exported_at?: string | null
           kind?: string
           related_invoice_id?: string | null
+          payment_method?: string | null
         }
         Update: {
           id?: string
@@ -572,6 +574,7 @@ export type Database = {
           exported_at?: string | null
           kind?: string
           related_invoice_id?: string | null
+          payment_method?: string | null
         }
         Relationships: []
       }

@@ -51,7 +51,10 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →
    Fakturace a DPH → Propojení, tlačítko Odeslat v detailu faktury; edge funkce
    `invoice-export`, tabulka `service_integrations`, placený modul `accounting`)
-   – zbývá Pohoda, Money, platební terminál (SumUp, GoPay), denní uzávěrka.
+   – 6. 9. **denní uzávěrka**: způsob platby při označení Zaplaceno
+   (`invoices.payment_method`, migrace 20260908130000), dialog Uzávěrka nad
+   seznamem faktur (doklady dne podle způsobu platby, tisk). Zbývá Pohoda,
+   Money, platební terminál (SumUp, GoPay).
 8. `[~]` **Apple a telefonní specifika** – kontrola IMEI a záruky při příjmu,
    Find My, historie zařízení napříč servisy, checklist příjmu s fotkou.
    Hotovo 6. 9.: **historie zařízení** – při příjmu i v detailu Jobi ukáže, že

@@ -121,6 +121,12 @@ export function daysOverdue(dueDate: string | null | undefined, today = todayIso
   return diff > 0 ? diff : 0;
 }
 
+export type ZpusobPlatby = "cash" | "card" | "transfer" | "other";
+export const ZPUSOB_PLATBY_LABELS: Record<ZpusobPlatby, string> = { cash: "Hotově", card: "Kartou", transfer: "Převodem", other: "Jinak" };
+export function asZpusobPlatby(v: unknown): ZpusobPlatby | null {
+  return v === "cash" || v === "card" || v === "transfer" || v === "other" ? v : null;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);

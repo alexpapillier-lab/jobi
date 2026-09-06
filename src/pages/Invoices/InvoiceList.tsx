@@ -24,6 +24,7 @@ import {
   type KindFilter,
   type ListFilter,
 } from "./types";
+import { asZpusobPlatby, ZPUSOB_PLATBY_LABELS } from "./types";
 
 const KIND_FILTER_OPTIONS: { value: KindFilter; label: string }[] = [
   { value: "all", label: "Vše" },
@@ -49,6 +50,7 @@ export function InvoiceList({
   search,
   onSearchChange,
   onNew,
+  onUzaverka,
   onOpen,
 }: {
   invoices: Invoice[];
@@ -60,6 +62,8 @@ export function InvoiceList({
   search: string;
   onSearchChange: (q: string) => void;
   onNew: () => void;
+  /** Denní uzávěrka – zaplacené doklady podle způsobu platby. */
+  onUzaverka?: () => void;
   onOpen: (inv: Invoice) => void;
 }) {
   const today = todayIso();
@@ -138,9 +142,16 @@ export function InvoiceList({
           title="Faktury"
           subtitle={hasAny ? `${pluralFaktury(invoices.length)} · ${formatCurrency(stats.unpaidSum)} nezaplaceno` : undefined}
           actions={
+            <>
+            {onUzaverka && (
+              <Button variant="soft" onClick={onUzaverka} title="Zaplacené doklady za den podle způsobu platby">
+                Uzávěrka
+              </Button>
+            )}
             <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onNew}>
               Nová faktura
             </Button>
+            </>
           }
         />
 
@@ -371,7 +382,11 @@ function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: 
         {overdueDays > 0 && (
           <div style={{ color: "var(--danger-text)", fontWeight: 700 }}>po splatnosti o {pluralDny(overdueDays)}</div>
         )}
-        {status === "paid" && inv.paid_at && <div style={{ color: "var(--success-text)" }}>zaplaceno {formatDate(inv.paid_at)}</div>}
+        {status === "paid" && inv.paid_at && (
+          <div style={{ color: "var(--success-text)" }}>
+            zaplaceno {formatDate(inv.paid_at)}{asZpusobPlatby(inv.payment_method) ? ` · ${ZPUSOB_PLATBY_LABELS[asZpusobPlatby(inv.payment_method)!].toLowerCase()}` : ""}
+          </div>
+        )}
       </div>
 
       <div

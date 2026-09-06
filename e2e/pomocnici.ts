@@ -116,6 +116,9 @@ export async function zalozZakazku(
   const podnadpis = page.getByText(new RegExp(`^${udaje.zakaznik} · `)).first();
   await expect(podnadpis).toBeVisible({ timeout: 30_000 });
   const hlavicka = podnadpis.locator("xpath=..");
+  // Číslo se v hlavičce objeví o chvíli později než jméno (zakázka se
+  // nejdřív ukáže, pak dojede z databáze) – počkat, ne číst hned.
+  await expect(hlavicka).toContainText(new RegExp(`${SERVIS.zkratka}\\d{6,}`), { timeout: 15_000 });
   const kod = ((await hlavicka.innerText()).match(new RegExp(`${SERVIS.zkratka}\\d{6,}`)) ?? [])[0];
   if (!kod) throw new Error("Zakázka se založila, ale v hlavičce detailu není číslo.");
 
