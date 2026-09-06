@@ -128,7 +128,11 @@ serve(async (req) => {
         metadata: { service_id: serviceId },
       });
       customerId = zakaznik.id;
-      await svc.from("service_billing").upsert({ service_id: serviceId, stripe_customer_id: customerId }, { onConflict: "service_id" });
+      // Neuložené id znamená, že se příště založí druhý zákazník u Stripe –
+      // dvě karty, dvě předplatná na jednu dílnu. Platba se kvůli tomu
+      // nepřeruší (webhook servis dohledá z metadat), ale musí to být v logu.
+      const { error } = await svc.from("service_billing").upsert({ service_id: serviceId, stripe_customer_id: customerId }, { onConflict: "service_id" });
+      if (error) console.error("[billing-checkout] uložení stripe_customer_id:", serviceId, error.message);
     }
 
     const sezeni = await stripe<{ url: string }>("POST", "/checkout/sessions", {

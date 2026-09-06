@@ -81,7 +81,11 @@ async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): 
 const s = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 async function pocet(svc: ReturnType<typeof createClient>, kanal: string, klic: string, minut: number): Promise<number> {
-  const { data } = await svc.rpc("pocet_udalosti", { p_kanal: kanal, p_klic: klic, p_minut: minut });
+  const { data, error } = await svc.rpc("pocet_udalosti", { p_kanal: kanal, p_klic: klic, p_minut: minut });
+  // Rozbité počítadlo znamená rezervace bez limitu. Nezavírá se kvůli němu
+  // veřejný formulář, ale musí být poznat v logu – jinak by se na to přišlo
+  // až podle podezřelého počtu rezervací.
+  if (error) console.error("[public-booking] počítadlo limitu selhalo:", kanal, error.message);
   return typeof data === "number" ? data : 0;
 }
 

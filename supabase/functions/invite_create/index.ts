@@ -251,7 +251,10 @@ serve(async (req) => {
       try {
         let isExistingMember = false;
         try {
-          const { data: hasMembership } = await svc.rpc("invited_email_has_any_membership", { p_email: emailTrim });
+          const { data: hasMembership, error } = await svc.rpc("invited_email_has_any_membership", { p_email: emailTrim });
+          // Supabase chybu nevyhazuje, vrací ji – bez tohohle by se text
+          // pozvánky tiše zvolil špatně (registrace vs. zadání kódu v profilu).
+          if (error) console.warn("[invite_create] invited_email_has_any_membership:", error.message);
           isExistingMember = hasMembership === true;
         } catch (e) {
           console.warn("[invite_create] invited_email_has_any_membership RPC failed, using default text", e);

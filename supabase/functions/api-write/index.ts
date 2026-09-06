@@ -293,16 +293,21 @@ serve(async (req) => {
 
   const odpoved = { ok: chyby.length === 0, ...vysledek, ...(chyby.length ? { errors: chyby } : {}) };
 
-  await svc.from("api_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", zaznam.id);
+  const { error: chybaTokenu } = await svc.from("api_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", zaznam.id);
+  if (chybaTokenu) console.error("[api-write] last_used_at:", chybaTokenu.message);
 
   if (klic) {
-    await svc.from("api_idempotency").insert({
+    // Bez uloženého klíče přestane idempotence platit: stejné volání by se
+    // při opakování (timeout na straně klienta) provedlo podruhé. Chyba se
+    // proto aspoň loguje – zápis dat už proběhl, takže se nevrací 500.
+    const { error: chybaKlice } = await svc.from("api_idempotency").insert({
       service_id: zaznam.service_id,
       token_id: zaznam.id,
       klic,
       otisk_tela: otiskT,
       odpoved,
     });
+    if (chybaKlice) console.error("[api-write] idempotenční klíč se neuložil:", klic, chybaKlice.message);
   }
 
   return json(odpoved, chyby.length ? 207 : 200);

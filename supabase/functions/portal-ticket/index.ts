@@ -73,7 +73,8 @@ async function prekrocenLimitKlienta(
 ): Promise<boolean> {
   try {
     const klic = await otiskKlienta(req);
-    const { data } = await svc.rpc("zapocitej_udalost", { p_kanal: "portal-ticket", p_klic: klic });
+    const { data, error } = await svc.rpc("zapocitej_udalost", { p_kanal: "portal-ticket", p_klic: klic });
+    if (error) console.error("[portal-ticket] počítadlo limitu selhalo:", error.message);
     return typeof data === "number" && data > strop;
   } catch {
     // Když počítadlo selže, portál se kvůli tomu nezavře – zákazník by přišel

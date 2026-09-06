@@ -107,7 +107,10 @@ async function overitPristup(
 ): Promise<boolean> {
   const secret = typeof body.secret === "string" ? body.secret : "";
   if (secret) {
-    const { data } = await svc.rpc("alerts_cron_secret");
+    const { data, error } = await svc.rpc("alerts_cron_secret");
+    // Bez tajemství se hlídač nepustí (a e-maily o chybách přestanou chodit);
+    // ať je v logu vidět proč.
+    if (error) console.error("[alerts-check] načtení tajemství selhalo:", error.message);
     const ocekavane = typeof data === "string" ? data : "";
     // Porovnání konstantní dobou – tajemství chodí zvenčí.
     if (ocekavane && secret.length === ocekavane.length) {

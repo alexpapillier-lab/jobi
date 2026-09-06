@@ -277,22 +277,32 @@ serve(async (req) => {
     }
 
     if (emailSent) {
-      // Update invoice status
-      await svc
+      // E-mail už odešel, takže se nesmí vrátit chyba – uživatel by poslal
+      // znovu a zákazník dostal fakturu dvakrát. Ale nesmí to ani zapadnout:
+      // když se stav faktury neuloží, aplikace ji dál ukazuje jako
+      // neodeslanou. Proto se chyba loguje a vrací v odpovědi.
+      const { error: chybaStavu } = await svc
         .from("invoices")
         .update({ status: "sent", sent_at: new Date().toISOString() })
         .eq("id", invoice_id);
+      if (chybaStavu) console.error("[invoice-send-email] stav faktury:", invoice_id, chybaStavu.message);
 
       // Log event
-      await svc.from("invoice_events").insert({
+      const { error: chybaUdalosti } = await svc.from("invoice_events").insert({
         invoice_id,
         type: "email_sent",
         payload: { recipient, message_id: messageId, subject: emailSubject },
         created_by: userId,
       });
+      if (chybaUdalosti) console.error("[invoice-send-email] záznam o odeslání:", invoice_id, chybaUdalosti.message);
 
       return new Response(
-        JSON.stringify({ ok: true, email_sent: true, message_id: messageId }),
+        JSON.stringify({
+          ok: true,
+          email_sent: true,
+          message_id: messageId,
+          ...(chybaStavu ? { varovani: "E-mail odešel, ale stav faktury se neuložil. Zkontrolujte ji." } : {}),
+        }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     } else {

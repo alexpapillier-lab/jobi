@@ -296,7 +296,10 @@ serve(async (req) => {
         .maybeSingle();
       const openId = byPhone.data?.id ?? null;
       if (openId) {
-        await svc.from("sms_conversations").update({ ticket_id: openId }).eq("id", conversationId);
+        // Nepřipojená konverzace se v detailu zakázky neukáže – odpověď
+        // zákazníka by pak nikdo neviděl. Chyba proto nesmí zapadnout.
+        const { error } = await svc.from("sms_conversations").update({ ticket_id: openId }).eq("id", conversationId);
+        if (error) console.error("[sms-incoming] připojení konverzace k zakázce:", conversationId, error.message);
       }
     }
   } else {

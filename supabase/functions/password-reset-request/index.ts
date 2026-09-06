@@ -50,7 +50,11 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
 
-    const { data: userId } = await svc.rpc("get_auth_user_id_by_email", { p_email: emailTrim });
+    const { data: userId, error: chybaUctu } = await svc.rpc("get_auth_user_id_by_email", { p_email: emailTrim });
+    // Chyba dohledání vypadá stejně jako „účet neexistuje“: uživatel dostane
+    // obecnou hlášku a čeká na e-mail, který nikdy nepřijde. Navenek se to
+    // nesmí lišit (enumerace účtů), v logu ano.
+    if (chybaUctu) console.error("[password-reset-request] dohledání účtu selhalo:", chybaUctu.message);
     if (!userId) {
       return new Response(
         JSON.stringify({ ok: true, message: GENERIC_OK_MESSAGE }),
@@ -98,12 +102,15 @@ serve(async (req) => {
       requestCount = windowStillOpen ? rl.request_count : 0;
     }
 
-    await svc.from("password_reset_rate_limit").upsert({
+    const { error: chybaLimitu } = await svc.from("password_reset_rate_limit").upsert({
       email: emailTrim,
       window_started_at: new Date(windowStart).toISOString(),
       request_count: requestCount + 1,
       last_request_at: new Date(nowMs).toISOString(),
     });
+    // Neuložený limit znamená, že další žádost projde znovu – rozesílání
+    // resetovacích e-mailů bez stropu je právě to, čemu má limit bránit.
+    if (chybaLimitu) console.error("[password-reset-request] limit se neuložil:", chybaLimitu.message);
     // --------------------------------------------------------------------
 
     const token = generateToken();

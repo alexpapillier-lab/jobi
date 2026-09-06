@@ -485,18 +485,24 @@ export async function saveInventoryToDb(
     }
   }
 
-  // Smazat odstraněné produkty (jedno volání místo N)
-  const { data: existingProducts } = await (supabase.from("inventory_products") as any).select("id").eq("service_id", serviceId);
+  // Smazat odstraněné produkty (jedno volání místo N).
+  // Chyba se hlásí volajícímu: kdyby se spolkla, aplikace by ohlásila
+  // uložení, položka by po načtení znovu naskočila a nikdo by nevěděl proč.
+  const { data: existingProducts, error: chybaCteniProduktu } = await (supabase.from("inventory_products") as any).select("id").eq("service_id", serviceId);
+  if (chybaCteniProduktu) return { error: chybaCteniProduktu.message };
   const toDeleteProductIds = (existingProducts ?? []).map((p: { id: string }) => p.id).filter((id: string) => !productIds.has(id));
   if (toDeleteProductIds.length > 0) {
-    await (supabase.from("inventory_products") as any).delete().in("id", toDeleteProductIds);
+    const { error } = await (supabase.from("inventory_products") as any).delete().in("id", toDeleteProductIds);
+    if (error) return { error: error.message };
   }
 
   // Smazat odstraněné kategorie (jedno volání místo N)
-  const { data: existingCategories } = await (supabase.from("inventory_product_categories") as any).select("id").eq("service_id", serviceId);
+  const { data: existingCategories, error: chybaCteniKategorii } = await (supabase.from("inventory_product_categories") as any).select("id").eq("service_id", serviceId);
+  if (chybaCteniKategorii) return { error: chybaCteniKategorii.message };
   const toDeleteCategoryIds = (existingCategories ?? []).map((c: { id: string }) => c.id).filter((id: string) => !categoryIds.has(id));
   if (toDeleteCategoryIds.length > 0) {
-    await (supabase.from("inventory_product_categories") as any).delete().in("id", toDeleteCategoryIds);
+    const { error } = await (supabase.from("inventory_product_categories") as any).delete().in("id", toDeleteCategoryIds);
+    if (error) return { error: error.message };
   }
 
   // Upsert categories
