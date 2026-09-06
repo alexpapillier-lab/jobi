@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -15,6 +15,17 @@ import { join } from "node:path";
  */
 const koren = join(__dirname, "..", "..");
 
+/** Poslední migrace, která definuje povolene_capability(). */
+function posledniMigraceSeSeznamem(): string {
+  const dir = "supabase/migrations";
+  const soubory = readdirSync(join(koren, dir))
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .filter((f) => readFileSync(join(koren, dir, f), "utf8").includes("function public.povolene_capability"));
+  expect(soubory.length, "Žádná migrace nedefinuje povolene_capability().").toBeGreaterThan(0);
+  return `${dir}/${soubory[soubory.length - 1]}`;
+}
+
 function klice(soubor: string, zacatek: RegExp, konec: string): string[] {
   const text = readFileSync(join(koren, soubor), "utf8");
   const od = text.search(zacatek);
@@ -26,7 +37,9 @@ function klice(soubor: string, zacatek: RegExp, konec: string): string[] {
 describe("seznam oprávnění je všude stejný", () => {
   const vRozhrani = klice("src/pages/Settings/TeamSettings.tsx", /const CAPABILITY_KEYS = \[/, "] as const");
   const vEdgeFunkci = klice("supabase/functions/team-set-capabilities/index.ts", /ALLOWED_KEYS = \[/, "];");
-  const vDatabazi = klice("supabase/migrations/20260909100000_capability_branch_only.sql", /select array\[/, "]::text[]");
+  // Migrace se hledá, ne napevno: až někdo přidá klíč novou migrací, nesmí
+  // test tlačit na editaci té už nasazené.
+  const vDatabazi = klice(posledniMigraceSeSeznamem(), /select array\[/, "]::text[]");
 
   it("rozhraní zná aspoň deset oprávnění", () => {
     expect(vRozhrani.length).toBeGreaterThanOrEqual(10);

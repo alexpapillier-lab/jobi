@@ -367,7 +367,19 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       // Rozpracované dohledání dodavatele pro nový doklad se do cizího editoru nesmí dostat.
       novyDokladTokenRef.current++;
       dodavatelNacitaniRef.current = null;
-      const { data: rows } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true });
+      const { data: rows, error: rowsErr } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true });
+      /* Nenačtené položky vypadají stejně jako doklad bez položek. Kdyby se
+         editor otevřel prázdný, uložení by původní řádky v databázi smazalo
+         (ukládá se „smaž a vlož znovu"). Radši editor neotevřít. */
+      if (rowsErr) {
+        reportError({
+          code: "invoices.items_load_failed",
+          error: rowsErr,
+          userMessage: "Položky dokladu se nepodařilo načíst, proto ho neotevírám k úpravě. Zkuste to za chvíli.",
+          source: "Invoices.openEditInvoice",
+        });
+        return;
+      }
       const items: EditorLineItem[] = rows?.length
         ? rows.map((it) => ({ id: it.id, name: it.name, qty: it.qty, unit: it.unit, unit_price: it.unit_price, vat_rate: it.vat_rate }))
         : [emptyLineItem(sazbaNoveVPolozky)];
@@ -390,6 +402,19 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       typedSupabase.from("invoice_events").select("*").eq("invoice_id", inv.id).order("created_at", { ascending: false }),
       typedSupabase.from("invoices").select("*").or(vazba).is("deleted_at", null).order("created_at", { ascending: true }),
     ]);
+    /* Chyba čtení vypadá stejně jako „doklad nemá položky“ – a z toho pak
+       plyne, že fakturu nejde vystavit („musí mít alespoň jednu položku“),
+       nebo se u už vyúčtované zálohy znovu nabídne vyúčtování a vznikne
+       druhý doklad. */
+    if (itemsRes.error || eventsRes.error || relatedRes.error) {
+      reportError({
+        code: "invoices.detail_load_failed",
+        error: itemsRes.error ?? eventsRes.error ?? relatedRes.error,
+        userMessage: "Doklad se nepodařilo celý načíst. Zavřete ho a otevřete znovu, jinak by akce vycházely z neúplných dat.",
+        source: "Invoices.openDetail",
+      });
+      return;
+    }
     setDetailItems(itemsRes.data || []);
     setDetailEvents(eventsRes.data || []);
     setDetailRelated(relatedRes.data || []);
@@ -537,7 +562,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           const { error } = await typedSupabase.from("invoices").update(payload).eq("id", editingId);
           if (error) throw error;
           invoiceId = editingId;
-          await typedSupabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+          // Bez kontroly by po neúspěšném mazání vložení přidalo položky
+          // podruhé a doklad by měl všechno dvakrát.
+          const { error: delErr } = await typedSupabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+          if (delErr) throw delErr;
         } else {
           const { data, error } = await typedSupabase
             .from("invoices")
@@ -546,6 +574,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
             .single();
           if (error) throw error;
           invoiceId = data!.id;
+          /* Hned, ne až po uložení položek: kdyby zápis položek selhal
+             a uživatel klikl na Uložit znovu, založil by se druhý doklad
+             s dalším číslem z řady a v číslování by zůstala díra. */
+          setEditingId(invoiceId);
         }
 
         const itemsPayload = editorItems.map((it, idx) => ({
@@ -882,8 +914,14 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // ─── Tisk, PDF, náhled ─────────────────────────────────────
 
+  /**
+   * Položky pro tisk. Chyba čtení se musí vyhodit, ne spolknout: doklad bez
+   * řádků se s hlavičkou a celkovou částkou vytiskne a odejde zákazníkovi,
+   * aniž by kdokoli poznal, že v něm něco chybí.
+   */
   const loadItemsFor = useCallback(async (inv: Invoice) => {
-    const { data } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+    const { data, error } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order");
+    if (error) throw new Error("Položky dokladu se nepodařilo načíst, tisk jsem zastavil.");
     return data || [];
   }, []);
 

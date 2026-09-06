@@ -25,6 +25,7 @@ const stejne = (a: Draft, b: Draft) =>
 export function DphNastaveni({ activeServiceId }: { activeServiceId: string | null }) {
   const ulozene = useServiceVat(activeServiceId);
   const [slugUlozeny, setSlugUlozeny] = useState("");
+  const [chybaSlugu, setChybaSlugu] = useState(false);
   const [draft, setDraft] = useState<Draft>({
     platce: VYCHOZI_DPH.vatPayer, sazba: String(VYCHOZI_DPH.defaultVatRate), cenySDph: VYCHOZI_DPH.pricesIncludeVat, slug: "",
   });
@@ -35,8 +36,12 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
     if (!activeServiceId || !supabase) return;
     let zruseno = false;
     (async () => {
-      const { data } = await supabase.from("services").select("public_slug").eq("id", activeServiceId).maybeSingle();
-      if (!zruseno) setSlugUlozeny(((data as { public_slug?: string } | null)?.public_slug) ?? "");
+      const { data, error } = await supabase.from("services").select("public_slug").eq("id", activeServiceId).maybeSingle();
+      if (zruseno) return;
+      // Nenačtená adresa vypadá jako prázdná; uložením by se veřejná adresa
+      // zrušila a ceník, sklad ani rezervace by se ven nedostaly.
+      setChybaSlugu(!!error);
+      setSlugUlozeny(((data as { public_slug?: string } | null)?.public_slug) ?? "");
     })();
     return () => { zruseno = true; };
   }, [activeServiceId]);
@@ -58,6 +63,13 @@ export function DphNastaveni({ activeServiceId }: { activeServiceId: string | nu
 
   const uloz = async () => {
     if (!activeServiceId || !supabase) return;
+    /* Když se nastavení nepodařilo načíst, jsou ve formuláři výchozí hodnoty
+       (plátce, 21 %, ceny s DPH) – uložením by se z neplátce stal plátce
+       a promítlo by se to do každé další faktury. */
+    if (ulozene.chyba || chybaSlugu) {
+      showToast("Nastavení se nepodařilo načíst, proto ho teď nejde uložit. Zkuste to za chvíli.", "error");
+      throw new Error("Nastavení DPH není načtené.");
+    }
     const cislo = Number(String(draft.sazba).replace(",", "."));
     if (!Number.isFinite(cislo) || cislo < 0 || cislo > 100) {
       showToast("Sazba DPH musí být mezi 0 a 100.", "error");

@@ -572,7 +572,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     if (!activeServiceId || !supabase) return;
     setCasNaOprave(zapnuto);
     try {
-      await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { cas_na_oprave: zapnuto } } });
+      // RPC chybu nevyhazuje, vrací ji – bez téhle kontroly by `catch` níž
+      // nikdy nezabral a přepínač by se tvářil uloženě.
+      const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { cas_na_oprave: zapnuto } } });
+      if (error) throw new Error(error.message);
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
     } catch (err) {
       console.error("[Settings] saveCasNaOprave", err);
@@ -585,10 +588,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     const cislo = parseFloat(text.replace(",", "."));
     const hodnota = Number.isFinite(cislo) && cislo > 0 ? Math.round(cislo * 100) / 100 : null;
     try {
-      await (supabase as any).rpc("update_service_settings", {
+      const { error } = await (supabase as any).rpc("update_service_settings", {
         p_service_id: activeServiceId,
         p_patch: { config: { hodinova_sazba: hodnota } },
       });
+      if (error) throw new Error(error.message);
       setHodinovaSazbaText(hodnota == null ? "" : String(hodnota));
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
     } catch (err) {
@@ -600,10 +604,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const saveOrdersShowClaimsInList = useCallback(async (value: boolean) => {
     if (!activeServiceId || !supabase) return;
     try {
-      await (supabase as any).rpc("update_service_settings", {
+      const { error } = await (supabase as any).rpc("update_service_settings", {
         p_service_id: activeServiceId,
         p_patch: { config: { orders_show_claims_in_list: value } },
       });
+      if (error) throw new Error(error.message);
       setOrdersShowClaimsInList(value);
       showToast("Uloženo", "success");
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));

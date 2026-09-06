@@ -2885,8 +2885,15 @@ export default function Orders({
   }, []);
 
   useEffect(() => {
+    // `pagehide` chytí i Safari, kde se `beforeunload` někdy nespustí, a
+    // odmontování stránky Zakázky, kde by odložený zápis jinak visel.
     window.addEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
-    return () => window.removeEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
+    window.addEventListener("pagehide", dokoncitOdlozeneZapisyOprav);
+    return () => {
+      window.removeEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
+      window.removeEventListener("pagehide", dokoncitOdlozeneZapisyOprav);
+      dokoncitOdlozeneZapisyOprav();
+    };
   }, [dokoncitOdlozeneZapisyOprav]);
 
   /** Upraví provedené opravy zakázky v místním stavu i v databázi. */
@@ -3046,7 +3053,7 @@ export default function Orders({
 
 
   /** Odložené zápisy diagnostiky psané v detailu reklamace. */
-  const odlozenaDiagnostikaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
+  const odlozenaDiagnostikaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void; patch: Record<string, unknown> }>>(new Map());
 
   /**
    * Zápis diagnostiky zakázky mimo její vlastní detail – typicky z reklamace,
@@ -3062,12 +3069,17 @@ export default function Orders({
     if (!supabase) return;
     const odlozene = odlozenaDiagnostikaRef.current;
     const cekajici = odlozene.get(ticketId);
+    /* Čekající zápis se s novým sloučí, nezahodí. Patche jsou různé sloupce
+       (text vs. fotky), takže zrušením čekajícího by se ztratilo posledních
+       pár set milisekund psaní – a v okně by text zůstal, takže by si toho
+       nikdo nevšiml až do přenačtení. */
+    const spojeny = cekajici ? { ...cekajici.patch, ...patch } : patch;
     if (cekajici) clearTimeout(cekajici.casovac);
     const proved = () => {
       odlozene.delete(ticketId);
       void (async () => {
         const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () =>
-          (supabase!.from("tickets") as any).update(patch).eq("id", ticketId));
+          (supabase!.from("tickets") as any).update(spojeny).eq("id", ticketId));
         if (!error) return;
         devLog("[diagnostika] zápis selhal", error);
         if (jeTrvalaChyba(error)) {
@@ -3078,7 +3090,7 @@ export default function Orders({
           klic: `tickets:${ticketId}:diagnostika`,
           tabulka: "tickets",
           id: ticketId,
-          data: patch,
+          data: spojeny,
           popis: `Diagnostika · ${popisZakazky(ticketId)}`,
           serviceId: activeServiceIdRef.current,
           chyba: error,
@@ -3086,7 +3098,7 @@ export default function Orders({
       })();
     };
     if (hned) proved();
-    else odlozene.set(ticketId, { casovac: setTimeout(proved, 600), proved });
+    else odlozene.set(ticketId, { casovac: setTimeout(proved, 600), proved, patch: spojeny });
   }, [popisZakazky, sOkamzitymZapisem]);
 
   const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
@@ -3310,7 +3322,16 @@ export default function Orders({
       setStornoDotaz(null);
       return;
     }
-    const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    /* Dotaz na uživatele je taky síťové volání. Když spadne (offline,
+       vypršelý token), nesmí to shodit celý potvrzovací krok – stav zakázky
+       už je změněný a dialog by zůstal viset nad stornovanou zakázkou.
+       Důvod storna je cennější než jméno toho, kdo ho zapsal. */
+    let uid: string | null = null;
+    try {
+      uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    } catch {
+      uid = null;
+    }
     const radek = {
       ticket_id: ticketId,
       service_id: activeServiceId,

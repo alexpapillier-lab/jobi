@@ -124,3 +124,29 @@ test("zakázky zákazníka jsou v jeho detailu a jde z nich založit další", a
   await expect(page.locator('button:text-is("Změnit"):visible')).toBeVisible();
   await expect(page.locator("#new-order-name")).toHaveCount(0);
 });
+
+test("rozepsaná úprava zákazníka se nezahodí kliknutím vedle okna", async ({ page }) => {
+  test.setTimeout(120_000);
+  await prihlasSe(page);
+  await naZakazniky(page);
+  await page.getByPlaceholder("Vyhledávání zákazníků…").fill(jmeno);
+  await vidCelek(page, jmeno).click();
+
+  await page.locator('button:text-is("Upravit"):visible').first().click();
+  await expect(page.locator("[data-upravy-zakaznika]")).toHaveAttribute("data-upravy-zakaznika", "otevreno", { timeout: 20_000 });
+  const poznamka = page.getByLabel("Informace");
+  const text = `Volá jen odpoledne ${Date.now().toString(36)}`;
+  await poznamka.fill(text);
+
+  // Klik do ztmavení vedle okna se dřív rozepsaných údajů jen tak zbavil.
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Zahodit rozepsané změny?").first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Zpět k úpravám" }).click();
+  await expect(poznamka).toHaveValue(text);
+
+  // Zahození je vědomá volba, ne nehoda.
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Zahodit", exact: true }).click();
+  // Okno zůstává v DOM a jen se prolíná, proto se čte jeho stav.
+  await expect(page.locator("[data-upravy-zakaznika]")).toHaveAttribute("data-upravy-zakaznika", "zavreno", { timeout: 20_000 });
+});

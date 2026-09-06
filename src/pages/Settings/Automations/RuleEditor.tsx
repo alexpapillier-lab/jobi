@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { createPortal } from "react-dom";
 import { Button, Input, Label } from "../../../components/ui";
 import { XIcon } from "../../../components/icons";
@@ -177,16 +178,30 @@ export function RuleEditor({
 }) {
   const [draft, setDraft] = useState<RuleDraft>(initial);
   const [touched, setTouched] = useState(false);
+  const [potvrditZavreni, setPotvrditZavreni] = useState(false);
   const narrow = useIsNarrow();
   const statusLabel = (key: string) => statuses.find((s) => s.key === key)?.label ?? key;
 
   useEffect(() => setDraft(initial), [initial]);
 
+  /**
+   * Zavření editoru. Pravidlo obsahuje text SMS i celý e-mail, často několik
+   * odstavců – kliknutí vedle okna nebo Escape je nesmí jen tak zahodit.
+   */
+  const rozepsano = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initial), [draft, initial]);
+  const zavri = useCallback(() => {
+    if (rozepsano) {
+      setPotvrditZavreni(true);
+      return;
+    }
+    onCancel();
+  }, [onCancel, rozepsano]);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); zavri(); } };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [onCancel]);
+  }, [zavri]);
 
   const set = <K extends keyof RuleDraft>(key: K, value: RuleDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -216,7 +231,7 @@ export function RuleEditor({
       aria-modal="true"
       aria-label={draft.id ? "Upravit pravidlo" : "Nové pravidlo"}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: narrow ? "flex-end" : "center", justifyContent: "center", zIndex: 10000, padding: narrow ? 0 : "var(--space-4)" }}
-      onClick={onCancel}
+      onClick={zavri}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -234,7 +249,7 @@ export function RuleEditor({
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", padding: "var(--space-4) var(--space-5)", borderBottom: "1px solid var(--border)" }}>
           <div style={{ fontWeight: 900, fontSize: "var(--text-lg)", color: "var(--text)" }}>{draft.id ? "Upravit pravidlo" : "Nové pravidlo"}</div>
-          <Button variant="ghost" size="sm" iconOnly aria-label="Zavřít" icon={<XIcon size={16} />} onClick={onCancel} />
+          <Button variant="ghost" size="sm" iconOnly aria-label="Zavřít" icon={<XIcon size={16} />} onClick={zavri} />
         </div>
 
         <div style={{ overflowY: "auto", padding: "var(--space-4) var(--space-5)", display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
@@ -370,7 +385,17 @@ export function RuleEditor({
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", padding: "var(--space-3) var(--space-5)", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
-          <Button variant="ghost" onClick={onCancel} disabled={saving}>Zrušit</Button>
+          <ConfirmDialog
+            open={potvrditZavreni}
+            title="Zahodit rozepsané pravidlo?"
+            message="Změny v automatizaci nejsou uložené. Když editor zavřete, přijdete o ně."
+            confirmLabel="Zahodit"
+            cancelLabel="Zpět k úpravám"
+            variant="danger"
+            onConfirm={() => { setPotvrditZavreni(false); onCancel(); }}
+            onCancel={() => setPotvrditZavreni(false)}
+          />
+          <Button variant="ghost" onClick={zavri} disabled={saving}>Zrušit</Button>
           <Button variant="primary" onClick={submit} disabled={saving}>{saving ? "Ukládám…" : "Uložit"}</Button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Button, Input, Label } from "../../components/ui";
 import { ChatIcon } from "../../components/icons";
@@ -141,27 +141,55 @@ export function CustomerDetail({
     info: "",
   });
 
+  /** Stav, se kterým se okno úprav otevřelo – podle něj se pozná rozepsaná změna. */
+  const [editVychozi, setEditVychozi] = useState<EditDraft | null>(null);
+  const [potvrditZavreni, setPotvrditZavreni] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteCustomerId, setDeleteCustomerId] = useState<string | null>(null);
+
+  /** Je v okně něco rozepsaného? Porovnává se s tím, co se do něj načetlo. */
+  const editDirty = useMemo(
+    () => JSON.stringify(editDraft) !== JSON.stringify(editVychozi),
+    [editDraft, editVychozi],
+  );
+
+  const zavriEdit = useCallback(() => {
+    if (editDirty) {
+      setPotvrditZavreni(true);
+      return;
+    }
+    setEditOpen(false);
+  }, [editDirty]);
 
   useEffect(() => {
     if (!editOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        setEditOpen(false);
+        zavriEdit();
       }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [editOpen]);
+    // zavriEdit v závislostech schválně: bez něj by posluchač držel funkci
+    // z chvíle, kdy se okno otevřelo, a ta si pamatuje „nic rozepsaného".
+  }, [editOpen, zavriEdit]);
 
   const openEdit = () => {
     if (!customer) return;
     setSubmitAttempted(false);
-    setEditDraft(draftFromCustomer(customer));
+    const vychozi = draftFromCustomer(customer);
+    setEditDraft(vychozi);
+    setEditVychozi(vychozi);
     setEditOpen(true);
   };
+
+
+  /**
+   * Zavření okna úprav. Formulář má devět polí včetně volného textu, takže
+   * kliknutí vedle okna nebo Escape nesmí rozepsané údaje jen tak zahodit –
+   * technik dopíše poznámku k zákazníkovi, netrefí se do okna a je to pryč.
+   */
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
@@ -459,7 +487,7 @@ export function CustomerDetail({
       {createPortal(
         <>
       <div
-        onClick={() => setEditOpen(false)}
+        onClick={zavriEdit}
         style={{
           position: "fixed",
           inset: 0,
@@ -471,7 +499,10 @@ export function CustomerDetail({
         }}
       />
 
+      {/* Okno zůstává v DOM a jen se prolíná, proto stav i pro testy: podle
+          opacity ho Playwright pořád vidí jako viditelné. */}
       <div
+        data-upravy-zakaznika={editOpen ? "otevreno" : "zavreno"}
         style={{
           position: "fixed",
           left: "50%",
@@ -502,7 +533,7 @@ export function CustomerDetail({
             <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Změna se zapíše do historie zákazníka.</div>
           </div>
           <Button variant="soft"
-            onClick={() => setEditOpen(false)}>
+            onClick={zavriEdit}>
             Zavřít
           </Button>
         </div>
@@ -621,7 +652,7 @@ export function CustomerDetail({
 
           <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <Button variant="soft"
-              onClick={() => setEditOpen(false)}>
+              onClick={zavriEdit}>
               Zrušit
             </Button>
 
@@ -636,6 +667,19 @@ export function CustomerDetail({
         document.body
       )}
       {/* Confirm Dialog for Delete Customer */}
+      <ConfirmDialog
+        open={potvrditZavreni}
+        title="Zahodit rozepsané změny?"
+        message="Úpravy zákazníka nejsou uložené. Když okno zavřete, přijdete o ně."
+        confirmLabel="Zahodit"
+        cancelLabel="Zpět k úpravám"
+        variant="danger"
+        onConfirm={() => {
+          setPotvrditZavreni(false);
+          setEditOpen(false);
+        }}
+        onCancel={() => setPotvrditZavreni(false)}
+      />
       <ConfirmDialog
         open={deleteDialogOpen}
         title="Smazat zákazníka?"

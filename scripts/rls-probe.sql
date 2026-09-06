@@ -211,7 +211,9 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (401, '22222222-3333-4444-8555-666666666666', 'spravce: neznamy klic prav',      'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_hack_everything": true}''::jsonb)'),
   (402, '11111111-2222-4333-8444-555555555555', 'technik: rozdavani prav',         'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
   (403, null, 'anon: rozdavani prav',                                              'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
-  (404, '3e2e0000-1111-4222-8333-444455556666', 'majitel E2E: prava v cizim servisu','odmitnuto','select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)')
+  (404, '3e2e0000-1111-4222-8333-444455556666', 'majitel E2E: prava v cizim servisu','odmitnuto','select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
+  (405, '22222222-3333-4444-8555-666666666666', 'spravce: prava s hodnotou null',   'projde',    'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": null}''::jsonb)'),
+  (406, '22222222-3333-4444-8555-666666666666', 'spravce: prazdna prava nic nemenil','projde',   'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{}''::jsonb)')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p

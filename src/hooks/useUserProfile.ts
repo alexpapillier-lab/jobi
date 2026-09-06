@@ -88,7 +88,10 @@ export function useUserProfile() {
       };
       if (supabase) {
         try {
-          await (supabase as import("@supabase/supabase-js").SupabaseClient<Database>).from("profiles").upsert(
+          // Supabase chybu nevyhazuje, vrací ji – bez `error` byl `catch`
+          // mrtvý kód a uživatel viděl „Profil uložen“ i tehdy, když se
+          // přezdívka nikam nezapsala.
+          const { error: chyba } = await (supabase as import("@supabase/supabase-js").SupabaseClient<Database>).from("profiles").upsert(
             {
               id: userId,
               nickname: next.nickname,
@@ -96,6 +99,7 @@ export function useUserProfile() {
             },
             { onConflict: "id" }
           );
+          if (chyba) throw new Error(chyba.message);
           setProfileState(next);
           setError(null);
         } catch (err) {
