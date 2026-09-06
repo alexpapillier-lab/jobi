@@ -10,6 +10,7 @@ import { OrdersTab } from "./Inventory/OrdersTab";
 import { SuppliersTab, SupplierForm } from "./Inventory/SuppliersTab";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
+import { nahlasCekani } from "../lib/frontaZapisu";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useEntitlements } from "../hooks/useEntitlements";
@@ -47,6 +48,78 @@ const NOVY_DODAVATEL = "__novy_dodavatel__";
  * neplatí a přežije i přemontování stránky.
  */
 let posledniUlozeno: { sid: string; data: InventoryData } | null = null;
+/**
+ * Opakování neúspěšného uložení skladu. Mimo komponentu schválně: odchod ze
+ * Skladu nesmí opakování zrušit, jinak by se změna ztratila právě tím, že
+ * uživatel odešel na jinou stránku. Sklad se ukládá jako několik závislých
+ * požadavků proti snímku z databáze, takže se nedá zařadit do fronty
+ * neuložených změn jako obyčejný `update` – opakuje se zavoláním celého
+ * uložení znovu, s aktuálními daty.
+ */
+let opakovaniSkladu: ReturnType<typeof setTimeout> | null = null;
+const OPAKOVAT_PO_MS = 8000;
+/**
+ * Rozdělaný sklad, který ještě není v databázi.
+ *
+ * Ukládání skladu má odklad (několik změn za sebou = jeden zápis), takže
+ * mezi kliknutím a zápisem je okamžik, kdy změna žije jen v paměti. Zavření
+ * aplikace nebo přenačtení stránky v tu chvíli změnu zahodilo – `beforeunload`
+ * sice uložení spustí, ale odcházející stránka požadavek nedokončí.
+ * Proto se rozdělaný stav píše i sem; po startu se dopíše do databáze.
+ */
+const KLIC_ROZDELANO = "jobi_sklad_neulozeno_v1";
+const ROZDELANO_MAX_STARI_MS = 24 * 60 * 60 * 1000;
+
+function ulozRozdelano(sid: string, data: InventoryData): void {
+  try {
+    localStorage.setItem(KLIC_ROZDELANO, JSON.stringify({ sid, ulozeno: Date.now(), data }));
+  } catch {
+    /* plný localStorage – zbytek pojistek (odklad, opakování) platí dál */
+  }
+}
+
+function zapomenRozdelano(): void {
+  try {
+    localStorage.removeItem(KLIC_ROZDELANO);
+  } catch {
+    /* nevadí */
+  }
+}
+
+function precitRozdelano(sid: string): InventoryData | null {
+  try {
+    const raw = localStorage.getItem(KLIC_ROZDELANO);
+    if (!raw) return null;
+    const z = JSON.parse(raw) as { sid?: string; ulozeno?: number; data?: InventoryData };
+    if (z?.sid !== sid || typeof z.ulozeno !== "number") return null;
+    if (Date.now() - z.ulozeno > ROZDELANO_MAX_STARI_MS) return null;
+    const d = z.data;
+    if (!d || !Array.isArray(d.products) || !Array.isArray(d.warehouses)) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+/** Kolikrát po sobě se čekalo na snímek skladu (ochrana proti nekonečné smyčce). */
+let cekaniNaSnimek = 0;
+/** Funkce, kterou opakování volá – nastavuje ji komponenta při každém renderu. */
+let ulozSkladZnovu: ((kdo: string) => void) | null = null;
+
+function naplanujOpakovaniSkladu(zaMs: number): void {
+  if (opakovaniSkladu) clearTimeout(opakovaniSkladu);
+  opakovaniSkladu = setTimeout(() => {
+    opakovaniSkladu = null;
+    ulozSkladZnovu?.("Inventory.opakovani");
+  }, zaMs);
+}
+
+function zrusOpakovaniSkladu(): void {
+  if (opakovaniSkladu) {
+    clearTimeout(opakovaniSkladu);
+    opakovaniSkladu = null;
+  }
+}
 
 function snimekProServis(sid: string): InventoryData | undefined {
   return posledniUlozeno && posledniUlozeno.sid === sid ? posledniUlozeno.data : undefined;
@@ -522,7 +595,14 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       if (cancelled) return;
       // Snímek toho, co je v databázi – od něj se počítá rozdíl při ukládání.
       posledniUlozeno = { sid: activeServiceId, data: invData };
-      setData(invData);
+      /* Rozdělané změny z minulého běhu (zavřená aplikace, přenačtení
+         stránky). Nastaví se jako data a odložené ukládání je dopíše do
+         databáze proti čerstvému snímku. */
+      const rozdelano = precitRozdelano(activeServiceId);
+      // Dopsání po restartu nemá čekat celý odklad – uživatel čeká, až bude
+      // hotovo, a může aplikaci zase zavřít.
+      if (rozdelano) rychleUlozeni.current = true;
+      setData(rozdelano ?? invData);
     })();
     return () => {
       cancelled = true;
@@ -551,6 +631,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
      Dřív se volala hned po setData, takže hlásila jen změnu v paměti –
      a když zápis neprošel, uživatel se to nedozvěděl. */
   const cekaHlaska = useRef<string | null>(null);
+  /* Vědomá změna bez hlášky (klik na „+"/„−"): uložit hned, ale netoastovat.
+     S výchozím odkladem 1,2 s se změna ztratila, když uživatel hned zavřel
+     aplikaci nebo přenačetl stránku. */
+  const rychleUlozeni = useRef(false);
 
   const ulozSklad = useCallback(async (kdo: string) => {
     const sid = sluzbaRef.current;
@@ -559,10 +643,37 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
        jde saveInventoryToDb do režimu „zapiš všechno a smaž, co v datech
        není“ – a data jsou při odchodu před dokončením načtení prázdná.
        Přesně tímhle jsem smazal sklad: odchod ze Skladu do 300 ms od
-       otevření uložil prázdno. */
+       otevření uložil prázdno.
+
+       Čekat se ale musí, ne to vzdát: tichým `return` se ztrácel produkt
+       přidaný dřív, než se sklad dočetl. Efekt s odkladem se znovu spustí
+       až při další změně dat, takže se na zápis nikdy nedošlo a produkt
+       zmizel při prvním obnovení stránky – bez jediné hlášky. */
     const drive = snimekProServis(sid);
-    if (!drive) return;
     const k = dataRef.current;
+    if (!drive) {
+      // Prázdný sklad bez snímku nemá co ztratit – čekat na načtení nemá smysl.
+      const maCoUlozit = k.products.length > 0 || k.productCategories.length > 0 || k.warehouses.length > 0;
+      if (!maCoUlozit) return;
+      // Kdyby načtení skončilo chybou, snímek nepřijde nikdy; po minutě to vzdáme
+      // a řekneme to nahlas, ať uživatel data nepovažuje za uložená.
+      cekaniNaSnimek += 1;
+      if (cekaniNaSnimek > 60) {
+        cekaniNaSnimek = 0;
+        nahlasCekani("sklad", null);
+        reportError({
+          code: "inventory.snimek_chybi",
+          error: new Error("Sklad se nenačetl, změny nejde bezpečně uložit."),
+          userMessage: "Sklad se nepodařilo načíst, proto se změny neuložily. Otevřete Sklad znovu.",
+          source: kdo,
+        });
+        return;
+      }
+      nahlasCekani("sklad", "Sklad · čeká na načtení");
+      naplanujOpakovaniSkladu(1000);
+      return;
+    }
+    cekaniNaSnimek = 0;
 
     /* Snímek je mimo komponentu, takže po návratu na Sklad existuje dřív,
        než se data stihnou načíst – a `data` jsou v tu chvíli prázdná.
@@ -585,6 +696,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     if (!r.error) {
       posledniUlozeno = { sid, data: k };
       lastSaveAtRef.current = Date.now();
+      rychleUlozeni.current = false;
+      zapomenRozdelano();
+      nahlasCekani("sklad", null);
+      zrusOpakovaniSkladu();
       if (cekaHlaska.current) {
         showToast(cekaHlaska.current, "success");
         cekaHlaska.current = null;
@@ -599,17 +714,32 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       reportError({
         code: "inventory.save_failed",
         error: r.error,
-        userMessage: "Sklad se nepodařilo uložit: " + r.error,
+        userMessage: "Sklad se nepodařilo uložit: " + r.error + " Zkouším dál, změny se neztratí.",
         source: kdo,
       });
     }
+    // Vidět v ukazateli neuložených změn a zkusit znovu, dokud to neprojde.
+    nahlasCekani("sklad", "Sklad · neuložené změny", r.error);
+    naplanujOpakovaniSkladu(OPAKOVAT_PO_MS);
   }, []);
+
+  /* Opakování běží i po odchodu ze Skladu (jinak by odchod na jinou stránku
+     změnu zahodil), takže musí volat aktuální funkci, ne tu zachycenou
+     v okamžiku selhání. */
+  useEffect(() => {
+    ulozSkladZnovu = (kdo) => { void ulozSklad(kdo); };
+  }, [ulozSklad]);
 
   useEffect(() => {
     if (!activeServiceId) return;
     // Po vědomé akci (uložení produktu) krátce, ať potvrzení přijde hned;
     // u průběžných změn se drží delší prodleva.
-    const t = setTimeout(() => { ulozSklad("Inventory.saveInventory"); }, cekaHlaska.current ? 150 : 1200);
+    /* Pojistka pro případ, že mezi změnou a zápisem někdo zavře aplikaci.
+       Píše se hned, zápis do databáze má odklad. */
+    if (data.products.length > 0 || data.productCategories.length > 0 || data.warehouses.length > 0) {
+      ulozRozdelano(activeServiceId, data);
+    }
+    const t = setTimeout(() => { ulozSklad("Inventory.saveInventory"); }, cekaHlaska.current || rychleUlozeni.current ? 150 : 1200);
     return () => clearTimeout(t);
   }, [activeServiceId, data, ulozSklad]);
 
@@ -653,13 +783,21 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     return () => window.removeEventListener(INVENTORY_DISPLAY_MODE_EVENT, onExternalChange);
   }, []);
 
-  // Refresh inventory from DB when returning from import
+  /* Přenačtení po zavření importu.
+     Dřív se to pouštělo i při prvním vykreslení (`!showImport` platí od
+     začátku) a přepsalo to data načtená hlavním efektem – včetně změn, které
+     se po restartu aplikace teprve doplňovaly z rozdělaného stavu. */
+  const bylOtevrenyImport = useRef(false);
   useEffect(() => {
-    if (!showImport && activeServiceId) {
-      loadInventoryFromDb(activeServiceId).then((res) => {
-        if (!res.error) { posledniUlozeno = { sid: activeServiceId, data: res.data }; setData(res.data); }
-      });
+    if (showImport) {
+      bylOtevrenyImport.current = true;
+      return;
     }
+    if (!bylOtevrenyImport.current || !activeServiceId) return;
+    bylOtevrenyImport.current = false;
+    loadInventoryFromDb(activeServiceId).then((res) => {
+      if (!res.error) { posledniUlozeno = { sid: activeServiceId, data: res.data }; setData(res.data); }
+    });
   }, [showImport, activeServiceId]);
 
   /* Dodavatelé, objednávky a rezervace – načíst při otevření a po každém
@@ -952,7 +1090,22 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         reloadTimer = null;
         if (Date.now() - lastSaveAtRef.current < 4000) return; // vlastní save – nepřenačítat
         loadInventoryFromDb(activeServiceId).then((res) => {
-          if (!res.error) { posledniUlozeno = { sid: activeServiceId, data: res.data }; setData(res.data); }
+          if (res.error) return;
+          /* Změna od kolegy nesmí přepsat, co má tenhle člověk rozdělané.
+             Dřív se místní stav prostě zahodil – stačilo, aby v tu chvíli
+             kdokoli jiný sáhl na jakýkoli produkt, a rozepsaná úprava
+             (i právě přidaný kus) byla pryč bez jediné hlášky.
+             Snímek se posune na čerstvá data z databáze; odložené uložení
+             pak zapíše rozdíl, tedy jen vlastní změny. */
+          const drivejsiSnimek = snimekProServis(activeServiceId);
+          const maNeulozene =
+            !!drivejsiSnimek && JSON.stringify(dataRef.current) !== JSON.stringify(drivejsiSnimek);
+          posledniUlozeno = { sid: activeServiceId, data: res.data };
+          if (maNeulozene) {
+            naplanujOpakovaniSkladu(300);
+            return;
+          }
+          setData(res.data);
         });
       }, 800);
     };
@@ -1159,7 +1312,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   const deleteProduct = (id: string) => {
     setData((d) => ({ ...d, products: d.products.filter((p) => p.id !== id) }));
-    showToast("Produkt smazán", "success");
+    // Hláška až po potvrzení z databáze – jinak by „smazáno" tvrdila i změna,
+    // která se neuložila a po obnovení stránky je produkt zpátky.
+    cekaHlaska.current = "Produkt smazán";
   };
 
   const askDeleteProduct = (p: Product) => {
@@ -1169,10 +1324,11 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   /**
    * Přidání/odebrání kusu v konkrétním skladu, přímo v seznamu. Bez
    * potvrzovacího dialogu – varování u nulového skladu má smysl při ruční
-   * editaci, ne u klikání na „−“. Zápis do DB obstará stejný debounce jako
-   * u ostatních změn.
+   * editaci, ne u klikání na „−“. Do databáze to jde skoro hned – počet kusů
+   * je vědomá akce, kterou uživatel po kliknutí považuje za hotovou.
    */
   const adjustStock = (id: string, warehouseId: string, delta: number) => {
+    rychleUlozeni.current = true;
     setData((d) => ({
       ...d,
       products: d.products.map((p) => {
@@ -1189,6 +1345,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
 
   /** Naskladnění o `zmena` kusů do vybraného skladu. */
   const naskladnit = (productId: string, zmena: number) => {
+    rychleUlozeni.current = true;
     const cil = restockWarehouseId || vychoziSklad(data.warehouses);
     if (!cil) {
       showToast("Servis nemá žádný sklad", "error");

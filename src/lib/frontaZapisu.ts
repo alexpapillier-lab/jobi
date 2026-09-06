@@ -49,6 +49,14 @@ export type PolozkaFronty = {
 type Posluchac = (polozky: PolozkaFronty[]) => void;
 
 const posluchaci = new Set<Posluchac>();
+/**
+ * Čekání, které se nedá popsat jedním `update` řádku – typicky sklad, který
+ * se ukládá jako několik závislých požadavků proti snímku z databáze.
+ * Do localStorage se neukládá (opakovat by šlo jen s aktuálním snímkem),
+ * ale v ukazateli je vidět stejně jako zbytek fronty, aby uživatel nevypnul
+ * počítač s tím, že je hotovo.
+ */
+const mimoFrontu = new Map<string, PolozkaFronty>();
 let odesilaSe = false;
 let casovac: ReturnType<typeof setInterval> | null = null;
 let hlidacSpusten = false;
@@ -74,7 +82,7 @@ function zapis(polozky: PolozkaFronty[]): void {
   }
   for (const p of posluchaci) {
     try {
-      p(polozky);
+      p([...polozky, ...mimoFrontu.values()]);
     } catch {
       /* posluchač si za svoje chyby může sám */
     }
@@ -150,15 +158,45 @@ export function jeTrvalaChyba(err: unknown): boolean {
   return t.includes("row-level security") || t.includes("not authorized") || t.includes("violates");
 }
 
-/** Kolik změn čeká na uložení. */
+/** Kolik změn čeká na uložení (včetně čekání mimo frontu). */
 export function neulozeneZmeny(): PolozkaFronty[] {
-  return nacti();
+  return [...nacti(), ...mimoFrontu.values()];
+}
+
+/**
+ * Ohlásí (nebo odvolá) čekání, které si opakování řídí samo – volající má
+ * vlastní smyčku a jen chce, aby o něm uživatel věděl. `popis: null` čekání
+ * odvolá, jakmile se uložení povede.
+ */
+export function nahlasCekani(klic: string, popis: string | null, chyba?: unknown): void {
+  if (popis === null) {
+    if (!mimoFrontu.delete(klic)) return;
+  } else {
+    mimoFrontu.set(klic, {
+      klic,
+      tabulka: "",
+      id: "",
+      data: {},
+      popis,
+      serviceId: null,
+      vlozeno: mimoFrontu.get(klic)?.vlozeno ?? Date.now(),
+      pokusy: (mimoFrontu.get(klic)?.pokusy ?? 0) + 1,
+      posledniChyba: chyba ? textChyby(chyba) : undefined,
+    });
+  }
+  for (const p of posluchaci) {
+    try {
+      p(neulozeneZmeny());
+    } catch {
+      /* posluchač si za svoje chyby může sám */
+    }
+  }
 }
 
 /** Přihlásí se k odběru změn fronty; vrací odhlášení. */
 export function naFrontu(cb: Posluchac): () => void {
   posluchaci.add(cb);
-  cb(nacti());
+  cb(neulozeneZmeny());
   return () => posluchaci.delete(cb);
 }
 
@@ -266,5 +304,6 @@ export function vycistiFrontu(): void {
     casovac = null;
   }
   hlidacSpusten = false;
+  mimoFrontu.clear();
   zapis([]);
 }

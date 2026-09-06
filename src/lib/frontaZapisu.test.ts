@@ -31,7 +31,7 @@ vi.mock("./supabaseClient", () => ({
 
 vi.mock("./errorLog", () => ({ logError: async () => {} }));
 
-const { ulozNaPozdeji, odesliFrontu, neulozeneZmeny, vycistiFrontu, naFrontu, jeTrvalaChyba } = await import("./frontaZapisu");
+const { ulozNaPozdeji, odesliFrontu, neulozeneZmeny, vycistiFrontu, naFrontu, jeTrvalaChyba, nahlasCekani } = await import("./frontaZapisu");
 
 function pametovyStorage() {
   const m = new Map<string, string>();
@@ -138,6 +138,30 @@ describe("fronta neuložených změn", () => {
     vi.resetModules();
     const znovu = await import("./frontaZapisu");
     expect(znovu.neulozeneZmeny()).toHaveLength(1);
+  });
+
+  it("čekání mimo frontu je vidět, ale neodesílá se jako řádek", async () => {
+    nahlasCekani("sklad", "Sklad · neuložené změny", new Error("Failed to fetch"));
+    expect(neulozeneZmeny()).toHaveLength(1);
+    expect(neulozeneZmeny()[0].popis).toBe("Sklad · neuložené změny");
+
+    // Fronta má co odeslat jen z localStorage – sklad si opakování řídí sám.
+    const r = await odesliFrontu();
+    expect(r.odeslano).toBe(0);
+    expect(zapsano).toHaveLength(0);
+    expect(neulozeneZmeny()).toHaveLength(1);
+
+    nahlasCekani("sklad", null);
+    expect(neulozeneZmeny()).toHaveLength(0);
+  });
+
+  it("posluchač vidí i čekání mimo frontu", () => {
+    const stavy: number[] = [];
+    const odhlas = naFrontu((p) => stavy.push(p.length));
+    nahlasCekani("sklad", "Sklad · neuložené změny");
+    ulozNaPozdeji(polozka("tickets:t1:detail", { title: "X" }));
+    odhlas();
+    expect(stavy).toEqual([0, 1, 2]);
   });
 
   it("rozbitý obsah v localStorage frontu neshodí", () => {
