@@ -7,22 +7,14 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeE164Prichozi, vyberServis, type CisloServisu, type SmsKlient } from "../_shared/sms.ts";
 
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?>\n<Response></Response>';
 const TWIML_HEADERS = { "Content-Type": "text/xml; charset=utf-8" };
 
-function normalizeE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 9 && /^[5-9]/.test(digits)) return `+420${digits}`;
-  if (digits.length === 10 && digits.startsWith("0") && /^0[79]/.test(digits)) return `+420${digits.slice(1)}`;
-  if (digits.startsWith("420") && digits.length === 12) return `+${digits}`;
-  if (digits.length >= 9 && !phone.trim().startsWith("+")) return `+${digits}`;
-  return phone.trim().startsWith("+") ? `+${digits}` : `+${digits}`;
-}
-
 /** Normalize Twilio "To" (our number) to match service_phone_numbers.twilio_number */
 function normalizeOurNumber(to: string): string {
-  return normalizeE164(to.trim());
+  return normalizeE164Prichozi(to.trim());
 }
 
 function webhookUrlCandidates(req: Request): string[] {
@@ -183,73 +175,20 @@ serve(async (req) => {
     return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
   }
 
-  const fromNorm = normalizeE164(from);
-  const fromDigits = fromNorm.replace(/\D/g, "");
+  const fromNorm = normalizeE164Prichozi(from);
 
-  function phoneMatchesTicket(raw: string | null): boolean {
-    if (!raw?.trim()) return false;
-    const tp = normalizeE164(raw);
-    const td = tp.replace(/\D/g, "");
-    if (tp === fromNorm || td === fromDigits) return true;
-    if (fromDigits.length >= 9 && td.length >= 9 && (td.endsWith(fromDigits.slice(-9)) || fromDigits.endsWith(td.slice(-9)))) {
-      return true;
-    }
-    return false;
-  }
-
-  let serviceId: string;
-  if (phoneRows.length === 1) {
-    serviceId = phoneRows[0].service_id;
-  } else {
-    const serviceIds = phoneRows.map((r: { service_id: string }) => r.service_id);
-    const { data: existingConvs } = await svc
-      .from("sms_conversations")
-      .select("service_id, updated_at")
-      .in("service_id", serviceIds)
-      .eq("customer_phone", fromNorm)
-      .order("updated_at", { ascending: false })
-      .limit(1);
-
-    if (existingConvs && existingConvs.length > 0) {
-      serviceId = existingConvs[0].service_id;
-    } else {
-      const { data: tix } = await svc
-        .from("tickets")
-        .select("service_id, customer_phone, updated_at")
-        .in("service_id", serviceIds)
-        .is("deleted_at", null)
-        .not("customer_phone", "is", null)
-        .order("updated_at", { ascending: false })
-        .limit(1000);
-
-      let ticketService: string | null = null;
-      for (const t of tix ?? []) {
-        const row = t as { service_id: string; customer_phone: string | null };
-        if (phoneMatchesTicket(row.customer_phone)) {
-          ticketService = row.service_id;
-          break;
-        }
-      }
-
-      if (ticketService && serviceIds.includes(ticketService)) {
-        serviceId = ticketService;
-      } else {
-        const { data: custRows } = await svc
-          .from("customers")
-          .select("service_id, updated_at")
-          .in("service_id", serviceIds)
-          .eq("phone_norm", fromNorm)
-          .order("updated_at", { ascending: false })
-          .limit(5);
-
-        if (custRows && custRows.length > 0) {
-          serviceId = (custRows[0] as { service_id: string }).service_id;
-        } else {
-          const primary = phoneRows.find((r: { is_pool_primary: boolean }) => r.is_pool_primary);
-          serviceId = (primary ?? phoneRows[0]).service_id;
-        }
-      }
-    }
+  /* Ke kterému servisu zpráva patří. Jedno číslo obsluhuje víc servisů,
+     takže se to musí odvodit z konverzací, zakázek a zákazníků – logika
+     je v _shared/sms.ts, aby se dala otestovat: špatná odpověď tady
+     znamená, že si dva servisy vidí do zpráv. */
+  const serviceId = await vyberServis(
+    svc as unknown as SmsKlient,
+    phoneRows as CisloServisu[],
+    fromNorm,
+  );
+  if (!serviceId) {
+    console.error("[sms-incoming] Nepodařilo se určit servis pro To=", toRaw);
+    return new Response(EMPTY_TWIML, { status: 200, headers: TWIML_HEADERS });
   }
 
   if (messageSid) {

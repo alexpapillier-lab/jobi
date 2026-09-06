@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { escapeHtml } from "../_shared/html.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -215,8 +216,6 @@ serve(async (req) => {
     const emailSubject = subject || `${druhNazev} ${inv.number}`;
     const plainText = emailBody || `Dobrý den,\n\nv příloze zasíláme ${druhAkuzativ} č. ${inv.number}.\n\nS pozdravem`;
 
-    const escapeHtml = (s: string) =>
-      String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const safeNumber = escapeHtml(inv.number || "");
     const safeBody = escapeHtml(plainText).replace(/\n/g, "<br>");
 

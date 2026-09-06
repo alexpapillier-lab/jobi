@@ -24,6 +24,8 @@ import { zmenyProduktu, zmenyOprav, zmenyKatalogu, otiskTela, type DruhKatalogu 
  * (viz docs/ZADANI_API.md, kapitola Limity).
  *
  * Zadání: docs/ZADANI_API.md, kapitola 5.
+ * Testy: src/lib/apiVerejne.test.ts (autorizace, idempotence, limity, oddělení
+ * servisů) a e2e/api-automatizace.spec.ts (celá cesta proti nasazené funkci).
  */
 
 const cors = {
@@ -122,8 +124,31 @@ serve(async (req) => {
       if (drive.otisk_tela !== otiskT) {
         return json({ error: "Idempotency-Key už byl použit s jiným tělem" }, 409);
       }
-      return json(drive.odpoved, 200, { "Idempotency-Replayed": "true" });
+      // Stav se musí zopakovat taky, ne jen tělo. Uložená odpověď s
+      // `ok: false` je částečný úspěch (207); kdyby se opakování vracelo
+      // jako 200, klient, který se řídí stavovým kódem, by při opakování
+      // po výpadku sítě přehlédl seznam chyb, který napoprvé viděl.
+      const puvodni = drive.odpoved as { ok?: boolean } | null;
+      return json(drive.odpoved, puvodni?.ok === false ? 207 : 200, { "Idempotency-Replayed": "true" });
     }
+  }
+
+  /*
+   * Rozsahy se ověří NAJEDNOU, ještě než se cokoli zapíše.
+   *
+   * Dřív se brána otevírala až u své sekce těla. Tělo {brands, products}
+   * s tokenem jen na ceník tedy značky doopravdy založilo a teprve pak
+   * vrátilo 403 na produktech: půlka zápisu venku, klient dostal chybu a
+   * idempotenční klíč se neuložil – takže opakování téhož požadavku
+   * značky založilo podruhé. Ověřeno na E2E servisu 6. 9. 2026.
+   */
+  const SEKCE_KATALOGU = ["brands", "categories", "models", "repairs"] as const;
+  const potrebneRozsahy: Rozsah[] = [];
+  if (SEKCE_KATALOGU.some((k) => Array.isArray((telo as any)[k]))) potrebneRozsahy.push("catalog:write");
+  if (Array.isArray((telo as any).products)) potrebneRozsahy.push("inventory:write");
+  for (const r of potrebneRozsahy) {
+    const brana = await branaRozsahu(r);
+    if (brana) return brana;
   }
 
   const vysledek: Record<string, unknown> = {};
@@ -163,8 +188,6 @@ serve(async (req) => {
   const KATALOG: Record<DruhKatalogu, string> = { brands: "device_brands", categories: "device_categories", models: "device_models" };
   for (const druh of ["brands", "categories", "models"] as DruhKatalogu[]) {
     if (!Array.isArray((telo as any)[druh])) continue;
-    const brana = await branaRozsahu("catalog:write");
-    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyKatalogu((telo as any)[druh], druh);
     chyby.push(...ch);
     const p = pocty();
@@ -191,8 +214,6 @@ serve(async (req) => {
 
   // --- opravy ---
   if (Array.isArray((telo as any).repairs)) {
-    const brana = await branaRozsahu("catalog:write");
-    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyOprav((telo as any).repairs);
     chyby.push(...ch);
     const p = pocty();
@@ -224,8 +245,6 @@ serve(async (req) => {
 
   // --- produkty ---
   if (Array.isArray((telo as any).products)) {
-    const brana = await branaRozsahu("inventory:write");
-    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyProduktu((telo as any).products);
     chyby.push(...ch);
     const p = pocty();

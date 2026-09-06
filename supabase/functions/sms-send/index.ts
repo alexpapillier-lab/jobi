@@ -5,6 +5,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SMS_MAX_BODY_LENGTH, normalizeE164, segmentu, textProSms, zkontrolujBalicek, type SmsKlient } from "../_shared/sms.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,54 +14,10 @@ const corsHeaders = {
 };
 
 const TWILIO_BASE = "https://api.twilio.com/2010-04-01";
-const SMS_MAX_BODY_LENGTH = 1600; // Twilio concatenated SMS limit
-
-/**
- * SMS se posílají bez diakritiky. Znak s háčkem přepne zprávu do kódování
- * UCS-2, kde se místo 160 znaků vejde jen 70 – běžná zpráva o hotové
- * zakázce tak stojí dvakrát tolik. Zákazník rozdíl nepozná, účet ano.
- */
-function bezDiakritiky(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    // Pár znaků, které rozklad NFD neřeší.
-    .replace(/[ĐđŁłØøÆæŒœß]/g, (z) => ({ "Đ": "D", "đ": "d", "Ł": "L", "ł": "l", "Ø": "O", "ø": "o", "Æ": "AE", "æ": "ae", "Œ": "OE", "œ": "oe", "ß": "ss" }[z] ?? z))
-    .normalize("NFC");
-}
-
-/** Kolik segmentů (a tedy kolik zpráv z balíčku) zpráva spotřebuje. */
-function segmentu(text: string): number {
-  const delka = text.length;
-  if (delka === 0) return 1;
-  return delka <= 160 ? 1 : Math.ceil(delka / 153);
-}
-
-/** Začátek aktuálního měsíce – balíček SMS se počítá po kalendářních měsících. */
-function zacatekMesice(): string {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
-}
 
 function twilioAuthHeader(accountSid: string, authToken: string): string {
   const encoded = btoa(`${accountSid}:${authToken}`);
   return `Basic ${encoded}`;
-}
-
-/** Normalize to E.164 for Twilio. Czech: +420 + 9 digits (no leading 0). */
-function normalizeE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (!digits.length) return phone.trim().startsWith("+") ? phone.trim() : `+${phone.trim()}`;
-  // CZ: 9 digits (7xx, 9xx) or 10 with leading 0 (0732...)
-  if (digits.length === 9 && /^[79]/.test(digits)) return `+420${digits}`;
-  if (digits.length === 10 && digits.startsWith("0") && /^0[79]/.test(digits)) return `+420${digits.slice(1)}`;
-  // Already with country code 420
-  if (digits.startsWith("420") && digits.length === 12) return `+${digits}`;
-  if (digits.startsWith("00420") && digits.length === 14) return `+420${digits.slice(5)}`;
-  // Other: ensure + and no leading zero after +
-  const withPlus = digits.startsWith("+") ? digits : `+${digits}`;
-  const noLeadingZero = withPlus.replace(/^\+0+/, "+");
-  return noLeadingZero || "+";
 }
 
 serve(async (req) => {
@@ -102,7 +59,6 @@ serve(async (req) => {
         { status: 401, headers: jsonHeaders }
       );
     }
-    const userId = userRes.user.id;
 
     const body = await req.json().catch(() => ({}));
     const serviceId = body?.service_id?.trim?.();
@@ -171,42 +127,24 @@ serve(async (req) => {
       );
     }
 
-    // Balíček SMS: kolik segmentů má servis na měsíc. `quota` u nároku je
-    // strop, ne přesah – co je nad, se neodešle. Zákazník tak nemůže dostat
-    // účet, se kterým nepočítal, a my nemusíme nic doúčtovávat.
-    const { data: naroky } = await svc
-      .from("service_entitlements")
-      .select("quota")
-      .eq("service_id", serviceId)
-      .eq("module", "sms")
-      .maybeSingle();
-    const limit = typeof naroky?.quota === "number" ? naroky.quota : null;
-
-    const textBezDiakritiky = bezDiakritiky(messageBody);
-    const potreba = segmentu(textBezDiakritiky);
-
-    if (limit !== null) {
-      const { data: odeslane } = await svc
-        .from("sms_messages")
-        .select("body, conversation_id, sms_conversations!inner(service_id)")
-        .eq("direction", "outbound")
-        .eq("sms_conversations.service_id", serviceId)
-        .gte("sent_at", zacatekMesice());
-      const spotrebovano = (odeslane ?? []).reduce(
-        (soucet: number, m: { body?: string | null }) => soucet + segmentu(m.body ?? ""),
-        0,
+    /* Balíček SMS: kolik segmentů má servis na měsíc. Počítání i strop jsou
+       v _shared/sms.ts, aby automatizace (automations-run) braly z téhož
+       balíčku a stejně je počítaly – dřív šly mimo něj úplně. */
+    const textProOdeslani = textProSms(messageBody);
+    const potreba = segmentu(textProOdeslani);
+    // Přetypování: _shared/sms.ts schválně nezná typy z esm.sh, aby se dal
+    // v testu poslat i pár řádků místo celého klienta.
+    const balicek = await zkontrolujBalicek(svc as unknown as SmsKlient, serviceId, potreba);
+    if (balicek.prekroceno) {
+      return new Response(
+        JSON.stringify({
+          error: balicek.zprava,
+          quota_exceeded: true,
+          used: balicek.spotrebovano,
+          limit: balicek.limit,
+        }),
+        { status: 402, headers: jsonHeaders },
       );
-      if (spotrebovano + potreba > limit) {
-        return new Response(
-          JSON.stringify({
-            error: `Balíček SMS je vyčerpaný (${spotrebovano} z ${limit} za tento měsíc). Další zprávy půjdou odeslat po přechodu na vyšší tarif nebo od příštího měsíce.`,
-            quota_exceeded: true,
-            used: spotrebovano,
-            limit,
-          }),
-          { status: 402, headers: jsonHeaders },
-        );
-      }
     }
 
     // Find or create conversation
@@ -264,7 +202,7 @@ serve(async (req) => {
     const form = new URLSearchParams({
       From: phoneRow.twilio_number,
       To: to,
-      Body: textBezDiakritiky,
+      Body: textProOdeslani,
     });
 
     const twilioRes = await fetch(messagesUrl, {
@@ -313,7 +251,7 @@ serve(async (req) => {
       .insert({
         conversation_id: conversationId,
         direction: "outbound",
-        body: textBezDiakritiky,
+        body: textProOdeslani,
         twilio_sid: twilioSid,
         status: twilioData?.status ?? null,
       })

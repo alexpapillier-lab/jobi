@@ -24,6 +24,8 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SMS_MAX_BODY_LENGTH, normalizeE164, segmentu, textProSms, zkontrolujBalicek, type SmsKlient } from "../_shared/sms.ts";
+import { escapeHtml } from "../_shared/html.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,7 +35,6 @@ const corsHeaders = {
 
 const PORTAL_BASE_URL = "https://appjobi.com/z/";
 const TWILIO_BASE = "https://api.twilio.com/2010-04-01";
-const SMS_MAX_BODY_LENGTH = 1600;
 /** Kolik zakázek na pravidlo a tik – ať jeden servis s tisíci zakázkami nezablokuje ostatní. */
 const MAX_TICKETS_PER_RULE = 200;
 /** Události portálu se berou o něco starší než interval tiku (15 min), překryv řeší dedupe. */
@@ -172,22 +173,6 @@ function secretsEqual(a: string, b: string): boolean {
 /** Stejné jako substituteTemplate v src/lib/automations.ts. */
 function substituteTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => vars[k] ?? "");
-}
-
-/** Stejné jako v sms-send: E.164 pro Twilio, výchozí +420. */
-function normalizeE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (!digits.length) return phone.trim().startsWith("+") ? phone.trim() : `+${phone.trim()}`;
-  if (digits.length === 9 && /^[79]/.test(digits)) return `+420${digits}`;
-  if (digits.length === 10 && digits.startsWith("0") && /^0[79]/.test(digits)) return `+420${digits.slice(1)}`;
-  if (digits.startsWith("420") && digits.length === 12) return `+${digits}`;
-  if (digits.startsWith("00420") && digits.length === 14) return `+420${digits.slice(5)}`;
-  const withPlus = digits.startsWith("+") ? digits : `+${digits}`;
-  return withPlus.replace(/^\+0+/, "+") || "+";
-}
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /** „2 490“ – celé koruny s mezerou po tisících (obyčejná mezera, ne NBSP, kvůli SMS). */
@@ -430,8 +415,19 @@ async function actionSms(svc: SupabaseClient, ctx: ServiceCtx, ticket: TicketRow
   if (!accountSid || !authToken) return ["error", "SMS není nakonfigurována (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)"];
 
   const vars = await buildVars(svc, ctx, ticket, days, template);
-  const body = substituteTemplate(template, vars).trim().slice(0, SMS_MAX_BODY_LENGTH);
+  /* Text se posílá stejně jako z chatu: bez diakritiky a bez typografických
+     znaků. Automatizace to dřív nedělala, takže česká zpráva letěla v UCS-2
+     po 70 znacích – dvakrát dražší, než co ukazoval chat u téhož textu. */
+  const body = textProSms(substituteTemplate(template, vars)).trim().slice(0, SMS_MAX_BODY_LENGTH);
   if (!body) return ["skipped", "Prázdná zpráva po dosazení proměnných"];
+
+  /* Balíček SMS. Tohle tu dřív nebylo: automatizace posílaly mimo strop, a
+     protože přes ně jde většina zpráv (změna stavu → SMS zákazníkovi), byl
+     zaplacený balíček jen číslo na obrazovce. Servis se stovkou zakázek za
+     měsíc tak mohl protelefonovat mnohonásobek toho, co si koupil. */
+  const potreba = segmentu(body);
+  const balicek = await zkontrolujBalicek(svc as unknown as SmsKlient, ctx.serviceId, potreba);
+  if (balicek.prekroceno) return ["skipped", balicek.zprava ?? "Balíček SMS je vyčerpaný"];
 
   const to = normalizeE164(phoneRaw);
 

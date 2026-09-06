@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { otiskKlienta } from "../_shared/limity.ts";
+import { mailServisuHtml, mailZakaznikoviHtml, predmetServisu, predmetZakaznikovi, type RezervaceMail } from "../_shared/bookingMail.ts";
 
 /**
  * Online rezervace z webu servisu.
@@ -89,25 +90,22 @@ async function pocet(svc: ReturnType<typeof createClient>, kanal: string, klic: 
   return typeof data === "number" ? data : 0;
 }
 
-/** Oznámení servisu e-mailem – best effort, rezervace v Jobi je i bez něj. */
-async function oznamServisu(servis: Servis, r: { customer_name: string; customer_phone: string; customer_email: string | null; device_label: string; repair_name: string | null; model_name: string | null; price_estimate: number | null; preferred_at: string | null; note: string | null }) {
+/**
+ * Oznámení servisu e-mailem – best effort, rezervace v Jobi je i bez něj.
+ *
+ * Nesmí vyhodit výjimku: volá se až po zápisu rezervace a spadlý poskytovatel
+ * nesmí zákazníkovi vrátit „Rezervaci se nepodařilo uložit“, když uložená je.
+ * Šablona i escapování jsou v _shared/bookingMail.ts, ať se dají otestovat.
+ */
+async function oznamServisu(servis: Servis, r: RezervaceMail) {
   const key = Deno.env.get("RESEND_API_KEY")?.trim();
   if (!key || !servis.email) return;
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const kdy = r.preferred_at ? new Date(r.preferred_at).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", dateStyle: "medium", timeStyle: "short" }) : "kdykoliv";
-  const radky = [
-    ["Zákazník", r.customer_name], ["Telefon", r.customer_phone], ["E-mail", r.customer_email ?? "—"],
-    ["Zařízení", r.model_name ? `${r.device_label} (${r.model_name})` : r.device_label],
-    ["Oprava", r.repair_name ? `${r.repair_name}${r.price_estimate ? ` – cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč` : ""}` : "—"],
-    ["Termín", kdy], ["Poznámka", r.note ?? "—"],
-  ];
-  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;color:#111"><h2 style="margin:0 0 12px">Nová rezervace z webu</h2><table cellpadding="6">${radky.map(([k, v]) => `<tr><td style="color:#666">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join("")}</table><p style="color:#666;margin-top:16px">Rezervaci najdete v Jobi v Kalendáři – tam ji potvrdíte nebo z ní jedním kliknutím založíte zakázku.</p></div>`;
   try {
     const odp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [servis.email], subject: `Nová rezervace: ${r.customer_name} – ${r.device_label}`, html }),
+      body: JSON.stringify({ from, to: [servis.email], subject: predmetServisu(r), html: mailServisuHtml(r) }),
     });
     if (!odp.ok) console.warn("[public-booking] e-mail servisu odmítnut", odp.status, await odp.text().catch(() => ""));
   } catch (e) {
@@ -115,33 +113,22 @@ async function oznamServisu(servis: Servis, r: { customer_name: string; customer
   }
 }
 
-/** Potvrzení zákazníkovi – ať ví, že rezervace dorazila, a má kontakt na servis. */
-async function potvrdZakaznikovi(servis: Servis, r: { customer_name: string; customer_email: string | null; device_label: string; repair_name: string | null; price_estimate: number | null; preferred_at: string | null }) {
+/** Potvrzení zákazníkovi – ať ví, že rezervace dorazila, a má kontakt na servis. Taky nesmí vyhodit výjimku. */
+async function potvrdZakaznikovi(servis: Servis, r: RezervaceMail) {
   const key = Deno.env.get("RESEND_API_KEY")?.trim();
   if (!key || !r.customer_email) return;
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const kdy = r.preferred_at ? new Date(r.preferred_at).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", dateStyle: "full", timeStyle: "short" }) : "termín upřesníme po telefonu";
-  const nazev = servis.name ?? "servis";
-  const oprava = r.repair_name ? `${r.repair_name}${r.price_estimate ? ` (předběžně cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč, konečnou cenu potvrdíme po prohlídce)` : ""}` : null;
-  const kontakt = [servis.telefon ? `tel. ${servis.telefon}` : "", servis.adresa ?? "", servis.email ?? ""].filter(Boolean).join(" · ");
-  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;color:#111;line-height:1.5">
-<p>Dobrý den, ${esc(r.customer_name)},</p>
-<p>děkujeme, vaši rezervaci máme. Ozveme se vám s potvrzením termínu.</p>
-<table cellpadding="6" style="border-collapse:collapse">
-<tr><td style="color:#666">Zařízení</td><td><b>${esc(r.device_label)}</b></td></tr>
-${oprava ? `<tr><td style="color:#666">Oprava</td><td><b>${esc(oprava)}</b></td></tr>` : ""}
-<tr><td style="color:#666">Termín</td><td><b>${esc(kdy)}</b></td></tr>
-</table>
-<p>Kdybyste se nemohli dostavit, dejte nám prosím vědět.</p>
-<p style="margin-top:20px"><b>${esc(nazev)}</b>${kontakt ? `<br>${esc(kontakt)}` : ""}</p>
-<p style="color:#888;font-size:12px;margin-top:24px">Tento e-mail byl odeslán automaticky po vyplnění rezervačního formuláře na webu servisu.</p>
-</div>`;
   try {
     const odp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [r.customer_email], reply_to: servis.email ?? undefined, subject: `${nazev}: rezervace přijata`, html }),
+      body: JSON.stringify({
+        from,
+        to: [r.customer_email],
+        reply_to: servis.email ?? undefined,
+        subject: predmetZakaznikovi(servis),
+        html: mailZakaznikoviHtml(servis, r),
+      }),
     });
     if (!odp.ok) console.warn("[public-booking] potvrzení zákazníkovi odmítnuto", odp.status, await odp.text().catch(() => ""));
   } catch (e) {
