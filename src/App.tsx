@@ -23,6 +23,7 @@ import { ToastContainer } from "./components/Toast";
 import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
 import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
+import { CiziServis } from "./components/CiziServis";
 import { spustHlidacFronty } from "./lib/frontaZapisu";
 
 /* Fronta neuložených změn běží od startu: co nestihl minulý běh aplikace,
@@ -673,12 +674,20 @@ export default function App() {
       });
       if (error || !data?.services) return;
       const list = (data.services as Array<{ service_id: string; service_name: string; role: string }>) || [];
-      if (list.length > 0) {
-        setServices(list);
-        const currentActive = activeServiceId;
-        const isValid = currentActive && list.some((s) => s.service_id === currentActive);
-        if (!isValid) setActiveServiceId(list[0].service_id);
+      setServices(list);
+      /*
+       * Prázdný seznam se nesmí přeskočit. Po smazání posledního servisu tu
+       * dřív zůstal ten starý: přepínač ho dál nabízel, aplikace do něj
+       * načítala data a obrazovka „Založte si servis“ se neukázala – vypadalo
+       * to, že mazání neproběhlo.
+       */
+      if (list.length === 0) {
+        setActiveServiceId(null);
+        return;
       }
+      const currentActive = activeServiceId;
+      const isValid = currentActive && list.some((s) => s.service_id === currentActive);
+      if (!isValid) setActiveServiceId(list[0].service_id);
     } catch (err) {
       console.error("[App] refreshServices error:", err);
     }
@@ -733,12 +742,13 @@ export default function App() {
 
   // Persist activeServiceId to localStorage when it changes
   useEffect(() => {
-    if (activeServiceId) {
-      try {
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_SERVICE_ID, activeServiceId);
-      } catch (err) {
-        console.error("[App] Error saving activeServiceId to localStorage:", err);
-      }
+    try {
+      if (activeServiceId) localStorage.setItem(STORAGE_KEYS.ACTIVE_SERVICE_ID, activeServiceId);
+      // Uklidit i naprázdno: po smazání servisu tu jinak zůstane jeho id a
+      // aplikace se do něj po restartu pokouší vrátit.
+      else localStorage.removeItem(STORAGE_KEYS.ACTIVE_SERVICE_ID);
+    } catch (err) {
+      console.error("[App] Error saving activeServiceId to localStorage:", err);
     }
   }, [activeServiceId]);
 
@@ -1153,6 +1163,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     return (
       <ThemeProvider>
         <OnlineGate>
+          <NeulozeneZmeny />
           <FirstServiceSetup
             email={session.user?.email ?? null}
             onCreated={(serviceId) => {
@@ -1176,6 +1187,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     return (
       <ThemeProvider>
         <OnlineGate>
+          <NeulozeneZmeny />
           <TrialEnded
             serviceId={activeServiceId}
             serviceName={aktivni?.service_name ?? "Servis"}
@@ -1193,6 +1205,10 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     return (
       <ThemeProvider>
         <OnlineGate>
+          {/* I na přihlašovací obrazovce: kdo se odhlásí s neuloženou změnou,
+              musí vidět, že na něj čeká – fronta se odesílá až po přihlášení
+              toho, komu data patří. Bez ukazatele tu vypadalo všechno hotové. */}
+          <NeulozeneZmeny />
           <Login
             onLogin={() => {
               setAuthenticated(true);
@@ -1209,6 +1225,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     <ThemeProvider>
       <OnlineGate>
         <NeulozeneZmeny />
+        <CiziServis serviceId={activeServiceId} />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>
         <AppTourOverlay
