@@ -429,11 +429,15 @@ export default function Customers({
 
     // Filter by query if provided
     if (q) {
+      // Telefon se hledá i podle číslic: „777 123 456“ musí najít
+      // „+420777123456“, jinak hledání podle čísla z papíru nic nenajde.
+      const qDigits = q.replace(/\D/g, "");
       result = customers.filter((c) => {
         const hay = [c.name, c.phone ?? "", c.email ?? "", c.company ?? "", c.ico ?? "", c.addressCity ?? ""]
           .join(" ")
           .toLowerCase();
-        return hay.includes(q);
+        if (hay.includes(q)) return true;
+        return qDigits.length >= 3 && (c.phone ?? "").replace(/\D/g, "").includes(qDigits);
       });
     }
 

@@ -151,22 +151,6 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
         }
       }
 
-      // Insert history entry if there are any changes
-      if (Object.keys(diff).length > 0) {
-        const { error: historyError } = await (supabase.from("customer_history") as any).insert({
-          customer_id: customer.id,
-          service_id: activeServiceId,
-          changed_by: changedBy,
-          change_type: "update",
-          diff: diff,
-        });
-
-        if (historyError) {
-          console.error("[Customers] Error inserting customer history:", historyError);
-          // Continue with update even if history insert fails
-        }
-      }
-
       // Get expected version for optimistic locking
       const expectedVersion = customer.version;
 
@@ -181,9 +165,12 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
         updateQuery = updateQuery.eq("version", expectedVersion);
       }
 
+      // maybeSingle(): při konfliktu verze se neaktualizuje žádný řádek a
+      // single() by na to odpověděl chybou PGRST116 – uživatel by viděl
+      // obecné „Chyba při ukládání“ místo hlášky o souběžné úpravě níže.
       const { data, error } = await updateQuery
         .select("id,name,phone,email,address_street,address_city,address_zip,company,ico,note,created_at,updated_at,version")
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error("[Customers] Error updating customer:", error);
@@ -249,6 +236,24 @@ export function useCustomerActions({ activeServiceId, onSave }: UseCustomerActio
         console.error("[Customers] update returned no data (and no version check was used)");
         showToast("Chyba: server nevrátil data", "error");
         return false; // Don't close modal
+      }
+
+      // Historie až po úspěšné změně: dřív se zapisovala předem, takže po
+      // odmítnutém uložení (duplicitní telefon, konflikt verze) zůstal
+      // v historii záznam o změně, která se nikdy neprovedla.
+      if (Object.keys(diff).length > 0) {
+        const { error: historyError } = await (supabase.from("customer_history") as any).insert({
+          customer_id: customer.id,
+          service_id: activeServiceId,
+          changed_by: changedBy,
+          change_type: "update",
+          diff: diff,
+        });
+
+        if (historyError) {
+          console.error("[Customers] Error inserting customer history:", historyError);
+          // Údaje jsou uložené; chybí jen záznam v historii.
+        }
       }
 
       // Update successful - build updatedCustomer and call onSave

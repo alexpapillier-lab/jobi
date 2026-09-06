@@ -499,7 +499,7 @@ export function CustomerDetail({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 16 }}>Upravit zákazníka</div>
-            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Ukládá se do localStorage.</div>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>Změna se zapíše do historie zákazníka.</div>
           </div>
           <Button variant="soft"
             onClick={() => setEditOpen(false)}>
@@ -630,7 +630,7 @@ export function CustomerDetail({
       <ConfirmDialog
         open={deleteDialogOpen}
         title="Smazat zákazníka?"
-        message="Opravdu chceš smazat tohoto zákazníka? Všechny jeho zakázky budou odpojeny (customer_id bude nastaveno na NULL). Tato akce je nevratná."
+        message="Opravdu chceš smazat tohoto zákazníka? Jeho zakázky zůstanou zachované, jen už nebudou k zákazníkovi přiřazené. Smaže se i historie změn zákazníka. Tato akce je nevratná."
         confirmLabel="Smazat"
         cancelLabel="Zrušit"
         variant="danger"

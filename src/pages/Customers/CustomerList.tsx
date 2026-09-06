@@ -23,6 +23,13 @@ type CustomerListProps = {
   error: string | null;
 };
 
+/** 1 zákazník, 2–4 zákazníci, 0 a 5+ zákazníků – „1 zákazníků“ vypadalo jako překlep. */
+function pocetZakazniku(n: number): string {
+  if (n === 1) return "1 zákazník";
+  if (n >= 2 && n <= 4) return `${n} zákazníci`;
+  return `${n} zákazníků`;
+}
+
 export function CustomerList({ customers, selectedCustomerId, onSelect, loading, error }: CustomerListProps) {
   const border = "1px solid var(--border)";
 
@@ -39,7 +46,7 @@ export function CustomerList({ customers, selectedCustomerId, onSelect, loading,
       }}
     >
       <div style={{ padding: 12, borderBottom: border, color: "var(--muted)", fontSize: 12 }}>
-        {customers.length} zákazníků
+        {pocetZakazniku(customers.length)}
       </div>
 
       {loading && (
