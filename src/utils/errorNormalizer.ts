@@ -5,10 +5,26 @@ function getErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Text chyby. Supabase vrací obyčejný objekt `{ code, message, details, hint }`,
+ * ne instanci Error – `String(err)` z něj udělá „[object Object]“ a přesně to
+ * uživatel viděl místo hlášky, proč se něco neuložilo.
+ */
+function textChyby(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const o = error as Record<string, unknown>;
+    const casti = [o.message, o.details, o.hint].filter((x): x is string => typeof x === "string" && x.trim() !== "");
+    if (casti.length > 0) return casti.join(" ");
+  }
+  return String(error);
+}
+
 export function normalizeError(error: unknown): string {
   if (!error) return "Neznámá chyba";
 
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorMessage = textChyby(error);
   const errorCode = getErrorCode(error);
   
   // Permission errors

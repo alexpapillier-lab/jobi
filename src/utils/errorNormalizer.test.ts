@@ -49,3 +49,23 @@ describe("formatInviteEmailReason", () => {
     expect(formatInviteEmailReason("Rate limit exceeded")).toBe("Rate limit exceeded");
   });
 });
+
+describe("chyby z Supabase (obyčejný objekt, ne Error)", () => {
+  it("vezme message, ne [object Object]", () => {
+    const chyba = { code: "P0001", message: "Neznámé oprávnění: branch_only", details: null, hint: null };
+    expect(normalizeError(chyba)).toContain("Neznámé oprávnění: branch_only");
+    expect(normalizeError(chyba)).not.toContain("[object Object]");
+  });
+
+  it("přidá podrobnosti, když jsou", () => {
+    expect(normalizeError({ message: "Zápis selhal", details: "řádek neexistuje" })).toBe("Zápis selhal řádek neexistuje");
+  });
+
+  it("prázdný objekt nespadne", () => {
+    expect(normalizeError({})).toBe("[object Object]");
+  });
+
+  it("řetězec projde beze změny", () => {
+    expect(normalizeError("Něco se pokazilo")).toBe("Něco se pokazilo");
+  });
+});
