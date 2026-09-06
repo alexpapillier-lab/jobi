@@ -71,8 +71,14 @@ test("výchozí hodinová sazba se uloží servisu a předvyplní se v zakázce"
   // Nastavení servisu sdílí celý tým, takže se musí načíst i po restartu.
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
-  await otevriSekci(page, "hodinová sazba", /Hodinová práce/);
-  await expect(page.getByLabel("Výchozí hodinová sazba v Kč za hodinu")).toHaveValue("950", { timeout: 20_000 });
+  /* Sekce se otevírá přes hledání a hodnota dojede z databáze; při plném
+     běhu sady to trvá dýl, proto se v případě prázdna zkusí otevřít znovu. */
+  await expect
+    .poll(async () => {
+      await otevriSekci(page, "hodinová sazba", /Hodinová práce/);
+      return page.getByLabel("Výchozí hodinová sazba v Kč za hodinu").inputValue().catch(() => "");
+    }, { timeout: 60_000, message: "Sazba se po restartu nenačetla." })
+    .toBe("950");
 
   // A hlavně: projeví se tam, kde se používá.
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders" } })));

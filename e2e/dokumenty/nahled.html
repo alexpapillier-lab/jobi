@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <title>Náhled dokumentu (test)</title>
+    <style>
+      html, body { margin: 0; padding: 0; background: #55606a; }
+      /* Rám má rozměr stránky A4 při 96 dpi, ať se dokument vykreslí tak,
+         jak vyjde z tiskárny, a ne roztažený do okna prohlížeče. */
+      #ramec { display: block; width: 794px; height: 1123px; border: 0; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <iframe id="ramec" title="Dokument"></iframe>
+    <script type="module" src="./nahled.ts"></script>
+  </body>
+</html>
