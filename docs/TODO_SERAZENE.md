@@ -2,6 +2,52 @@
 
 ---
 
+## 🔴 Jen pro majitele – tohle za tebe nikdo neudělá (6. 9. 2026)
+
+Tři věci z revizí, na které nemá programátor dosah, protože potřebují buď
+tvoje údaje, nebo tvůj účet.
+
+- **Doplnit údaje provozovatele do právních textů.** Všechny tři stránky jsou
+  živé na appjobi.com a mají v sobě nevyplněné hranaté závorky i redakční
+  poznámku „Než texty zveřejníte…“, kterou vidí každý návštěvník. Servis,
+  který zvažuje předplatné, tak nezjistí, s kým uzavírá smlouvu, a
+  zpracovatelská smlouva neidentifikuje zpracovatele.
+  - `web/obchodni-podminky.html` – datum účinnosti; jméno nebo obchodní firma,
+    IČO, sídlo; rejstřík; a **„Poskytovatel [je / není] plátcem DPH“** (ceník
+    na hlavní stránce už tvrdí, že nejsi plátce – musí to sedět).
+  - `web/ochrana-osobnich-udaju.html` – datum, jméno/firma, IČO, sídlo, rejstřík.
+  - `web/zpracovani-udaju.html` – totéž. Navíc doplnit, že se při úkonech na
+    portálu ukládá IP adresa a prohlížeč zákazníka (dnes se ukládají, ale
+    v textech nejsou), a stanovit dobu uchování.
+  - Po doplnění smazat žlutý redakční rámeček nahoře na všech třech stránkách.
+  - Obchodní podmínky mají v čl. 7 větu o prioritní podpoře, ale ta se z ceníku
+    vypustila (v produktu ji nedrží nic). Buď větu smazat, nebo podporu
+    definovat konkrétní lhůtou a vrátit ji do ceníku.
+
+- **Vydat instalátory.** Poslední vydání na GitHubu neobsahuje ani jeden
+  instalátor, jen aktualizační balík Tauri a doprovodné soubory. Tlačítka
+  „Stáhnout“ na webu proto nemají co nabídnout (od 6. 9. to aspoň řeknou
+  nahlas místo tichého přesměrování na GitHub).
+  - **Jobi / macOS** – `.dmg`, název začínající „jobi“ a bez „jobidocs“.
+  - **Jobi / Windows** – `.exe` (NSIS). Pozor: `src-tauri/tauri.conf.json` má
+    `bundle.targets: "app"`, takže build dnes `.dmg` ani Windows instalátor
+    nevyrábí. Samotné `.msi` web nenajde, hledá `.exe`.
+  - **JobiDocs / macOS** – `JobiDocs-<verze>-universal.dmg` (dnes se do vydání
+    nahrály jen `.blockmap` bez samotného `.dmg`).
+  - **JobiDocs / Windows** – `JobiDocs-Setup-<verze>.exe`.
+  - Web hledá soubory v posledním **ne**-předvydání; `jobidocs-v0.3.5` je
+    předvydání, takže ho `/releases/latest` přeskakuje.
+
+- **Přenasadit Cloudflare Worker `jobi-api-worker`.** Nasazená verze nezná
+  cestu `/v1/booking`, kterou zdroj v `infra/cloudflare/jobi-api-worker.js`
+  má. Rezervační formulář proto tluče přímo na origin: každé zobrazení
+  stránky s widgetem = dva dotazy do databáze, bez limitu a bez cache. Je to
+  jediné veřejné rozhraní bez stropu (viz `docs/ZATEZ.md`). Při té příležitosti
+  zvednout `X-Jobi-Verze`, ať se příště pozná, že nasazená verze neodpovídá
+  zdrojáku.
+
+---
+
 ## 🟠 Vysoká priorita – relativně snadné
 
 - **SMS nefungují – Twilio číslo už není platné** (2. 9. 2026)
