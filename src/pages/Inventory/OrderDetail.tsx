@@ -120,6 +120,16 @@ export function OrderDetail({
     const r = await updateItems(order.id, naVstup(nove));
     if (r.error && !r.nedostupne) {
       chyba("items_failed", r.error, "Položky se nepodařilo uložit");
+      /*
+       * Zpátky na to, co je v databázi.
+       *
+       * Položky se ukládají jako celý seznam (smazat a vložit znovu), takže
+       * je nejde zařadit do fronty neuložených změn – opakování by je
+       * zdvojilo. Zůstat na obrazovce ale nesmí: hláška o chybě za chvíli
+       * zmizí a člověk objednávku zavře s tím, že díl v ní je. Radši ať
+       * řádek zmizí hned a je vidět, že se přidání nepovedlo.
+       */
+      setItems(zPolozek(order));
       return false;
     }
     await onChanged();

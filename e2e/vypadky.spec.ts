@@ -127,8 +127,18 @@ async function otevriNabidkuUctu(page: Page): Promise<void> {
  * zkusí se obojí. Vrací seznam položek servisů, které nejsou ten testovací.
  */
 async function otevriSeznamServisu(page: Page): Promise<void> {
-  const prepinac = page.locator('[aria-label^="Servis: "]:visible').first();
-  if (await prepinac.isVisible().catch(() => false)) {
+  /* Ve sbalené postranní liště přepínač servisů vůbec není – rozbalí se
+     najetím myší. V úzkém okně (spodní lišta) je seznam servisů rovnou
+     v nabídce účtu, tam se hover nekoná. */
+  await page.locator('[aria-label="Hlavní navigace"]').first().hover().catch(() => {});
+  const prepinac = page.locator('[aria-label^="Servis: "]').first();
+  /* `isVisible()` se nedoptává – lišta se rozbaluje s prodlevou, takže by
+     odpověděla „není“ dřív, než se přepínač vůbec vykreslí. */
+  const jePrepinac = await prepinac
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (jePrepinac) {
     await expect
       .poll(
         async () => {
@@ -328,6 +338,63 @@ test("reklamace rozepsaná při výpadku se doplní sama", async ({ page }) => {
   await expect(page.getByText(text).first()).toBeVisible({ timeout: 20_000 });
 });
 
+test("díl, který se do objednávky nezapsal, na obrazovce nezůstane", async ({ page }) => {
+  test.setTimeout(180_000);
+  const POLOZKY = /\/rest\/v1\/inventory_purchase_order_items/;
+  await prihlasSe(page);
+
+  /* Sklad se otevírá událostí; po přenačtení nemusí být posluchač hned
+     připojený, proto se navigace opakuje. */
+  await expect
+    .poll(
+      async () => {
+        await naStranku(page, "inventory");
+        return page.getByRole("group", { name: "Část skladu" }).isVisible().catch(() => false);
+      },
+      { timeout: 60_000, message: "Sklad se neotevřel." },
+    )
+    .toBe(true);
+
+  await page.getByRole("button", { name: /^Produkty/ }).first().click();
+  await page.getByLabel("Hledat produkt").fill("AUDIT");
+  await page.getByRole("button", { name: "Objednat" }).first().click();
+  await expect(page.getByText(/přidán do návrhu/i).first()).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: /^Objednávky/ }).first().click();
+  await page.getByText(/^OBJ/).first().click();
+  const mnozstvi = page.locator('input[aria-label="Množství"]');
+  await expect(mnozstvi.first()).toBeVisible({ timeout: 20_000 });
+  const pred = await mnozstvi.count();
+
+  /* Položky objednávky se ukládají jako celý seznam (smazat a vložit znovu),
+     takže je nejde poslat do fronty – opakování by je zdvojilo. O to
+     důležitější je, aby se řádek, který v databázi neskončil, nedělal
+     uloženým: hláška zmizí a člověk objednávku odešle dodavateli bez dílu. */
+  await shodZapisy(page, POLOZKY);
+  await page.getByPlaceholder("Hledat produkt podle názvu, SKU nebo kódu u dodavatele…").fill("AUDIT");
+  await page.locator("button.ui-menu-item").first().click();
+  await expect(page.getByText(/Položky se nepodařilo uložit/).first()).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => mnozstvi.count(), { timeout: 20_000 }).toBe(pred);
+
+  // A databáze na tom je stejně – po přenačtení nesmí řádek přibýt ani zmizet.
+  await obnovSit(page, POLOZKY);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await expect
+    .poll(
+      async () => {
+        await naStranku(page, "inventory");
+        return page.getByRole("group", { name: "Část skladu" }).isVisible().catch(() => false);
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: /^Objednávky/ }).first().click();
+  await page.getByText(/^OBJ/).first().click();
+  await expect(page.locator('input[aria-label="Množství"]').first()).toBeVisible({ timeout: 20_000 });
+  expect(await page.locator('input[aria-label="Množství"]').count()).toBe(pred);
+});
+
 test("zavřené okno s rozdělanou prací o nic nepřijde", async ({ page, context }) => {
   test.setTimeout(180_000);
   await prihlasSe(page);
@@ -482,9 +549,15 @@ test("souběžná úprava se ohlásí a rozepsaný text nezmizí", async ({ page
     await expect(page.getByText(/mezitím upravil někdo jiný/).first()).toBeVisible({ timeout: 30_000 });
     await expect(poleZavady(page)).toHaveValue(mojeVerze);
 
-    // Druhé uložení už projde a text skončí v databázi.
+    // Detail zůstal v úpravách – je co uložit podruhé.
+    await expect(page.locator('button[title="Uložit změny"]:visible').first()).toBeVisible();
+    /* Než se klikne podruhé, musí se stihnout vykreslit zakázka načtená po
+       konfliktu – teprve s její `version` má druhé uložení šanci projít. */
+    await page.waitForTimeout(2000);
+
+    // Druhé uložení už projde: detail vyskočí z režimu úprav a text je v databázi.
     await page.locator('button[title="Uložit změny"]:visible').first().click();
-    await expect(page.getByText(/mezitím upravil někdo jiný/)).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator('button[title="Upravit zakázku"]:visible').first()).toBeVisible({ timeout: 30_000 });
 
     await technik.reload();
     await expect(technik.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });

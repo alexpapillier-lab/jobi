@@ -13,6 +13,7 @@ takový test neuspokojí.
 | --- | --- |
 | `zakazka.spec.ts` | příjem, opravy, kontrola po opravě, zápůjčka, stopky, storno |
 | `spolehlivost.spec.ts` | fronta neuložených změn, výpadek sítě, komentáře |
+| `vypadky.spec.ts` | výpadek u zákazníka, reklamace, nabídky, kontroly, termínu a objednávky dílů; zavření okna, přepnutí servisu, odhlášení, souběžná úprava |
 | `sklad.spec.ts` | produkty, počty kusů, odchod ze stránky před zápisem |
 | `cenik.spec.ts` | ceník oprav a opakování neúspěšného zápisu |
 | `objednavky-dilu.spec.ts` | objednávka u dodavatele od návrhu po naskladnění |
@@ -147,10 +148,21 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   trefí přesně ten okamžik, kdy uložení neprojde. Vzor musí být regulární
   výraz (`/\/rest\/v1\/tickets/`); glob s hvězdičkou se o dotazovací část
   URL rozbije.
+- **Placeholder „Výměna displeje, výměna baterie, diagnostika“ patří oknu
+  Nová zakázka, ne detailu.** Okno příjmu zůstává připojené v DOM i zavřené,
+  takže se do něj text opravdu zapíše – a protože se rozpracovaný příjem
+  ukládá do localStorage, najde ho tam test i po přenačtení. Zakázka přitom
+  zůstane nezměněná. V otevřeném detailu se pole jmenuje
+  `input[placeholder="Popis požadované opravy"]` a bere se s `:visible`.
 - **Sklad a ceník se ukládají s odkladem.** Že je změna v databázi, se pozná
   podle toho, že z `localStorage` zmizel klíč `jobi_sklad_neulozeno_v1`
   (u ceníku `jobi_zarizeni_neulozeno_v1`). Bez téhle kontroly test projde
   i nad hodnotou, která je jen na obrazovce.
+- **Přepínač servisů je jen v rozbalené postranní liště.** Ve sbalené v DOM
+  vůbec není; rozbalí se najetím myší (`hover` na „Hlavní navigace“) a teprve
+  pak se objeví `[aria-label^="Servis: "]`. Jednotlivé servisy v nabídce mají
+  `data-servis="<id>"` – podle názvu se trefit nedá, servisů bývá víc
+  s podobným jménem a spletený klik by test odvedl do cizích dat.
 - **`servisy.spec.ts` potřebuje nasazenou edge funkci `service-delete-own`.**
   Bez ní vrátí mazání 404 a servis po testu zůstane:
   `npx supabase functions deploy service-delete-own`.

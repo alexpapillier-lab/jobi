@@ -171,7 +171,12 @@ test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zp
 
   // „Upravit" je i u jednotlivých oprav; tohle je to v hlavičce detailu.
   await page.locator('button[title="Upravit zakázku"]:visible').first().click();
-  const popis = page.getByPlaceholder("Výměna displeje, výměna baterie, diagnostika").first();
+  /* Pole detailu, ne okna Nová zakázka. Placeholder „Výměna displeje…“ patří
+     příjmu, jehož okno zůstává připojené v DOM – text se do něj zapsal, uložil
+     se rozpracovaný příjem do localStorage a test pak po přenačtení nacházel
+     svůj řetězec v něm, ne v zakázce. Prošel by i nad zakázkou, do které se
+     nic nezapsalo. */
+  const popis = page.locator('input[placeholder="Popis požadované opravy"]:visible').first();
   await expect(popis).toBeVisible({ timeout: 20_000 });
   await popis.fill(novyPopis);
   await page.locator('button[title="Uložit změny"]:visible').first().click();

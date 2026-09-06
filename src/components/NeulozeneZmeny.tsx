@@ -37,7 +37,13 @@ export function NeulozeneZmeny() {
         left: "50%",
         transform: "translateX(-50%)",
         bottom: "calc(var(--bottom-nav-h, 0px) + var(--safe-bottom, 0px) + 16px)",
-        zIndex: 9000,
+        /*
+         * Nad vším, i nad přihlašovací obrazovkou (ta má 99999 a překrývá
+         * celé okno). Kdo se odhlásí s neuloženou změnou, musí ji vidět –
+         * proužek schovaný za přihlašovacím pozadím je stejně k ničemu,
+         * jako by tam nebyl.
+         */
+        zIndex: 100000,
         maxWidth: 380,
         borderRadius: 12,
         border: `1px solid ${zaseknute > 0 ? "var(--danger, #dc2626)" : "var(--border)"}`,
