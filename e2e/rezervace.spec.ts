@@ -52,13 +52,16 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "calendar" } })));
   await expect(page.getByRole("region", { name: "Rezervace z webu" })).toBeVisible({ timeout: 30_000 });
   const hotova = page.getByRole("region", { name: "Rezervace z webu" }).locator("li", { hasText: zakaznik });
-  await expect
-    .poll(async () => {
-      const vyrizene = page.getByRole("button", { name: /Vyřízené/ });
-      if (await vyrizene.isVisible().catch(() => false)) await vyrizene.click().catch(() => {});
-      return (await hotova.count()) > 0 ? (await hotova.first().innerText()) : "";
-    }, { timeout: 30_000, message: "Rezervace se neoznačila jako vyřízená." })
-    .toContain("Zakázka založena");
+  /* „Vyřízené" je rozbalovátko, takže se na něj kliká jednou – opakovaný klik
+     v cyklu by ho zase zavřel. Když se seznam nestihne překreslit, zkusí se
+     rozbalení ještě jednou. */
+  const vyrizene = page.getByRole("button", { name: /Vyřízené/ });
+  await expect(vyrizene).toBeVisible({ timeout: 20_000 });
+  await vyrizene.click();
+  if (!(await hotova.first().isVisible({ timeout: 15_000 }).catch(() => false))) {
+    await vyrizene.click();
+  }
+  await expect(hotova.first()).toContainText("Zakázka založena", { timeout: 20_000 });
   // Seznam se po přepnutí filtru překresluje, proto počkat, ne číst hned.
   await expect(hotova.first().getByRole("button", { name: "Otevřít zakázku" })).toBeVisible({ timeout: 30_000 });
 });
