@@ -87,10 +87,16 @@ serve(async (req) => {
     }
 
     // Load invoice
+    /* Faktura se hledá i podle servisu. Bez toho by šlo poslat na vlastní
+       e-mail cizí fakturu: členství se kontroluje proti `service_id` z těla,
+       ale doklad se načítal jen podle `invoice_id` pod service_role, tedy
+       mimo RLS. */
     const { data: invoice, error: invError } = await svc
       .from("invoices")
       .select("*")
       .eq("id", invoice_id)
+      .eq("service_id", service_id)
+      .is("deleted_at", null)
       .single();
     if (invError || !invoice) {
       return new Response(
@@ -99,8 +105,14 @@ serve(async (req) => {
       );
     }
 
-    // Druh dokladu (invoices.kind): zálohová faktura a dobropis mají vlastní
-    // nadpis, předmět i název přílohy; starší řádky bez sloupce jsou faktura.
+    /* Druh dokladu (invoices.kind): zálohová faktura a dobropis mají vlastní
+       nadpis, předmět i název přílohy; starší řádky bez sloupce jsou faktura.
+
+       Tady se dřív četlo `inv`, jenže ta konstanta se deklaruje o sto řádků
+       níž ve stejném bloku – JavaScript proto na tomhle řádku vždycky spadl
+       na `Cannot access 'inv' before initialization` a odeslání faktury
+       e-mailem nefungovalo vůbec. */
+    const inv = invoice as Record<string, any>;
     const kind: string = inv.kind === "proforma" || inv.kind === "credit_note" ? inv.kind : "invoice";
     const druhNazev = kind === "proforma" ? "Zálohová faktura" : kind === "credit_note" ? "Dobropis" : "Faktura";
     const druhAkuzativ = kind === "proforma" ? "zálohovou fakturu" : kind === "credit_note" ? "dobropis" : "fakturu";
@@ -120,7 +132,6 @@ serve(async (req) => {
 
     try {
       const variables: Record<string, string> = {};
-      const inv = invoice as Record<string, any>;
       variables.inv_number = inv.number || "";
       // Nadpis dokladu podle druhu; u běžné faktury se nechá výchozí text šablony.
       if (druhNadpis) variables.inv_title = druhNadpis;
@@ -201,7 +212,6 @@ serve(async (req) => {
     }
 
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
-    const inv = invoice as Record<string, any>;
     const emailSubject = subject || `${druhNazev} ${inv.number}`;
     const plainText = emailBody || `Dobrý den,\n\nv příloze zasíláme ${druhAkuzativ} č. ${inv.number}.\n\nS pozdravem`;
 
