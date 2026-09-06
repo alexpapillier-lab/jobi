@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, testovaciJmeno } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
 
 /**
  * Reklamace: kód přiděluje databáze (funkce dalsi_cislo_reklamace) a je
@@ -80,4 +80,33 @@ test("neuložená reklamace zůstane ve formuláři, nezmizí", async ({ page })
   await page.unroute(/\/rest\/v1\/warranty_claims/);
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
   await expect(page.getByText(jmeno).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({ page }) => {
+  test.setTimeout(180_000);
+  await prihlasSe(page, "owner");
+
+  const zakaznik = testovaciJmeno("Reklamace diagnostika");
+  const kod = await zalozZakazku(page, { zakaznik, zarizeni: "Notebook (reklamace)" });
+
+  // Reklamace navázaná na zakázku – jen tam se diagnostika napojené zakázky ukazuje.
+  await page.getByRole("button", { name: "+ Nová reklamace" }).click();
+  await page.getByPlaceholder("Vyhledat zakázku (kód, zákazník, SN, telefon…)").fill(kod);
+  await page.getByRole("button", { name: new RegExp(kod) }).first().click();
+  await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 30_000 });
+
+  // Detail reklamace ukazuje diagnostiku zakázky; dřív se odtud neukládala vůbec.
+  await page.getByText(/^R\d{8}$/).first().click();
+  const protokol = page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...");
+  await expect(protokol).toBeVisible({ timeout: 20_000 });
+  const text = `Naměřeno v reklamaci ${Date.now().toString(36)}`;
+  await protokol.fill(text);
+  await page.waitForTimeout(2000);
+
+  // Až v zakázce po přenačtení je jisté, že to skončilo v databázi.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await vidZakazku(page, kod).first().click();
+  await expect(page.getByText(text).first()).toBeVisible({ timeout: 30_000 });
 });

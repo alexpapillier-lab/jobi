@@ -47,41 +47,41 @@ beforeEach(() => {
 describe("nastavení dokumentů", () => {
   it("zachová zbytek configu", async () => {
     ctenaOdpoved = { data: { config: { sablony: ["A"], companyData: { ico: "123" } }, version: 3 }, error: null };
-    const ok = await saveDocumentsConfigAutoPrint(SID, { intake: true });
+    const ok = await saveDocumentsConfigAutoPrint(SID, { warrantyOnCreate: true });
     expect(ok).toBe(true);
     expect(zapsano[0]).toEqual({
       service_id: SID,
-      config: { sablony: ["A"], companyData: { ico: "123" }, autoPrint: { intake: true } },
+      config: { sablony: ["A"], companyData: { ico: "123" }, autoPrint: { warrantyOnCreate: true } },
     });
   });
 
   it("při chybě čtení radši neuloží nic", async () => {
     ctenaOdpoved = { data: null, error: { message: "Failed to fetch" } };
-    const ok = await saveDocumentsConfigAutoPrint(SID, { intake: true });
+    const ok = await saveDocumentsConfigAutoPrint(SID, { warrantyOnCreate: true });
     expect(ok).toBe(false);
     expect(zapsano).toHaveLength(0);
   });
 
   it("nový servis bez řádku uloží jen svou část", async () => {
     ctenaOdpoved = { data: null, error: null };
-    const ok = await saveDocumentsConfigAutoPrint(SID, { intake: true });
+    const ok = await saveDocumentsConfigAutoPrint(SID, { warrantyOnCreate: true });
     expect(ok).toBe(true);
-    expect(zapsano[0]).toEqual({ service_id: SID, config: { autoPrint: { intake: true } } });
+    expect(zapsano[0]).toEqual({ service_id: SID, config: { autoPrint: { warrantyOnCreate: true } } });
   });
 
   it("záruční list se slučuje s tím, co už tam je", async () => {
-    ctenaOdpoved = { data: { config: { warrantyCertificate: { mesice: 24, text: "starý" } } }, version: 1, error: null };
-    await saveDocumentsConfigWarrantyCertificate(SID, { text: "nový" });
+    ctenaOdpoved = { data: { config: { warrantyCertificate: { warrantyUnifiedDuration: 24, warrantyCustomText: "starý" } }, version: 1 }, error: null };
+    await saveDocumentsConfigWarrantyCertificate(SID, { warrantyCustomText: "nový" });
     expect(zapsano[0]).toEqual({
       service_id: SID,
-      config: { warrantyCertificate: { mesice: 24, text: "nový" } },
+      config: { warrantyCertificate: { warrantyUnifiedDuration: 24, warrantyCustomText: "nový" } },
     });
   });
 
   it("neúspěšný zápis se pozná", async () => {
     ctenaOdpoved = { data: { config: {}, version: 1 }, error: null };
     zapisChyba = { message: "row-level security" };
-    expect(await saveDocumentsConfigAutoPrint(SID, { intake: true })).toBe(false);
+    expect(await saveDocumentsConfigAutoPrint(SID, { warrantyOnCreate: true })).toBe(false);
   });
 
   it("čtení vrátí null, když se nepodaří", async () => {

@@ -2878,6 +2878,10 @@ export default function Orders({
       clearTimeout(casovac);
       proved();
     }
+    for (const { casovac, proved } of odlozenaDiagnostikaRef.current.values()) {
+      clearTimeout(casovac);
+      proved();
+    }
   }, []);
 
   useEffect(() => {
@@ -3040,6 +3044,50 @@ export default function Orders({
     }
   }, []);
 
+
+  /** Odložené zápisy diagnostiky psané v detailu reklamace. */
+  const odlozenaDiagnostikaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
+
+  /**
+   * Zápis diagnostiky zakázky mimo její vlastní detail – typicky z reklamace,
+   * kde se ukazují údaje napojené zakázky.
+   *
+   * Dřív se změna zapsala jen do stavu v prohlížeči a u karty stálo „pro
+   * uložení otevřete zakázku a klikněte na Uložit“. Kdo si toho nevšiml,
+   * přišel o napsaný protokol i o nahrané fotky – ty zůstaly v úložišti,
+   * ale zakázka o nich nevěděla. Text se posílá s krátkým odkladem (píše se
+   * po písmenech), fotky hned.
+   */
+  const ulozDiagnostikuZakazky = useCallback((ticketId: string, patch: { diagnostic_text?: string; diagnostic_photos?: string[]; diagnostic_photos_before?: string[] }, hned: boolean) => {
+    if (!supabase) return;
+    const odlozene = odlozenaDiagnostikaRef.current;
+    const cekajici = odlozene.get(ticketId);
+    if (cekajici) clearTimeout(cekajici.casovac);
+    const proved = () => {
+      odlozene.delete(ticketId);
+      void (async () => {
+        const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () =>
+          (supabase!.from("tickets") as any).update(patch).eq("id", ticketId));
+        if (!error) return;
+        devLog("[diagnostika] zápis selhal", error);
+        if (jeTrvalaChyba(error)) {
+          showToast("Diagnostiku se nepodařilo uložit", "error");
+          return;
+        }
+        ulozNaPozdeji({
+          klic: `tickets:${ticketId}:diagnostika`,
+          tabulka: "tickets",
+          id: ticketId,
+          data: patch,
+          popis: `Diagnostika · ${popisZakazky(ticketId)}`,
+          serviceId: activeServiceIdRef.current,
+          chyba: error,
+        });
+      })();
+    };
+    if (hned) proved();
+    else odlozene.set(ticketId, { casovac: setTimeout(proved, 600), proved });
+  }, [popisZakazky, sOkamzitymZapisem]);
 
   const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, ...fields } : r)), false);
@@ -5908,17 +5956,19 @@ export default function Orders({
             <>
               <div style={{ ...card, marginTop: 16 }}>
                 <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky. Pro uložení do databáze otevřete zakázku a klikněte na Uložit.</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky {sourceTicket.code ? `(${sourceTicket.code})` : ""}. Změny se ukládají rovnou do ní.</div>
                 <div style={{ display: "grid", gap: 12 }}>
                   <div>
                     <div style={fieldLabel}>Diagnostický protokol</div>
                     <textarea
                       value={sourceTicket.diagnosticText || ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const text = e.target.value;
                         setCloudTickets((prev) =>
-                          prev.map((t) => (t.id === sourceTicket.id ? { ...t, diagnosticText: e.target.value } : t))
-                        )
-                      }
+                          prev.map((t) => (t.id === sourceTicket.id ? { ...t, diagnosticText: text } : t))
+                        );
+                        ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_text: text }, false);
+                      }}
                       style={baseFieldTextArea}
                       placeholder="Zadejte výsledky diagnostiky zařízení..."
                       rows={6}
@@ -5954,6 +6004,8 @@ export default function Orders({
                                       reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
                                     }
                                   }
+                                  const zbyva = (sourceTicket.diagnosticPhotosBefore || []).filter((_, i) => i !== idx);
+                                  ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos_before: zbyva }, true);
                                   setCloudTickets((prev) =>
                                     prev.map((t) =>
                                       t.id === sourceTicket.id
@@ -6002,6 +6054,8 @@ export default function Orders({
                                   reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
                                 }
                               }
+                              const zbyva = (sourceTicket.diagnosticPhotos || []).filter((_, i) => i !== idx);
+                              ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: zbyva }, true);
                               setCloudTickets((prev) =>
                                 prev.map((t) =>
                                   t.id === sourceTicket.id ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) } : t
@@ -6111,6 +6165,8 @@ export default function Orders({
                                   const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file);
                                   urls.push(url);
                                 }
+                                const vsechny = [...(sourceTicket.diagnosticPhotos || []), ...urls];
+                                ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: vsechny }, true);
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
                                     t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
@@ -6131,6 +6187,8 @@ export default function Orders({
                                 });
                               try {
                                 const results = await Promise.all(files.map(reader));
+                                const vsechny = [...(sourceTicket.diagnosticPhotos || []), ...results];
+                                ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: vsechny }, true);
                                 setCloudTickets((prev) =>
                                   prev.map((t) =>
                                     t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
