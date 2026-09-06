@@ -258,7 +258,7 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const POVOLENE = ["deactivate", "activate", "hardDelete", "rename", "export"];
+    const POVOLENE = ["deactivate", "activate", "hardDelete", "rename", "export", "join", "leave"];
     if (!POVOLENE.includes(action)) {
       return new Response(
         JSON.stringify({ error: `Invalid action. Must be one of: ${POVOLENE.join(", ")}` }),
@@ -268,6 +268,53 @@ serve(async (req) => {
 
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const svc = createClient(supabaseUrl, serviceKey);
+
+    /*
+     * Přístup majitele aplikace do cizího servisu.
+     *
+     * Seznam servisů majiteli vrací všechny, ale data pouští databáze jen
+     * členům – po přepnutí do cizího servisu se proto načetlo prázdno a
+     * vypadalo to, že servis o data přišel. Řeší se to členstvím, ne obejitím
+     * RLS: přístup je pak vidět v týmu servisu (kdo a odkdy tam je), dá se
+     * zase odebrat a zbytek aplikace o žádnou výjimku neví. Role `admin`,
+     * ne `owner` – majitelství firmy patří zákazníkovi.
+     */
+    if (action === "join") {
+      const { error } = await svc
+        .from("service_memberships")
+        .upsert({ service_id: serviceId, user_id: user.id, role: "admin" }, { onConflict: "service_id,user_id" });
+      if (error) {
+        return new Response(JSON.stringify({ error: `Nepodařilo se získat přístup: ${error.message}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, role: "admin" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "leave") {
+      // Vlastní členství se odebírá jen tam, kde vzniklo přes „join“ – řádek
+      // s rolí owner může být jediný vlastník servisu a ten se ztratit nesmí.
+      const { error } = await svc
+        .from("service_memberships")
+        .delete()
+        .eq("service_id", serviceId)
+        .eq("user_id", user.id)
+        .eq("role", "admin");
+      if (error) {
+        return new Response(JSON.stringify({ error: `Přístup se nepodařilo odebrat: ${error.message}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "export") {
       const data = await exportService(svc, serviceId);

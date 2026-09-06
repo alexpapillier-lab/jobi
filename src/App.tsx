@@ -1225,7 +1225,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     <ThemeProvider>
       <OnlineGate>
         <NeulozeneZmeny />
-        <CiziServis serviceId={activeServiceId} />
+        <CiziServis serviceId={activeServiceId} onPristupZiskan={() => { void refreshServices(); }} />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>
         <AppTourOverlay
