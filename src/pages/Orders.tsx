@@ -1915,7 +1915,8 @@ export default function Orders({
     setShouldOpenNew(true);
     // Rezervace z webu: údaje zákazníka a zařízení rovnou do formuláře.
     // Rozepsanou zakázku nepřepisovat bez dotazu.
-    const r = newOrderPrefill.rezervace;
+    // Pojistka: rezervace patří ke svému servisu, i kdyby záměr přežil přepnutí.
+    const r = newOrderPrefill.rezervace && newOrderPrefill.rezervace.service_id === activeServiceId ? newOrderPrefill.rezervace : undefined;
     if (r && isDraftDirty(newDraft) && !window.confirm("Máte rozepsanou novou zakázku. Nahradit ji údaji z rezervace?")) {
       onNewOrderPrefillConsumed();
       return;
@@ -1991,6 +1992,9 @@ export default function Orders({
       } catch (err) {
         console.error("[Orders] Error loading customer for prefill:", err);
       }
+      // Okno příjmu se otevře až s načtenými údaji zákazníka. Dřív se otevíralo
+      // souběžně s načítáním a při pomalejší odpovědi zůstalo prázdné.
+      setShouldOpenNew(true);
     })();
   }, [newOrderPrefill?.customerId, supabase, activeServiceId, onNewOrderPrefillConsumed]);
 

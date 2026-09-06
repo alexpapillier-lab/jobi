@@ -882,6 +882,17 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     return () => window.removeEventListener("jobsheet:draft-count" as any, onDraft);
   }, []);
 
+  /**
+   * Přepnutí servisu zahodí rozpracované záměry z toho předchozího.
+   * Bez toho se stalo tohle: rozdělaná rezervace v jednom servisu, přepnutí
+   * jinam, „Založit zakázku“ – a v příjmu byla data z cizího servisu.
+   */
+  useEffect(() => {
+    setNewOrderPrefill(null);
+    setOpenTicketIntent(null);
+    setInvoicePrefill(null);
+  }, [activeServiceId]);
+
   // Customers → request new order (prefill and redirect to Orders)
   useEffect(() => {
     const onReq = (e: any) => {

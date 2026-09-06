@@ -2689,7 +2689,20 @@ function SettingsNav({
   }
 
   return (
-    <nav data-tour="settings-categories" aria-label="Sekce nastavení" style={{ position: "sticky", top: "var(--space-3)", minWidth: 0 }}>
+    <nav
+      data-tour="settings-categories"
+      aria-label="Sekce nastavení"
+      style={{
+        position: "sticky",
+        top: "var(--space-3)",
+        minWidth: 0,
+        // Vlastní posuvník: sloupec byl jen přilepený, takže se dlouhý seznam
+        // sekcí dal projet teprve po odrolování celé stránky dolů.
+        maxHeight: "calc(100vh - var(--space-6))",
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+      }}
+    >
       {body}
     </nav>
   );

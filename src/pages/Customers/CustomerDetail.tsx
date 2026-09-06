@@ -511,6 +511,7 @@ export function CustomerDetail({
         <div style={{ marginTop: 14 }}>
           <Label>Jméno a příjmení *</Label>
           <Input
+            aria-label="Jméno a příjmení"
             value={editDraft.name}
             onChange={(e) => setEditDraft((p) => ({ ...p, name: e.target.value }))}
               invalid={submitAttempted && !!errors.name} />
@@ -521,7 +522,8 @@ export function CustomerDetail({
           <div style={{ marginTop: 14 }}>
             <Label>Telefon</Label>
             <Input
-              value={editDraft.phone}
+              aria-label="Telefon"
+            value={editDraft.phone}
               onChange={(e) => setEditDraft((p) => ({ ...p, phone: e.target.value }))}
               invalid={submitAttempted && !!errors.phone} />
             {submitAttempted && errors.phone && (
@@ -533,7 +535,8 @@ export function CustomerDetail({
             <Label>E-mail</Label>
             <Input
               type="email"
-              value={editDraft.email}
+              aria-label="E-mail"
+            value={editDraft.email}
               onChange={(e) => setEditDraft((p) => ({ ...p, email: e.target.value }))}
               invalid={submitAttempted && !!errors.email} />
             {submitAttempted && errors.email && (
@@ -544,14 +547,16 @@ export function CustomerDetail({
           <div style={{ marginTop: 14 }}>
             <Label>Firma</Label>
             <Input
-              value={editDraft.company}
+              aria-label="Firma"
+            value={editDraft.company}
               onChange={(e) => setEditDraft((p) => ({ ...p, company: e.target.value }))} />
           </div>
 
           <div style={{ marginTop: 14 }}>
             <Label>IČO</Label>
             <Input
-              value={editDraft.ico}
+              aria-label="IČO"
+            value={editDraft.ico}
               onChange={(e) => setEditDraft((p) => ({ ...p, ico: e.target.value }))}
               invalid={submitAttempted && !!errors.ico} />
             {submitAttempted && errors.ico && (
@@ -562,7 +567,8 @@ export function CustomerDetail({
           <div style={{ marginTop: 14 }}>
             <Label>Adresa – ulice</Label>
             <Input
-              value={editDraft.addressStreet}
+              aria-label="Adresa – ulice"
+            value={editDraft.addressStreet}
               onChange={(e) => setEditDraft((p) => ({ ...p, addressStreet: e.target.value }))} />
           </div>
 
@@ -570,14 +576,16 @@ export function CustomerDetail({
             <div>
               <Label>Město</Label>
               <Input
-                value={editDraft.addressCity}
+                aria-label="Město"
+            value={editDraft.addressCity}
                 onChange={(e) => setEditDraft((p) => ({ ...p, addressCity: e.target.value }))} />
             </div>
 
             <div>
               <Label>PSČ</Label>
               <Input
-                value={editDraft.addressZip}
+                aria-label="PSČ"
+            value={editDraft.addressZip}
                 onChange={(e) => setEditDraft((p) => ({ ...p, addressZip: e.target.value }))}
                 invalid={submitAttempted && !!errors.zip} />
               {submitAttempted && errors.zip && (
@@ -589,7 +597,8 @@ export function CustomerDetail({
           <div style={{ marginTop: 14 }}>
             <Label>Informace</Label>
             <textarea
-              value={editDraft.info}
+              aria-label="Informace"
+            value={editDraft.info}
               onChange={(e) => setEditDraft((p) => ({ ...p, info: e.target.value }))}
               rows={4}
               style={{
