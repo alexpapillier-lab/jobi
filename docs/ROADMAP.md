@@ -56,7 +56,11 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    z veřejného ceníku s předběžnou cenou (ověřuje se na serveru, migrace
    20260908120000); zakázka z rezervace vzniká rovnou s plánovanou opravou.
    Zákazník dostane potvrzení e-mailem (Resend, odpověď jde na e-mail servisu;
-   nasazeno 6. 9.). Zbývá: SMS zákazníkovi,
+   nasazeno 6. 9.). Formulář přepsán 6. 9.: sekce Kontakt / Zařízení a oprava /
+   Termín / Poznámka, vlastní styl s předponou `jobi-rez` (přebít jde
+   `--jobi-akcent`), **výběr víc oprav najednou** se součtem ceny i času
+   (`bookings.repair_ids`, migrace 20260908230000) a odhadem, kdy bude hotovo.
+   Zbývá: SMS zákazníkovi,
    volitelně cesty `/v1/booking` ve Workeru (`infra/cloudflare/jobi-api-worker.js`
    je připravený, stačí znovu vložit do Cloudflare).
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →

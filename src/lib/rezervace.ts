@@ -17,6 +17,8 @@ export type Rezervace = {
   repair_name: string | null;
   /** Oprava a model z ceníku, když si je zákazník vybral; cena podle ceníku v době rezervace. */
   repair_id: string | null;
+  /** Všechny opravy vybrané v rezervaci (cena a délka jsou jejich součty). */
+  repair_ids: string[] | null;
   model_name: string | null;
   price_estimate: number | null;
   /** Odhad délky opravy z ceníku (minuty). */
@@ -55,7 +57,7 @@ export function nastaveniRezervaciZConfigu(raw: unknown): NastaveniRezervaci {
 }
 
 /** Nevyřízené rezervace (nové a potvrzené) plus posledních pár uzavřených, nejnovější první. */
-const SLOUPCE = "id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, repair_id, model_name, price_estimate, duration_min, note, preferred_at, ticket_id, created_at";
+const SLOUPCE = "id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, repair_id, repair_ids, model_name, price_estimate, duration_min, note, preferred_at, ticket_id, created_at";
 
 export async function nactiRezervace(serviceId: string): Promise<Rezervace[]> {
   if (!supabase) return [];

@@ -1940,10 +1940,13 @@ export default function Orders({
             ? new Date(new Date(r.preferred_at).getTime() + (r.duration_min ?? 0) * 60_000).toISOString()
             : undefined,
           plannedRepairs: (() => {
-            const cen = r.repair_id ? devicesData.repairs.find((x) => x.id === r.repair_id) : undefined;
-            return cen
-              ? [{ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds }]
-              : undefined;
+            // Zákazník mohl v rezervaci vybrat víc oprav najednou.
+            const ids = r.repair_ids && r.repair_ids.length > 0 ? r.repair_ids : r.repair_id ? [r.repair_id] : [];
+            const vybrane = ids
+              .map((id) => devicesData.repairs.find((x) => x.id === id))
+              .filter((x): x is NonNullable<typeof x> => !!x)
+              .map((cen) => ({ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds }));
+            return vybrane.length > 0 ? vybrane : undefined;
           })(),
         }],
         rezervaceId: r.id,

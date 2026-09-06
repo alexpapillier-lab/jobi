@@ -149,28 +149,77 @@ function embedSkript(slug: string): string {
   // Přímo edge funkce, ne api.appjobi.com: rezervací je pár denně, cache
   // Workeru tu nic nepřinese a formulář funguje, i když Worker nemá cestu.
   const api = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
+  // Styly jsou v jednom bloku s vlastní předponou, aby se nepotkaly se
+  // stylem webu servisu. Barvy jdou přebít proměnnou --jobi-akcent.
+  const styl = `
+.jobi-rez{--jobi-akcent:#0e7c86;--jobi-ram:rgba(0,0,0,.14);--jobi-tlum:rgba(0,0,0,.55);--jobi-plocha:rgba(0,0,0,.02);font:inherit;color:inherit;max-width:640px;display:grid;gap:18px}
+@media (prefers-color-scheme:dark){.jobi-rez{--jobi-ram:rgba(255,255,255,.18);--jobi-tlum:rgba(255,255,255,.65);--jobi-plocha:rgba(255,255,255,.04)}}
+.jobi-rez *{box-sizing:border-box}
+.jobi-rez__uvod{margin:0;color:var(--jobi-tlum);line-height:1.5}
+.jobi-rez__blok{display:grid;gap:12px;padding:16px;border:1px solid var(--jobi-ram);border-radius:14px;background:var(--jobi-plocha)}
+.jobi-rez__nadpis{font-weight:700;font-size:.95em;letter-spacing:.01em}
+.jobi-rez__radek{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+@media (max-width:520px){.jobi-rez__radek{grid-template-columns:1fr}}
+.jobi-rez__pole{display:grid;gap:6px;font-size:.9em}
+.jobi-rez__pole>span{color:var(--jobi-tlum)}
+.jobi-rez input[type=text],.jobi-rez input[type=tel],.jobi-rez input[type=email],.jobi-rez input[type=date],.jobi-rez select,.jobi-rez textarea{width:100%;padding:11px 12px;border:1px solid var(--jobi-ram);border-radius:10px;background:transparent;color:inherit;font:inherit;transition:border-color .15s,box-shadow .15s}
+.jobi-rez input:focus,.jobi-rez select:focus,.jobi-rez textarea:focus{outline:none;border-color:var(--jobi-akcent);box-shadow:0 0 0 3px rgba(14,124,134,.18)}
+.jobi-rez textarea{min-height:84px;resize:vertical}
+.jobi-rez__opravy{display:grid;gap:8px}
+.jobi-rez__oprava{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--jobi-ram);border-radius:10px;cursor:pointer}
+.jobi-rez__oprava:hover{border-color:var(--jobi-akcent)}
+.jobi-rez__oprava input{width:18px;height:18px;accent-color:var(--jobi-akcent);flex:0 0 auto}
+.jobi-rez__oprava-nazev{flex:1;min-width:0}
+.jobi-rez__oprava-cas{display:block;font-size:.82em;color:var(--jobi-tlum)}
+.jobi-rez__oprava-cena{font-weight:700;white-space:nowrap}
+.jobi-rez__souhrn{display:flex;justify-content:space-between;gap:12px;padding:12px;border-radius:10px;background:rgba(14,124,134,.1);font-size:.92em}
+.jobi-rez__souhrn b{white-space:nowrap}
+.jobi-rez__patka{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.jobi-rez__odeslat{padding:13px 22px;border:none;border-radius:10px;background:var(--jobi-akcent);color:#fff;font:inherit;font-weight:700;cursor:pointer;transition:opacity .15s}
+.jobi-rez__odeslat:disabled{opacity:.6;cursor:progress}
+.jobi-rez__pozn{margin:0;font-size:.85em;color:var(--jobi-tlum);line-height:1.5}
+.jobi-rez__chyba{color:#b91c1c;font-size:.9em}
+.jobi-rez__hotovo{display:grid;gap:8px;padding:20px;border-radius:14px;background:rgba(14,124,134,.1)}
+.jobi-rez__hotovo h3{margin:0;font-size:1.1em}
+.jobi-rez__past{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+`;
   return `(function () {
   "use strict";
   var SLUG = ${JSON.stringify(slug)};
   var API = ${JSON.stringify(api)};
   var cil = document.getElementById("jobi-rezervace");
   if (!cil) { return; }
+
+  var styl = document.createElement("style");
+  styl.textContent = ${JSON.stringify(styl)};
+  document.head.appendChild(styl);
+
   function el(tag, attrs, deti) {
     var e = document.createElement(tag);
     for (var k in (attrs || {})) { if (k === "text") { e.textContent = attrs[k]; } else { e.setAttribute(k, attrs[k]); } }
     (deti || []).forEach(function (d) { e.appendChild(d); });
     return e;
   }
-  function pole(nazev, name, typ, povinne, placeholder) {
-    var input = el(typ === "textarea" ? "textarea" : "input", { name: name, placeholder: placeholder || "" });
-    if (typ !== "textarea") { input.type = typ; }
-    if (povinne) { input.required = true; }
-    input.style.cssText = "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid rgba(0,0,0,.2);border-radius:8px;font:inherit;background:transparent;color:inherit";
-    var lab = el("label", {}, [el("span", { text: nazev + (povinne ? " *" : "") }), input]);
-    lab.style.cssText = "display:grid;gap:4px;font-size:.9em";
-    return { lab: lab, input: input };
+  function pole(nazev, typ, placeholder, povinne) {
+    var vstup = el(typ === "textarea" ? "textarea" : (typ === "select" ? "select" : "input"), { placeholder: placeholder || "" });
+    if (typ !== "textarea" && typ !== "select") { vstup.type = typ; }
+    if (povinne) { vstup.required = true; }
+    var obal = el("label", { class: "jobi-rez__pole" }, [el("span", { text: nazev + (povinne ? " *" : "") }), vstup]);
+    return { obal: obal, vstup: vstup };
   }
-  // Ceník přes api.appjobi.com (cache); když není, napřímo. Bez ceníku formulář funguje s volným textem.
+  function blok(nadpis, deti) {
+    return el("div", { class: "jobi-rez__blok" }, [el("div", { class: "jobi-rez__nadpis", text: nadpis })].concat(deti));
+  }
+  function fmt(c) {
+    return (Math.round(c) === c ? c.toLocaleString("cs-CZ") : c.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + " Kč";
+  }
+  function cas(minut) {
+    if (!minut) { return ""; }
+    if (minut < 60) { return minut + " min"; }
+    var h = Math.floor(minut / 60), m = minut % 60;
+    return h + " h" + (m ? " " + m + " min" : "");
+  }
+
   function nactiCenik() {
     return fetch("https://api.appjobi.com/v1/catalog?service=" + encodeURIComponent(SLUG))
       .then(function (r) { if (!r.ok) { throw new Error(); } return r.json(); })
@@ -178,6 +227,7 @@ function embedSkript(slug: string): string {
         return fetch(API + "/public-catalog?service=" + encodeURIComponent(SLUG)).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       });
   }
+
   Promise.all([
     fetch(API + "/public-booking?service=" + encodeURIComponent(SLUG)).then(function (r) { if (!r.ok) { throw new Error("nedostupné"); } return r.json(); }),
     nactiCenik(),
@@ -185,123 +235,193 @@ function embedSkript(slug: string): string {
     .then(function (vysledky) {
       var n = vysledky[0];
       var cenik = vysledky[1];
-      var form = el("form", { novalidate: "" });
-      form.style.cssText = "display:grid;gap:12px;max-width:560px;font:inherit;color:inherit";
-      if (n.uvod) { var p = el("p", { text: n.uvod }); p.style.margin = "0"; form.appendChild(p); }
-      var jmeno = pole("Jméno a příjmení", "name", "text", true, "Jan Novák");
-      var telefon = pole("Telefon", "phone", "tel", true, "+420 777 123 456");
-      var email = pole("E-mail", "email", "email", false, "jan@email.cz");
-      var zarizeni = pole("Zařízení", "device", "text", true, "např. iPhone 13, notebook Lenovo");
-      var oprava = pole("Co je potřeba opravit", "repair", "text", false, "prasklý displej, nedrží baterie…");
-      // Výběr z ceníku: model → opravy s cenou. Volný text zůstává, kdo model v ceníku nenajde.
-      var modelSel = null, opravaSel = null, cenaInfo = null;
       var maCenik = cenik && cenik.models && cenik.models.length > 0 && cenik.repairs && cenik.repairs.length > 0;
+
+      var form = el("form", { class: "jobi-rez", novalidate: "" });
+      if (n.uvod) { form.appendChild(el("p", { class: "jobi-rez__uvod", text: n.uvod })); }
+
+      // ── Kontakt ──────────────────────────────────────────────────────────
+      var jmeno = pole("Jméno a příjmení", "text", "Jan Novák", true);
+      var telefon = pole("Telefon", "tel", "+420 777 123 456", true);
+      var email = pole("E-mail", "email", "jan@email.cz", false);
+      form.appendChild(blok("Kontakt", [jmeno.obal, el("div", { class: "jobi-rez__radek" }, [telefon.obal, email.obal])]));
+
+      // ── Zařízení a oprava ────────────────────────────────────────────────
+      var zarizeni = pole("Zařízení", "text", "např. iPhone 13, notebook Lenovo", true);
+      var popis = pole("Co je potřeba opravit", "text", "prasklý displej, nedrží baterie…", false);
+      var modelSel = null, opravyBox = null, souhrn = null, vybrane = [];
+      var deti = [];
+
       if (maCenik) {
         var znacky = {}; (cenik.brands || []).forEach(function (b) { znacky[b.id] = b.name; });
         var kategorie = {}; (cenik.categories || []).forEach(function (c) { kategorie[c.id] = c; });
-        modelSel = el("select", { name: "model_id" }); modelSel.style.cssText = zarizeni.input.style.cssText;
-        modelSel.appendChild(el("option", { value: "", text: "– vyberte model z ceníku (nepovinné) –" }));
+        var m = pole("Model z ceníku", "select", "", false);
+        modelSel = m.vstup;
+        modelSel.appendChild(el("option", { value: "", text: "– vyberte model (nepovinné) –" }));
         cenik.models.slice().sort(function (a, b) {
           var ka = kategorie[a.category_id] || {}, kb = kategorie[b.category_id] || {};
           return ((znacky[ka.brand_id] || "") + a.name).localeCompare((znacky[kb.brand_id] || "") + b.name, "cs");
-        }).forEach(function (m) {
-          var k = kategorie[m.category_id] || {}; var z = znacky[k.brand_id];
-          modelSel.appendChild(el("option", { value: m.id, text: (z ? z + " " : "") + m.name }));
+        }).forEach(function (mo) {
+          var k = kategorie[mo.category_id] || {}; var z = znacky[k.brand_id];
+          modelSel.appendChild(el("option", { value: mo.id, text: (z ? z + " " : "") + mo.name }));
         });
-        opravaSel = el("select", { name: "repair_id" }); opravaSel.style.cssText = zarizeni.input.style.cssText;
-        opravaSel.disabled = true;
-        opravaSel.appendChild(el("option", { value: "", text: "– nejdřív vyberte model –" }));
-        cenaInfo = el("div", {}); cenaInfo.style.cssText = "font-size:.9em;opacity:.8";
-        function fmt(c) { return (Math.round(c) === c ? c.toLocaleString("cs-CZ") : c.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + " Kč"; }
-        modelSel.addEventListener("change", function () {
-          var mid = modelSel.value;
-          while (opravaSel.firstChild) { opravaSel.removeChild(opravaSel.firstChild); }
-          cenaInfo.textContent = "";
-          if (!mid) { opravaSel.disabled = true; opravaSel.appendChild(el("option", { value: "", text: "– nejdřív vyberte model –" })); return; }
-          var opr = cenik.repairs.filter(function (r) { return (r.model_ids || []).indexOf(mid) !== -1; });
-          opravaSel.disabled = opr.length === 0;
-          opravaSel.appendChild(el("option", { value: "", text: opr.length ? "– vyberte opravu (nepovinné) –" : "K tomuto modelu zatím nemáme ceník – popište závadu níže" }));
-          opr.forEach(function (r) { opravaSel.appendChild(el("option", { value: r.id, text: r.name + (typeof r.price === "number" ? " – " + fmt(r.price) : "") })); });
-          var m = cenik.models.filter(function (x) { return x.id === mid; })[0];
-          if (m && !zarizeni.input.value.trim()) { var k = kategorie[m.category_id] || {}; zarizeni.input.value = (znacky[k.brand_id] ? znacky[k.brand_id] + " " : "") + m.name; }
-        });
-        opravaSel.addEventListener("change", function () {
-          var r = cenik.repairs.filter(function (x) { return x.id === opravaSel.value; })[0];
-          var casText = r && r.estimated_time_label ? " Oprava trvá cca " + r.estimated_time_label + "." : "";
-          cenaInfo.textContent = r && typeof r.price === "number" ? "Předběžná cena podle ceníku: " + fmt(r.price) + (cenik.vat && cenik.vat.payer ? (cenik.vat.prices_include_vat ? " s DPH" : " bez DPH") : "") + "." + casText + " Konečnou cenu potvrdí servis po prohlídce." : (r ? casText.trim() : "");
-          aktualizujHotovo();
-          if (r && !oprava.input.value.trim()) { oprava.input.value = r.name; }
-        });
+        opravyBox = el("div", { class: "jobi-rez__opravy" });
+        souhrn = el("div", { class: "jobi-rez__souhrn" });
+        souhrn.hidden = true;
+        deti = [m.obal, opravyBox, souhrn, zarizeni.obal, popis.obal];
+      } else {
+        deti = [zarizeni.obal, popis.obal];
       }
-      var datum = pole("Kdy byste chtěli přijít", "date", "date", false, "");
-      var cas = el("select", { name: "time" });
-      cas.style.cssText = zarizeni.input.style.cssText;
-      cas.appendChild(el("option", { value: "", text: "Kdykoliv během otevírací doby" }));
+      form.appendChild(blok("Zařízení a oprava", deti));
+
+      // ── Termín ───────────────────────────────────────────────────────────
+      var datum = pole("Kdy se vám to hodí", "date", "", false);
+      var casSel = pole("Čas", "select", "", false);
+      casSel.vstup.appendChild(el("option", { value: "", text: "Kdykoliv během otevírací doby" }));
       (function () {
         var od = n.od.split(":"), doo = n.do.split(":");
-        var m = parseInt(od[0], 10) * 60 + parseInt(od[1], 10), konec = parseInt(doo[0], 10) * 60 + parseInt(doo[1], 10);
-        for (; m < konec; m += n.krokMin) {
-          var t = (Math.floor(m / 60) < 10 ? "0" : "") + Math.floor(m / 60) + ":" + (m % 60 < 10 ? "0" : "") + (m % 60);
-          cas.appendChild(el("option", { value: t, text: t }));
+        var m2 = parseInt(od[0], 10) * 60 + parseInt(od[1], 10), konec = parseInt(doo[0], 10) * 60 + parseInt(doo[1], 10);
+        for (; m2 < konec; m2 += n.krokMin) {
+          var t = (Math.floor(m2 / 60) < 10 ? "0" : "") + Math.floor(m2 / 60) + ":" + (m2 % 60 < 10 ? "0" : "") + (m2 % 60);
+          casSel.vstup.appendChild(el("option", { value: t, text: t }));
         }
       })();
-      // Podle délky opravy z ceníku řekne, kdy bude zhruba hotovo – zákazník se rozhodne, jestli počká.
-      var hotovoInfo = el("div", {}); hotovoInfo.style.cssText = "font-size:.85em;opacity:.75";
-      function aktualizujHotovo() {
-        hotovoInfo.textContent = "";
-        if (!opravaSel || !opravaSel.value || !cas.value) { return; }
-        var r = cenik.repairs.filter(function (x) { return x.id === opravaSel.value; })[0];
-        var minut = r && typeof r.estimated_time === "number" ? r.estimated_time : 0;
-        if (!minut) { return; }
-        var casti = cas.value.split(":"); var m = parseInt(casti[0], 10) * 60 + parseInt(casti[1], 10) + minut;
-        var konec = n.do.split(":"); var konecMin = parseInt(konec[0], 10) * 60 + parseInt(konec[1], 10);
-        if (m > konecMin) { hotovoInfo.textContent = "Oprava by přesáhla otevírací dobu – zařízení bude k vyzvednutí další den, nebo zvolte dřívější čas."; return; }
-        hotovoInfo.textContent = "Při příchodu v " + cas.value + " bude hotovo cca v " + (Math.floor(m / 60) < 10 ? "0" : "") + Math.floor(m / 60) + ":" + (m % 60 < 10 ? "0" : "") + (m % 60) + ".";
-      }
-      cas.addEventListener("change", aktualizujHotovo);
-      var casLab = el("label", {}, [el("span", { text: "Čas" }), cas, hotovoInfo]);
-      casLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
-      var pozn = pole("Poznámka", "note", "textarea", false, "");
-      var past = el("input", { name: "web", type: "text", tabindex: "-1", autocomplete: "off" });
-      past.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;opacity:0";
-      var radek = el("div", {}, [datum.lab, casLab]);
-      radek.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:12px";
-      var tlacitko = el("button", { type: "submit", text: "Odeslat rezervaci" });
-      tlacitko.style.cssText = "padding:12px 18px;border:none;border-radius:8px;background:#0e7c86;color:#fff;font:inherit;font-weight:700;cursor:pointer";
-      var zprava = el("div", {}); zprava.style.cssText = "font-size:.9em";
-      var poradi = [jmeno.lab, telefon.lab, email.lab];
-      if (maCenik) {
-        var modelLab = el("label", {}, [el("span", { text: "Model z ceníku" }), modelSel]); modelLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
-        var opravaLab = el("label", {}, [el("span", { text: "Oprava z ceníku" }), opravaSel]); opravaLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
-        poradi = poradi.concat([modelLab, opravaLab, cenaInfo]);
-      }
-      poradi.concat([zarizeni.lab, oprava.lab, radek, pozn.lab, past, tlacitko, zprava]).forEach(function (x) { form.appendChild(x); });
+      var hotovoInfo = el("p", { class: "jobi-rez__pozn" });
       var dnyTxt = ["", "Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
-      var info = el("p", { text: "Otevřeno: " + n.dny.map(function (d) { return dnyTxt[d]; }).join(", ") + " " + n.od + "–" + n.do + ". Rezervace je nezávazná, ozveme se vám s potvrzením." });
-      info.style.cssText = "margin:0;font-size:.85em;opacity:.75";
-      form.appendChild(info);
+      var oteviraci = el("p", { class: "jobi-rez__pozn", text: "Otevřeno: " + n.dny.map(function (d) { return dnyTxt[d]; }).join(", ") + " " + n.od + "–" + n.do + ". Rezervace je nezávazná, ozveme se vám s potvrzením." });
+      form.appendChild(blok("Termín", [el("div", { class: "jobi-rez__radek" }, [datum.obal, casSel.obal]), hotovoInfo, oteviraci]));
+
+      // ── Poznámka a odeslání ──────────────────────────────────────────────
+      var poznVstup = el("textarea", { placeholder: "cokoliv, co bychom měli vědět dopředu", "aria-label": "Poznámka" });
+      var pozn = { vstup: poznVstup };
+      form.appendChild(blok("Poznámka", [poznVstup]));
+
+      var past = el("input", { class: "jobi-rez__past", name: "web", type: "text", tabindex: "-1", autocomplete: "off" });
+      var tlacitko = el("button", { type: "submit", class: "jobi-rez__odeslat", text: "Odeslat rezervaci" });
+      var zprava = el("div", { class: "jobi-rez__chyba" });
+      form.appendChild(el("div", { class: "jobi-rez__patka" }, [tlacitko, zprava]));
+      form.appendChild(past);
+
+      // ── Chování ceníku ───────────────────────────────────────────────────
+      function opravyModelu(mid) {
+        return cenik.repairs.filter(function (r) { return (r.model_ids || []).indexOf(mid) !== -1; });
+      }
+      function prepocitej() {
+        var cena = 0, minut = 0;
+        vybrane.forEach(function (r) { cena += typeof r.price === "number" ? r.price : 0; minut += typeof r.estimated_time === "number" ? r.estimated_time : 0; });
+        souhrn.innerHTML = "";
+        souhrn.hidden = vybrane.length === 0;
+        if (vybrane.length > 0) {
+          var levy = el("span", { text: vybrane.length === 1 ? "Vybraná oprava" : "Vybráno " + vybrane.length + " oprav" });
+          var pravy = el("b", { text: (cena > 0 ? "cca " + fmt(cena) : "") + (minut ? (cena > 0 ? " · " : "") + cas(minut) : "") });
+          souhrn.appendChild(levy); souhrn.appendChild(pravy);
+        }
+        if (!popis.vstup.value.trim() && vybrane.length > 0) {
+          popis.vstup.placeholder = vybrane.map(function (r) { return r.name; }).join(" + ");
+        }
+        hotovo();
+      }
+      function hotovo() {
+        hotovoInfo.textContent = "";
+        var minut = 0;
+        vybrane.forEach(function (r) { minut += typeof r.estimated_time === "number" ? r.estimated_time : 0; });
+        if (!minut || !casSel.vstup.value) { return; }
+        var casti = casSel.vstup.value.split(":");
+        var m3 = parseInt(casti[0], 10) * 60 + parseInt(casti[1], 10) + minut;
+        var konec = n.do.split(":"); var konecMin = parseInt(konec[0], 10) * 60 + parseInt(konec[1], 10);
+        if (m3 > konecMin) { hotovoInfo.textContent = "Oprava by přesáhla otevírací dobu – zařízení bude k vyzvednutí další den, nebo zvolte dřívější čas."; return; }
+        hotovoInfo.textContent = "Při příchodu v " + casSel.vstup.value + " počítáme s dokončením kolem " + (Math.floor(m3 / 60) < 10 ? "0" : "") + Math.floor(m3 / 60) + ":" + (m3 % 60 < 10 ? "0" : "") + (m3 % 60) + ".";
+      }
+      if (maCenik) {
+        modelSel.addEventListener("change", function () {
+          vybrane = [];
+          opravyBox.innerHTML = "";
+          var mid = modelSel.value;
+          if (!mid) { prepocitej(); return; }
+          var opr = opravyModelu(mid);
+          if (opr.length === 0) {
+            opravyBox.appendChild(el("p", { class: "jobi-rez__pozn", text: "K tomuto modelu zatím nemáme ceník – popište závadu níže." }));
+          } else {
+            opravyBox.appendChild(el("p", { class: "jobi-rez__pozn", text: "Vyberte, co je potřeba. Můžete zaškrtnout i víc oprav." }));
+            opr.forEach(function (r) {
+              var check = el("input", {});
+              check.type = "checkbox";
+              var text = el("span", { class: "jobi-rez__oprava-nazev" }, [el("span", { text: r.name })]);
+              if (typeof r.estimated_time === "number" && r.estimated_time > 0) { text.appendChild(el("span", { class: "jobi-rez__oprava-cas", text: "trvá cca " + cas(r.estimated_time) })); }
+              var radek = el("label", { class: "jobi-rez__oprava" }, [check, text, el("span", { class: "jobi-rez__oprava-cena", text: typeof r.price === "number" ? fmt(r.price) : "" })]);
+              check.addEventListener("change", function () {
+                if (check.checked) { vybrane.push(r); } else { vybrane = vybrane.filter(function (x) { return x.id !== r.id; }); }
+                prepocitej();
+              });
+              opravyBox.appendChild(radek);
+            });
+          }
+          var mo = cenik.models.filter(function (x) { return x.id === mid; })[0];
+          if (mo && !zarizeni.vstup.value.trim()) {
+            var k = (cenik.categories || []).filter(function (c) { return c.id === mo.category_id; })[0] || {};
+            var zn = (cenik.brands || []).filter(function (b) { return b.id === k.brand_id; })[0];
+            zarizeni.vstup.value = (zn ? zn.name + " " : "") + mo.name;
+          }
+          prepocitej();
+        });
+        casSel.vstup.addEventListener("change", hotovo);
+      } else {
+        casSel.vstup.addEventListener("change", hotovo);
+      }
+
       form.addEventListener("submit", function (ev) {
         ev.preventDefault();
-        if (!jmeno.input.value.trim() || !telefon.input.value.trim() || !zarizeni.input.value.trim()) { zprava.textContent = "Vyplňte prosím jméno, telefon a zařízení."; zprava.style.color = "#b91c1c"; return; }
+        if (!jmeno.vstup.value.trim() || !telefon.vstup.value.trim() || !zarizeni.vstup.value.trim()) {
+          zprava.textContent = "Vyplňte prosím jméno, telefon a zařízení.";
+          return;
+        }
         var preferred = null;
-        // Místní čas návštěvníka → ISO s časovou zónou, ať se termín neposune o offset.
-        if (datum.input.value) { var dt = new Date(datum.input.value + "T" + (cas.value || n.od) + ":00"); preferred = isNaN(dt.getTime()) ? null : dt.toISOString(); }
-        tlacitko.disabled = true; zprava.textContent = "Odesílám…"; zprava.style.color = "";
-        fetch(API + "/public-booking", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          service: SLUG, name: jmeno.input.value, phone: telefon.input.value, email: email.input.value, device: zarizeni.input.value,
-          repair: oprava.input.value, repair_id: opravaSel ? opravaSel.value : "", model_id: modelSel ? modelSel.value : "",
-          preferred_at: preferred, note: pozn.input.value, web: past.value }) })
+        if (datum.vstup.value) {
+          var dt = new Date(datum.vstup.value + "T" + (casSel.vstup.value || n.od) + ":00");
+          preferred = isNaN(dt.getTime()) ? null : dt.toISOString();
+        }
+        tlacitko.disabled = true;
+        var puvodni = tlacitko.textContent;
+        tlacitko.textContent = "Odesílám…";
+        zprava.textContent = "";
+        fetch(API + "/public-booking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            service: SLUG,
+            name: jmeno.vstup.value,
+            phone: telefon.vstup.value,
+            email: email.vstup.value,
+            device: zarizeni.vstup.value,
+            repair: popis.vstup.value,
+            repair_ids: vybrane.map(function (r) { return r.id; }),
+            model_id: modelSel ? modelSel.value : "",
+            preferred_at: preferred,
+            note: pozn.vstup.value,
+            web: past.value,
+          }),
+        })
           .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
           .then(function (res) {
             if (!res.ok) { throw new Error(res.b && res.b.error ? res.b.error : "Odeslání se nezdařilo"); }
+            var kdy = datum.vstup.value
+              ? new Date(datum.vstup.value + "T" + (casSel.vstup.value || n.od) + ":00").toLocaleString("cs-CZ", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })
+              : null;
             form.innerHTML = "";
-            var ok = el("p", { text: "Děkujeme, rezervaci máme. Ozveme se vám na uvedený telefon nebo e-mail s potvrzením termínu." });
-            ok.style.cssText = "margin:0;padding:12px 14px;border-radius:8px;background:rgba(14,124,134,.1)";
-            form.appendChild(ok);
+            form.appendChild(el("div", { class: "jobi-rez__hotovo" }, [
+              el("h3", { text: "Děkujeme, rezervaci máme." }),
+              el("p", { class: "jobi-rez__pozn", text: kdy ? "Termín " + kdy + " vám potvrdíme telefonicky nebo e-mailem." : "Ozveme se vám s potvrzením termínu." }),
+            ]));
           })
-          .catch(function (e) { tlacitko.disabled = false; zprava.textContent = e.message; zprava.style.color = "#b91c1c"; });
+          .catch(function (e) {
+            tlacitko.disabled = false;
+            tlacitko.textContent = puvodni;
+            zprava.textContent = e.message;
+          });
       });
-      cil.innerHTML = ""; cil.appendChild(form);
+
+      cil.innerHTML = "";
+      cil.appendChild(form);
     })
     .catch(function () { cil.textContent = "Online rezervace momentálně není dostupná. Zavolejte nám prosím."; });
 })();`;
@@ -315,7 +435,8 @@ serve(async (req) => {
   if (req.method === "GET") {
     const slug = (url.searchParams.get("service")?.trim().toLowerCase() ?? "").slice(0, 80);
     if (url.pathname.endsWith("/embed.js")) {
-      return new Response(embedSkript(slug), { headers: { ...cors, "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=300" } });
+      // Kratší cache: po úpravě formuláře se změna projeví do minuty, ne za pět.
+      return new Response(embedSkript(slug), { headers: { ...cors, "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=60" } });
     }
     const servis = await najdiServis(svc, slug);
     if (!servis) return json({ error: "Rezervace nejsou k dispozici" }, 404);
@@ -366,14 +487,26 @@ serve(async (req) => {
   let durationMin: number | null = null;
   let modelName: string | null = null;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Zákazník může vybrat víc oprav najednou (displej i baterie).
+  const vstupOprav: string[] = Array.isArray(telo.repair_ids)
+    ? (telo.repair_ids as unknown[]).map((x) => s(x, 40)).filter((x) => uuid.test(x))
+    : [];
   const rid = s(telo.repair_id, 40);
-  if (rid && uuid.test(rid)) {
-    const { data: r } = await svc.from("repairs").select("id, name, price, estimated_time").eq("id", rid).eq("service_id", servis.id).maybeSingle();
-    if (r) {
-      repairId = r.id;
-      repairName = r.name;
-      priceEstimate = typeof r.price === "number" ? r.price : Number(r.price) || null;
-      durationMin = Number(r.estimated_time) > 0 ? Math.round(Number(r.estimated_time)) : null;
+  if (rid && uuid.test(rid) && !vstupOprav.includes(rid)) vstupOprav.unshift(rid);
+  let repairIds: string[] = [];
+  if (vstupOprav.length > 0) {
+    const { data: opravy } = await svc.from("repairs").select("id, name, price, estimated_time").eq("service_id", servis.id).in("id", vstupOprav.slice(0, 10));
+    const nalezene = (opravy ?? []) as Array<{ id: string; name: string; price: number | string | null; estimated_time: number | null }>;
+    // Pořadí podle toho, jak je zákazník vybral.
+    const serazene = vstupOprav.map((id) => nalezene.find((o) => o.id === id)).filter((o): o is typeof nalezene[number] => !!o);
+    if (serazene.length > 0) {
+      repairIds = serazene.map((o) => o.id);
+      repairId = serazene[0].id;
+      repairName = serazene.map((o) => o.name).join(" + ");
+      const cena = serazene.reduce((a, o) => a + (Number(o.price) || 0), 0);
+      priceEstimate = cena > 0 ? Math.round(cena * 100) / 100 : null;
+      const minut = serazene.reduce((a, o) => a + (Number(o.estimated_time) || 0), 0);
+      durationMin = minut > 0 ? minut : null;
     }
   }
   const mid = s(telo.model_id, 40);
@@ -394,7 +527,7 @@ serve(async (req) => {
 
   const radek = {
     service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null,
-    device_label: device, repair_name: repairName, repair_id: repairId, model_name: modelName, price_estimate: priceEstimate, duration_min: durationMin,
+    device_label: device, repair_name: repairName, repair_id: repairId, repair_ids: repairIds.length > 0 ? repairIds : null, model_name: modelName, price_estimate: priceEstimate, duration_min: durationMin,
     note: note || null, preferred_at: preferred, source: "web",
   };
   const { error } = await svc.from("bookings").insert(radek);
