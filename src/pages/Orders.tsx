@@ -839,6 +839,8 @@ export default function Orders({
   /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
   const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
   const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
+  /** Odložené zápisy kontroly po opravě – psaní poznámky jinak posílá zápis na každou klávesu. */
+  const odlozenaKontrolaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
   const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
@@ -2872,6 +2874,10 @@ export default function Orders({
       clearTimeout(casovac);
       proved();
     }
+    for (const { casovac, proved } of odlozenaKontrolaRef.current.values()) {
+      clearTimeout(casovac);
+      proved();
+    }
   }, []);
 
   useEffect(() => {
@@ -2988,10 +2994,30 @@ export default function Orders({
     }
   }, []);
 
-  /** Kontrola po opravě se ukládá hned – stejný důvod jako u provedených oprav. */
+  /**
+   * Kontrola po opravě se ukládá s krátkým odkladem.
+   *
+   * Bez něj šel do databáze zápis na každou klávesu v poznámce. Dvacet
+   * požadavků na stejný řádek nemá zaručené pořadí, takže při pomalejší síti
+   * mohl doběhnout jako poslední ten s kratším textem – a poznámka se
+   * ořízla nebo zmizela. Odklad pošle jen poslední stav; před zavřením
+   * detailu a při odchodu ze stránky se dopíše okamžitě.
+   */
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
+    if (!supabase) return;
+    const odlozene = odlozenaKontrolaRef.current;
+    const cekajici = odlozene.get(ticketId);
+    if (cekajici) clearTimeout(cekajici.casovac);
+    const proved = () => {
+      odlozene.delete(ticketId);
+      void zapisKontrolu(ticketId, kontrola, puvodni);
+    };
+    odlozene.set(ticketId, { casovac: setTimeout(proved, 450), proved });
+  }, []);
+
+  const zapisKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null, puvodni: KontrolaPoOpraveData | undefined) => {
     if (!supabase) return;
     const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId));
     if (error) {
@@ -3013,6 +3039,7 @@ export default function Orders({
       showToast("Spojení vypadlo – kontrola se uloží sama, jakmile bude připojení. Neztratí se.", "info");
     }
   }, []);
+
 
   const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
     upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, ...fields } : r)), false);
@@ -3231,20 +3258,45 @@ export default function Orders({
     // nezapíše a dialog zůstane otevřený – hlášku o chybě ukáže změna stavu.
     const zmeneno = await provedZmenuStavu(ticketId, next);
     if (!zmeneno) return;
-    setStornoDotaz(null);
-    if (!supabase || !activeServiceId) return;
-    try {
-      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-      await (supabase.from("ticket_history") as any).insert({
-        ticket_id: ticketId,
-        service_id: activeServiceId,
-        action: "cancel_reason",
-        changed_by: uid,
-        details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
-      });
-    } catch (err) {
-      devLog("[storno] důvod se do historie nezapsal", err);
+    if (!supabase || !activeServiceId) {
+      setStornoDotaz(null);
+      return;
     }
+    const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const radek = {
+      ticket_id: ticketId,
+      service_id: activeServiceId,
+      action: "cancel_reason",
+      changed_by: uid,
+      details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
+    };
+    /* Zápis se opakuje. `insert` chybu nevyhazuje, jen ji vrátí – dřív se
+       nekontrolovala vůbec, takže se důvod storna občas do historie nezapsal
+       a nikdo se to nedozvěděl. Historie zakázky je přitom to jediné, kde
+       důvod zůstane. */
+    let posledniChyba: unknown = null;
+    for (let pokus = 0; pokus < 3; pokus++) {
+      try {
+        const { error } = await (supabase.from("ticket_history") as any).insert(radek);
+        if (!error) {
+          // Dialog se zavírá až po zápisu: kdo hned otevře historii, vidí důvod.
+          setStornoDotaz(null);
+          return;
+        }
+        posledniChyba = error;
+      } catch (err) {
+        posledniChyba = err;
+      }
+      await new Promise((r) => setTimeout(r, 400 * (pokus + 1)));
+    }
+    setStornoDotaz(null);
+    reportError({
+      code: "orders.cancel_reason_failed",
+      error: posledniChyba,
+      userMessage: "Zakázka je zrušená, ale důvod se nepodařilo zapsat do historie.",
+      source: "Orders.potvrdStorno",
+      serviceId: activeServiceId,
+    });
   };
 
   const provedZmenuStavu = async (ticketId: string, next: string): Promise<boolean> => {

@@ -41,10 +41,10 @@ test("změna stavu od jednoho se propíše druhému", async ({ page, browser }) 
     // Stav mění technik – má na to právo can_change_ticket_status.
     await radekZakazky(technik, kod).getByRole("button", { name: /Přijato/ }).first().click();
     await technik.getByRole("button", { name: "Diagnostika", exact: true }).first().click();
-    await expect(radekZakazky(technik, kod).getByRole("button", { name: /Diagnostika/ })).toBeVisible({ timeout: 20_000 });
+    await expect(radekZakazky(technik, kod).getByRole("button", { name: /Diagnostika/ }).first()).toBeVisible({ timeout: 20_000 });
 
     // U majitele se stav musí změnit taky, bez obnovení stránky.
-    await expect(radekZakazky(page, kod).getByRole("button", { name: /Diagnostika/ })).toBeVisible({ timeout: 30_000 });
+    await expect(radekZakazky(page, kod).getByRole("button", { name: /Diagnostika/ }).first()).toBeVisible({ timeout: 30_000 });
   } finally {
     await technik.context().close();
   }
@@ -71,7 +71,7 @@ test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ p
     // Technik mezitím změní stav ze seznamu.
     await radekZakazky(technik, kod).getByRole("button", { name: /Přijato/ }).first().click();
     await technik.getByRole("button", { name: "Diagnostika", exact: true }).first().click();
-    await expect(radekZakazky(technik, kod).getByRole("button", { name: /Diagnostika/ })).toBeVisible({ timeout: 20_000 });
+    await expect(radekZakazky(technik, kod).getByRole("button", { name: /Diagnostika/ }).first()).toBeVisible({ timeout: 20_000 });
 
     // Majiteli přišla změna stavu, ale oprava nezmizela.
     await expect(page.getByRole("button", { name: /Diagnostika/ }).first()).toBeVisible({ timeout: 30_000 });

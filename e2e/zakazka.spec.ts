@@ -236,9 +236,16 @@ test("při stornu se servis zeptá na důvod a zapíše ho do historie", async (
 
   await expect(hlavicka.getByRole("button", { name: /Zrušeno/ }).first()).toBeVisible({ timeout: 20_000 });
 
-  // Důvod je v historii zakázky.
-  await page.getByRole("button", { name: "Další akce" }).first().click();
-  await page.getByText("Historie", { exact: true }).first().click();
+  // Důvod je v historii zakázky. Nabídka se hned po změně stavu překresluje,
+  // takže první klik do ní občas propadne – proto se otevření zopakuje.
+  const dalsiAkce = page.getByRole("button", { name: "Další akce" }).first();
+  const polozkaHistorie = page.getByText("Historie", { exact: true }).first();
+  await dalsiAkce.click();
+  if (!(await polozkaHistorie.isVisible().catch(() => false))) {
+    await dalsiAkce.click();
+    await expect(polozkaHistorie).toBeVisible({ timeout: 10_000 });
+  }
+  await polozkaHistorie.click();
   await expect(page.getByText("Důvod storna").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Cena byla pro zákazníka vysoká – Nabídka 3 500 Kč/).first()).toBeVisible();
 });
