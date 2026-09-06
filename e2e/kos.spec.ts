@@ -32,17 +32,22 @@ test("smazaná zakázka zmizí ze seznamu a je v koši", async ({ page }) => {
   await page.getByRole("button", { name: "Smazat", exact: true }).click();
 
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 30_000 });
+  // Ze seznamu musí zmizet hned, ještě před přenačtením.
+  await expect(vidZakazku(page, kod)).toHaveCount(0, { timeout: 30_000 });
+  // A po přenačtení taky – teprve to čte stav z databáze.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
   await expect(vidZakazku(page, kod)).toHaveCount(0, { timeout: 30_000 });
 
   await otevriKos(page);
-  await expect(page.getByText(kod).first()).toBeVisible({ timeout: 30_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test("smazaná zakázka je v koši i po restartu a jde obnovit", async ({ page }) => {
   test.setTimeout(150_000);
   await prihlasSe(page);
   await otevriKos(page);
-  const radek = page.getByText(kod).first().locator('xpath=ancestor::*[.//button[normalize-space()="Obnovit"]][1]');
+  const radek = vidZakazku(page, kod).first().locator('xpath=ancestor::*[.//button[normalize-space()="Obnovit"]][1]');
   await expect(radek).toBeVisible({ timeout: 30_000 });
 
   await radek.getByRole("button", { name: "Obnovit" }).click();

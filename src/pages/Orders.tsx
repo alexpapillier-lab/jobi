@@ -7595,6 +7595,11 @@ export default function Orders({
           }
           
           showToast("Zakázka smazána", "success");
+          /* Ze seznamu hned, ne až po přenačtení. Měkké smazání je z pohledu
+             databáze obyčejná úprava řádku, takže živá aktualizace ho jako
+             zmizení nepozná – zakázka po smazání dál svítila v seznamu
+             a uživatel nevěděl, jestli se to povedlo. */
+          setCloudTickets((prev) => prev.filter((t) => t.id !== deleteTicketId));
           // Smazaná zakázka díly nedrží.
           void releaseReservations(deleteTicketId);
 
