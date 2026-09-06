@@ -1,4 +1,3 @@
-import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
 import { supabase } from "./supabaseClient";
 import { STORAGE_KEYS } from "../constants/storageKeys";
@@ -79,73 +78,8 @@ export function escapeHtmlForDoc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Sestaví proměnné pro vlastní texty v šabloně JobiDocs ({{ticket_code}}, {{customer_name}} atd.) při tisku z Jobi. */
-export function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: Record<string, unknown>): Record<string, string> {
-  const addr = [ticket.customerAddressStreet, ticket.customerAddressCity, ticket.customerAddressZip].filter(Boolean).join(", ");
-  const totalPrice = ticket.performedRepairs?.length
-    ? ticket.performedRepairs.reduce((sum, r) => sum + (r.price || 0), 0)
-    : 0;
-  const repairDateFormatted = new Date(ticket.createdAt).toLocaleDateString("cs-CZ");
-  const completionFormatted = ticket.expectedDoneAt ? new Date(ticket.expectedDoneAt).toLocaleDateString("cs-CZ") : "";
-  const serviceName = (companyData?.name != null && String(companyData.name).trim() !== "") ? String(companyData.name) : "";
-  const serviceAddr = [companyData?.addressStreet, companyData?.addressCity, companyData?.addressZip].filter(Boolean).map((x) => String(x)).join(", ");
-  const repairItems = ticket.performedRepairs?.length
-    ? JSON.stringify(
-        ticket.performedRepairs.map((r) => {
-          const hodinova = r.type === "hourly" && (r.hodiny ?? 0) > 0;
-          return {
-            name: hodinova && r.technik ? `${r.name} (${r.technik})` : (r.name ?? ""),
-            price: hodinova ? `${r.sazba ?? 0} Kč` : r.price != null ? `${r.price} Kč` : "",
-            quantity: hodinova ? r.hodiny! : 1,
-            unit: hodinova ? "h" : "ks",
-            total: r.price != null ? `${r.price} Kč` : "",
-          };
-        })
-      )
-    : "[]";
-  return {
-    ticket_code: ticket.code ?? "",
-    order_code: ticket.code ?? "",
-    customer_name: ticket.customerName ?? "",
-    customer_phone: ticket.customerPhone ?? "",
-    customer_email: ticket.customerEmail ?? "",
-    customer_address: addr,
-    device_name: ticket.deviceLabel ?? "",
-    device_serial: ticket.serialOrImei ?? "",
-    device_imei: ticket.serialOrImei ?? "",
-    device_state: ticket.deviceCondition ?? "",
-    device_problem: (ticket.requestedRepair || ticket.issueShort) ?? "",
-    service_name: serviceName,
-    service_phone: (companyData?.phone != null && String(companyData.phone).trim() !== "") ? String(companyData.phone) : "",
-    service_email: (companyData?.email != null && String(companyData.email).trim() !== "") ? String(companyData.email) : "",
-    service_address: serviceAddr,
-    service_ico: (companyData?.ico != null && String(companyData.ico).trim() !== "") ? String(companyData.ico) : "",
-    service_dic: (companyData?.dic != null && String(companyData.dic).trim() !== "") ? String(companyData.dic) : "",
-    repair_date: repairDateFormatted,
-    repair_completion_date: completionFormatted,
-    total_price: totalPrice > 0 ? `${totalPrice} Kč` : "",
-    warranty_until: "",
-    diagnostic_text: ticket.diagnosticText ?? "",
-    note: (ticket as { notes?: string }).notes ?? "",
-    repair_items: repairItems,
-    // Kontrola po opravě – shrnutí a řádky; bez kontroly prázdné, šablona blok skryje.
-    checklist_summary: (() => {
-      const polozky = ticket.testChecklist?.polozky ?? [];
-      if (polozky.length === 0) return "";
-      const overeno = polozky.filter((p) => p.stav).length;
-      const chyb = polozky.filter((p) => p.stav === "chyba").length;
-      const zaklad = `Ověřeno ${overeno} z ${polozky.length}`;
-      return chyb > 0 ? `${zaklad}, ${chyb} s chybou` : overeno === polozky.length ? `${zaklad}, vše v pořádku` : zaklad;
-    })(),
-    checklist_list: (ticket.testChecklist?.polozky ?? [])
-      .map((p) => `${p.stav === "ok" ? "✓" : p.stav === "chyba" ? "✗" : "–"} ${p.text}${p.stav === "chyba" && p.poznamka?.trim() ? ` – ${p.poznamka.trim()}` : ""}`)
-      .join("\n"),
-    photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
-    complaint_code: "",
-    reclamation_code: "",
-    original_ticket_code: ticket.code ?? "",
-  };
-}
+// Proměnné pro JobiDocs v2 staví src/lib/documentData.ts (DocumentData); starší
+// plochý slovník proměnných byl odstraněn 6. 9. – nikdo ho nevolal.
 
 /** Sestaví proměnné pro dokument příjemky/výdejky reklamace (JobiDocs šablona). */
 export function buildClaimVariablesForJobiDocs(claim: WarrantyClaimRow, originalTicketCode: string = ""): Record<string, string> {

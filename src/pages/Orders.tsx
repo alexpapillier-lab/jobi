@@ -2859,7 +2859,7 @@ export default function Orders({
   );
 
   const addPerformedRepair = useCallback(
-    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string }) => {
+    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string }) => {
       // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
       let repairPrice: number | undefined = undefined;
       let repairCosts: number | undefined = undefined;
@@ -2901,7 +2901,7 @@ export default function Orders({
         costs: repairCosts,
         estimatedTime: repairTime,
         productIds: repairProductIds,
-        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik } : {}),
+        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId } : {}),
       };
       upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
@@ -6815,6 +6815,7 @@ export default function Orders({
                     inventoryData={inventoryData}
                     vychoziSazba={hodinovaSazba ?? undefined}
                     vychoziTechnik={userProfile?.nickname ?? undefined}
+                    vychoziTechnikId={session?.user?.id ?? undefined}
                     onAddToModel={(repairData) => {
                       // Add repair to model in Devices
                       const currentDevices = safeLoadDevicesData();

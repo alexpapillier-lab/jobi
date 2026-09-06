@@ -200,9 +200,10 @@ První tři měsíce: body 1, 2, 4.
   rezervace: limity před validací, termín v rozsahu, změna stavu se zámkem proti
   souběhu, panel načte všechny nevyřízené; import CSV jen s právem na zákazníky,
   uvozovka uprostřed buňky, „číslo zákazníka“ není telefon; drobnosti v knihovnách
-  (místní datum, IBAN zadaný rovnou, hranice slova v šablonách). Neopraveno (nízké):
-  „Bez technika“ řádek v KPI, hodinová práce párovaná jménem, `dates.diagnosed`
-  je čas tisku, přetečení měsíce u záruky, legacy `buildTicketVariablesForJobiDocs`.
+  (místní datum, IBAN zadaný rovnou, hranice slova v šablonách). Dodatek: řádek
+  „Bez technika“ v KPI, hodinová práce vázaná na účet technika, záruka bez
+  přetečení měsíce, legacy proměnné pro JobiDocs odstraněny. Neopraveno (nízké):
+  `dates.diagnosed` je čas tisku (chce sloupec na zakázce).
 - `[~]` **Lov chyb 5. 9. (dva agenti, reklamace+faktury a sklad+zařízení).**
   Opraveno (commit 376830d): číslo faktury až při uložení (díry v řadě),
   kontrola duplicitního čísla, dodavatel nové faktury ze service_settings,

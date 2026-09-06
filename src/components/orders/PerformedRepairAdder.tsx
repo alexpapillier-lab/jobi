@@ -11,14 +11,17 @@ export function PerformedRepairAdder({
   inventoryData: inventoryDataProp,
   vychoziSazba,
   vychoziTechnik,
+  vychoziTechnikId,
   onAddToModel,
 }: {
   availableRepairs: DeviceRepair[];
-  onAdd: (repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string }) => void;
+  onAdd: (repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string }) => void;
   /** Hodinová sazba servisu (Nastavení → Zakázky → Hodinová práce). */
   vychoziSazba?: number;
   /** Přezdívka přihlášeného – kdo práci nejspíš odvedl. */
   vychoziTechnik?: string;
+  /** Účet přihlášeného; uloží se, když technik zůstal on. */
+  vychoziTechnikId?: string;
   deviceLabel?: string;
   devicesData?: DevicesData;
   /** Produkty skladu z databáze; bez nich se sáhne do starší kopie v localStorage. */
@@ -87,6 +90,7 @@ export function PerformedRepairAdder({
         hodiny: hodinyCislo,
         sazba: sazbaCislo,
         technik: praceTechnik.trim() || undefined,
+        technikUserId: vychoziTechnik && praceTechnik.trim() === vychoziTechnik.trim() ? vychoziTechnikId : undefined,
       });
       setPraceHodiny("1");
     }

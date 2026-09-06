@@ -61,19 +61,32 @@ function repairsToItems(ticket: TicketEx): LineItem[] {
     );
 }
 
+/** Přičte měsíce bez přetečení: 31. 1. + 1 měsíc = 28./29. 2., ne 3. 3. */
+export function pridejMesice(d: Date, mesicu: number): Date {
+  const den = d.getDate();
+  const x = new Date(d.getTime());
+  x.setDate(1);
+  x.setMonth(x.getMonth() + mesicu);
+  const posledni = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate();
+  x.setDate(Math.min(den, posledni));
+  return x;
+}
+
 /** Zakázkový list, záruční list, diagnostika. */
 export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<string, unknown>, opts?: { completedAt?: string; warrantyMonths?: number }): DocumentData {
   const items = repairsToItems(ticket);
-  const total = items.reduce((sum, it) => sum + (it.total ?? 0), 0);
+  const hruba = items.reduce((sum, it) => sum + (it.total ?? 0), 0);
+  // Stejný výpočet jako itemsTotal() v jobidocs/core – jinak by řádek Sleva byl
+  // na dokladu vidět, ale Celkem by zůstalo bez ní.
+  const sleva = ticket.discountType === "percentage" ? hruba * ((ticket.discountValue ?? 0) / 100) : ticket.discountType === "amount" ? (ticket.discountValue ?? 0) : 0;
+  const total = Math.max(0, Math.round((hruba - sleva) * 100) / 100);
   const hasPrices = items.some((it) => it.total != null);
   const t = ticket as TicketEx & { completedAt?: string | null; notes?: string; warrantyMonths?: number };
   const completed = opts?.completedAt ?? t.completedAt ?? undefined;
   const warrantyMonths = opts?.warrantyMonths ?? t.warrantyMonths;
   let warrantyUntil: string | undefined;
   if (warrantyMonths && completed) {
-    const d = new Date(completed);
-    d.setMonth(d.getMonth() + warrantyMonths);
-    warrantyUntil = d.toISOString();
+    warrantyUntil = pridejMesice(new Date(completed), warrantyMonths).toISOString();
   }
   const portalToken = (ticket as TicketEx & { portalToken?: string | null }).portalToken;
   return {
