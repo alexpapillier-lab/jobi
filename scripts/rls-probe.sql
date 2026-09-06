@@ -203,7 +203,15 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (310, '33333333-4444-4555-8666-777777777777', 'pobocka: stav cizi zakazky (RPC)',    'odmitnuto', 'select change_ticket_status((select id from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' and deleted_at is null limit 1), ''received'')'),
   (311, '33333333-4444-4555-8666-777777777777', 'pobocka: portal cizi zakazky (RPC)',  'odmitnuto', 'select ensure_portal_token((select id from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' and deleted_at is null limit 1))'),
   (312, '33333333-4444-4555-8666-777777777777', 'pobocka: statistiky jen vlastni',     'kontrola',  'select (statistiky_prehled(array[''bbc926bd-25ba-4da1-b528-92b6f1dee24d'']::uuid[], null, null, ''ea9faf76-26eb-4be9-922c-3705477d423c''::uuid) -> ''pocetVObdobi'')::int as zakazek'),
-  (202, null, 'anon: home branch',              'odmitnuto', 'select set_member_home_branch(''882beee7-4564-4d10-8ac6-16dc19240b57'', ''3e2e0000-2222-4222-8333-444455556666'', ''a4c7e885-9570-45c2-bcfa-0b5aff665a77'')')
+  (202, null, 'anon: home branch',              'odmitnuto', 'select set_member_home_branch(''882beee7-4564-4d10-8ac6-16dc19240b57'', ''3e2e0000-2222-4222-8333-444455556666'', ''a4c7e885-9570-45c2-bcfa-0b5aff665a77'')'),
+  -- ══ 4. kolo (6. 9.): ukládání práv členů ═══════════════════════════════════
+  -- Rozhraní posílá vždy všechny klíče najednou, takže jediný neznámý zablokuje
+  -- celý zápis. Přesně tak nešlo měnit práva po přidání pobočkových omezení.
+  (400, '22222222-3333-4444-8555-666666666666', 'spravce: prava vc. branch_only',  'projde',    'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', (select jsonb_object_agg(k, true) from unnest(povolene_capability()) k))'),
+  (401, '22222222-3333-4444-8555-666666666666', 'spravce: neznamy klic prav',      'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_hack_everything": true}''::jsonb)'),
+  (402, '11111111-2222-4333-8444-555555555555', 'technik: rozdavani prav',         'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
+  (403, null, 'anon: rozdavani prav',                                              'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
+  (404, '3e2e0000-1111-4222-8333-444455556666', 'majitel E2E: prava v cizim servisu','odmitnuto','select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p
