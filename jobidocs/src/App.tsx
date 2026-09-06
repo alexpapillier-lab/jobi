@@ -3,7 +3,7 @@
  * k Jobi, stránky Dokumenty / Značka / Tiskárna / Aktivity / O aplikaci.
  */
 import { useCallback, useEffect, useState } from "react";
-import { api, type Context } from "./api";
+import { api, electron, type Context } from "./api";
 import { AppLogo } from "./components/AppLogo";
 import { ActivityIcon, DocIcon, InfoIcon, PrinterIcon } from "./components/icons";
 import { DocumentEditor } from "./editor/DocumentEditor";
@@ -40,6 +40,14 @@ export default function App() {
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; kind: "ok" | "error" } | null>(null);
   const [pendingTab, setPendingTab] = useState<Tab | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Když se lokální API nespustí (obsazený port), aplikace se otevře, ale
+  // nic nefunguje. Bez tohohle pruhu by uživatel jen viděl věčné „Čekám na
+  // Jobi…“ a neměl šanci uhodnout proč.
+  useEffect(() => {
+    electron()?.apiError().then(setApiError).catch(() => {});
+  }, []);
 
   const showToast = useCallback((msg: string, kind: "ok" | "error" = "ok") => {
     setToast({ msg, kind });
@@ -100,6 +108,12 @@ export default function App() {
       </aside>
 
       <main className="app-main">
+        {apiError && (
+          <div className="glass-panel" data-test="api-error" style={{ marginBottom: 14, borderColor: "var(--danger, #c0392b)" }}>
+            <b>JobiDocs nemůže přijímat tisk z Jobi.</b>
+            <p style={{ margin: "6px 0 0", fontSize: 13 }}>{apiError}</p>
+          </div>
+        )}
         <div className="ed-toolbar" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Servis</div>
           <select className="ui-select" style={{ width: "auto", minWidth: 220 }} value={serviceId ?? ""} onChange={(e) => setServiceId(e.target.value || null)} disabled={!context || context.services.length === 0}>

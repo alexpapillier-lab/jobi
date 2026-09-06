@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("electron", {
   openPrintDialog: (html: string) => ipcRenderer.invoke("open-print-dialog", html),
   showSaveDialog: (defaultName: string) => ipcRenderer.invoke("show-save-dialog", defaultName),
+  /** Proč neběží lokální API (obsazený port). null = běží v pořádku. */
+  apiError: () => ipcRenderer.invoke("jobidocs:get-api-error"),
   update: {
     check: () => ipcRenderer.invoke("jobidocs:check-update"),
     getState: () => ipcRenderer.invoke("jobidocs:get-update-state"),

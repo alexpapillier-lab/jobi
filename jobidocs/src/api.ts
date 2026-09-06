@@ -95,6 +95,7 @@ export const api = {
 /** Bridge z preloadu (Electron). Ve vývoji v prohlížeči chybí. */
 export type ElectronBridge = {
   showSaveDialog: (defaultName: string) => Promise<string | null>;
+  apiError: () => Promise<string | null>;
   openPrintDialog: (html: string) => Promise<void>;
   update: {
     check: () => Promise<string | null>;

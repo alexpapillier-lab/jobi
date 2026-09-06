@@ -38,8 +38,15 @@ Kontext (servisy, údaje firmy, přihlášení k Supabase) posílá běžící J
 ```bash
 npm run typecheck             # renderer + Electron
 npm test                      # testy jádra (vitest z kořene jobi)
+npm run test:e2e              # build + spuštěná aplikace (Playwright, e2e/)
+npm run test:e2e:only         # totéž bez přebuildování
 npm run electron:build        # DMG/ZIP do release/
 ```
+
+Testy v `e2e/` spouštějí skutečnou aplikaci z `dist/` a `dist-electron/` – proto
+`test:e2e:only` vyžaduje čerstvý `build:electron`. Do ostrých dat nesahají:
+každý běh má vlastní adresář s daty v systémovém tempu a vlastní port, takže
+běží i vedle nainstalovaného JobiDocs. Netiskne se na skutečnou tiskárnu.
 
 ## API (http://127.0.0.1:3847)
 

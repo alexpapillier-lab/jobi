@@ -93,22 +93,50 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-/** Hlavičkový papír pod každou stranu obsahu. */
-async function mergeLetterhead(content: Buffer, letterheadUrl: string | undefined): Promise<Buffer> {
+/**
+ * Hlavičkový papír pod každou stranu obsahu.
+ *
+ * Když se nepodaří načíst, dokument se vytiskne bez něj – zastavit kvůli
+ * tomu tisk by servisu bránilo v práci. Nesmí to ale proběhnout mlčky:
+ * papír bez hlavičky vypadá jako platný doklad, takže důvod jde přes `warn`
+ * do logu i do Aktivit, kde ho uživatel uvidí.
+ */
+async function mergeLetterhead(content: Buffer, letterheadUrl: string | undefined, warn: (msg: string) => void): Promise<Buffer> {
   if (!letterheadUrl || !letterheadUrl.trim()) return content;
   let letterhead: Buffer | null = null;
-  if (letterheadUrl.startsWith("data:application/pdf;base64,")) {
-    letterhead = Buffer.from(letterheadUrl.replace(/^data:application\/pdf;base64,/, ""), "base64");
-  } else if (/^https?:\/\//.test(letterheadUrl)) {
-    const res = await fetch(letterheadUrl);
-    if (!res.ok) return content;
-    letterhead = Buffer.from(await res.arrayBuffer());
+  try {
+    if (letterheadUrl.startsWith("data:application/pdf;base64,")) {
+      letterhead = Buffer.from(letterheadUrl.replace(/^data:application\/pdf;base64,/, ""), "base64");
+    } else if (/^https?:\/\//.test(letterheadUrl)) {
+      const res = await fetch(letterheadUrl);
+      if (!res.ok) {
+        warn(`Hlavičkový papír se nepodařilo stáhnout (HTTP ${res.status}); dokument je bez něj.`);
+        return content;
+      }
+      letterhead = Buffer.from(await res.arrayBuffer());
+    } else {
+      warn("Hlavičkový papír má neznámý formát odkazu; dokument je bez něj.");
+      return content;
+    }
+    if (!letterhead) return content;
+    const { PDFDocument } = await import("pdf-lib");
+    const lh = await PDFDocument.load(letterhead);
+    const doc = await PDFDocument.load(content);
+    if (lh.getPageCount() === 0 || doc.getPageCount() === 0) {
+      warn("Hlavičkový papír neobsahuje žádnou stranu; dokument je bez něj.");
+      return content;
+    }
+    return await drawOver(lh, doc);
+  } catch (err) {
+    warn(`Hlavičkový papír se nepodařilo použít: ${err instanceof Error ? err.message : String(err)}`);
+    return content;
   }
-  if (!letterhead) return content;
+}
+
+type PdfDoc = Awaited<ReturnType<typeof import("pdf-lib").PDFDocument.create>>;
+
+async function drawOver(lh: PdfDoc, doc: PdfDoc): Promise<Buffer> {
   const { PDFDocument } = await import("pdf-lib");
-  const lh = await PDFDocument.load(letterhead);
-  const doc = await PDFDocument.load(content);
-  if (lh.getPageCount() === 0 || doc.getPageCount() === 0) return content;
   const out = await PDFDocument.create();
   const embedded = await out.embedPdf(doc, doc.getPageIndices());
   for (let i = 0; i < doc.getPageCount(); i++) {
@@ -191,8 +219,13 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     return { documents: loaded.documents, source: loaded.source };
   }
 
-  async function buildHtml(req: RenderRequest): Promise<string> {
-    const { documents } = await resolveDocuments(req.serviceId, req.documents);
+  /** Varování, které samo o sobě tisk nezastaví, ale uživatel o něm musí vědět. */
+  function warnUser(action: "print" | "export", msg: string) {
+    fastify.log.warn(msg);
+    pushActivity(action, "error", msg);
+  }
+
+  function buildHtmlFrom(documents: DocumentsV2, req: RenderRequest): string {
     const template = templateFor(documents, req.docType);
     const contextService = serviceFromCompanyData(jobiContext.companyData);
     let data: DocumentData;
@@ -205,12 +238,23 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     return renderDocument({ template, data, brand: documents.brand, theme: documents.theme, options: { mode: req.mode ?? "print", showPlaceholders: req.showPlaceholders } });
   }
 
-  async function buildPdf(req: RenderRequest): Promise<Buffer> {
+  async function buildHtml(req: RenderRequest): Promise<string> {
+    const { documents } = await resolveDocuments(req.serviceId, req.documents);
+    return buildHtmlFrom(documents, req);
+  }
+
+  /**
+   * Šablona se načítá jen jednou. Dřív se `resolveDocuments` volalo tady
+   * i uvnitř `buildHtml`, takže každý tisk sahal do Supabase dvakrát – a mezi
+   * oběma čteními se šablona mohla změnit, takže hlavičkový papír patřil
+   * k jiné verzi než obsah.
+   */
+  async function buildPdf(req: RenderRequest, action: "print" | "export" = "print"): Promise<Buffer> {
     if (!htmlToPdf) throw Object.assign(new Error("PDF rendering requires JobiDocs (Electron)"), { statusCode: 503 });
     const { documents } = await resolveDocuments(req.serviceId, req.documents);
-    const html = await buildHtml({ ...req, mode: "print", showPlaceholders: false });
+    const html = buildHtmlFrom(documents, { ...req, mode: "print", showPlaceholders: false });
     const pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
-    return mergeLetterhead(pdf, documents.brand.letterheadPdfUrl);
+    return mergeLetterhead(pdf, documents.brand.letterheadPdfUrl, (m) => warnUser(action, m));
   }
 
   async function printBuffer(serviceId: string, pdf: Buffer, explicitPrinter?: string): Promise<{ printer: string; jobId: string }> {
@@ -223,7 +267,17 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { statusCode?: number })?.statusCode ?? (msg === "PDF render timeout" ? 504 : 500);
     fastify.log.error(err);
-    return reply.status(status).send({ error: msg || "Failed" });
+    // Typ odpovědi se musí přepnout zpátky na JSON.
+    //
+    // Cesty /v2/pdf a /v1/render-pdf si nastaví `application/pdf` (a /v2/html
+    // `text/html`) ještě předtím, než se dokument sestaví. Když sestavení
+    // selže, Fastify pod tímhle typem odmítne poslat objekt s chybou
+    // (FST_ERR_REP_INVALID_PAYLOAD_TYPE) a odpověď nahradí vlastní hláškou
+    // s kódem 500. Skutečný důvod se tak k Jobi vůbec nedostal: místo
+    // „PDF rendering requires JobiDocs“ s kódem 503, ze kterého Jobi skládá
+    // radu „spusťte JobiDocs“, uživatel viděl „Attempted to send payload of
+    // invalid type 'object'“.
+    return reply.type("application/json; charset=utf-8").status(status).send({ error: msg || "Failed" });
   }
 
   // -------------------------------------------------------------------------
@@ -390,7 +444,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     const target = req.body?.target_path;
     if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
     try {
-      const pdf = await buildPdf(r);
+      const pdf = await buildPdf(r, "export");
       await fs.writeFile(target, pdf);
       pushActivity("export", "ok", target);
       return { ok: true, path: target };
@@ -450,7 +504,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     const target = req.body?.target_path;
     if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
     try {
-      const pdf = await buildPdf(r);
+      const pdf = await buildPdf(r, "export");
       await fs.writeFile(target, pdf);
       pushActivity("export", "ok", target);
       return { ok: true, path: target };
@@ -477,7 +531,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     if (!html || typeof html !== "string") return reply.status(400).send({ error: "html required" });
     try {
       let pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
-      pdf = await mergeLetterhead(pdf, letterhead_pdf_url);
+      pdf = await mergeLetterhead(pdf, letterhead_pdf_url, (m) => warnUser("export", m));
       return { pdf_base64: pdf.toString("base64") };
     } catch (err) {
       return sendError(reply, err);
@@ -506,7 +560,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     if (!target_path || typeof target_path !== "string") return reply.status(400).send({ error: "target_path required" });
     try {
       let pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
-      pdf = await mergeLetterhead(pdf, letterhead_pdf_url);
+      pdf = await mergeLetterhead(pdf, letterhead_pdf_url, (m) => warnUser("export", m));
       await fs.writeFile(target_path, pdf);
       pushActivity("export", "ok", target_path);
       return { ok: true, path: target_path };

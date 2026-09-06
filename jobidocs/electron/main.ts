@@ -9,9 +9,18 @@ import { startApiServer } from "../api/server";
 // Některé sítě neroutují IPv6; Node by pak u Supabase a fontů skončil na „fetch failed“.
 dns.setDefaultResultOrder("ipv4first");
 
-const API_PORT = 3847;
+// Port lze přenastavit, aby šla aplikace spustit vedle už běžící kopie (testy).
+const API_PORT = Number(process.env.JOBIDOCS_API_PORT) || 3847;
 // V zabalené aplikaci vždy načítat zabudovaný dist; jinak by se načítal localhost → prázdné okno
 const isDev = !app.isPackaged;
+/**
+ * Načíst zabudovaný dist i v nezabalené aplikaci.
+ *
+ * Automatický test spouští `electron .` z buildu, ale bez vývojového serveru
+ * na 5173 – bez tohohle přepínače by se otevřelo prázdné okno. Aktualizace
+ * se tím neovlivní: ty se dál řídí `isDev`, takže test nesahá na GitHub.
+ */
+const loadFromDist = process.env.JOBIDOCS_LOAD_DIST === "1";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -22,6 +31,15 @@ let tray: Tray | null = null;
  * na to, že ho nastaví jen položka v trayi – viz komentář tam.
  */
 let isQuitting = false;
+/**
+ * Proč lokální API neběží (nejčastěji obsazený port = druhá kopie JobiDocs).
+ *
+ * Dřív se `startApiServer` čekalo bez ošetření chyby: když port obsadila jiná
+ * kopie, `app.whenReady()` skončilo zamítnutým příslibem, okno se vůbec
+ * nevytvořilo a v horní liště zůstala jen ikona. Uživatel viděl aplikaci,
+ * která „nejde otevřít“. Teď se chyba uloží sem, okno se otevře a UI ji ukáže.
+ */
+let apiStartError: string | null = null;
 
 /**
  * Tisk PDF na Windows přes Chromium v Electronu.
@@ -151,20 +169,24 @@ async function htmlToPdfElectron(html: string): Promise<Buffer> {
       },
     });
 
-    await win.loadFile(tmpPath);
-    // loadFile už čeká na načtení – čekání na did-finish-load by viselo (událost už proběhla)
-    await waitForFit(win);
+    try {
+      await win.loadFile(tmpPath);
+      // loadFile už čeká na načtení – čekání na did-finish-load by viselo (událost už proběhla)
+      await waitForFit(win);
 
-    const pdfBuffer = await win.webContents.printToPDF({
-      printBackground: true,
-      // Electron 44 zrušil marginType; nulové okraje se zadávají čísly (v palcích).
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      pageSize: "A4",
-      preferCSSPageSize: true,
-    });
+      const pdfBuffer = await win.webContents.printToPDF({
+        printBackground: true,
+        // Electron 44 zrušil marginType; nulové okraje se zadávají čísly (v palcích).
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        pageSize: "A4",
+        preferCSSPageSize: true,
+      });
 
-    win.close();
-    return Buffer.from(pdfBuffer);
+      return Buffer.from(pdfBuffer);
+    } finally {
+      // Bez tohohle zůstávalo po každém neúspěšném renderu viset skryté okno.
+      if (!win.isDestroyed()) win.close();
+    }
   } finally {
     await fs.unlink(tmpPath).catch(() => {});
   }
@@ -252,11 +274,18 @@ async function createWindow() {
     },
   });
 
-  if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
+  // Okno musí mluvit s API TOHOTO procesu, ne s pevnou 3847.
+  //
+  // Renderer měl adresu API natvrdo, takže druhá spuštěná kopie (a stejně
+  // tak test na vlastním portu) obsluhovala okno cizí instance: ukazovala
+  // její servisy a ukládala do nich. Adresu proto předává hlavní proces
+  // v parametru `?api=`, který src/api.ts už uměl číst.
+  const apiUrl = `http://127.0.0.1:${API_PORT}`;
+  if (isDev && !loadFromDist) {
+    mainWindow.loadURL(`http://localhost:5173/?api=${encodeURIComponent(apiUrl)}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"));
+    mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"), { query: { api: apiUrl } });
   }
 
   mainWindow.on("closed", () => {
@@ -264,10 +293,15 @@ async function createWindow() {
   });
 
   // macOS: červené tlačítko zavřít → skrýt okno (ne quit), skrýt Dock; zůstane jen tray. Při Ukončit → skutečně quit.
+  //
+  // Podmínka `tray` je zásadní: schovat okno i Dock a nemít ikonu v horní
+  // liště znamená běžící aplikaci, kterou uživatel nemá jak vyvolat zpět.
+  // Když se tray nepodaří vytvořit (chybí ikona v buildu), necháme okno
+  // zavřít normálně, ať se aplikace chová jako každá jiná.
   if (process.platform === "darwin") {
     const win = mainWindow;
     win.on("close", (e) => {
-      if (!win.isDestroyed() && !isQuitting) {
+      if (!win.isDestroyed() && !isQuitting && tray) {
         e.preventDefault();
         win.hide();
         app.dock?.hide();
@@ -296,7 +330,10 @@ function setupTray() {
   if (process.platform !== "darwin") return;
   try {
     const icon = loadTrayIcon();
-    if (!icon) return;
+    if (!icon) {
+      console.warn(`[JobiDocs] Ikona pro horní lištu nenalezena (${TRAY_ICON_TEMPLATE}); aplikace poběží bez trayi.`);
+      return;
+    }
     tray = new Tray(icon);
     tray.setToolTip("JobiDocs – běží");
     tray.setContextMenu(
@@ -328,8 +365,10 @@ function setupTray() {
     tray.on("click", () => {
       tray?.popUpContextMenu();
     });
-  } catch {
-    // ikona nenalezena – tray přeskočíme
+  } catch (err) {
+    // Tray přeskočíme, ale mlčky ne: bez něj se mění i chování zavírání okna.
+    console.warn("[JobiDocs] Tray se nepodařilo vytvořit:", err);
+    tray = null;
   }
 }
 
@@ -467,16 +506,27 @@ ipcMain.handle("jobidocs:set-update-channel", async (_e, channel: string) => {
 });
 ipcMain.handle("jobidocs:get-update-error", () => updateError);
 
+ipcMain.handle("jobidocs:get-api-error", () => apiStartError);
+
 app.whenReady().then(async () => {
   const userDataPath = app.getPath("userData");
   const isWindows = process.platform === "win32";
-  await startApiServer(API_PORT, userDataPath, {
-    htmlToPdf: htmlToPdfElectron,
-    // Na macOS zůstávají undefined -> api/server.ts použije původní lp/lpstat cestu.
-    printPdfNative: isWindows ? printPdfElectronWindows : undefined,
-    listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
-    appVersion: app.getVersion(),
-  });
+  try {
+    await startApiServer(API_PORT, userDataPath, {
+      htmlToPdf: htmlToPdfElectron,
+      // Na macOS zůstávají undefined -> api/server.ts použije původní lp/lpstat cestu.
+      printPdfNative: isWindows ? printPdfElectronWindows : undefined,
+      listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
+      appVersion: app.getVersion(),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    apiStartError =
+      (err as { code?: string })?.code === "EADDRINUSE"
+        ? `Port ${API_PORT} už používá jiný program – nejspíš druhá kopie JobiDocs. Ukončete ji a spusťte JobiDocs znovu.`
+        : `Lokální službu JobiDocs se nepodařilo spustit: ${detail}`;
+    console.error("[JobiDocs] Start API selhal:", err);
+  }
   setupQuitHandling();
   await createWindow();
   setupTray();
