@@ -240,11 +240,53 @@ s heslem.
 
 ## 4. Databázové dotazy aplikace
 
-**Nezměřeno** – `E2E_PASSWORD` nebylo v prostředí (žije v GitHub secrets, viz
-`e2e/README.md`) a bez přihlášení projde přes RLS jen prázdno. Skript
-`scripts/zatez/db-dotazy.mjs` je hotový a měří seznam zakázek (první stránka
-i všechny stránky), detail zakázky, `statistiky_prehled` za rok a seznam
-skladu; pustí se s heslem přes `npm run zatez:db`.
+Změřeno 6. 9. 2026 na testovacím servisu s 1 608 zakázkami, rampa
+1 → 5 → 20 → 50 souběžných po 30 vteřinách (`npm run zatez:db`).
+
+| Endpoint | Souběžně | Požadavků | req/s | medián ms | p95 ms | max ms | chybovost | stavy |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| seznam zakázek – 1. stránka (1000 řádků) | 1 | 84 | 2.8 | 280 | 762 | 1446 | 0.0 % | 200×84 |
+| seznam zakázek – 1. stránka (1000 řádků) | 5 | 326 | 10.5 | 366 | 837 | 4689 | 0.0 % | 200×326 |
+| seznam zakázek – 1. stránka (1000 řádků) | 20 | 512 | 16.4 | 1091 | 1772 | 4961 | 0.0 % | 200×512 |
+| seznam zakázek – 1. stránka (1000 řádků) | 50 | 578 | 17.4 | 2198 | 5670 | 10994 | 0.0 % | 200×578 |
+| seznam zakázek – stránka po 50 (co by stačilo) | 1 | 182 | 6.1 | 151 | 293 | 396 | 0.0 % | 200×182 |
+| seznam zakázek – stránka po 50 (co by stačilo) | 5 | 947 | 31.3 | 130 | 321 | 908 | 0.0 % | 200×947 |
+| seznam zakázek – stránka po 50 (co by stačilo) | 20 | 2407 | 74.7 | 188 | 536 | 4203 | 0.0 % | 200×2407 |
+| seznam zakázek – stránka po 50 (co by stačilo) | 50 | 3340 | 104.4 | 376 | 859 | 4676 | 0.0 % | 200×3340 |
+| seznam zakázek – všechny stránky (fetchAllPages) | 1 | 43 | 1.4 | 681 | 995 | 1044 | 0.0 % | 200×43 |
+| seznam zakázek – všechny stránky (fetchAllPages) | 5 | 175 | 5.7 | 729 | 1609 | 5208 | 0.0 % | 200×175 |
+| seznam zakázek – všechny stránky (fetchAllPages) | 20 | 282 | 8.7 | 2105 | 3113 | 4972 | 0.0 % | 200×282 |
+| seznam zakázek – všechny stránky (fetchAllPages) | 50 | 256 | 7.3 | 5747 | 11533 | 16778 | 0.0 % | 200×256 |
+| detail zakázky podle id | 1 | 343 | 11.4 | 72 | 132 | 186 | 0.0 % | 200×343 |
+| detail zakázky podle id | 5 | 1563 | 51.9 | 86 | 160 | 196 | 0.0 % | 200×1563 |
+| detail zakázky podle id | 20 | 3957 | 131.1 | 151 | 206 | 393 | 0.0 % | 200×3957 |
+| detail zakázky podle id | 50 | 5154 | 170.1 | 275 | 522 | 1075 | 0.0 % | 200×5154 |
+| statistiky za rok – RPC statistiky_prehled | 1 | 167 | 5.6 | 174 | 198 | 966 | 0.0 % | 200×167 |
+| statistiky za rok – RPC statistiky_prehled | 5 | 614 | 20.3 | 252 | 295 | 437 | 0.0 % | 200×614 |
+| statistiky za rok – RPC statistiky_prehled | 20 | 674 | 22.1 | 897 | 1047 | 1287 | 0.0 % | 200×674 |
+| statistiky za rok – RPC statistiky_prehled | 50 | 675 | 20.9 | 1898 | 5031 | 13982 | 0.0 % | 200×675 |
+| seznam skladu | 1 | 371 | 12.3 | 62 | 144 | 155 | 0.0 % | 200×371 |
+| seznam skladu | 5 | 1759 | 58.4 | 66 | 144 | 201 | 0.0 % | 200×1759 |
+| seznam skladu | 20 | 6446 | 214.3 | 87 | 151 | 292 | 0.0 % | 200×6446 |
+| seznam skladu | 50 | 9763 | 321.1 | 135 | 368 | 1177 | 0.0 % | 200×9763 |
+
+**Nic se nezlomilo** – žádný stupeň nevrátil jedinou chybu, jen se prodloužila
+fronta.
+
+**Nejdražší je stahování všech zakázek najednou.** Aplikace dnes v Orders
+načte celý seznam a filtruje v prohlížeči. Při padesáti souběžných to
+znamená medián 5,7 vteřiny a v nejhorším 16,8. Stránkování po padesáti
+řádcích, tedy tolik, kolik se vejde na obrazovku, je na stejném stupni
+**patnáctkrát rychlejší** (376 ms) a zvládne 104 požadavků za vteřinu místo
+sedmi. Je to nejsilnější argument pro doporučení číslo 7 níž.
+
+**Detail zakázky a sklad jsou levné** – 275 a 135 ms i při padesáti
+souběžných, protože jde o jeden indexovaný dotaz.
+
+**Statistiky za rok** drží 20 požadavků za vteřinu bez ohledu na zátěž;
+agregace běží v databázi a je to vidět (medián 174 ms sólo). Nad padesát
+souběžných začne p95 utíkat (5 s), ale statistiky nikdo neotevírá padesátkrát
+za vteřinu.
 
 Co se ale dá říct z kódu a z migrací i bez měření:
 
