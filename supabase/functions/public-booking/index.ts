@@ -53,7 +53,7 @@ function nastaveniZConfigu(raw: unknown): Nastaveni {
   };
 }
 
-type Servis = { id: string; name: string | null; nastaveni: Nastaveni; email: string | null };
+type Servis = { id: string; name: string | null; nastaveni: Nastaveni; email: string | null; telefon: string | null; adresa: string | null };
 
 /** Servis podle slugu, včetně kontroly modulu a zapnutých rezervací. */
 async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): Promise<Servis | null> {
@@ -68,7 +68,16 @@ async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): 
   const nastaveni = nastaveniZConfigu(config.rezervace);
   if (!nastaveni.zapnuto) return null;
   const firma = (config.companyData ?? {}) as Record<string, unknown>;
-  return { id: servis.id, name: servis.name, nastaveni, email: typeof firma.email === "string" && firma.email.includes("@") ? firma.email : null };
+  const t = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const adresa = [t(firma.addressStreet), [t(firma.addressZip), t(firma.addressCity)].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null;
+  return {
+    id: servis.id,
+    name: t(firma.name) ?? servis.name,
+    nastaveni,
+    email: typeof firma.email === "string" && firma.email.includes("@") ? firma.email : null,
+    telefon: t(firma.phone),
+    adresa,
+  };
 }
 
 const s = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -100,6 +109,39 @@ async function oznamServisu(servis: Servis, r: { customer_name: string; customer
     });
   } catch (e) {
     console.warn("[public-booking] e-mail servisu se neposlal", e);
+  }
+}
+
+/** Potvrzení zákazníkovi – ať ví, že rezervace dorazila, a má kontakt na servis. */
+async function potvrdZakaznikovi(servis: Servis, r: { customer_name: string; customer_email: string | null; device_label: string; repair_name: string | null; price_estimate: number | null; preferred_at: string | null }) {
+  const key = Deno.env.get("RESEND_API_KEY")?.trim();
+  if (!key || !r.customer_email) return;
+  const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const kdy = r.preferred_at ? new Date(r.preferred_at).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", dateStyle: "full", timeStyle: "short" }) : "termín upřesníme po telefonu";
+  const nazev = servis.name ?? "servis";
+  const oprava = r.repair_name ? `${r.repair_name}${r.price_estimate ? ` (předběžně cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč, konečnou cenu potvrdíme po prohlídce)` : ""}` : null;
+  const kontakt = [servis.telefon ? `tel. ${servis.telefon}` : "", servis.adresa ?? "", servis.email ?? ""].filter(Boolean).join(" · ");
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;color:#111;line-height:1.5">
+<p>Dobrý den, ${esc(r.customer_name)},</p>
+<p>děkujeme, vaši rezervaci máme. Ozveme se vám s potvrzením termínu.</p>
+<table cellpadding="6" style="border-collapse:collapse">
+<tr><td style="color:#666">Zařízení</td><td><b>${esc(r.device_label)}</b></td></tr>
+${oprava ? `<tr><td style="color:#666">Oprava</td><td><b>${esc(oprava)}</b></td></tr>` : ""}
+<tr><td style="color:#666">Termín</td><td><b>${esc(kdy)}</b></td></tr>
+</table>
+<p>Kdybyste se nemohli dostavit, dejte nám prosím vědět.</p>
+<p style="margin-top:20px"><b>${esc(nazev)}</b>${kontakt ? `<br>${esc(kontakt)}` : ""}</p>
+<p style="color:#888;font-size:12px;margin-top:24px">Tento e-mail byl odeslán automaticky po vyplnění rezervačního formuláře na webu servisu.</p>
+</div>`;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [r.customer_email], reply_to: servis.email ?? undefined, subject: `${nazev}: rezervace přijata`, html }),
+    });
+  } catch (e) {
+    console.warn("[public-booking] potvrzení zákazníkovi se neposlalo", e);
   }
 }
 
@@ -339,6 +381,6 @@ serve(async (req) => {
     console.error("[public-booking] insert", error);
     return json({ error: "Rezervaci se nepodařilo uložit" }, 500);
   }
-  await oznamServisu(servis, radek);
+  await Promise.all([oznamServisu(servis, radek), potvrdZakaznikovi(servis, radek)]);
   return json({ ok: true }, 201);
 });

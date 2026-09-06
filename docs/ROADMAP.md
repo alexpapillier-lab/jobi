@@ -44,7 +44,9 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    Vyžaduje modul veřejného API (`api_catalog`). Formulář nabízí model a opravu
    z veřejného ceníku s předběžnou cenou (ověřuje se na serveru, migrace
    20260908120000); zakázka z rezervace vzniká rovnou s plánovanou opravou.
-   Zbývá: potvrzovací e-mail/SMS zákazníkovi,
+   Potvrzení zákazníkovi e-mailem je napsané ve funkci public-booking, **ale
+   nenasazené ani neotestované** (přerušeno 6. 9.) – nasadit `supabase functions
+   deploy public-booking --no-verify-jwt` a ověřit doručení. Zbývá: SMS zákazníkovi,
    volitelně cesty `/v1/booking` ve Workeru (`infra/cloudflare/jobi-api-worker.js`
    je připravený, stačí znovu vložit do Cloudflare).
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →
