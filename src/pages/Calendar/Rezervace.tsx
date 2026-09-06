@@ -98,6 +98,7 @@ export function RezervacePanel({
           {r.device_label}{r.model_name && r.model_name !== r.device_label ? ` (${r.model_name})` : ""}
           {r.repair_name ? ` · ${r.repair_name}` : ""}
           {r.price_estimate ? ` · cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč` : ""}
+          {r.duration_min ? ` · cca ${r.duration_min >= 60 ? `${Math.round((r.duration_min / 60) * 10) / 10} h` : `${r.duration_min} min`}` : ""}
           <span style={{ color: "var(--muted)" }}> · termín {popisTerminu(r)}</span>
         </div>
         {r.note && <div style={{ color: "var(--muted)" }}>{r.note}</div>}

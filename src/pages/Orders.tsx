@@ -1934,6 +1934,10 @@ export default function Orders({
           requestedRepair: r.repair_name ?? "",
           deviceNote: [r.model_name && r.model_name !== r.device_label ? `Zákazník uvedl: ${r.device_label}` : "", r.note ? `Z rezervace: ${r.note}` : ""].filter(Boolean).join(" · "),
           estimatedPrice: r.price_estimate ?? undefined,
+          // Termín z rezervace + délka opravy z ceníku = předpokládané dokončení.
+          expectedCompletionAt: r.preferred_at
+            ? new Date(new Date(r.preferred_at).getTime() + (r.duration_min ?? 0) * 60_000).toISOString()
+            : undefined,
           plannedRepairs: (() => {
             const cen = r.repair_id ? devicesData.repairs.find((x) => x.id === r.repair_id) : undefined;
             return cen

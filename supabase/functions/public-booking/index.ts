@@ -229,7 +229,9 @@ function embedSkript(slug: string): string {
         });
         opravaSel.addEventListener("change", function () {
           var r = cenik.repairs.filter(function (x) { return x.id === opravaSel.value; })[0];
-          cenaInfo.textContent = r && typeof r.price === "number" ? "Předběžná cena podle ceníku: " + fmt(r.price) + (cenik.vat && cenik.vat.payer ? (cenik.vat.prices_include_vat ? " s DPH" : " bez DPH") : "") + ". Konečnou cenu potvrdí servis po prohlídce." : "";
+          var casText = r && r.estimated_time_label ? " Oprava trvá cca " + r.estimated_time_label + "." : "";
+          cenaInfo.textContent = r && typeof r.price === "number" ? "Předběžná cena podle ceníku: " + fmt(r.price) + (cenik.vat && cenik.vat.payer ? (cenik.vat.prices_include_vat ? " s DPH" : " bez DPH") : "") + "." + casText + " Konečnou cenu potvrdí servis po prohlídce." : (r ? casText.trim() : "");
+          aktualizujHotovo();
           if (r && !oprava.input.value.trim()) { oprava.input.value = r.name; }
         });
       }
@@ -245,7 +247,21 @@ function embedSkript(slug: string): string {
           cas.appendChild(el("option", { value: t, text: t }));
         }
       })();
-      var casLab = el("label", {}, [el("span", { text: "Čas" }), cas]);
+      // Podle délky opravy z ceníku řekne, kdy bude zhruba hotovo – zákazník se rozhodne, jestli počká.
+      var hotovoInfo = el("div", {}); hotovoInfo.style.cssText = "font-size:.85em;opacity:.75";
+      function aktualizujHotovo() {
+        hotovoInfo.textContent = "";
+        if (!opravaSel || !opravaSel.value || !cas.value) { return; }
+        var r = cenik.repairs.filter(function (x) { return x.id === opravaSel.value; })[0];
+        var minut = r && typeof r.estimated_time === "number" ? r.estimated_time : 0;
+        if (!minut) { return; }
+        var casti = cas.value.split(":"); var m = parseInt(casti[0], 10) * 60 + parseInt(casti[1], 10) + minut;
+        var konec = n.do.split(":"); var konecMin = parseInt(konec[0], 10) * 60 + parseInt(konec[1], 10);
+        if (m > konecMin) { hotovoInfo.textContent = "Oprava by přesáhla otevírací dobu – zařízení bude k vyzvednutí další den, nebo zvolte dřívější čas."; return; }
+        hotovoInfo.textContent = "Při příchodu v " + cas.value + " bude hotovo cca v " + (Math.floor(m / 60) < 10 ? "0" : "") + Math.floor(m / 60) + ":" + (m % 60 < 10 ? "0" : "") + (m % 60) + ".";
+      }
+      cas.addEventListener("change", aktualizujHotovo);
+      var casLab = el("label", {}, [el("span", { text: "Čas" }), cas, hotovoInfo]);
       casLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
       var pozn = pole("Poznámka", "note", "textarea", false, "");
       var past = el("input", { name: "web", type: "text", tabindex: "-1", autocomplete: "off" });
@@ -349,15 +365,17 @@ serve(async (req) => {
   let repairId: string | null = null;
   let repairName: string | null = repair || null;
   let priceEstimate: number | null = null;
+  let durationMin: number | null = null;
   let modelName: string | null = null;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const rid = s(telo.repair_id, 40);
   if (rid && uuid.test(rid)) {
-    const { data: r } = await svc.from("repairs").select("id, name, price").eq("id", rid).eq("service_id", servis.id).maybeSingle();
+    const { data: r } = await svc.from("repairs").select("id, name, price, estimated_time").eq("id", rid).eq("service_id", servis.id).maybeSingle();
     if (r) {
       repairId = r.id;
       repairName = r.name;
       priceEstimate = typeof r.price === "number" ? r.price : Number(r.price) || null;
+      durationMin = Number(r.estimated_time) > 0 ? Math.round(Number(r.estimated_time)) : null;
     }
   }
   const mid = s(telo.model_id, 40);
@@ -378,7 +396,7 @@ serve(async (req) => {
 
   const radek = {
     service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null,
-    device_label: device, repair_name: repairName, repair_id: repairId, model_name: modelName, price_estimate: priceEstimate,
+    device_label: device, repair_name: repairName, repair_id: repairId, model_name: modelName, price_estimate: priceEstimate, duration_min: durationMin,
     note: note || null, preferred_at: preferred, source: "web",
   };
   const { error } = await svc.from("bookings").insert(radek);
