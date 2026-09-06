@@ -140,6 +140,8 @@
           <button role="tab" aria-selected="false" aria-controls="ukazka-faktury" id="tab-faktury" type="button" tabindex="-1">Faktury</button>
           <button role="tab" aria-selected="false" aria-controls="ukazka-sklad" id="tab-sklad" type="button" tabindex="-1">Sklad</button>
           <button role="tab" aria-selected="false" aria-controls="ukazka-statistiky" id="tab-statistiky" type="button" tabindex="-1">Statistiky</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-rezervace" id="tab-rezervace" type="button" tabindex="-1">Rezervace</button>
+          <button role="tab" aria-selected="false" aria-controls="ukazka-kontrola" id="tab-kontrola" type="button" tabindex="-1">Kontrola a zápůjčka</button>
           <button role="tab" aria-selected="false" aria-controls="ukazka-portal" id="tab-portal" type="button" tabindex="-1">Zákaznický portál</button>
         </div>
 
@@ -167,6 +169,14 @@
           <figure id="ukazka-statistiky" role="tabpanel" aria-labelledby="tab-statistiky" hidden>
             <img src="img/statistiky.png" alt="Statistiky: příjem, náklady, zisk, marže a zakázky podle stavu" width="1600" height="1000" loading="lazy" decoding="async" />
             <figcaption>Příjem, náklady a marže za období. Kliknutím na stav nebo opravu se výběr zúží.</figcaption>
+          </figure>
+          <figure id="ukazka-rezervace" role="tabpanel" aria-labelledby="tab-rezervace" hidden>
+            <img src="img/rezervace.png" alt="Kalendář s rezervacemi z webu servisu a tlačítkem Založit zakázku" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Rezervace z vašeho webu přistanou v kalendáři. Potvrdíte je, nebo z nich jedním kliknutím založíte zakázku.</figcaption>
+          </figure>
+          <figure id="ukazka-kontrola" role="tabpanel" aria-labelledby="tab-kontrola" hidden>
+            <img src="img/kontrola.png" alt="Detail zakázky s půjčeným náhradním zařízením a kontrolním seznamem po opravě" width="1600" height="1000" loading="lazy" decoding="async" />
+            <figcaption>Před předáním technik odškrtá kontrolu podle typu zařízení. Náhradní telefon je půjčený se smlouvou a kaucí, aplikace ví, kdo ho má.</figcaption>
           </figure>
           <figure id="ukazka-portal" role="tabpanel" aria-labelledby="tab-portal" hidden class="ukazka-mobil">
             <img src="img/portal-mobil.png" alt="Zákaznický portál na telefonu se stavem zakázky a cenovou nabídkou" width="416" height="900" loading="lazy" decoding="async" />
@@ -207,7 +217,7 @@
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
           </div>
           <h3>Tisknutelné dokumenty</h3>
-          <p>Zakázkový list, záruční list i diagnostický protokol vytisknete jedním kliknutím. Dokumenty jsou ve vaší grafice a nesou QR kód na stav zakázky.</p>
+          <p>Zakázkový list, záruční list, protokol s kontrolou po opravě i smlouva o zápůjčce náhradního zařízení, jedním kliknutím. Dokumenty jsou ve vaší grafice a nesou QR kód na stav zakázky.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
@@ -235,7 +245,7 @@
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 12h8"/><path d="M8 16h4"/></svg>
           </div>
           <h3>Faktury a účetnictví</h3>
-          <p>Fakturu vystavíte přímo ze zakázky, položky se převezmou z provedených oprav. Odtud ji odešlete do iDokladu nebo Fakturoidu, takže se nikde nepřepisuje.</p>
+          <p>Fakturu, zálohovou fakturu i dobropis vystavíte přímo ze zakázky, položky se převezmou z provedených oprav. Denní uzávěrka ukáže, co přišlo hotově a co kartou. Odtud jde vše do iDokladu nebo Fakturoidu.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
@@ -243,6 +253,20 @@
           </div>
           <h3>Zákaznický portál</h3>
           <p>Zákazník si přes odkaz nebo QR kód otevře stav zakázky a fotky z příjmu. Ve stejném okně schválí cenovou nabídku a podepíše převzetí.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/></svg>
+          </div>
+          <h3>Online rezervace z vašeho webu</h3>
+          <p>Zákazník si na vašem webu vybere model a opravu z ceníku, vidí předběžnou cenu a rezervuje termín. Rezervace přistane v kalendáři a jedním kliknutím z ní vznikne zakázka.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon-wrap">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+          </div>
+          <h3>Kontrola po opravě a půjčení zařízení</h3>
+          <p>Před předáním technik odškrtá kontrolní seznam podle typu zařízení, výsledek jde do protokolu. Náhradní telefon nebo notebook půjčíte se smlouvou a kaucí, aplikace hlídá, kdo ho má.</p>
         </article>
         <article class="feature-card reveal">
           <div class="feature-icon-wrap">
@@ -261,7 +285,7 @@
       <p class="section-desc reveal">Prvních 30&nbsp;dní zdarma, bez zadávání karty. Pak se platí měsíčně, nebo ročně o 15&nbsp;% levněji. Ceny jsou konečné, nejsme plátci DPH.</p>
 
       <div class="pricing-motto reveal">
-        <p>Platí se za servis, ne za jednotlivé uživatele. Tarify se liší jen rozsahem modulů, srovnání je v tabulce níže.</p>
+        <p>Platí se za servis, ne za každého člověka: technici, příjem i účetní jsou v ceně, ať je vás dva nebo dvanáct. Žádné příplatky za moduly, které jinde stojí navíc. Tarify se liší jen rozsahem, srovnání je v tabulce níže.</p>
       </div>
 
       <div class="pricing-toggle-wrap reveal">
@@ -365,6 +389,8 @@
               <tr><td>Pobočka navíc</td><td>—</td><td><span class="pricing-addon-cell">490&nbsp;Kč/měs</span></td><td><span class="pricing-addon-cell">490&nbsp;Kč/měs</span></td></tr>
               <tr><td>Sklad napříč pobočkami</td><td>—</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Veřejné API (ceník a sklad na web servisu)</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
+              <tr><td>Online rezervace z vašeho webu</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
+              <tr><td>Kontrola po opravě, hodinová práce, zápůjčky, denní uzávěrka</td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Statistiky přes všechny vaše servisy</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
               <tr><td>Prioritní podpora</td><td>—</td><td>—</td><td><span class="pricing-check">✓</span></td></tr>
             </tbody>
@@ -375,6 +401,36 @@
       <p class="pricing-note reveal">Platí se za servis, ne za jednotlivé uživatele. Předplatné je na dobu neurčitou a zrušit ho jde kdykoli ke konci zaplaceného období. SMS se počítají po zprávách za kalendářní měsíc a nevyčerpané se nepřevádějí do dalšího měsíce. Když balíček dojde, Jobi další zprávy neodešle a nic se nedoúčtuje; balíček jde kdykoli zvětšit. K odesílání je potřeba telefonní číslo, které servisu přidělíme. Dotazy k ceně a nasazení posílejte na <a href="mailto:info@appjobi.com">info@appjobi.com</a>.</p>
     </section>
 
+    <!-- PŘECHOD Z JINÉHO SYSTÉMU – konkurenci nejmenujeme, ale její zákazníky oslovujeme -->
+    <section id="prechod" class="section section-alt" aria-labelledby="prechod-heading">
+      <div class="section-eyebrow reveal">Přecházíte z jiného systému?</div>
+      <h2 id="prechod-heading" class="section-title reveal">Data si vezmete s sebou</h2>
+      <p class="section-desc reveal">Nezačínáte od nuly. Zákazníky, ceník i sklad nahrajete během jednoho odpoledne a zkušební měsíc si projdete s vlastními daty.</p>
+      <ol class="kroky">
+        <li class="krok reveal">
+          <div class="krok-cislo">1</div>
+          <div class="krok-telo">
+            <h3>Zákazníci z CSV</h3>
+            <p>Export z předchozí aplikace nebo tabulka z Excelu. Jobi pozná sloupce podle hlavičky, ukáže náhled a zákazníky s telefonem, který už máte, přeskočí. Import jde spustit i opakovaně.</p>
+          </div>
+        </li>
+        <li class="krok reveal">
+          <div class="krok-cislo">2</div>
+          <div class="krok-telo">
+            <h3>Ceník oprav a katalog zařízení</h3>
+            <p>Značky, modely a opravy s cenami nahrajete jedním textovým souborem, vzor si stáhnete v aplikaci. Díly do skladu jdou přes veřejné API nebo ručně.</p>
+          </div>
+        </li>
+        <li class="krok reveal">
+          <div class="krok-cislo">3</div>
+          <div class="krok-telo">
+            <h3>Pomoc s přechodem zdarma</h3>
+            <p>Pošlete nám export z vašeho systému a nahrajeme ho za vás. Rozjeté zakázky dokončíte ve starém systému, nové založíte v Jobi a od prvního dne máte historii zákazníků po ruce.</p>
+            <p class="krok-vysledek"><a href="mailto:info@appjobi.com?subject=P%C5%99echod%20do%20Jobi">Napište nám, z čeho přecházíte</a>, ozveme se s postupem.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
     <!-- DOWNLOAD -->
     <section id="stazeni" class="section section-download" aria-labelledby="stazeni-heading">
       <div class="download-card reveal">

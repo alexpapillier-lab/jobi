@@ -211,8 +211,8 @@ První tři měsíce: body 1, 2, 4.
   konkurentů **ne** (6. 9.: reklama konkurenci, riziko zastaralých údajů); místo
   toho: argumenty v ceníku beze jmen (neomezení uživatelé v ceně, žádné
   příplatky za moduly, cena za servis, ne za člověka) a sekce „Přecházíte
-  z jiného systému?“ (import CSV, pomoc s přechodem). Zbývá i video a nové
-  snímky (rezervace, kontrola, zápůjčka).
+  z jiného systému?“ (import CSV, pomoc s přechodem) – **hotovo 6. 9.**, včetně
+  nových snímků (Rezervace, Kontrola a zápůjčka) a dvou karet funkcí. Zbývá video.
 - `[x]` Nápověda: 10 kapitol na `appjobi.com/napoveda` (první kroky, příjem,
   stavy a automatizace, tisk a JobiDocs, nabídka a portál, SMS, faktury,
   sklad, tým a pobočky, import a API). V aplikaci Nastavení → Aplikace →

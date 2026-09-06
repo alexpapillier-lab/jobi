@@ -99,7 +99,23 @@ try {
   await pauza(2500);
   await snimek(page, "statistiky");
 
-  // 7) Zákaznický portál na telefonu – z produkce, tam ho zákazníci otevírají.
+  // 7) Kalendář s rezervacemi z webu (ukázkový servis má dvě).
+  await naStranku(page, "calendar");
+  await page.getByText("Rezervace z webu").first().waitFor({ timeout: 20_000 });
+  await pauza(1000);
+  await snimek(page, "rezervace");
+
+  // 8) Kontrola po opravě a náhradní zařízení v detailu zakázky SN26000012.
+  await naStranku(page, "orders");
+  await page.getByText("SN26000012", { exact: true }).first().click();
+  await page.getByText("Kontrola po opravě").first().waitFor({ timeout: 20_000 });
+  await page.evaluate(() => document.getElementById("detail-zapujcka")?.scrollIntoView({ block: "start" }));
+  await pauza(1200);
+  await snimek(page, "kontrola");
+  await page.keyboard.press("Escape");
+  await pauza(800);
+
+  // 9) Zákaznický portál na telefonu – z produkce, tam ho zákazníci otevírají.
   const mobil = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, locale: "cs-CZ", isMobile: true, hasTouch: true });
   const portal = await mobil.newPage();
   await portal.goto(`https://appjobi.com/z/?t=${PORTAL_TOKEN}`);
