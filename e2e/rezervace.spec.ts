@@ -59,5 +59,6 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
       return (await hotova.count()) > 0 ? (await hotova.first().innerText()) : "";
     }, { timeout: 30_000, message: "Rezervace se neoznačila jako vyřízená." })
     .toContain("Zakázka založena");
-  await expect(hotova.getByRole("button", { name: "Otevřít zakázku" })).toBeVisible();
+  // Seznam se po přepnutí filtru překresluje, proto počkat, ne číst hned.
+  await expect(hotova.first().getByRole("button", { name: "Otevřít zakázku" })).toBeVisible({ timeout: 30_000 });
 });
