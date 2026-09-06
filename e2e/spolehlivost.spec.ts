@@ -155,6 +155,41 @@ test("fronta neuložených změn přežije zavření aplikace", async ({ page, c
   await zavriDetail(page);
 });
 
+test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zpět", async ({ page }) => {
+  test.setTimeout(180_000);
+  await prihlasSe(page);
+  await page.getByText(kod, { exact: true }).first().click();
+  await expect(page.locator("#detail-zapujcka")).toBeVisible({ timeout: 20_000 });
+
+  const novyPopis = `Závada po výpadku ${Date.now().toString(36)}`;
+
+  /* Shodí se jen zápisy zakázek. Čtení funguje dál, takže se pozná i to,
+     že se místní změna nepřepíše starými daty ze serveru. */
+  await page.route(/\/rest\/v1\/tickets/, (route) =>
+    route.request().method() === "GET" ? route.continue() : route.abort("failed"),
+  );
+
+  // „Upravit" je i u jednotlivých oprav; tohle je to v hlavičce detailu.
+  await page.locator('button[title="Upravit zakázku"]:visible').first().click();
+  const popis = page.getByPlaceholder("Výměna displeje, výměna baterie, diagnostika").first();
+  await expect(popis).toBeVisible({ timeout: 20_000 });
+  await popis.fill(novyPopis);
+  await page.locator('button[title="Uložit změny"]:visible').first().click();
+
+  const ukazatel = page.locator("[data-neulozene-zmeny]");
+  await expect(ukazatel).toBeVisible({ timeout: 30_000 });
+  await expect(ukazatel).toContainText("čeká na uložení");
+
+  await page.unroute(/\/rest\/v1\/tickets/);
+  await expect(ukazatel).toHaveCount(0, { timeout: 90_000 });
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByText(kod, { exact: true }).first().click();
+  await expect(page.getByText(novyPopis).first()).toBeVisible({ timeout: 20_000 });
+  await zavriDetail(page);
+});
+
 test("úklid: testovací náhradní zařízení se z nastavení smaže", async ({ page }) => {
   await prihlasSe(page);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
