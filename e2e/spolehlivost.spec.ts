@@ -190,6 +190,42 @@ test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zp
   await zavriDetail(page);
 });
 
+test("interní komentář se uloží a po nepovedeném zápisu zůstane rozepsaný", async ({ page }) => {
+  test.setTimeout(150_000);
+  await prihlasSe(page);
+  await page.getByText(kod, { exact: true }).first().click();
+  const pole = page.getByPlaceholder("Napiš interní komentář k zakázce…");
+  await expect(pole).toBeVisible({ timeout: 20_000 });
+
+  const komentar = `Domluveno se zákazníkem ${Date.now().toString(36)}`;
+  await pole.fill(komentar);
+  await page.getByRole("button", { name: "Přidat komentář" }).click();
+  await expect(page.getByText(komentar).first()).toBeVisible({ timeout: 20_000 });
+
+  // Až po přenačtení je jisté, že komentář je v databázi.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByText(kod, { exact: true }).first().click();
+  await expect(page.getByText(komentar).first()).toBeVisible({ timeout: 20_000 });
+
+  /* Komentář, který se nezapíše, se nesmí ztratit z pole – jinak si ho
+     člověk musí pamatovat a napsat znovu. */
+  await page.route(/\/rest\/v1\/ticket_comments/, (route) =>
+    route.request().method() === "GET" ? route.continue() : route.abort("failed"),
+  );
+  const nepovedeny = `Tenhle se nezapíše ${Date.now().toString(36)}`;
+  const pole2 = page.getByPlaceholder("Napiš interní komentář k zakázce…");
+  await pole2.fill(nepovedeny);
+  await page.getByRole("button", { name: "Přidat komentář" }).click();
+  await expect(page.getByText("Nepodařilo se uložit komentář.").first()).toBeVisible({ timeout: 30_000 });
+  await expect(pole2).toHaveValue(nepovedeny);
+
+  await page.unroute(/\/rest\/v1\/ticket_comments/);
+  await page.getByRole("button", { name: "Přidat komentář" }).click();
+  await expect(page.getByText(nepovedeny).first()).toBeVisible({ timeout: 20_000 });
+  await zavriDetail(page);
+});
+
 test("úklid: testovací náhradní zařízení se z nastavení smaže", async ({ page }) => {
   await prihlasSe(page);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));

@@ -44,3 +44,40 @@ test("dvě reklamace založené naráz dostanou různé kódy", async ({ page, b
     await technik.context().close();
   }
 });
+
+test("reklamace i její řešení jsou po přenačtení v databázi", async ({ page }) => {
+  test.setTimeout(150_000);
+  await prihlasSe(page, "owner");
+  const jmeno = testovaciJmeno("Reklamace trvanlivost");
+  await zalozReklamaci(page, jmeno, "Tablet (reklamace)");
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByRole("button", { name: /^Reklamace/ }).first().click();
+  await expect(page.getByText(jmeno).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test("neuložená reklamace zůstane ve formuláři, nezmizí", async ({ page }) => {
+  test.setTimeout(150_000);
+  await prihlasSe(page, "owner");
+  const jmeno = testovaciJmeno("Reklamace bez zápisu");
+
+  /* Shodí se jen zakládání reklamací. Vyplněný formulář nesmí zmizet –
+     zákazník stojí u pultu a údaje by se musely vyplňovat znovu. */
+  await page.route(/\/rest\/v1\/warranty_claims/, (route) =>
+    route.request().method() === "GET" ? route.continue() : route.abort("failed"),
+  );
+
+  await page.getByRole("button", { name: "+ Nová reklamace" }).click();
+  await page.getByRole("button", { name: "Reklamace bez propojení na zakázku" }).click();
+  await page.getByPlaceholder("Jméno zákazníka").fill(jmeno);
+  await page.getByPlaceholder("např. iPhone 13, notebook").fill("Tablet (bez zápisu)");
+  await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
+
+  await expect(page.getByText(/Chyba při vytváření reklamace/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByPlaceholder("Jméno zákazníka")).toHaveValue(jmeno);
+
+  await page.unroute(/\/rest\/v1\/warranty_claims/);
+  await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
+  await expect(page.getByText(jmeno).first()).toBeVisible({ timeout: 30_000 });
+});

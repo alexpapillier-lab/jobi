@@ -85,3 +85,75 @@ test("zaplacení se ptá na způsob platby a faktura je v denní uzávěrce", as
   await expect(uzaverka.locator("tfoot")).toContainText("Hotově");
 });
 
+
+test("faktura je po přenačtení pořád v databázi", async ({ page }) => {
+  test.setTimeout(120_000);
+  await prihlasSe(page);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "invoices" } })));
+  await expect(page.getByRole("button", { name: "Uzávěrka" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /^Vystavené/ }).click();
+  const prvni = page.getByText(/^FV\d{4}-\d{4}$/).first();
+  await expect(prvni).toBeVisible({ timeout: 20_000 });
+  const cislo = (await prvni.textContent())!.trim();
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  /* Hned po přenačtení se událost o přechodu občas ztratí – posluchač ještě
+     nemusí být připojený. Proto se posílá, dokud se stránka neotevře. */
+  const uzaverka = page.getByRole("button", { name: "Uzávěrka" });
+  await expect
+    .poll(async () => {
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "invoices" } })));
+      return uzaverka.isVisible().catch(() => false);
+    }, { timeout: 45_000, message: "Stránka Faktury se neotevřela." })
+    .toBe(true);
+  await expect(page.getByText(cislo, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+});
+
+test("faktura, která se neuloží, zůstane rozepsaná v editoru", async ({ page }) => {
+  test.setTimeout(150_000);
+  await prihlasSe(page);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "invoices" } })));
+  const novaFaktura = page.getByRole("button", { name: "Nová faktura" });
+  await expect(novaFaktura).toBeVisible({ timeout: 30_000 });
+  await novaFaktura.click();
+  await expect(page.getByText("Nová faktura").first()).toBeVisible({ timeout: 30_000 });
+
+  const polozka = `Nepovedený zápis ${Date.now().toString(36)}`;
+  await page.getByPlaceholder("Název položky").first().fill(polozka);
+  await page.locator('input[type="number"]').nth(1).fill("777");
+
+  /* Shodí se jen zápisy faktur. Rozepsaná faktura nesmí zmizet – účetní
+     doklad, který se ztratí mezi kliknutím a chybou, je to nejhorší, co
+     může aplikace udělat. */
+  await page.route(/\/rest\/v1\/invoices/, (route) =>
+    route.request().method() === "GET" ? route.continue() : route.abort("failed"),
+  );
+  await page.getByRole("button", { name: "Uložit koncept" }).first().click();
+
+  // Chyba se ukáže a rozepsaná položka zůstane na obrazovce.
+  await expect(page.getByText(/nepodařilo uložit/i).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByPlaceholder("Název položky").first()).toHaveValue(polozka);
+
+  // Po obnovení spojení jde uložit znovu, bez opisování.
+  await page.unroute(/\/rest\/v1\/invoices/);
+  await page.getByRole("button", { name: "Uložit koncept" }).first().click();
+  await expect(page.getByText("Koncept uložen").first()).toBeVisible({ timeout: 30_000 });
+
+  /* Úklid: koncepty z testů nemají v servisu zůstat. V testovacím servisu
+     žádné jiné koncepty nejsou, tak se smažou všechny. */
+  await page.getByRole("button", { name: /^Koncepty/ }).first().click();
+  for (let i = 0; i < 10; i++) {
+    const radek = page.getByText(/^FV\d{4}-\d{4}$|^Bez čísla$/).first();
+    if ((await radek.count()) === 0) break;
+    await radek.click();
+    const nabidka = page.getByRole("button", { name: /Další akce|Více akcí|Více/ }).first();
+    if ((await nabidka.count()) === 0) break;
+    await nabidka.click();
+    await page.getByText("Smazat koncept").first().click();
+    const potvrzeni = page.getByRole("button", { name: /^Smazat/ }).last();
+    if (await potvrzeni.isVisible().catch(() => false)) await potvrzeni.click();
+    await expect(page.getByText("Koncept smazán").first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(800);
+  }
+});
