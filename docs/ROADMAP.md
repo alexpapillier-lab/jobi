@@ -39,8 +39,14 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    Fakturace a DPH → Propojení, tlačítko Odeslat v detailu faktury; edge funkce
    `invoice-export`, tabulka `service_integrations`, placený modul `accounting`)
    – zbývá Pohoda, Money, platební terminál (SumUp, GoPay), denní uzávěrka.
-8. `[ ]` **Apple a telefonní specifika** – kontrola IMEI a záruky při příjmu,
+8. `[~]` **Apple a telefonní specifika** – kontrola IMEI a záruky při příjmu,
    Find My, historie zařízení napříč servisy, checklist příjmu s fotkou.
+   Hotovo 6. 9.: **historie zařízení** – při příjmu i v detailu Jobi ukáže, že
+   zařízení se stejným sériovým číslem / IMEI už v servisu bylo (kód, datum,
+   závada; v detailu proklik), a **kontrola IMEI** podle kontrolní číslice
+   (překlep je vidět hned). `src/lib/zarizeniHistorie.ts`. Zbývá: záruka a
+   aktivační zámek u Apple (bez oficiálního API; jen odkaz na checkcoverage),
+   IMEI databáze blacklistu (placené API).
 9. `[ ]` **AI, kde šetří minuty** – z fotky a popisu navrhnout opravu a cenu
    z ceníku, napsat SMS zákazníkovi, shrnout historii zařízení.
 10. `[ ]` **Migrace jedním klikem** ze Zakázkového listu i MyRepair včetně

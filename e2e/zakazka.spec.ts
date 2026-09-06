@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, SERVIS, testovaciJmeno } from "./pomocnici";
+import { prihlasSe, SERVIS, testovaciJmeno, zalozZakazku } from "./pomocnici";
 
 /**
  * Hlavní cesta servisu: založit zakázku, najít ji v seznamu, otevřít detail
@@ -222,4 +222,24 @@ test("při stornu se servis zeptá na důvod a zapíše ho do historie", async (
   await page.getByText("Historie", { exact: true }).first().click();
   await expect(page.getByText("Důvod storna").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Cena byla pro zákazníka vysoká – Nabídka 3 500 Kč/).first()).toBeVisible();
+});
+
+test("při příjmu Jobi upozorní na zařízení, které už tu bylo, a na překlep v IMEI", async ({ page }) => {
+  await prihlasSe(page);
+  const sn = `E2ESN${Date.now().toString(36).toUpperCase()}`;
+  const kod = await zalozZakazku(page, { zakaznik: testovaciJmeno("Stejné SN"), zarizeni: "Telefon (stejné SN)", seriove: sn, popis: "Nejde nabíjet (SN test)" });
+
+  await page.getByRole("button", { name: "+ Nová zakázka" }).click();
+  const poleSn = page.getByPlaceholder("35-123456-789012-3").first();
+  // Jiný formát zápisu (mezery, malá písmena) musí najít stejné zařízení.
+  await poleSn.fill(sn.toLowerCase().replace(/^(.{4})/, "$1 "));
+  const upozorneni = page.getByRole("note");
+  await expect(upozorneni).toContainText("Zařízení už u vás bylo (1×)");
+  await expect(upozorneni).toContainText(kod);
+
+  // IMEI s chybnou kontrolní číslicí.
+  await poleSn.fill("356938035643800");
+  await expect(page.getByRole("alert")).toContainText("IMEI nevypadá platně");
+  await poleSn.fill("356938035643809");
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });

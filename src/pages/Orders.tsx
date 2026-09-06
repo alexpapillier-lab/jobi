@@ -43,6 +43,7 @@ import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type ZapujckaData } from "../lib/zapujcka";
+import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { PortalCard } from "../components/orders/PortalCard";
@@ -1334,7 +1335,11 @@ export default function Orders({
                   const zapisBezi =
                     (rozpracovaneZapisyOpravRef.current.get(newTicket.id) ?? 0) > 0 ||
                     odlozeneZapisyOpravRef.current.has(newTicket.id);
-                  const sloucena = zapisBezi ? { ...newTicket, performedRepairs: existing.performedRepairs } : newTicket;
+                  // Stejně se hned ukládá kontrola po opravě a náhradní zařízení –
+                  // ozvěna staršího zápisu by přepsala kliknutí, které přišlo mezitím.
+                  const sloucena = zapisBezi
+                    ? { ...newTicket, performedRepairs: existing.performedRepairs, testChecklist: existing.testChecklist, loaner: existing.loaner }
+                    : newTicket;
                   return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
                 } else {
                   // Add new - insert in correct position based on created_at
@@ -2731,6 +2736,22 @@ export default function Orders({
    * odkladem, aby se poslal jeden zápis. Při chybě zůstane příznak
    * rozpracovanosti a opravy se uloží při zavření detailu jako dřív.
    */
+  /**
+   * Označí zakázce běžící okamžitý zápis (opravy, kontrola, zápůjčka), aby
+   * realtime ozvěna staršího zápisu nepřepsala místní stav – viz upsert výše.
+   */
+  const sOkamzitymZapisem = useCallback(async <T,>(ticketId: string, zapis: () => Promise<T>): Promise<T> => {
+    const pocty = rozpracovaneZapisyOpravRef.current;
+    pocty.set(ticketId, (pocty.get(ticketId) ?? 0) + 1);
+    try {
+      return await zapis();
+    } finally {
+      const n = (pocty.get(ticketId) ?? 1) - 1;
+      if (n <= 0) pocty.delete(ticketId);
+      else pocty.set(ticketId, n);
+    }
+  }, []);
+
   const zapisProvedeneOpravy = useCallback((ticketId: string, repairs: PerformedRepair[], hned: boolean) => {
     if (!supabase) {
       setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
@@ -2863,7 +2884,7 @@ export default function Orders({
   const ulozZapujcku = useCallback(async (ticketId: string, zapujcka: ZapujckaData | null) => {
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: zapujcka ?? undefined } : t)));
     if (!supabase) return;
-    const { error } = await (supabase.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId);
+    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId));
     if (error) {
       devLog("[zapujcka] zápis selhal", error);
       showToast("Půjčení zařízení se nepodařilo uložit", "error");
@@ -2874,7 +2895,7 @@ export default function Orders({
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
     if (!supabase) return;
-    const { error } = await (supabase.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId);
+    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId));
     if (error) {
       devLog("[kontrola] zápis selhal", error);
       showToast("Kontrolu se nepodařilo uložit", "error");
@@ -4835,6 +4856,30 @@ export default function Orders({
                           style={baseFieldInput}
                           placeholder="35-123456-789012-3"
                         />
+                        {/* Překlep v IMEI a „tenhle telefon už tu byl“ – obojí chce servis vědět hned při příjmu. */}
+                        {(() => {
+                          const sn = dev.serialOrImei;
+                          const spatnyImei = vypadaJakoImei(sn) && !platnyImei(sn);
+                          const drive = najdiStejneZarizeni(cloudTickets, sn);
+                          if (!spatnyImei && drive.length === 0) return null;
+                          return (
+                            <div style={{ marginTop: 6, display: "grid", gap: 4, fontSize: 12 }}>
+                              {spatnyImei && (
+                                <div role="alert" style={{ color: "#dc2626" }}>IMEI nevypadá platně – nesedí kontrolní číslice, zkontrolujte překlep.</div>
+                              )}
+                              {drive.length > 0 && (
+                                <div role="note" style={{ color: "var(--accent)", background: "var(--accent-soft)", borderRadius: 8, padding: "6px 8px" }}>
+                                  Zařízení už u vás bylo ({drive.length}×):{" "}
+                                  {drive
+                                    .slice(0, 3)
+                                    .map((t) => `${t.code ?? "—"} · ${formatCZ(t.createdAt)}${t.issueShort || t.requestedRepair ? ` · ${t.issueShort || t.requestedRepair}` : ""}`)
+                                    .join(", ")}
+                                  {drive.length > 3 ? " …" : ""}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div>
                         <div style={{ ...fieldLabel, marginTop: 0 }}>Heslo / kód</div>
@@ -6086,6 +6131,25 @@ export default function Orders({
                           <span>SN: {detailedTicket.serialOrImei}</span>
                         </div>
                       )}
+                      {(() => {
+                        const drive = najdiStejneZarizeni(cloudTickets, detailedTicket.serialOrImei, detailedTicket.id);
+                        if (drive.length === 0) return null;
+                        return (
+                          <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span>Toto zařízení u vás už bylo ({drive.length}×):</span>
+                            {drive.slice(0, 4).map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => { setDetailId(t.id); setDetailClaimId(null); }}
+                                style={{ background: "transparent", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}
+                              >
+                                {t.code ?? "—"} · {formatCZ(t.createdAt)}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <div
                         style={{
                           fontSize: 14,

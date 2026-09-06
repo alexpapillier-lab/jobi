@@ -79,7 +79,7 @@ export function nahodnyTelefon(): string {
  */
 export async function zalozZakazku(
   page: Page,
-  udaje: { zakaznik: string; zarizeni: string; popis?: string; telefon?: string; nechatOtevrene?: boolean },
+  udaje: { zakaznik: string; zarizeni: string; popis?: string; telefon?: string; seriove?: string; nechatOtevrene?: boolean },
 ): Promise<string> {
   await page.getByRole("button", { name: "+ Nová zakázka" }).click();
   await page.getByPlaceholder("Jan Novák").fill(udaje.zakaznik);
@@ -87,6 +87,7 @@ export async function zalozZakazku(
   // zákazník už existuje, a formulář se chová jinak, než test čeká.
   await page.getByPlaceholder("+420 777 123 456").fill(udaje.telefon ?? nahodnyTelefon());
   await page.getByPlaceholder("Název nebo typ zařízení…").first().fill(udaje.zarizeni);
+  if (udaje.seriove) await page.getByPlaceholder("35-123456-789012-3").first().fill(udaje.seriove);
   // Vyplnění dalšího pole zavře napovídač zařízení, který jinak leží přes
   // tlačítko Vytvořit zakázku. Escape by zavřel celé okno.
   await page
