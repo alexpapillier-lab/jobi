@@ -244,7 +244,7 @@ export default function App() {
   );
 
   const smsProvisioned = useSmsEnabled(activeServiceId);
-  const { has: hasModule, loading: entitlementsLoading } = useEntitlements(activeServiceId);
+  const { has: hasModule, loading: entitlementsLoading, nacteniSelhalo: narokySelhaly } = useEntitlements(activeServiceId);
   /** Majitel aplikace musí dovnitř i u servisu po zkušebním období. */
   const isRootOwnerUser = useIsRootOwner();
 
@@ -1181,8 +1181,13 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
    * Konec zkušebního období: bez platného nároku „access“ se v aplikaci
    * nepracuje. Majitel aplikace (root owner) projde vždycky, aby měl jak
    * nárok prodloužit.
+   *
+   * Když se nároky nepodařilo načíst, zamykat se nesmí: výpadek sítě není
+   * konec předplatného a platící servis by přišel o přístup k vlastní práci.
+   * Riziko je malé – od migrace 20260911100000 hlídá nárok „access“ i RLS
+   * na serveru, takže servisu bez předplatného stejně žádný zápis neprojde.
    */
-  if (session && activeServiceId && !entitlementsLoading && !hasModule("access") && !isRootOwnerUser) {
+  if (session && activeServiceId && !entitlementsLoading && !narokySelhaly && !hasModule("access") && !isRootOwnerUser) {
     const aktivni = services.find((s) => s.service_id === activeServiceId);
     return (
       <ThemeProvider>

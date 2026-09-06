@@ -10,11 +10,16 @@ import { supabase } from "../lib/supabaseClient";
  *
  * DŮLEŽITÉ: tenhle hook slouží k tomu, aby UI neukazovalo, co si servis
  * nezaplatil. NENÍ to bezpečnostní prvek – kdo si otevře vývojářské
- * nástroje, zavolá edge funkci přímo. Skutečná kontrola je na serveru,
- * viz has_entitlement() v sms-send, sms-provision a invoice-send-email.
+ * nástroje, zavolá edge funkci přímo. Skutečná kontrola je na serveru:
+ * has_entitlement() v sms-send, sms-provision a invoice-send-email,
+ * ma_modul() v RLS u faktur a nárok „access“ v politikách nad daty servisu
+ * (migrace 20260911100000).
  */
 
 export type ModuleName = "access" | "sms" | "invoices" | "api_catalog" | "api_inventory" | "branches" | "accounting" | "consolidated";
+
+/** Řádek tabulky service_entitlements v podobě, v jaké ho hook potřebuje. */
+export type NarokRadek = { module: string; active: boolean; valid_until: string | null; quota: number | null };
 
 type State = {
   /** Které moduly má servis aktivní. */
@@ -25,6 +30,51 @@ type State = {
 /** Kolik kusů modulu má servis zaplaceno (dnes počet poboček). */
 type Quotas = Partial<Record<ModuleName, number>>;
 
+/**
+ * Co z nároků plyne pro aplikaci. Oddělené od Reactu, ať se dá vyzkoušet
+ * bez vykreslování – na tomhle výpočtu stojí, jestli se aplikace zamkne.
+ */
+export function vyhodnotNaroky(
+  radky: NarokRadek[],
+  ted: number = Date.now(),
+): { modules: Set<ModuleName>; quotas: Quotas; trialEndsAt: string | null } {
+  const zapnute = radky.filter((r) => r.active);
+  const plati = (r: NarokRadek) => !r.valid_until || new Date(r.valid_until).getTime() > ted;
+  const live = zapnute.filter(plati);
+
+  const quotas: Quotas = {};
+  for (const r of live) {
+    if (typeof r.quota === "number") quotas[r.module as ModuleName] = r.quota;
+  }
+
+  /*
+   * Konec zkušebního období je platnost nároku „access“, ne nejzazší datum
+   * ze všech modulů. Podle „access“ se aplikace zamyká, takže jen on smí
+   * rozhodovat o odpočtu.
+   *
+   * Dřív se bral maximem přes všechny časově omezené nároky. Platícímu
+   * servisu s trvalým „access“ a doplňkem na dobu určitou (třeba balíček SMS
+   * na měsíc) pak proužek tvrdil „zkušební období končí za 3 dny, jinak se
+   * aplikace zamkne“ – a po vypršení doplňku „zkušební období skončilo“,
+   * i když servis řádně platil a nic se mu nezamklo.
+   */
+  const pristup = zapnute.find((r) => r.module === "access");
+
+  return {
+    modules: new Set(live.map((r) => r.module as ModuleName)),
+    quotas,
+    // Časově omezený nárok drží i po vypršení – aplikace pak umí říct, že
+    // zkušební období skončilo, místo aby moduly beze slova zmizely.
+    trialEndsAt: pristup?.valid_until ?? null,
+  };
+}
+
+/** Zbývající dny do konce; záporné číslo = už skončilo. */
+export function zbyvaDni(konec: string | null, ted: number): number | null {
+  if (!konec) return null;
+  return Math.ceil((new Date(konec).getTime() - ted) / 86_400_000);
+}
+
 export function useEntitlements(activeServiceId: string | null): State & {
   has: (m: ModuleName) => boolean;
   /** Konec zkušebního období (ISO), nebo null u servisu bez časového omezení. */
@@ -33,13 +83,19 @@ export function useEntitlements(activeServiceId: string | null): State & {
   trialDaysLeft: number | null;
   /** Limit počtu kusů modulu; null = bez omezení nebo modul není aktivní. */
   quota: (m: ModuleName) => number | null;
+  /**
+   * Nároky se nepodařilo načíst (výpadek sítě, uspané spojení).
+   * Není to totéž co „servis nemá nárok“ – viz komentář u načítání.
+   */
+  nacteniSelhalo: boolean;
   refresh: () => void;
 } {
   const [modules, setModules] = useState<Set<ModuleName>>(new Set());
   const [quotas, setQuotas] = useState<Quotas>({});
-  /** Konec zkušebního období = nejzazší platnost mezi časově omezenými nároky. */
+  /** Konec zkušebního období = platnost nároku „access“. */
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nacteniSelhalo, setNacteniSelhalo] = useState(false);
   /**
    * Pro který servis platí načtené nároky.
    *
@@ -61,21 +117,20 @@ export function useEntitlements(activeServiceId: string | null): State & {
       setQuotas({});
       setTrialEndsAt(null);
       setNactenoPro(null);
+      setNacteniSelhalo(false);
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const nowIso = new Date().toISOString();
       // Vygenerované typy Supabase tuhle tabulku zatím neznají
       // (types/supabase.ts se generuje ze schématu). Stejná obezlička
       // jako jinde v kódu; až se typy přegenerují, dá se odstranit.
-      type EntitlementRow = { module: string; active: boolean; valid_until: string | null; quota: number | null };
       const { data, error } = (await (supabase.from("service_entitlements") as never as {
         select: (c: string) => {
           eq: (a: string, b: unknown) => {
-            eq: (a: string, b: unknown) => Promise<{ data: EntitlementRow[] | null; error: unknown }>;
+            eq: (a: string, b: unknown) => Promise<{ data: NarokRadek[] | null; error: unknown }>;
           };
         };
       })
@@ -85,22 +140,33 @@ export function useEntitlements(activeServiceId: string | null): State & {
 
       if (cancelled) return;
       if (error || !data) {
-        // Při chybě raději nic nezpřístupnit – server by to stejně odmítl.
-        setModules(new Set());
-        setQuotas({});
-        setTrialEndsAt(null);
-      } else {
-        const live = data.filter((r) => !r.valid_until || r.valid_until > nowIso);
-        setModules(new Set(live.map((r) => r.module as ModuleName)));
-        const q: Quotas = {};
-        for (const r of live) {
-          if (typeof r.quota === "number") q[r.module as ModuleName] = r.quota;
+        /*
+         * Nepovedený dotaz NENÍ „servis nemá nárok“.
+         *
+         * Dřív se při chybě vyprázdnily moduly a aplikace ukázala „Zkušební
+         * období skončilo“ – platícímu servisu stačilo, aby jeden dotaz
+         * spadl na uspaném spojení nebo chvilkovém výpadku, a zamklo ho to
+         * mimo vlastní data. Přitom aplikace umí pracovat i při výpadku
+         * (fronta neuložených změn) a schování obrazovky stejně nikoho
+         * nezastaví: skutečnou hranicí je RLS na serveru, která nárok
+         * „access“ hlídá u každého zápisu.
+         *
+         * Naposledy načtené moduly se proto nechávají být a chyba se hlásí
+         * zvlášť – App podle ní pozná, že zamykat nemá. Po přepnutí na jiný
+         * servis se ale nechat nedají: byly by to nároky někoho jiného.
+         */
+        setNacteniSelhalo(true);
+        if (nactenoPro !== activeServiceId) {
+          setModules((prev) => (prev.size === 0 ? prev : new Set()));
+          setQuotas({});
+          setTrialEndsAt(null);
         }
-        setQuotas(q);
-        // Časově omezené nároky drží i po vypršení (aplikace pak umí říct,
-        // že zkušební období skončilo, místo aby moduly beze slova zmizely).
-        const konce = data.map((r) => r.valid_until).filter((v): v is string => typeof v === "string");
-        setTrialEndsAt(konce.length > 0 ? konce.sort().slice(-1)[0] : null);
+      } else {
+        const vysledek = vyhodnotNaroky(data);
+        setModules(vysledek.modules);
+        setQuotas(vysledek.quotas);
+        setTrialEndsAt(vysledek.trialEndsAt);
+        setNacteniSelhalo(false);
       }
       setNactenoPro(activeServiceId);
       setLoading(false);
@@ -137,13 +203,11 @@ export function useEntitlements(activeServiceId: string | null): State & {
     return () => clearInterval(id);
   }, [trialEndsAt]);
 
-  const trialDaysLeft = trialEndsAt
-    ? Math.ceil((new Date(trialEndsAt).getTime() - ted) / 86_400_000)
-    : null;
+  const trialDaysLeft = zbyvaDni(trialEndsAt, ted);
 
   // Nároky z minulého servisu (nebo z doby, kdy žádný nebyl) se nesmí tvářit
   // jako platná odpověď pro ten současný.
   const nacitaSe = loading || nactenoPro !== (activeServiceId ?? null);
 
-  return { modules, loading: nacitaSe, has, quota, trialEndsAt, trialDaysLeft, refresh };
+  return { modules, loading: nacitaSe, has, quota, trialEndsAt, trialDaysLeft, nacteniSelhalo, refresh };
 }
