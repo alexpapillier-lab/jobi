@@ -281,6 +281,8 @@ type SaveTicketChangesParams = {
    * Bez tohohle se volal `onSuccess`, který úpravy zahodil.
    */
   onConflict?: (ticket: TicketEx) => void;
+  /** Zápis skončil ve frontě neuložených změn – volající o tom nesmí hlásit „uloženo“. */
+  onQueued?: () => void;
 };
 
 /**
@@ -497,7 +499,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
-    const { detailedTicket, editedTicket, onSuccess, onConflict } = params;
+    const { detailedTicket, editedTicket, onSuccess, onConflict, onQueued } = params;
 
     devLog("[Save] started", { ticketId: detailedTicket?.id });
     devLog("[SaveTicket] START", { 
@@ -531,6 +533,25 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     /* Payload i pro catch: když spojení spadne uprostřed zápisu, musí se
        změna dostat do fronty neuložených změn a ne zmizet s výjimkou. */
     let poslednPayload: Record<string, unknown> | null = null;
+    /* Stav zakázky, jak ho uživatel právě uložil. Když zápis skončí ve frontě,
+       ukáže se na obrazovce tenhle – do databáze dojde z fronty. */
+    let poslednUpraveny: TicketEx | null = null;
+
+    /** Zápis je bezpečně ve frontě: pro uživatele je hotovo. */
+    const doFrontyAHotovo = (payload: Record<string, unknown>, chyba: unknown): boolean => {
+      zaradDoFronty(payload, detailedTicket, activeServiceId, chyba);
+      /* Režim úprav se ukončí stejně jako po povedeném uložení. Dřív se
+         vracelo `false`, takže detail zůstal v úpravách – a protože zavření
+         detailu neuložené úpravy nepustí, nešlo z rozdělané zakázky odejít
+         vůbec, dokud se nevrátilo spojení. */
+      if (poslednUpraveny) {
+        const hotovy = poslednUpraveny;
+        setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? hotovy : t)));
+        onSuccess(hotovy);
+      }
+      onQueued?.();
+      return true;
+    };
 
     try {
       // Použij aktuální hodnoty z detailedTicket (které mohou obsahovat změny z diagnostiky)
@@ -648,6 +669,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         customer_info: payload.customer_info,
       });
       poslednPayload = payload;
+      poslednUpraveny = updated;
       devLog("[SaveTicket] PAYLOAD (full)", payload);
       devLog("[SaveTicket] Optimistic lock - expected version:", expectedVersion);
       
@@ -680,9 +702,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       if (error) {
         console.error("[SaveTicket] update error", error);
         if (!jeTrvalaChyba(error)) {
-          zaradDoFronty(payload, detailedTicket, activeServiceId, error);
           devLog("[SaveTicket] END (do fronty)");
-          return false;
+          return doFrontyAHotovo(payload, error);
         }
         showToast(`Chyba při ukládání zakázky: ${error.message}`, "error");
         devLog("[SaveTicket] END (error)");
@@ -749,9 +770,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
       console.error("[SaveTicket] update exception", err);
       if (!jeTrvalaChyba(err) && poslednPayload) {
-        zaradDoFronty(poslednPayload, detailedTicket, activeServiceId, err);
         devLog("[SaveTicket] END (do fronty)");
-        return false;
+        return doFrontyAHotovo(poslednPayload, err);
       }
       showToast(`Chyba při ukládání zakázky: ${errorMessage}`, "error");
       devLog("[SaveTicket] END");

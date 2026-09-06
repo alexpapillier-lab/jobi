@@ -981,8 +981,9 @@ export default function Orders({
   //
   // Načítá se ve dvou kolech. První dotaz vezme jen PRVNI_DAVKA_ZAKAZEK
   // nejnovějších zakázek – tolik, že první stránka seznamu je z čeho vykreslit –
-  // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím seznam
-  // objevil za 0,4 s místo 3,2 s (měřeno 6. 9. 2026, viz docs/ZATEZ.md).
+  // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím první
+  // řádek seznamu objevil za 520 ms místo 2 505 ms (medián ze tří běhů,
+  // 6. 9. 2026, viz docs/ZATEZ.md oddíl 5).
   // Servis pod dvě stě zakázek pošle pořád jen jeden dotaz.
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -1106,8 +1107,9 @@ export default function Orders({
   //
   // Dřív se natáhly komentáře **celého servisu** a seskupily podle ticket_id.
   // Vidět je přitom vždycky jen ten jeden otevřený detail: u zátěžového servisu
-  // to bylo 6 664 řádků v sedmi kolech po síti (~1,4 s a přes megabajt) kvůli
-  // pár řádkům, které si někdo přečte. Načítají se proto ke konkrétní zakázce.
+  // to bylo 6 664 řádků v sedmi kolech po síti kvůli pár řádkům, které si někdo
+  // přečte. Načítají se proto ke konkrétní zakázce – ze čtyřiceti osmi dotazů
+  // při otevření seznamu zakázek tím ubylo sedm (6. 9. 2026, docs/ZATEZ.md).
   const nactiKomentare = useCallback(async (ticketIds: string[]) => {
     if (!activeServiceId || !supabase || ticketIds.length === 0) return;
     const myReqId = ++commentsReqIdRef.current;
@@ -3528,7 +3530,11 @@ export default function Orders({
   };
 
 
+  /** Skončil poslední zápis ve frontě? Pak se nesmí hlásit „Změny uloženy“. */
+  const zapisSkoncilVeFronteRef = useRef(false);
+
   const saveTicketChanges = useCallback(async (): Promise<boolean> => {
+    zapisSkoncilVeFronteRef.current = false;
     if (!detailedTicket) {
       return false;
     }
@@ -3560,6 +3566,9 @@ export default function Orders({
       onConflict: (refreshedTicket) => {
         originalTicketRef.current = JSON.parse(JSON.stringify(refreshedTicket));
       },
+      onQueued: () => {
+        zapisSkoncilVeFronteRef.current = true;
+      },
     });
   }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
 
@@ -3584,7 +3593,8 @@ export default function Orders({
         if (!saved) {
           return;
         }
-        showToast("Změny uloženy", "success");
+        // Nad změnou, která teprve čeká ve frontě, by „uloženo“ byla lež.
+        if (!zapisSkoncilVeFronteRef.current) showToast("Změny uloženy", "success");
       } catch (err) {
         showToast("Chyba při ukládání změn: " + (err instanceof Error ? err.message : "Neznámá chyba"), "error");
         return;
@@ -3683,7 +3693,7 @@ export default function Orders({
       e.preventDefault();
       saveTicketChanges().then((ok) => {
         if (!ok) return;
-        showToast("Změny uloženy", "success");
+        if (!zapisSkoncilVeFronteRef.current) showToast("Změny uloženy", "success");
         const page = returnToPage;
         const customerId = returnToCustomerIdRef.current;
         setDetailId(null);

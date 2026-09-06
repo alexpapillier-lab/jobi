@@ -678,6 +678,10 @@ export function Sidebar({
                         layout="row"
                         selected={service.service_id === activeServiceId}
                         key={service.service_id}
+                        /* Aby šlo v testech trefit konkrétní servis: názvy se
+                           v seznamu opakují a e2e servis nesmí nikdy skončit
+                           přepnutý omylem do ostrého. */
+                        data-servis={service.service_id}
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveServiceId(service.service_id);
@@ -1231,6 +1235,7 @@ export function Sidebar({
                       layout="row"
                       selected={service.service_id === activeServiceId}
                       key={service.service_id}
+                      data-servis={service.service_id}
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();

@@ -100,6 +100,50 @@ function poleZavady(page: Page) {
   return page.locator('input[placeholder="Popis požadované opravy"]:visible').first();
 }
 
+/**
+ * Otevře nabídku účtu (odhlášení).
+ *
+ * Klik se opakuje, dokud nabídka opravdu není otevřená: postranní lišta se
+ * při najetí myší rozbaluje a překresluje, takže první kliknutí občas
+ * dopadne do překreslované lišty a stav přepínače se nezmění.
+ */
+async function otevriNabidkuUctu(page: Page): Promise<void> {
+  const ucet = page.locator('[aria-label="Účet"]:visible').first();
+  await expect(ucet).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(
+      async () => {
+        if ((await ucet.getAttribute("aria-expanded")) === "true") return true;
+        await ucet.click({ timeout: 5000 }).catch(() => {});
+        return (await ucet.getAttribute("aria-expanded")) === "true";
+      },
+      { timeout: 30_000, message: "Nabídka účtu se neotevřela." },
+    )
+    .toBe(true);
+}
+
+/**
+ * Přepínač servisů. V široké liště je vedle názvu servisu, v úzké pod účtem –
+ * zkusí se obojí. Vrací seznam položek servisů, které nejsou ten testovací.
+ */
+async function otevriSeznamServisu(page: Page): Promise<void> {
+  const prepinac = page.locator('[aria-label^="Servis: "]:visible').first();
+  if (await prepinac.isVisible().catch(() => false)) {
+    await expect
+      .poll(
+        async () => {
+          if ((await prepinac.getAttribute("aria-expanded")) === "true") return true;
+          await prepinac.click({ timeout: 5000 }).catch(() => {});
+          return (await prepinac.getAttribute("aria-expanded")) === "true";
+        },
+        { timeout: 30_000, message: "Nabídka servisů se neotevřela." },
+      )
+      .toBe(true);
+    return;
+  }
+  await otevriNabidkuUctu(page);
+}
+
 /** Druhé okno jako samostatný prohlížeč – vlastní přihlášení i úložiště. */
 async function druhyClovek(browser: Browser, kdo: "owner" | "technik"): Promise<Page> {
   const kontext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: "cs-CZ" });
@@ -327,14 +371,17 @@ test("přepnutí servisu s rozdělanou prací nezapíše nic do cizího servisu"
   await poleZavady(page).fill(popisek);
   await page.locator('button[title="Uložit změny"]:visible').first().click();
   await expect(ukazatel(page)).toBeVisible({ timeout: 30_000 });
+  // Zápis je ve frontě, takže detail jde zavřít – rozdělané úpravy by ho nepustily.
+  await zavriDetail(page);
 
-  // Nabídka účtu nese i seznam servisů.
-  await page.locator('[aria-label="Účet"]:visible').first().click();
-  const jinyServis = page.getByRole("button", { name: /^(?!.*E2E testovaci servis).*$/ }).filter({ hasText: /Servis|servis/ });
+  await otevriSeznamServisu(page);
+  const jinyServis = page.locator(`[data-servis]:visible:not([data-servis="${SERVIS.id}"])`);
   const pocet = await jinyServis.count();
   test.skip(pocet === 0, "Účet nemá druhý servis, přepnutí nejde vyzkoušet.");
 
   await jinyServis.first().click();
+  // Přepnutí je hotové, teprve když se přestal ukazovat testovací servis.
+  await expect(page.locator(`[aria-label="Servis: ${SERVIS.nazev}"]`)).toHaveCount(0, { timeout: 20_000 });
   // Síť je pořád dole, takže se do cizího servisu nemůže nic zapsat ani
   // omylem; fronta si přitom drží servis, kterému změna patří.
   await expect(ukazatel(page)).toBeVisible({ timeout: 20_000 });
@@ -343,8 +390,9 @@ test("přepnutí servisu s rozdělanou prací nezapíše nic do cizího servisu"
   expect(fronta).toContain(SERVIS.id);
 
   // Zpátky do testovacího servisu a teprve pak síť nahoru.
-  await page.locator('[aria-label="Účet"]:visible').first().click();
-  await page.getByRole("button", { name: /E2E testovaci servis/ }).first().click();
+  await otevriSeznamServisu(page);
+  await page.locator(`[data-servis="${SERVIS.id}"]:visible`).first().click();
+  await expect(page.locator(`[aria-label="Servis: ${SERVIS.nazev}"]`).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 30_000 });
 
   await obnovSit(page, TICKETS);
@@ -368,8 +416,9 @@ test("odhlášení s rozdělanou prací o ni nepřipraví", async ({ page }) => 
   await poleZavady(page).fill(popisek);
   await page.locator('button[title="Uložit změny"]:visible').first().click();
   await expect(ukazatel(page)).toBeVisible({ timeout: 30_000 });
+  await zavriDetail(page);
 
-  await page.locator('[aria-label="Účet"]:visible').first().click();
+  await otevriNabidkuUctu(page);
   await page.getByRole("button", { name: "Odhlásit se" }).click();
   await expect(page.locator('input[type="email"]').first()).toBeVisible({ timeout: 30_000 });
 

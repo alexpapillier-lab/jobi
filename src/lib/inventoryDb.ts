@@ -251,8 +251,7 @@ export async function loadInventoryFromDb(serviceId: string | null): Promise<Loa
   }
 
   // Čtyři nezávislé dotazy. Dřív se čekalo na každý zvlášť, takže se sčítaly
-  // čtyři cesty na server (naměřeno 6. 9. 2026: sklad 2,1 s); souběžně se platí
-  // jen ta nejdelší z nich.
+  // čtyři cesty na server; souběžně se platí jen ta nejdelší z nich.
   const [categoriesRes, productsRes, warehousesRes, stockRes] = await Promise.all([
     (supabase.from("inventory_product_categories") as any).select("id, name, model_ids, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at"),
     vybratProdukty(supabase, serviceId),

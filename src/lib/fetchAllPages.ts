@@ -7,11 +7,11 @@
  * zákazníky by to znamenalo, že se v appce zobrazí jen část dat.
  *
  * Stránky se od druhé berou **po několika najednou**. Sekvenční stránkování
- * platí latenci za každou stránku zvlášť: u 4 800 zakázek to bylo pět kol po
- * ~700 ms, tedy 3,5 s jenom čekáním na síť (změřeno 6. 9. 2026, viz
- * docs/ZATEZ.md). Souběžně se z toho stanou dvě kola. První stránka jde vždy
- * sama – z její velikosti se pozná, jestli má smysl posílat další, takže
- * malý servis pošle přesně jeden dotaz jako dřív.
+ * platí čekání na síť za každou stránku zvlášť: u 4 800 zakázek to bylo pět
+ * kol za sebou, souběžně jsou z toho dvě (změřeno 6. 9. 2026, viz
+ * docs/ZATEZ.md oddíl 5). První stránka jde vždycky sama – z její velikosti
+ * se pozná, jestli má smysl posílat další, takže malý servis pošle přesně
+ * jeden dotaz jako dřív.
  */
 export async function fetchAllPages<T>(
   loadPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
