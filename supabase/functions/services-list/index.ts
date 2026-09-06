@@ -69,9 +69,13 @@ serve(async (req) => {
       const ids = (allServices || []).map((s: { id: string }) => s.id);
       let memberCounts: Record<string, number> = {};
       if (ids.length > 0) {
+        // Skrytá členství (majitel aplikace kvůli podpoře) se do počtu lidí
+        // v servisu nepočítají – jinak by u každého servisu přibyl člověk,
+        // kterého tam nikdo nevidí.
         const { data: counts } = await svc
           .from("service_memberships")
           .select("service_id")
+          .eq("skryty", false)
           .in("service_id", ids);
         const byService: Record<string, number> = {};
         for (const sid of ids) byService[sid] = 0;

@@ -68,6 +68,8 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
     void (supabase.from("service_memberships") as any)
       .select("user_id", { count: "exact", head: true })
       .eq("service_id", activeServiceId)
+      // Skryté členství majitele aplikace se do „kolik nás tu je" nepočítá.
+      .eq("skryty", false)
       .then(({ count }: { count: number | null }) => { if (!cancelled) setClenu(count ?? 1); }, () => {});
     return () => { cancelled = true; };
   }, [activeServiceId]);

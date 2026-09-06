@@ -360,7 +360,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       if (!uid) return;
       const { data: clenstvi } = await (supabase!.from("service_memberships") as any)
         .select("service_id")
-        .eq("user_id", uid);
+        .eq("user_id", uid)
+        // Skrytá členství (majitel aplikace v cizích servisech) se do
+        // souhrnných statistik nepočítají – jinak by se čísla zákazníků
+        // sečetla dohromady s jeho vlastními.
+        .eq("skryty", false);
       const ids = ((clenstvi ?? []) as Array<{ service_id: string }>).map((m) => m.service_id);
       if (ids.length === 0) return;
       const { data: servisy } = await (supabase!.from("services") as any).select("id, name").in("id", ids);

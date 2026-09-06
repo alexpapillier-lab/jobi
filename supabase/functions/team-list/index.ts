@@ -79,10 +79,14 @@ serve(async (req) => {
       // Root owner can view team for any service – use service role to fetch
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const adminClient = createClient(supabaseUrl, serviceKey);
+      // Skryté členství (majitel aplikace kvůli podpoře) se v týmu neukazuje
+      // ani jemu samotnému – jinak by na obrazovce byl člen, kterého ostatní
+      // nevidí, a nedalo by se poznat, co vlastně zákazník vidí.
       const res = await adminClient
         .from("service_memberships")
         .select("user_id, service_id, role, created_at, capabilities, home_branch_id")
         .eq("service_id", serviceId)
+        .eq("skryty", false)
         .order("created_at", { ascending: true });
       memberships = res.data;
       membersError = res.error;
@@ -113,6 +117,7 @@ serve(async (req) => {
         .from("service_memberships")
         .select("user_id, service_id, role, created_at, capabilities, home_branch_id")
         .eq("service_id", serviceId)
+        .eq("skryty", false)
         .order("created_at", { ascending: true });
       memberships = res.data;
       membersError = res.error;
