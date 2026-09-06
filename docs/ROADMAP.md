@@ -79,10 +79,14 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Export a výmaz dat servisu na žádost (GDPR) – v Owner panelu tlačítko
   „Exportovat data (JSON)“ (akce `export` ve `service-manage`, kompletní obsah
   servisu včetně seznamu souborů) a mazání, které nově uklidí i úložiště.
-- `[ ]` Právní texty na dokumentech (příjemka, záruční list) zkontrolovat
-  právníkem – jsou přepsané, ne převzaté.
-
-### Provoz a bezpečnost
+- `[~]` Právní texty na dokumentech (6. 9., `jobidocs/core/defaults.ts` LEGAL_TEXTS):
+  záruční list už neomezuje díly na 12 měsíců (spotřebitel má ze zákona 24
+  měsíců z vadného plnění, § 2615 → § 2165 OZ) a nevylučuje pozdější reklamaci
+  vnějšího poškození; reklamační příjemka má náležitosti potvrzení podle § 19
+  zákona o ochraně spotřebitele (kdy, co, požadovaný způsob, 30 dnů, písemné
+  potvrzení o vyřízení); zakázkový list zmiňuje prodej nevyzvednuté věci po
+  6 měsících (§ 2609 OZ). Smlouva o zápůjčce nová. **Ještě nechat přečíst
+  právníkem** – texty jsou výchozí a servis si je v JobiDocs upravuje.
 - `[~]` Zálohy DB – hotová automatická denní záloha mimo Supabase
   (`.github/workflows/backup-db.yml`): dump, zkouška obnovy do prázdného
   Postgresu s porovnáním počtů řádků, šifrování AES-256 a artefakt na 90 dní.
