@@ -217,7 +217,26 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (403, null, 'anon: rozdavani prav',                                              'odmitnuto', 'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
   (404, '3e2e0000-1111-4222-8333-444455556666', 'majitel E2E: prava v cizim servisu','odmitnuto','select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": true}''::jsonb)'),
   (405, '22222222-3333-4444-8555-666666666666', 'spravce: prava s hodnotou null',   'projde',    'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{"can_manage_statuses": null}''::jsonb)'),
-  (406, '22222222-3333-4444-8555-666666666666', 'spravce: prazdna prava nic nemenil','projde',   'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{}''::jsonb)')
+  (406, '22222222-3333-4444-8555-666666666666', 'spravce: prazdna prava nic nemenil','projde',   'select set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''11111111-2222-4333-8444-555555555555'', ''{}''::jsonb)'),
+  -- ══ 5. kolo (6. 9. večer): vedlejší tabulky a skladová RPC vs. pobočka ═════
+  (500, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi SMS konverzace',      'nic',       'select c.* from sms_conversations c join tickets t on t.id = c.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (501, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi SMS zpravy',          'nic',       'select m.* from sms_messages m join sms_conversations c on c.id = m.conversation_id join tickets t on t.id = c.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (502, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi historie reklamaci',  'nic',       'select h.* from warranty_claim_history h join warranty_claims w on w.id = h.warranty_claim_id where w.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (503, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi udalosti portalu',    'nic',       'select e.* from ticket_portal_events e join tickets t on t.id = e.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (504, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi dokumenty zakazky',   'nic',       'select d.* from ticket_documents d join tickets t on t.id = d.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (505, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi rezervace dilu',      'nic',       'select r.* from inventory_reservations r join tickets t on t.id = r.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (506, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi behy automatizaci',   'nic',       'select a.* from automation_runs a join tickets t on t.id = a.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (507, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi polozky objednavek',  'nic',       'select i.* from inventory_purchase_order_items i join tickets t on t.id = i.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  -- Zakázka z cizí pobočky není pro tenhle účet vidět, takže `insert … select`
+  -- nemá co vložit. Nula vložených řádků je stejně bezpečná jako odmítnutí.
+  (509, '33333333-4444-4555-8666-777777777777', 'pobocka: komentar na cizi zakazku', 'nic', 'insert into ticket_comments (service_id, ticket_id, content) select ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', t.id, ''HACK'' from tickets t where t.service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' limit 1'),
+  (510, '33333333-4444-4555-8666-777777777777', 'pobocka: historie na cizi zakazku', 'nic', 'insert into ticket_history (service_id, ticket_id, action) select ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', t.id, ''updated'' from tickets t where t.service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' limit 1'),
+  (511, '33333333-4444-4555-8666-777777777777', 'pobocka: rezervace cizi zakazky RPC','odmitnuto','select inventory_reserve_for_repair(''f1ee088f-3aef-4380-aa52-897690259ae0''::uuid, ''audit'', array[]::uuid[], 1)'),
+  (512, '33333333-4444-4555-8666-777777777777', 'pobocka: uvolneni rezervaci RPC',   'odmitnuto', 'select inventory_release_reservations(''f1ee088f-3aef-4380-aa52-897690259ae0''::uuid)'),
+  (513, '33333333-4444-4555-8666-777777777777', 'pobocka: odepsani skladu RPC',      'odmitnuto', 'select inventory_consume_ticket(''f1ee088f-3aef-4380-aa52-897690259ae0''::uuid)'),
+  (520, null, 'anon: vypis diagnostickych fotek',                                    'nic',       'select * from storage.objects where bucket_id = ''diagnostic-photos'''),
+  -- Úložiště navíc mazání přes SQL zakazuje samo; politika je druhá pojistka.
+  (521, '11111111-2222-4333-8444-555555555555', 'clen: cizi fotky smazat',           'odmitnuto',       'delete from storage.objects where bucket_id = ''diagnostic-photos'' and (storage.foldername(name))[1] <> ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p

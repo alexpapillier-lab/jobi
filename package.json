@@ -65,7 +65,11 @@
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
-    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx"
+    "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
+    "zatez": "node scripts/zatez/verejne-api.mjs",
+    "zatez:db": "node scripts/zatez/db-dotazy.mjs",
+    "zatez:limity": "node scripts/zatez/limity.mjs",
+    "zatez:prohlizec": "node scripts/zatez/prohlizec.mjs"
   },
   "type": "module",
   "version": "0.5.1"

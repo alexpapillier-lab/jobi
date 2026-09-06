@@ -74,10 +74,6 @@ export interface DocumentsConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function escapeHtmlForDoc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 // Proměnné pro JobiDocs v2 staví src/lib/documentData.ts (DocumentData); starší
 // plochý slovník proměnných byl odstraněn 6. 9. – nikdo ho nevolal.
 
@@ -99,6 +95,53 @@ export function buildClaimVariablesForJobiDocs(claim: WarrantyClaimRow, original
     device_state: claim.device_condition ?? "",
     device_problem: claim.notes ?? "",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Záruční doba pro záruční list
+// ---------------------------------------------------------------------------
+
+export type ZarucniDoba = { months?: number; days?: number };
+
+/**
+ * Jak dlouhou záruku servis dává na opravu.
+ *
+ * Není to údaj zakázky, ale nastavení dokumentů servisu
+ * (service_document_settings → warrantyCertificate), proto se čte odtud.
+ * Dny se na měsíce nepřepočítávají: „45 dnů“ není „1,5 měsíce“ a přepočet
+ * přes třicetidenní měsíc by zákazníkovi na papíře slíbil něco jiného, než
+ * si servis nastavil. Vlastní text záruky žádnou délku neurčuje.
+ */
+export function zarucniDobaZNastaveni(config: unknown): ZarucniDoba | undefined {
+  const wc = (config as { warrantyCertificate?: Record<string, unknown> } | null | undefined)?.warrantyCertificate;
+  if (!wc || typeof wc !== "object") return undefined;
+  if (wc.warrantyType === "custom") return undefined;
+  const delka = Number(wc.warrantyUnifiedDuration);
+  if (!Number.isFinite(delka) || delka <= 0) return undefined;
+  if (wc.warrantyUnifiedUnit === "days") return { days: Math.round(delka) };
+  if (wc.warrantyUnifiedUnit === "years") return { months: Math.round(delka * 12) };
+  return { months: Math.round(delka) };
+}
+
+/**
+ * Poslední načtená záruční doba servisu.
+ *
+ * Tisk zakázky je synchronní, ale nastavení dokumentů se načítá z databáze;
+ * drží se proto v paměti spolu s ID servisu. Bez shody ID se raději nevrátí
+ * nic – vytisknout záruku předchozího servisu je horší než ji nevytisknout,
+ * právní text si v takovém případě vystačí se zákonnou délkou.
+ */
+let zapamatovanaZaruka: { serviceId: string; doba: ZarucniDoba } | null = null;
+
+export function zapamatujZarukuServisu(serviceId: string | null | undefined, config: unknown): void {
+  if (!serviceId) return;
+  const doba = zarucniDobaZNastaveni(config);
+  zapamatovanaZaruka = doba ? { serviceId, doba } : null;
+}
+
+export function zarucniDobaProTisk(serviceId: string | null | undefined): ZarucniDoba | undefined {
+  if (!serviceId || zapamatovanaZaruka?.serviceId !== serviceId) return undefined;
+  return zapamatovanaZaruka.doba;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +190,8 @@ export async function loadDocumentsConfigFromDB(serviceId: string | null): Promi
     const typedData = data as { config: any };
     if (!typedData.config) return null;
     const parsed = typedData.config as any;
+    // Záruční doba se odsud tiskne na záruční list, viz zarucniDobaProTisk.
+    zapamatujZarukuServisu(serviceId, parsed);
 
     return {
       ticketList: {
@@ -172,6 +217,12 @@ export async function loadDocumentsConfigFromDB(serviceId: string | null): Promi
         includeDeviceInfo: typeof parsed?.warrantyCertificate?.includeDeviceInfo === "boolean" ? parsed.warrantyCertificate.includeDeviceInfo : DEFAULT_DOCUMENTS_CONFIG.warrantyCertificate.includeDeviceInfo,
         includeRepairs: typeof parsed?.warrantyCertificate?.includeRepairs === "boolean" ? parsed.warrantyCertificate.includeRepairs : DEFAULT_DOCUMENTS_CONFIG.warrantyCertificate.includeRepairs,
         includeDates: typeof parsed?.warrantyCertificate?.includeDates === "boolean" ? parsed.warrantyCertificate.includeDates : DEFAULT_DOCUMENTS_CONFIG.warrantyCertificate.includeDates,
+        // Délka záruky se dřív z načteného configu ztrácela, takže na
+        // záručním listu chybělo číslo, které si servis nastavil.
+        warrantyType: parsed?.warrantyCertificate?.warrantyType,
+        warrantyUnifiedDuration: parsed?.warrantyCertificate?.warrantyUnifiedDuration,
+        warrantyUnifiedUnit: parsed?.warrantyCertificate?.warrantyUnifiedUnit,
+        warrantyCustomText: parsed?.warrantyCertificate?.warrantyCustomText,
       },
       autoPrint: parsed?.autoPrint ? {
         ticketListOnCreate: !!parsed.autoPrint.ticketListOnCreate,
@@ -221,75 +272,5 @@ export function safeLoadDocumentsConfig(): any {
     };
   } catch {
     return { ...DEFAULT_DOCUMENTS_CONFIG };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Fallback design styles for Jobi HTML generators
-// (simplified flat shape; JobiDocs has a richer version in documentDesign.ts)
-// ---------------------------------------------------------------------------
-
-export type FallbackDesignStyles = {
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  borderColor: string;
-  bgColor: string;
-  headerBg: string;
-  headerText: string;
-  sectionBg: string;
-  sectionBorder: string;
-};
-
-export function getDesignStylesForFallback(designType: string): FallbackDesignStyles {
-  switch (designType) {
-    case "modern":
-      return {
-        primaryColor: "#1e40af",
-        secondaryColor: "#3b82f6",
-        accentColor: "#60a5fa",
-        borderColor: "#dbeafe",
-        bgColor: "#ffffff",
-        headerBg: "transparent",
-        headerText: "#1e40af",
-        sectionBg: "#ffffff",
-        sectionBorder: "2px solid #dbeafe",
-      };
-    case "minimal":
-      return {
-        primaryColor: "#1a1a1a",
-        secondaryColor: "#6b7280",
-        accentColor: "#9ca3af",
-        borderColor: "#e5e7eb",
-        bgColor: "#ffffff",
-        headerBg: "transparent",
-        headerText: "#1a1a1a",
-        sectionBg: "transparent",
-        sectionBorder: "none",
-      };
-    case "professional":
-      return {
-        primaryColor: "#0f172a",
-        secondaryColor: "#334155",
-        accentColor: "#475569",
-        borderColor: "#cbd5e1",
-        bgColor: "#ffffff",
-        headerBg: "transparent",
-        headerText: "#0f172a",
-        sectionBg: "#ffffff",
-        sectionBorder: "1px solid #e2e8f0",
-      };
-    default: // classic
-      return {
-        primaryColor: "#1f2937",
-        secondaryColor: "#4b5563",
-        accentColor: "#6b7280",
-        borderColor: "#d1d5db",
-        bgColor: "#ffffff",
-        headerBg: "#f9fafb",
-        headerText: "#1f2937",
-        sectionBg: "#ffffff",
-        sectionBorder: "1px solid #e5e7eb",
-      };
   }
 }

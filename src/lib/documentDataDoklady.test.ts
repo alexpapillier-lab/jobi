@@ -120,8 +120,29 @@ describe("konec záruky", () => {
     expect(d.warranty?.until).toBeUndefined();
   });
 
+  it("záruka sjednaná ve dnech se počítá po dnech, ne po třicetidenních měsících", () => {
+    const d = ticketDocumentData(zakazka(), {}, { completedAt: "2026-09-03T12:00:00.000Z", warrantyDays: 45 });
+    expect(d.warranty?.days).toBe(45);
+    expect(d.warranty?.months).toBeUndefined();
+    expect(d.warranty?.until?.slice(0, 10)).toBe("2026-10-18");
+  });
+
   it("bez sjednané záruky se blok záruky na doklad nedostane vůbec", () => {
     expect(ticketDocumentData(zakazka(), {}, { completedAt: "2026-09-03T12:00:00.000Z" }).warranty).toBeUndefined();
+  });
+});
+
+// Bez značky i modelu nemá na příjemce reklamace zůstat prázdná kolonka
+// „Zařízení: “ – řádek bez hodnoty se má z dokladu ztratit celý.
+describe("zařízení na příjemce reklamace", () => {
+  it("bez názvu, značky i modelu zůstane kolonka nevyplněná, ne prázdná", () => {
+    const d = claimDocumentData(reklamace({ device_label: null, device_brand: null, device_model: null }), firma());
+    expect(d.device?.name).toBeUndefined();
+  });
+
+  it("bez názvu se poskládá ze značky a modelu", () => {
+    const d = claimDocumentData(reklamace({ device_label: null, device_brand: "Apple", device_model: "iPhone 13" }), firma());
+    expect(d.device?.name).toBe("Apple iPhone 13");
   });
 });
 

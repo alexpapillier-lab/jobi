@@ -64,10 +64,18 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
   const vybranyInfo = TARIFY.find((t) => t.tier === tarif)!;
   const klicTarifu = vybrany?.lookup_key ?? `jobi_${tarif}_${obdobi === "year" ? "yearly" : "monthly"}`;
   const maSmsVCene = (vybrany?.modules ?? vybranyInfo.modules).includes("sms");
+  /**
+   * Umí vybraný tarif vůbec pobočky? Starter je nemá, takže se u něj pole
+   * „Pobočky navíc" nenabízí – dřív se nabízelo a zákazník si připlatil za
+   * pobočku, kterou mu pak databáze stejně nedovolila založit.
+   */
+  const maPobocky = (vybrany?.modules ?? vybranyInfo.modules).includes("branches");
 
   const koupit = async () => {
     setBusy("checkout");
-    const res = await startCheckout(activeServiceId, { plan: klicTarifu, branches: pobockyNavic, sms: smsNavic && !maSmsVCene });
+    // Když tarif pobočky neumí, neposílá se ani počet – jinak by checkout
+    // skončil chybou kvůli hodnotě, kterou už uživatel nevidí.
+    const res = await startCheckout(activeServiceId, { plan: klicTarifu, branches: maPobocky ? pobockyNavic : 0, sms: smsNavic && !maSmsVCene });
     setBusy(null);
     if (res.url) { window.location.href = res.url; return; }
     if (res.notConfigured) { setPlatbyVypnute(true); return; }
@@ -274,21 +282,27 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
 
               <div style={{ display: "grid", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)" }}>
                 <div style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)" }}>Připlatit si</div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)", flexWrap: "wrap" }}>
-                  Pobočky navíc
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={pobockyNavic}
-                    onChange={(e) => setPobockyNavic(Math.max(0, Math.min(50, Number(e.target.value) || 0)))}
-                    className="ui-input"
-                    style={{ width: 70, padding: "4px 8px", textAlign: "center" }}
-                  />
-                  <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>
-                    nad {vybranyInfo.branchesIncluded === 1 ? "jednu pobočku" : `${vybranyInfo.branchesIncluded} pobočky`}, které tarif {vybranyInfo.label} zahrnuje
-                  </span>
-                </label>
+                {maPobocky ? (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)", flexWrap: "wrap" }}>
+                    Pobočky navíc
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={pobockyNavic}
+                      onChange={(e) => setPobockyNavic(Math.max(0, Math.min(50, Number(e.target.value) || 0)))}
+                      className="ui-input"
+                      style={{ width: 70, padding: "4px 8px", textAlign: "center" }}
+                    />
+                    <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>
+                      nad {vybranyInfo.branchesIncluded === 1 ? "jednu pobočku" : `${vybranyInfo.branchesIncluded} pobočky`}, které tarif {vybranyInfo.label} zahrnuje
+                    </span>
+                  </label>
+                ) : (
+                  <div style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>
+                    Tarif {vybranyInfo.label} má jednu pobočku a další se k němu dokoupit nedají. Víc poboček umí Business a vyšší.
+                  </div>
+                )}
                 {!maSmsVCene && (
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text)", cursor: "pointer", flexWrap: "wrap" }}>
                     <input type="checkbox" checked={smsNavic} onChange={(e) => setSmsNavic(e.target.checked)} />

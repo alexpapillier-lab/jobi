@@ -91,7 +91,7 @@ serve(async (req) => {
 
     // Zkušební období: celá aplikace na 30 dní, pak si servis vybere plán.
     const konecZkusebni = new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString();
-    await svc
+    const { error: narokyErr } = await svc
       .from("service_entitlements")
       .insert(TRIAL_MODULES.map((module) => ({
         service_id: novy.id,
@@ -99,15 +99,22 @@ serve(async (req) => {
         active: true,
         valid_until: konecZkusebni,
         note: `Zkušební období ${TRIAL_DAYS} dní`,
-      })))
-      .then(() => {}, () => {});
+      })));
+    if (narokyErr) {
+      // Servis bez nároků je servis, do kterého se nedá vstoupit – majitel by
+      // byl hned po registraci zamčený a ještě by mu ten servis počítal do
+      // limitu. Radši uklidit a nechat ho zkusit to znovu.
+      await svc.from("services").delete().eq("id", novy.id);
+      return json({ error: `Zkušební období se nepodařilo zapnout: ${narokyErr.message}` }, 500);
+    }
 
     // Název servisu rovnou i do firemních údajů, ať se objeví na dokumentech
-    // dřív, než je majitel doplní celé.
-    await svc
+    // dřív, než je majitel doplní celé. Tohle si majitel doplní i sám, takže
+    // se kvůli tomu zakládání neruší – jen ať je chyba vidět v logu.
+    const { error: nastaveniErr } = await svc
       .from("service_settings")
-      .upsert({ service_id: novy.id, config: { companyData: { name: nazev } } }, { onConflict: "service_id" })
-      .then(() => {}, () => {});
+      .upsert({ service_id: novy.id, config: { companyData: { name: nazev } } }, { onConflict: "service_id" });
+    if (nastaveniErr) console.error("[service-create] firemní údaje se nezaložily:", nastaveniErr.message);
 
     return json({ ok: true, service_id: novy.id, trial_ends_at: konecZkusebni });
   } catch (e) {

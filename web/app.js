@@ -11,7 +11,10 @@
   var loaderMsgEl = document.getElementById("loader-msg");
   var loaderBarEl = document.getElementById("loader-bar-fill");
   var loaderStart = Date.now();
-  var loaderMinMs = 1800;
+  /* Loader držel stránku minimálně 1,8 s i tehdy, když bylo dávno načteno.
+     Ta doba nikomu nic nepřinesla, jen zdržela. 300 ms stačí na to, aby
+     přechod nebyl trhnutí. */
+  var loaderMinMs = 300;
   var loaderMsgIdx = 0;
 
   function setLoaderMsg(text, barPct) {
@@ -45,7 +48,7 @@
         loaderEl.classList.add("loader-out");
         setTimeout(function () { if (loaderEl) loaderEl.remove(); }, 500);
       }
-    }, 320);
+    }, 120); // Jen aby stihl doběhnout pruh na 100 %. Dřív 320 ms – další zdržení navíc.
   }
 
   window.addEventListener("load", function () {
@@ -57,9 +60,13 @@
   var GITHUB_RELEASE = "https://api.github.com/repos/alexpapillier-lab/jobi/releases/latest";
 
   // ---- Mockup scroll parallax + rotation ----
+  /* Komu se z pohybu dělá špatně, ten si omezený pohyb zapne v systému.
+     Parallax s otáčením je ozdoba, takže se prostě nespustí. */
+  var omezenyPohyb = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   var mockupWin = document.querySelector(".mockup-window");
   var heroEl = document.querySelector(".hero");
-  if (mockupWin && heroEl && window.innerWidth > 920) {
+  if (mockupWin && heroEl && window.innerWidth > 920 && !omezenyPohyb) {
     mockupWin.style.willChange = "transform";
     function updateMockup() {
       var heroH = heroEl.offsetHeight;
@@ -88,6 +95,10 @@
   window.addEventListener("scroll", reveal);
   window.addEventListener("load", reveal);
   reveal();
+  /* Od téhle chvíle má rozsvěcení obsahu na starosti skript. Dokud tu třída
+     není, style.css obsah po třech vteřinách zobrazí sám – viz nouzové
+     animace na konci style.css. */
+  document.documentElement.classList.add("js");
 
   // ---- Pricing toggle (měsíčně / ročně) ----
   var pricingToggle = document.getElementById("pricing-toggle");
@@ -122,6 +133,43 @@
 
   // ---- Stáhnout Jobi nebo JobiDocs DMG z GitHub ----
   var downloadLoading = document.getElementById("download-loading");
+  var downloadMsgEl = document.getElementById("download-msg");
+
+  var NAZEV_OS = { mac: "macOS", win: "Windows" };
+  var NAZEV_APP = { jobi: "Jobi", jobidocs: "JobiDocs" };
+
+  /* Tlačítko dřív při nenalezeném instalátoru mlčky otevřelo GitHub a člověk
+     tam koukal na stránku vydání bez souboru, který hledal. Radši to řekneme
+     rovnou a nabídneme cestu dál. */
+  function ukazZpravu(html) {
+    if (!downloadMsgEl) return;
+    downloadMsgEl.innerHTML = html;
+    downloadMsgEl.hidden = false;
+  }
+
+  function skryjZpravu() {
+    if (!downloadMsgEl) return;
+    downloadMsgEl.hidden = true;
+    downloadMsgEl.innerHTML = "";
+  }
+
+  function zpravaChybiVydani(which, os) {
+    ukazZpravu(
+      "<strong>" + NAZEV_APP[which] + " pro " + NAZEV_OS[os] + " zatím není vydaný.</strong> " +
+      "V posledním vydání na GitHubu instalátor pro tenhle systém není. " +
+      "Napište na <a href=\"mailto:info@appjobi.com?subject=Instal%C3%A1tor%20" + NAZEV_APP[which] + "%20pro%20" + NAZEV_OS[os] + "\">info@appjobi.com</a> " +
+      "a dáme vědět, jakmile bude, nebo se podívejte na " +
+      "<a href=\"https://github.com/alexpapillier-lab/jobi/releases/latest\" target=\"_blank\" rel=\"noopener\">stránku vydání</a>."
+    );
+  }
+
+  function zpravaNedostupnyGitHub() {
+    ukazZpravu(
+      "<strong>Nepodařilo se zjistit poslední vydání.</strong> " +
+      "Zkuste to za chvíli znovu, nebo otevřete " +
+      "<a href=\"https://github.com/alexpapillier-lab/jobi/releases/latest\" target=\"_blank\" rel=\"noopener\">stránku vydání na GitHubu</a>."
+    );
+  }
 
   function triggerDownload(url, filename) {
     var a = document.createElement("a");
@@ -157,20 +205,25 @@
   function fetchReleaseAndDownload(which, btn) {
     if (!btn) return;
     btn.disabled = true;
+    skryjZpravu();
     if (downloadLoading) downloadLoading.hidden = false;
+    var os = selectedOS;
     fetch(GITHUB_RELEASE)
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error("GitHub odpověděl " + r.status);
+        return r.json();
+      })
       .then(function (data) {
         var assets = data.assets || [];
-        var file = findAsset(assets, which, selectedOS);
+        var file = findAsset(assets, which, os);
         if (file && file.browser_download_url) {
           triggerDownload(file.browser_download_url, file.name);
         } else {
-          window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
+          zpravaChybiVydani(which, os);
         }
       })
       .catch(function () {
-        window.open("https://github.com/alexpapillier-lab/jobi/releases/latest", "_blank");
+        zpravaNedostupnyGitHub();
       })
       .finally(function () {
         btn.disabled = false;
@@ -201,6 +254,8 @@
 
   function applyOS(os) {
     selectedOS = os;
+    // Hláška platí vždy pro konkrétní systém, po přepnutí by lhala.
+    skryjZpravu();
     if (osMacBtn) {
       osMacBtn.classList.toggle("is-active", os === "mac");
       osMacBtn.setAttribute("aria-pressed", os === "mac" ? "true" : "false");

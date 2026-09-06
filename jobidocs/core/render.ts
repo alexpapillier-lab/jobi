@@ -13,7 +13,7 @@
 import { qrDataUrl } from "../src/qr.js";
 import { ROBOTO_FONT_FACES } from "./fonts.js";
 import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
-import { VARIABLES, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, monthsText, substitute, substitutePlaceholders } from "./variables.js";
+import { VARIABLES, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, warrantyDurationText } from "./variables.js";
 
 export type RenderInput = {
   template: Template;
@@ -84,7 +84,7 @@ function isBlockEmpty(ctx: Ctx, block: Block): boolean {
     case "photos":
       return !(d.photos && d.photos.length > 0);
     case "warranty":
-      return d.warranty?.months == null && !d.warranty?.text && !d.warranty?.until;
+      return d.warranty?.months == null && d.warranty?.days == null && !d.warranty?.text && !d.warranty?.until;
     case "vatSummary":
       return d.totals?.total == null && itemsTotal(d) == null;
     case "payment":
@@ -187,9 +187,14 @@ function renderItems(ctx: Ctx, block: Extract<Block, { type: "items" }>): string
   if (block.showTotal !== false) {
     const total = itemsTotal(ctx.data);
     const parts: string[] = [];
-    if (ctx.data.discount) {
-      const d = ctx.data.discount;
-      parts.push(`<tr class="discount"><td colspan="${Math.max(1, cols.length - 1)}">Sleva</td><td class="num">${d.type === "percentage" ? `${formatQty(d.value)} %` : `−${formatMoney(d.value, ctx.currency)}`}</td></tr>`);
+    const d = ctx.data.discount;
+    const sleva = discountAmount(ctx.data);
+    if (d && sleva != null) {
+      // U procentní slevy patří na doklad i částka, kterou představuje –
+      // jinak si zákazník „10 %“ proti řádku Celkem neověří. A tiskne se
+      // nejvýš do výše ceny, aby si Sleva a Celkem neodporovaly.
+      const popis = d.type === "percentage" ? `Sleva ${formatQty(d.value)} %` : "Sleva";
+      parts.push(`<tr class="discount"><td colspan="${Math.max(1, cols.length - 1)}">${popis}</td><td class="num">−${formatMoney(sleva, ctx.currency)}</td></tr>`);
     }
     if (total != null) parts.push(`<tr class="total"><td colspan="${Math.max(1, cols.length - 1)}">Celkem</td><td class="num">${formatMoney(total, ctx.currency)}</td></tr>`);
     if (parts.length) foot = `<tfoot>${parts.join("")}</tfoot>`;
@@ -217,7 +222,7 @@ function renderWarranty(ctx: Ctx, block: Extract<Block, { type: "warranty" }>): 
   if (ctx.placeholders) {
     parts.push(`<p>Záruční doba činí ⟨Záruka (měsíce)⟩. Záruka do: ⟨Záruka do⟩</p>`);
   } else {
-    if (w?.months != null) parts.push(`<p>Záruční doba činí <b>${monthsText(w.months)}</b>${w.until ? `, platí do <b>${escapeHtml(formatDate(w.until))}</b>` : ""}.</p>`);
+    if (w?.months != null || w?.days != null) parts.push(`<p>Záruční doba činí <b>${warrantyDurationText(w)}</b>${w.until ? `, platí do <b>${escapeHtml(formatDate(w.until))}</b>` : ""}.</p>`);
     else if (w?.until) parts.push(`<p>Záruka platí do <b>${escapeHtml(formatDate(w.until))}</b>.</p>`);
     if (w?.text) parts.push(richText(w.text));
   }

@@ -55,6 +55,17 @@ export function nahled(token: string): string {
 }
 
 /** Modul, který musí mít servis zapnutý, aby rozsah něco znamenal. */
-export function modulProRozsah(r: Rozsah): "api_catalog" | "api_inventory" {
+export function modulProRozsah(r: Rozsah): ModulApi {
   return r.startsWith("catalog") ? "api_catalog" : "api_inventory";
 }
+
+export type ModulApi = "api_catalog" | "api_inventory";
+
+/**
+ * Jak se modul jmenuje směrem ven. Chyba z API má říct, co si servis nemá
+ * zaplacené, ne jen vypsat klíč z databáze.
+ */
+export const NAZEV_MODULU: Record<ModulApi, string> = {
+  api_catalog: "Veřejné API – ceník",
+  api_inventory: "Veřejné API – sklad",
+};

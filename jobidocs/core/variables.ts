@@ -8,7 +8,7 @@
  * Staré názvy z v1 ({{customer_name}}, {{ticket_code}}…) dál fungují přes
  * tabulku aliasů, aby se nerozbily vlastní texty, které si servisy napsaly.
  */
-import type { DocumentData } from "./types.js";
+import type { DocumentData, LineItem } from "./types.js";
 
 export type VariableDef = {
   key: string;
@@ -97,6 +97,8 @@ export const VARIABLES: VariableDef[] = [
   { key: "checklist.list", label: "Kontrola po opravě – položky po řádcích", group: G.other, sample: "✓ Displej a dotyk po celé ploše\n✓ Nabíjení a přenos dat\n✗ Tlačítka a vibrace – vibrace slabší" },
   { key: "note", label: "Poznámka", group: G.other, sample: "" },
   { key: "warranty.months", label: "Záruka (měsíce)", group: G.other, sample: "12" },
+  { key: "warranty.days", label: "Záruka (dny)", group: G.other, sample: "" },
+  { key: "warranty.duration", label: "Záruční doba", group: G.other, sample: "12 měsíců" },
   { key: "warranty.until", label: "Záruka do", group: G.other, sample: "3. 9. 2027" },
   { key: "warranty.text", label: "Text záruky", group: G.other, sample: "" },
 
@@ -199,30 +201,96 @@ export function formatQty(value: number | undefined | null): string {
   return new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 3 }).format(value);
 }
 
-/** České skloňování měsíců: 1 měsíc, 2 měsíce, 5 měsíců (i 21, 22, 25). */
+/**
+ * České skloňování: 1 měsíc, 2–4 měsíce, jinak měsíců.
+ *
+ * Pozor na číslovky nad dvacet zapsané číslicí: čte se „dvacet jedna
+ * měsíců“, ne „dvacet jedna měsíc“, takže se řídí celé číslo, ne jeho
+ * poslední číslice (jako v ruštině nebo polštině). Proto „21 měsíců“
+ * i „24 měsíců“ – dřív z toho na záručním listu bylo „24 měsíce“.
+ */
 export function monthsText(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${n} měsíc`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} měsíce`;
+  if (n === 1) return `${n} měsíc`;
+  if (n >= 2 && n <= 4) return `${n} měsíce`;
   return `${n} měsíců`;
 }
 
-/** Součet položek, když Jobi neposlalo totals.total. */
-export function itemsTotal(data: DocumentData): number | undefined {
-  if (data.totals?.total != null) return data.totals.total;
+/** Totéž pro dny: 1 den, 2–4 dny, jinak dnů. */
+export function daysText(n: number): string {
+  if (n === 1) return `${n} den`;
+  if (n >= 2 && n <= 4) return `${n} dny`;
+  return `${n} dnů`;
+}
+
+/**
+ * Záruční doba do věty („24 měsíců“, „45 dnů“).
+ *
+ * Když servis délku záruky nemá nastavenou, nesmí v právním textu zůstat
+ * díra („poskytuje servis záruku  měsíců“). Vypsat místo ní nějaké číslo by
+ * znamenalo slíbit zákazníkovi dobu, kterou servis nesjednal, proto se
+ * použije zákonná délka – ta platí i bez ujednání a nic navíc neslibuje.
+ */
+export function warrantyDurationText(warranty: DocumentData["warranty"]): string {
+  if (warranty?.months != null && warranty.months > 0) return monthsText(warranty.months);
+  if (warranty?.days != null && warranty.days > 0) return daysText(warranty.days);
+  return "v zákonné délce";
+}
+
+/** Cena řádku: buď je vyplněná, nebo se spočítá z ceny za jednotku. */
+function lineTotal(it: LineItem): number | undefined {
+  return it.total ?? (it.unitPrice != null ? it.unitPrice * (it.qty ?? 1) : undefined);
+}
+
+/** Součet oceněných položek – tatáž hrubá cena, se kterou počítá Jobi. */
+function soucetOcenenych(data: DocumentData): number | undefined {
+  let sum = 0;
+  let ocenenych = 0;
+  for (const it of data.items ?? []) {
+    const line = lineTotal(it);
+    if (line == null) continue;
+    sum += line;
+    ocenenych += 1;
+  }
+  return ocenenych > 0 ? Math.round(sum * 100) / 100 : undefined;
+}
+
+/** Součet položek před slevou; `undefined`, když u některé chybí cena. */
+export function itemsSubtotal(data: DocumentData): number | undefined {
   const items = data.items ?? [];
   if (items.length === 0) return undefined;
-  let sum = 0;
-  for (const it of items) {
-    const line = it.total ?? (it.unitPrice != null ? it.unitPrice * (it.qty ?? 1) : undefined);
-    if (line == null) return undefined;
-    sum += line;
-  }
-  if (data.discount) {
-    sum = data.discount.type === "percentage" ? sum * (1 - data.discount.value / 100) : sum - data.discount.value;
-  }
-  return Math.max(0, Math.round(sum * 100) / 100);
+  // Chybí-li cena u jediné opravy, součet by tvrdil, že je zdarma.
+  if (items.some((it) => lineTotal(it) == null)) return undefined;
+  return soucetOcenenych(data);
+}
+
+/**
+ * Kolik sleva doopravdy ubere – nikdy víc, než kolik stojí oprava.
+ *
+ * Sleva 5 000 na zakázce za 1 500 znamená překlep nebo slevu z jiné
+ * zakázky. Vytisknout „Sleva −5 000, Celkem 0,00“ znamená napsat na doklad
+ * dvě čísla, která si odporují, a zákazník u pultu právem chce doplatek.
+ * Stejný strop má i výpočet v Jobi (castkaSlevy v src/lib/slevaZakazky.ts).
+ */
+export function discountAmount(data: DocumentData): number | undefined {
+  const d = data.discount;
+  if (!d || !(d.value > 0)) return undefined;
+  // Když má cenu jen část oprav, řádek Celkem stejně přijde z Jobi už po
+  // slevě – sleva se proto počítá ze součtu oceněných oprav, aby na dokladu
+  // nechyběl řádek, který nižší částku vysvětluje.
+  const subtotal = soucetOcenenych(data);
+  // Bez jediné ceny se sleva ověřit nedá; radši ji netisknout než tisknout
+  // částku, ke které na dokladu není z čeho dojít.
+  if (subtotal == null || subtotal <= 0) return undefined;
+  const raw = d.type === "percentage" ? (subtotal * d.value) / 100 : d.value;
+  return Math.min(subtotal, Math.round(raw * 100) / 100);
+}
+
+/** Součet položek po slevě, když Jobi neposlalo totals.total. */
+export function itemsTotal(data: DocumentData): number | undefined {
+  if (data.totals?.total != null) return data.totals.total;
+  const subtotal = itemsSubtotal(data);
+  if (subtotal == null) return undefined;
+  return Math.max(0, Math.round((subtotal - (discountAmount(data) ?? 0)) * 100) / 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +325,7 @@ export function resolveVariable(key: string, data: DocumentData): string {
       return items.map((it) => joinParts([it.name, it.total != null || it.unitPrice != null ? formatMoney(it.total ?? (it.unitPrice ?? 0) * (it.qty ?? 1), currency) : undefined], " – ")).join("; ");
     }
     case "warranty.months": return data.warranty?.months != null ? String(data.warranty.months) : "";
+    case "warranty.duration": return warrantyDurationText(data.warranty);
     case "warranty.until": return formatDate(data.warranty?.until);
     case "warranty.text": return data.warranty?.text ?? "";
     case "diagnostic": return data.diagnostic ?? "";

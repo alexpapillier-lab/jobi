@@ -190,6 +190,16 @@ serve(async (req) => {
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
+
+        // Ownera smí udělat jen owner (nebo majitel aplikace). Stejné pravidlo
+        // má team-update-role; bez něj by si admin poslal pozvánku s rolí
+        // owner na vlastní druhý e-mail a obešel tím zákaz povyšování.
+        if (roleNorm === "owner" && membership.role !== "owner") {
+          return new Response(
+            JSON.stringify({ error: "Only owner can assign owner role" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       targetServiceId = serviceId;

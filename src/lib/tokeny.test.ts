@@ -5,7 +5,7 @@
  * Soubor _shared/tokeny.ts je proto záměrně bez Deno API.
  */
 import { describe, it, expect } from "vitest";
-import { novyToken, otisk, nahled, ocistiRozsahy, jeRozsah, modulProRozsah, PREFIX } from "../../supabase/functions/_shared/tokeny";
+import { novyToken, otisk, nahled, ocistiRozsahy, jeRozsah, modulProRozsah, NAZEV_MODULU, ROZSAHY, PREFIX } from "../../supabase/functions/_shared/tokeny";
 
 describe("novyToken", () => {
   it("má poznatelný prefix a plnou délku", () => {
@@ -67,5 +67,23 @@ describe("modulProRozsah", () => {
     expect(modulProRozsah("catalog:write")).toBe("api_catalog");
     expect(modulProRozsah("inventory:read")).toBe("api_inventory");
     expect(modulProRozsah("inventory:write")).toBe("api_inventory");
+  });
+
+  /*
+   * Rozsah bez modulu by znamenal placenou funkci, kterou nikdo nekontroluje:
+   * api-write i api-tokens-manage se ptají právě přes tuhle funkci.
+   */
+  it("každý rozsah má svůj modul, žádný nezůstane bez kontroly", () => {
+    for (const r of ROZSAHY) {
+      expect(["api_catalog", "api_inventory"], `rozsah ${r}`).toContain(modulProRozsah(r));
+    }
+  });
+
+  it("každý modul má český název do chybové hlášky, ne holý klíč", () => {
+    for (const r of ROZSAHY) {
+      const modul = modulProRozsah(r);
+      expect(NAZEV_MODULU[modul], `modul ${modul} nemá název`).toBeTruthy();
+      expect(NAZEV_MODULU[modul]).not.toBe(modul);
+    }
   });
 });

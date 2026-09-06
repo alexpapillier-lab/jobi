@@ -4,11 +4,20 @@
   --panel: rgba(255, 255, 255, 0.05);
   --panel-hi: rgba(255, 255, 255, 0.08);
   --text: #e8edff;
-  --muted: rgba(232, 237, 255, 0.48);
+  /* 0.48 dávalo na tmavém pozadí 4,44:1, těsně pod hranicí WCAG AA (4,5:1).
+     0.55 vychází na 5,5:1 na pozadí stránky a 5,3:1 na kartách. */
+  --muted: rgba(232, 237, 255, 0.55);
   --border: rgba(255, 255, 255, 0.09);
   --accent: #3b82f6;
   --accent-soft: rgba(59, 130, 246, 0.16);
   --accent-hover: #2563eb;
+  /* Pozadí tlačítek s bílým textem. #3b82f6 dává s bílou jen 3,68:1;
+     tahle dvojice 5,17:1 a 6,70:1. Jako barva textu na tmavém pozadí
+     zůstává --accent, tam je světlejší modrá potřeba. */
+  --accent-btn: #2563eb;
+  --accent-btn-hover: #1d4ed8;
+  /* Světlá modrá pro drobné znaky na modrém podkladu (✓ v tabulce tarifů). */
+  --accent-on-soft: #93c5fd;
   --accent-glow: rgba(59, 130, 246, 0.4);
   --shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.35);
   --shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
@@ -61,6 +70,7 @@ body {
 .site-logo {
   display: inline-flex;
   align-items: center;
+  min-height: 44px;
   gap: 10px;
   text-decoration: none;
   color: #fff;
@@ -74,8 +84,12 @@ body {
 
 .nav-links { display: flex; align-items: center; gap: 4px; }
 
+/* Lišta je na telefonu hlavní navigace; 36 px vysoký odkaz se trefuje špatně. */
 .nav-links a {
-  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.6);
   text-decoration: none;
@@ -89,11 +103,11 @@ body {
 .nav-links a:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
 
 .nav-links .nav-cta {
-  background: var(--accent);
+  background: var(--accent-btn);
   color: #fff;
   font-weight: 600;
 }
-.nav-links .nav-cta:hover { background: var(--accent-hover); color: #fff; }
+.nav-links .nav-cta:hover { background: var(--accent-btn-hover); color: #fff; }
 
 /* Odkaz na webové rozhraní – odlišený rámečkem, ale ne tak výrazný
    jako hlavní CTA "Stáhnout". Je to záložní cesta, ne hlavní produkt. */
@@ -121,7 +135,7 @@ body {
   .nav-web-full { display: none; }
   .nav-web-short { display: inline; }
   .nav-links { gap: 4px; }
-  .nav-links a { padding: 8px 12px; font-size: 13px; }
+  .nav-links a { padding: 0 12px; font-size: 13px; }
 }
 
 /* ========== Hero ========== */
@@ -240,7 +254,9 @@ body {
 
 .hero-sub {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  /* 0.3 dávalo 2,64:1. Drobné písmo pod tlačítky je pořád text, který má
+     někdo přečíst, ne dekorace. */
+  color: rgba(255, 255, 255, 0.62);
   opacity: 0;
   animation: fadeUp 0.5s var(--ease) 0.58s forwards;
 }
@@ -248,6 +264,21 @@ body {
 @keyframes fadeUp {
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Odkazy uvnitř drobných odstavců neměly nastavenou barvu, takže se použila
+   výchozí modrá prohlížeče (#0000EE) – na skoro černém pozadí 1,6:1. Tyhle dva
+   („Napište nám, z čeho přecházíte“ a „v prohlížeči“) jsou přitom jediná cesta
+   dál v celé sekci. */
+.krok-vysledek a,
+.download-note a,
+.download-smartscreen a {
+  color: #cddcff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.krok-vysledek a:hover,
+.download-note a:hover,
+.download-smartscreen a:hover { color: #fff; }
 
 /* ========== Buttons ========== */
 .btn {
@@ -268,12 +299,12 @@ body {
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--accent-btn);
   color: #fff;
   box-shadow: 0 4px 16px var(--accent-glow);
 }
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background: var(--accent-btn-hover);
   box-shadow: 0 6px 24px var(--accent-glow);
   transform: translateY(-1px);
 }
@@ -573,6 +604,17 @@ section#stazeni {
   color: #4ade80;
   border-radius: 20px;
 }
+/* Vizuál zůstává 52×28 px, ale prst potřebuje 44 px. Neviditelná plocha
+   v ::after cíl zvětší, aniž by se pilulka roztáhla nebo rozhodila řádek. */
+.pricing-toggle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 44px;
+}
 .pricing-toggle {
   position: relative;
   width: 52px;
@@ -659,7 +701,7 @@ section#stazeni {
   padding: 4px 12px;
   font-size: 11px;
   font-weight: 700;
-  background: var(--accent);
+  background: var(--accent-btn);
   color: #fff;
   border-radius: 20px;
   white-space: nowrap;
@@ -820,7 +862,7 @@ section#stazeni {
   height: 22px;
   background: var(--accent-soft);
   border-radius: 50%;
-  color: var(--accent);
+  color: var(--accent-on-soft);
   font-size: 13px;
   font-weight: 800;
 }
@@ -923,8 +965,11 @@ section#stazeni {
 .download-os-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 9px 18px;
+  /* Dotykový cíl 44 px; dřív to bylo 35 px. */
+  min-height: 44px;
+  padding: 10px 18px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -965,7 +1010,7 @@ section#stazeni {
 
 .download-option-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.58);
   text-align: center;
   max-width: 220px;
   line-height: 1.4;
@@ -978,7 +1023,7 @@ section#stazeni {
   gap: 10px;
   padding: 15px 28px;
   border-radius: 12px;
-  background: var(--accent);
+  background: var(--accent-btn);
   color: #fff;
   font-size: 16px;
   font-weight: 700;
@@ -989,7 +1034,7 @@ section#stazeni {
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease);
 }
 .btn-download-main:hover {
-  background: var(--accent-hover);
+  background: var(--accent-btn-hover);
   transform: translateY(-2px);
   box-shadow: 0 8px 32px var(--accent-glow);
 }
@@ -1011,15 +1056,39 @@ section#stazeni {
 .download-loading {
   display: block;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.62);
   margin-top: 12px;
 }
 .download-note {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.28);
+  /* 0.28 dávalo na kartě 2,45:1. */
+  color: rgba(255, 255, 255, 0.6);
   margin-top: 18px;
   line-height: 1.5;
 }
+
+/* Vysvětlení, proč se nic nestáhlo. Vypadá jako upozornění, ne jako chyba
+   aplikace – nestahuje se proto, že vydání ještě není, ne proto, že se něco
+   rozbilo. */
+.download-msg {
+  max-width: 480px;
+  margin: 16px auto 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  border-radius: 12px;
+  background: rgba(250, 204, 21, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: left;
+}
+.download-msg strong { color: #fff; font-weight: 600; }
+.download-msg a {
+  color: #cddcff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.download-msg a:hover { color: #fff; }
 
 /* Upozornění na SmartScreen u Windows. Záměrně klidné – není to chyba,
    jen krok navíc, a poplašný tón by lidi od instalace spíš odradil. */
@@ -1087,6 +1156,7 @@ section#stazeni {
 .footer-logo {
   display: inline-flex;
   align-items: center;
+  min-height: 44px;
   gap: 8px;
   font-weight: 700;
   font-size: 14px;
@@ -1096,10 +1166,23 @@ section#stazeni {
 }
 .footer-logo:hover { color: #fff; }
 .footer-logo img { width: 22px; height: 22px; border-radius: 6px; display: block; }
-.footer-copy { font-size: 13px; color: rgba(255, 255, 255, 0.28); }
+.footer-copy { font-size: 13px; color: rgba(255, 255, 255, 0.62); }
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 4px;
+}
+/* Řádek odkazů měl na výšku 15–18 px. Výplň dělá z každého odkazu cíl
+   vysoký 44 px, aniž by se patička opticky nafoukla. */
 .footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.62);
   text-decoration: none;
   font-weight: 500;
   transition: color 0.2s;
@@ -1296,8 +1379,11 @@ section#stazeni {
    vypadalo jako hyperlink z devadesátek. Teď je to tichá druhá volba:
    bez podtržení, na jednom řádku, podtrhne se až najetím myší. */
 .pricing-contact {
-  display: block;
-  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 4px;
   text-align: center;
   font-size: 0.8rem;
   font-weight: 500;
@@ -1333,7 +1419,10 @@ section#stazeni {
 }
 
 .ukazky-tabs [role="tab"] {
-  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 16px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: transparent;
@@ -1411,4 +1500,92 @@ section#stazeni {
   border-radius: 999px;
   background: #0b0d14;
   z-index: 1;
+}
+
+
+/* ---------------------------------------------------------------
+   Záchranná brzda pro stránku bez JavaScriptu
+
+   Loader je neprůhledný překryv přes celé okno a odstraňoval ho jedině
+   skript v app.js. Když se skript nenačte (výpadek CDN, blokovaná doména,
+   chyba v jiném skriptu), zůstal návštěvníkovi černý obdélník a nic víc.
+   Stejný problém měl obsah: .reveal má opacity: 0 a rozsvěcí ho taky jen
+   skript.
+
+   Řešení má dvě vrstvy:
+   - vypnutý JavaScript řeší <noscript> v hlavičce index.html (skryje loader
+     hned a obsah rovnou zobrazí),
+   - selhání skriptu při zapnutém JavaScriptu řeší tyhle dvě animace se
+     zpožděním. Když skript doběhne dřív, prvek zmizí (loader) nebo dostane
+     třídu .visible (obsah) a animace se nikdy neprojeví.
+   --------------------------------------------------------------- */
+@keyframes loaderNouzoveSkryti {
+  to { opacity: 0; visibility: hidden; }
+}
+#page-loader {
+  animation: loaderNouzoveSkryti 0.45s var(--ease) 2.5s forwards;
+}
+
+/* Obsah se rozsvítí sám jen tehdy, když se skript vůbec nerozběhl. Kdyby to
+   platilo vždycky, po třech vteřinách by naskočily i sekce hluboko pod
+   ohybem a rozsvěcení při scrollu by ztratilo smysl. Třídu `js` přidává
+   app.js v místě, kde už má rozsvěcení pod kontrolou. */
+@keyframes revealNouzoveZobrazeni {
+  to { opacity: 1; transform: none; }
+}
+html:not(.js) .reveal,
+html:not(.js) .feature-card {
+  animation: revealNouzoveZobrazeni 0.3s linear 3s forwards;
+}
+
+
+/* ---------------------------------------------------------------
+   Omezený pohyb
+
+   Koule na pozadí plavou v nekonečné smyčce, snímek aplikace se při scrollu
+   otáčí a sekce se prolínají. Komu se z toho dělá špatně, ten si to v systému
+   vypne – a web to musí respektovat stejně jako zákaznický portál.
+
+   Animace se nevypínají, jen zkracují na nulu: prvky, které mají opacity: 0
+   a rozsvěcí je až animace (hero, nouzové zobrazení obsahu), by jinak zůstaly
+   neviditelné. Parallax snímku je v JavaScriptu, ten se řídí stejným dotazem.
+   --------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+
+  /* Konečný stav napevno, ať nic nezávisí na doběhnutí animace. */
+  .hero-badge,
+  .hero-title-line,
+  .hero-lead,
+  .hero-actions,
+  .hero-sub,
+  .hero-mockup,
+  .reveal,
+  .feature-card,
+  .download-card {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Naklonění snímku aplikace i jeho otáčení při scrollu je čistá ozdoba. */
+  .mockup-window { transform: none; }
+
+  /* Plovoucí koule a pulzující logo se zastaví úplně. */
+  .hero-orb,
+  .dl-orb,
+  .loader-orb,
+  .loader-logo,
+  .loader-logo-ring,
+  .loader-bar-fill::after {
+    animation: none !important;
+  }
 }

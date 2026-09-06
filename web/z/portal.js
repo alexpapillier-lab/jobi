@@ -34,10 +34,15 @@
     quoteMode: 'idle',   // idle | approve | reject
     quoteError: '',
     signError: '',
+    // Rozepsaná poznámka k zamítnutí žije ve state, ne jen v <textarea>.
+    // Karta se překresluje (chyba sítě, tiché obnovení dat) a zákazník
+    // v mobilním signálu by jinak přišel o to, co už napsal.
+    rejectNote: '',
     fingerprints: {},    // per-card otisk dat – karta se překreslí jen při změně
     refreshTimer: null,
     lightbox: { photos: [], index: 0, lastFocus: null },
     sig: null,           // instance podpisového pole
+    signUi: null,        // prvky karty s podpisem – při chybě se jen odblokují, nepřekresluje se
   };
 
   /* ===================== Pomocné funkce ===================== */
@@ -95,37 +100,6 @@
   }
   function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
   function str(v) { return v == null ? '' : String(v); }
-
-  /* Kontrast textu pro barvu statusu (WCAG relativní luminance). */
-  function parseColor(c) {
-    if (typeof c !== 'string') return null;
-    const s = c.trim();
-    let m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-    if (m) {
-      let hex = m[1];
-      if (hex.length === 3) hex = hex.split('').map((x) => x + x).join('');
-      const n = parseInt(hex, 16);
-      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-    if (m) return [+m[1], +m[2], +m[3]];
-    return null;
-  }
-  function luminance(rgb) {
-    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
-  }
-  function contrast(a, b) {
-    const la = luminance(a), lb = luminance(b);
-    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-  }
-  function pillColors(color) {
-    const rgb = parseColor(color);
-    if (!rgb) return { bg: '#e5e7eb', fg: '#1f2937' };
-    const white = [255, 255, 255], dark = [17, 24, 39];
-    const fg = contrast(rgb, white) >= contrast(rgb, dark) ? '#ffffff' : '#111827';
-    return { bg: 'rgb(' + rgb.join(',') + ')', fg };
-  }
 
   function telHref(phone) { return 'tel:' + str(phone).replace(/[^\d+]/g, ''); }
   function mapsHref(service) {
@@ -297,7 +271,12 @@
     add('Předání do servisu', methodLabel(ticket.handoffMethod));
     add('Vrácení zákazníkovi', methodLabel(ticket.handbackMethod));
     const hasPrice = (Array.isArray(ticket.performedRepairs) && ticket.performedRepairs.length) || num(ticket.totalPrice) > 0;
-    if (!hasPrice && num(ticket.estimatedPrice) > 0) add('Odhad ceny', fmtMoney(ticket.estimatedPrice));
+    // Odhad ceny je jen orientační číslo z příjmu. Jakmile servis pošle cenovou
+    // nabídku, platí ta – dvě různé částky vedle sebe bez vysvětlení zákazníka
+    // jen matou a při schvalování je to matení o penězích.
+    const quoteStatus = str(ticket.quote && ticket.quote.status);
+    const maNabidku = !!quoteStatus && quoteStatus !== 'none';
+    if (!hasPrice && !maNabidku && num(ticket.estimatedPrice) > 0) add('Odhad ceny', fmtMoney(ticket.estimatedPrice));
     card.appendChild(dl);
 
   }
@@ -353,12 +332,16 @@
       ]));
     } else if (state.quoteMode === 'reject') {
       const ta = h('textarea', { class: 'input', id: 'rejectNote', maxlength: '500', placeholder: 'Např. „Oprava je pro mě příliš drahá, zařízení si vyzvednu.“' });
+      // Předvyplnit tím, co už zákazník napsal – po chybě sítě se karta
+      // překresluje a prázdné pole by znamenalo psát to znovu.
+      ta.value = state.rejectNote;
+      ta.addEventListener('input', () => { state.rejectNote = ta.value; });
       card.appendChild(h('div', { class: 'confirm', role: 'group', 'aria-label': 'Zamítnutí nabídky' }, [
         h('p', { text: 'Nabídku zamítnete a servis se vám ozve s dalším postupem.' }),
         h('label', { class: 'lbl', for: 'rejectNote', text: 'Poznámka pro servis (nepovinné)' }),
         ta,
         h('div', { class: 'btn-row' }, [
-          h('button', { type: 'button', class: 'btn btn-danger', disabled: state.busy, text: state.busy ? 'Odesílám…' : 'Potvrdit zamítnutí', onclick: () => doAction('reject', { note: ta.value.trim() }) }),
+          h('button', { type: 'button', class: 'btn btn-danger', disabled: state.busy, text: state.busy ? 'Odesílám…' : 'Potvrdit zamítnutí', onclick: () => doAction('reject', { note: state.rejectNote.trim() }) }),
           h('button', { type: 'button', class: 'btn btn-secondary', disabled: state.busy, text: 'Zpět', onclick: () => setQuoteMode('idle') }),
         ]),
       ]));
@@ -377,7 +360,11 @@
     if (state.data) renderQuote(state.data.ticket);
     if (mode === 'reject') {
       const ta = $('rejectNote');
-      if (ta) ta.focus();
+      if (ta) {
+        ta.focus();
+        // Kurzor na konec rozepsaného textu, ať se dá rovnou psát dál.
+        try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { /* nepodstatné */ }
+      }
     } else if (mode === 'approve') {
       const b = el.cardQuote.querySelector('.btn-primary');
       if (b) b.focus();
@@ -657,7 +644,14 @@
   function renderSign(ticket) {
     const card = el.cardSign;
     if (state.sig) { state.sig.destroy(); state.sig = null; }
+    state.signUi = null;
     clear(card);
+
+    // Uzavřenou zakázku už není co brát do opravy. Nepodepsané převzetí
+    // u zakázky, která je dávno hotová, jen mate – kartu vůbec neukazujeme.
+    const jeUzavrena = !!(ticket.status && ticket.status.isFinal);
+    if (!ticket.intakeSignedAt && jeUzavrena) { card.hidden = true; return; }
+
     card.hidden = false;
     card.appendChild(h('h2', { class: 'card-title', id: 'signTitle', text: 'Převzetí do opravy' }));
 
@@ -678,14 +672,20 @@
     const clearBtn = h('button', { type: 'button', class: 'btn btn-secondary', text: 'Vymazat', disabled: true });
     const submitBtn = h('button', { type: 'button', class: 'btn btn-primary', text: 'Podepsat', disabled: true });
     card.appendChild(h('div', { class: 'btn-row' }, [submitBtn, clearBtn]));
-    if (state.signError) card.appendChild(h('div', { class: 'inline-error', role: 'alert', text: state.signError }));
+    // Místo na chybu je v kartě vždy – při neúspěchu se jen naplní textem,
+    // aby se kvůli hlášce nemusel překreslovat (a smazat) nakreslený podpis.
+    const errBox = h('div', { class: 'inline-error', role: 'alert', hidden: !state.signError, text: state.signError || '' });
+    card.appendChild(errBox);
 
     const pad = createSignaturePad(canvas);
     state.sig = pad;
+    state.signUi = { canvas, pad, clearBtn, submitBtn, errBox };
     pad.onchange = () => {
       const ink = pad.hasInk();
       clearBtn.disabled = !ink || state.busy;
       submitBtn.disabled = !ink || state.busy;
+      // Nová čára po chybě znamená nový pokus – stará hláška už neplatí.
+      if (ink && state.signError) setSignError('');
     };
     clearBtn.addEventListener('click', () => pad.clear());
     submitBtn.addEventListener('click', async () => {
@@ -699,12 +699,31 @@
         width -= 100;
       }
       if (!dataUrl) return;
+      setSignError('');
       submitBtn.textContent = 'Odesílám…';
       submitBtn.disabled = true;
       clearBtn.disabled = true;
       canvas.style.pointerEvents = 'none';
       await doAction('sign', { signature: dataUrl });
     });
+  }
+
+  /**
+   * Zobrazí (nebo schová) chybu u podpisu a vrátí kartu do ovladatelného stavu.
+   * Záměrně NEpřekresluje kartu – nakreslený podpis by se ztratil a zákazník
+   * by se po chybě sítě musel podepisovat znovu.
+   */
+  function setSignError(msg) {
+    state.signError = msg || '';
+    const ui = state.signUi;
+    if (!ui) return;
+    ui.errBox.textContent = state.signError;
+    ui.errBox.hidden = !state.signError;
+    ui.submitBtn.textContent = 'Podepsat';
+    ui.canvas.style.pointerEvents = '';
+    const ink = ui.pad.hasInk();
+    ui.submitBtn.disabled = !ink || state.busy;
+    ui.clearBtn.disabled = !ink || state.busy;
   }
 
   /* ===================== Akce (POST) ===================== */
@@ -719,6 +738,8 @@
       state.quoteMode = 'idle';
       state.quoteError = '';
       state.signError = '';
+      // Poznámku držíme jen do chvíle, než se opravdu odešle.
+      if (action === 'reject') state.rejectNote = '';
       applyData(data, true);
       if (action === 'approve') toast('Nabídka schválena');
       else if (action === 'reject') toast('Nabídka zamítnuta');
@@ -727,12 +748,15 @@
       state.busy = false;
       const msg = e && e.message ? e.message : 'Akce se nezdařila.';
       if (action === 'sign') {
-        state.signError = msg;
         if (e && e.status === 409) {
-          state.signError = 'Zakázka už byla podepsána.';
+          // Podepsáno jinde. Načteme čerstvá data, která kartu překreslí na
+          // „Podepsáno“; hlášku i tak ukážeme, aby karta neuvízla na „Odesílám…“,
+          // kdyby obnovení dat neprošlo.
+          setSignError('Zakázka už byla podepsána.');
           refresh(true);
         } else {
-          renderSign(state.data.ticket);
+          // Chyba sítě nebo serveru: podpis zůstane nakreslený, jen odblokujeme tlačítka.
+          setSignError(msg);
         }
       } else {
         state.quoteError = msg;
@@ -757,11 +781,13 @@
 
     const fps = {
       header: fp(service),
-      status: fp([ticket.code, ticket.createdAt, ticket.expectedCompletionAt, ticket.deviceLabel, ticket.requestedRepair, ticket.status, ticket.handoffMethod, ticket.handbackMethod, ticket.estimatedPrice, ticket.totalPrice, ticket.performedRepairs]),
+      // Stav nese i stav nabídky – odeslaná nabídka schová odhad ceny.
+      status: fp([ticket.code, ticket.createdAt, ticket.expectedCompletionAt, ticket.deviceLabel, ticket.requestedRepair, ticket.status, ticket.handoffMethod, ticket.handbackMethod, ticket.estimatedPrice, ticket.totalPrice, ticket.performedRepairs, ticket.quote && ticket.quote.status]),
       quote: fp(ticket.quote),
       price: fp([ticket.performedRepairs, ticket.discount, ticket.totalPrice, payment, service.bankAccount, service.iban]),
       photos: fp([ticket.photosBefore, ticket.photos]),
-      sign: fp([ticket.intakeSignedAt, ticket.intakeSignatureUrl]),
+      // Uzavření zakázky kartu s podpisem schová, proto je stav součástí otisku.
+      sign: fp([ticket.intakeSignedAt, ticket.intakeSignatureUrl, ticket.status]),
     };
     const changed = (k) => first || force || state.fingerprints[k] !== fps[k];
 
@@ -776,7 +802,11 @@
     if (changed('photos')) renderPhotos(ticket);
     // Podpis: rozkreslený podpis zachovat, překreslit jen při změně dat nebo když je pole prázdné
     const drawing = state.sig && state.sig.hasInk() && !ticket.intakeSignedAt;
-    if (first || state.fingerprints.sign !== fps.sign || (force && !drawing)) renderSign(ticket);
+    if (first || state.fingerprints.sign !== fps.sign || (force && !drawing)) {
+      // Změnila se data → stará hláška o chybě už neplatí.
+      if (state.fingerprints.sign !== fps.sign) state.signError = '';
+      renderSign(ticket);
+    }
 
     state.fingerprints = fps;
     el.offlineBanner.hidden = true;

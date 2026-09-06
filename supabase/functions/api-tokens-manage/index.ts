@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { novyToken, otisk, nahled, ocistiRozsahy } from "../_shared/tokeny.ts";
+import { novyToken, otisk, nahled, ocistiRozsahy, modulProRozsah, NAZEV_MODULU } from "../_shared/tokeny.ts";
 
 /**
  * Správa tokenů pro zápis přes veřejné API.
@@ -82,6 +82,24 @@ serve(async (req) => {
 
     const rozsahy = ocistiRozsahy(telo?.scopes);
     if (rozsahy.length === 0) return json({ error: "Vyber aspoň jeden rozsah" }, 400);
+
+    // Veřejné API je placený modul. Členství nestačí – schování obrazovky
+    // v aplikaci obejde každý, kdo tuhle funkci zavolá přímo, a pak si vyrobí
+    // token na funkci, kterou servis nemá zaplacenou.
+    // Vypnutí tokenu (`revoke`) ani jejich výpis se naopak neomezuje: to musí
+    // jít i servisu, kterému předplatné doběhlo.
+    for (const modul of new Set(rozsahy.map(modulProRozsah))) {
+      const { data: maNarok, error: chybaNaroku } = await svc.rpc("has_entitlement", {
+        p_service_id: serviceId,
+        p_module: modul,
+      });
+      if (chybaNaroku || maNarok !== true) {
+        return json({
+          error: `${NAZEV_MODULU[modul]} není pro tento servis aktivní.`,
+          detail: chybaNaroku?.message ?? `Chybí platný nárok na modul ${modul}.`,
+        }, 403);
+      }
+    }
 
     // Deset tokenů na servis je víc, než kdo potřebuje; brání to tomu, aby
     // se tabulka dala zaplnit ve smyčce.

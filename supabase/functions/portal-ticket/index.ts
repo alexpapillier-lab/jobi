@@ -433,7 +433,13 @@ serve(async (req) => {
         return json({ error: "Nabídka už není k rozhodnutí." }, 409);
       }
       const nextStatus = action === "approve" ? "approved" : "rejected";
-      const { error: updErr } = await svc
+      // `.select("id")` je tu podstatné: podmíněný UPDATE, který nechytil
+      // žádný řádek, vrací error === null. Bez kontroly počtu řádků by portál
+      // zákazníkovi odpověděl „ok“, přestože se nic neuložilo – a zapsal by
+      // událost o rozhodnutí, které v zakázce není. Při dvojím odeslání
+      // (přeposlaný odkaz, dvojklik) by tak vznikly quote_approved
+      // i quote_rejected zároveň.
+      const { data: updated, error: updErr } = await svc
         .from("tickets")
         .update({
           quote_status: nextStatus,
@@ -441,10 +447,15 @@ serve(async (req) => {
           quote_decision_meta: meta,
         })
         .eq("id", ticket.id)
-        .eq("quote_status", "sent"); // ochrana před dvojklikem / souběhem
+        .eq("quote_status", "sent") // ochrana před dvojklikem / souběhem
+        .select("id");
       if (updErr) {
         console.error("[portal-ticket] quote update error:", updErr);
         return json({ error: "Nepodařilo se uložit rozhodnutí." }, 500);
+      }
+      if (!updated || updated.length === 0) {
+        // Mezitím rozhodl někdo jiný (nebo druhé odeslání téhož kliknutí).
+        return json({ error: "Nabídka už není k rozhodnutí." }, 409);
       }
       await insertEvent(svc, ticket, action === "approve" ? "quote_approved" : "quote_rejected", meta);
     } else if (action === "sign") {
@@ -455,6 +466,36 @@ serve(async (req) => {
       if (!bytes) {
         return json({ error: "Podpis musí být PNG do 300 kB." }, 400);
       }
+
+      // Nejdřív rezervace, teprve pak nahrávání. Kdyby se nahrávalo první,
+      // souběžný druhý pokus by nechal v úložišti soubor, na který se
+      // v zakázce nikdo neodkáže – podpis zákazníka ležící bez vazby.
+      const signedAt = new Date().toISOString();
+      const { data: reserved, error: resErr } = await svc
+        .from("tickets")
+        .update({ intake_signed_at: signedAt })
+        .eq("id", ticket.id)
+        .is("intake_signed_at", null)
+        .select("id");
+      if (resErr) {
+        console.error("[portal-ticket] signature reserve error:", resErr);
+        return json({ error: "Nepodařilo se uložit podpis." }, 500);
+      }
+      if (!reserved || reserved.length === 0) {
+        return json({ error: "Převzetí už bylo podepsáno." }, 409);
+      }
+
+      // Rezervaci uvolníme jen tehdy, když je pořád naše – jinak bychom
+      // smazali podpis, který mezitím uložil někdo jiný.
+      const uvolniRezervaci = async () => {
+        const { error } = await svc
+          .from("tickets")
+          .update({ intake_signed_at: null })
+          .eq("id", ticket.id)
+          .eq("intake_signed_at", signedAt);
+        if (error) console.error("[portal-ticket] signature reserve rollback error:", error);
+      };
+
       const path = `signatures/${ticket.id}-${Date.now()}.png`;
       const { error: uploadErr } = await svc.storage
         .from(BUCKET)
@@ -462,21 +503,41 @@ serve(async (req) => {
         .upload(path, bytes, { contentType: "image/png", cacheControl: "31536000", upsert: false });
       if (uploadErr) {
         console.error("[portal-ticket] signature upload error:", uploadErr);
+        await uvolniRezervaci();
         return json({ error: "Nepodařilo se uložit podpis." }, 500);
       }
       const { data: urlData } = svc.storage.from(BUCKET).getPublicUrl(path);
-      const signedAt = new Date().toISOString();
-      const { error: updErr } = await svc
+      const { data: linked, error: updErr } = await svc
         .from("tickets")
-        .update({ intake_signature_url: urlData.publicUrl, intake_signed_at: signedAt })
+        .update({ intake_signature_url: urlData.publicUrl })
         .eq("id", ticket.id)
-        .is("intake_signed_at", null);
-      if (updErr) {
-        console.error("[portal-ticket] signature update error:", updErr);
+        .eq("intake_signed_at", signedAt)
+        .select("id");
+      if (updErr || !linked || linked.length === 0) {
+        if (updErr) console.error("[portal-ticket] signature update error:", updErr);
+        // Nahraný soubor by jinak zůstal v úložišti osiřelý.
+        const { error: rmErr } = await svc.storage.from(BUCKET).remove([path]);
+        if (rmErr) console.error("[portal-ticket] signature cleanup error:", rmErr);
+        await uvolniRezervaci();
         return json({ error: "Nepodařilo se uložit podpis." }, 500);
       }
       await insertEvent(svc, ticket, "signed", { ...meta, url: urlData.publicUrl });
     } else if (action === "pickup") {
+      // Bez pojistky by opakované odeslání založilo druhé potvrzení převzetí
+      // a servis by v historii viděl dvě různá vyzvednutí téhož zařízení.
+      const { data: jizPotvrzeno, error: pickupErr } = await svc
+        .from("ticket_portal_events")
+        .select("id")
+        .eq("ticket_id", ticket.id)
+        .eq("type", "pickup_confirmed")
+        .limit(1);
+      if (pickupErr) {
+        console.error("[portal-ticket] pickup lookup error:", pickupErr);
+        return json({ error: "Nepodařilo se uložit potvrzení." }, 500);
+      }
+      if (jizPotvrzeno && jizPotvrzeno.length > 0) {
+        return json({ error: "Převzetí už bylo potvrzeno." }, 409);
+      }
       await insertEvent(svc, ticket, "pickup_confirmed", meta);
     }
 

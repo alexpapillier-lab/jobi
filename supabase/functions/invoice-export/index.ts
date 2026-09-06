@@ -336,6 +336,20 @@ serve(async (req) => {
     const { data: membership } = await svc.from("service_memberships").select("role").eq("service_id", service_id).eq("user_id", userId).maybeSingle();
     if (!membership) return json({ error: "Nejste členem tohoto servisu." }, 403);
 
+    // Napojení na účetnictví je placený modul. Členství nestačí – schování
+    // modulu v aplikaci obejde každý, kdo tuhle funkci zavolá přímo, a servis
+    // bez předplatného by exportoval dál.
+    const { data: maUcetnictvi, error: chybaNaroku } = await svc.rpc("has_entitlement", {
+      p_service_id: service_id,
+      p_module: "accounting",
+    });
+    if (chybaNaroku || maUcetnictvi !== true) {
+      return json({
+        error: "Napojení na účetnictví není pro tento servis aktivní.",
+        detail: chybaNaroku?.message ?? "Chybí platný nárok na modul accounting.",
+      }, 403);
+    }
+
     const { data: integ } = await svc.from("service_integrations").select("config, active").eq("service_id", service_id).eq("provider", provider).maybeSingle();
     const jmenoSluzby = provider === "fakturoid" ? "Fakturoid" : "iDoklad";
     if (!integ || integ.active === false) return json({ error: `${jmenoSluzby} není pro tento servis propojený. Nastavení → Fakturace a DPH.` }, 400);

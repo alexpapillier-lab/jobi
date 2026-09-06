@@ -46,6 +46,14 @@ async function najitServis(svc: SupabaseClient, sub: Subscription): Promise<stri
   }
 }
 
+/**
+ * Chyba zápisu do databáze. Vyhazuje se, aby webhook odpověděl 5xx – Stripe
+ * pak událost pošle znovu. Kdyby se chyba spolkla, zůstal by nárok v tom
+ * stavu, v jakém byl před platbou (nebo před zrušením), a nikdo by se to
+ * nedozvěděl.
+ */
+class ZapisError extends Error {}
+
 /** Předplatné → nároky. Aktivní i po splatnosti (několik dní hájení), jinak nic. */
 async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscription) {
   const polozky = sub.items?.data ?? [];
@@ -61,7 +69,13 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     if (!key || !(key in ADDONS)) continue;
     const addon = ADDONS[key];
     for (const m of addon.modules ?? []) moduly.add(m);
-    if (addon.branches) pobocekNavic += addon.branches * (i.quantity ?? 0);
+    if (addon.branches) {
+      pobocekNavic += addon.branches * (i.quantity ?? 0);
+      // Zaplacená pobočka navíc musí modul zapnout i tam, kde ho tarif nemá
+      // (třeba když se příplatek přidal ručně v portálu Stripe). Jinak by se
+      // za pobočku platilo a databáze by ji dál odmítala.
+      moduly.add("branches");
+    }
     if (addon.sms) smsNavic += addon.sms * (i.quantity ?? 0);
   }
   const pobocekCelkem = (plan?.branchesIncluded ?? 0) + pobocekNavic;
@@ -75,7 +89,7 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     ? new Date(konec.getTime() + GRACE_DAYS * 86_400_000).toISOString()
     : new Date().toISOString();
 
-  await svc.from("service_billing").upsert({
+  const { error: chybaBilling } = await svc.from("service_billing").upsert({
     service_id: serviceId,
     stripe_customer_id: sub.customer,
     stripe_subscription_id: sub.id,
@@ -85,6 +99,7 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     current_period_end: sub.current_period_end ? konec.toISOString() : null,
     cancel_at_period_end: sub.cancel_at_period_end === true,
   }, { onConflict: "service_id" });
+  if (chybaBilling) throw new ZapisError(`service_billing: ${chybaBilling.message}`);
 
   if (moduly.size === 0) return;
 
@@ -100,7 +115,8 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     // Kolik poboček tarif zahrnuje plus kolik se jich dokoupilo.
     if (modul === "branches") radek.quota = Math.max(1, pobocekCelkem);
     if (modul === "sms") radek.quota = smsCelkem > 0 ? smsCelkem : null;
-    await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
+    const { error } = await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
+    if (error) throw new ZapisError(`service_entitlements (${modul}): ${error.message}`);
   }
 }
 
@@ -126,11 +142,20 @@ serve(async (req) => {
       }
       if (udalost.type === "customer.subscription.deleted") {
         // Zrušeno: přístup končí teď, data zůstávají.
-        await svc.from("service_billing").upsert({ service_id: serviceId, status: "canceled", stripe_subscription_id: sub.id, stripe_customer_id: sub.customer }, { onConflict: "service_id" });
-        await svc.from("service_entitlements")
+        const { error: chybaBilling } = await svc.from("service_billing").upsert({ service_id: serviceId, status: "canceled", stripe_subscription_id: sub.id, stripe_customer_id: sub.customer }, { onConflict: "service_id" });
+        if (chybaBilling) throw new ZapisError(`service_billing: ${chybaBilling.message}`);
+        // Vypnout jen nároky z předplatného, tedy ty s koncem platnosti.
+        // Řádky bez `valid_until` uděluje ručně majitel aplikace
+        // (entitlements-manage) a zrušené předplatné jimi nehýbe.
+        //
+        // Pozor na `.neq("valid_until", null)`: PostgREST z toho udělá
+        // porovnání s řetězcem „null“, které nesedne na žádný řádek –
+        // zrušené předplatné by pak přístup neodebralo vůbec.
+        const { error: chybaNaroku } = await svc.from("service_entitlements")
           .update({ active: false, updated_at: new Date().toISOString() })
           .eq("service_id", serviceId)
-          .neq("valid_until", null);
+          .not("valid_until", "is", null);
+        if (chybaNaroku) throw new ZapisError(`service_entitlements: ${chybaNaroku.message}`);
       } else {
         await zapsatNaroky(svc, serviceId, sub);
       }
@@ -140,7 +165,8 @@ serve(async (req) => {
     if (udalost.type === "invoice.payment_failed") {
       const faktura = udalost.data.object as { customer?: string };
       if (faktura.customer) {
-        await svc.from("service_billing").update({ status: "past_due" }).eq("stripe_customer_id", faktura.customer);
+        const { error } = await svc.from("service_billing").update({ status: "past_due" }).eq("stripe_customer_id", faktura.customer);
+        if (error) throw new ZapisError(`service_billing: ${error.message}`);
       }
       return json({ ok: true });
     }
@@ -148,6 +174,9 @@ serve(async (req) => {
     return json({ ok: true, ignorovano: udalost.type });
   } catch (e) {
     console.error("[billing-webhook]", e);
+    // 5xx schválně: Stripe událost zopakuje. Kdyby se odpovědělo 200,
+    // zůstal by nárok navždy v původním stavu – zaplaceno a nezapnuto,
+    // nebo zrušeno a pořád zapnuto.
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });

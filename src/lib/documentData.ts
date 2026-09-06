@@ -73,8 +73,13 @@ export function pridejMesice(d: Date, mesicu: number): Date {
   return x;
 }
 
+/** Přičte dny na přesný okamžik – 45 dnů je 45 dnů, ne půldruhého měsíce. */
+export function pridejDny(d: Date, dnu: number): Date {
+  return new Date(d.getTime() + dnu * 24 * 60 * 60 * 1000);
+}
+
 /** Zakázkový list, záruční list, diagnostika. */
-export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<string, unknown>, opts?: { completedAt?: string; warrantyMonths?: number }): DocumentData {
+export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<string, unknown>, opts?: { completedAt?: string; warrantyMonths?: number; warrantyDays?: number }): DocumentData {
   const items = repairsToItems(ticket);
   const hruba = items.reduce((sum, it) => sum + (it.total ?? 0), 0);
   // Stejný výpočet jako itemsTotal() v jobidocs/core – jinak by řádek Sleva byl
@@ -83,10 +88,15 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
   const hasPrices = items.some((it) => it.total != null);
   const t = ticket as TicketEx & { completedAt?: string | null; notes?: string; warrantyMonths?: number };
   const completed = opts?.completedAt ?? t.completedAt ?? undefined;
+  // Délka záruky je slib servisu, ne údaj zakázky: bere se z nastavení
+  // dokumentů servisu (viz zarucniDobaProTisk v documentHelpers.ts) a jen
+  // pro jistotu se dá přebít údajem uloženým u zakázky.
   const warrantyMonths = opts?.warrantyMonths ?? t.warrantyMonths;
+  const warrantyDays = warrantyMonths ? undefined : opts?.warrantyDays;
   let warrantyUntil: string | undefined;
-  if (warrantyMonths && completed) {
-    warrantyUntil = pridejMesice(new Date(completed), warrantyMonths).toISOString();
+  if (completed) {
+    if (warrantyMonths) warrantyUntil = pridejMesice(new Date(completed), warrantyMonths).toISOString();
+    else if (warrantyDays) warrantyUntil = pridejDny(new Date(completed), warrantyDays).toISOString();
   }
   const portalToken = (ticket as TicketEx & { portalToken?: string | null }).portalToken;
   return {
@@ -142,7 +152,7 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
       : undefined,
     note: s(t.notes),
     photos: (ticket.diagnosticPhotos ?? []).filter((u) => typeof u === "string" && u.trim()),
-    warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : undefined,
+    warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : warrantyDays ? { days: warrantyDays, until: warrantyUntil } : undefined,
     extra: { external_id: ticket.externalId ?? "" },
   };
 }
@@ -171,7 +181,9 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
       address: addressOf(claim.customer_address_street, claim.customer_address_city, claim.customer_address_zip),
     },
     device: {
-      name: s(claim.device_label) ?? [s(claim.device_brand), s(claim.device_model)].filter(Boolean).join(" ") ?? undefined,
+      // s() na výsledku spojení: bez značky i modelu vrací join prázdný
+      // řetězec, který ?? propustí dál a na dokladu zbude prázdná kolonka.
+      name: s(claim.device_label) ?? s([s(claim.device_brand), s(claim.device_model)].filter(Boolean).join(" ")),
       serial: s(claim.device_serial),
       imei: s(claim.device_imei),
       passcode: s(claim.device_passcode),

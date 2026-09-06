@@ -42,7 +42,7 @@ export const LEGAL_TEXTS: Partial<Record<DocType, string>> = {
   zakazkovy_list:
     "Předáním zařízení do servisu zákazník objednává diagnostiku a případnou opravu popsanou výše a zavazuje se uhradit sjednanou cenu. Překročí-li skutečná cena opravy uvedený odhad, servis si před pokračováním vyžádá souhlas zákazníka.\n\nServis neodpovídá za data uložená v zařízení; zákazník potvrzuje, že si před předáním pořídil zálohu. Nevyzvedne-li zákazník zařízení do 30 dnů od výzvy k převzetí, může servis účtovat skladné 20 Kč za každý započatý den; zařízení nevyzvednuté do 6 měsíců od výzvy může servis po předchozím upozornění prodat na účet zákazníka (§ 2609 občanského zákoníku).\n\nZákazník podpisem stvrzuje správnost uvedených údajů a souhlas s těmito podmínkami.",
   zarucni_list:
-    "Na provedenou práci a použité náhradní díly poskytuje servis záruku {{warranty.months}} měsíců ode dne převzetí zařízení zákazníkem. Práva spotřebitele z vadného plnění podle občanského zákoníku (24 měsíců od převzetí) tím nejsou dotčena. Záruka se vztahuje na vadu, která byla předmětem opravy, a na použité díly; nekryje mechanické poškození, zásah kapaliny, neodborný zásah ani běžné opotřebení.\n\nZákazník při převzetí zkontroluje stav zařízení a zjištěné vnější poškození oznámí hned. Reklamaci lze uplatnit v provozovně servisu uvedené v hlavičce.",
+    "Na provedenou práci a použité náhradní díly poskytuje servis záruku {{warranty.duration}} ode dne převzetí zařízení zákazníkem. Práva spotřebitele z vadného plnění podle občanského zákoníku (24 měsíců od převzetí) tím nejsou dotčena. Záruka se vztahuje na vadu, která byla předmětem opravy, a na použité díly; nekryje mechanické poškození, zásah kapaliny, neodborný zásah ani běžné opotřebení.\n\nZákazník při převzetí zkontroluje stav zařízení a zjištěné vnější poškození oznámí hned. Reklamaci lze uplatnit v provozovně servisu uvedené v hlavičce.",
   prijemka_reklamace:
     "Servis převzal zařízení k posouzení reklamace a tímto potvrzuje, kdy byla uplatněna, co je jejím obsahem a jaký způsob vyřízení zákazník požaduje. Reklamace bude vyřízena bez zbytečného odkladu, nejpozději do 30 dnů od uplatnění, nedohodnou-li se strany na delší lhůtě; o způsobu a datu vyřízení vydá servis písemné potvrzení. Uznaná reklamace se řeší bezplatnou opravou nebo výměnou dílu.",
   vydejka_reklamace: "Zákazník podpisem potvrzuje převzetí zařízení po vyřízení reklamace a seznámení s jejím výsledkem.",
@@ -250,8 +250,32 @@ export function templateFor(docs: DocumentsV2 | null | undefined, docType: DocTy
   return t ? normalizeTemplate(t) : defaultTemplate(docType);
 }
 
+/**
+ * Starší znění záručního textu v už uložených šablonách.
+ *
+ * Do verze s {{warranty.duration}} se počet měsíců dosazoval jako holé číslo
+ * a slovo „měsíců“ bylo v šabloně napsané natvrdo. Servisu, který délku
+ * záruky nemá nastavenou, tak na papíře zbyla díra („záruku  měsíců“),
+ * a u 21 nebo 24 měsíců navíc špatný tvar slova. Šablony si servisy ukládají
+ * do databáze, takže samotná změna výchozí šablony na ně nedosáhne – znění
+ * se proto přepisuje při každém načtení.
+ */
+const STARY_ZARUCNI_TEXT = "{{warranty.months}} měsíců";
+const NOVY_ZARUCNI_TEXT = "{{warranty.duration}}";
+
+function opravStaryZarucniText(t: Template): Template {
+  const json = JSON.stringify(t);
+  if (!json.includes(STARY_ZARUCNI_TEXT)) return t;
+  try {
+    return JSON.parse(json.split(STARY_ZARUCNI_TEXT).join(NOVY_ZARUCNI_TEXT)) as Template;
+  } catch {
+    return t;
+  }
+}
+
 /** Doplní chybějící pole (starší uložené šablony, ručně editovaný JSON). Nikdy nevyhodí výjimku. */
-export function normalizeTemplate(t: Template): Template {
+export function normalizeTemplate(vstup: Template): Template {
+  const t = opravStaryZarucniText(vstup);
   const slots = { ...emptySlots() };
   for (const k of Object.keys(slots) as (keyof typeof slots)[]) {
     const arr = (t.slots as Record<string, unknown> | undefined)?.[k];

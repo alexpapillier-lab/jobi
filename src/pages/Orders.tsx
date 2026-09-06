@@ -99,11 +99,11 @@ import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
   safeLoadDocumentsConfig,
+  zarucniDobaProTisk,
 } from "../lib/documentHelpers";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
-export { generateTicketHTML, generateDiagnosticProtocolHTML, generateWarrantyHTML, generatePrijetiReklamaceHTML } from "../lib/documentGenerators";
 
 
 type GroupKey = "all" | "active" | "final" | "reklamace";
@@ -641,9 +641,18 @@ type DocMode = "print" | "export";
 function ticketDocData(ticket: TicketEx, docType: DocTypeForPrint): DocumentData {
   const t = ticket as TicketEx & { completed_at?: string | null };
   const completedAt = t.completed_at ?? (docType === "zarucni_list" ? new Date().toISOString() : undefined);
+  const serviceId = (ticket as any).service_id as string | null | undefined;
   // Adresa, telefon a e-mail pobočky mají na dokumentu přednost před firemními.
-  const branch = getCachedBranch((ticket as any).service_id, ticket.branchId);
-  return ticketDocumentData(ticket, companyDataForBranch(safeLoadCompanyData(), branch), { completedAt });
+  const branch = getCachedBranch(serviceId, ticket.branchId);
+  // Délku záruky si servis nastavuje v dokumentech, ne u zakázky. Bez ní
+  // zůstávala na záručním listu ve větě „poskytuje servis záruku … měsíců“
+  // díra místo čísla.
+  const zaruka = zarucniDobaProTisk(serviceId);
+  return ticketDocumentData(ticket, companyDataForBranch(safeLoadCompanyData(), branch), {
+    completedAt,
+    warrantyMonths: zaruka?.months,
+    warrantyDays: zaruka?.days,
+  });
 }
 
 async function runWebDocument(mode: DocMode, docType: WebPrintDocType, sid: string, data: DocumentData) {

@@ -8,12 +8,16 @@
   <meta name="referrer" content="no-referrer" />
   <title>Stav zakázky</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="portal.css?v=20260904" />
-  <script>
-    window.PORTAL_CONFIG = { supabaseUrl: 'https://ijtvcgolsdsrquqbvjrz.supabase.co' };
-  </script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script defer src="portal.js?v=20260904"></script>
+  <link rel="stylesheet" href="portal.css?v=20260906" />
+  <!--
+    Všechno běží z vlastní domény: QR knihovna je hostovaná lokálně a
+    nastavení je v souboru, ne v inline skriptu. Na stránce, kde zákazník
+    kreslí podpis a kde je v adrese token k zakázce, nemá co dělat kód
+    z cizího serveru. Viz web/_headers – /z/* má na to i CSP.
+  -->
+  <script defer src="portal-config.js?v=20260906"></script>
+  <script defer src="qrcode.min.js?v=20260906"></script>
+  <script defer src="portal.js?v=20260906"></script>
 </head>
 <body>
   <!-- Kompaktní lišta – zobrazí se po odscrollování hlavičky -->

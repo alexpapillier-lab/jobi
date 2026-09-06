@@ -76,11 +76,22 @@ Best-effort limit 60 požadavků/min na token → `429`.
 |-----------|------------------------------|-------|
 | `approve` | `quote_status = 'sent'`, jinak 409 | `quote_status = 'approved'`, `quote_decided_at`, `quote_decision_meta = { ip, userAgent, note }`, událost `quote_approved` |
 | `reject`  | dtto                         | `quote_status = 'rejected'`, …, událost `quote_rejected` |
-| `sign`    | ještě nepodepsáno, jinak 409; PNG data URL do 300 kB, jinak 400 | upload do `diagnostic-photos/signatures/<ticketId>-<ts>.png`, `intake_signature_url`, `intake_signed_at`, událost `signed` |
-| `pickup`  | –                            | jen událost `pickup_confirmed` |
+| `sign`    | ještě nepodepsáno, jinak 409; PNG data URL do 300 kB, jinak 400 | rezervace `intake_signed_at`, pak upload do `diagnostic-photos/signatures/<ticketId>-<ts>.png` a `intake_signature_url`, událost `signed` |
+| `pickup`  | ještě nepotvrzeno, jinak 409 | jen událost `pickup_confirmed` |
 | jiné      | –                            | 400 |
 
 Každá úspěšná akce vrací stejný payload jako GET.
+
+### 409 znamená „neuloženo“, ne „uloženo jinak“
+
+Podmíněný `UPDATE`, který nechytil žádný řádek, vrací v supabase-js `error === null`.
+Proto má každý zápis `.select("id")` a při nule řádků odpovídá 409 – jinak by portál
+zákazníkovi odpověděl „ok“, přestože se nic neuložilo, a v `ticket_portal_events` by
+zůstala událost o rozhodnutí, které v zakázce není (i obě naráz).
+
+Podpis proto zabírá `intake_signed_at` **před** nahráním souboru. Kdyby se nahrávalo
+první, souběžný druhý pokus by v úložišti nechal podpis zákazníka bez vazby na zakázku.
+Když nahrání nebo dopsání URL selže, funkce rezervaci uvolní a nahraný soubor smaže.
 
 ## Co se ven neposílá
 

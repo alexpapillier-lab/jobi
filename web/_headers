@@ -17,11 +17,33 @@
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
 
+# Celý web: HTTPS napevno a zákaz hádání typu obsahu.
+#
+# X-Frame-Options tu schválně NENÍ. Portál potřebuje DENY a webová verze
+# aplikace SAMEORIGIN (tu si přidává vlastní blok /servis/*); dvě různé
+# hodnoty jedné hlavičky si prohlížeče vykládají různě, tak ji nastavujeme
+# jen tam, kam patří.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+
 # Zákaznický portál (/z/) – veřejná stránka s tokenem v URL.
 # Neindexovat, neposílat referrer (token by unikl do logů cizích serverů),
 # krátká keš, aby se změny projevily hned.
+#
+# Zákazník tu schvaluje opravu a podepisuje převzetí, proto:
+#  - frame-ancestors 'none' + X-Frame-Options: DENY – cizí web nesmí portál
+#    načíst do rámu a nechat zákazníka kliknout na „Schválit opravu“ naslepo,
+#  - CSP pouští skripty a styly jen z vlastní domény (QR knihovna je proto
+#    v /z/qrcode.min.js a nastavení v /z/portal-config.js, ne inline),
+#  - connect-src pouští jen edge funkci portálu, takže token z adresy
+#    nemá kam odtéct.
+# Fotky se nahrávají do Supabase Storage; img-src proto pouští https
+#  obecně, ať přenesení úložiště nezhasne zákazníkovi fotky.
 /z/*
   X-Robots-Tag: noindex, nofollow
   Referrer-Policy: no-referrer
   Cache-Control: public, max-age=300, must-revalidate
   X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src https://ijtvcgolsdsrquqbvjrz.supabase.co; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

@@ -70,6 +70,12 @@ serve(async (req) => {
 
     const interval = PLANS[plan].interval;
     const polozky: Array<{ price: string; quantity: number }> = [{ price: planPrice, quantity: 1 }];
+    // Pobočky navíc dávají smysl jen tam, kde tarif pobočky vůbec umí.
+    // Bez téhle kontroly si Starter připlatil za druhou pobočku, ale modul
+    // `branches` mu nevznikl a databáze mu ji dál odmítala – platil za nic.
+    if (pobocekNavic > 0 && !PLANS[plan].modules.includes("branches")) {
+      return json({ error: `Tarif ${PLANS[plan].label} pobočky navíc neumí. Vyberte vyšší tarif.` }, 400);
+    }
     if (pobocekNavic > 0) {
       const cena = await priceIdByLookupKey(addonKey("jobi_branch_addon", interval));
       if (cena) polozky.push({ price: cena, quantity: pobocekNavic });

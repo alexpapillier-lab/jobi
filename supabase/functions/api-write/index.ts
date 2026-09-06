@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { otisk, PREFIX, type Rozsah } from "../_shared/tokeny.ts";
+import { modulProRozsah, NAZEV_MODULU, otisk, PREFIX, type Rozsah } from "../_shared/tokeny.ts";
 import { zmenyProduktu, zmenyOprav, zmenyKatalogu, otiskTela, type DruhKatalogu } from "../_shared/zapis.ts";
 
 /**
@@ -70,6 +70,28 @@ serve(async (req) => {
   if (!zaznam || zaznam.revoked_at) return json({ error: "Neplatný token" }, 401);
 
   const rozsahy = (zaznam.scopes ?? []) as Rozsah[];
+
+  /**
+   * Rozsah tokenu říká, co token smí. Nárok na modul říká, jestli si to
+   * servis platí – a to je jiná otázka. Bez druhé kontroly píše vydaný token
+   * dál i měsíce po vypršení předplatného.
+   *
+   * Výsledek se drží v paměti požadavku, ať se stejný modul neptá databáze
+   * u každé sekce těla zvlášť.
+   */
+  const naroky = new Map<string, boolean>();
+  const branaRozsahu = async (r: Rozsah): Promise<Response | null> => {
+    if (!rozsahy.includes(r)) return json({ error: `Token nemá rozsah ${r}` }, 403);
+    const modul = modulProRozsah(r);
+    let ma = naroky.get(modul);
+    if (ma === undefined) {
+      const { data, error } = await svc.rpc("has_entitlement", { p_service_id: zaznam.service_id, p_module: modul });
+      ma = !error && data === true;
+      naroky.set(modul, ma);
+    }
+    if (!ma) return json({ error: `${NAZEV_MODULU[modul]} není pro tento servis aktivní.` }, 403);
+    return null;
+  };
 
   // Limit se počítá i pro požadavky, které nakonec spadnou na chybu –
   // jinak by šlo přes chybné požadavky zkoušet donekonečna.
@@ -141,7 +163,8 @@ serve(async (req) => {
   const KATALOG: Record<DruhKatalogu, string> = { brands: "device_brands", categories: "device_categories", models: "device_models" };
   for (const druh of ["brands", "categories", "models"] as DruhKatalogu[]) {
     if (!Array.isArray((telo as any)[druh])) continue;
-    if (!rozsahy.includes("catalog:write")) return json({ error: "Token nemá rozsah catalog:write" }, 403);
+    const brana = await branaRozsahu("catalog:write");
+    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyKatalogu((telo as any)[druh], druh);
     chyby.push(...ch);
     const p = pocty();
@@ -168,7 +191,8 @@ serve(async (req) => {
 
   // --- opravy ---
   if (Array.isArray((telo as any).repairs)) {
-    if (!rozsahy.includes("catalog:write")) return json({ error: "Token nemá rozsah catalog:write" }, 403);
+    const brana = await branaRozsahu("catalog:write");
+    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyOprav((telo as any).repairs);
     chyby.push(...ch);
     const p = pocty();
@@ -200,7 +224,8 @@ serve(async (req) => {
 
   // --- produkty ---
   if (Array.isArray((telo as any).products)) {
-    if (!rozsahy.includes("inventory:write")) return json({ error: "Token nemá rozsah inventory:write" }, 403);
+    const brana = await branaRozsahu("inventory:write");
+    if (brana) return brana;
     const { zmeny, chyby: ch } = zmenyProduktu((telo as any).products);
     chyby.push(...ch);
     const p = pocty();

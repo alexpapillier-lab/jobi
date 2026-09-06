@@ -16,6 +16,9 @@ import {
   formatDate,
   formatMoney,
   itemsTotal,
+  discountAmount,
+  monthsText,
+  normalizeTemplate,
   renderDocument,
   type DocType,
   type DocumentData,
@@ -37,6 +40,12 @@ function naPapire(html: string): string {
 /** Řádek „Celkem“ z tabulky položek. */
 function radekCelkem(html: string): string {
   const i = html.indexOf('<tr class="total">');
+  return i === -1 ? "" : html.slice(i, html.indexOf("</tr>", i));
+}
+
+/** Řádek „Sleva“ z tabulky položek. */
+function radekSleva(html: string): string {
+  const i = html.indexOf('<tr class="discount">');
   return i === -1 ? "" : html.slice(i, html.indexOf("</tr>", i));
 }
 
@@ -172,6 +181,49 @@ describe("sleva na dokladu", () => {
     expect(radekCelkem(naPapire(tisk("zarucni_list", data)))).toContain(`0,00${NBSP}Kč`);
   });
 
+  it("sleva vyšší než cena se vytiskne nejvýš do výše ceny", () => {
+    // Sleva −5 000 nad opravou za 1 500 znamená, že servis zákazníkovi doplácí.
+    const papir = naPapire(tisk("zarucni_list", seSlevou({ type: "amount", value: 5000 })));
+    expect(radekSleva(papir)).toContain(`1${NBSP}500,00${NBSP}Kč`);
+    expect(radekSleva(papir)).not.toContain(`5${NBSP}000,00`);
+    expect(radekCelkem(papir)).toContain(`0,00${NBSP}Kč`);
+  });
+
+  it("stoprocentní sleva se rovná ceně, ne dvojnásobku", () => {
+    const papir = naPapire(tisk("zarucni_list", seSlevou({ type: "percentage", value: 100 })));
+    expect(radekSleva(papir)).toContain(`1${NBSP}500,00${NBSP}Kč`);
+  });
+
+  it("u procentní slevy je vidět i částka, kterou představuje", () => {
+    // Deset procent z 1 500 si zákazník u pultu ověří jen tehdy, když
+    // je na dokladu i výsledek, ne jenom „10 %“.
+    const radek = radekSleva(naPapire(tisk("zarucni_list", seSlevou({ type: "percentage", value: 10 }))));
+    expect(radek).toContain("10 %");
+    expect(radek).toContain(`150,00${NBSP}Kč`);
+  });
+
+  it("odečtená sleva a řádek Celkem dají dohromady cenu oprav", () => {
+    for (const discount of [{ type: "percentage", value: 33 }, { type: "amount", value: 249.5 }, { type: "amount", value: 9999 }] as const) {
+      const data = seSlevou(discount);
+      expect((discountAmount(data) ?? 0) + (itemsTotal(data) ?? 0)).toBeCloseTo(1500, 2);
+    }
+  });
+
+  it("u zakázky, kde má cenu jen část oprav, se sleva ukáže spolu s Celkem", () => {
+    // Celkem přichází z Jobi už po slevě. Kdyby řádek Sleva chyběl, zákazník
+    // by viděl nižší částku a nikde by nebylo, čím to je.
+    const papir = naPapire(
+      tisk("zarucni_list", {
+        service: { name: "Servis" },
+        items: [{ name: "Výměna displeje", total: 1000 }, { name: "Vyčištění konektoru" }],
+        totals: { total: 900, currency: "CZK" },
+        discount: { type: "percentage", value: 10 },
+      }),
+    );
+    expect(radekSleva(papir)).toContain(`100,00${NBSP}Kč`);
+    expect(radekCelkem(papir)).toContain(`900,00${NBSP}Kč`);
+  });
+
   it("u oprav bez cen se řádek Celkem netiskne vůbec, místo nuly", () => {
     const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" }, items: [{ name: "Výměna displeje" }], totals: { currency: "CZK" } }));
     expect(papir).toContain("Výměna displeje");
@@ -195,6 +247,68 @@ describe("záruka na záručním listu", () => {
   it("bez jakéhokoli údaje o záruce se blok Záruka na doklad nedostane", () => {
     const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" } }));
     expect(papir).not.toContain('data-type="warranty"');
+  });
+
+  it("záruka sjednaná ve dnech se tiskne ve dnech, ne přepočtená na měsíce", () => {
+    const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" }, warranty: { days: 45, until: "2026-10-18" } }));
+    expect(papir).toContain("45 dnů");
+    // 45 dnů není „1,5 měsíce“; přepočet přes třicetidenní měsíc by lhal.
+    expect(papir).not.toContain("1 měsíc");
+    expect(papir).not.toContain("2 měsíce");
+  });
+
+  it("délka záruky se propíše i do právního textu na konci listu", () => {
+    const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" }, warranty: { months: 6, until: "2027-03-03" } }));
+    expect(papir).toContain("poskytuje servis záruku 6 měsíců ode dne");
+  });
+
+  it("bez nastavené délky záruky nezůstane v právním textu díra", () => {
+    const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" } }));
+    expect(papir).not.toContain("záruku  měsíc");
+    expect(papir).not.toContain("záruku  ode dne");
+    expect(papir).toContain("poskytuje servis záruku v zákonné délce ode dne");
+  });
+
+  it("starší uložená šablona s „{{warranty.months}} měsíců“ se opraví při načtení", () => {
+    // Šablony uložené před opravou mají počet měsíců napsaný natvrdo i se
+    // slovem „měsíců“; bez nastavené záruky by z nich zbyla dvojitá mezera.
+    const stara = defaultTemplate("zarucni_list");
+    stara.blocks = [{ id: "b1", type: "text", content: "poskytuje servis záruku {{warranty.months}} měsíců ode dne převzetí", size: "small", align: "justify" }];
+    const t = normalizeTemplate(stara);
+    const papir = naPapire(
+      renderDocument({ template: t, data: { service: { name: "Servis" } }, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } }),
+    );
+    expect(papir).toContain("poskytuje servis záruku v zákonné délce ode dne");
+    expect(papir).not.toContain("záruku  měsíců");
+  });
+});
+
+// „24 měsíce“ vypadá na záručním listu jako překlep z automatu. Číslovky nad
+// dvacet zapsané číslicí mají v češtině u podstatného jména druhý pád.
+describe("skloňování měsíců", () => {
+  it("1 měsíc, 2 až 4 měsíce, jinak měsíců – i u 21 a 24", () => {
+    const ocekavane: Array<[number, string]> = [
+      [1, "1 měsíc"],
+      [2, "2 měsíce"],
+      [3, "3 měsíce"],
+      [4, "4 měsíce"],
+      [5, "5 měsíců"],
+      [11, "11 měsíců"],
+      [12, "12 měsíců"],
+      [21, "21 měsíců"],
+      [22, "22 měsíců"],
+      [24, "24 měsíců"],
+      [25, "25 měsíců"],
+      [100, "100 měsíců"],
+      [101, "101 měsíců"],
+    ];
+    for (const [n, text] of ocekavane) expect(monthsText(n)).toBe(text);
+  });
+
+  it("dvouletá záruka se na papíře jmenuje „24 měsíců“", () => {
+    const papir = naPapire(tisk("zarucni_list", { service: { name: "Servis" }, warranty: { months: 24, until: "2028-09-03" } }));
+    expect(papir).toContain("24 měsíců");
+    expect(papir).not.toContain("24 měsíce");
   });
 });
 

@@ -3,7 +3,7 @@
  * Testuje se odsud, protože edge funkce běží v Denu a vlastní testy nemá.
  */
 import { describe, it, expect } from "vitest";
-import { vyhodnotLimit, otiskKlienta, LIMIT_NA_IP, LIMIT_NA_SERVIS } from "../../supabase/functions/_shared/limity";
+import { vyhodnotLimit, otiskKlienta, klientskaIp, LIMIT_NA_IP, LIMIT_NA_SERVIS } from "../../supabase/functions/_shared/limity";
 
 describe("vyhodnotLimit", () => {
   it("pustí provoz pod limitem", () => {
@@ -41,13 +41,45 @@ describe("otiskKlienta", () => {
     expect(a).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it("bere první adresu ze seznamu, ne celý řetězec", async () => {
-    const a = await otiskKlienta(req({ "x-forwarded-for": "1.2.3.4, 9.9.9.9" }));
-    const b = await otiskKlienta(req({ "x-forwarded-for": "1.2.3.4" }));
-    expect(a).toBe(b);
-  });
-
   it("poradí si s chybějící hlavičkou", async () => {
     expect(await otiskKlienta(req({}))).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  /**
+   * Tady se dřív bral první záznam z x-forwarded-for. Ten ale pošle klient a
+   * proxy své adresy připojují za něj, takže si každý mohl vyrobit nový otisk
+   * a limit „na klienta" nic neznamenal.
+   */
+  it("podvržená první položka x-forwarded-for otisk nezmění", async () => {
+    const skutecny = await otiskKlienta(req({ "x-forwarded-for": "9.9.9.9" }));
+    const podvrzeny = await otiskKlienta(req({ "x-forwarded-for": "1.2.3.4, 9.9.9.9" }));
+    expect(podvrzeny).toBe(skutecny);
+  });
+
+  it("dvě různé podvržené hlavičky od stejného klienta dají stejný otisk", async () => {
+    const a = await otiskKlienta(req({ "x-forwarded-for": "1.1.1.1, 9.9.9.9" }));
+    const b = await otiskKlienta(req({ "x-forwarded-for": "2.2.2.2, 9.9.9.9" }));
+    expect(a).toBe(b);
+  });
+});
+
+describe("klientskaIp", () => {
+  const req = (h: Record<string, string>) => new Request("https://x.test", { headers: h });
+
+  it("dá přednost cf-connecting-ip, kterou Cloudflare přepisuje", () => {
+    expect(klientskaIp(req({ "cf-connecting-ip": "9.9.9.9", "x-forwarded-for": "1.2.3.4" }))).toBe("9.9.9.9");
+  });
+
+  it("z x-forwarded-for bere poslední položku, tu připojila poslední proxy", () => {
+    expect(klientskaIp(req({ "x-forwarded-for": "1.2.3.4, 5.6.7.8, 9.9.9.9" }))).toBe("9.9.9.9");
+  });
+
+  it("jedinou adresu vezme tak, jak je, a ořízne mezery", () => {
+    expect(klientskaIp(req({ "x-forwarded-for": "  1.2.3.4  " }))).toBe("1.2.3.4");
+  });
+
+  it("prázdný nebo chybějící seznam neshodí limit", () => {
+    expect(klientskaIp(req({}))).toBe("neznama");
+    expect(klientskaIp(req({ "x-forwarded-for": " , " }))).toBe("neznama");
   });
 });
