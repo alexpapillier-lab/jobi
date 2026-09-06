@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
 
 /**
  * Peníze: cenová nabídka pro zákazníka a faktura ze zakázky.
@@ -34,7 +34,7 @@ test("na zakázce jde sestavit cenová nabídka z položek", async ({ page }) =>
 
 test("ze zakázky jde vystavit faktura", async ({ page }) => {
   await prihlasSe(page);
-  await page.getByText(kod, { exact: true }).click();
+  await vidZakazku(page, kod).first().click();
   await page.getByRole("button", { name: /Vystavit fakturu/ }).first().click();
 
   // Otevře se editor faktury s předvyplněným odběratelem. Číslo z řady se

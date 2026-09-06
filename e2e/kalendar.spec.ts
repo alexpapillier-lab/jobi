@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, nahodnyTelefon } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, nahodnyTelefon, vidZakazku } from "./pomocnici";
 
 /**
  * Termín dokončení: co se slíbí zákazníkovi na příjmu, musí být vidět
@@ -51,8 +51,7 @@ test("zakázka založená s termínem je v kalendáři pod tím dnem", async ({ 
 
   await naKalendar(page);
   // Zakázka s termínem nepatří do skupiny „Bez termínu“, ale pod svůj den.
-  // Stránka Zakázky zůstává připojená a schovaná, proto :visible.
-  const radek = page.locator(`:text-is("${kod}"):visible`).first();
+  const radek = vidZakazku(page, kod).first();
   await expect(radek).toBeVisible({ timeout: 30_000 });
   const skupina = radek.locator("xpath=ancestor::section[1]");
   await expect(skupina).not.toHaveAttribute("aria-label", /Bez termínu/);
@@ -62,8 +61,7 @@ test("termín drží i po přenačtení aplikace", async ({ page }) => {
   test.setTimeout(150_000);
   await prihlasSe(page);
   await naKalendar(page);
-  // Stránka Zakázky zůstává připojená a schovaná, proto :visible.
-  const radek = page.locator(`:text-is("${kod}"):visible`).first();
+  const radek = vidZakazku(page, kod).first();
   await expect(radek).toBeVisible({ timeout: 30_000 });
   const skupina = radek.locator("xpath=ancestor::section[1]");
   const den = await skupina.getAttribute("aria-label");
@@ -72,7 +70,7 @@ test("termín drží i po přenačtení aplikace", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
   await naKalendar(page);
-  const znovu = page.locator(`:text-is("${kod}"):visible`).first();
+  const znovu = vidZakazku(page, kod).first();
   await expect(znovu).toBeVisible({ timeout: 30_000 });
   await expect(znovu.locator("xpath=ancestor::section[1]")).toHaveAttribute("aria-label", den ?? "");
 });

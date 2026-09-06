@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail, vidZakazku } from "./pomocnici";
 
 /**
  * Zákaznický portál: servis pošle cenovou nabídku, zákazník ji na svém
@@ -67,7 +67,7 @@ test("zákazník nabídku na telefonu schválí", async ({ browser }) => {
 test("schválení je vidět v zakázce", async ({ page }) => {
   test.setTimeout(120_000);
   await prihlasSe(page);
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   await expect(page.getByText(/Schváleno/).first()).toBeVisible({ timeout: 30_000 });
   await zavriDetail(page);
 });

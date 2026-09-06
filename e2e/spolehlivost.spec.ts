@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail, vidZakazku } from "./pomocnici";
 
 /**
  * Spolehlivost ukládání: co uživatel zadá, musí skončit v databázi – i když
@@ -24,7 +24,7 @@ let kod = "";
  *  Tlačítka „Upravit" jsou v detailu i u oprav, proto se vždy pracuje
  *  uvnitř téhle karty. */
 async function otevriDetail(page: import("@playwright/test").Page) {
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   const karta = page.locator("#detail-zapujcka");
   await expect(karta).toBeVisible({ timeout: 20_000 });
   return karta;
@@ -158,7 +158,7 @@ test("fronta neuložených změn přežije zavření aplikace", async ({ page, c
 test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zpět", async ({ page }) => {
   test.setTimeout(180_000);
   await prihlasSe(page);
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   await expect(page.locator("#detail-zapujcka")).toBeVisible({ timeout: 20_000 });
 
   const novyPopis = `Závada po výpadku ${Date.now().toString(36)}`;
@@ -185,7 +185,7 @@ test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zp
 
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   await expect(page.getByText(novyPopis).first()).toBeVisible({ timeout: 20_000 });
   await zavriDetail(page);
 });
@@ -193,7 +193,7 @@ test("úprava zakázky při výpadku sítě se doplní sama a nepřepíše se zp
 test("interní komentář se uloží a po nepovedeném zápisu zůstane rozepsaný", async ({ page }) => {
   test.setTimeout(150_000);
   await prihlasSe(page);
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   const pole = page.getByPlaceholder("Napiš interní komentář k zakázce…");
   await expect(pole).toBeVisible({ timeout: 20_000 });
 
@@ -205,7 +205,7 @@ test("interní komentář se uloží a po nepovedeném zápisu zůstane rozepsan
   // Až po přenačtení je jisté, že komentář je v databázi.
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
-  await page.getByText(kod, { exact: true }).first().click();
+  await vidZakazku(page, kod).first().click();
   await expect(page.getByText(komentar).first()).toBeVisible({ timeout: 20_000 });
 
   /* Komentář, který se nezapíše, se nesmí ztratit z pole – jinak si ho

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
 
 /**
  * Hledání a filtry. Servis s tisícovkami zakázek je používá pořád a rozbité
@@ -13,21 +13,21 @@ test("zakázku najde hledání podle jména i podle čísla", async ({ page }) =
   const hledani = page.getByPlaceholder("Vyhledávání…");
 
   await hledani.fill(zakaznik);
-  await expect(page.getByText(kod, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 20_000 });
 
   await hledani.fill(kod);
-  await expect(page.getByText(kod, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 20_000 });
 
   // Zařízení je taky vodítko, kterým lidi hledají.
   await hledani.fill("Herní notebook");
-  await expect(page.getByText(kod, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 20_000 });
 
   // Nesmysl nesmí vrátit nic – jinak filtr nefiltruje.
   await hledani.fill("nexistujicizakazka-zzz");
-  await expect(page.getByText(kod, { exact: true })).toBeHidden({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod)).toHaveCount(0, { timeout: 20_000 });
 
   await hledani.fill("");
-  await expect(page.getByText(kod, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 20_000 });
 });
 
 test("filtr Dokončené oddělí hotové zakázky od aktivních", async ({ page }) => {
@@ -36,8 +36,8 @@ test("filtr Dokončené oddělí hotové zakázky od aktivních", async ({ page 
 
   // Nová zakázka je aktivní, mezi dokončenými být nesmí.
   await page.getByRole("button", { name: /^Dokončené/ }).click();
-  await expect(page.getByText(kod, { exact: true })).toBeHidden({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod)).toHaveCount(0, { timeout: 20_000 });
 
   await page.getByRole("button", { name: /^Aktivní/ }).click();
-  await expect(page.getByText(kod, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 20_000 });
 });

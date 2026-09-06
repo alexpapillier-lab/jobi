@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, radekZakazky, TECHNIK, testovaciJmeno, zalozZakazku } from "./pomocnici";
+import { prihlasSe, radekZakazky, TECHNIK, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
 
 /**
  * Dva lidé na jednom servisu ve stejnou chvíli.
@@ -25,7 +25,7 @@ test("technik uvidí zakázku, kterou právě založil majitel", async ({ page, 
   try {
     const kod = await zalozZakazku(page, { zakaznik: testovaciJmeno("Souběh"), zarizeni: "Notebook (souběh)" });
     // Technik nic neobnovuje – zakázka mu má přijít sama.
-    await expect(technik.getByText(kod, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(vidZakazku(technik, kod).first()).toBeVisible({ timeout: 30_000 });
   } finally {
     await technik.context().close();
   }
@@ -36,7 +36,7 @@ test("změna stavu od jednoho se propíše druhému", async ({ page, browser }) 
   const technik = await druhyClovek(browser, "technik");
   try {
     const kod = await zalozZakazku(page, { zakaznik: testovaciJmeno("Stav"), zarizeni: "Tiskárna (souběh)" });
-    await expect(technik.getByText(kod, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(vidZakazku(technik, kod).first()).toBeVisible({ timeout: 30_000 });
 
     // Stav mění technik – má na to právo can_change_ticket_status.
     await radekZakazky(technik, kod).getByRole("button", { name: /Přijato/ }).first().click();
@@ -58,10 +58,10 @@ test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ p
   const technik = await druhyClovek(browser, "technik");
   try {
     const kod = await zalozZakazku(page, { zakaznik: testovaciJmeno("Oprava"), zarizeni: "Tablet (souběh)" });
-    await expect(technik.getByText(kod, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(vidZakazku(technik, kod).first()).toBeVisible({ timeout: 30_000 });
 
     // Majitel otevře detail a přidá opravu; detail nechá otevřený.
-    await page.getByText(kod, { exact: true }).click();
+    await vidZakazku(page, kod).first().click();
     await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Manuálně zadat" }).first().click();
     await page.getByPlaceholder("Napište název opravy...").first().fill("Výměna skla (souběh)");
@@ -79,7 +79,7 @@ test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ p
     await expect(page.getByText("Výměna skla (souběh)").first()).toBeVisible();
 
     // A je i v databázi: technik ji vidí, když si detail otevře.
-    await technik.getByText(kod, { exact: true }).click();
+    await vidZakazku(technik, kod).first().click();
     await expect(technik.getByText("Výměna skla (souběh)").first()).toBeVisible({ timeout: 20_000 });
   } finally {
     await technik.context().close();
@@ -88,7 +88,7 @@ test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ p
 
 /** Počká na zakázku v seznamu; když se živá aktualizace opozdí, přenačte. */
 async function pockejNaZakazku(page: Page, kod: string) {
-  const radek = page.getByText(kod, { exact: true });
+  const radek = vidZakazku(page, kod).first();
   if (await radek.first().isVisible({ timeout: 20_000 }).catch(() => false)) return;
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });

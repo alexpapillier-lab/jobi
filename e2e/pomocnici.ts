@@ -67,8 +67,20 @@ export function testovaciJmeno(predpona: string): string {
  * nestačí: podle toho, co se do řádku vejde, vrátí buď celý řádek, nebo
  * jen odstavec se jménem, a test pak hledá tlačítko tam, kde není.
  */
+/**
+ * Viditelný výskyt čísla zakázky.
+ *
+ * Číslo se v seznamu vykresluje ve dvou rozvrženích (široké a úzké) a další
+ * kopie drží schované stránky, které zůstávají připojené. `getByText` proto
+ * pravidelně padá na „resolved to 2 elements“. Tenhle pomocník bere jen to,
+ * co je opravdu vidět.
+ */
+export function vidZakazku(page: Page, kod: string) {
+  return page.locator(`:text-is("${kod}"):visible`);
+}
+
 export function radekZakazky(page: Page, kod: string) {
-  return page.getByText(kod, { exact: true }).locator("xpath=ancestor::*[.//button][1]");
+  return vidZakazku(page, kod).first().locator("xpath=ancestor::*[.//button][1]");
 }
 
 /** Náhodné české mobilní číslo, ať se zákazníci mezi testy nepotkávají. */
