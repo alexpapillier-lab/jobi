@@ -1919,14 +1919,23 @@ export default function Orders({
         customerEmail: r.customer_email ?? "",
         devices: [{
           ...defaultDraft().devices[0],
-          deviceLabel: r.device_label,
+          // Model z ceníku má přednost: podle názvu se pak nabídnou opravy z ceníku.
+          deviceLabel: r.model_name || r.device_label,
           requestedRepair: r.repair_name ?? "",
-          deviceNote: r.note ? `Z rezervace: ${r.note}` : "",
+          deviceNote: [r.model_name && r.model_name !== r.device_label ? `Zákazník uvedl: ${r.device_label}` : "", r.note ? `Z rezervace: ${r.note}` : ""].filter(Boolean).join(" · "),
+          estimatedPrice: r.price_estimate ?? undefined,
+          plannedRepairs: (() => {
+            const cen = r.repair_id ? devicesData.repairs.find((x) => x.id === r.repair_id) : undefined;
+            return cen
+              ? [{ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds }]
+              : undefined;
+          })(),
         }],
         rezervaceId: r.id,
       }));
     }
     if (!newOrderPrefill.customerId) onNewOrderPrefillConsumed();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- devicesData jen pro dohledání opravy z ceníku v okamžiku předvyplnění
   }, [newOrderPrefill, onNewOrderPrefillConsumed]);
 
   // Load customer detail and prefill form when newOrderPrefill.customerId is set (e.g. "Vytvořit zakázku" u zákazníka)

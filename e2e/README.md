@@ -74,7 +74,9 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   vzala první servis ze seznamu.
 - **Online rezervace:** testovací servis má `public_slug = e2e-servis` a v
   `service_settings.config.rezervace` zapnuté rezervace; `rezervace.spec.ts`
-  volá edge funkci `public-booking` napřímo.
+  volá edge funkci `public-booking` napřímo. Funkce pouští 10 rezervací za
+  hodinu z jedné adresy – při mnoha místních bězích za sebou vrátí 429;
+  počítadlo vynuluje `delete from rate_hits where kanal = 'booking'`.
 - **Náhradní zařízení:** v `service_settings.config.nahradniZarizeni` testovacího
   servisu je položka „iPhone SE náhradní (E2E)“ se sériovým číslem E2E-SN-001 a
   kaucí 2 000 – test zápůjčky ji vybírá ze seznamu.

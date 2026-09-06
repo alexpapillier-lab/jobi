@@ -105,7 +105,7 @@ paths:
     post:
       summary: Nová rezervace
       description: |
-        Nezávazná rezervace termínu. Bez tokenu; chrání ji limit 5 rezervací za hodinu
+        Nezávazná rezervace termínu. Bez tokenu; chrání ji limit 10 rezervací za hodinu
         z jedné adresy a 60 za hodinu na servis (429) a skryté pole `web`, které musí
         zůstat prázdné. Servis dostane e-mail a rezervaci vidí v Jobi v Kalendáři.
       requestBody:
@@ -121,7 +121,9 @@ paths:
                 phone: { type: string, maxLength: 40 }
                 email: { type: string, format: email }
                 device: { type: string, maxLength: 160, description: Zařízení (např. iPhone 13) }
-                repair: { type: string, maxLength: 200, description: Co je potřeba opravit }
+                repair: { type: string, maxLength: 200, description: Co je potřeba opravit (volný text) }
+                repair_id: { type: string, format: uuid, description: Oprava z ceníku (`/catalog` → repairs[].id); název a cena se berou z ceníku }
+                model_id: { type: string, format: uuid, description: Model z ceníku (`/catalog` → models[].id) }
                 preferred_at: { type: string, format: date-time, description: Přání termínu; prázdné = kdykoliv }
                 note: { type: string, maxLength: 1000 }
                 web: { type: string, description: Skryté pole proti robotům – nechte prázdné }

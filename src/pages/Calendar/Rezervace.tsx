@@ -90,8 +90,9 @@ export function RezervacePanel({
           {stitek(r.status)}
         </div>
         <div>
-          {r.device_label}
+          {r.device_label}{r.model_name && r.model_name !== r.device_label ? ` (${r.model_name})` : ""}
           {r.repair_name ? ` · ${r.repair_name}` : ""}
+          {r.price_estimate ? ` · cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč` : ""}
           <span style={{ color: "var(--muted)" }}> · termín {popisTerminu(r)}</span>
         </div>
         {r.note && <div style={{ color: "var(--muted)" }}>{r.note}</div>}

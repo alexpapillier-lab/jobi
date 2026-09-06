@@ -37,12 +37,14 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    `public-booking`): formulář k vložení na web servisu (`<div id="jobi-rezervace">`
    + skript `…/public-booking/embed.js?service=slug`), nezávazná rezervace
    s termínem podle otevírací doby (Nastavení → Veřejné API → Online rezervace:
-   zapnutí, dny, hodiny, krok, úvodní text), limit 5/hod na adresu a skryté pole
+   zapnutí, dny, hodiny, krok, úvodní text), limit 10/hod na adresu a skryté pole
    proti robotům, e-mail servisu přes Resend. V Jobi panel „Rezervace z webu“
    v Kalendáři: potvrdit, zrušit, „Založit zakázku“ s předvyplněným příjmem,
    po založení se rezervace označí jako převedená s odkazem na zakázku.
-   Vyžaduje modul veřejného API (`api_catalog`). Zbývá: výběr opravy z ceníku
-   s předběžnou cenou (dnes volný text), potvrzovací e-mail/SMS zákazníkovi,
+   Vyžaduje modul veřejného API (`api_catalog`). Formulář nabízí model a opravu
+   z veřejného ceníku s předběžnou cenou (ověřuje se na serveru, migrace
+   20260908120000); zakázka z rezervace vzniká rovnou s plánovanou opravou.
+   Zbývá: potvrzovací e-mail/SMS zákazníkovi,
    volitelně cesty `/v1/booking` ve Workeru (`infra/cloudflare/jobi-api-worker.js`
    je připravený, stačí znovu vložit do Cloudflare).
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →

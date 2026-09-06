@@ -13,7 +13,7 @@ import { otiskKlienta } from "../_shared/limity.ts";
  * v Nastavení → Veřejné API. Neexistující servis, vypnutý modul a vypnuté
  * rezervace vracejí totéž, aby se přes endpoint nedaly hádat slugy.
  *
- * Ochrana: limit 5 rezervací za hodinu z jedné adresy (otisk IP solený
+ * Ochrana: limit 10 rezervací za hodinu z jedné adresy (otisk IP solený
  * dnem, viz limity.ts), 60 za hodinu na servis, skryté pole proti robotům.
  */
 
@@ -25,7 +25,7 @@ const cors = {
 const json = (telo: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(telo), { status, headers: { ...cors, "Content-Type": "application/json; charset=utf-8", ...extra } });
 
-const LIMIT_NA_KLIENTA_HOD = 5;
+const LIMIT_NA_KLIENTA_HOD = 10;
 const LIMIT_NA_SERVIS_HOD = 60;
 
 type Nastaveni = {
@@ -79,7 +79,7 @@ async function pocet(svc: ReturnType<typeof createClient>, kanal: string, klic: 
 }
 
 /** Oznámení servisu e-mailem – best effort, rezervace v Jobi je i bez něj. */
-async function oznamServisu(servis: Servis, r: { customer_name: string; customer_phone: string; customer_email: string | null; device_label: string; repair_name: string | null; preferred_at: string | null; note: string | null }) {
+async function oznamServisu(servis: Servis, r: { customer_name: string; customer_phone: string; customer_email: string | null; device_label: string; repair_name: string | null; model_name: string | null; price_estimate: number | null; preferred_at: string | null; note: string | null }) {
   const key = Deno.env.get("RESEND_API_KEY")?.trim();
   if (!key || !servis.email) return;
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
@@ -87,7 +87,9 @@ async function oznamServisu(servis: Servis, r: { customer_name: string; customer
   const kdy = r.preferred_at ? new Date(r.preferred_at).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", dateStyle: "medium", timeStyle: "short" }) : "kdykoliv";
   const radky = [
     ["Zákazník", r.customer_name], ["Telefon", r.customer_phone], ["E-mail", r.customer_email ?? "—"],
-    ["Zařízení", r.device_label], ["Oprava", r.repair_name ?? "—"], ["Termín", kdy], ["Poznámka", r.note ?? "—"],
+    ["Zařízení", r.model_name ? `${r.device_label} (${r.model_name})` : r.device_label],
+    ["Oprava", r.repair_name ? `${r.repair_name}${r.price_estimate ? ` – cca ${r.price_estimate.toLocaleString("cs-CZ")} Kč` : ""}` : "—"],
+    ["Termín", kdy], ["Poznámka", r.note ?? "—"],
   ];
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;color:#111"><h2 style="margin:0 0 12px">Nová rezervace z webu</h2><table cellpadding="6">${radky.map(([k, v]) => `<tr><td style="color:#666">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join("")}</table><p style="color:#666;margin-top:16px">Rezervaci najdete v Jobi v Kalendáři – tam ji potvrdíte nebo z ní jedním kliknutím založíte zakázku.</p></div>`;
   try {
@@ -126,9 +128,21 @@ function embedSkript(slug: string): string {
     lab.style.cssText = "display:grid;gap:4px;font-size:.9em";
     return { lab: lab, input: input };
   }
-  fetch(API + "/public-booking?service=" + encodeURIComponent(SLUG))
-    .then(function (r) { if (!r.ok) { throw new Error("nedostupné"); } return r.json(); })
-    .then(function (n) {
+  // Ceník přes api.appjobi.com (cache); když není, napřímo. Bez ceníku formulář funguje s volným textem.
+  function nactiCenik() {
+    return fetch("https://api.appjobi.com/v1/catalog?service=" + encodeURIComponent(SLUG))
+      .then(function (r) { if (!r.ok) { throw new Error(); } return r.json(); })
+      .catch(function () {
+        return fetch(API + "/public-catalog?service=" + encodeURIComponent(SLUG)).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+      });
+  }
+  Promise.all([
+    fetch(API + "/public-booking?service=" + encodeURIComponent(SLUG)).then(function (r) { if (!r.ok) { throw new Error("nedostupné"); } return r.json(); }),
+    nactiCenik(),
+  ])
+    .then(function (vysledky) {
+      var n = vysledky[0];
+      var cenik = vysledky[1];
       var form = el("form", { novalidate: "" });
       form.style.cssText = "display:grid;gap:12px;max-width:560px;font:inherit;color:inherit";
       if (n.uvod) { var p = el("p", { text: n.uvod }); p.style.margin = "0"; form.appendChild(p); }
@@ -137,6 +151,44 @@ function embedSkript(slug: string): string {
       var email = pole("E-mail", "email", "email", false, "jan@email.cz");
       var zarizeni = pole("Zařízení", "device", "text", true, "např. iPhone 13, notebook Lenovo");
       var oprava = pole("Co je potřeba opravit", "repair", "text", false, "prasklý displej, nedrží baterie…");
+      // Výběr z ceníku: model → opravy s cenou. Volný text zůstává, kdo model v ceníku nenajde.
+      var modelSel = null, opravaSel = null, cenaInfo = null;
+      var maCenik = cenik && cenik.models && cenik.models.length > 0 && cenik.repairs && cenik.repairs.length > 0;
+      if (maCenik) {
+        var znacky = {}; (cenik.brands || []).forEach(function (b) { znacky[b.id] = b.name; });
+        var kategorie = {}; (cenik.categories || []).forEach(function (c) { kategorie[c.id] = c; });
+        modelSel = el("select", { name: "model_id" }); modelSel.style.cssText = zarizeni.input.style.cssText;
+        modelSel.appendChild(el("option", { value: "", text: "– vyberte model z ceníku (nepovinné) –" }));
+        cenik.models.slice().sort(function (a, b) {
+          var ka = kategorie[a.category_id] || {}, kb = kategorie[b.category_id] || {};
+          return ((znacky[ka.brand_id] || "") + a.name).localeCompare((znacky[kb.brand_id] || "") + b.name, "cs");
+        }).forEach(function (m) {
+          var k = kategorie[m.category_id] || {}; var z = znacky[k.brand_id];
+          modelSel.appendChild(el("option", { value: m.id, text: (z ? z + " " : "") + m.name }));
+        });
+        opravaSel = el("select", { name: "repair_id" }); opravaSel.style.cssText = zarizeni.input.style.cssText;
+        opravaSel.disabled = true;
+        opravaSel.appendChild(el("option", { value: "", text: "– nejdřív vyberte model –" }));
+        cenaInfo = el("div", {}); cenaInfo.style.cssText = "font-size:.9em;opacity:.8";
+        function fmt(c) { return (Math.round(c) === c ? c.toLocaleString("cs-CZ") : c.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + " Kč"; }
+        modelSel.addEventListener("change", function () {
+          var mid = modelSel.value;
+          while (opravaSel.firstChild) { opravaSel.removeChild(opravaSel.firstChild); }
+          cenaInfo.textContent = "";
+          if (!mid) { opravaSel.disabled = true; opravaSel.appendChild(el("option", { value: "", text: "– nejdřív vyberte model –" })); return; }
+          var opr = cenik.repairs.filter(function (r) { return (r.model_ids || []).indexOf(mid) !== -1; });
+          opravaSel.disabled = opr.length === 0;
+          opravaSel.appendChild(el("option", { value: "", text: opr.length ? "– vyberte opravu (nepovinné) –" : "K tomuto modelu zatím nemáme ceník – popište závadu níže" }));
+          opr.forEach(function (r) { opravaSel.appendChild(el("option", { value: r.id, text: r.name + (typeof r.price === "number" ? " – " + fmt(r.price) : "") })); });
+          var m = cenik.models.filter(function (x) { return x.id === mid; })[0];
+          if (m && !zarizeni.input.value.trim()) { var k = kategorie[m.category_id] || {}; zarizeni.input.value = (znacky[k.brand_id] ? znacky[k.brand_id] + " " : "") + m.name; }
+        });
+        opravaSel.addEventListener("change", function () {
+          var r = cenik.repairs.filter(function (x) { return x.id === opravaSel.value; })[0];
+          cenaInfo.textContent = r && typeof r.price === "number" ? "Předběžná cena podle ceníku: " + fmt(r.price) + (cenik.vat && cenik.vat.payer ? (cenik.vat.prices_include_vat ? " s DPH" : " bez DPH") : "") + ". Konečnou cenu potvrdí servis po prohlídce." : "";
+          if (r && !oprava.input.value.trim()) { oprava.input.value = r.name; }
+        });
+      }
       var datum = pole("Kdy byste chtěli přijít", "date", "date", false, "");
       var cas = el("select", { name: "time" });
       cas.style.cssText = zarizeni.input.style.cssText;
@@ -159,7 +211,13 @@ function embedSkript(slug: string): string {
       var tlacitko = el("button", { type: "submit", text: "Odeslat rezervaci" });
       tlacitko.style.cssText = "padding:12px 18px;border:none;border-radius:8px;background:#0e7c86;color:#fff;font:inherit;font-weight:700;cursor:pointer";
       var zprava = el("div", {}); zprava.style.cssText = "font-size:.9em";
-      [jmeno.lab, telefon.lab, email.lab, zarizeni.lab, oprava.lab, radek, pozn.lab, past, tlacitko, zprava].forEach(function (x) { form.appendChild(x); });
+      var poradi = [jmeno.lab, telefon.lab, email.lab];
+      if (maCenik) {
+        var modelLab = el("label", {}, [el("span", { text: "Model z ceníku" }), modelSel]); modelLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
+        var opravaLab = el("label", {}, [el("span", { text: "Oprava z ceníku" }), opravaSel]); opravaLab.style.cssText = "display:grid;gap:4px;font-size:.9em";
+        poradi = poradi.concat([modelLab, opravaLab, cenaInfo]);
+      }
+      poradi.concat([zarizeni.lab, oprava.lab, radek, pozn.lab, past, tlacitko, zprava]).forEach(function (x) { form.appendChild(x); });
       var dnyTxt = ["", "Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
       var info = el("p", { text: "Otevřeno: " + n.dny.map(function (d) { return dnyTxt[d]; }).join(", ") + " " + n.od + "–" + n.do + ". Rezervace je nezávazná, ozveme se vám s potvrzením." });
       info.style.cssText = "margin:0;font-size:.85em;opacity:.75";
@@ -173,7 +231,8 @@ function embedSkript(slug: string): string {
         tlacitko.disabled = true; zprava.textContent = "Odesílám…"; zprava.style.color = "";
         fetch(API + "/public-booking", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           service: SLUG, name: jmeno.input.value, phone: telefon.input.value, email: email.input.value, device: zarizeni.input.value,
-          repair: oprava.input.value, preferred_at: preferred, note: pozn.input.value, web: past.value }) })
+          repair: oprava.input.value, repair_id: opravaSel ? opravaSel.value : "", model_id: modelSel ? modelSel.value : "",
+          preferred_at: preferred, note: pozn.input.value, web: past.value }) })
           .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
           .then(function (res) {
             if (!res.ok) { throw new Error(res.b && res.b.error ? res.b.error : "Odeslání se nezdařilo"); }
@@ -239,7 +298,27 @@ serve(async (req) => {
   if (name.length < 2) return json({ error: "Vyplňte jméno" }, 400);
   if (phone.replace(/\D/g, "").length < 9) return json({ error: "Vyplňte platný telefon" }, 400);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "E-mail nevypadá platně" }, 400);
-  if (device.length < 2) return json({ error: "Vyplňte zařízení" }, 400);
+  if (device.length < 2 && !s(telo.model_id, 40)) return json({ error: "Vyplňte zařízení" }, 400);
+  // Oprava a model z ceníku – ověřují se v databázi, cena se bere odtud.
+  let repairId: string | null = null;
+  let repairName: string | null = repair || null;
+  let priceEstimate: number | null = null;
+  let modelName: string | null = null;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const rid = s(telo.repair_id, 40);
+  if (rid && uuid.test(rid)) {
+    const { data: r } = await svc.from("repairs").select("id, name, price").eq("id", rid).eq("service_id", servis.id).maybeSingle();
+    if (r) {
+      repairId = r.id;
+      repairName = r.name;
+      priceEstimate = typeof r.price === "number" ? r.price : Number(r.price) || null;
+    }
+  }
+  const mid = s(telo.model_id, 40);
+  if (mid && uuid.test(mid)) {
+    const { data: m } = await svc.from("device_models").select("name").eq("id", mid).eq("service_id", servis.id).maybeSingle();
+    if (m?.name) modelName = String(m.name);
+  }
   let preferred: string | null = null;
   const p = s(telo.preferred_at, 40);
   if (p) {
@@ -250,7 +329,11 @@ serve(async (req) => {
 
   await Promise.all([svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: klic }), svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: `servis:${servis.id}` })]);
 
-  const radek = { service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null, device_label: device, repair_name: repair || null, note: note || null, preferred_at: preferred, source: "web" };
+  const radek = {
+    service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null,
+    device_label: device, repair_name: repairName, repair_id: repairId, model_name: modelName, price_estimate: priceEstimate,
+    note: note || null, preferred_at: preferred, source: "web",
+  };
   const { error } = await svc.from("bookings").insert(radek);
   if (error) {
     console.error("[public-booking] insert", error);

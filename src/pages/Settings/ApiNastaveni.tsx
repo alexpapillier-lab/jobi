@@ -515,7 +515,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
             <Tlacitko onClick={() => zkopiruj(`<div id="jobi-rezervace"></div>\n<script src="${REZERVACE_SKRIPT}?service=${slug ?? ""}"></script>`)}>Kopírovat kód</Tlacitko>
           </div>
           <p style={popis}>
-            Ochrana proti robotům a limit 5 rezervací za hodinu z jedné adresy jsou součástí. Formulář
+            Ochrana proti robotům a limit 10 rezervací za hodinu z jedné adresy jsou součástí. Formulář
             přebírá písmo a barvy vašeho webu; kdo chce vlastní vzhled, může volat <code>POST /booking</code> podle dokumentace níže.
           </p>
         </div>

@@ -15,6 +15,10 @@ export type Rezervace = {
   customer_email: string | null;
   device_label: string;
   repair_name: string | null;
+  /** Oprava a model z ceníku, když si je zákazník vybral; cena podle ceníku v době rezervace. */
+  repair_id: string | null;
+  model_name: string | null;
+  price_estimate: number | null;
   note: string | null;
   preferred_at: string | null;
   ticket_id: string | null;
@@ -52,7 +56,7 @@ export function nastaveniRezervaciZConfigu(raw: unknown): NastaveniRezervaci {
 export async function nactiRezervace(serviceId: string): Promise<Rezervace[]> {
   if (!supabase) return [];
   const { data, error } = await (supabase.from("bookings") as any)
-    .select("id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, note, preferred_at, ticket_id, created_at")
+    .select("id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, repair_id, model_name, price_estimate, note, preferred_at, ticket_id, created_at")
     .eq("service_id", serviceId)
     .order("created_at", { ascending: false })
     .limit(200);
