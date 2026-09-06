@@ -7375,6 +7375,37 @@ export default function Orders({
                   discount: "Sleva",
                   device_condition: "Stav zařízení",
                   device_note: "Poznámka k zařízení",
+                  device_accessories: "Příslušenství",
+                  device_brand: "Značka",
+                  device_model: "Model",
+                  device_serial: "Sériové číslo",
+                  device_imei: "IMEI",
+                  device_passcode: "Kód zařízení",
+                  customer_company: "Firma",
+                  customer_ico: "IČO",
+                  customer_info: "Poznámka k zákazníkovi",
+                  customer_address_street: "Ulice",
+                  customer_address_city: "Město",
+                  customer_address_zip: "PSČ",
+                  customer_address_country: "Země",
+                  customer_id: "Zákazník v adresáři",
+                  external_id: "Externí číslo",
+                  handoff_method: "Převzetí",
+                  handback_method: "Předání",
+                  diagnostic_photos: "Fotky diagnostiky",
+                  expected_completion_at: "Předpokládané dokončení",
+                  completed_at: "Dokončeno",
+                  branch_id: "Pobočka",
+                  test_checklist: "Kontrola po opravě",
+                  loaner: "Náhradní zařízení",
+                  quote_items: "Cenová nabídka",
+                  quote_status: "Stav nabídky",
+                  quote_amount: "Částka nabídky",
+                  quote_sent_at: "Nabídka odeslána",
+                  quote_decided_at: "Nabídka rozhodnuta",
+                  quote_decision_meta: "Rozhodnutí o nabídce",
+                  intake_signed_at: "Podpis převzetí",
+                  intake_signature_url: "Podpis převzetí (obrázek)",
                 };
                 const formatHistoryVal = (key: string, val: unknown): string => {
                   if (val === null || val === undefined) return "—";
@@ -7390,6 +7421,24 @@ export default function Orders({
                     const o = val as { type?: string; value?: number };
                     return [o.type, typeof o.value === "number" ? `${o.value} Kč` : ""].filter(Boolean).join(" · ") || "—";
                   }
+                  // Strukturované sloupce: krátké shrnutí místo JSON.
+                  if (key === "test_checklist" && val && typeof val === "object") {
+                    const k = val as { sablonaNazev?: string; polozky?: Array<{ stav?: string | null }> };
+                    const p = k.polozky ?? [];
+                    return `${k.sablonaNazev ?? "kontrola"}: ověřeno ${p.filter((x) => x.stav).length} z ${p.length}${p.some((x) => x.stav === "chyba") ? " (s chybou)" : ""}`;
+                  }
+                  if (key === "loaner" && val && typeof val === "object") {
+                    const z = val as { nazev?: string; vraceno?: string | null };
+                    return `${z.nazev ?? "—"}${z.vraceno ? " (vráceno)" : " (u zákazníka)"}`;
+                  }
+                  if (key === "quote_items" && Array.isArray(val)) return `${val.length} položek`;
+                  if (key === "quote_status") return ({ none: "bez nabídky", draft: "koncept", sent: "odeslána", approved: "schválena", rejected: "zamítnuta" } as Record<string, string>)[String(val)] ?? String(val);
+                  if (key === "quote_amount" && typeof val === "number") return formatCurrency(val);
+                  if (key === "branch_id") return getCachedBranch(activeServiceId ?? undefined, String(val))?.name ?? "jiná pobočka";
+                  if (key === "intake_signature_url") return "podepsáno";
+                  if ((key === "expected_completion_at" || key === "completed_at" || key === "quote_sent_at" || key === "quote_decided_at" || key === "intake_signed_at") && typeof val === "string") return formatCZ(val);
+                  if (Array.isArray(val)) return `${val.length} položek`;
+                  if (typeof val === "object") return JSON.stringify(val).slice(0, 80);
                   return String(val);
                 };
                 const getHistoryChanges = (details: Record<string, unknown>): Array<{ label: string; oldVal: string; newVal: string }> => {
