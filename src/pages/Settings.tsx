@@ -45,6 +45,7 @@ import { loadDocumentsConfigRawFromDB, saveDocumentsConfigAutoPrint } from "../l
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { subscribeServiceConfig, mergeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
+import { zalozServis } from "../lib/servisy";
 import { ThemeLogo } from "../components/ThemeLogo";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppUpdate } from "../context/AppUpdateContext";
@@ -357,6 +358,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [companySaving, setCompanySaving] = useState(false);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [inviteAcceptLoading, setInviteAcceptLoading] = useState(false);
+  const [novyServisNazev, setNovyServisNazev] = useState("");
+  const [novyServisLoading, setNovyServisLoading] = useState(false);
   
   
   // Calculate tooltip position
@@ -914,7 +917,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        { key: "profile_me", label: "Fotka a přezdívka", keywords: ["profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis"] },
+        { key: "profile_me", label: "Fotka a přezdívka", keywords: ["profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis", "nový servis", "založit servis", "další provozovna"] },
       ],
     },
   // Skupina bez viditelné podsekce se neukazuje (např. Komunikace pro člena).
@@ -1080,6 +1083,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
             </div>
           </Card>
+
           <UnsavedBar dirty={companyDirty} saving={companySaving} onSave={() => { saveCompany().catch(() => {}); }} onDiscard={discardCompany} />
         </>
       )}
@@ -1412,6 +1416,55 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   }}
                 >
                   {inviteAcceptLoading ? "Přidávám…" : "Přidat servis"}
+                </Button>
+              </div>
+            </Card>
+          </div>
+          {/* Založení dalšího servisu. Do teď šlo servis založit jen na
+              obrazovce po registraci, takže kdo už jeden měl, musel psát
+              podporu i kvůli druhé provozovně. */}
+          <div>
+            <Card>
+              <CardHeader title="Založit nový servis" description="Druhá provozovna nebo firma s vlastními zakázkami, skladem a ceníkem. Prvních 30 dní bez omezení." />
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                  <FieldLabel>Název servisu</FieldLabel>
+                  <TextInput
+                    type="text"
+                    value={novyServisNazev}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setNovyServisNazev(e.target.value)}
+                    placeholder="např. Servis Novák"
+                    disabled={novyServisLoading}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  disabled={!novyServisNazev.trim() || novyServisLoading}
+                  onClick={async () => {
+                    const nazev = novyServisNazev.trim();
+                    if (!nazev) return;
+                    setNovyServisLoading(true);
+                    try {
+                      const serviceId = await zalozServis(nazev);
+                      setNovyServisNazev("");
+                      // `refreshServices` je nepovinná prop; kdyby chyběla,
+                      // servis je i tak založený a smí se do něj přepnout –
+                      // jen se seznam dotáhne až po znovunačtení. Dřív se
+                      // tlačítko bez ní tvářilo, že nic nedělá.
+                      if (refreshServices) await refreshServices();
+                      // Přepnout rovnou do nového servisu: kdo ho zakládá, chce
+                      // v něm pokračovat, ne ho pak hledat v přepínači.
+                      setActiveServiceId(serviceId);
+                      showToast(`Servis „${nazev}“ je připravený`, "success");
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : "Servis se nepodařilo založit", "error");
+                    } finally {
+                      setNovyServisLoading(false);
+                    }
+                  }}
+                >
+                  {novyServisLoading ? "Zakládám…" : "Založit servis"}
                 </Button>
               </div>
             </Card>

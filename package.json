@@ -61,6 +61,7 @@
     "tauri:dev:check": "concurrently \"npm run tauri dev\" \"tsc --noEmit --watch\"",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:jobidocs": "playwright test -c jobidocs/playwright.config.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:integration": "RUN_INTEGRATION=1 vitest run src/lib/__integration__",
     "test:run": "vitest run",
@@ -69,7 +70,9 @@
     "zatez": "node scripts/zatez/verejne-api.mjs",
     "zatez:db": "node scripts/zatez/db-dotazy.mjs",
     "zatez:limity": "node scripts/zatez/limity.mjs",
-    "zatez:prohlizec": "node scripts/zatez/prohlizec.mjs"
+    "zatez:prohlizec": "node scripts/zatez/prohlizec.mjs",
+    "test:migrace": "bash scripts/test-migrace-na-cisto.sh",
+    "test:e2e:servisy": "playwright test -c playwright.servisy.config.ts"
   },
   "type": "module",
   "version": "0.5.1"

@@ -15,6 +15,17 @@ const PORT = Number(process.env.E2E_PORT ?? 5190);
 
 export default defineConfig({
   testDir: "./e2e",
+  /*
+   * Dvě sady sem nepatří a mají vlastní config:
+   *  - `servisy.spec.ts` zakládá a MAŽE servisy v ostré databázi. V CI, které
+   *    jede při každém pushi, by stačil jeden přerušený běh (timeout jobu) a
+   *    po testu by zůstal osiřelý servis; mazání navíc nepatří do sady, která
+   *    běží automaticky vedle ostrých dat. Pouští se ručně:
+   *    `npm run test:e2e:servisy`.
+   *  - `prohlizece.spec.ts` potřebuje statický server portálu, který startuje
+   *    jen `playwright.prohlizece.config.ts`.
+   */
+  testIgnore: [/servisy\.spec\.ts$/, /prohlizece\.spec\.ts$/],
   // Jedna zakázka se zakládá a pak se s ní pracuje – paralelně by si testy
   // přepisovaly stav pod rukama.
   fullyParallel: false,
