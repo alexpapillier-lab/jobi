@@ -1,4 +1,5 @@
 import type { StatusMeta } from "../../state/StatusesStore";
+import { konecnaCena } from "../../lib/slevaZakazky";
 
 export type TicketCardData = {
   id: string;
@@ -31,13 +32,15 @@ export type StatusHelpers = {
   isFinal: (key: string) => boolean;
 };
 
+/**
+ * Datum na kartě zakázky. `new Date("nesmysl")` nevyhazuje, vrací Invalid
+ * Date – `try/catch` proto nikdy nezabral a na kartě se objevilo
+ * „NaN.NaN.NaN". Nečitelné datum se radši vypíše, jak přišlo.
+ */
 export function formatCZDate(dtIso: string): string {
-  try {
-    const d = new Date(dtIso);
-    return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-  } catch {
-    return dtIso;
-  }
+  const d = new Date(dtIso);
+  if (Number.isNaN(d.getTime())) return dtIso;
+  return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`;
 }
 
 export function formatPhone(value: string): string {
@@ -54,12 +57,7 @@ export function formatPhone(value: string): string {
 export function computeFinalPrice(t: TicketCardData): number {
   const repairs = t.performedRepairs ?? [];
   const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-  const discountType = t.discountType;
-  const discountValue = t.discountValue || 0;
-  let discountAmount = 0;
-  if (discountType === "percentage") discountAmount = (totalPrice * discountValue) / 100;
-  else if (discountType === "amount") discountAmount = discountValue;
-  return Math.max(0, totalPrice - discountAmount);
+  return konecnaCena(totalPrice, t.discountType, t.discountValue);
 }
 
 export type TicketComment = {

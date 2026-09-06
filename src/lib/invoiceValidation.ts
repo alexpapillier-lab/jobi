@@ -42,7 +42,11 @@ export function validateInvoiceForSave(
   // Znaménko částky určuje druh dokladu: záporná faktura je ve skutečnosti
   // dobropis a kladný dobropis nedává smysl – účetnictví by je nepřijalo.
   const total = computeTotals(items).total;
-  if (invoice.kind === "credit_note") {
+  // NaN projde přes obě porovnání níž, takže by se vystavil doklad, na
+  // kterém je místo částky „NaN". Bere se to jako chyba v položkách.
+  if (!Number.isFinite(total)) {
+    errors.push({ field: "items", message: "Některá položka má neplatné množství nebo cenu" });
+  } else if (invoice.kind === "credit_note") {
     if (total > 0) errors.push({ field: "items", message: "Dobropis musí mít zápornou nebo nulovou částku" });
   } else if (total < 0) {
     errors.push({ field: "items", message: "Faktura nemůže mít zápornou částku – vystavte dobropis" });

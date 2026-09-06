@@ -56,13 +56,26 @@ export function computeTotals(items: InvoiceLineItem[]): InvoiceTotals {
   return { subtotal, vat_amount, total, rounding, total_rounded, vat_breakdown };
 }
 
-export function formatCurrency(amount: number, currency = "CZK"): string {
-  return new Intl.NumberFormat("cs-CZ", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+/**
+ * Částka v české podobě i s měnou.
+ *
+ * Výchozí „CZK" se uplatní i na prázdný řetězec: `Intl.NumberFormat` na
+ * prázdnou měnu vyhodí `RangeError`, a protože se tudy chodí při sestavování
+ * dokladu, spadlo by tím celé generování a faktura by se vůbec nevytiskla.
+ */
+export function formatCurrency(amount: number, currency?: string | null): string {
+  const mena = (currency || "").trim() || "CZK";
+  try {
+    return new Intl.NumberFormat("cs-CZ", {
+      style: "currency",
+      currency: mena,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // Neznámý kód měny (překlep v nastavení) nesmí shodit tisk dokladu.
+    return `${new Intl.NumberFormat("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)} ${mena}`;
+  }
 }
 
 /**

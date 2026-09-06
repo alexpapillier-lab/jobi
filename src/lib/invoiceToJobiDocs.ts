@@ -87,13 +87,18 @@ export function invoiceToJobiDocsVariables(
 function generateSpaydString(inv: Invoice): string {
   const iban = (inv.supplier_iban || "").replace(/\s/g, "");
   if (!iban) return "";
+  /* Dobropis se neplatí, peníze jdou opačným směrem. Záporná částka navíc
+     ve SPAYD není platná a banka takový kód odmítne – radši žádný QR kód
+     než ten, který zákazníkovi nefunguje. */
+  if (inv.total <= 0) return "";
 
   const parts = ["SPD*1.0"];
   parts.push(`ACC:${iban}`);
   parts.push(`AM:${inv.total.toFixed(2)}`);
-  parts.push(`CC:${inv.currency || "CZK"}`);
+  parts.push(`CC:${(inv.currency || "").trim() || "CZK"}`);
   if (inv.variable_symbol) parts.push(`X-VS:${inv.variable_symbol}`);
-  const msg = `Faktura ${inv.number || ""}`.trim();
+  const nazev = inv.kind === "proforma" ? "Zálohová faktura" : "Faktura";
+  const msg = `${nazev} ${inv.number || ""}`.trim();
   if (msg) parts.push(`MSG:${msg}`);
 
   return parts.join("*");

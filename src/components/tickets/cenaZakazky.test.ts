@@ -97,8 +97,13 @@ describe("telefon na kartě zakázky", () => {
 });
 
 describe("datum na kartě zakázky", () => {
-  it("datum se píše česky den.měsíc.rok", () => {
-    expect(formatCZDate("2026-01-05T12:00:00")).toBe("5.1.2026");
-    expect(formatCZDate("2026-12-31T12:00:00")).toBe("31.12.2026");
+  it("nečitelné datum se vypíše, jak přišlo – nikdy ne NaN.NaN.NaN", () => {
+    expect(formatCZDate("nesmysl")).toBe("nesmysl");
+    expect(formatCZDate("")).toBe("");
+  });
+
+  it("datum se píše česky s mezerami, stejně jako na dokladech", () => {
+    expect(formatCZDate("2026-01-05T12:00:00")).toBe("5. 1. 2026");
+    expect(formatCZDate("2026-12-31T12:00:00")).toBe("31. 12. 2026");
   });
 });

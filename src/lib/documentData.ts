@@ -6,6 +6,7 @@
  * i ve webové verzi.
  */
 import type { DocumentData, LineItem, Party } from "../../jobidocs/core/types";
+import { konecnaCena } from "./slevaZakazky";
 import { ibanZCislaUctu } from "./banka";
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
@@ -78,8 +79,7 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
   const hruba = items.reduce((sum, it) => sum + (it.total ?? 0), 0);
   // Stejný výpočet jako itemsTotal() v jobidocs/core – jinak by řádek Sleva byl
   // na dokladu vidět, ale Celkem by zůstalo bez ní.
-  const sleva = ticket.discountType === "percentage" ? hruba * ((ticket.discountValue ?? 0) / 100) : ticket.discountType === "amount" ? (ticket.discountValue ?? 0) : 0;
-  const total = Math.max(0, Math.round((hruba - sleva) * 100) / 100);
+  const total = konecnaCena(hruba, ticket.discountType, ticket.discountValue);
   const hasPrices = items.some((it) => it.total != null);
   const t = ticket as TicketEx & { completedAt?: string | null; notes?: string; warrantyMonths?: number };
   const completed = opts?.completedAt ?? t.completedAt ?? undefined;

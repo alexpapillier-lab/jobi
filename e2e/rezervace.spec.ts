@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno } from "./pomocnici";
+import { prihlasSe, testovaciJmeno, zavriDetail } from "./pomocnici";
 
 /**
  * Online rezervace z webu: formulář na webu servisu volá veřejnou edge
@@ -46,11 +46,18 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   await expect(page.locator("#detail-opravy").getByText("Výměna displeje").first()).toBeVisible();
 
   // Rezervace je označená jako převedená a vede na zakázku.
+  // Detail zakázky se musí zavřít, jinak leží přes kalendář a klik do
+  // filtru dopadne na ztmavení.
+  await zavriDetail(page);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "calendar" } })));
   await expect(page.getByRole("region", { name: "Rezervace z webu" })).toBeVisible({ timeout: 30_000 });
-  const vyrizene = page.getByRole("button", { name: /Vyřízené/ });
-  if (await vyrizene.isVisible().catch(() => false)) await vyrizene.click();
   const hotova = page.getByRole("region", { name: "Rezervace z webu" }).locator("li", { hasText: zakaznik });
-  await expect(hotova).toContainText("Zakázka založena", { timeout: 20_000 });
+  await expect
+    .poll(async () => {
+      const vyrizene = page.getByRole("button", { name: /Vyřízené/ });
+      if (await vyrizene.isVisible().catch(() => false)) await vyrizene.click().catch(() => {});
+      return (await hotova.count()) > 0 ? (await hotova.first().innerText()) : "";
+    }, { timeout: 30_000, message: "Rezervace se neoznačila jako vyřízená." })
+    .toContain("Zakázka založena");
   await expect(hotova.getByRole("button", { name: "Otevřít zakázku" })).toBeVisible();
 });

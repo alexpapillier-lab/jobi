@@ -1,4 +1,5 @@
 import type { TicketEx } from "../Orders";
+import { castkaSlevy } from "../../lib/slevaZakazky";
 
 /**
  * Výpočet marže pro Statistiky.
@@ -87,10 +88,9 @@ export type TicketMargin = {
   entriesMissingPurchasePrice: number;
 };
 
+/** Stejný vzorec jako na kartě zakázky a na dokladech – viz lib/slevaZakazky. */
 export function ticketDiscountOf(gross: number, t: TicketEx): number {
-  if (t.discountType === "percentage") return (gross * (t.discountValue || 0)) / 100;
-  if (t.discountType === "amount") return t.discountValue || 0;
-  return 0;
+  return castkaSlevy(gross, t.discountType, t.discountValue);
 }
 
 export function ticketMargin(t: TicketEx, sources: CostSources): TicketMargin {
@@ -112,7 +112,9 @@ export function ticketMargin(t: TicketEx, sources: CostSources): TicketMargin {
     discount,
     revenue,
     cost,
-    margin: gross - cost - discount,
+    // Marže se počítá z tržby, ne z hrubé ceny: sleva se nemůže „ztratit"
+    // tím, že by tržba spadla na nulu a marže zůstala vyšší.
+    margin: revenue - cost,
     entriesWithoutCost,
     entriesMissingPurchasePrice,
   };

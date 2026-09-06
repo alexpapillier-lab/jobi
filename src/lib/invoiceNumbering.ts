@@ -21,10 +21,22 @@ export async function generateInvoiceNumber(
   } catch {
     // fallback
   }
-  const ts = Date.now().toString(36).toUpperCase().slice(-4);
-  return `${prefix}${y}-${ts}`;
+  /* Náhradní číslo jen z číslic. Dřív bylo v base36 („FV2026-1A2B"), takže
+     z něj vyšel nesmyslný variabilní symbol – ten se odvozuje jen z číslic
+     a písmena tiše vypadla. */
+  const sekundy = (Math.floor(Date.now() / 1000) % 10000).toString().padStart(4, "0");
+  const nahoda = Math.floor(Math.random() * 100).toString().padStart(2, "0");
+  return `${prefix}${y}-${sekundy}${nahoda}`;
 }
 
+/**
+ * Variabilní symbol z čísla dokladu.
+ *
+ * Bere jen číslice, takže „FV2026-0001" dá „20260001". Pozor: číselné řady
+ * běží zvlášť pro faktury, zálohy a dobropisy, takže „ZF2026-0001" dá stejný
+ * symbol. Na výpisu z účtu jsou pak dvě platby k nerozeznání – jestli to má
+ * být jinak, je to rozhodnutí o účetní konvenci, ne o kódu.
+ */
 export function invoiceNumberToVS(invoiceNumber: string): string {
   return invoiceNumber.replace(/[^0-9]/g, "").slice(0, 10);
 }

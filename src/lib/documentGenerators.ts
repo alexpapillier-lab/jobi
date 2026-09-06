@@ -1,4 +1,5 @@
 import type { TicketEx } from "../pages/Orders";
+import { castkaSlevy, konecnaCena, korunami } from "./slevaZakazky";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
 import { safeLoadCompanyData } from "./companyData";
 import { safeLoadDocumentsConfig, getDesignStylesForFallback, escapeHtmlForDoc } from "./documentHelpers";
@@ -512,7 +513,7 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
           <div class="section">
             <div class="section-title">Provedené opravy</div>
             ${ticket.performedRepairs.map((repair) => {
-              const priceText = repair.price ? `${repair.price} Kč` : "";
+              const priceText = repair.price ? korunami(repair.price) : "";
               return `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px;">
                 <span style="color: ${styles.primaryColor};">• ${repair.name}</span>
                 ${priceText ? `<span style="color: ${styles.primaryColor}; font-weight: 600; text-align: right;">${priceText}</span>` : ""}
@@ -520,20 +521,18 @@ export function generateTicketHTML(ticket: TicketEx, forPrint: boolean = true, c
             }).join("")}
             ${(() => {
               const totalPrice = ticket.performedRepairs?.reduce((sum, r) => sum + (r.price || 0), 0) || 0;
-              const discountAmount = ticket.discountType === "percentage" && ticket.discountValue 
-                ? totalPrice * (ticket.discountValue / 100)
-                : ticket.discountType === "amount" && ticket.discountValue
-                ? ticket.discountValue
-                : 0;
-              const finalPrice = totalPrice - discountAmount;
+              // Jeden vzorec pro kartu zakázky i pro doklad – dřív se lišily
+              // a zákazník mohl na tištěném dokladu vidět zápornou částku.
+              const discountAmount = castkaSlevy(totalPrice, ticket.discountType, ticket.discountValue);
+              const finalPrice = konecnaCena(totalPrice, ticket.discountType, ticket.discountValue);
               if (totalPrice > 0) {
-                let result = `<div class="field-price" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${styles.borderColor};"><span class="field-label">Celkem:</span><span class="field-value">${totalPrice} Kč</span></div>`;
+                let result = `<div class="field-price" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${styles.borderColor};"><span class="field-label">Celkem:</span><span class="field-value">${korunami(totalPrice)}</span></div>`;
                 if (discountAmount > 0) {
                   const discountText = ticket.discountType === "percentage" 
                     ? `Sleva ${ticket.discountValue}%`
                     : `Sleva ${ticket.discountValue} Kč`;
-                  result += `<div class="field-price"><span class="field-label">${discountText}:</span><span class="field-value">-${discountAmount.toFixed(2)} Kč</span></div>`;
-                  result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${finalPrice.toFixed(2)} Kč</span></div>`;
+                  result += `<div class="field-price"><span class="field-label">${discountText}:</span><span class="field-value">-${korunami(discountAmount)}</span></div>`;
+                  result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${korunami(finalPrice)}</span></div>`;
                 } else {
                   result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${totalPrice} Kč</span></div>`;
                 }
@@ -1625,7 +1624,7 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
           <div class="section">
             <div class="section-title">Provedené opravy</div>
             ${ticket.performedRepairs.map((repair) => {
-              const priceText = repair.price ? `${repair.price} Kč` : "";
+              const priceText = repair.price ? korunami(repair.price) : "";
               return `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px;">
                 <span style="color: ${styles.primaryColor};">• ${repair.name}</span>
                 ${priceText ? `<span style="color: ${styles.primaryColor}; font-weight: 600; text-align: right;">${priceText}</span>` : ""}
@@ -1633,20 +1632,18 @@ export function generateWarrantyHTML(ticket: TicketEx, companyData: any, forPrin
             }).join("")}
             ${(() => {
               const totalPrice = ticket.performedRepairs?.reduce((sum, r) => sum + (r.price || 0), 0) || 0;
-              const discountAmount = ticket.discountType === "percentage" && ticket.discountValue 
-                ? totalPrice * (ticket.discountValue / 100)
-                : ticket.discountType === "amount" && ticket.discountValue
-                ? ticket.discountValue
-                : 0;
-              const finalPrice = totalPrice - discountAmount;
+              // Jeden vzorec pro kartu zakázky i pro doklad – dřív se lišily
+              // a zákazník mohl na tištěném dokladu vidět zápornou částku.
+              const discountAmount = castkaSlevy(totalPrice, ticket.discountType, ticket.discountValue);
+              const finalPrice = konecnaCena(totalPrice, ticket.discountType, ticket.discountValue);
               if (totalPrice > 0) {
-                let result = `<div class="field-price" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${styles.borderColor};"><span class="field-label">Celkem:</span><span class="field-value">${totalPrice} Kč</span></div>`;
+                let result = `<div class="field-price" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${styles.borderColor};"><span class="field-label">Celkem:</span><span class="field-value">${korunami(totalPrice)}</span></div>`;
                 if (discountAmount > 0) {
                   const discountText = ticket.discountType === "percentage" 
                     ? `Sleva ${ticket.discountValue}%`
                     : `Sleva ${ticket.discountValue} Kč`;
-                  result += `<div class="field-price"><span class="field-label">${discountText}:</span><span class="field-value">-${discountAmount.toFixed(2)} Kč</span></div>`;
-                  result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${finalPrice.toFixed(2)} Kč</span></div>`;
+                  result += `<div class="field-price"><span class="field-label">${discountText}:</span><span class="field-value">-${korunami(discountAmount)}</span></div>`;
+                  result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${korunami(finalPrice)}</span></div>`;
                 } else {
                   result += `<div class="field-price" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid ${styles.primaryColor}; font-weight: 700; font-size: 13px;"><span class="field-label" style="font-size: 13px; font-weight: 700;">Konečná cena:</span><span class="field-value" style="font-size: 14px; font-weight: 800; color: ${styles.primaryColor};">${totalPrice} Kč</span></div>`;
                 }

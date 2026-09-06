@@ -54,7 +54,13 @@ describe("QR platba na faktuře", () => {
   it("částka má vždy dvě desetinná místa a desetinnou tečku, ne českou čárku", () => {
     expect(casti(invoiceToJobiDocsVariables(doklad({ total: 1210 }), bezPolozek).inv_spayd_qr).AM).toBe("1210.00");
     expect(casti(invoiceToJobiDocsVariables(doklad({ total: 1209.5 }), bezPolozek).inv_spayd_qr).AM).toBe("1209.50");
-    expect(casti(invoiceToJobiDocsVariables(doklad({ total: 0 }), bezPolozek).inv_spayd_qr).AM).toBe("0.00");
+  });
+
+  it("na nulový doklad a na dobropis se QR kód netiskne", () => {
+    // Záporná částka ve SPAYD není platná a banka takový kód odmítne;
+    // dobropis se navíc neplatí, peníze jdou opačným směrem.
+    expect(invoiceToJobiDocsVariables(doklad({ total: 0 }), bezPolozek).inv_spayd_qr).toBe("");
+    expect(invoiceToJobiDocsVariables(doklad({ total: -1210, kind: "credit_note" }), bezPolozek).inv_spayd_qr).toBe("");
   });
 
   it("v QR je stejná částka, jakou má zákazník na dokladu zaplatit", () => {

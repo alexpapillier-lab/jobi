@@ -60,7 +60,8 @@ test("produkt a počet kusů jsou v databázi, ne jen na obrazovce", async ({ pa
   await naSklad(page);
   await najdi(page, produkt);
   await expect(radek(page, produkt)).toContainText("5 ks");
-  await expect(page.getByText("249").first()).toBeVisible();
+  // Cena se hledá v řádku produktu; „249" je i v číslech zakázek na schované stránce.
+  await expect(radek(page, produkt)).toContainText("249");
 });
 
 test("přidaný kus přežije odchod ze stránky hned po kliknutí", async ({ page }) => {

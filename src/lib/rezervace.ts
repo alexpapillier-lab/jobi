@@ -44,11 +44,23 @@ export const VYCHOZI_NASTAVENI_REZERVACI: NastaveniRezervaci = { zapnuto: false,
 
 export function nastaveniRezervaciZConfigu(raw: unknown): NastaveniRezervaci {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const cas = (v: unknown, def: string) => (typeof v === "string" && /^\d{1,2}:\d{2}$/.test(v) ? v.padStart(5, "0") : def);
+  /* Kontroluje se i rozsah, ne jen tvar: „25:99" by se jinak uložilo
+     a rezervační formulář by z něj počítal nesmyslné časy. */
+  const cas = (v: unknown, def: string) => {
+    if (typeof v !== "string") return def;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+    if (!m) return def;
+    const h = Number(m[1]);
+    const mi = Number(m[2]);
+    if (h > 23 || mi > 59) return def;
+    return v.padStart(5, "0");
+  };
   const d = VYCHOZI_NASTAVENI_REZERVACI;
   return {
     zapnuto: r.zapnuto === true,
-    dny: Array.isArray(r.dny) ? r.dny.filter((x): x is number => typeof x === "number" && x >= 1 && x <= 7) : d.dny,
+    // Kopie, ne odkaz: kdo výsledek upraví, přepsal by výchozí nastavení
+    // pro celý běh aplikace.
+    dny: Array.isArray(r.dny) ? r.dny.filter((x): x is number => typeof x === "number" && x >= 1 && x <= 7) : [...d.dny],
     od: cas(r.od, d.od),
     do: cas(r.do, d.do),
     krokMin: typeof r.krokMin === "number" && r.krokMin >= 10 && r.krokMin <= 120 ? r.krokMin : d.krokMin,
