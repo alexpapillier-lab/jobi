@@ -36,8 +36,11 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    hlídá databáze restriktivními politikami na zakázky, reklamace a faktury
    (funkce `pobocka_povolena`, migrace 20260908140000; ověřeno probe v TEST2:
    člen s domovskou pobočkou Brno vidí 3 z 50 zakázek), aplikace mu ukáže jen
-   jeho pobočku bez přepínače. Chybí: čas na opravě, vytížení techniků
-   v Kalendáři, KPI techniků.
+   jeho pobočku bez přepínače. **KPI techniků** (6. 9.): karta Technici ve
+   Statistikách – kdo zakázky přijímá a dokončuje (z historie zakázek podle
+   koncových stavů servisu) a hodiny + tržba hodinové práce (RPC
+   `statistiky_technici`, migrace 20260908150000). Chybí: čas na opravě,
+   vytížení techniků v Kalendáři.
 6. `[~]` **Online rezervace** (6. 9., migrace 20260908110000, edge funkce
    `public-booking`): formulář k vložení na web servisu (`<div id="jobi-rezervace">`
    + skript `…/public-booking/embed.js?service=slug`), nezávazná rezervace

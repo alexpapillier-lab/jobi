@@ -175,3 +175,29 @@ export async function nactiStatistiky(client: SupabaseClient, dotaz: StatistikyD
     mesicDo: cas(o.mesicDo),
   };
 }
+
+/** Řádek KPI techniků – kdo přijímá, kdo dokončuje, kolik hodin práce si zapsal. */
+export type ServerTechnik = { userId: string | null; name: string; prijato: number; dokonceno: number; hodiny: number; trzbaHodin: number };
+
+export async function nactiTechnici(
+  client: SupabaseClient,
+  dotaz: { serviceIds: string[]; od: Date | null; do: Date | null; branchId: string | null },
+): Promise<ServerTechnik[]> {
+  const { data, error } = await client.rpc("statistiky_technici", {
+    p_service_ids: dotaz.serviceIds,
+    p_od: dotaz.od ? dotaz.od.toISOString() : null,
+    p_do: dotaz.do ? dotaz.do.toISOString() : null,
+    p_branch_id: dotaz.branchId,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
+  return (data as Array<Record<string, unknown>>).map((r) => ({
+    userId: typeof r.userId === "string" ? r.userId : null,
+    name: String(r.name ?? "—"),
+    prijato: Number(r.prijato) || 0,
+    dokonceno: Number(r.dokonceno) || 0,
+    hodiny: Number(r.hodiny) || 0,
+    trzbaHodin: Number(r.trzbaHodin) || 0,
+  }));
+}
+

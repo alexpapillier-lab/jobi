@@ -15,7 +15,7 @@ import {
 } from "../components/icons";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
-import { nactiStatistiky, type StatistikyPrehled } from "../lib/statistikyServer";
+import { nactiStatistiky, type StatistikyPrehled, nactiTechnici, type ServerTechnik } from "../lib/statistikyServer";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
 import { KpiTile, KpiTileSkeleton } from "./Statistics/KpiTile";
@@ -348,6 +348,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const [serverStats, setServerStats] = useState<StatistikyPrehled | null>(null);
   const [serverLoading, setServerLoading] = useState(true);
   const [serverNedostupny, setServerNedostupny] = useState(false);
+  /** KPI techniků – samostatné RPC, aby hlavní přehled zůstal beze změny. */
+  const [technici, setTechnici] = useState<ServerTechnik[]>([]);
 
   useEffect(() => {
     if (!supabase || !activeServiceId) return;
@@ -544,6 +546,19 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       cancelled = true;
     };
   }, [idsServisu, obdobi, predchoziObdobi, activeBranchId, drillDown, reloadToken]);
+
+  useEffect(() => {
+    if (!supabase || idsServisu.length === 0) {
+      setTechnici([]);
+      return;
+    }
+    const client = supabase;
+    let cancelled = false;
+    nactiTechnici(client, { serviceIds: idsServisu, od: obdobi?.start ?? null, do: obdobi?.end ?? null, branchId: activeBranchId })
+      .then((rows) => { if (!cancelled) setTechnici(rows); })
+      .catch((err) => { console.warn("[Statistics] statistiky_technici selhalo", err); if (!cancelled) setTechnici([]); });
+    return () => { cancelled = true; };
+  }, [idsServisu, obdobi, activeBranchId, reloadToken]);
 
   const branchTickets = useMemo(() => filterByBranch(allTickets, activeBranchId), [allTickets, activeBranchId]);
   const tickets = useMemo(() => {
@@ -823,6 +838,36 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             emptyText="Ve vybraném období nejsou žádné zakázky."
             titlePrefix="Pobočka"
           />
+        </Card>
+      )}
+      {technici.length > 0 && (
+        <Card style={{ padding: "var(--pad-24)" }}>
+          <SectionHeading icon={<StatusIcon size={18} />}>Technici</SectionHeading>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 10 }}>
+            Kdo zakázky přijímá a dokončuje (z historie zakázek) a kolik hodinové práce si zapsal. Období a pobočka jako u ostatních čísel.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "var(--text-sm)" }}>
+              <thead>
+                <tr>
+                  {["Technik", "Přijal", "Dokončil", "Hodin práce", "Tržba z práce"].map((h, i) => (
+                    <th key={h} style={{ textAlign: i === 0 ? "left" : "right", padding: "6px 8px", borderBottom: "1px solid var(--border)", color: "var(--muted)", fontWeight: 700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {technici.map((t) => (
+                  <tr key={t.userId ?? t.name}>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>{t.name}</td>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.prijato}</td>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.dokonceno}</td>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.hodiny > 0 ? t.hodiny.toLocaleString("cs-CZ") : "—"}</td>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.trzbaHodin > 0 ? formatCurrencyRounded(t.trzbaHodin) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
       <Card style={{ padding: "var(--pad-24)" }}>
