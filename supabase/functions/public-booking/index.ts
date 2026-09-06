@@ -9,9 +9,10 @@ import { otiskKlienta } from "../_shared/limity.ts";
  *   POST /v1/booking                      → nová rezervace {service, name, phone, email?, device, repair?, preferred_at?, note?}
  *   GET  /v1/booking.js?service=<slug>    → hotový formulář k vložení na web
  *
- * Servis musí mít modul veřejného API (api_catalog) a rezervace zapnuté
- * v Nastavení → Veřejné API. Neexistující servis, vypnutý modul a vypnuté
- * rezervace vracejí totéž, aby se přes endpoint nedaly hádat slugy.
+ * Rezervace má každý tarif (Nastavení → Zakázky → Online rezervace);
+ * výběr opravy z ceníku ve formuláři potřebuje modul veřejného API, protože
+ * ceník jde ven přes /v1/catalog. Neexistující servis a vypnuté rezervace
+ * vracejí totéž, aby se přes endpoint nedaly hádat slugy.
  *
  * Ochrana: limit 10 rezervací za hodinu z jedné adresy (otisk IP solený
  * dnem, viz limity.ts), 60 za hodinu na servis, skryté pole proti robotům.
@@ -60,9 +61,6 @@ async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): 
   if (!slug) return null;
   const { data: servis } = await svc.from("services").select("id, name").eq("public_slug", slug).maybeSingle();
   if (!servis) return null;
-  const { data: modul } = await svc.from("service_entitlements").select("active, valid_until").eq("service_id", servis.id).eq("module", "api_catalog").maybeSingle();
-  const platny = modul?.active === true && (!modul.valid_until || new Date(modul.valid_until).getTime() > Date.now());
-  if (!platny) return null;
   const { data: nast } = await svc.from("service_settings").select("config").eq("service_id", servis.id).maybeSingle();
   const config = (nast?.config ?? {}) as Record<string, unknown>;
   const nastaveni = nastaveniZConfigu(config.rezervace);

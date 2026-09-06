@@ -88,6 +88,18 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 
 První tři měsíce: body 1, 2, 4.
 
+**Rozhodnutí k tarifům (6. 9. 2026):**
+- **Online rezervace jsou ve všech tarifech**, i ve Starteru. Důvod: nestojí nás
+  nic (pár požadavků denně), ale přivádí servisu zákazníky – je to funkce, kvůli
+  které si Jobi nechá i malý servis. Nastavení je v Zakázkách, ne v API.
+- **Výběr opravy z ceníku ve formuláři (cena a délka opravy) zůstává na modulu
+  veřejného API** (`api_catalog`, dnes Enterprise): ceník jde ven přes `/v1/catalog`.
+  Bez modulu formulář funguje s volným textem. Až se bude měnit ceník tarifů,
+  tohle je hranice mezi „rezervace zdarma“ a „rezervace s ceníkem“.
+- **Zápis přes API** (od 6. 9. i zakládání a mazání skladu a ceníku) je pod
+  `api_catalog`/`api_inventory`, tedy Enterprise. Kdo si dělá vlastní rozhraní na
+  sklad, platí za API, ne za rezervace.
+
 ## B. Checklist do první produkční fáze „na prodej“
 
 ### Účet, registrace, platby

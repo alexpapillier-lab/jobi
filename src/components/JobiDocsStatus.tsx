@@ -3,7 +3,18 @@ import { assetUrl } from "../lib/assetUrl";
 import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../lib/jobidocs";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
-const POLL_INTERVAL_MS = 1000;
+/**
+ * Jak často se ptáme, jestli JobiDocs běží.
+ *
+ * Bylo to po vteřině, tedy 3 600 dotazů za hodinu. Každý jde přes HTTP
+ * plugin Tauri, který na požadavek zakládá nový síťový klient – po delším
+ * běhu aplikace došla spojení a všechno padalo na „error sending request“.
+ * Vteřinová odezva tu k ničemu není; stav se navíc přepočítá hned po
+ * návratu do okna a po pokusu o tisk.
+ */
+const POLL_INTERVAL_MS = 15_000;
+/** Když neběží, ptáme se svižněji – uživatel ho nejspíš právě spouští. */
+const POLL_INTERVAL_ODPOJENO_MS = 5_000;
 
 type JobiDocsStatusProps = {
   onFirstConnect?: () => void;
@@ -15,15 +26,36 @@ export function JobiDocsStatus({ onFirstConnect, compact = false }: JobiDocsStat
   const [connected, setConnected] = useState<boolean | null>(null);
   const hasTriggeredFirstConnectGuide = useRef(false);
 
+  const connectedRef = useRef<boolean | null>(null);
   const check = async () => {
     const ok = await isJobiDocsRunning();
+    connectedRef.current = ok;
     setConnected(ok);
   };
 
   useEffect(() => {
-    check();
-    const id = setInterval(check, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    let id: number | undefined;
+    const naplanuj = (ms: number) => {
+      window.clearInterval(id);
+      id = window.setInterval(() => {
+        // Ve skryté kartě se neptáme vůbec – po návratu se stav načte hned.
+        if (document.visibilityState === "visible") void check();
+      }, ms);
+    };
+    void check();
+    naplanuj(connectedRef.current === true ? POLL_INTERVAL_MS : POLL_INTERVAL_ODPOJENO_MS);
+    const onViditelnost = () => {
+      if (document.visibilityState !== "visible") return;
+      void check();
+      naplanuj(connectedRef.current === true ? POLL_INTERVAL_MS : POLL_INTERVAL_ODPOJENO_MS);
+    };
+    document.addEventListener("visibilitychange", onViditelnost);
+    window.addEventListener("focus", onViditelnost);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onViditelnost);
+      window.removeEventListener("focus", onViditelnost);
+    };
   }, []);
 
   useEffect(() => {

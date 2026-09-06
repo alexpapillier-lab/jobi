@@ -3,6 +3,7 @@ import { Button, Segmented, Input, MenuItem, SettingRow, SettingRows, UnsavedBar
 import { SearchIcon, CheckIcon } from "../components/icons";
 import { UnsavedGuardProvider, type UnsavedHandle } from "./Settings/hooks/useUnsavedGuard";
 import { UnsavedChangesDialog } from "./Settings/components/UnsavedChangesDialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { assetUrl } from "../lib/assetUrl";
 import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
 import { useStatuses, type StatusMeta } from "../state/StatusesStore";
@@ -28,6 +29,7 @@ import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
 import { KontrolniSeznamySettingsSection } from "./Settings/KontrolniSeznamySettingsSection";
 import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSettingsSection";
+import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
 import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
@@ -58,7 +60,7 @@ export type SettingsCategory = "company" | "orders" | "documents" | "communicati
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations"
-  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
   | "about_app" | "about_updates" | "about_help";
@@ -72,7 +74,7 @@ type SettingsSection = {
 const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
-  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders",
+  orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication",
   service_team: "people", service_api: "people",
@@ -320,6 +322,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [section, setSection] = useState<SettingsSection>(sectionFor("service_basic"));
   const [navQuery, setNavQuery] = useState("");
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
+  // Status ke smazání – čeká na potvrzení (mazalo se bez dotazu jedním klikem).
+  const [statusToDelete, setStatusToDelete] = useState<StatusMeta | null>(null);
 
   // Průvodce: přepnutí na správnou záložku, aby byl zvýrazněný prvek viditelný
   useEffect(() => {
@@ -756,7 +760,25 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // ---- Firemní údaje: jedna lišta „Neuložené změny“ pro Údaje firmy i Kontakty ----
   const companyDirty = JSON.stringify(companyData) !== JSON.stringify(companySavedRef.current);
+  /** Povinná pole (označená * v Údajích firmy a Kontaktech) a formát e-mailu – dřív se
+   *  uložila i prázdná zkratka, ze které se generují kódy zakázek. */
+  const validateCompany = (d: CompanyData): string | null => {
+    const req: Array<[keyof CompanyData, string]> = [
+      ["abbreviation", "Zkratka"], ["name", "Název"], ["ico", "IČO"], ["defaultPhonePrefix", "Výchozí tel. předvolba"],
+      ["addressStreet", "Ulice"], ["addressCity", "Město"], ["addressZip", "PSČ"], ["phone", "Telefonní číslo"], ["email", "E-mailová adresa"],
+    ];
+    const missing = req.filter(([k]) => !String(d[k] ?? "").trim()).map(([, label]) => label);
+    if (missing.length) return `Vyplňte povinná pole: ${missing.join(", ")}`;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) return "E-mailová adresa nemá platný tvar";
+    if (!/^\+?\d{1,4}$/.test(d.defaultPhonePrefix.trim())) return "Výchozí předvolba má být např. +420";
+    return null;
+  };
   const saveCompany = async () => {
+    const problem = validateCompany(companyData);
+    if (problem) {
+      showToast(problem, "error");
+      throw new Error(problem);
+    }
     setCompanySaving(true);
     try {
       await saveServiceSettings(companyData);
@@ -816,6 +838,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "orders_prace", label: "Hodinová práce", keywords: ["hodinová", "sazba", "práce", "technik", "hodina", "kč/h", "hodinovka"] },
         { key: "orders_kontrola", label: "Kontrola po opravě", keywords: ["kontrola", "checklist", "kontrolní seznam", "test", "po opravě", "šablona", "protokol"] },
         { key: "orders_nahradni", label: "Náhradní zařízení", keywords: ["náhradní", "zápůjčka", "půjčení", "zařízení", "kauce", "smlouva"] },
+        { key: "orders_rezervace", label: "Online rezervace", keywords: ["rezervace", "objednání", "termín", "web", "formulář", "online", "objednávka termínu"] },
         { key: "orders_filters", label: "Filtry a stránkování", keywords: ["filtry", "rychlé filtry", "stránkování", "počet zakázek", "stránka", "na stránce"] },
         { key: "orders_deleted", label: "Koš smazaných zakázek", keywords: ["koš", "smazané", "smazaná zakázka", "obnovit", "obnova"] },
       ],
@@ -1754,7 +1777,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     <Button
                       size="sm"
                       variant="danger"
-                      onClick={() => deleteStatus(s.key)}
+                      onClick={() => setStatusToDelete(s)}
                       disabled={s.key === fallbackKey}
                       title={s.key === fallbackKey ? "Fallback status nelze smazat" : "Smazat status"}
                     >
@@ -2116,6 +2139,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
       {section.subsection === "orders_device_options" && (
         <DeviceOptionsSettingsSection activeServiceId={activeServiceId} />
+      )}
+      {section.subsection === "orders_rezervace" && (
+        <RezervaceSettingsSection activeServiceId={activeServiceId} />
       )}
       {section.subsection === "orders_nahradni" && (
         <NahradniZarizeniSettingsSection activeServiceId={activeServiceId} />
@@ -2492,6 +2518,19 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       </div>
       </div>
 
+      <ConfirmDialog
+        open={statusToDelete != null}
+        title="Smazat status"
+        message={`Opravdu smazat status „${statusToDelete?.label ?? ""}“? Pokud ho používají zakázky, smazání se zamítne.`}
+        confirmLabel="Smazat"
+        variant="danger"
+        onCancel={() => setStatusToDelete(null)}
+        onConfirm={async () => {
+          if (!statusToDelete) return;
+          await deleteStatus(statusToDelete.key);
+          setStatusToDelete(null);
+        }}
+      />
       <UnsavedChangesDialog
         open={!!pendingSection}
         onBack={() => setPendingSection(null)}
