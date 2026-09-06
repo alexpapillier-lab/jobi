@@ -67,16 +67,22 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
   for (const i of polozky) {
     const key = i.price?.lookup_key;
     if (!key || !(key in ADDONS)) continue;
+    // Množství 0 znamená „příplatek na předplatném je, ale nic za něj neplatí“.
+    // Kdyby se takový řádek započítal, přidal by modul s nulovou kvótou –
+    // u SMS to dřív znamenalo odesílání bez stropu (viz níž). Chybějící
+    // množství je u licencované ceny vždycky jeden kus.
+    const mnozstvi = i.quantity ?? 1;
+    if (mnozstvi <= 0) continue;
     const addon = ADDONS[key];
     for (const m of addon.modules ?? []) moduly.add(m);
     if (addon.branches) {
-      pobocekNavic += addon.branches * (i.quantity ?? 0);
+      pobocekNavic += addon.branches * mnozstvi;
       // Zaplacená pobočka navíc musí modul zapnout i tam, kde ho tarif nemá
       // (třeba když se příplatek přidal ručně v portálu Stripe). Jinak by se
       // za pobočku platilo a databáze by ji dál odmítala.
       moduly.add("branches");
     }
-    if (addon.sms) smsNavic += addon.sms * (i.quantity ?? 0);
+    if (addon.sms) smsNavic += addon.sms * mnozstvi;
   }
   const pobocekCelkem = (plan?.branchesIncluded ?? 0) + pobocekNavic;
   // Balíček SMS: co dává tarif plus dokoupené balíčky. Je to strop na měsíc,
@@ -101,7 +107,13 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
   }, { onConflict: "service_id" });
   if (chybaBilling) throw new ZapisError(`service_billing: ${chybaBilling.message}`);
 
-  if (moduly.size === 0) return;
+  if (!plan) {
+    // Lookup key ve Stripe se přejmenoval nebo přibyla cena, o které tabulka
+    // PLANS neví. Dřív se tady skončilo ještě před zápisem nároků, takže
+    // přechod na `unpaid`/`canceled` přístup neodebral. Teď se pokračuje:
+    // moduly z příplatků se zapíšou a neplatící předplatné se vypne.
+    console.error("[billing-webhook] neznámý tarif u předplatného:", sub.id, polozky.map((i) => i.price?.lookup_key));
+  }
 
   for (const modul of moduly) {
     const radek: Record<string, unknown> = {
@@ -114,9 +126,28 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     };
     // Kolik poboček tarif zahrnuje plus kolik se jich dokoupilo.
     if (modul === "branches") radek.quota = Math.max(1, pobocekCelkem);
-    if (modul === "sms") radek.quota = smsCelkem > 0 ? smsCelkem : null;
+    // Vždycky číslo, i kdyby vyšlo 0. `quota: null` čte sms-send jako
+    // „bez omezení“ a takový nárok smí vzniknout jen ruční správou.
+    if (modul === "sms") radek.quota = smsCelkem;
     const { error } = await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
     if (error) throw new ZapisError(`service_entitlements (${modul}): ${error.message}`);
+  }
+
+  // Co předplatné nedává, nesmí zůstat zapnuté – přechod na nižší tarif jinak
+  // nechal moduly vyššího tarifu běžet až do konce původního období. Ručně
+  // udělené nároky (bez `valid_until`) se nevypínají, ty patří majiteli
+  // aplikace. Při neznámém tarifu s platícím předplatným se nemaže nic:
+  // nevíme, co má zůstat, a přístup zaplacené dílny nesmí zmizet kvůli
+  // přejmenovanému lookup key.
+  if (plan || !plati) {
+    const nechat = plati ? [...moduly] : [];
+    let dotaz = svc.from("service_entitlements")
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .eq("service_id", serviceId)
+      .not("valid_until", "is", null);
+    if (nechat.length > 0) dotaz = dotaz.not("module", "in", `(${nechat.join(",")})`);
+    const { error } = await dotaz;
+    if (error) throw new ZapisError(`service_entitlements (úklid): ${error.message}`);
   }
 }
 
@@ -142,7 +173,18 @@ serve(async (req) => {
       }
       if (udalost.type === "customer.subscription.deleted") {
         // Zrušeno: přístup končí teď, data zůstávají.
-        const { error: chybaBilling } = await svc.from("service_billing").upsert({ service_id: serviceId, status: "canceled", stripe_subscription_id: sub.id, stripe_customer_id: sub.customer }, { onConflict: "service_id" });
+        // Přepsat i tarif a počty: jinak obrazovka Předplatné dál ukazuje
+        // „Business, 2 pobočky, obnoví se…“ u předplatného, které už neběží.
+        const { error: chybaBilling } = await svc.from("service_billing").upsert({
+          service_id: serviceId,
+          status: "canceled",
+          stripe_subscription_id: sub.id,
+          stripe_customer_id: sub.customer,
+          plan: null,
+          branches_quantity: 0,
+          cancel_at_period_end: false,
+          current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+        }, { onConflict: "service_id" });
         if (chybaBilling) throw new ZapisError(`service_billing: ${chybaBilling.message}`);
         // Vypnout jen nároky z předplatného, tedy ty s koncem platnosti.
         // Řádky bez `valid_until` uděluje ručně majitel aplikace
@@ -169,6 +211,16 @@ serve(async (req) => {
         if (error) throw new ZapisError(`service_billing: ${error.message}`);
       }
       return json({ ok: true });
+    }
+
+    if (udalost.type === "checkout.session.completed") {
+      // Přístup vzniká výhradně z `customer.subscription.*`; Checkout event
+      // přijde dřív a nemá položky předplatného. Návody u Stripe ale ukazují
+      // hlavně jeho, takže se aspoň zaloguje – v opačném případě vypadá
+      // špatně nastavený endpoint jako mrtvý webhook.
+      const sezeni = udalost.data.object as { id?: string; subscription?: string };
+      console.log("[billing-webhook] checkout dokončen (nároky přijdou s předplatným):", sezeni.id, sezeni.subscription);
+      return json({ ok: true, ignorovano: udalost.type });
     }
 
     return json({ ok: true, ignorovano: udalost.type });

@@ -20,6 +20,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+/** Strop na příplatkové pobočky v jednom sezení – překlep v množství jinak projde do platby. */
+const MAX_POBOCEK_NAVIC = 50;
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
@@ -88,14 +91,24 @@ serve(async (req) => {
     if (pobocekNavic > 0 && !PLANS[plan].modules.includes("branches")) {
       return json({ error: `Tarif ${PLANS[plan].label} pobočky navíc neumí. Vyberte vyšší tarif.` }, 400);
     }
+    if (pobocekNavic > MAX_POBOCEK_NAVIC) {
+      return json({ error: `Najednou lze přikoupit nejvýš ${MAX_POBOCEK_NAVIC} poboček. Napište nám, potřebujete-li víc.` }, 400);
+    }
+    // Chybějící cena příplatku se dřív mlčky přeskočila: zákazník prošel
+    // Checkoutem v přesvědčení, že si pobočku nebo SMS koupil, zaplatil jen
+    // tarif a modul nedostal. U ceny tarifu se vrací 400, tady taky.
     if (pobocekNavic > 0) {
-      const cena = await priceIdByLookupKey(addonKey("jobi_branch_addon", interval));
-      if (cena) polozky.push({ price: cena, quantity: pobocekNavic });
+      const klic = addonKey("jobi_branch_addon", interval);
+      const cena = await priceIdByLookupKey(klic);
+      if (!cena) return json({ error: `Ve Stripe chybí cena s lookup key „${klic}“.` }, 400);
+      polozky.push({ price: cena, quantity: pobocekNavic });
     }
     // SMS jsou v ceně od Business výš; u Starteru se přikupují.
     if (chceSms && !PLANS[plan].modules.includes("sms")) {
-      const cena = await priceIdByLookupKey(addonKey("jobi_sms_addon", interval));
-      if (cena) polozky.push({ price: cena, quantity: 1 });
+      const klic = addonKey("jobi_sms_addon", interval);
+      const cena = await priceIdByLookupKey(klic);
+      if (!cena) return json({ error: `Ve Stripe chybí cena s lookup key „${klic}“.` }, 400);
+      polozky.push({ price: cena, quantity: 1 });
     }
 
     // Zákazník Stripe patří servisu, ne uživateli – předplatné platí za dílnu.

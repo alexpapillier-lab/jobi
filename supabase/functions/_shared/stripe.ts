@@ -86,15 +86,19 @@ export async function priceIdByLookupKey(lookupKey: string): Promise<string | nu
  */
 export async function overitPodpis(payload: string, header: string | null, secret: string): Promise<boolean> {
   if (!header) return false;
-  const casti = Object.fromEntries(
-    header.split(",").map((c) => {
-      const [k, ...zbytek] = c.split("=");
-      return [k.trim(), zbytek.join("=")];
-    }),
-  );
-  const t = casti["t"];
-  const v1 = casti["v1"];
-  if (!t || !v1) return false;
+  // Při rotaci tajemství posílá Stripe víc podpisů najednou (`t=…,v1=staré,
+  // v1=nové`). `Object.fromEntries` by si nechal jen poslední – platný podpis
+  // na prvním místě by propadl a webhook by v okně rotace odmítal události.
+  let t = "";
+  const podpisy: string[] = [];
+  for (const cast of header.split(",")) {
+    const [k, ...zbytek] = cast.split("=");
+    const klic = k.trim();
+    const hodnota = zbytek.join("=");
+    if (klic === "t") t = hodnota;
+    else if (klic === "v1" && hodnota) podpisy.push(hodnota);
+  }
+  if (!t || podpisy.length === 0) return false;
   // Stará zpráva = nejspíš přehrávaný útok.
   const stari = Math.abs(Date.now() / 1000 - Number(t));
   if (!Number.isFinite(stari) || stari > 300) return false;
@@ -108,11 +112,16 @@ export async function overitPodpis(payload: string, header: string | null, secre
   );
   const podpis = await crypto.subtle.sign("HMAC", klic, new TextEncoder().encode(`${t}.${payload}`));
   const ocekavano = Array.from(new Uint8Array(podpis)).map((b) => b.toString(16).padStart(2, "0")).join("");
-  // Porovnání v konstantním čase.
-  if (ocekavano.length !== v1.length) return false;
-  let rozdil = 0;
-  for (let i = 0; i < ocekavano.length; i++) rozdil |= ocekavano.charCodeAt(i) ^ v1.charCodeAt(i);
-  return rozdil === 0;
+  // Porovnání v konstantním čase. Projdou se všechny podpisy z hlavičky,
+  // cyklus se nepřerušuje – ať doba odpovědi neprozradí, který seděl.
+  let sedi = false;
+  for (const v1 of podpisy) {
+    if (ocekavano.length !== v1.length) continue;
+    let rozdil = 0;
+    for (let i = 0; i < ocekavano.length; i++) rozdil |= ocekavano.charCodeAt(i) ^ v1.charCodeAt(i);
+    sedi = sedi || rozdil === 0;
+  }
+  return sedi;
 }
 
 /**

@@ -9,6 +9,9 @@
  * Obsah tarifů se v aplikaci opisuje ručně (zdroj pravdy je Stripe), takže
  * se snadno rozejde: vyšší tarif musí obsahovat všechno z nižšího, jinak by
  * servis po upgradu přišel o modul, který mu do té doby fungoval.
+ *
+ * Tady se testuje jen to, co je v src/lib. Porovnání s tabulkou PLANS ve
+ * Stripe, podpis webhooku, nároky a kvóty jsou v billingWebhook.test.ts.
  */
 import { describe, it, expect, vi } from "vitest";
 
@@ -98,6 +101,28 @@ describe("obsah tarifů", () => {
       expect(t.popis.trim().length).toBeGreaterThan(0);
     }
   });
+
+  it("seznam modulů v tarifu nemá modul dvakrát", () => {
+    // Duplicita by na obrazovce vypsala tutéž odrážku dvakrát a vypadala
+    // by jako chyba v tom, co si člověk kupuje.
+    for (const t of TARIFY) expect(new Set(t.modules).size).toBe(t.modules.length);
+  });
+
+  it("aplikace nezná popis modulu, který si nejde koupit", () => {
+    // Popis navíc znamená modul, který se odněkud vytratil z tarifů –
+    // buď se na obrazovku nedostane, nebo se ho někdo chystá prodávat.
+    const prodavane = new Set(TARIFY.flatMap((t) => t.modules));
+    for (const modul of Object.keys(MODUL_POPIS)) {
+      expect(prodavane.has(modul), `modul ${modul} má popis, ale žádný tarif ho nedává`).toBe(true);
+    }
+  });
+
+  it("popisy modulů jsou čitelná čeština, ne klíče z databáze", () => {
+    for (const [modul, popis] of Object.entries(MODUL_POPIS)) {
+      expect(popis).not.toBe(modul);
+      expect(popis, `popis modulu ${modul} vypadá jako klíč`).not.toMatch(/^[a-z_]+$/);
+    }
+  });
 });
 
 describe("roční sleva a stavy předplatného", () => {
@@ -110,6 +135,14 @@ describe("roční sleva a stavy předplatného", () => {
     for (const stav of ["trialing", "active", "past_due", "canceled", "unpaid"]) {
       expect(STATUS_LABELS[stav], `stav ${stav} nemá popisek`).toBeTruthy();
       expect(STATUS_LABELS[stav]).not.toBe(stav);
+    }
+  });
+
+  it("i stavy po neúspěšné platbě mají popisek – právě tehdy se člověk dívá", () => {
+    // Servis, kterému neprošla karta, otevře obrazovku Předplatné jako první.
+    // Prázdné místo místo stavu je ta nejhorší chvíle, kdy nevědět, co se děje.
+    for (const stav of ["incomplete", "incomplete_expired", "past_due", "unpaid", "canceled"]) {
+      expect(STATUS_LABELS[stav], `stav ${stav} nemá popisek`).toBeTruthy();
     }
   });
 });

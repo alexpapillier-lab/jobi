@@ -7929,12 +7929,28 @@ export default function Orders({
           const prev = t.branchId ?? null;
           setCloudTickets((list) => list.map((x) => (x.id === t.id ? { ...x, branchId: b.id } : x)));
           void setTicketBranch(t.id, b.id).then((res) => {
-            if (res.error) {
+            if (!res.error) {
+              showToast(`Zakázka přesunuta na pobočku ${b.name}`, "success");
+              return;
+            }
+            if (jeTrvalaChyba(res.error)) {
               setCloudTickets((list) => list.map((x) => (x.id === t.id ? { ...x, branchId: prev } : x)));
               showToast(`Přesun se nepodařil: ${res.error}`, "error");
-            } else {
-              showToast(`Zakázka přesunuta na pobočku ${b.name}`, "success");
+              return;
             }
+            /* Výpadek spojení: přesun zůstane na obrazovce a fronta ho dopíše.
+               Bez toho stačilo hned přenačíst stránku a zakázka byla zpátky
+               na staré pobočce, aniž by se o tom kdokoli dozvěděl. */
+            ulozNaPozdeji({
+              klic: `tickets:${t.id}:branch`,
+              tabulka: "tickets",
+              id: t.id,
+              data: { branch_id: b.id },
+              popis: `Přesun na pobočku · ${popisZakazky(t.id)}`,
+              serviceId: activeServiceIdRef.current,
+              chyba: res.error,
+            });
+            showToast("Spojení vypadlo – přesun se uloží sám, jakmile bude připojení.", "info");
           });
         }}
       />
