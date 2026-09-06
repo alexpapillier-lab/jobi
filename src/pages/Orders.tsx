@@ -20,6 +20,8 @@ import { DateTimePicker } from "../components/DateTimePicker";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
 import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
+import { subscribeServiceConfig } from "../lib/serviceSettingsSync";
 import { fetchAllPages } from "../lib/fetchAllPages";
 import {
   uploadDiagnosticPhotoWithWatermark,
@@ -932,45 +934,47 @@ export default function Orders({
     };
   }, [activeServiceId]);
 
-  // Load orders_show_claims_in_list from service_settings
+  /* Nastavení servisu do stavu stránky. Jedno místo pro první načtení,
+     ruční událost i realtime – dřív to byly dvě skoro stejné kopie a na
+     realtime se zapomnělo. Kvůli tomu se nově přidané náhradní zařízení
+     v otevřené aplikaci v detailu zakázky vůbec neobjevilo: stránka
+     Zakázky zůstává připojená a config si nikdy znovu nenačetla. */
+  const pouzijConfigServisu = useCallback((config: any) => {
+    setOrdersShowClaimsInList(!!config?.orders_show_claims_in_list);
+    setHodinovaSazba(typeof config?.hodinova_sazba === "number" ? config.hodinova_sazba : null);
+    setKontrolniSeznamy(normalizujSablony(config?.kontrolniSeznamy));
+    setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
+    setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
+  }, []);
+
+  const nactiConfigServisu = useCallback(() => {
+    if (!activeServiceId || !supabase) return;
+    (supabase.from("service_settings") as any)
+      .select("config")
+      .eq("service_id", activeServiceId)
+      .maybeSingle()
+      .then(({ data }: any) => pouzijConfigServisu(data?.config))
+      .catch(() => {});
+  }, [activeServiceId, pouzijConfigServisu]);
+
   useEffect(() => {
     if (!activeServiceId || !supabase) {
       setOrdersShowClaimsInList(false);
       return;
     }
-    (supabase
-      .from("service_settings") as any)
-      .select("config")
-      .eq("service_id", activeServiceId)
-      .maybeSingle()
-      .then(({ data }: any) => {
-        setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
-        setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
-        setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
-        setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
-        setCasNaOpraveZapnuto(data?.config?.cas_na_oprave === true);
-      })
-      .catch(() => setOrdersShowClaimsInList(false));
-  }, [activeServiceId]);
+    nactiConfigServisu();
+  }, [activeServiceId, nactiConfigServisu]);
+
   useEffect(() => {
-    const onUiUpdated = () => {
-      if (!activeServiceId || !supabase) return;
-      (supabase.from("service_settings") as any)
-        .select("config")
-        .eq("service_id", activeServiceId)
-        .maybeSingle()
-        .then(({ data }: any) => {
-          setOrdersShowClaimsInList(!!data?.config?.orders_show_claims_in_list);
-          setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
-          setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
-          setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
-          setCasNaOpraveZapnuto(data?.config?.cas_na_oprave === true);
-        })
-        .catch(() => {});
-    };
-    window.addEventListener("jobsheet:ui-updated" as any, onUiUpdated);
-    return () => window.removeEventListener("jobsheet:ui-updated" as any, onUiUpdated);
-  }, [activeServiceId]);
+    window.addEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
+    return () => window.removeEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
+  }, [nactiConfigServisu]);
+
+  // Změna nastavení odjinud (jiný počítač, druhá záložka, kolega) se projeví hned.
+  useEffect(() => {
+    if (!activeServiceId) return;
+    return subscribeServiceConfig(activeServiceId, (config) => pouzijConfigServisu(config), "orders");
+  }, [activeServiceId, pouzijConfigServisu]);
 
   // Load tickets from cloud when activeServiceId changes
   useEffect(() => {
@@ -2795,6 +2799,12 @@ export default function Orders({
    * Označí zakázce běžící okamžitý zápis (opravy, kontrola, zápůjčka), aby
    * realtime ozvěna staršího zápisu nepřepsala místní stav – viz upsert výše.
    */
+  /** Číslo zakázky do výpisu neuložených změn; když ho neznáme, aspoň zákazník. */
+  const popisZakazky = useCallback((ticketId: string): string => {
+    const t = cloudTicketsRef.current.find((x) => x.id === ticketId);
+    return t?.code || t?.customerName || "zakázka";
+  }, []);
+
   const sOkamzitymZapisem = useCallback(async <T,>(ticketId: string, zapis: () => Promise<T>): Promise<T> => {
     const pocty = rozpracovaneZapisyOpravRef.current;
     pocty.set(ticketId, (pocty.get(ticketId) ?? 0) + 1);
@@ -2831,6 +2841,20 @@ export default function Orders({
         } catch (err) {
           devLog("[opravy] zápis selhal, uloží se při zavření detailu", err);
           setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+          /* Druhá pojistka: zavření detailu zkusí zápis znovu, ale když je
+             síť pryč i potom, opravy by se ztratily. Fronta je dopíše sama,
+             až spojení naskočí – přežije i zavření aplikace. */
+          if (!jeTrvalaChyba(err)) {
+            ulozNaPozdeji({
+              klic: `tickets:${ticketId}:performed_repairs`,
+              tabulka: "tickets",
+              id: ticketId,
+              data: { performed_repairs: repairs },
+              popis: `Provedené opravy · ${popisZakazky(ticketId)}`,
+              serviceId: activeServiceIdRef.current,
+              chyba: err,
+            });
+          }
         } finally {
           const n = (pocty.get(ticketId) ?? 1) - 1;
           if (n <= 0) pocty.delete(ticketId);
@@ -2943,9 +2967,24 @@ export default function Orders({
     const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId));
     if (error) {
       devLog("[zapujcka] zápis selhal", error);
-      // Zpět na stav z databáze – jinak by karta ukazovala něco, co po obnovení zmizí.
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: puvodni } : t)));
-      showToast("Půjčení zařízení se nepodařilo uložit", "error");
+      if (jeTrvalaChyba(error)) {
+        // Opakování by nepomohlo (chybí právo, zakázka zmizela). Zpět na stav
+        // z databáze – jinak by karta ukazovala něco, co po obnovení zmizí.
+        setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: puvodni } : t)));
+        showToast("Půjčení zařízení se nepodařilo uložit", "error");
+        return;
+      }
+      // Výpadek spojení: zadané údaje si necháme a frontu je dopíše sama.
+      ulozNaPozdeji({
+        klic: `tickets:${ticketId}:loaner`,
+        tabulka: "tickets",
+        id: ticketId,
+        data: { loaner: zapujcka },
+        popis: `Půjčení zařízení · ${popisZakazky(ticketId)}`,
+        serviceId: activeServiceIdRef.current,
+        chyba: error,
+      });
+      showToast("Spojení vypadlo – půjčení se uloží samo, jakmile bude připojení. Neztratí se.", "info");
     }
   }, []);
 
@@ -2957,8 +2996,21 @@ export default function Orders({
     const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId));
     if (error) {
       devLog("[kontrola] zápis selhal", error);
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: puvodni } : t)));
-      showToast("Kontrolu se nepodařilo uložit", "error");
+      if (jeTrvalaChyba(error)) {
+        setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: puvodni } : t)));
+        showToast("Kontrolu se nepodařilo uložit", "error");
+        return;
+      }
+      ulozNaPozdeji({
+        klic: `tickets:${ticketId}:test_checklist`,
+        tabulka: "tickets",
+        id: ticketId,
+        data: { test_checklist: kontrola },
+        popis: `Kontrola po opravě · ${popisZakazky(ticketId)}`,
+        serviceId: activeServiceIdRef.current,
+        chyba: error,
+      });
+      showToast("Spojení vypadlo – kontrola se uloží sama, jakmile bude připojení. Neztratí se.", "info");
     }
   }, []);
 

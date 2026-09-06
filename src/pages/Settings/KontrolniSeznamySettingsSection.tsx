@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Button } from "../../components/ui";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { useConfigNacteno } from "./useConfigNacteno";
 import { VYCHOZI_SABLONY, normalizujSablony, type SablonaKontroly } from "../../lib/kontrolniSeznamy";
 import { showToast } from "../../components/Toast";
 
@@ -14,20 +15,25 @@ import { showToast } from "../../components/Toast";
 export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [sablony, setSablony] = useState<SablonaKontroly[]>(VYCHOZI_SABLONY);
   const [rozbalena, setRozbalena] = useState<string | null>(null);
+  const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
 
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
     loadServiceConfig(activeServiceId).then((config) => {
-      if (!zruseno) setSablony(normalizujSablony(config?.kontrolniSeznamy));
+      if (zruseno) return;
+      setSablony(normalizujSablony(config?.kontrolniSeznamy));
+      oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
       setSablony(normalizujSablony(config.kontrolniSeznamy));
     });
     return () => { zruseno = true; unsubscribe(); };
-  }, [activeServiceId]);
+  }, [activeServiceId, oznacNacteno]);
 
   const ulozit = useCallback(async (next: SablonaKontroly[]) => {
+    // Viz useConfigNacteno: uložení před načtením by přepsalo šablony servisu.
+    if (!nacteno) return;
     setSablony(next);
     if (!activeServiceId) return;
     try {
@@ -36,7 +42,7 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
       console.error("[KontrolniSeznamy] uložení selhalo", err);
       showToast("Šablony se nepodařilo uložit", "error");
     }
-  }, [activeServiceId]);
+  }, [activeServiceId, nacteno]);
 
   const uprav = (id: string, zmena: Partial<SablonaKontroly>) => {
     void ulozit(sablony.map((s) => (s.id === id ? { ...s, ...zmena } : s)));

@@ -2,12 +2,14 @@ import { Card } from "../../lib/settingsUi";
 import { getHandoffOptions, setHandoffOptions, type HandoffOptions } from "../../lib/handoffOptions";
 import { useCallback, useEffect, useState } from "react";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { useConfigNacteno } from "./useConfigNacteno";
 
 /** Sdílené mezi všemi na servisu v reálném čase – viz komentář u DeviceOptionsSettingsSection. */
 export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [options, setOptions] = useState(() => getHandoffOptions());
   const [newReceive, setNewReceive] = useState("");
   const [newReturn, setNewReturn] = useState("");
+  const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
 
   const applyRemote = useCallback((remote: HandoffOptions) => {
     setHandoffOptions(remote);
@@ -18,20 +20,23 @@ export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServi
     if (!activeServiceId) return;
     let zruseno = false;
     loadServiceConfig(activeServiceId).then((config) => {
-      if (zruseno || !config?.handoffOptions) return;
-      applyRemote(config.handoffOptions as HandoffOptions);
+      if (zruseno) return;
+      if (config?.handoffOptions) applyRemote(config.handoffOptions as HandoffOptions);
+      oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
       if (config.handoffOptions) applyRemote(config.handoffOptions as HandoffOptions);
     });
     return () => { zruseno = true; unsubscribe(); };
-  }, [activeServiceId, applyRemote]);
+  }, [activeServiceId, applyRemote, oznacNacteno]);
 
   const ulozit = useCallback((next: HandoffOptions) => {
+    // Viz useConfigNacteno: bez načteného configu by se uložil výchozí seznam.
+    if (!nacteno) return;
     setHandoffOptions(next);
     setOptions(next);
     if (activeServiceId) void mergeServiceConfig(activeServiceId, { handoffOptions: next });
-  }, [activeServiceId]);
+  }, [activeServiceId, nacteno]);
 
   const addReceive = () => {
     const v = newReceive.trim();

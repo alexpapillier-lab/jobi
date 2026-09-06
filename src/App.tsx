@@ -22,6 +22,12 @@ import { StatusesProvider } from "./state/StatusesStore";
 import { ToastContainer } from "./components/Toast";
 import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
+import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
+import { spustHlidacFronty } from "./lib/frontaZapisu";
+
+/* Fronta neuložených změn běží od startu: co nestihl minulý běh aplikace,
+   se dopíše hned, jak je spojení. */
+spustHlidacFronty();
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
@@ -1202,6 +1208,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
   return (
     <ThemeProvider>
       <OnlineGate>
+        <NeulozeneZmeny />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>
         <AppTourOverlay

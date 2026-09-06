@@ -321,16 +321,64 @@ function embedSkript(slug: string): string {
         }
         hotovo();
       }
+      /* Odhad dokončení. Délka opravy se rozpočítá do otevírací doby: co se
+         nevejde do dneška, pokračuje další otevřený den. Oprava na čtyři dny
+         proto řekne konkrétní den, ne „další den“. Když u vybraných oprav
+         není odhad délky, termín neslíbíme žádný. */
+      function minuty(t) { var c = String(t || "").split(":"); return parseInt(c[0], 10) * 60 + parseInt(c[1], 10); }
+      function hhmm(m) {
+        var h = Math.floor(m / 60), mi = Math.round(m % 60);
+        return (h < 10 ? "0" : "") + h + ":" + (mi < 10 ? "0" : "") + mi;
+      }
+      function jeOtevreno(d) {
+        var iso = d.getDay() === 0 ? 7 : d.getDay();
+        return n.dny.indexOf(iso) !== -1;
+      }
       function hotovo() {
         hotovoInfo.textContent = "";
-        var minut = 0;
-        vybrane.forEach(function (r) { minut += typeof r.estimated_time === "number" ? r.estimated_time : 0; });
-        if (!minut || !casSel.vstup.value) { return; }
-        var casti = casSel.vstup.value.split(":");
-        var m3 = parseInt(casti[0], 10) * 60 + parseInt(casti[1], 10) + minut;
-        var konec = n.do.split(":"); var konecMin = parseInt(konec[0], 10) * 60 + parseInt(konec[1], 10);
-        if (m3 > konecMin) { hotovoInfo.textContent = "Oprava by přesáhla otevírací dobu – zařízení bude k vyzvednutí další den, nebo zvolte dřívější čas."; return; }
-        hotovoInfo.textContent = "Při příchodu v " + casSel.vstup.value + " počítáme s dokončením kolem " + (Math.floor(m3 / 60) < 10 ? "0" : "") + Math.floor(m3 / 60) + ":" + (m3 % 60 < 10 ? "0" : "") + (m3 % 60) + ".";
+        if (vybrane.length === 0) { return; }
+        var minut = 0, chybiOdhad = false;
+        vybrane.forEach(function (r) {
+          if (typeof r.estimated_time === "number" && r.estimated_time > 0) { minut += r.estimated_time; }
+          else { chybiOdhad = true; }
+        });
+        if (!minut) {
+          hotovoInfo.textContent = "U vybraných oprav nemáme odhad délky – termín dokončení potvrdíme, až zařízení uvidíme.";
+          return;
+        }
+        if (!casSel.vstup.value || !datum.vstup.value) { return; }
+
+        var odMin = minuty(n.od), doMin = minuty(n.do);
+        var denKap = doMin - odMin;
+        if (!(denKap > 0)) { return; }
+        var zacatek = Math.max(minuty(casSel.vstup.value), odMin);
+        var zbyva = minut;
+        var den = new Date(datum.vstup.value + "T00:00:00");
+        var konecMin = zacatek + zbyva;
+        var dnuNavic = 0;
+        var dnesVolno = doMin - zacatek;
+        if (zbyva > dnesVolno) {
+          zbyva -= Math.max(0, dnesVolno);
+          var pojistka = 0;
+          while (zbyva > 0 && pojistka < 400) {
+            pojistka += 1;
+            den.setDate(den.getDate() + 1);
+            if (!jeOtevreno(den)) { continue; }
+            dnuNavic += 1;
+            if (zbyva <= denKap) { konecMin = odMin + zbyva; zbyva = 0; }
+            else { zbyva -= denKap; }
+          }
+          if (zbyva > 0) { hotovoInfo.textContent = "Práce je zhruba na " + cas(minut) + " – termín dokončení s vámi domluvíme."; return; }
+        }
+
+        var pozn = chybiOdhad ? " U některých vybraných oprav odhad délky nemáme, může to trvat dél." : "";
+        if (dnuNavic === 0) {
+          hotovoInfo.textContent = "Při příchodu v " + casSel.vstup.value + " počítáme s dokončením kolem " + hhmm(konecMin) + "." + pozn;
+          return;
+        }
+        var kdy = den.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "numeric" });
+        hotovoInfo.textContent = "Práce je zhruba na " + cas(minut) + ". Při příchodu v " + casSel.vstup.value
+          + " počítáme s dokončením v " + kdy + " kolem " + hhmm(konecMin) + "." + pozn;
       }
       if (maCenik) {
         modelSel.addEventListener("change", function () {
@@ -364,10 +412,9 @@ function embedSkript(slug: string): string {
           }
           prepocitej();
         });
-        casSel.vstup.addEventListener("change", hotovo);
-      } else {
-        casSel.vstup.addEventListener("change", hotovo);
       }
+      casSel.vstup.addEventListener("change", hotovo);
+      datum.vstup.addEventListener("change", hotovo);
 
       form.addEventListener("submit", function (ev) {
         ev.preventDefault();

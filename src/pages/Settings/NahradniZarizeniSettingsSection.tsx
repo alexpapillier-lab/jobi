@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Button } from "../../components/ui";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { useConfigNacteno } from "./useConfigNacteno";
 import { normalizujNahradni, type NahradniZarizeni } from "../../lib/zapujcka";
 import { showToast } from "../../components/Toast";
 
@@ -12,18 +13,23 @@ import { showToast } from "../../components/Toast";
 export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [seznam, setSeznam] = useState<NahradniZarizeni[]>([]);
   const [novy, setNovy] = useState<NahradniZarizeni>({ id: "", nazev: "" });
+  const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
 
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
     loadServiceConfig(activeServiceId).then((config) => {
-      if (!zruseno) setSeznam(normalizujNahradni(config?.nahradniZarizeni));
+      if (zruseno) return;
+      setSeznam(normalizujNahradni(config?.nahradniZarizeni));
+      oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => setSeznam(normalizujNahradni(config.nahradniZarizeni)));
     return () => { zruseno = true; unsubscribe(); };
-  }, [activeServiceId]);
+  }, [activeServiceId, oznacNacteno]);
 
   const ulozit = useCallback(async (next: NahradniZarizeni[]) => {
+    // Dokud nevíme, co je na serveru, nesmí se ukládat – přepsalo by to seznam.
+    if (!nacteno) return;
     setSeznam(next);
     if (!activeServiceId) return;
     try {
@@ -32,7 +38,7 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
       console.error("[NahradniZarizeni] uložení selhalo", e);
       showToast("Seznam se nepodařilo uložit", "error");
     }
-  }, [activeServiceId]);
+  }, [activeServiceId, nacteno]);
 
   const pridat = () => {
     if (!novy.nazev.trim()) return;
@@ -44,7 +50,9 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
   const mrizka: React.CSSProperties = { display: "grid", gridTemplateColumns: "2fr 1.4fr 1.4fr 0.8fr auto", gap: 8, alignItems: "center" };
 
   return (
-    <Card>
+    /* data-config-nacteno: než je seznam ze serveru, nesmí se ukládat.
+       Testy podle toho poznají, že sekce má skutečná data, ne výchozí prázdno. */
+    <Card data-config-nacteno={nacteno ? "1" : "0"}>
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>Náhradní zařízení</div>
         <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
@@ -71,7 +79,7 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
           <input type="text" value={novy.seriove ?? ""} onChange={(e) => setNovy({ ...novy, seriove: e.target.value })} placeholder="SN / IMEI" aria-label="Nové sériové číslo" style={input} />
           <input type="text" value={novy.prislusenstvi ?? ""} onChange={(e) => setNovy({ ...novy, prislusenstvi: e.target.value })} placeholder="nabíječka, kryt" aria-label="Nové příslušenství" style={input} />
           <input type="number" min={0} step={100} value={novy.kauce ?? ""} onChange={(e) => setNovy({ ...novy, kauce: e.target.value === "" ? undefined : Number(e.target.value) })} placeholder="kauce" aria-label="Nová kauce" style={input} />
-          <Button size="sm" variant="soft" onClick={pridat} disabled={!novy.nazev.trim()}>Přidat</Button>
+          <Button size="sm" variant="soft" onClick={pridat} disabled={!novy.nazev.trim() || !nacteno}>Přidat</Button>
         </div>
       </div>
     </Card>

@@ -2,6 +2,7 @@ import { Card } from "../../lib/settingsUi";
 import { getDeviceOptions, setDeviceOptions, type DeviceOptions } from "../../lib/deviceOptions";
 import { useCallback, useEffect, useState } from "react";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { useConfigNacteno } from "./useConfigNacteno";
 
 /**
  * Nabídka stavů zařízení/příslušenství sdílená mezi všemi na servisu,
@@ -18,6 +19,8 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
   const [newCondition, setNewCondition] = useState("");
   const [newAccessory, setNewAccessory] = useState("");
 
+  const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
+
   const applyRemote = useCallback((remote: DeviceOptions) => {
     setDeviceOptions(remote);
     setOptions(getDeviceOptions());
@@ -27,20 +30,23 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
     if (!activeServiceId) return;
     let zruseno = false;
     loadServiceConfig(activeServiceId).then((config) => {
-      if (zruseno || !config?.deviceOptions) return;
-      applyRemote(config.deviceOptions as DeviceOptions);
+      if (zruseno) return;
+      if (config?.deviceOptions) applyRemote(config.deviceOptions as DeviceOptions);
+      oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
       if (config.deviceOptions) applyRemote(config.deviceOptions as DeviceOptions);
     });
     return () => { zruseno = true; unsubscribe(); };
-  }, [activeServiceId, applyRemote]);
+  }, [activeServiceId, applyRemote, oznacNacteno]);
 
   const ulozit = useCallback((next: DeviceOptions) => {
+    // Viz useConfigNacteno: bez načteného configu by se uložil výchozí seznam.
+    if (!nacteno) return;
     setDeviceOptions(next);
     setOptions(next);
     if (activeServiceId) void mergeServiceConfig(activeServiceId, { deviceOptions: next });
-  }, [activeServiceId]);
+  }, [activeServiceId, nacteno]);
 
   const addCondition = () => {
     const v = newCondition.trim();

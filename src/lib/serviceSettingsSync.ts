@@ -68,10 +68,12 @@ export async function mergeServiceConfig(
 export function subscribeServiceConfig(
   serviceId: string,
   onChange: (config: ServiceConfig) => void,
+  /** Rozlišení kanálu, když config poslouchá víc míst naráz (Nastavení i Zakázky). */
+  jmenoKanalu = "default",
 ): () => void {
   if (!supabase) return () => {};
   const channel = supabase
-    .channel(`service_settings:${serviceId}`)
+    .channel(`service_settings:${serviceId}:${jmenoKanalu}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "service_settings", filter: `service_id=eq.${serviceId}` },

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { supabase, supabaseUrl, supabaseFetch, resetTauriFetchState } from "../../../lib/supabaseClient";
 import { devLog, devWarn } from "../../../lib/devLog";
+import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { normalizePhone } from "../../../lib/phone";
 import { showToast } from "../../../components/Toast";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
@@ -263,6 +264,32 @@ type SaveTicketChangesParams = {
   onSuccess: (ticket: TicketEx) => void;
 };
 
+/**
+ * Zápis zakázky, který neprošel kvůli spojení, uloží do fronty neuložených
+ * změn. Fronta zapisuje jen podle `id`, bez kontroly verze: pokud mezitím
+ * zakázku upravil kolega, vyhraje tenhle (poslední) zápis. Ztratit rozepsanou
+ * zakázku je horší než přepsat cizí mezikrok, o kterém se navíc dozví
+ * v historii zakázky.
+ */
+function zaradDoFronty(
+  payload: Record<string, unknown>,
+  ticket: { id: string; code?: string; customerName?: string },
+  serviceId: string | null,
+  chyba: unknown,
+): void {
+  ulozNaPozdeji({
+    klic: `tickets:${ticket.id}:detail`,
+    tabulka: "tickets",
+    id: ticket.id,
+    // Verzi řídí databáze sama; poslat ji znovu by zápis zablokovalo napořád.
+    data: Object.fromEntries(Object.entries(payload).filter(([k]) => k !== "version")),
+    popis: `Zakázka · ${ticket.code || ticket.customerName || "detail"}`,
+    serviceId,
+    chyba,
+  });
+  showToast("Spojení vypadlo – zakázka se uloží sama, jakmile bude připojení. Změny se neztratí.", "info");
+}
+
 export function useOrderActions(deps: UseOrderActionsDeps) {
   const {
     activeServiceId,
@@ -482,6 +509,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       // Continue without version check (fallback for old tickets without version)
     }
 
+    /* Payload i pro catch: když spojení spadne uprostřed zápisu, musí se
+       změna dostat do fronty neuložených změn a ne zmizet s výjimkou. */
+    let poslednPayload: Record<string, unknown> | null = null;
+
     try {
       // Použij aktuální hodnoty z detailedTicket (které mohou obsahovat změny z diagnostiky)
       // nebo hodnoty z editedTicket pokud jsou definované (v edit módu)
@@ -597,6 +628,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         customer_ico: payload.customer_ico,
         customer_info: payload.customer_info,
       });
+      poslednPayload = payload;
       devLog("[SaveTicket] PAYLOAD (full)", payload);
       devLog("[SaveTicket] Optimistic lock - expected version:", expectedVersion);
       
@@ -620,6 +652,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
 
       if (error) {
         console.error("[SaveTicket] update error", error);
+        if (!jeTrvalaChyba(error)) {
+          zaradDoFronty(payload, detailedTicket, activeServiceId, error);
+          devLog("[SaveTicket] END (do fronty)");
+          return false;
+        }
         showToast(`Chyba při ukládání zakázky: ${error.message}`, "error");
         devLog("[SaveTicket] END (error)");
         return false;
@@ -681,6 +718,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Neznámá chyba";
       console.error("[SaveTicket] update exception", err);
+      if (!jeTrvalaChyba(err) && poslednPayload) {
+        zaradDoFronty(poslednPayload, detailedTicket, activeServiceId, err);
+        devLog("[SaveTicket] END (do fronty)");
+        return false;
+      }
       showToast(`Chyba při ukládání zakázky: ${errorMessage}`, "error");
       devLog("[SaveTicket] END");
       return false;
