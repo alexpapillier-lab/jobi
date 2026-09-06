@@ -19,6 +19,8 @@ const ALLOWED_KEYS = [
   "can_edit_devices",
   "can_edit_inventory",
   "can_adjust_inventory_quantity",
+  // Omezení, ne oprávnění: člen vidí a mění jen záznamy své domovské pobočky.
+  "branch_only",
   "can_edit_service_settings",
 ];
 

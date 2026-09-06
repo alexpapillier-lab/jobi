@@ -147,14 +147,24 @@ export async function setMemberHomeBranch(serviceId: string, userId: string, bra
 }
 
 export async function loadMyHomeBranch(serviceId: string, userId: string): Promise<string | null> {
-  if (!supabase) return null;
+  return (await loadMyBranchAccess(serviceId, userId)).homeBranchId;
+}
+
+/**
+ * Domovská pobočka a případné omezení „jen vlastní pobočka“ (capabilities
+ * členství, hlídá ho i databáze). Správce a majitel omezení nemají.
+ */
+export async function loadMyBranchAccess(serviceId: string, userId: string): Promise<{ homeBranchId: string | null; branchOnly: boolean }> {
+  if (!supabase) return { homeBranchId: null, branchOnly: false };
   const { data, error } = await (supabase.from("service_memberships") as any)
-    .select("home_branch_id")
+    .select("home_branch_id, role, capabilities")
     .eq("service_id", serviceId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (error || !data) return null;
-  return typeof data.home_branch_id === "string" ? data.home_branch_id : null;
+  if (error || !data) return { homeBranchId: null, branchOnly: false };
+  const role = typeof data.role === "string" ? data.role : "";
+  const branchOnly = role !== "owner" && role !== "admin" && (data.capabilities as Record<string, unknown> | null)?.branch_only === true;
+  return { homeBranchId: typeof data.home_branch_id === "string" ? data.home_branch_id : null, branchOnly };
 }
 
 export function subscribeBranches(serviceId: string, onChange: () => void): () => void {

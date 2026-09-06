@@ -31,8 +31,13 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    pobočky na dokumentech a v portálu, filtr v Zakázkách / Kalendáři /
    Skladu / Statistikách / Fakturách, domovská pobočka člena, srovnání
    poboček ve Statistikách, konsolidované statistiky přes všechny servisy
-   majitele jako modul `consolidated`; chybí: omezení přístupu jen na pobočku,
-   čas na opravě, vytížení techniků v Kalendáři, KPI techniků).
+   majitele jako modul `consolidated`). 6. 9.: **omezení člena na vlastní
+   pobočku** – v Týmu oprávnění „Jen vlastní pobočka“ (`capabilities.branch_only`),
+   hlídá databáze restriktivními politikami na zakázky, reklamace a faktury
+   (funkce `pobocka_povolena`, migrace 20260908140000; ověřeno probe v TEST2:
+   člen s domovskou pobočkou Brno vidí 3 z 50 zakázek), aplikace mu ukáže jen
+   jeho pobočku bez přepínače. Chybí: čas na opravě, vytížení techniků
+   v Kalendáři, KPI techniků.
 6. `[~]` **Online rezervace** (6. 9., migrace 20260908110000, edge funkce
    `public-booking`): formulář k vložení na web servisu (`<div id="jobi-rezervace">`
    + skript `…/public-booking/embed.js?service=slug`), nezávazná rezervace
@@ -199,8 +204,12 @@ První tři měsíce: body 1, 2, 4.
 - `[~]` appjobi.com – ceník se třemi tarify, balíčky SMS, zkušební období
   a aktuální funkce hotové (5. 9.). Skutečné snímky aplikace z ukázkového
   servisu v hero i v sekci Ukázky (`scripts/snimky-pro-web.mjs`), sekce
-  Jak to chodí u pultu, revize všech textů. Zbývá srovnání s konkurencí
-  a video.
+  Jak to chodí u pultu, revize všech textů. Srovnávací tabulka s názvy
+  konkurentů **ne** (6. 9.: reklama konkurenci, riziko zastaralých údajů); místo
+  toho: argumenty v ceníku beze jmen (neomezení uživatelé v ceně, žádné
+  příplatky za moduly, cena za servis, ne za člověka) a sekce „Přecházíte
+  z jiného systému?“ (import CSV, pomoc s přechodem). Zbývá i video a nové
+  snímky (rezervace, kontrola, zápůjčka).
 - `[x]` Nápověda: 10 kapitol na `appjobi.com/napoveda` (první kroky, příjem,
   stavy a automatizace, tisk a JobiDocs, nabídka a portál, SMS, faktury,
   sklad, tým a pobočky, import a API). V aplikaci Nastavení → Aplikace →

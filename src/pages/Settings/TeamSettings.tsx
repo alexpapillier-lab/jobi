@@ -36,11 +36,17 @@ const CAPABILITY_KEYS = [
   "can_edit_inventory",
   "can_adjust_inventory_quantity",
   "can_edit_service_settings",
+  "branch_only",
 ] as const;
 
 type CapabilityInfo = { label: string; description: string; group?: string };
 
 const CAPABILITY_INFO: Record<string, CapabilityInfo> = {
+  branch_only: {
+    label: "Jen vlastní pobočka",
+    description: "Vidí a mění jen zakázky, reklamace a faktury své domovské pobočky. Přepínač poboček se mu neukáže. Správce a majitel vidí vždy vše.",
+    group: "Pobočky",
+  },
   can_manage_tickets_basic: {
     label: "Úpravy zakázek",
     description: "Může měnit text, ceny a další údaje u zakázek (kromě stavu a mazání).",
