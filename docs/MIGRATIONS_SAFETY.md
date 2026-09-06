@@ -37,6 +37,16 @@ ALTER TABLE public.tickets ADD COLUMN IF NOT EXISTS flag boolean DEFAULT false;
 ### 5. RLS a policy
 
 - Používej `DROP POLICY IF EXISTS` před `CREATE POLICY`, aby opakované spuštění migrace nepadalo (viz např. `20260208110000_create_profiles.sql`).
+- **Každá nová tabulka s odkazem na zakázku** (`ticket_id`) dostane kromě členství
+  v servisu i restriktivní politiku „jen k viditelným zakázkám“:
+  `exists (select 1 from public.tickets t where t.id = <tabulka>.ticket_id)`.
+  Členství v servisu nestačí – od 6. 9. existuje omezení člena na pobočku
+  (`capabilities.branch_only`, funkce `pobocka_povolena`) a přes vedlejší tabulku
+  (historie, komentáře, úseky práce) by šlo přečíst obsah cizí pobočky. Stejně
+  tak každá nová funkce `security definer`, která bere `ticket_id`, musí zavolat
+  `pobocka_povolena(service_id, branch_id)`.
+- Po každé migraci s politikou spusť `scripts/rls-probe.sql` (3. kolo = člen omezený
+  na pobočku) a přidej sondu pro novou tabulku.
 
 ### 6. Před nasazením
 

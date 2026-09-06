@@ -12,6 +12,9 @@
 --   721ef873-75c3-4ec1-bf71-13281051ce99  člen TEST2 bez jediného práva
 --   22222222-3333-4444-8555-666666666666  správce TEST2 (spravce.test@jobi.test)
 --   3e2e0000-1111-4222-8333-444455556666  majitel E2E servisu
+--   33333333-4444-4555-8666-777777777777  člen TEST2 omezený na pobočku Brno
+--                                          (pobocka.test@jobi.test, „Jen vlastní
+--                                          pobočka“; hlavní pobočka je pro něj cizí)
 --   NULL                                  anon
 --
 -- Čtení výsledků: PROSLO:n = dotaz prošel a dotkl se n řádků (u SELECT 0 =
@@ -184,6 +187,22 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (199, null, 'anon: ucet podle e-mailu',       'odmitnuto', 'select get_auth_user_id_by_email(''e2e@jobi.test'')'),
   (200, null, 'anon: clenstvi podle e-mailu',   'odmitnuto', 'select invited_email_has_any_membership(''e2e@jobi.test'')'),
   (201, null, 'anon: cislo faktury',            'odmitnuto', 'select next_invoice_number(''882beee7-4564-4d10-8ac6-16dc19240b57'', ''HACK'', 2026)'),
+  -- ══ 3. kolo (6. 9.): člen omezený na pobočku Brno (33333333-…) ═════════════
+  -- Uvnitř vlastního servisu smí jen svou pobočku. Každá tabulka s odkazem na
+  -- zakázku musí mít politiku „jen k viditelným zakázkám“, ne jen členství.
+  (300, '33333333-4444-4555-8666-777777777777', 'pobocka: vlastni zakazky',            'neco',      'select * from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''01fa9595-3acd-442e-acda-0f84d4146609'' and deleted_at is null'),
+  (301, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi zakazky',               'nic',       'select * from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (302, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi historie',              'nic',       'select h.* from ticket_history h join tickets t on t.id = h.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (303, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi komentare',             'nic',       'select c.* from ticket_comments c join tickets t on t.id = c.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (304, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi useky prace',           'nic',       'select w.* from ticket_work_sessions w join tickets t on t.id = w.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (305, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi faktury',               'nic',       'select * from invoices where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (306, '33333333-4444-4555-8666-777777777777', 'pobocka: cizi reklamace',             'nic',       'select * from warranty_claims where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (307, '33333333-4444-4555-8666-777777777777', 'pobocka: zmena cizi zakazky',         'nic',       'update tickets set customer_name = ''HACK'' where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' and deleted_at is null'),
+  (308, '33333333-4444-4555-8666-777777777777', 'pobocka: presun zakazky mimo pobocku','odmitnuto',       'update tickets set branch_id = null where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''01fa9595-3acd-442e-acda-0f84d4146609'' and deleted_at is null'),
+  (309, '33333333-4444-4555-8666-777777777777', 'pobocka: zakazka bez pobocky',        'odmitnuto', 'insert into tickets (service_id, title, status, customer_name, branch_id) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''HACK'', ''received'', ''HACK'', null)'),
+  (310, '33333333-4444-4555-8666-777777777777', 'pobocka: stav cizi zakazky (RPC)',    'odmitnuto', 'select change_ticket_status((select id from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' and deleted_at is null limit 1), ''received'')'),
+  (311, '33333333-4444-4555-8666-777777777777', 'pobocka: portal cizi zakazky (RPC)',  'odmitnuto', 'select ensure_portal_token((select id from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'' and branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' and deleted_at is null limit 1))'),
+  (312, '33333333-4444-4555-8666-777777777777', 'pobocka: statistiky jen vlastni',     'kontrola',  'select (statistiky_prehled(array[''bbc926bd-25ba-4da1-b528-92b6f1dee24d'']::uuid[], null, null, ''ea9faf76-26eb-4be9-922c-3705477d423c''::uuid) -> ''pocetVObdobi'')::int as zakazek'),
   (202, null, 'anon: home branch',              'odmitnuto', 'select set_member_home_branch(''882beee7-4564-4d10-8ac6-16dc19240b57'', ''3e2e0000-2222-4222-8333-444455556666'', ''a4c7e885-9570-45c2-bcfa-0b5aff665a77'')')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
