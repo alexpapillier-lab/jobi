@@ -99,7 +99,7 @@ test("změna skladu při výpadku sítě se doplní sama, až se spojení vrát�
 
   /* Shodí se jen zápisy do skladu, ne celá síť: aplikace zůstane použitelná
      a test tak trefí přesně ten okamžik, kdy uložení neprojde. */
-  await page.route("**/rest/v1/inventory_*", (route) =>
+  await page.route(/\/rest\/v1\/inventory_/, (route) =>
     route.request().method() === "GET" ? route.continue() : route.abort("failed"),
   );
 
@@ -110,7 +110,7 @@ test("změna skladu při výpadku sítě se doplní sama, až se spojení vrát�
   await expect(ukazatel).toBeVisible({ timeout: 60_000 });
   await expect(ukazatel).toContainText("čeká na uložení");
 
-  await page.unroute("**/rest/v1/inventory_*");
+  await page.unroute(/\/rest\/v1\/inventory_/);
   // Sklad si opakování řídí sám; nic se neklikalo.
   await expect(ukazatel).toHaveCount(0, { timeout: 90_000 });
 

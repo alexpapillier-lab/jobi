@@ -4,6 +4,7 @@ import { Button, Card, PageHeader } from "../components/ui";
 import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { showToast } from "../components/Toast";
+import { nahlasCekani } from "../lib/frontaZapisu";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
@@ -73,9 +74,67 @@ function reorderWithin<T extends { id: string }>(list: T[], siblingIds: Set<stri
   return list.map((x) => (siblingIds.has(x.id) ? byId.get(order[i++])! : x));
 }
 
+/**
+ * Rozdělaný ceník, který ještě není v databázi, a snímek toho, co v databázi
+ * je. Stejné pojistky jako u skladu (viz Inventory.tsx): mezi změnou
+ * a zápisem je odklad, takže zavření aplikace v tu chvíli změnu zahodilo,
+ * neúspěšný zápis skončil jen toastem a přenačtení po změně od kolegy
+ * přepsalo rozepsanou úpravu.
+ */
+const KLIC_ROZDELANO_ZARIZENI = "jobi_zarizeni_neulozeno_v1";
+const ROZDELANO_MAX_STARI_MS = 24 * 60 * 60 * 1000;
+const OPAKOVAT_PO_MS = 8000;
+
+let snimekZarizeni: { sid: string; data: DevicesData } | null = null;
+let opakovaniZarizeni: ReturnType<typeof setTimeout> | null = null;
+let ulozZarizeniZnovu: (() => void) | null = null;
+
+function naplanujOpakovaniZarizeni(zaMs: number): void {
+  if (opakovaniZarizeni) clearTimeout(opakovaniZarizeni);
+  opakovaniZarizeni = setTimeout(() => {
+    opakovaniZarizeni = null;
+    ulozZarizeniZnovu?.();
+  }, zaMs);
+}
+
+function ulozRozdelanaZarizeni(sid: string, data: DevicesData): void {
+  try {
+    localStorage.setItem(KLIC_ROZDELANO_ZARIZENI, JSON.stringify({ sid, ulozeno: Date.now(), data }));
+  } catch {
+    /* plný localStorage – zbytek pojistek platí dál */
+  }
+}
+
+function zapomenRozdelanaZarizeni(): void {
+  try {
+    localStorage.removeItem(KLIC_ROZDELANO_ZARIZENI);
+  } catch {
+    /* nevadí */
+  }
+}
+
+function precitRozdelanaZarizeni(sid: string): DevicesData | null {
+  try {
+    const raw = localStorage.getItem(KLIC_ROZDELANO_ZARIZENI);
+    if (!raw) return null;
+    const z = JSON.parse(raw) as { sid?: string; ulozeno?: number; data?: DevicesData };
+    if (z?.sid !== sid || typeof z.ulozeno !== "number") return null;
+    if (Date.now() - z.ulozeno > ROZDELANO_MAX_STARI_MS) return null;
+    const d = z.data;
+    if (!d || !Array.isArray(d.brands) || !Array.isArray(d.repairs)) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
 export default function Devices({ activeServiceId }: { activeServiceId: string | null }) {
   const isNarrow = useIsNarrow();
   const [data, setData] = useState<DevicesData>(EMPTY_DEVICES);
+  /* Aktuální data mimo React – opakované ukládání běží i po odchodu ze
+     stránky, kde by zachycená hodnota z minulého renderu byla zastaralá. */
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; });
   /** Přepínače viditelnosti mají smysl, jen když servis ceník ven posílá. */
   const { has: maModul } = useEntitlements(activeServiceId);
   const ukazatViditelnost = maModul("api_catalog");
@@ -196,8 +255,12 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
         devicesData.models.length > 0 ||
         devicesData.repairs.length > 0;
       loadedEmptyRef.current = !hadData;
-      justLoadedRef.current = true;
-      setData(devicesData);
+      snimekZarizeni = { sid: activeServiceId, data: devicesData };
+      /* Rozdělané změny z minulého běhu (zavřená aplikace, přenačtení
+         stránky) se dopíšou do databáze proti čerstvému snímku. */
+      const rozdelano = precitRozdelanaZarizeni(activeServiceId);
+      justLoadedRef.current = !rozdelano;
+      setData(rozdelano ?? devicesData);
       initialLoadDoneRef.current = true;
       const invDb = invRes.data;
 
@@ -257,17 +320,61 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
     if (!activeServiceId || !initialLoadDoneRef.current) return;
     if (!hasAnyData && loadedEmptyRef.current) return; // load vrátil prázdná – neukládat zpět
     const t = setTimeout(() => {
-      if (justLoadedRef.current) {
+      /* Neukládat, co právě přišlo z databáze. Dřív se to řešilo příznakem
+         „právě načteno", který přeskočil první uložení – jenže když uživatel
+         stihl něco změnit do půl vteřiny od načtení, přeskočila se právě
+         jeho změna a tiše se zahodila. Porovnání se snímkem to určí přesně. */
+      const snimek = snimekZarizeni?.sid === activeServiceId ? snimekZarizeni.data : null;
+      if (snimek && JSON.stringify(data) === JSON.stringify(snimek)) {
         justLoadedRef.current = false;
-        return; // data právě z loadu – neukládat (snižuje tlak na connection pool)
+        return;
       }
+      justLoadedRef.current = false;
       saveDevicesToDb(activeServiceId, data).then((r) => {
-        if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
-        else oznamZmenuKatalogu(activeServiceId);
+        if (r.error) {
+          showToast("Chyba uložení ceníku: " + r.error + " Zkouším dál, změny se neztratí.", "error");
+          nahlasCekani("zarizeni", "Ceník a zařízení · neuložené změny", r.error);
+          naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+          return;
+        }
+        snimekZarizeni = { sid: activeServiceId, data };
+        zapomenRozdelanaZarizeni();
+        nahlasCekani("zarizeni", null);
+        if (opakovaniZarizeni) {
+          clearTimeout(opakovaniZarizeni);
+          opakovaniZarizeni = null;
+        }
+        oznamZmenuKatalogu(activeServiceId);
       });
     }, 500);
     return () => clearTimeout(t);
   }, [activeServiceId, data, hasAnyData]);
+
+  /* Pojistka pro případ, že mezi změnou a zápisem někdo zavře aplikaci.
+     Píše se hned, zápis do databáze má odklad. */
+  useEffect(() => {
+    if (!activeServiceId || !initialLoadDoneRef.current || !hasAnyData) return;
+    ulozRozdelanaZarizeni(activeServiceId, data);
+  }, [activeServiceId, data, hasAnyData]);
+
+  /* Opakování musí volat aktuální uložení, i když uživatel mezitím odešel
+     na jinou stránku – jinak by odchod změnu zahodil. */
+  useEffect(() => {
+    if (!activeServiceId) return;
+    ulozZarizeniZnovu = () => {
+      void saveDevicesToDb(activeServiceId, dataRef.current).then((r) => {
+        if (r.error) {
+          nahlasCekani("zarizeni", "Ceník a zařízení · neuložené změny", r.error);
+          naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+          return;
+        }
+        snimekZarizeni = { sid: activeServiceId, data: dataRef.current };
+        zapomenRozdelanaZarizeni();
+        nahlasCekani("zarizeni", null);
+        oznamZmenuKatalogu(activeServiceId);
+      });
+    };
+  }, [activeServiceId]);
 
   // Realtime: při změně zařízení v jiné záložce/zařízení přenačíst (debounce 2s – sníží záplavu při nestabilním připojení)
   useEffect(() => {
@@ -279,11 +386,19 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       reloadTimer = setTimeout(() => {
         reloadTimer = null;
         loadDevicesFromDb(activeServiceId).then((r) => {
-          if (!r.error) {
-            justLoadedRef.current = true;
-            setData(r.data);
-            setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models }));
+          if (r.error) return;
+          /* Změna od kolegy nesmí přepsat rozepsanou úpravu. Posune se jen
+             snímek databáze; odložené uložení pak zapíše vlastní rozdíl. */
+          const drivejsi = snimekZarizeni?.sid === activeServiceId ? snimekZarizeni.data : null;
+          const maNeulozene = !!drivejsi && JSON.stringify(dataRef.current) !== JSON.stringify(drivejsi);
+          snimekZarizeni = { sid: activeServiceId, data: r.data };
+          if (maNeulozene) {
+            naplanujOpakovaniZarizeni(300);
+            return;
           }
+          justLoadedRef.current = true;
+          setData(r.data);
+          setInventoryData((prev) => ({ ...prev, brands: r.data.brands, categories: r.data.categories, models: r.data.models }));
         });
       }, 2000);
     };
@@ -968,7 +1083,10 @@ DETALY: Výměna opotřebované baterie
     loadedEmptyRef.current = false;
     // Okamžitě uložit do DB – nečekat na debounce (uživatel může rychle reloadnout)
     saveDevicesToDb(activeServiceId, newData).then((r) => {
-      if (r.error) showToast("Chyba uložení zařízení: " + r.error, "error");
+      if (!r.error) return;
+      showToast("Chyba uložení ceníku: " + r.error + " Zkouším dál.", "error");
+      nahlasCekani("zarizeni", "Ceník a zařízení · neuložené změny", r.error);
+      naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
     });
 
     showToast("Import dokončen", "success");
@@ -990,7 +1108,11 @@ DETALY: Výměna opotřebované baterie
     };
     setData(nova);
     saveDevicesToDb(activeServiceId, nova).then((r) => {
-      if (r.error) showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error, "error");
+      if (r.error) {
+        showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error + " Zkouším dál.", "error");
+        nahlasCekani("zarizeni", "Ceník a zařízení · neuložené změny", r.error);
+        naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+      }
       else showToast(
         `${zverejnit ? "Posílá se do API" : "Vyřazeno z API"}: ${dotcene.size} ${dotcene.size === 1 ? "oprava" : dotcene.size < 5 ? "opravy" : "oprav"}`,
         "success",
@@ -1017,7 +1139,10 @@ DETALY: Výměna opotřebované baterie
     } as DevicesData;
     setData(nova);
     saveDevicesToDb(activeServiceId, nova).then((r) => {
-      if (r.error) showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error, "error");
+      if (!r.error) return;
+      showToast("Změnu viditelnosti se nepodařilo uložit: " + r.error + " Zkouším dál.", "error");
+      nahlasCekani("zarizeni", "Ceník a zařízení · neuložené změny", r.error);
+      naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
     });
   };
 
