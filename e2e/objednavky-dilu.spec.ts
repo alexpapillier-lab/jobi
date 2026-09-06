@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { prihlasSe } from "./pomocnici";
+import { prihlasSe, pockejNaZapisSnimku } from "./pomocnici";
 
 /**
  * Objednávky dílů u dodavatele: z produktu se udělá návrh, ten se odešle
@@ -98,8 +98,6 @@ test("přijatá objednávka zůstane v historii i po přenačtení", async ({ pa
   await page.getByLabel("Hledat produkt").first().fill(PRODUKT);
   await expect(radek(page, PRODUKT)).toBeVisible({ timeout: 20_000 });
   await radek(page, PRODUKT).getByRole("button", { name: "Odebrat kus" }).click();
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("jobi_sklad_neulozeno_v1")), { timeout: 60_000 })
-    .toBeNull();
+  await pockejNaZapisSnimku(page, "jobi_sklad_neulozeno_v1");
   expect(await pocetKusu(page)).toBe(kusuPred);
 });

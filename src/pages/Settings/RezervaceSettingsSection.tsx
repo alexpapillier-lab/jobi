@@ -3,7 +3,7 @@ import { Card, Button } from "../../components/ui";
 import { showToast } from "../../components/Toast";
 import { supabase, supabaseUrl } from "../../lib/supabaseClient";
 import { useEntitlements } from "../../hooks/useEntitlements";
-import { loadServiceConfig, mergeServiceConfig } from "../../lib/serviceSettingsSync";
+import { nactiServiceConfig, mergeServiceConfig } from "../../lib/serviceSettingsSync";
 import { VYCHOZI_NASTAVENI_REZERVACI, nastaveniRezervaciZConfigu, type NastaveniRezervaci } from "../../lib/rezervace";
 
 /**
@@ -24,6 +24,7 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
   const [slug, setSlug] = useState("");
   const [slugUlozeny, setSlugUlozeny] = useState("");
   const [nacitam, setNacitam] = useState(true);
+  const [chybaNacteni, setChybaNacteni] = useState(false);
 
   useEffect(() => {
     if (!activeServiceId || !supabase) {
@@ -32,13 +33,21 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
     }
     let zruseno = false;
     void (async () => {
-      const [config, sluzba] = await Promise.all([
-        loadServiceConfig(activeServiceId),
+      const [nactene, sluzba] = await Promise.all([
+        nactiServiceConfig(activeServiceId),
         (supabase!.from("services") as never as { select: (c: string) => { eq: (a: string, b: string) => { maybeSingle: () => Promise<{ data: { public_slug?: string | null } | null }> } } })
           .select("public_slug").eq("id", activeServiceId).maybeSingle(),
       ]);
       if (zruseno) return;
-      setNastaveni(nastaveniRezervaciZConfigu(config?.rezervace));
+      if (nactene.stav === "chyba") {
+        // Bez načteného nastavení by se uložila výchozí otevírací doba
+        // a smazal ručně psaný úvodní text.
+        setChybaNacteni(true);
+        setNacitam(false);
+        return;
+      }
+      setChybaNacteni(false);
+      setNastaveni(nastaveniRezervaciZConfigu(nactene.stav === "ok" ? (nactene.config as any)?.rezervace : undefined));
       const s = sluzba?.data?.public_slug ?? "";
       setSlug(s);
       setSlugUlozeny(s);
@@ -51,7 +60,9 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
     setNastaveni(next);
     if (!activeServiceId) return;
     try {
-      await mergeServiceConfig(activeServiceId, { rezervace: next });
+      // Chyba se vrací, nevyhazuje – `catch` sám by ji minul.
+      const r = await mergeServiceConfig(activeServiceId, { rezervace: next });
+      if (r.error) throw new Error(r.error);
     } catch (e) {
       console.error("[Rezervace] uložení selhalo", e);
       showToast("Nastavení se nepodařilo uložit", "error");
@@ -86,6 +97,13 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
   };
 
   if (nacitam) return <div style={{ color: "var(--muted)" }}>Načítám…</div>;
+  if (chybaNacteni) {
+    return (
+      <div style={{ color: "var(--danger, #dc2626)" }}>
+        Nastavení rezervací se nepodařilo načíst. Zkuste to za chvíli – měnit ho teď nejde, uložila by se výchozí otevírací doba.
+      </div>
+    );
+  }
 
   const input: React.CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit" };
   const popis: React.CSSProperties = { fontSize: 13, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 10px" };
@@ -137,10 +155,12 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              Od <input type="time" value={nastaveni.od} onChange={(e) => void uloz({ ...nastaveni, od: e.target.value || nastaveni.od })} style={input} />
+              {/* Ukládá se až po opuštění pole: při psaní času odchází několik
+                  zápisů za sebou a vyhrát může starší mezistav (např. „0:30“). */}
+              Od <input type="time" value={nastaveni.od} onChange={(e) => setNastaveni({ ...nastaveni, od: e.target.value || nastaveni.od })} onBlur={() => void uloz(nastaveni)} style={input} />
             </label>
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              Do <input type="time" value={nastaveni.do} onChange={(e) => void uloz({ ...nastaveni, do: e.target.value || nastaveni.do })} style={input} />
+              Do <input type="time" value={nastaveni.do} onChange={(e) => setNastaveni({ ...nastaveni, do: e.target.value || nastaveni.do })} onBlur={() => void uloz(nastaveni)} style={input} />
             </label>
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
               Krok

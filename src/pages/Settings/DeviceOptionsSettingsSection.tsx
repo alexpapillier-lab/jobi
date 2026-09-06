@@ -1,7 +1,8 @@
 import { Card } from "../../lib/settingsUi";
 import { getDeviceOptions, setDeviceOptions, type DeviceOptions } from "../../lib/deviceOptions";
 import { useCallback, useEffect, useState } from "react";
-import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { showToast } from "../../components/Toast";
+import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 import { useConfigNacteno } from "./useConfigNacteno";
 
 /**
@@ -20,6 +21,7 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
   const [newAccessory, setNewAccessory] = useState("");
 
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
+  const [chybaNacteni, setChybaNacteni] = useState(false);
 
   const applyRemote = useCallback((remote: DeviceOptions) => {
     setDeviceOptions(remote);
@@ -29,9 +31,16 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
-    loadServiceConfig(activeServiceId).then((config) => {
+    nactiServiceConfig(activeServiceId).then((r) => {
       if (zruseno) return;
-      if (config?.deviceOptions) applyRemote(config.deviceOptions as DeviceOptions);
+      // Chyba čtení není platný stav: bez jistoty, co je v databázi, by se
+      // uložil výchozí seznam přes ten skutečný.
+      if (r.stav === "chyba") {
+        setChybaNacteni(true);
+        return;
+      }
+      setChybaNacteni(false);
+      if (r.stav === "ok" && (r.config as any)?.deviceOptions) applyRemote((r.config as any).deviceOptions as DeviceOptions);
       oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
@@ -45,7 +54,12 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
     if (!nacteno) return;
     setDeviceOptions(next);
     setOptions(next);
-    if (activeServiceId) void mergeServiceConfig(activeServiceId, { deviceOptions: next });
+    if (activeServiceId) {
+      // Chyba se vrací, nevyhazuje – bez téhle kontroly zmizí potichu.
+      void mergeServiceConfig(activeServiceId, { deviceOptions: next }).then((r) => {
+        if (r.error) showToast("Nastavení se nepodařilo uložit: " + r.error, "error");
+      });
+    }
   }, [activeServiceId, nacteno]);
 
   const addCondition = () => {
@@ -71,6 +85,11 @@ export function DeviceOptionsSettingsSection({ activeServiceId }: { activeServic
   const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "6px 0", flexWrap: "wrap" };
   return (
     <Card>
+      {chybaNacteni && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: "1px solid var(--danger, #dc2626)", color: "var(--danger, #dc2626)", fontSize: 13 }}>
+          Nabídky se nepodařilo načíst. Dokud se nenačtou, nejde je měnit – jinak by se uložily výchozí.
+        </div>
+      )}
       <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Stavy zařízení a příslušenství</div>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
         Přednastavené možnosti se zobrazí při zakládání zakázky v polích „Popis stavu“ a „Příslušenství“. Uživatel může vybrat z listu nebo napsat vlastní text. Změny se ukládají automaticky (tlačítko Uložit není potřeba).

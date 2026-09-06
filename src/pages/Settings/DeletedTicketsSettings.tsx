@@ -37,7 +37,7 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
       try {
         const { data, error: fetchError } = await supabase
           .from("tickets")
-          .select("id, title, status, customer_name, customer_phone, created_at, deleted_at")
+          .select("id, code, title, status, customer_name, customer_phone, created_at, deleted_at")
           .eq("service_id", activeServiceId)
           .not("deleted_at", "is", null)
           .order("deleted_at", { ascending: false });
@@ -155,7 +155,12 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
                 }}
               >
                 <div>
+                  {/* Číslo zakázky je jediné, podle čeho se v koši dá poznat,
+                      která to je – dvě opravy stejného telefonu vypadají jinak
+                      úplně stejně. */}
                   <div style={{ fontWeight: 800, fontSize: 14, color: "var(--text)" }}>
+                    {ticket.code ? <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{ticket.code}</span> : null}
+                    {ticket.code ? " · " : ""}
                     {ticket.title || "Neznámá zakázka"}
                   </div>
                   {ticket.customer_name && (

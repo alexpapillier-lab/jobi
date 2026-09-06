@@ -10,7 +10,9 @@ import { OrdersTab } from "./Inventory/OrdersTab";
 import { SuppliersTab, SupplierForm } from "./Inventory/SuppliersTab";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
-import { nahlasCekani } from "../lib/frontaZapisu";
+import { nahlasCekani, jeTrvalaChyba } from "../lib/frontaZapisu";
+import { logError } from "../lib/errorLog";
+import { sloucData } from "../lib/sloucitSnimky";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useEntitlements } from "../hooks/useEntitlements";
@@ -70,32 +72,51 @@ const OPAKOVAT_PO_MS = 8000;
 const KLIC_ROZDELANO = "jobi_sklad_neulozeno_v1";
 const ROZDELANO_MAX_STARI_MS = 24 * 60 * 60 * 1000;
 
-function ulozRozdelano(sid: string, data: InventoryData): void {
+/** Klíč je na servis: neuložená změna jednoho servisu nesmí zmizet tím, že se
+ *  přepne na druhý a tam se něco uloží. */
+function klicRozdelano(sid: string): string {
+  return `${KLIC_ROZDELANO}:${sid}`;
+}
+
+/**
+ * Vedle rozdělaných dat se ukládá i snímek, ze kterého vznikla. Bez něj by
+ * se po restartu nedalo poznat, co uživatel změnil a co mezitím přidal
+ * kolega – a zápis by kolegovy přírůstky smazal, protože sklad se ukládá
+ * jako celý snímek.
+ */
+function ulozRozdelano(sid: string, data: InventoryData, zaklad: InventoryData): void {
   try {
-    localStorage.setItem(KLIC_ROZDELANO, JSON.stringify({ sid, ulozeno: Date.now(), data }));
-  } catch {
-    /* plný localStorage – zbytek pojistek (odklad, opakování) platí dál */
+    localStorage.setItem(klicRozdelano(sid), JSON.stringify({ sid, ulozeno: Date.now(), data, zaklad }));
+  } catch (error) {
+    // Plný localStorage vypne i frontu neuložených změn, která bydlí vedle.
+    // Tiché selhání by znamenalo, že obě pojistky přestanou fungovat a nikdo
+    // se to nedozví.
+    void logError({ code: "inventory.rozdelano_neulozeno", error, source: "Inventory.ulozRozdelano", serviceId: sid });
   }
 }
 
-function zapomenRozdelano(): void {
+function zapomenRozdelano(sid: string): void {
   try {
-    localStorage.removeItem(KLIC_ROZDELANO);
+    localStorage.removeItem(klicRozdelano(sid));
   } catch {
     /* nevadí */
   }
 }
 
-function precitRozdelano(sid: string): InventoryData | null {
+function precitRozdelano(sid: string): { data: InventoryData; zaklad: InventoryData } | null {
   try {
-    const raw = localStorage.getItem(KLIC_ROZDELANO);
+    const raw = localStorage.getItem(klicRozdelano(sid));
     if (!raw) return null;
-    const z = JSON.parse(raw) as { sid?: string; ulozeno?: number; data?: InventoryData };
+    const z = JSON.parse(raw) as { sid?: string; ulozeno?: number; data?: InventoryData; zaklad?: InventoryData };
     if (z?.sid !== sid || typeof z.ulozeno !== "number") return null;
     if (Date.now() - z.ulozeno > ROZDELANO_MAX_STARI_MS) return null;
-    const d = z.data;
-    if (!d || !Array.isArray(d.products) || !Array.isArray(d.warehouses)) return null;
-    return d;
+    const uplny = (d: unknown): d is InventoryData =>
+      !!d && Array.isArray((d as InventoryData).products) && Array.isArray((d as InventoryData).warehouses)
+      && Array.isArray((d as InventoryData).productCategories);
+    // Useknutý záznam (plný disk, starší formát) by po dosazení do stavu
+    // shodil ukládání na chybějícím poli, a to potichu v async funkci.
+    if (!uplny(z.data) || !uplny(z.zaklad)) return null;
+    return { data: z.data, zaklad: z.zaklad };
   } catch {
     return null;
   }
@@ -602,7 +623,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       // Dopsání po restartu nemá čekat celý odklad – uživatel čeká, až bude
       // hotovo, a může aplikaci zase zavřít.
       if (rozdelano) rychleUlozeni.current = true;
-      setData(rozdelano ?? invData);
+      /* Sloučení, ne dosazení: rozdělaný stav může být i den starý a mezitím
+         mohl kolega přidat půl skladu. Prosté dosazení by ho při dalším
+         uložení smazalo, protože sklad se ukládá jako celý snímek. */
+      setData(rozdelano ? sloucData(rozdelano.zaklad, rozdelano.data, invData) : invData);
     })();
     return () => {
       cancelled = true;
@@ -660,7 +684,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       cekaniNaSnimek += 1;
       if (cekaniNaSnimek > 60) {
         cekaniNaSnimek = 0;
-        nahlasCekani("sklad", null);
+        nahlasCekani(`sklad:${sid}`, null);
         reportError({
           code: "inventory.snimek_chybi",
           error: new Error("Sklad se nenačetl, změny nejde bezpečně uložit."),
@@ -669,7 +693,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         });
         return;
       }
-      nahlasCekani("sklad", "Sklad · čeká na načtení");
+      nahlasCekani(`sklad:${sid}`, "Sklad · čeká na načtení");
       naplanujOpakovaniSkladu(1000);
       return;
     }
@@ -697,8 +721,8 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       posledniUlozeno = { sid, data: k };
       lastSaveAtRef.current = Date.now();
       rychleUlozeni.current = false;
-      zapomenRozdelano();
-      nahlasCekani("sklad", null);
+      zapomenRozdelano(sid);
+      nahlasCekani(`sklad:${sid}`, null);
       zrusOpakovaniSkladu();
       if (cekaHlaska.current) {
         showToast(cekaHlaska.current, "success");
@@ -719,8 +743,10 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       });
     }
     // Vidět v ukazateli neuložených změn a zkusit znovu, dokud to neprojde.
-    nahlasCekani("sklad", "Sklad · neuložené změny", r.error);
-    naplanujOpakovaniSkladu(OPAKOVAT_PO_MS);
+    nahlasCekani(`sklad:${sid}`, "Sklad · neuložené změny", r.error);
+    // Chybu, kterou opakování nespraví (chybí právo), nemá smysl zkoušet
+    // každých osm vteřin až do vypnutí notebooku – zůstane jen v ukazateli.
+    if (!jeTrvalaChyba(r.error)) naplanujOpakovaniSkladu(OPAKOVAT_PO_MS);
   }, []);
 
   /* Opakování běží i po odchodu ze Skladu (jinak by odchod na jinou stránku
@@ -736,8 +762,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     // u průběžných změn se drží delší prodleva.
     /* Pojistka pro případ, že mezi změnou a zápisem někdo zavře aplikaci.
        Píše se hned, zápis do databáze má odklad. */
-    if (data.products.length > 0 || data.productCategories.length > 0 || data.warehouses.length > 0) {
-      ulozRozdelano(activeServiceId, data);
+    const zaklad = snimekProServis(activeServiceId);
+    if (zaklad && (data.products.length > 0 || data.productCategories.length > 0 || data.warehouses.length > 0)) {
+      ulozRozdelano(activeServiceId, data, zaklad);
     }
     const t = setTimeout(() => { ulozSklad("Inventory.saveInventory"); }, cekaHlaska.current || rychleUlozeni.current ? 150 : 1200);
     return () => clearTimeout(t);
@@ -1101,7 +1128,12 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           const maNeulozene =
             !!drivejsiSnimek && JSON.stringify(dataRef.current) !== JSON.stringify(drivejsiSnimek);
           posledniUlozeno = { sid: activeServiceId, data: res.data };
-          if (maNeulozene) {
+          if (maNeulozene && drivejsiSnimek) {
+            /* Vlastní rozdělané změny se spojí s tím, co přišlo od kolegy.
+               Dřív se tady jen naplánovalo uložení místního stavu – a protože
+               se sklad ukládá jako celý snímek, smazalo to kolegovi všechno,
+               co mezitím přidal. */
+            setData(sloucData(drivejsiSnimek, dataRef.current, res.data));
             naplanujOpakovaniSkladu(300);
             return;
           }

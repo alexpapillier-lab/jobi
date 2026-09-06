@@ -10,7 +10,9 @@ import { useCallback, useEffect, useState } from "react";
  * smazalo všechna ostatní.
  *
  * `oznacNacteno()` se volá i tehdy, když server nic nevrátil – „servis
- * zatím nic nemá" je taky platný načtený stav.
+ * zatím nic nemá" je taky platný načtený stav. Chyba čtení ale platný stav
+ * NENÍ: tehdy se `oznacNacteno` volat nesmí, jinak by se prázdný výchozí
+ * seznam uložil přes to, co je v databázi.
  */
 export function useConfigNacteno(activeServiceId: string | null) {
   const [nacteno, setNacteno] = useState(false);

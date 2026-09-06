@@ -30,15 +30,38 @@ export type ServiceConfig = {
   [key: string]: unknown;
 };
 
-/** Aktuální config servisu. `null` při chybě/neexistenci – volající drží výchozí hodnoty. */
+/**
+ * Načtení configu se třemi stavy.
+ *
+ * „Nepodařilo se načíst“ a „servis zatím nic nemá“ se nesmí splést: sekce
+ * nastavení pak ukáže prázdný seznam, uživatel do něj přidá jednu položku
+ * a `mergeServiceConfig` nahradí celý klíč – zmizí všechno, co v databázi
+ * bylo. Volající proto musí chybu poznat a v tom stavu neukládat.
+ */
+export type NactenyServiceConfig =
+  | { stav: "ok"; config: ServiceConfig }
+  | { stav: "prazdno" }
+  | { stav: "chyba"; chyba: unknown };
+
+export async function nactiServiceConfig(serviceId: string): Promise<NactenyServiceConfig> {
+  if (!supabase) return { stav: "chyba", chyba: new Error("Supabase není k dispozici") };
+  try {
+    const { data, error } = await (supabase.from("service_settings") as any)
+      .select("config")
+      .eq("service_id", serviceId)
+      .maybeSingle();
+    if (error) return { stav: "chyba", chyba: error };
+    if (!data) return { stav: "prazdno" };
+    return { stav: "ok", config: (data.config as ServiceConfig) ?? {} };
+  } catch (chyba) {
+    return { stav: "chyba", chyba };
+  }
+}
+
+/** Aktuální config servisu. `null` při chybě/neexistenci – kdo potřebuje rozlišit, použije `nactiServiceConfig`. */
 export async function loadServiceConfig(serviceId: string): Promise<ServiceConfig | null> {
-  if (!supabase) return null;
-  const { data, error } = await (supabase.from("service_settings") as any)
-    .select("config")
-    .eq("service_id", serviceId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return (data.config as ServiceConfig) ?? {};
+  const r = await nactiServiceConfig(serviceId);
+  return r.stav === "ok" ? r.config : null;
 }
 
 /**

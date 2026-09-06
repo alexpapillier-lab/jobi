@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { prihlasSe } from "./pomocnici";
+import { prihlasSe, pockejNaZapisSnimku } from "./pomocnici";
 
 /**
  * Ceník oprav (stránka Zařízení). Ukládá se stejným způsobem jako sklad –
@@ -13,12 +13,7 @@ const oprava = `Oprava E2E ${Date.now().toString(36)}`;
 
 /** Počká, až rozdělaný ceník zmizí z localStorage – tedy až ho potvrdí databáze. */
 async function pockejNaZapis(page: Page) {
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("jobi_zarizeni_neulozeno_v1")), {
-      timeout: 60_000,
-      message: "Ceník zůstal rozdělaný – změna se nedostala do databáze.",
-    })
-    .toBeNull();
+  await pockejNaZapisSnimku(page, "jobi_zarizeni_neulozeno_v1");
 }
 
 async function naZarizeni(page: Page) {

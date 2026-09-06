@@ -1,7 +1,8 @@
 import { Card } from "../../lib/settingsUi";
 import { getHandoffOptions, setHandoffOptions, type HandoffOptions } from "../../lib/handoffOptions";
 import { useCallback, useEffect, useState } from "react";
-import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { showToast } from "../../components/Toast";
+import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 import { useConfigNacteno } from "./useConfigNacteno";
 
 /** Sdílené mezi všemi na servisu v reálném čase – viz komentář u DeviceOptionsSettingsSection. */
@@ -10,6 +11,7 @@ export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServi
   const [newReceive, setNewReceive] = useState("");
   const [newReturn, setNewReturn] = useState("");
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
+  const [chybaNacteni, setChybaNacteni] = useState(false);
 
   const applyRemote = useCallback((remote: HandoffOptions) => {
     setHandoffOptions(remote);
@@ -19,9 +21,16 @@ export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServi
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
-    loadServiceConfig(activeServiceId).then((config) => {
+    nactiServiceConfig(activeServiceId).then((r) => {
       if (zruseno) return;
-      if (config?.handoffOptions) applyRemote(config.handoffOptions as HandoffOptions);
+      // Chyba čtení není platný stav: bez jistoty, co je v databázi, by se
+      // uložil výchozí seznam přes ten skutečný.
+      if (r.stav === "chyba") {
+        setChybaNacteni(true);
+        return;
+      }
+      setChybaNacteni(false);
+      if (r.stav === "ok" && (r.config as any)?.handoffOptions) applyRemote((r.config as any).handoffOptions as HandoffOptions);
       oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
@@ -35,7 +44,12 @@ export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServi
     if (!nacteno) return;
     setHandoffOptions(next);
     setOptions(next);
-    if (activeServiceId) void mergeServiceConfig(activeServiceId, { handoffOptions: next });
+    if (activeServiceId) {
+      // Chyba se vrací, nevyhazuje – bez téhle kontroly zmizí potichu.
+      void mergeServiceConfig(activeServiceId, { handoffOptions: next }).then((r) => {
+        if (r.error) showToast("Nastavení se nepodařilo uložit: " + r.error, "error");
+      });
+    }
   }, [activeServiceId, nacteno]);
 
   const addReceive = () => {
@@ -62,6 +76,11 @@ export function HandoffOptionsSettingsSection({ activeServiceId }: { activeServi
   const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "6px 0", flexWrap: "wrap" };
   return (
     <Card>
+      {chybaNacteni && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: "1px solid var(--danger, #dc2626)", color: "var(--danger, #dc2626)", fontSize: 13 }}>
+          Způsoby předání se nepodařilo načíst. Dokud se nenačtou, nejde je měnit – jinak by se uložily výchozí.
+        </div>
+      )}
       <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Způsoby převzetí a předání</div>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
         Možnosti pro „Způsob převzetí“ a „Způsob předání“ při zakládání a úpravě zakázky. V zakázce lze vybírat pouze z tohoto seznamu (dropdown). Změny se ukládají automaticky.

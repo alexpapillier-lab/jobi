@@ -96,10 +96,32 @@ describe("fronta neuložených změn", () => {
     expect(prvni.odeslano).toBe(0);
     expect(neulozeneZmeny()[0].pokusy).toBe(1);
 
+    // Po neúspěchu se čeká, ať fronta nemlátí do sítě a baterie; ruční
+    // „Zkusit hned“ čekání přeskočí.
     dalsiChyba = null;
-    const druhy = await odesliFrontu();
+    expect((await odesliFrontu()).odeslano).toBe(0);
+    const druhy = await odesliFrontu(true);
     expect(druhy.odeslano).toBe(1);
     expect(zapsano[0].data).toEqual({ title: "Neztratit" });
+  });
+
+  it("odstup mezi pokusy roste, ať se nezkouší donekonečna každou chvíli", async () => {
+    ulozNaPozdeji(polozka("tickets:t1:detail", { title: "X" }));
+    dalsiChyba = new Error("Failed to fetch");
+    await odesliFrontu();
+    const dalsi = neulozeneZmeny()[0].dalsiPokusOd ?? 0;
+    expect(dalsi).toBeGreaterThan(Date.now());
+  });
+
+  it("zaseknutou položku fronta sama nezkouší, ruční pokus ano", async () => {
+    ulozNaPozdeji(polozka("tickets:t1:detail", { title: "Bez práva" }));
+    dalsiChyba = { code: "42501", message: "row-level security" };
+    await odesliFrontu();
+    expect(neulozeneZmeny()[0].zaseknuto).toBe(true);
+
+    dalsiChyba = null;
+    expect((await odesliFrontu()).odeslano).toBe(0);
+    expect((await odesliFrontu(true)).odeslano).toBe(1);
   });
 
   it("chyba oprávnění se neopakuje donekonečna, ale položka nezmizí", async () => {

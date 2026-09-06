@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Button } from "../../components/ui";
-import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 import { useConfigNacteno } from "./useConfigNacteno";
 import { normalizujNahradni, type NahradniZarizeni } from "../../lib/zapujcka";
 import { showToast } from "../../components/Toast";
@@ -14,13 +14,21 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
   const [seznam, setSeznam] = useState<NahradniZarizeni[]>([]);
   const [novy, setNovy] = useState<NahradniZarizeni>({ id: "", nazev: "" });
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
+  const [chybaNacteni, setChybaNacteni] = useState(false);
 
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
-    loadServiceConfig(activeServiceId).then((config) => {
+    nactiServiceConfig(activeServiceId).then((r) => {
       if (zruseno) return;
-      setSeznam(normalizujNahradni(config?.nahradniZarizeni));
+      if (r.stav === "chyba") {
+        // Bez jistoty, co je v databázi, se nesmí ukládat – uložil by se
+        // prázdný výchozí seznam přes ten skutečný.
+        setChybaNacteni(true);
+        return;
+      }
+      setChybaNacteni(false);
+      setSeznam(normalizujNahradni(r.stav === "ok" ? (r.config as any)?.nahradniZarizeni : undefined));
       oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => setSeznam(normalizujNahradni(config.nahradniZarizeni)));
@@ -33,7 +41,9 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
     setSeznam(next);
     if (!activeServiceId) return;
     try {
-      await mergeServiceConfig(activeServiceId, { nahradniZarizeni: next });
+      // mergeServiceConfig chybu nevyhazuje, vrací ji – `catch` sám by ji minul.
+      const r = await mergeServiceConfig(activeServiceId, { nahradniZarizeni: next });
+      if (r.error) throw new Error(r.error);
     } catch (e) {
       console.error("[NahradniZarizeni] uložení selhalo", e);
       showToast("Seznam se nepodařilo uložit", "error");
@@ -59,6 +69,11 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
           Co půjčujete zákazníkům na dobu opravy. V zakázce se zařízení vybere ze seznamu, formulář se vyplní a u půjčeného je vidět, ve které zakázce právě je.
         </div>
       </div>
+      {chybaNacteni && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: "1px solid var(--danger, #dc2626)", color: "var(--danger, #dc2626)", fontSize: 13 }}>
+          Seznam se nepodařilo načíst. Dokud se nenačte, nejde ho měnit – jinak by se uložil prázdný.
+        </div>
+      )}
       <div style={{ display: "grid", gap: 8 }}>
         {seznam.length > 0 && (
           <div style={{ ...mrizka, fontSize: 12, color: "var(--muted)", padding: "0 4px" }}>

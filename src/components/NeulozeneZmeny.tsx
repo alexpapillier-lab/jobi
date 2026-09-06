@@ -86,6 +86,7 @@ export function NeulozeneZmeny() {
           </ul>
           <p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>
             Změny se uloží samy, jakmile bude spojení. Zůstávají uložené i po zavření aplikace.
+            {zaseknute > 0 ? " U změn, které se nedaří uložit, to sama nezkouší – použijte tlačítko níž." : ""}
           </p>
           <button
             type="button"
@@ -93,7 +94,7 @@ export function NeulozeneZmeny() {
             onClick={async () => {
               setOdesila(true);
               try {
-                await odesliFrontu();
+                await odesliFrontu(true);
               } finally {
                 setOdesila(false);
               }

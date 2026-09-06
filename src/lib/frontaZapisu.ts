@@ -24,9 +24,15 @@ const KLIC = "jobi_neulozene_zmeny_v1";
 const MAX_POLOZEK = 200;
 /** Po tolika dnech se položka vzdá; to už je stav v aplikaci dávno jiný. */
 const MAX_STARI_MS = 7 * 24 * 60 * 60 * 1000;
-/** Po tolika marných pokusech se položka označí za zaseknutou a přestane se zkoušet tak často. */
+/** Po tolika marných pokusech se položka označí za zaseknutou a sama se už nezkouší. */
 const POKUSU_DO_ZASEKNUTI = 12;
 const INTERVAL_MS = 30_000;
+/** Odstupy mezi pokusy. Poslední hodnota platí pro všechny další pokusy. */
+const ODSTUPY_MS = [0, 30_000, 60_000, 300_000, 900_000, 1_800_000];
+
+function dalsiOdstup(pokusy: number): number {
+  return ODSTUPY_MS[Math.min(pokusy, ODSTUPY_MS.length - 1)];
+}
 
 export type PolozkaFronty = {
   /** Stejný klíč = stejný cíl; novější zápis ten starší nahradí. */
@@ -44,6 +50,8 @@ export type PolozkaFronty = {
   posledniChyba?: string;
   /** Opakování nepomáhá (chybí právo, řádek zmizel). Zůstává vidět, ať se to neztratí potichu. */
   zaseknuto?: boolean;
+  /** Dřív se nezkouší. Roste s počtem marných pokusů, ať fronta nemlátí do sítě a baterie. */
+  dalsiPokusOd?: number;
 };
 
 type Posluchac = (polozky: PolozkaFronty[]) => void;
@@ -204,7 +212,7 @@ export function naFrontu(cb: Posluchac): () => void {
  * Pošle, co ve frontě je. Položky jdou po jedné a v pořadí vložení, ať se
  * dva zápisy do stejného řádku nepřetlačí.
  */
-export async function odesliFrontu(): Promise<{ odeslano: number; zbyva: number }> {
+export async function odesliFrontu(vcetneZaseknutych = false): Promise<{ odeslano: number; zbyva: number }> {
   if (odesilaSe) return { odeslano: 0, zbyva: nacti().length };
   const klient = supabase;
   if (!klient) return { odeslano: 0, zbyva: nacti().length };
@@ -216,7 +224,12 @@ export async function odesliFrontu(): Promise<{ odeslano: number; zbyva: number 
       zapis(fronta);
       return { odeslano: 0, zbyva: 0 };
     }
+    const ted = Date.now();
     for (const polozka of [...fronta]) {
+      // Zaseknutou položku sama od sebe nezkoušíme – opakování jí nepomůže
+      // a uživatel ji vidí v ukazateli. Pustí ji tlačítkem „Zkusit hned“.
+      if (polozka.zaseknuto && !vcetneZaseknutych) continue;
+      if (!vcetneZaseknutych && polozka.dalsiPokusOd && polozka.dalsiPokusOd > ted) continue;
       let chyba: unknown = null;
       try {
         const { error } = await (klient.from(polozka.tabulka) as any).update(polozka.data).eq("id", polozka.id);
@@ -244,6 +257,7 @@ export async function odesliFrontu(): Promise<{ odeslano: number; zbyva: number 
         pokusy,
         posledniChyba: textChyby(chyba),
         zaseknuto: jeTrvalaChyba(chyba) || pokusy >= POKUSU_DO_ZASEKNUTI,
+        dalsiPokusOd: Date.now() + dalsiOdstup(pokusy),
       };
       zapis(aktualni);
       if (jeTrvalaChyba(chyba)) {
@@ -293,7 +307,9 @@ export function spustHlidacFronty(): void {
     if (document.visibilityState === "visible") naplanujOdeslani(500);
   });
   casovac = setInterval(() => {
-    if (nacti().length > 0) void odesliFrontu();
+    // Když je prohlížeč offline, nemá smysl budit síť; návrat řeší událost výš.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (nacti().some((p) => !p.zaseknuto)) void odesliFrontu();
   }, INTERVAL_MS);
 }
 

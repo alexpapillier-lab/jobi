@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Button } from "../../components/ui";
-import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
+import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "../../lib/serviceSettingsSync";
 import { useConfigNacteno } from "./useConfigNacteno";
 import { VYCHOZI_SABLONY, normalizujSablony, type SablonaKontroly } from "../../lib/kontrolniSeznamy";
 import { showToast } from "../../components/Toast";
@@ -16,13 +16,21 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
   const [sablony, setSablony] = useState<SablonaKontroly[]>(VYCHOZI_SABLONY);
   const [rozbalena, setRozbalena] = useState<string | null>(null);
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
+  const [chybaNacteni, setChybaNacteni] = useState(false);
 
   useEffect(() => {
     if (!activeServiceId) return;
     let zruseno = false;
-    loadServiceConfig(activeServiceId).then((config) => {
+    nactiServiceConfig(activeServiceId).then((r) => {
       if (zruseno) return;
-      setSablony(normalizujSablony(config?.kontrolniSeznamy));
+      if (r.stav === "chyba") {
+        // Bez jistoty, co je v databázi, se nesmí ukládat – uložil by se
+        // prázdný výchozí seznam přes ten skutečný.
+        setChybaNacteni(true);
+        return;
+      }
+      setChybaNacteni(false);
+      setSablony(normalizujSablony(r.stav === "ok" ? (r.config as any)?.kontrolniSeznamy : undefined));
       oznacNacteno();
     });
     const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
@@ -37,7 +45,8 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
     setSablony(next);
     if (!activeServiceId) return;
     try {
-      await mergeServiceConfig(activeServiceId, { kontrolniSeznamy: next });
+      const r = await mergeServiceConfig(activeServiceId, { kontrolniSeznamy: next });
+      if (r.error) throw new Error(r.error);
     } catch (err) {
       console.error("[KontrolniSeznamy] uložení selhalo", err);
       showToast("Šablony se nepodařilo uložit", "error");
@@ -58,6 +67,11 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
 
   return (
     <Card>
+      {chybaNacteni && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: "1px solid var(--danger, #dc2626)", color: "var(--danger, #dc2626)", fontSize: 13 }}>
+          Šablony se nepodařilo načíst. Dokud se nenačtou, nejde je měnit – jinak by se uložily prázdné.
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
         <div>
           <div style={{ fontWeight: 800, fontSize: 15 }}>Kontrola po opravě</div>

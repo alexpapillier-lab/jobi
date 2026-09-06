@@ -168,3 +168,21 @@ export async function zavriDetail(page: Page): Promise<void> {
     )
     .toBe(false);
 }
+
+/**
+ * Počká, až z localStorage zmizí rozdělaný stav dané oblasti – tedy až ho
+ * potvrdí databáze.
+ *
+ * Sklad i ceník se ukládají s odkladem a klíč je na servis
+ * (`jobi_sklad_neulozeno_v1:<id servisu>`), takže se hledá podle předpony.
+ * Bez téhle kontroly by test prošel i nad hodnotou, která je jen na
+ * obrazovce – a hledáním přesného klíče by prošel dokonce vždycky.
+ */
+export async function pockejNaZapisSnimku(page: Page, predpona: string): Promise<void> {
+  await expect
+    .poll(
+      () => page.evaluate((p) => Object.keys(localStorage).filter((k) => k.startsWith(p)).length, predpona),
+      { timeout: 60_000, message: `Rozdělaný stav (${predpona}) nezmizel – změna se nedostala do databáze.` },
+    )
+    .toBe(0);
+}

@@ -1,14 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
-import { prihlasSe } from "./pomocnici";
+import { prihlasSe, pockejNaZapisSnimku } from "./pomocnici";
 
 /** Počká, až rozdělaný sklad zmizí z localStorage – tedy až ho potvrdí databáze. */
 async function pockejNaZapisSkladu(page: Page) {
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("jobi_sklad_neulozeno_v1")), {
-      timeout: 60_000,
-      message: "Sklad zůstal rozdělaný – změna se nedostala do databáze.",
-    })
-    .toBeNull();
+  await pockejNaZapisSnimku(page, "jobi_sklad_neulozeno_v1");
 }
 
 /**
