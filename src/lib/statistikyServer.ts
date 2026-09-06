@@ -177,7 +177,7 @@ export async function nactiStatistiky(client: SupabaseClient, dotaz: StatistikyD
 }
 
 /** Řádek KPI techniků – kdo přijímá, kdo dokončuje, kolik hodin práce si zapsal. */
-export type ServerTechnik = { userId: string | null; name: string; prijato: number; dokonceno: number; hodiny: number; trzbaHodin: number };
+export type ServerTechnik = { userId: string | null; name: string; prijato: number; dokonceno: number; odpracovanoHodin: number; hodiny: number; trzbaHodin: number };
 
 export async function nactiTechnici(
   client: SupabaseClient,
@@ -196,6 +196,7 @@ export async function nactiTechnici(
     name: String(r.name ?? "—"),
     prijato: Number(r.prijato) || 0,
     dokonceno: Number(r.dokonceno) || 0,
+    odpracovanoHodin: Number(r.odpracovanoHodin) || 0,
     hodiny: Number(r.hodiny) || 0,
     trzbaHodin: Number(r.trzbaHodin) || 0,
   }));

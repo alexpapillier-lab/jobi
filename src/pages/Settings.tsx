@@ -423,6 +423,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     }
     setOrdersShowClaimsInList(!!config.orders_show_claims_in_list);
     setHodinovaSazbaText(typeof config.hodinova_sazba === "number" ? String(config.hodinova_sazba) : "");
+    setCasNaOprave(config.cas_na_oprave === true);
   }, []);
 
   // Load service_settings from DB when activeServiceId changes
@@ -561,6 +562,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   /** Hodinová sazba servisu (Kč/h) – výchozí pro položku „Hodinová práce“ v zakázce. */
   const [hodinovaSazbaText, setHodinovaSazbaText] = useState("");
+  /** Stopky na zakázce – volitelná funkce (service_settings.config.cas_na_oprave). */
+  const [casNaOprave, setCasNaOprave] = useState(false);
+  const saveCasNaOprave = useCallback(async (zapnuto: boolean) => {
+    if (!activeServiceId || !supabase) return;
+    setCasNaOprave(zapnuto);
+    try {
+      await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { cas_na_oprave: zapnuto } } });
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    } catch (err) {
+      console.error("[Settings] saveCasNaOprave", err);
+      showToast("Nastavení se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId]);
+
   const saveHodinovaSazba = useCallback(async (text: string) => {
     if (!activeServiceId || !supabase) return;
     const cislo = parseFloat(text.replace(",", "."));
@@ -2210,6 +2225,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   />
                   <span style={{ color: "var(--muted)", fontSize: 13 }}>Kč/h</span>
                 </span>
+              }
+            />
+            <SettingRow
+              clickable
+              label="Stopky na zakázce"
+              description="V detailu zakázky karta „Čas na opravě“: technik spustí a zastaví práci, vidí se, kdo právě pracuje a kolik času zakázka stála. Odpracovaný čas jde do KPI techniků ve Statistikách."
+              control={
+                <input
+                  type="checkbox"
+                  checked={casNaOprave}
+                  onChange={(e) => { void saveCasNaOprave(e.target.checked).then(() => hintSazba.show()); }}
+                />
               }
             />
           </SettingRows>

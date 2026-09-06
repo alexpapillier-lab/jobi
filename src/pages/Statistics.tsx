@@ -844,13 +844,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <Card style={{ padding: "var(--pad-24)" }}>
           <SectionHeading icon={<StatusIcon size={18} />}>Technici</SectionHeading>
           <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 10 }}>
-            Kdo zakázky přijímá a dokončuje (z historie zakázek) a kolik hodinové práce si zapsal. Období a pobočka jako u ostatních čísel.
+            Kdo zakázky přijímá a dokončuje (z historie zakázek), čas ze stopek na zakázkách a kolik hodinové práce si zapsal. Období a pobočka jako u ostatních čísel.
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "var(--text-sm)" }}>
               <thead>
                 <tr>
-                  {["Technik", "Přijal", "Dokončil", "Hodin práce", "Tržba z práce"].map((h, i) => (
+                  {["Technik", "Přijal", "Dokončil", "Na opravách", "Hodin práce", "Tržba z práce"].map((h, i) => (
                     <th key={h} style={{ textAlign: i === 0 ? "left" : "right", padding: "6px 8px", borderBottom: "1px solid var(--border)", color: "var(--muted)", fontWeight: 700 }}>{h}</th>
                   ))}
                 </tr>
@@ -861,6 +861,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>{t.name}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.prijato}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.dokonceno}</td>
+                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }} title="Odpracovaný čas ze stopek na zakázkách">{t.odpracovanoHodin > 0 ? `${t.odpracovanoHodin.toLocaleString("cs-CZ")} h` : "—"}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.hodiny > 0 ? t.hodiny.toLocaleString("cs-CZ") : "—"}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.trzbaHodin > 0 ? formatCurrencyRounded(t.trzbaHodin) : "—"}</td>
                   </tr>

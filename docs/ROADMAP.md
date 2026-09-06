@@ -39,8 +39,11 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    jeho pobočku bez přepínače. **KPI techniků** (6. 9.): karta Technici ve
    Statistikách – kdo zakázky přijímá a dokončuje (z historie zakázek podle
    koncových stavů servisu) a hodiny + tržba hodinové práce (RPC
-   `statistiky_technici`, migrace 20260908150000). Chybí: čas na opravě,
-   vytížení techniků v Kalendáři.
+   `statistiky_technici`, migrace 20260908150000). **Čas na opravě** (6. 9.,
+   migrace 20260908160000): volitelné stopky (Nastavení → Zakázky → Hodinová
+   práce → Stopky na zakázce, `config.cas_na_oprave`), tabulka
+   `ticket_work_sessions`, karta v detailu, odpracovaný čas v KPI techniků.
+   Chybí: vytížení techniků v Kalendáři (z úseků jde dopočítat).
 6. `[~]` **Online rezervace** (6. 9., migrace 20260908110000, edge funkce
    `public-booking`): formulář k vložení na web servisu (`<div id="jobi-rezervace">`
    + skript `…/public-booking/embed.js?service=slug`), nezávazná rezervace

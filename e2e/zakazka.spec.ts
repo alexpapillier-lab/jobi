@@ -196,6 +196,25 @@ test("půjčení náhradního zařízení se zapíše a jde označit jako vráce
   await expect(page.getByText("Vráceno", { exact: true })).toBeVisible();
 });
 
+test("stopky na zakázce spustí a zastaví práci", async ({ page }) => {
+  // Testovací servis má stopky zapnuté (config.cas_na_oprave).
+  await prihlasSe(page);
+  await page.getByText(zakaznik).first().click();
+  const karta = page.locator("#detail-cas");
+  await expect(karta).toBeVisible({ timeout: 20_000 });
+  await karta.getByRole("button", { name: "Spustit práci" }).click();
+  await expect(karta).toContainText("právě běží", { timeout: 15_000 });
+  await expect(karta.getByRole("button", { name: /^Zastavit/ })).toBeVisible();
+  await karta.getByRole("button", { name: /^Zastavit/ }).click();
+  await expect(karta.getByRole("button", { name: "Spustit práci" })).toBeVisible({ timeout: 15_000 });
+  await expect(karta).not.toContainText("právě běží");
+  // Úsek zůstal v seznamu i po obnovení stránky.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByText(zakaznik).first().click();
+  await expect(page.locator("#detail-cas").locator("li").first()).toContainText("min", { timeout: 20_000 });
+});
+
 test("při stornu se servis zeptá na důvod a zapíše ho do historie", async ({ page }) => {
   await prihlasSe(page);
   await page.getByText(zakaznik).first().click();

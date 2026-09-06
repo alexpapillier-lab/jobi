@@ -41,6 +41,7 @@ import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
+import { CasNaOprave } from "../components/orders/CasNaOprave";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
 import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
@@ -947,6 +948,7 @@ export default function Orders({
         setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
         setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
         setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
+        setCasNaOpraveZapnuto(data?.config?.cas_na_oprave === true);
       })
       .catch(() => setOrdersShowClaimsInList(false));
   }, [activeServiceId]);
@@ -962,6 +964,7 @@ export default function Orders({
           setHodinovaSazba(typeof data?.config?.hodinova_sazba === "number" ? data.config.hodinova_sazba : null);
           setKontrolniSeznamy(normalizujSablony(data?.config?.kontrolniSeznamy));
           setNahradniZarizeni(normalizujNahradni(data?.config?.nahradniZarizeni));
+          setCasNaOpraveZapnuto(data?.config?.cas_na_oprave === true);
         })
         .catch(() => {});
     };
@@ -1478,6 +1481,8 @@ export default function Orders({
   const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
   /** Stálý seznam náhradních zařízení servisu (service_settings.config.nahradniZarizeni). */
   const [nahradniZarizeni, setNahradniZarizeni] = useState<NahradniZarizeni[]>([]);
+  /** Stopky na zakázce – volitelné (service_settings.config.cas_na_oprave). */
+  const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -7241,6 +7246,18 @@ export default function Orders({
                     })()}
                   />
                 </div>
+
+                {casNaOpraveZapnuto && activeServiceId && (
+                  <div id="detail-cas" style={{ ...card, marginTop: 16 }}>
+                    <SectionHeading icon={<HistoryIcon size={16} />}>Čas na opravě</SectionHeading>
+                    <CasNaOprave
+                      serviceId={activeServiceId}
+                      ticketId={detailedTicket.id}
+                      userId={session?.user?.id ?? null}
+                      jmena={session?.user?.id && userProfile?.nickname ? { [session.user.id]: userProfile.nickname } : {}}
+                    />
+                  </div>
+                )}
 
                 <div id="detail-kontrola" style={{ ...card, marginTop: 16 }}>
                   <SectionHeading icon={<CheckIcon size={16} />}>Kontrola po opravě</SectionHeading>
