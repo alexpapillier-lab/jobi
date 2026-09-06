@@ -37,17 +37,33 @@ CDN. Skutečný provoz přes `api.appjobi.com` je proti tomu podstatně mírněj
 Referenční hodnoty ze stejného stroje a stejné chvíle, aby se dalo oddělit,
 co je síť a co práce:
 
-| Co | medián |
-|---|---:|
-| TCP + TLS na `supabase.co` | 29 ms |
-| PostgREST bez dotazu (`GET /rest/v1/`) | 55 ms |
-| `OPTIONS` na edge funkci (žádná databáze) | 201 ms |
-| `GET public-catalog` (limit + 4 dotazy + ETag) | 386 ms |
+| Co | medián | pozn. |
+|---|---:|---|
+| TCP + TLS na `supabase.co` | 29 ms | |
+| PostgREST bez dotazu (`GET /rest/v1/`) | 55 ms | nové spojení pokaždé |
+| `OPTIONS` na edge funkci (žádná databáze) | 201 ms | nové spojení pokaždé |
+| `GET public-booking/embed.js` (žádná databáze) | **24 ms** | znovupoužité spojení |
+| `GET public-booking` (2 dotazy za sebou) | 183–261 ms | |
+| `GET public-catalog` (4 dotazy za sebou + 4 souběžné) | 386 ms | |
 
-**Samotné spuštění edge funkce stojí zhruba 150 ms** – rozdíl mezi PostgREST
-a `OPTIONS`, kde se ještě nesáhlo na databázi. Z 386 ms ceníku je tedy asi
-polovina režie runtime a jen zbytek opravdová práce s daty. Na tuhle režii
-nemá projekt vliv, ale je dobré vědět, že pod ni se u veřejného API nedá jít.
+Těch 201 ms u `OPTIONS` je klam měření: `curl` zahazuje spojení po každém
+požadavku, takže se v čísle veze TLS handshake. Když se spojení drží (což
+prohlížeč i CDN dělají), **odpoví edge funkce bez databáze za 24 ms** a zvládne
+přes 750 požadavků za vteřinu. Runtime tedy brzdou není.
+
+**Brzdou je počet dotazů do databáze jdoucích za sebou.** Jeden sekvenční
+round trip z funkce do Postgresu vyjde zhruba na 85 ms a odezva se z nich
+skládá skoro celá:
+
+| Endpoint | dotazů za sebou | 24 ms + 85 ms × n | naměřeno |
+|---|---:|---:|---:|
+| `embed.js` | 0 | 24 | 24 |
+| `public-booking` | 2 | 194 | 183–261 |
+| `public-catalog` | 4 | 364 | 386 |
+
+U ceníku jsou ty čtyři: servis podle slugu → kontrola modulu → RPC limitu →
+a teprve pak čtyři dotazy na data, ty už souběžně. Kdo chce zrychlit veřejné
+API, musí ubrat kroky, ne optimalizovat jednotlivé dotazy.
 
 ## 1. Veřejná rozhraní
 
@@ -86,8 +102,9 @@ všech stupních.** Funkce se pod zátěží zpomalí, neodpadne. To je lepší
 chování, než jsem čekal.
 
 **Velikost ceníku je jedno.** Dvakrát větší ceník (8,2 kB proti 3,8 kB)
-odpovídá stejně rychle. Čas nežere přenos dat ani jejich množství, ale těch
-pět dotazů do databáze a start runtime.
+odpovídá stejně rychle. Čas nežere přenos dat ani jejich množství, ale ta
+čtyři kola dotazů do databáze, která se udělají vždycky stejně – ať je
+v ceníku deset oprav nebo tisíc.
 
 **304 nešetří serveru vůbec nic.** Odpověď „nezměnilo se" trvá stejně dlouho
 jako plná (433 proti 399 ms při jednom vlákně). Je to logické: ETag se počítá
@@ -96,15 +113,99 @@ dotazy. Podmíněný dotaz ušetří přenesené bajty, ne práci databáze.
 
 ### Endpointy bez limitu čtení
 
-<!-- TABULKA_BEZ_LIMITU -->
+Tady má rampa smysl v plné délce – 30 s na stupeň, kolik se stihne.
+
+| Endpoint | Souběžně | Požadavků | req/s | medián ms | p95 ms | max ms | chybovost |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| booking GET nastavení | 1 | 115 | 3,8 | 261 | 331 | 456 | 0 % |
+| booking GET nastavení | 5 | 658 | 21,9 | 205 | 333 | 693 | 0 % |
+| booking GET nastavení | 20 | 3 163 | **104,8** | 183 | 289 | 715 | 0 % |
+| booking GET nastavení | 50 | 5 784 | **191,1** | 251 | 394 | 1132 | 0 % |
+| embed.js (bez databáze) | 1 | 860 | 28,6 | 24 | 105 | 268 | 0 % |
+| embed.js (bez databáze) | 5 | 4 176 | 139,1 | 24 | 106 | 256 | 0 % |
+| embed.js (bez databáze) | 20 | 15 704 | 522,9 | 24 | 109 | 1252 | 0 % |
+| embed.js (bez databáze) | 50 | 22 822 | **757,8** | 27 | 190 | 3583 | 0 % |
+| portal-ticket neplatný token | 1 | 109 | 3,6 | 274 | 418 | 530 | 0 % |
+| portal-ticket neplatný token | 5 | 16 | 16,9 | 268 | 425 | 425 | 31 % → **429** |
+
+**Tohle je nejzajímavější číslo z celého měření.** `public-booking`, který
+dělá dva dotazy do databáze, utáhne **191 požadavků za vteřinu**. Ceník, který
+dělá čtyři plus RPC limitu, se zasekne na **30**. Šestinásobný rozdíl na
+stejném runtime a stejné databázi.
+
+Ceník i sklad totiž při každém dotazu volají `api_zapocitej_cteni`, a ta dělá
+dva `INSERT … ON CONFLICT DO UPDATE` – jeden z nich **vždycky do stejného
+řádku** (souhrn za servis, `klic = ''`). Padesát souběžných požadavků na jeden
+servis se tedy pere o jeden řádek a Postgres je musí seřadit za sebe.
+**Nejdražší část veřejného ceníku není čtení dat, ale počítadlo, které hlídá,
+aby se nečetlo moc.** Přesně naopak, než bych čekal.
+
+Do dvaceti souběžných to nevadí (limit 60/min stejně dřív usekne provoz) a
+před funkcí navíc stojí cache. Ale je to důvod, proč se ceník nedá škálovat
+pouhým přidáním výkonu.
+
+`embed.js` je kontrolní vzorek: čistý text, nulová databáze, 758 req/s a
+stabilních 24 ms i při padesáti souběžných. Runtime má rezervu, hrdlo je
+v databázi.
+
+**Portál dopadl jinak, než tabulka napovídá.** Při jednom vlákně prošlo 109
+dotazů bez chyby; 429 přišla až v dalším stupni po dalších 16. Dohromady 125
+za minutu, tedy přesně dokumentovaný strop 120/min na volajícího. Limit
+funguje, jen ho tahle rampa změřila nešikovně – čisté číslo je níž.
 
 ### Kde se to zlomilo
 
-<!-- ZLOMY -->
+Jediné místo, kde měření skončilo dřív, než mělo:
+
+- **portal-ticket při 5 souběžných** – `429` po 16 požadavcích, ale to je
+  součet s předchozím stupněm (viz výš), ne skutečná hranice.
+
+Jinde **ne**. Ani při padesáti souběžných nevrátil žádný endpoint jedinou
+chybu – ani `5xx`, ani spadlé spojení. Ceník a sklad se zpomalí na vteřinu až
+dvě, `booking` a `embed.js` drží odezvu i propustnost. To je pro projekt dobrá
+zpráva: **nic z toho se pod zátěží nerozbije, jen zpomalí.**
+
+Za hranici tedy považuju:
+
+| Endpoint | Praktický strop | Čím je daný |
+|---|---:|---|
+| `public-catalog` | ~30 req/s | soupeření o řádek počítadla limitu |
+| `public-inventory` | ~28 req/s | totéž |
+| `public-booking` GET | ~190 req/s | dva dotazy do databáze |
+| `public-booking/embed.js` | ~758 req/s | nic, je to text |
+
+Před tímhle stropem ale u ceníku a skladu vždycky sepne limit 60/min na IP,
+takže na něj jedna adresa nedosáhne. Dosáhne na něj až **provoz z mnoha IP
+adres na jeden servis** – a proti tomu stojí limit 600/min na servis, tedy
+10 req/s. Ten je bezpečně pod naměřenými 30.
 
 ## 2. Kdy přesně padne 429
 
-<!-- LIMITY -->
+Sekvenční sonda: požadavky po jednom, dokud nepřijde 429. Před každým měřením
+se čeká na začátek minuty, protože okno limitu je `date_trunc('minute')`.
+
+| Endpoint | 429 po … požadavcích | strop v kódu | `Retry-After` | medián ms |
+|---|---:|---:|---:|---:|
+| `public-catalog` | **61** | 60/min/IP | 60 | 393 |
+| `public-inventory` | **61** | 60/min/IP | 60 | 395 |
+| `portal-ticket` GET | **121** | 120/min/IP | *chybí* | 278 |
+| `public-booking` GET | >150 | žádný | – | 266 |
+| `public-booking/embed.js` | >150 | žádný | – | 31 |
+
+**Limity sedí na kus přesně** – 61. požadavek je první nad stropem 60, 121.
+nad stropem 120. Co je v `docs/LIMITY.md` napsané, to platí. Zotavení taky:
+v následující minutě vrátil ceník zase `200`.
+
+Dvě věci k tomu:
+
+**`portal-ticket` neposílá `Retry-After`.** Ceník a sklad ho posílají
+(`60`), portál ne – klient se tedy nedozví, kdy to má zkusit znovu, a bude
+buď zkoušet hned, nebo to vzdá. Jednořádková oprava.
+
+**`public-booking` nemá strop žádný.** Sonda vyčerpala 150 požadavků a nic.
+Potvrzuje to, co je vidět v kódu: `GET` větev `public-booking` limit vůbec
+nevolá. V `docs/LIMITY.md` tenhle endpoint chybí taky – není to opomenutí
+v dokumentaci, opravdu tam žádný limit není.
 
 ## 3. Načtení aplikace v prohlížeči
 
@@ -129,8 +230,8 @@ kompresi (1,7 MB rozbaleno). Na stolním počítači to nevadí – 550 ms. Na
 pomalém 4G je to **3,6 vteřiny na přihlašovací obrazovku**, z toho 2,8 s do
 prvního vykreslení, a to se ještě nenačetla jediná zakázka.
 
-Podle `docs/WEBOVA_VERZE.md` je webová verze „záložní nástroj, po kterém se
-sahá z mobilu v dílně". V dílně bývá jeden čárek signálu. Tohle je tedy
+Komentář v `index.html` říká, že webová verze je „záložní nástroj, po kterém
+se sahá z mobilu v dílně". V dílně bývá jeden čárek signálu. Tohle je tedy
 scénář, pro který je verze určená, a zrovna v něm je nejpomalejší.
 
 Seznam zakázek po přihlášení se nezměřil – `E2E_PASSWORD` nebylo v prostředí
@@ -202,7 +303,8 @@ cest, které zná:
 v `MAPA` má. Zdroj je před nasazením a **nepozná se to** – hlavička
 `X-Jobi-Verze` hlásí `6` na obou stranách, protože se při přidání cest
 nezvedla. Rezervační formulář proto míří rovnou na `…supabase.co` (což
-`public-booking/embed.js` dělá záměrně, viz komentář na řádku 149), takže
+`public-booking/embed.js` dělá záměrně – komentář to zdůvodňuje tím, že
+rezervací je pár denně), takže
 **každé zobrazení stránky s rezervačním formulářem je nekešovaný dotaz na
 origin, který udělá dva dotazy do databáze za sebou – a nepočítá se do
 žádného limitu.** `docs/LIMITY.md` `public-booking` GET taky neuvádí.
@@ -236,25 +338,42 @@ zóny na 300 s, aby seděl se záměrem funkce, nebo (lepší) nechat čtyři ho
 a **purgnout cache při uložení ceníku a skladu**. Servis, který opraví cenu
 a čtyři hodiny ji na svém webu nevidí, bude psát na podporu.
 
-**4. Zlevnit 304.** ETag se počítá až z hotových dat, takže podmíněný dotaz
+**4. Nedělat z počítadla limitu úzké hrdlo.** Souhrnný řádek za servis
+(`klic = ''`) je jediný řádek, o který se perou všechny souběžné požadavky
+téhož servisu – kvůli němu utáhne ceník 30 req/s místo 190. Dvě levné
+možnosti, obě bez změny chování navenek:
+
+- rozprostřít souhrn na několik řádků (`klic = 'souhrn:' || (náhoda 0–9)`)
+  a při vyhodnocení je sečíst – klasický *sharded counter*, odpadne tím
+  soupeření o jeden řádek;
+- nebo souhrn za servis nepočítat při každém dotazu, ale dopočítávat ho
+  z řádků na IP, které se rozkládají samy.
+
+Není to naléhavé (limit 60/min i cache před funkcí drží provoz hluboko pod
+hranicí), ale je dobré vědět, že přidání výkonu tenhle strop neposune.
+
+**5. Přidat `Retry-After` do 429 z `portal-ticket`.** Ceník a sklad ho
+posílají, portál ne. Zákazník, kterému se odkaz na zakázku zasekne na limitu,
+tak nemá jak zjistit, že stačí počkat minutu. Jeden řádek.
+
+**6. Zlevnit 304.** ETag se počítá až z hotových dat, takže podmíněný dotaz
 stojí server přesně tolik co plná odpověď. Kdyby se otisk skládal z něčeho
 levného – `max(updated_at)` nad dotčenými tabulkami – dala by se odpověď
-`304` vrátit po jednom dotazu místo pěti. Nespěchá to, dokud drží cache
-před funkcí, ale je to nejlevnější místo, kde jde ubrat práci.
+`304` vrátit po jednom dotazu místo čtyř kol.
 
-**5. Rozdělit balík aplikace.** 484 kB v jednom souboru je 3,6 s na pomalém
+**7. Rozdělit balík aplikace.** 484 kB v jednom souboru je 3,6 s na pomalém
 4G. Statistiky, Nastavení a JobiDocs se při běžné práci neotvírají a do
 prvního načtení nemusí patřit; `React.lazy` na úrovni stránek by z toho ubral
 podstatnou část. Týká se to jen webové verze – desktopová appka má balík
 lokálně.
 
-**6. Server-side filtr a stránkování v seznamu zakázek.** Dnes se stahují
+**8. Server-side filtr a stránkování v seznamu zakázek.** Dnes se stahují
 všechny zakázky servisu a filtruje se v prohlížeči. U 3 500 zakázek to jde,
 u 10 000 to bude znát – a to je při 937 zakázkách ročně (číslo
 z `docs/KAPACITA.md`) zhruba desátý rok, u rušnějšího servisu dřív. Není to
 na teď, ale je to jediné místo, kde náklady rostou s objemem dat.
 
-**7. Co zvýšit nemusí nic.** Limity 60/min na IP a 600/min na servis se
+**9. Co zvyšovat nemusíš.** Limity 60/min na IP a 600/min na servis se
 ukázaly jako přiměřené: běžný návštěvník se k funkci vůbec nedostane (cache)
 a kdo se dostane, ten 60 dotazů za minutu z jedné adresy legitimně nepotřebuje.
 Limit na servis (600/min) se z jedné IP vůbec nedá vyzkoušet – dřív spadne

@@ -66,6 +66,9 @@ serve(async (req) => {
       .select("id, service_id")
       .eq("token", token)
       .is("ticket_id", null)
+      // Platnost se kontroluje i tady; `capture-upload` to dělá, tyhle dvě
+      // funkce ne, takže odkaz na focení platil, dokud ho někdo nesmazal.
+      .gt("expires_at", new Date().toISOString())
       .single();
 
     if (tokenErr || !tokenRow) {
@@ -111,13 +114,21 @@ serve(async (req) => {
       .order("created_at", { ascending: true });
 
     const urls = (draftPhotos ?? []).map((r: { photo_url: string }) => r.photo_url);
-    const current = Array.isArray(ticket.diagnostic_photos_before) ? ticket.diagnostic_photos_before : [];
-    const updated = [...current, ...urls];
 
-    const { error: updateErr } = await svc
-      .from("tickets")
-      .update({ diagnostic_photos_before: updated })
-      .eq("id", ticketId);
+    /* Připojení po jedné, ale zápisem v databázi – načíst pole a přepsat ho
+       celé znamená, že souběžné nahrávání z telefonu o fotky přijde. */
+    let updateErr: unknown = null;
+    for (const url of urls) {
+      const { error } = await svc.rpc("pridej_fotku_zakazky", {
+        p_ticket_id: ticketId,
+        p_url: url,
+        p_pred: true,
+      });
+      if (error) {
+        updateErr = error;
+        break;
+      }
+    }
 
     if (updateErr) {
       console.error("[capture-claim-draft] ticket update error:", updateErr);

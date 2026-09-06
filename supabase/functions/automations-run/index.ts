@@ -928,7 +928,7 @@ async function handleImmediate(req: Request, svc: SupabaseClient, body: Record<s
   const serviceId = strOrNull(body.service_id);
   const ticketId = strOrNull(body.ticket_id);
   const event = strOrNull(body.event);
-  const statusKey = strOrNull(body.status_key);
+  // `status_key` z těla se schválně ignoruje – viz komentář u volání níž.
   if (!serviceId || !ticketId) return json({ error: "Missing required fields: service_id, ticket_id" }, 400);
   if (event !== "status_change" && event !== "ticket_created") {
     return json({ error: "event musí být status_change nebo ticket_created" }, 400);
@@ -946,6 +946,18 @@ async function handleImmediate(req: Request, svc: SupabaseClient, body: Record<s
   const ticket = await loadTicket(svc, ticketId);
   if (!ticket || ticket.service_id !== serviceId) return json({ error: "Zakázka nenalezena" }, 404);
 
+  /* Zakázka se načítá pod `service_role`, tedy mimo RLS – členství samo
+     nestačí. Kdo je omezený na jednu pobočku, nesmí spouštět pravidla nad
+     zakázkou z cizí pobočky: rozeslaly by zákazníkovi SMS a e-mail
+     „zařízení je hotové" a akce `set_status` by mu zakázku i přepnula. */
+  const { data: pobockaOk, error: pobockaErr } = await userClient.rpc("pobocka_povolena", {
+    p_service_id: serviceId,
+    p_branch_id: (ticket as { branch_id?: string | null }).branch_id ?? null,
+  });
+  if (pobockaErr || pobockaOk === false) {
+    return json({ error: "Zakázka patří jiné pobočce" }, 403);
+  }
+
   const counters: Counters = { ran: 0, skipped: 0, errors: 0 };
   let rules: Rule[];
   let ctx: ServiceCtx;
@@ -960,7 +972,10 @@ async function handleImmediate(req: Request, svc: SupabaseClient, body: Record<s
       await evaluateRule(svc, ctx, rule, ticket, { depth: 0 }, counters);
     }
   } else {
-    await runStatusChange(svc, ctx, ticket, statusKey ?? ticket.status, 0, counters, rules);
+    /* Stav se bere ze zakázky, ne z těla požadavku. Dřív si volající mohl
+       zvolit libovolný a spustit tím pravidla pro stav, ve kterém zakázka
+       vůbec není – tedy třeba poslat zákazníkovi „zařízení je hotové“. */
+    await runStatusChange(svc, ctx, ticket, ticket.status, 0, counters, rules);
   }
 
   return json({ ok: true, ...counters });

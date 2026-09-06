@@ -60,10 +60,15 @@ const SERVICE_TABLES = [
  * integracím) by se v souboru předávaném zákazníkovi objevit neměla a k ničemu
  * mu nejsou – token se z hashe zpět nedopočítá.
  */
+/* Sloupce, které z exportu vypadnou. Kromě tajemství sem patří i odkazy,
+   které fungují jako heslo: kdo dostane exportní soubor, dostal by s ním
+   jinak platné vstupenky do zákaznického portálu a do pozvánek. */
 const REDACTED_COLUMNS: Record<string, string[]> = {
   api_tokens: ["token_hash"],
   capture_tokens: ["token"],
   service_integrations: ["config"],
+  service_invites: ["token"],
+  tickets: ["portal_token"],
 };
 
 /** Načte celou tabulku po tisícovkách, aby export nespadl na limitu dotazu. */

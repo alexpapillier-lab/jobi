@@ -118,15 +118,10 @@ serve(async (req) => {
       membersError = res.error;
     }
 
-    // Debug: log memberships list query
-    console.log(
-      "[team-list] memberships list:",
-      JSON.stringify({
-        err: membersError?.message ?? null,
-        count: memberships?.length ?? 0,
-        rows: (memberships ?? []).map((m) => ({ user_id: m.user_id, role: m.role })),
-      })
-    );
+    /* Do logu jen počty. Dřív se sem vypisovala id a e-maily všech členů
+       při každém volání – osobní údaje v provozním logu, který čte
+       i platforma. */
+    if (membersError) console.error("[team-list] memberships:", membersError.message);
 
     if (membersError) {
       return new Response(
@@ -168,20 +163,15 @@ serve(async (req) => {
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
 
-    // Debug: log response members after email enrichment
-    console.log(
-      "[team-list] response members:",
-      JSON.stringify({
-        count: membersWithEmails?.length ?? 0,
-        users: (membersWithEmails ?? []).map((u) => ({ user_id: u.user_id, role: u.role, email: u.email ?? null })),
-      })
-    );
+
 
     // Pending invites – root owner uses adminClient (RLS may block), others use supabase
     const invitesClient = isRootOwner ? adminClient : supabase;
     const { data: invites, error: invitesError } = await invitesClient
       .from("service_invites")
-      .select("id, email, role, token, created_at, expires_at")
+      // Token pozvánky do prohlížeče nepatří – kdo ho potřebuje, vezme si
+      // ho přes invite-get-token.
+      .select("id, email, role, created_at, expires_at")
       .eq("service_id", serviceId)
       .is("accepted_at", null)
       .order("created_at", { ascending: false });

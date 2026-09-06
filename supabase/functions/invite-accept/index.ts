@@ -257,11 +257,11 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
     console.error("[invite-accept] exception details", { errorMessage, errorStack });
+    /* Ven jde jen obecná hláška. Zásobník volání prozrazuje cesty k souborům
+       a vnitřní strukturu, a tuhle funkci volá kdokoli s odkazem z pozvánky.
+       Podrobnosti zůstávají v logu funkce. */
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        detail: errorStack 
-      }),
+      JSON.stringify({ error: "Pozvánku se nepodařilo přijmout. Zkuste to prosím znovu." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

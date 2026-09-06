@@ -65,6 +65,9 @@ serve(async (req) => {
       .select("id, service_id")
       .eq("token", token)
       .is("ticket_id", null)
+      // Platnost se kontroluje i tady; `capture-upload` to dělá, tyhle dvě
+      // funkce ne, takže odkaz na focení platil, dokud ho někdo nesmazal.
+      .gt("expires_at", new Date().toISOString())
       .single();
 
     if (tokenErr || !tokenRow) {

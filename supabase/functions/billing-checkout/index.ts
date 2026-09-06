@@ -47,7 +47,19 @@ serve(async (req) => {
     const plan = typeof body?.plan === "string" && body.plan in PLANS ? body.plan : "jobi_business_monthly";
     const pobocekNavic = Number.isInteger(body?.branches) && body.branches > 0 ? Number(body.branches) : 0;
     const chceSms = body?.sms === true;
-    const returnUrl = typeof body?.return_url === "string" && body.return_url.startsWith("http")
+    /* Adresa pro návrat musí být naše. Stačilo „http“ na začátku, takže
+       stránka Stripe Checkout uměla po zaplacení poslat zákazníka kamkoli –
+       a klidně po nešifrovaném spojení. */
+    const povolenyNavrat = (u: string): boolean => {
+      try {
+        const url = new URL(u);
+        if (url.protocol !== "https:") return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        return url.hostname === "appjobi.com" || url.hostname.endsWith(".appjobi.com");
+      } catch {
+        return false;
+      }
+    };
+    const returnUrl = typeof body?.return_url === "string" && povolenyNavrat(body.return_url)
       ? body.return_url
       : "https://appjobi.com/servis/";
     if (!serviceId) return json({ error: "Chybí service_id." }, 400);

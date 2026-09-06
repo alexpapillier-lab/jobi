@@ -201,30 +201,15 @@ serve(async (req) => {
 
     const isBefore = scope === "before";
 
-    const { data: ticket, error: fetchErr } = await svc
-      .from("tickets")
-      .select(isBefore ? "diagnostic_photos_before" : "diagnostic_photos")
-      .eq("id", ticketId)
-      .single();
-
-    if (fetchErr || !ticket) {
-      return new Response(
-        JSON.stringify({ error: "Zakázka nenalezena." }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const current = isBefore
-      ? (Array.isArray(ticket.diagnostic_photos_before) ? ticket.diagnostic_photos_before : [])
-      : (Array.isArray(ticket.diagnostic_photos) ? ticket.diagnostic_photos : []);
-    const updated = [...current, photoUrl];
-
-    const updatePayload = isBefore ? { diagnostic_photos_before: updated } : { diagnostic_photos: updated };
-
-    const { error: updateErr } = await svc
-      .from("tickets")
-      .update(updatePayload)
-      .eq("id", ticketId);
+    /* Připojení jedním zápisem v databázi, ne načtením a přepsáním pole.
+       Technik na telefonu vybere víc fotek najednou, požadavky běží souběžně
+       a poslední přepis by ostatní fotky z pole vymazal – soubor by v úložišti
+       zůstal, ale zakázka by o něm nevěděla. */
+    const { error: updateErr } = await svc.rpc("pridej_fotku_zakazky", {
+      p_ticket_id: ticketId,
+      p_url: photoUrl,
+      p_pred: isBefore,
+    });
 
     if (updateErr) {
       console.error("[capture-upload] update error:", updateErr);

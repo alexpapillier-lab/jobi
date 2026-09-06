@@ -236,7 +236,10 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (513, '33333333-4444-4555-8666-777777777777', 'pobocka: odepsani skladu RPC',      'odmitnuto', 'select inventory_consume_ticket(''f1ee088f-3aef-4380-aa52-897690259ae0''::uuid)'),
   (520, null, 'anon: vypis diagnostickych fotek',                                    'nic',       'select * from storage.objects where bucket_id = ''diagnostic-photos'''),
   -- Úložiště navíc mazání přes SQL zakazuje samo; politika je druhá pojistka.
-  (521, '11111111-2222-4333-8444-555555555555', 'clen: cizi fotky smazat',           'odmitnuto',       'delete from storage.objects where bucket_id = ''diagnostic-photos'' and (storage.foldername(name))[1] <> ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''')
+  (521, '11111111-2222-4333-8444-555555555555', 'clen: cizi fotky smazat',           'odmitnuto',       'delete from storage.objects where bucket_id = ''diagnostic-photos'' and (storage.foldername(name))[1] <> ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
+  (530, '721ef873-75c3-4ec1-bf71-13281051ce99', 'clen bez prav: reklamace zalozit',  'odmitnuto', 'insert into warranty_claims (service_id, code, status) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''HACK'', ''new'')'),
+  (531, '721ef873-75c3-4ec1-bf71-13281051ce99', 'clen bez prav: reklamace smazat',   'nic',       'delete from warranty_claims where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
+  (532, '11111111-2222-4333-8444-555555555555', 'clen: telefonni cislo prepsat',     'nic',       'update service_phone_numbers set twilio_number = ''+420000000000'' where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p

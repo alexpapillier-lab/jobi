@@ -62,6 +62,13 @@ serve(async (req) => {
     }
 
     const { error: updateErr } = await svc.auth.admin.updateUserById(userId, { password: newPassword });
+    /* Po změně hesla se odhlásí i ostatní zařízení. Bez toho by ukradená
+       relace přežila změnu hesla ještě týden (`jwt_expiry` je 604800 s),
+       takže by změna hesla útočníka nevyhodila. */
+    if (!updateErr) {
+      const { error: odhlaseniErr } = await svc.auth.admin.signOut(userId, "global");
+      if (odhlaseniErr) console.error("[password-reset-confirm] signOut failed", odhlaseniErr);
+    }
     if (updateErr) {
       console.error("[password-reset-confirm] updateUserById failed", updateErr);
       return new Response(
