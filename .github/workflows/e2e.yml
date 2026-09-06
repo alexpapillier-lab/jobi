@@ -26,7 +26,9 @@ jobs:
   e2e:
     name: Hlavní cesty v prohlížeči
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Sada roste (přes 150 testů, ~15 min); 20 minut už těsně nestačilo a job
+    # zabitý timeoutem nechá v databázi rozdělaná testovací data.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
