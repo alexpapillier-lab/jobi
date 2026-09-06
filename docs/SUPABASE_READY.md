@@ -34,9 +34,9 @@ Kontrolní seznam, že je projekt připraven na provoz a další vývoj, a co hl
 
 ### Edge Functions a secrets
 
-- **ROOT_OWNER_ID** – nutné pro services-list, service-manage, team-*, invite (root owner režim). Nastaveno v Supabase Secrets.
+- **ROOT_OWNER_ID** – nutné pro services-list, service-manage, team-*, invite (root owner režim). Nastaveno v Supabase Secrets. Stejné id drží i databáze v `app_nastaveni` (klíč `root_owner_id`), odkud ho bere trigger, který majitele aplikace přidává jako skrytého člena každého nového servisu – při změně účtu majitele je potřeba přepsat obě místa i `VITE_ROOT_OWNER_ID` v aplikaci.
 - **RESEND_API_KEY** (a volitelně doména) – pro odesílání pozvánek. Viz **docs/INVITE_EMAIL_RESEND.md**.
-- Funkce volané z frontendu: `invite_create`, `invite-accept`, `team-list`, `team-update-role`, `team-remove-member`, `services-list`, `invite-delete`, `statuses-init-defaults`, `team-invite-list`, `service-manage`, `team-set-capabilities` (a další dle aplikace).
+- Funkce volané z frontendu: `invite_create`, `invite-accept`, `team-list`, `team-update-role`, `team-remove-member`, `services-list`, `invite-delete`, `statuses-init-defaults`, `team-invite-list`, `service-manage`, `team-set-capabilities`, `service-delete-own` (a další dle aplikace).
 
 ---
 

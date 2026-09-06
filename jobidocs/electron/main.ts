@@ -9,8 +9,17 @@ import { startApiServer } from "../api/server";
 // Některé sítě neroutují IPv6; Node by pak u Supabase a fontů skončil na „fetch failed“.
 dns.setDefaultResultOrder("ipv4first");
 
-// Port lze přenastavit, aby šla aplikace spustit vedle už běžící kopie (testy).
-const API_PORT = Number(process.env.JOBIDOCS_API_PORT) || 3847;
+/**
+ * Port lze přenastavit, aby šla aplikace spustit vedle už běžící kopie (testy).
+ *
+ * V zabalené aplikaci se ale přepínač ignoruje: Jobi chodí na natvrdo
+ * `http://127.0.0.1:3847` (src-tauri/src/lib.rs a src/lib/jobidocs.ts), takže
+ * jiný port by obě aplikace tiše rozpojil – JobiDocs by běžel a Jobi by hlásil
+ * „spusťte JobiDocs“. Proměnná v prostředí uživatele (třeba zděděná ze
+ * spouštěče) tak nemůže rozbít tisk.
+ */
+const VYCHOZI_PORT = 3847;
+const API_PORT = app.isPackaged ? VYCHOZI_PORT : Number(process.env.JOBIDOCS_API_PORT) || VYCHOZI_PORT;
 // V zabalené aplikaci vždy načítat zabudovaný dist; jinak by se načítal localhost → prázdné okno
 const isDev = !app.isPackaged;
 /**
