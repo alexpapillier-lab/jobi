@@ -8,6 +8,9 @@ import { fetchAllPages } from "../lib/fetchAllPages";
 import { CustomerList, type CustomerRecord } from "./Customers/CustomerList";
 import { CustomerDetail } from "./Customers/CustomerDetail";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { Button } from "../components/ui";
+import { ImportZakazniku } from "./Customers/ImportZakazniku";
+import { normalizePhone } from "../lib/phone";
 
 type TicketLite = {
   id: string;
@@ -70,6 +73,10 @@ export default function Customers({
       version: typeof supabaseCustomer.version === "number" ? supabaseCustomer.version : undefined,
     };
   };
+
+  /** Import z CSV: po dokončení se seznam načte znovu. */
+  const [importOpen, setImportOpen] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
 
   // Load customers from cloud when activeServiceId changes
   useEffect(() => {
@@ -166,7 +173,7 @@ export default function Customers({
     };
 
     loadCustomers();
-  }, [activeServiceId]);
+  }, [activeServiceId, reloadTick]);
 
   // Realtime subscription for customers
   useEffect(() => {
@@ -534,9 +541,22 @@ export default function Customers({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
-      <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zákazníci</div>
+        <Button variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
+          Import z CSV
+        </Button>
       </div>
+      <ImportZakazniku
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        activeServiceId={activeServiceId}
+        existujiciTelefony={new Set(customers.map((c) => normalizePhone(c.phone)).filter((p): p is string => !!p))}
+        onHotovo={(v) => {
+          setReloadTick((t) => t + 1);
+          showToast(v.novych > 0 ? `Založeno ${v.novych} zákazníků` : "Žádný nový zákazník", v.chyb > 0 ? "error" : "success");
+        }}
+      />
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", minWidth: 0 }}>
         <input

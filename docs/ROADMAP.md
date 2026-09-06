@@ -63,9 +63,14 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 9. ~~**AI, kde šetří minuty**~~ – **vyřazeno 6. 9.** po dohodě s majitelem: pro
    malý servis komplikace navíc a platba za API u každé zakázky, přínos
    nejistý. Nevracet se, dokud o to neřeknou sami zákazníci.
-10. `[ ]` **Migrace jedním klikem** ze Zakázkového listu i MyRepair včetně
+10. `[~]` **Migrace jedním klikem** ze Zakázkového listu i MyRepair včetně
     zákazníků, historie a ceníku (import ze Zakázkového listu existuje
     ve `scripts/import-zakazkovylist`).
+    Hotovo 6. 9.: **import zákazníků z CSV** (Zákazníci → Import z CSV; `src/lib/csv.ts`,
+    `ImportZakazniku.tsx`) – oddělovač i sloupce se poznají samy, ručně jde přemapovat,
+    duplicity podle normalizovaného telefonu se přeskočí, dávkové vkládání. Zbývá:
+    import zakázek s historií (chce vzorové exporty z MyRepair a Zakázkového listu –
+    nemáme), přenos katalogu z těchto systémů.
 
 První tři měsíce: body 1, 2, 4.
 
