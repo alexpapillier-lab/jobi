@@ -66,11 +66,34 @@ tvoje údaje, nebo tvůj účet.
 
 ---
 
+## ✅ Hotovo 6.–7. 9. 2026
+
+Kvůli přehledu, ať se to nezkouší podruhé. Podrobnosti jsou v historii commitů.
+
+- **Ztráta dat mezi aplikací a databází**: fronta neuložených změn, sloučení
+  souběžných úprav, opakování zápisů u zakázek, zákazníků, reklamací, nabídky,
+  kalendáře, skladu a ceníku. Fronta si dřív odškrtávala i zápisy, které se
+  nikdy nestaly (PostgREST vrací 204 i na update, který nesedl na žádný řádek).
+- **Výkon**: seznam zakázek u servisu se 4 800 zakázkami 2 505 → 520 ms do
+  prvního řádku, 6 444 → 2 044 ms do konce; pět indexů; sklad četl produkty
+  bez stránkování a nad 1 000 položkami o zbytek tiše přišel.
+- **Testy**: 867 jednotkových, ~150 E2E (Chromium), 8 v Safari a Firefoxu,
+  38 nad spuštěným JobiDocs, 158 sond na oprávnění. Databáze jde postavit
+  od nuly (`npm run test:migrace`).
+- **Platby**: osm oprav ve webhooku a checkoutu (viz `src/lib/billingWebhook.test.ts`).
+- **Přístupy**: majitel aplikace je skrytým členem každého servisu; servis bez
+  členství se už netváří jako prázdný.
+
+---
+
 ## 🟡 Stredni priorita – stredni narocnost
 
 - ve smazanych zakazkach ukazat, jaky user zakazku smazal – to mame?
 - umoznit presunuti / zmenu pozice sidebaru
-- reseni kdyz se ztrati pripojeni
+- ~~reseni kdyz se ztrati pripojeni~~ – **hotovo 6.–7. 9. 2026**: neuložené
+  změny čekají ve frontě (`src/lib/frontaZapisu.ts`), samy se odešlou a je
+  o nich vidět proužek i na přihlašovací obrazovce; pokryto sadami
+  `e2e/spolehlivost.spec.ts` a `e2e/vypadky.spec.ts`.
 
 ---
 
