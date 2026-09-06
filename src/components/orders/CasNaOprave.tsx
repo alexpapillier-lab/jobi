@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../../components/Toast";
-import { delkaSekund, formatDelka, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
+import { delkaSekund, formatDelka, nactiPrezdivky, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
 
 /**
  * Karta „Čas na opravě“ v detailu zakázky (jen když to servis zapnul).
@@ -22,18 +22,35 @@ export function CasNaOprave({
   jmena: Record<string, string>;
 }) {
   const [useky, setUseky] = useState<UsekPrace[]>([]);
+  const [prezdivky, setPrezdivky] = useState<Record<string, string>>({});
   const [ted, setTed] = useState(() => Date.now());
   const [ceka, setCeka] = useState(false);
+  // Odpověď pro předchozí zakázku nesmí přepsat úseky té současné.
+  const aktualniTicket = useRef(ticketId);
+  aktualniTicket.current = ticketId;
 
   const nacti = useCallback(async () => {
+    const pro = ticketId;
     try {
-      setUseky(await nactiUseky(ticketId));
+      const radky = await nactiUseky(pro);
+      if (aktualniTicket.current !== pro) return;
+      setUseky(radky);
+      const ids = [...new Set(radky.map((u) => u.user_id))];
+      const chybi = ids.filter((id) => !(id in prezdivkyRef.current));
+      if (chybi.length > 0) {
+        const nove = await nactiPrezdivky(chybi);
+        if (aktualniTicket.current !== pro) return;
+        setPrezdivky((prev) => ({ ...prev, ...nove }));
+      }
     } catch (e) {
       console.warn("[cas] načtení selhalo", e);
     }
   }, [ticketId]);
+  const prezdivkyRef = useRef(prezdivky);
+  prezdivkyRef.current = prezdivky;
 
   useEffect(() => {
+    setUseky([]);
     void nacti();
     const odhlasit = sledujUseky(ticketId, () => void nacti());
     return odhlasit;
@@ -48,13 +65,13 @@ export function CasNaOprave({
 
   const mujBezici = userId ? useky.find((u) => !u.ended_at && u.user_id === userId) ?? null : null;
   const celkem = useky.reduce((a, u) => a + delkaSekund(u, ted), 0);
-  const jmeno = (id: string) => jmena[id] ?? (id === userId ? "Já" : "Kolega");
+  const jmeno = (id: string) => jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega");
 
   const start = async () => {
     if (!userId) return;
     setCeka(true);
     try {
-      await spustPraci(serviceId, ticketId, userId);
+      await spustPraci(serviceId, ticketId);
       await nacti();
     } catch (e) {
       showToast("Práci se nepodařilo spustit: " + (e instanceof Error ? e.message : String(e)), "error");
@@ -66,7 +83,7 @@ export function CasNaOprave({
     if (!mujBezici) return;
     setCeka(true);
     try {
-      await zastavPraci(mujBezici.id);
+      await zastavPraci();
       await nacti();
     } catch {
       showToast("Práci se nepodařilo zastavit", "error");

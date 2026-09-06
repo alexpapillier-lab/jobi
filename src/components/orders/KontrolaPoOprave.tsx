@@ -68,7 +68,7 @@ export function KontrolaPoOprave({
         type="button"
         aria-label={`${popisek} – ${text}`}
         aria-pressed={aktivni}
-        onClick={() => nastav(i, { stav: aktivni ? null : stav })}
+        onClick={() => nastav(i, { stav: aktivni ? null : stav, poznamka: stav === "chyba" && !aktivni ? kontrola.polozky[i].poznamka : undefined })}
         style={{
           minWidth: 34,
           height: 28,

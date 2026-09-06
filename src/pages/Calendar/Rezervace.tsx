@@ -63,7 +63,12 @@ export function RezervacePanel({
 
   const zmenStav = async (r: Rezervace, status: Rezervace["status"]) => {
     try {
-      await nastavStavRezervace(r.id, status);
+      const zmeneno = await nastavStavRezervace(r.id, status);
+      if (!zmeneno) {
+        showToast("Rezervaci mezitím vyřídil někdo jiný", "info");
+        await nacti();
+        return;
+      }
       setRezervace((prev) => prev.map((x) => (x.id === r.id ? { ...x, status } : x)));
     } catch {
       showToast("Změnu rezervace se nepodařilo uložit", "error");

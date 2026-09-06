@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/ui";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { showToast } from "../../components/Toast";
 import { ZPUSOB_PLATBY_LABELS, asZpusobPlatby, type Invoice, type ZpusobPlatby } from "./types";
 
 /**
@@ -57,11 +58,25 @@ export function UzaverkaDialog({ open, onClose, invoices, nazevServisu }: { open
 <tfoot>${souhrn}${neurceno}<tr><td colspan="4">Celkem</td><td style="text-align:right">${esc(formatCurrency(data.celkem))}</td></tr></tfoot></table>
 <p style="margin-top:40px">Pokladnu předal: ______________________ &nbsp;&nbsp; převzal: ______________________</p>
 <script>window.onload=function(){window.print();}</script></body></html>`;
-    const w = window.open("", "_blank", "width=900,height=700");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    // Skrytý iframe místo window.open – v desktopové aplikaci nové okno nevznikne.
+    try {
+      const ramec = document.createElement("iframe");
+      ramec.setAttribute("aria-hidden", "true");
+      ramec.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0";
+      ramec.srcdoc = html.replace("<script>window.onload=function(){window.print();}</script>", "");
+      ramec.onload = () => {
+        try {
+          ramec.contentWindow?.focus();
+          ramec.contentWindow?.print();
+        } catch {
+          showToast("Tisk se nepodařilo otevřít", "error");
+        }
+        window.setTimeout(() => ramec.remove(), 60_000);
+      };
+      document.body.appendChild(ramec);
+    } catch {
+      showToast("Tisk se nepodařilo otevřít", "error");
+    }
   };
 
   const bunka: React.CSSProperties = { padding: "6px 8px", borderBottom: "1px solid var(--border)", fontSize: 13 };

@@ -844,7 +844,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <Card style={{ padding: "var(--pad-24)" }}>
           <SectionHeading icon={<StatusIcon size={18} />}>Technici</SectionHeading>
           <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 10 }}>
-            Kdo zakázky přijímá a dokončuje (z historie zakázek), čas ze stopek na zakázkách a kolik hodinové práce si zapsal. Období a pobočka jako u ostatních čísel.
+            Kdo zakázky přijímá a dokončuje (z historie, podle data události; storno se nepočítá), čas ze stopek a hodinová práce (podle vzniku zakázky, jako ostatní čísla). Pobočka jako u ostatních čísel.
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "var(--text-sm)" }}>

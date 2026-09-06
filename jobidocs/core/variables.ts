@@ -89,6 +89,7 @@ export const VARIABLES: VariableDef[] = [
   { key: "loaner.serial", label: "Náhradní zařízení – sériové číslo / IMEI", group: G.device, sample: "DNPZK0ABCD12" },
   { key: "loaner.accessories", label: "Náhradní zařízení – příslušenství", group: G.device, sample: "Nabíječka, kryt" },
   { key: "loaner.deposit", label: "Náhradní zařízení – kauce", group: G.price, sample: "2 000,00 Kč" },
+  { key: "loaner.depositText", label: "Náhradní zařízení – kauce (jen když je; do textu)", group: G.price, sample: "2 000,00 Kč" },
   { key: "loaner.lentAt", label: "Náhradní zařízení – půjčeno dne", group: G.dates, sample: "1. 9. 2026" },
   { key: "loaner.returnedAt", label: "Náhradní zařízení – vráceno dne", group: G.dates, sample: "4. 9. 2026" },
   { key: "loaner.note", label: "Náhradní zařízení – poznámka", group: G.other, sample: "Drobné škrábance na krytu." },
@@ -263,6 +264,7 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "loaner.serial": return data.loaner?.serial ?? "";
     case "loaner.accessories": return data.loaner?.accessories ?? "";
     case "loaner.deposit": return data.loaner?.deposit ? formatMoney(data.loaner.deposit, data.totals?.currency) : data.loaner ? "bez kauce" : "";
+    case "loaner.depositText": return data.loaner?.deposit ? formatMoney(data.loaner.deposit, data.totals?.currency) : "";
     case "loaner.lentAt": return formatDate(data.loaner?.lentAt);
     case "loaner.returnedAt": return formatDate(data.loaner?.returnedAt);
     case "loaner.note": return data.loaner?.note ?? "";

@@ -42,5 +42,10 @@ export function najdiStejneZarizeni<T extends ZaznamZarizeni>(zakazky: T[], seri
   if (klic.length < 6) return [];
   return zakazky
     .filter((t) => t.id !== vynechatId && normalizujSeriove(t.serialOrImei) === klic)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime();
+      const tb = new Date(b.createdAt).getTime();
+      // Neplatné datum by v komparátoru dalo NaN a rozhodilo celé pořadí.
+      return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+    });
 }

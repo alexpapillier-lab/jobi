@@ -52,12 +52,12 @@ export function StornoDialog({
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        onZrusit();
+        if (!ceka) onZrusit();
       }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [open, onZrusit]);
+  }, [open, onZrusit, ceka]);
 
   if (!open) return null;
 

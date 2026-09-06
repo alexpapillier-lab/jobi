@@ -42,7 +42,8 @@ export function parseCsv(text: string, oddelovac?: string): CsvTabulka {
       }
       continue;
     }
-    if (c === '"') {
+    if (c === '"' && bunka === "") {
+      // Uvozovkový režim jen na začátku buňky – „displej 5"“ uprostřed je obyčejný znak.
       vUvozovkach = true;
     } else if (c === sep) {
       radek.push(bunka);
@@ -80,7 +81,7 @@ export const POPIS_POLE: Record<PoleZakaznika, string> = {
 };
 
 const VZORY: Array<[PoleZakaznika, RegExp]> = [
-  ["phone", /^(tel|telefon|phone|mobil|mobile|číslo|cislo)/i],
+  ["phone", /^(tel|telefon|phone|mobil|mobile)|^(číslo|cislo)\s*(tel|mobil)/i],
   ["email", /mail/i],
   ["ico", /^(ičo|ico|ič$|ic$)/i],
   ["dic", /^(dič|dic)/i],

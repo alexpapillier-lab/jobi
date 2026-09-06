@@ -186,6 +186,23 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Výkon: Statistiky se počítají na serveru (funkce `statistiky_prehled`,
   migrace 20260907120000). Odpověď pro největší servis 273 kB místo 1,65 MB
   a neroste s počtem zakázek. Zakázky se stahují jen pro režim Tabulka.
+- `[x]` **Revize 6. 9. (tři agenti čtením kódu: bezpečnost, logika karet, dokumenty
+  a faktury).** Opraveno v jednom commitu: člen s „Jen vlastní pobočka“ viděl přes
+  historii, komentáře a úseky práce obsah cizí pobočky a RPC (změna stavu, portálový
+  odkaz, statistiky) pobočku nehlídaly – restriktivní politiky a kontroly v RPC
+  (migrace 20260908180000); zápis omezeného člena jen do vlastní pobočky; historie
+  neukládá kód zařízení ani podpis; stopky jako RPC s unikátním indexem (jeden běžící
+  úsek na člověka, 20260908170000); KPI „Dokončil“ počítá zakázky jednou a bez storna
+  (20260908190000); sleva se propisuje do „Celkem“ na dokladech; editor faktury
+  nepřepíše cizí koncept ani rozepsaná pole, dvojklik na Vystavit nezaloží dva
+  doklady; dobropis zaokrouhluje symetricky; uzávěrka tiskne i v desktopu; storno
+  zapíše důvod až po úspěšné změně stavu; kontrola/zápůjčka se při chybě vrátí;
+  rezervace: limity před validací, termín v rozsahu, změna stavu se zámkem proti
+  souběhu, panel načte všechny nevyřízené; import CSV jen s právem na zákazníky,
+  uvozovka uprostřed buňky, „číslo zákazníka“ není telefon; drobnosti v knihovnách
+  (místní datum, IBAN zadaný rovnou, hranice slova v šablonách). Neopraveno (nízké):
+  „Bez technika“ řádek v KPI, hodinová práce párovaná jménem, `dates.diagnosed`
+  je čas tisku, přetečení měsíce u záruky, legacy `buildTicketVariablesForJobiDocs`.
 - `[~]` **Lov chyb 5. 9. (dva agenti, reklamace+faktury a sklad+zařízení).**
   Opraveno (commit 376830d): číslo faktury až při uložení (díry v řadě),
   kontrola duplicitního čísla, dodavatel nové faktury ze service_settings,

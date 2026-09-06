@@ -53,23 +53,31 @@ export function nastaveniRezervaciZConfigu(raw: unknown): NastaveniRezervaci {
 }
 
 /** Nevyřízené rezervace (nové a potvrzené) plus posledních pár uzavřených, nejnovější první. */
+const SLOUPCE = "id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, repair_id, model_name, price_estimate, note, preferred_at, ticket_id, created_at";
+
 export async function nactiRezervace(serviceId: string): Promise<Rezervace[]> {
   if (!supabase) return [];
-  const { data, error } = await (supabase.from("bookings") as any)
-    .select("id, service_id, status, customer_name, customer_phone, customer_email, device_label, repair_name, repair_id, model_name, price_estimate, note, preferred_at, ticket_id, created_at")
-    .eq("service_id", serviceId)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (error) throw error;
-  return (data ?? []) as Rezervace[];
+  // Nevyřízené všechny (u rušného servisu by jinak ty starší vypadly), uzavřené jen pár posledních.
+  const [otevrene, uzavrene] = await Promise.all([
+    (supabase.from("bookings") as any).select(SLOUPCE).eq("service_id", serviceId).in("status", ["new", "confirmed"]).order("created_at", { ascending: false }),
+    (supabase.from("bookings") as any).select(SLOUPCE).eq("service_id", serviceId).in("status", ["converted", "cancelled"]).order("created_at", { ascending: false }).limit(20),
+  ]);
+  if (otevrene.error) throw otevrene.error;
+  if (uzavrene.error) throw uzavrene.error;
+  return [...((otevrene.data ?? []) as Rezervace[]), ...((uzavrene.data ?? []) as Rezervace[])];
 }
 
-export async function nastavStavRezervace(id: string, status: StavRezervace, ticketId?: string | null): Promise<void> {
-  if (!supabase) return;
+/**
+ * Změní stav rezervace, jen pokud je ještě otevřená (new/confirmed) – kolega ji
+ * mohl mezitím zrušit nebo z ní založit zakázku. Vrací false, když už nebyla.
+ */
+export async function nastavStavRezervace(id: string, status: StavRezervace, ticketId?: string | null): Promise<boolean> {
+  if (!supabase) return false;
   const patch: Record<string, unknown> = { status };
   if (ticketId !== undefined) patch.ticket_id = ticketId;
-  const { error } = await (supabase.from("bookings") as any).update(patch).eq("id", id);
+  const { data, error } = await (supabase.from("bookings") as any).update(patch).eq("id", id).in("status", ["new", "confirmed"]).select("id");
   if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
 }
 
 /** Realtime: každá změna v rezervacích servisu zavolá callback (stačí znovu načíst). */

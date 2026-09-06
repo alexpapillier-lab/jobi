@@ -7,7 +7,9 @@
  * doplněné na 6 + číslo doplněné na 10.
  */
 export function ibanZCislaUctu(cislo: string | null | undefined): string | null {
-  const bezMezer = (cislo ?? "").replace(/\s/g, "");
+  const bezMezer = (cislo ?? "").replace(/\s/g, "").toUpperCase();
+  // Kdo do pole „číslo účtu“ vepsal rovnou IBAN, dostane ho zpět.
+  if (/^CZ\d{22}$/.test(bezMezer)) return bezMezer;
   const m = /^(?:(\d{1,6})-)?(\d{2,10})\/(\d{4})$/.exec(bezMezer);
   if (!m) return null;
   const predcisli = (m[1] ?? "").padStart(6, "0");

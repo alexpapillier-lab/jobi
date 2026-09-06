@@ -49,7 +49,8 @@ export function computeTotals(items: InvoiceLineItem[]): InvoiceTotals {
   const vat_amount = round2(vat_breakdown.reduce((s, v) => s + v.vat, 0));
   const total = round2(subtotal + vat_amount);
 
-  const total_rounded = Math.round(total);
+  // Symetricky k nule: dobropis −100,50 → −101, stejně jako faktura 100,50 → 101.
+  const total_rounded = Math.sign(total) * Math.round(Math.abs(total));
   const rounding = round2(total_rounded - total);
 
   return { subtotal, vat_amount, total, rounding, total_rounded, vat_breakdown };

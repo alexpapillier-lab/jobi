@@ -338,7 +338,15 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         void nacitani.then((dodavatel) => {
           if (novyDokladTokenRef.current !== token) return;
           dodavatelNacitaniRef.current = null;
-          setEditorInvoice((prev) => ({ ...prev, ...dodavatel }));
+          // Doplnit jen prázdná pole – co člověk mezitím napsal, zůstane.
+          setEditorInvoice((prev) => {
+            const next = { ...prev } as Record<string, unknown>;
+            for (const [k, v] of Object.entries(dodavatel)) {
+              const stav = next[k];
+              if ((typeof stav !== "string" || !stav.trim()) && typeof v === "string" && v.trim()) next[k] = v;
+            }
+            return next as Partial<Invoice>;
+          });
           setEditorBaseline((prev) => {
             // Doplnění dodavatele není změna od uživatele – lišta „Neuložené změny“ se kvůli němu neukáže.
             try {
@@ -356,6 +364,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   const openEditInvoice = useCallback(
     async (inv: Invoice) => {
+      // Rozpracované dohledání dodavatele pro nový doklad se do cizího editoru nesmí dostat.
+      novyDokladTokenRef.current++;
+      dodavatelNacitaniRef.current = null;
       const { data: rows } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true });
       const items: EditorLineItem[] = rows?.length
         ? rows.map((it) => ({ id: it.id, name: it.name, qty: it.qty, unit: it.unit, unit_price: it.unit_price, vat_rate: it.vat_rate }))
@@ -451,6 +462,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const persistEditor = useCallback(
     async (issue: boolean) => {
       if (!activeServiceId || saving) return;
+      // Dvojklik na Vystavit by jinak založil dva doklady – zámek hned, ještě před čekáním.
+      setSaving(true);
 
       // Dodavatel se u nového dokladu dohledává na pozadí; kdo klikne Vystavit
       // dřív, než dorazí, dostal „Dodavatel je povinný“. Počká se na něj.
@@ -470,10 +483,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       const errors = validation(toValidationData(bezCisla ? { ...editorInvoice, number: "auto" } : editorInvoice), editorItems);
       if (errors.length > 0) {
         showToast(errors[0].message, "error");
+        setSaving(false);
         return;
       }
 
-      setSaving(true);
       try {
         const kind = asKind(editorInvoice);
         // Každý druh má vlastní řadu (FV / ZF / DB), aby dobropisy nedělaly díry ve fakturách.
@@ -589,6 +602,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   /** Odchod z editoru; s neuloženými změnami se nejdřív zeptá. */
   const leaveEditor = useCallback(() => {
+    novyDokladTokenRef.current++;
+    dodavatelNacitaniRef.current = null;
     if (!editorDirty) {
       setView("list");
       return;

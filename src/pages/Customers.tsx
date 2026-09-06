@@ -11,6 +11,7 @@ import { useIsNarrow } from "../hooks/useIsNarrow";
 import { Button } from "../components/ui";
 import { ImportZakazniku } from "./Customers/ImportZakazniku";
 import { normalizePhone } from "../lib/phone";
+import { useActiveRole } from "../hooks/useActiveRole";
 
 type TicketLite = {
   id: string;
@@ -74,7 +75,9 @@ export default function Customers({
     };
   };
 
-  /** Import z CSV: po dokončení se seznam načte znovu. */
+  /** Import z CSV: po dokončení se seznam načte znovu. Jen kdo smí zákazníky upravovat. */
+  const { hasCapability } = useActiveRole(activeServiceId);
+  const smiImportovat = hasCapability("can_manage_customers");
   const [importOpen, setImportOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -543,9 +546,11 @@ export default function Customers({
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zákazníci</div>
-        <Button variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
-          Import z CSV
-        </Button>
+        {smiImportovat && (
+          <Button variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
+            Import z CSV
+          </Button>
+        )}
       </div>
       <ImportZakazniku
         open={importOpen}

@@ -23,23 +23,34 @@ export async function nactiUseky(ticketId: string): Promise<UsekPrace[]> {
   return (data ?? []) as UsekPrace[];
 }
 
-/** Spustí práci na zakázce; běžící úsek téhož člověka (kdekoli) nejdřív ukončí. */
-export async function spustPraci(serviceId: string, ticketId: string, userId: string): Promise<UsekPrace> {
+/**
+ * Spustí práci na zakázce. Běžící úsek téhož člověka (kdekoli) ukončí
+ * databáze ve stejné transakci (RPC spust_praci), takže nikdy nevzniknou
+ * dva běžící úseky ani při dvou otevřených oknech.
+ */
+export async function spustPraci(serviceId: string, ticketId: string): Promise<UsekPrace> {
   if (!supabase) throw new Error("Bez připojení");
-  const ted = new Date().toISOString();
-  await (supabase.from("ticket_work_sessions") as any).update({ ended_at: ted }).eq("user_id", userId).is("ended_at", null);
-  const { data, error } = await (supabase.from("ticket_work_sessions") as any)
-    .insert({ service_id: serviceId, ticket_id: ticketId, user_id: userId, started_at: ted })
-    .select("id, ticket_id, user_id, started_at, ended_at, note")
-    .single();
+  const { data, error } = await (supabase as any).rpc("spust_praci", { p_service_id: serviceId, p_ticket_id: ticketId });
   if (error) throw error;
   return data as UsekPrace;
 }
 
-export async function zastavPraci(usekId: string): Promise<void> {
+/** Zastaví všechny běžící úseky přihlášeného (server má vždy nejvýš jeden). */
+export async function zastavPraci(): Promise<void> {
   if (!supabase) return;
-  const { error } = await (supabase.from("ticket_work_sessions") as any).update({ ended_at: new Date().toISOString() }).eq("id", usekId);
+  const { error } = await (supabase as any).rpc("zastav_praci");
   if (error) throw error;
+}
+
+/** Přezdívky lidí z úseků – ať karta říká, kdo pracuje, ne jen „Kolega“. */
+export async function nactiPrezdivky(userIds: string[]): Promise<Record<string, string>> {
+  if (!supabase || userIds.length === 0) return {};
+  const { data } = await (supabase.from("profiles") as any).select("id, nickname").in("id", userIds);
+  const out: Record<string, string> = {};
+  for (const p of (data ?? []) as Array<{ id: string; nickname: string | null }>) {
+    if (p.nickname) out[p.id] = p.nickname;
+  }
+  return out;
 }
 
 export async function smazUsek(usekId: string): Promise<void> {

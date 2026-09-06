@@ -36,7 +36,7 @@ export function ZapujckaKarta({
   const stitek: React.CSSProperties = { display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" };
 
   if (upravuji) {
-    const platne = navrh.nazev.trim() !== "" && !!navrh.pujceno;
+    const platne = navrh.nazev.trim() !== "" && !!navrh.pujceno && (!navrh.vraceno || navrh.vraceno >= navrh.pujceno);
     return (
       <div style={{ display: "grid", gap: 8 }}>
         {katalog.length > 0 && (

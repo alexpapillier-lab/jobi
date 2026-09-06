@@ -78,13 +78,17 @@ export const VYCHOZI_SABLONY: SablonaKontroly[] = [
 export function normalizujSablony(raw: unknown): SablonaKontroly[] {
   if (!Array.isArray(raw)) return VYCHOZI_SABLONY;
   const vysledek: SablonaKontroly[] = [];
+  const pouzitaId = new Set<string>();
   for (const s of raw as Array<Partial<SablonaKontroly>>) {
     if (!s || typeof s !== "object") continue;
     const nazev = typeof s.nazev === "string" ? s.nazev.trim() : "";
     const polozky = Array.isArray(s.polozky) ? s.polozky.filter((p): p is string => typeof p === "string" && p.trim() !== "").map((p) => p.trim()) : [];
     if (!nazev || polozky.length === 0) continue;
+    let id = typeof s.id === "string" && s.id ? s.id : `s_${vysledek.length}`;
+    while (pouzitaId.has(id)) id = `${id}_${vysledek.length}`;
+    pouzitaId.add(id);
     vysledek.push({
-      id: typeof s.id === "string" && s.id ? s.id : `s_${vysledek.length}`,
+      id,
       nazev,
       klicovaSlova: Array.isArray(s.klicovaSlova) ? s.klicovaSlova.filter((k): k is string => typeof k === "string").map((k) => k.trim().toLowerCase()).filter(Boolean) : [],
       polozky,
@@ -101,7 +105,9 @@ export function vyberSablonu(sablony: SablonaKontroly[], nazevZarizeni?: string 
   if (sablony.length === 0) return undefined;
   const nazev = (nazevZarizeni ?? "").toLowerCase();
   if (nazev) {
-    const podleSlova = sablony.find((s) => s.klicovaSlova.some((k) => k && nazev.includes(k)));
+    // Celé slovo, ne podřetězec – „hp“ nesmí chytit „Techphone“.
+    const slova = nazev.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const podleSlova = sablony.find((s) => s.klicovaSlova.some((k) => k && (k.includes(" ") ? nazev.includes(k) : slova.includes(k))));
     if (podleSlova) return podleSlova;
   }
   return sablony.find((s) => s.klicovaSlova.length === 0) ?? sablony[0];

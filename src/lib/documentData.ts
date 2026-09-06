@@ -45,7 +45,8 @@ function kontrolaDoDokumentu(kontrola: TicketEx["testChecklist"]): DocumentData[
   const stav = { ok: "ok", chyba: "fail", neoverovano: "skipped" } as const;
   return {
     title: kontrola.sablonaNazev,
-    items: kontrola.polozky.map((p) => ({ text: p.text, status: p.stav ? stav[p.stav] : null, note: p.poznamka?.trim() || undefined })),
+    // Poznámka má smysl jen u chyby; u OK by v protokolu mátla.
+    items: kontrola.polozky.map((p) => ({ text: p.text, status: p.stav ? stav[p.stav] : null, note: p.stav === "chyba" ? p.poznamka?.trim() || undefined : undefined })),
   };
 }
 

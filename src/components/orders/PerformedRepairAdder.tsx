@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Segmented } from "../ui";
 import { type DevicesData, type InventoryData, type DeviceRepair, safeLoadInventoryData } from "../../lib/catalogStorage";
 import { RepairPicker } from "./RepairPicker";
@@ -32,6 +32,10 @@ export function PerformedRepairAdder({
   const [praceHodiny, setPraceHodiny] = useState("1");
   const [praceSazba, setPraceSazba] = useState(vychoziSazba && vychoziSazba > 0 ? String(vychoziSazba) : "");
   const [praceTechnik, setPraceTechnik] = useState(vychoziTechnik ?? "");
+  // Sazba ze servisu dojíždí z databáze později než se karta vykreslí – doplnit, dokud je pole prázdné.
+  useEffect(() => {
+    if (vychoziSazba && vychoziSazba > 0) setPraceSazba((s) => (s.trim() === "" ? String(vychoziSazba) : s));
+  }, [vychoziSazba]);
   const hodinyCislo = parseFloat(praceHodiny.replace(",", ".")) || 0;
   const sazbaCislo = parseFloat(praceSazba.replace(",", ".")) || 0;
   const praceCena = Math.round(hodinyCislo * sazbaCislo * 100) / 100;
@@ -439,6 +443,7 @@ export function PerformedRepairAdder({
         </div>
       )}
 
+      {mode !== "hourly" && (
       <button
         onClick={handleAdd}
         disabled={(mode === "select" && !selectedRepairId) || (mode === "manual" && !manualRepairName.trim())}
@@ -464,6 +469,7 @@ export function PerformedRepairAdder({
       >
         Přidat opravu
       </button>
+      )}
     </div>
   );
 }

@@ -138,7 +138,7 @@ export function buildTicketVariablesForJobiDocs(ticket: TicketEx, companyData: R
       return chyb > 0 ? `${zaklad}, ${chyb} s chybou` : overeno === polozky.length ? `${zaklad}, vše v pořádku` : zaklad;
     })(),
     checklist_list: (ticket.testChecklist?.polozky ?? [])
-      .map((p) => `${p.stav === "ok" ? "✓" : p.stav === "chyba" ? "✗" : "–"} ${p.text}${p.poznamka?.trim() ? ` – ${p.poznamka.trim()}` : ""}`)
+      .map((p) => `${p.stav === "ok" ? "✓" : p.stav === "chyba" ? "✗" : "–"} ${p.text}${p.stav === "chyba" && p.poznamka?.trim() ? ` – ${p.poznamka.trim()}` : ""}`)
       .join("\n"),
     photo_urls: JSON.stringify(ticket.diagnosticPhotos && ticket.diagnosticPhotos.length > 0 ? ticket.diagnosticPhotos : []),
     complaint_code: "",

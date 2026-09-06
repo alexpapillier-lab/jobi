@@ -1914,7 +1914,12 @@ export default function Orders({
     if (!newOrderPrefill) return;
     setShouldOpenNew(true);
     // Rezervace z webu: údaje zákazníka a zařízení rovnou do formuláře.
+    // Rozepsanou zakázku nepřepisovat bez dotazu.
     const r = newOrderPrefill.rezervace;
+    if (r && isDraftDirty(newDraft) && !window.confirm("Máte rozepsanou novou zakázku. Nahradit ji údaji z rezervace?")) {
+      onNewOrderPrefillConsumed();
+      return;
+    }
     if (r) {
       setNewDraft((prev) => ({
         ...defaultDraft(),
@@ -2921,22 +2926,27 @@ export default function Orders({
 
   /** Náhradní zařízení se ukládá hned – smlouva se tiskne vzápětí a data musí být v DB. */
   const ulozZapujcku = useCallback(async (ticketId: string, zapujcka: ZapujckaData | null) => {
+    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.loaner;
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: zapujcka ?? undefined } : t)));
     if (!supabase) return;
     const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId));
     if (error) {
       devLog("[zapujcka] zápis selhal", error);
+      // Zpět na stav z databáze – jinak by karta ukazovala něco, co po obnovení zmizí.
+      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: puvodni } : t)));
       showToast("Půjčení zařízení se nepodařilo uložit", "error");
     }
   }, []);
 
   /** Kontrola po opravě se ukládá hned – stejný důvod jako u provedených oprav. */
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
+    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
     if (!supabase) return;
     const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId));
     if (error) {
       devLog("[kontrola] zápis selhal", error);
+      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: puvodni } : t)));
       showToast("Kontrolu se nepodařilo uložit", "error");
     }
   }, []);
@@ -3154,31 +3164,31 @@ export default function Orders({
   const potvrdStorno = async (odpoved: { duvod: string; poznamka: string }) => {
     if (!stornoDotaz) return;
     const { ticketId, next } = stornoDotaz;
-    // Důvod se zapíše dřív než stav: změna stavu se v UI projeví hned
-    // (optimisticky) a kdo si vzápětí otevře historii, má důvod už vidět.
-    if (supabase && activeServiceId) {
-      try {
-        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-        await (supabase.from("ticket_history") as any).insert({
-          ticket_id: ticketId,
-          service_id: activeServiceId,
-          action: "cancel_reason",
-          changed_by: uid,
-          details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
-        });
-      } catch (err) {
-        devLog("[storno] důvod se do historie nezapsal", err);
-      }
-    }
-    await provedZmenuStavu(ticketId, next);
+    // Nejdřív změna stavu; když neprojde (oprávnění, neplatný stav), důvod se
+    // nezapíše a dialog zůstane otevřený – hlášku o chybě ukáže změna stavu.
+    const zmeneno = await provedZmenuStavu(ticketId, next);
+    if (!zmeneno) return;
     setStornoDotaz(null);
+    if (!supabase || !activeServiceId) return;
+    try {
+      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+      await (supabase.from("ticket_history") as any).insert({
+        ticket_id: ticketId,
+        service_id: activeServiceId,
+        action: "cancel_reason",
+        changed_by: uid,
+        details: { duvod: odpoved.duvod, poznamka: odpoved.poznamka, status: next },
+      });
+    } catch (err) {
+      devLog("[storno] důvod se do historie nezapsal", err);
+    }
   };
 
-  const provedZmenuStavu = async (ticketId: string, next: string) => {
+  const provedZmenuStavu = async (ticketId: string, next: string): Promise<boolean> => {
     // Guard: check if selectedStatusKey is valid (exists in statuses array)
     if (!statusKeysSet.has(next)) {
       showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
-      return;
+      return false;
     }
 
     const ticket = tickets.find((t) => t.id === ticketId);
@@ -3247,6 +3257,7 @@ export default function Orders({
             hasRules: hasAutomationRulesFor(next),
           });
         }
+      return true;
       } catch (err: any) {
         // Rollback optimistic update
         setStatusById((prev) => {
@@ -3267,8 +3278,11 @@ export default function Orders({
         } else {
         showToast(`Chyba při změně statusu: ${errorMessage}`, "error");
         }
+        return false;
       }
     }
+    // Bez připojení zůstala jen optimistická změna – pro volajícího je hotová.
+    return true;
   };
 
 
@@ -3585,7 +3599,10 @@ export default function Orders({
         if (first) setDetailId(first.id);
         if (first && rezervaceId) {
           nastavStavRezervace(rezervaceId, "converted", first.id)
-            .then(() => window.dispatchEvent(new CustomEvent("jobsheet:rezervace-zmena")))
+            .then((zmeneno) => {
+              if (!zmeneno) showToast("Rezervaci mezitím někdo vyřídil; zakázka je založená.", "info");
+              window.dispatchEvent(new CustomEvent("jobsheet:rezervace-zmena"));
+            })
             .catch((e) => devLog("[rezervace] označení převedené selhalo", e));
         }
         const config = await loadDocumentsConfigFromDB(activeServiceId);

@@ -102,11 +102,12 @@ async function oznamServisu(servis: Servis, r: { customer_name: string; customer
   ];
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;color:#111"><h2 style="margin:0 0 12px">Nová rezervace z webu</h2><table cellpadding="6">${radky.map(([k, v]) => `<tr><td style="color:#666">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join("")}</table><p style="color:#666;margin-top:16px">Rezervaci najdete v Jobi v Kalendáři – tam ji potvrdíte nebo z ní jedním kliknutím založíte zakázku.</p></div>`;
   try {
-    await fetch("https://api.resend.com/emails", {
+    const odp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: [servis.email], subject: `Nová rezervace: ${r.customer_name} – ${r.device_label}`, html }),
     });
+    if (!odp.ok) console.warn("[public-booking] e-mail servisu odmítnut", odp.status, await odp.text().catch(() => ""));
   } catch (e) {
     console.warn("[public-booking] e-mail servisu se neposlal", e);
   }
@@ -135,11 +136,12 @@ ${oprava ? `<tr><td style="color:#666">Oprava</td><td><b>${esc(oprava)}</b></td>
 <p style="color:#888;font-size:12px;margin-top:24px">Tento e-mail byl odeslán automaticky po vyplnění rezervačního formuláře na webu servisu.</p>
 </div>`;
   try {
-    await fetch("https://api.resend.com/emails", {
+    const odp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: [r.customer_email], reply_to: servis.email ?? undefined, subject: `${nazev}: rezervace přijata`, html }),
     });
+    if (!odp.ok) console.warn("[public-booking] potvrzení zákazníkovi odmítnuto", odp.status, await odp.text().catch(() => ""));
   } catch (e) {
     console.warn("[public-booking] potvrzení zákazníkovi se neposlalo", e);
   }
@@ -297,7 +299,7 @@ serve(async (req) => {
   const svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   if (req.method === "GET") {
-    const slug = url.searchParams.get("service")?.trim().toLowerCase() ?? "";
+    const slug = (url.searchParams.get("service")?.trim().toLowerCase() ?? "").slice(0, 80);
     if (url.pathname.endsWith("/embed.js")) {
       return new Response(embedSkript(slug), { headers: { ...cors, "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=300" } });
     }
@@ -322,12 +324,14 @@ serve(async (req) => {
   const servis = await najdiServis(svc, slug);
   if (!servis) return json({ error: "Rezervace nejsou k dispozici" }, 404);
 
+  // Limit se započítá hned – i nevalidní pokusy stojí dotazy do databáze.
   const klic = await otiskKlienta(req);
+  await Promise.all([svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: klic }), svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: `servis:${servis.id}` })]);
   const [zaKlic, zaServis] = await Promise.all([
     pocet(svc, "booking", klic, 60),
     pocet(svc, "booking", `servis:${servis.id}`, 60),
   ]);
-  if (zaKlic >= LIMIT_NA_KLIENTA_HOD || zaServis >= LIMIT_NA_SERVIS_HOD) {
+  if (zaKlic > LIMIT_NA_KLIENTA_HOD || zaServis > LIMIT_NA_SERVIS_HOD) {
     return json({ error: "Příliš mnoho rezervací, zkuste to prosím později." }, 429, { "Retry-After": "3600" });
   }
 
@@ -366,10 +370,11 @@ serve(async (req) => {
   if (p) {
     const d = new Date(p);
     if (Number.isNaN(d.getTime())) return json({ error: "Termín nevypadá platně" }, 400);
+    // Minulost a víc než rok dopředu nedávají smysl (překlep v roce).
+    if (d.getTime() < Date.now() - 60 * 60 * 1000) return json({ error: "Termín je v minulosti" }, 400);
+    if (d.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000) return json({ error: "Termín je příliš daleko" }, 400);
     preferred = d.toISOString();
   }
-
-  await Promise.all([svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: klic }), svc.rpc("zapocitej_udalost", { p_kanal: "booking", p_klic: `servis:${servis.id}` })]);
 
   const radek = {
     service_id: servis.id, customer_name: name, customer_phone: phone, customer_email: email || null,

@@ -47,7 +47,7 @@ export const LEGAL_TEXTS: Partial<Record<DocType, string>> = {
     "Servis převzal zařízení k posouzení reklamace a tímto potvrzuje, kdy byla uplatněna, co je jejím obsahem a jaký způsob vyřízení zákazník požaduje. Reklamace bude vyřízena bez zbytečného odkladu, nejpozději do 30 dnů od uplatnění, nedohodnou-li se strany na delší lhůtě; o způsobu a datu vyřízení vydá servis písemné potvrzení. Uznaná reklamace se řeší bezplatnou opravou nebo výměnou dílu.",
   vydejka_reklamace: "Zákazník podpisem potvrzuje převzetí zařízení po vyřízení reklamace a seznámení s jejím výsledkem.",
   smlouva_zapujcka:
-    "Servis půjčuje zákazníkovi výše uvedené náhradní zařízení bezplatně na dobu opravy zakázky {{number}}. Zákazník zařízení převzal funkční a bez viditelného poškození, zavazuje se s ním zacházet šetrně, nepředávat ho třetí osobě a vrátit ho při vyzvednutí své opravy, nejpozději však do 3 dnů od výzvy servisu, ve stavu, v jakém ho převzal, včetně příslušenství. Za poškození, ztrátu nebo odcizení odpovídá zákazník v plné výši; servis je oprávněn započíst škodu proti složené kauci {{loaner.deposit}}. Kauce se vrací při vrácení nepoškozeného zařízení. Zákazník před vrácením odstraní své účty a data; servis zařízení po vrácení uvede do továrního nastavení.",
+    "Servis půjčuje zákazníkovi výše uvedené náhradní zařízení bezplatně na dobu opravy zakázky {{number}}. Zákazník zařízení převzal funkční a bez viditelného poškození, zavazuje se s ním zacházet šetrně, nepředávat ho třetí osobě a vrátit ho při vyzvednutí své opravy, nejpozději však do 3 dnů od výzvy servisu, ve stavu, v jakém ho převzal, včetně příslušenství. Za poškození, ztrátu nebo odcizení odpovídá zákazník v plné výši. Zákazník před vrácením odstraní své účty a data; servis zařízení po vrácení uvede do továrního nastavení.",
 };
 
 function row(label: string, value: string): FieldRow {
@@ -215,6 +215,8 @@ function zapujcka(): Template {
     fields([row("Zakázka", "{{number}}"), row("Zařízení v opravě", "{{device.name}}"), row("Předpokládané dokončení", "{{dates.eta}}")], "Souvisí s opravou"),
     text("{{loaner.note}}", { title: "Poznámka", when: "notEmpty" }),
     text(LEGAL_TEXTS.smlouva_zapujcka!, { size: "small", align: "justify", columns: 2 }),
+    // Věta o kauci jen když nějaká je – bez ní by zněla „proti složené kauci bez kauce“.
+    text("Zákazník složil kauci {{loaner.depositText}}; servis je oprávněn započíst proti ní škodu. Kauce se vrací při vrácení nepoškozeného zařízení.", { size: "small", align: "justify", when: "notEmpty" }),
   ];
   t.slots.bottomLeft = [signatureSlot("Zákazník – převzetí zařízení")];
   t.slots.bottomCenter = [stampSlot("Za servis")];
