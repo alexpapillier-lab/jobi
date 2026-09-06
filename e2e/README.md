@@ -4,6 +4,25 @@ Projdou hlavní cestu servisu v prohlížeči: přihlásit se, založit zakázku
 najít ji v seznamu a přidat provedenou opravu. Doplňují unit testy, které
 hlídají výpočty, ale o rozbité obrazovce nic nevědí.
 
+Kromě toho hlídají to nejdůležitější: **že se nic neztratí mezi aplikací
+a databází**. Několik testů proto shodí síť přesně mezi kliknutím a zápisem
+a hodnotu pak ověřuje až po přenačtení stránky – to, co je jen na obrazovce,
+takový test neuspokojí.
+
+| Soubor | Co hlídá |
+| --- | --- |
+| `zakazka.spec.ts` | příjem, opravy, kontrola po opravě, zápůjčka, stopky, storno |
+| `spolehlivost.spec.ts` | fronta neuložených změn, výpadek sítě, komentáře |
+| `sklad.spec.ts` | produkty, počty kusů, odchod ze stránky před zápisem |
+| `cenik.spec.ts` | ceník oprav a opakování neúspěšného zápisu |
+| `objednavky-dilu.spec.ts` | objednávka u dodavatele od návrhu po naskladnění |
+| `faktura-a-nabidka.spec.ts` | nabídka, faktura, uzávěrka, rozepsaný doklad |
+| `portal.spec.ts` | zákazník schválí nabídku na appjobi.com |
+| `statistiky.spec.ts` | čísla odpovídají tomu, co se stalo |
+| `kalendar.spec.ts` | slíbený termín dokončení |
+| `soubezna-prace.spec.ts` | dva lidé naráz, práva technika |
+| `zakaznici*.spec.ts`, `hledani`, `nastaveni`, `reklamace`, `rezervace`, `prihlaseni` | zbytek |
+
 ## Spuštění
 
 ```bash
@@ -84,7 +103,23 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   kaucí 2 000 – test zápůjčky ji vybírá ze seznamu.
 - **Testovací servis potřebuje produkty ve skladu** („Displej AUDIT“) – test
   výběru dílů u opravy je hledá. Kdyby zmizely, založte libovolný produkt se
-  slovem AUDIT v názvu.
+  slovem AUDIT v názvu. „Displej AUDIT“ má nastaveného dodavatele, protože
+  bez něj by nešlo objednávat díly.
+- **Číslo zakázky je v DOM vícekrát.** Vykresluje se ve dvou rozvrženích
+  a schované stránky zůstávají připojené, takže `getByText` padá na
+  „resolved to 2 elements“. Používejte `vidZakazku(page, kod)` z pomocníků.
+- **Výpadek sítě se dělá `page.route`, ne `context.setOffline`.** Shodí se
+  jen zápisy do jedné tabulky, zbytek aplikace zůstane použitelný a test
+  trefí přesně ten okamžik, kdy uložení neprojde. Vzor musí být regulární
+  výraz (`/\/rest\/v1\/tickets/`); glob s hvězdičkou se o dotazovací část
+  URL rozbije.
+- **Sklad a ceník se ukládají s odkladem.** Že je změna v databázi, se pozná
+  podle toho, že z `localStorage` zmizel klíč `jobi_sklad_neulozeno_v1`
+  (u ceníku `jobi_zarizeni_neulozeno_v1`). Bez téhle kontroly test projde
+  i nad hodnotou, která je jen na obrazovce.
+- **Testy po sobě uklízejí, co je nastavením servisu.** Náhradní zařízení,
+  opravy v ceníku, produkty a koncepty faktur se na konci mažou – jinak by
+  testovací servis po pár týdnech vypadal jako smetiště.
 
 ## Ukázkový servis pro snímky na web
 
