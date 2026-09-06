@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 
 // Bez klienta se funkce ani nedostane k úložišti; prázdný objekt stačí,
 // protože se testuje jen čtení uložené relace, ne volání do cloudu.
@@ -31,6 +31,9 @@ function nastavUloziste(u: unknown) {
   Object.defineProperty(globalThis, "localStorage", { value: u, configurable: true, writable: true });
 }
 
+/** V prostředí node žádné úložiště není; po testech se vrátí, jak bylo. */
+const puvodniUloziste = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+
 const zaHodinu = Math.floor(Date.now() / 1000) + 3600;
 const predHodinou = Math.floor(Date.now() / 1000) - 3600;
 const KLIC = "sb-abcdefgh-auth-token";
@@ -41,6 +44,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+afterAll(() => {
+  if (puvodniUloziste) Object.defineProperty(globalThis, "localStorage", puvodniUloziste);
+  else delete (globalThis as { localStorage?: unknown }).localStorage;
 });
 
 /**

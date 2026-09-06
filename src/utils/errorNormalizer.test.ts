@@ -69,3 +69,77 @@ describe("chyby z Supabase (obyčejný objekt, ne Error)", () => {
     expect(normalizeError("Něco se pokazilo")).toBe("Něco se pokazilo");
   });
 });
+
+/**
+ * Hláška se ukazuje technikovi uprostřed práce. Musí z ní poznat, jestli
+ * má zkusit znovu (výpadek sítě), zavolat majiteli servisu (chybí
+ * oprávnění), nebo jestli je chyba v tom, co zrovna vyplnil. Špatně
+ * zařazená chyba pošle člověka hledat úplně jinam.
+ */
+describe("zařazení chyby do správné hlášky", () => {
+  it("chybějící oprávnění vyhrává nad tím, že se zrovna nepovedlo spojení", () => {
+    const chyba = Object.assign(new Error("Failed to fetch"), { code: "PGRST301" });
+    expect(normalizeError(chyba)).toBe("Nemáte oprávnění k této akci");
+  });
+
+  it("zamítnutí od databáze se přeloží na chybějící oprávnění", () => {
+    expect(normalizeError({ message: "permission denied for table tickets" })).toBe(
+      "Nemáte oprávnění k této akci"
+    );
+  });
+
+  it("nedostupná cloudová funkce má vlastní návod, ne obecnou síťovou hlášku", () => {
+    const text = normalizeError(new Error("Failed to send a request to the Edge Function"));
+    expect(text).toContain("cloudovou funkci");
+    expect(text).not.toContain("Nelze se připojit k cloudu");
+  });
+
+  it("Load failed ze Safari je výpadek sítě, ne neznámá chyba", () => {
+    expect(normalizeError(new Error("Load failed"))).toContain("Nelze se připojit k cloudu");
+  });
+
+  it("vypršený časový limit se bere jako výpadek spojení", () => {
+    expect(normalizeError(new Error("Request timeout after 30000ms"))).toContain("Nelze se připojit k cloudu");
+  });
+
+  it("česká hláška ze serveru se nepřepisuje, projde i s diakritikou", () => {
+    expect(normalizeError({ message: "Zakázku nelze smazat, má vystavenou fakturu" })).toBe(
+      "Zakázku nelze smazat, má vystavenou fakturu"
+    );
+  });
+
+  it("nula a prázdný řetězec jsou taky „žádná chyba“", () => {
+    expect(normalizeError(0)).toBe("Neznámá chyba");
+    expect(normalizeError("")).toBe("Neznámá chyba");
+    expect(normalizeError(false)).toBe("Neznámá chyba");
+  });
+
+  it("chyba, která není ani objekt, ani text, nespadne", () => {
+    expect(() => normalizeError(42)).not.toThrow();
+    expect(normalizeError(42)).toBe("42");
+  });
+
+  it("objekt jen s nápovědou od databáze ji ukáže místo [object Object]", () => {
+    expect(normalizeError({ hint: "Zkontrolujte, že servis má aktivní modul" })).toBe(
+      "Zkontrolujte, že servis má aktivní modul"
+    );
+  });
+
+  it("dlouhý výpis z databáze se nezkracuje – technik ho posílá do podpory", () => {
+    const dlouhy = "Zápis selhal: " + "podrobnost ".repeat(200);
+    expect(normalizeError({ message: dlouhy })).toBe(dlouhy);
+  });
+});
+
+describe("hláška o neodeslané pozvánce", () => {
+  it("na velikosti písmen v odpovědi z Resendu nezáleží", () => {
+    const r = "403 - You Can Only Send To Your Own Email Until You Verify A Domain";
+    expect(formatInviteEmailReason(r)).toContain("RESEND_FROM_EMAIL");
+  });
+
+  it("chybu typu validation_error pozná i bez čísla 403", () => {
+    expect(formatInviteEmailReason("validation_error: you can only send to your own email")).toContain(
+      "ověř doménu"
+    );
+  });
+});

@@ -22,7 +22,11 @@
 -- Sloupec „ocekavano“: nic = PROSLO:0, odmitnuto = ODMITNUTO, projde/neco =
 -- PROSLO s nenulovým počtem, kontrola = podívat se ručně.
 --
--- Po doběhnutí funkci zase zahodit:  drop function public.__rls_probe(uuid, text);
+-- POZOR: funkce se MUSÍ po doběhnutí zahodit – dělá se to na posledním
+-- řádku tohohle souboru, ať se na to nedá zapomenout. Když v databázi
+-- zůstane, může přes ni kdokoli s veřejným klíčem spustit libovolné SQL
+-- pod identitou libovolného uživatele. Přesně to se 6. 9. 2026 stalo:
+-- funkce tam po předchozím kole auditu zůstala s právem EXECUTE pro anon.
 
 create or replace function public.__rls_probe(p_user uuid, p_sql text) returns text
 language plpgsql as $$
@@ -218,3 +222,6 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p
  order by p.poradi;
+
+-- Úklid: ladicí funkce nesmí v databázi zůstat ani na minutu.
+drop function if exists public.__rls_probe(uuid, text);
