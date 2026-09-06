@@ -43,3 +43,50 @@ test("zvolené zobrazení zakázek přežije obnovení aplikace", async ({ page 
   await poZnovunacteni.getByRole("radio", { name: /Seznam/ }).click();
   await page.waitForTimeout(1500);
 });
+
+/** Otevře podsekci nastavení podle názvu (přes hledání, viz otevriRozhrani). */
+async function otevriSekci(page: import("@playwright/test").Page, hledat: string, nazev: RegExp) {
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
+  const hledani = page.getByPlaceholder("Hledat v nastavení…");
+  await expect(hledani).toBeVisible({ timeout: 20_000 });
+  await hledani.fill(hledat);
+  await page.getByRole("button", { name: nazev }).first().click();
+  await hledani.fill("");
+}
+
+test("výchozí hodinová sazba se uloží servisu a předvyplní se v zakázce", async ({ page }) => {
+  test.setTimeout(150_000);
+  await prihlasSe(page);
+  await otevriSekci(page, "hodinová sazba", /Hodinová práce/);
+
+  const sazba = page.getByLabel("Výchozí hodinová sazba v Kč za hodinu");
+  await expect(sazba).toBeVisible({ timeout: 20_000 });
+  const puvodni = await sazba.inputValue();
+
+  await sazba.fill("950");
+  // Ukládá se po opuštění pole – kliknutí jinam je součást chování.
+  await sazba.blur();
+  await expect(page.getByText(/Uloženo/i).first()).toBeVisible({ timeout: 20_000 });
+
+  // Nastavení servisu sdílí celý tým, takže se musí načíst i po restartu.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await otevriSekci(page, "hodinová sazba", /Hodinová práce/);
+  await expect(page.getByLabel("Výchozí hodinová sazba v Kč za hodinu")).toHaveValue("950", { timeout: 20_000 });
+
+  // A hlavně: projeví se tam, kde se používá.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders" } })));
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 20_000 });
+  await page.getByText(/^E2E\d{6,}$/).first().click();
+  await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Hodinová práce" }).first().click();
+  await expect(page.getByLabel("Sazba (Kč/h)")).toHaveValue("950", { timeout: 20_000 });
+  await page.keyboard.press("Escape");
+
+  // Uklidit po sobě.
+  await otevriSekci(page, "hodinová sazba", /Hodinová práce/);
+  const zpet = page.getByLabel("Výchozí hodinová sazba v Kč za hodinu");
+  await zpet.fill(puvodni);
+  await zpet.blur();
+  await page.waitForTimeout(1500);
+});

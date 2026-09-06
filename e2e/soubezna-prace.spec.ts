@@ -86,6 +86,15 @@ test("oprava přidaná majitelem přežije změnu stavu od technika", async ({ p
   }
 });
 
+/** Počká na zakázku v seznamu; když se živá aktualizace opozdí, přenačte. */
+async function pockejNaZakazku(page: Page, kod: string) {
+  const radek = page.getByText(kod, { exact: true });
+  if (await radek.first().isVisible({ timeout: 20_000 }).catch(() => false)) return;
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await expect(radek.first()).toBeVisible({ timeout: 30_000 });
+}
+
 test("dva lidé zakládají zakázky naráz a čísla se nesrazí", async ({ page, browser }) => {
   await prihlasSe(page, "owner");
   const technik = await druhyClovek(browser, "technik");
@@ -96,9 +105,11 @@ test("dva lidé zakládají zakázky naráz a čísla se nesrazí", async ({ pag
       zalozZakazku(technik, { zakaznik: testovaciJmeno("Naráz B"), zarizeni: "Telefon B" }),
     ]);
     expect(kodA).not.toBe(kodB);
-    // Každý musí vidět i tu druhou zakázku.
-    await expect(page.getByText(kodB, { exact: true })).toBeVisible({ timeout: 30_000 });
-    await expect(technik.getByText(kodA, { exact: true })).toBeVisible({ timeout: 30_000 });
+    // Každý musí vidět i tu druhou zakázku. Kdyby se živá aktualizace
+    // opozdila, rozhodne přenačtení – tenhle test je o číslech, propsání
+    // v reálném čase hlídá test výš.
+    await pockejNaZakazku(page, kodB);
+    await pockejNaZakazku(technik, kodA);
   } finally {
     await technik.context().close();
   }

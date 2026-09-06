@@ -2573,14 +2573,18 @@ function SettingsNav({
   isNarrow: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const q = normalizeText(query.trim());
-  const matches = q
+  /* Hledá se po slovech, ne celý řetězec najednou. „hodinová sazba" je
+     přirozený dotaz, ale žádné klíčové slovo tuhle dvojici neobsahuje –
+     dřív proto nenašel nic. Každé slovo musí sedět někde v názvu sekce,
+     v názvu kategorie nebo v klíčových slovech. */
+  const slova = normalizeText(query.trim()).split(/\s+/).filter(Boolean);
+  const matches = slova.length
     ? categories.flatMap((cat) =>
         cat.subsections
-          .filter((sub) =>
-            normalizeText(sub.label).includes(q)
-            || normalizeText(cat.label).includes(q)
-            || sub.keywords.some((k) => normalizeText(k).includes(q)))
+          .filter((sub) => {
+            const kde = [normalizeText(sub.label), normalizeText(cat.label), ...sub.keywords.map((k) => normalizeText(k))];
+            return slova.every((slovo) => kde.some((text) => text.includes(slovo)));
+          })
           .map((sub) => ({ cat, sub })))
     : [];
 
@@ -2625,7 +2629,7 @@ function SettingsNav({
         />
       </div>
 
-      {q ? (
+      {slova.length > 0 ? (
         matches.length === 0 ? (
           <div style={{ padding: "var(--space-3)", color: "var(--muted)", fontSize: "var(--text-base)" }}>Nic nenalezeno</div>
         ) : (
