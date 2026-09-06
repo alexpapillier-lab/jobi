@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { reportSilent } from "../../../lib/reportError";
 import { supabase } from "../../../lib/supabaseClient";
 import { showToast } from "../../../components/Toast";
 import type { TicketEx } from "../../Orders";
@@ -125,13 +126,16 @@ export function useWarrantyClaims(activeServiceId: string | null) {
       // Log to ticket_history so original ticket shows "založena reklamace R-xxx" (only if we still have source_ticket_id)
       const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
       if (ticket.id) {
-        await (supabase.from("ticket_history") as any).insert({
+        // Chyba se vrací, nevyhazuje. Bez záznamu v historii nikdo nepozná,
+        // že k zakázce vznikla reklamace – proto se aspoň zaloguje.
+        const { error: histErr } = await (supabase.from("ticket_history") as any).insert({
         ticket_id: ticket.id,
         service_id: activeServiceId,
         action: "warranty_claim_created",
         changed_by: uid,
         details: { warranty_claim_id: data.id, warranty_claim_code: data.code },
         });
+        if (histErr) reportSilent({ code: "claims.history_insert_failed", error: histErr, source: "useWarrantyClaims.createFromTicket" });
       }
       showToast(`Reklamace ${data.code} vytvořena`, "success");
       return data as WarrantyClaimRow;

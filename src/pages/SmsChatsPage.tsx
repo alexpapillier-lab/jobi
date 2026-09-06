@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { reportSilent } from "../lib/reportError";
 import { getTypedSupabaseClient } from "../lib/typedSupabase";
 import { showToast } from "../components/Toast";
 import { reportError } from "../lib/reportError";
@@ -160,7 +161,13 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
     for (const c of enriched) {
       const disp = c.display_name?.trim();
       if (disp && !c.customer_name?.trim()) {
-        client.from("sms_conversations").update({ customer_name: disp }).eq("id", c.id).then(() => {});
+        client.from("sms_conversations").update({ customer_name: disp })
+            .eq("id", c.id)
+            // Jde o odvozenou jmenovku, ne o práci uživatele, ale tichý zápis
+            // by se opakoval při každém načtení seznamu a nikdo by nevěděl proč.
+            .then(({ error }: { error: unknown }) => {
+              if (error) reportSilent({ code: "sms.conversation_name_failed", error, source: "SmsChatsPage.doplnJmeno" });
+            });
       }
     }
 

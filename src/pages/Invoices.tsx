@@ -269,7 +269,10 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     if (overdueIds.length === 0) return;
     (async () => {
       try {
-        await typedSupabase.from("invoices").update({ status: "overdue" }).in("id", overdueIds);
+        // Chyba se vrací, nevyhazuje – bez tohohle by se zápis opakoval při
+        // každém načtení seznamu a nikdo by se o něm nedozvěděl.
+        const { error } = await typedSupabase.from("invoices").update({ status: "overdue" }).in("id", overdueIds);
+        if (error) throw error;
         loadInvoices();
       } catch (e) {
         // Když selže, uživatel uvidí zastaralý stav a nepozná proč – proto se to zaloguje.
@@ -461,12 +464,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const logEvent = useCallback(
     async (invoiceId: string, type: string, payload: Record<string, unknown>) => {
       try {
-        await typedSupabase.from("invoice_events").insert({
+        const { error } = await typedSupabase.from("invoice_events").insert({
           invoice_id: invoiceId,
           type,
           payload: payload as never,
           created_by: session?.user?.id || null,
         });
+        if (error) throw error;
       } catch (e) {
         // Selhání nebrání práci, ale bez logu by chyběl záznam a nikdo by nevěděl, že se nezapisuje.
         reportSilent({ code: "invoices.log_event_failed", error: e, source: "Invoices.logEvent" });

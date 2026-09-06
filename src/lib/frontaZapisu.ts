@@ -46,6 +46,9 @@ export type PolozkaFronty = {
   popis: string;
   serviceId: string | null;
   vlozeno: number;
+  /** Rozlišení dvou zápisů téhož klíče. `vlozeno` na to nestačí – dva zápisy
+   *  ve stejné milisekundě by byly nerozlišitelné a novější by se smazal. */
+  poradi?: string;
   pokusy: number;
   posledniChyba?: string;
   /** Opakování nepomáhá (chybí právo, řádek zmizel). Zůstává vidět, ať se to neztratí potichu. */
@@ -144,11 +147,18 @@ export function ulozNaPozdeji(vstup: {
     popis: vstup.popis,
     serviceId: vstup.serviceId ?? null,
     vlozeno: Date.now(),
+    poradi: novePoradi(),
     pokusy: 0,
     posledniChyba: vstup.chyba ? textChyby(vstup.chyba) : undefined,
   });
   zapis(polozky);
   naplanujOdeslani();
+}
+
+let citac = 0;
+function novePoradi(): string {
+  citac += 1;
+  return `${Date.now().toString(36)}-${citac.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function textChyby(err: unknown): string {
@@ -242,7 +252,11 @@ export async function odesliFrontu(vcetneZaseknutych = false): Promise<{ odeslan
       const aktualni = nacti();
       const idx = aktualni.findIndex((p) => p.klic === polozka.klic);
       if (idx < 0) continue;
-      if (aktualni[idx].vlozeno !== polozka.vlozeno) continue;
+      // Mezitím mohl přibýt novější stav téhož řádku – ten se zahodit nesmí.
+      const stejnaPolozka = polozka.poradi
+        ? aktualni[idx].poradi === polozka.poradi
+        : aktualni[idx].vlozeno === polozka.vlozeno;
+      if (!stejnaPolozka) continue;
 
       if (!chyba) {
         aktualni.splice(idx, 1);

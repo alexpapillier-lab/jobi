@@ -141,37 +141,33 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
   const modelIds = new Set(data.models.map((m) => m.id));
   const repairIds = new Set(data.repairs.map((r) => r.id));
 
-  // 1) Smazat opravy, které už nejsou v data
-  const { data: existingRepairs } = await (supabase.from("repairs") as any).select("id").eq("service_id", serviceId);
-  for (const r of existingRepairs ?? []) {
-    if (!repairIds.has(r.id)) {
-      await (supabase.from("repairs") as any).delete().eq("id", r.id);
-    }
+  /* Mazání toho, co v datech není. Dřív se to dělalo po jednom a bez
+     kontroly chyb: když zápis uprostřed selhal, zůstal ceník rozpůlený
+     a funkce to nepoznala. Čtení se kontroluje taky – nenačtený seznam
+     vypadá jako prázdný a smazalo by se tím všechno. */
+  const smazChybejici = async (
+    tabulka: string,
+    zustavaji: Set<string>,
+  ): Promise<string | null> => {
+    const { data: existujici, error } = await (supabase.from(tabulka) as any).select("id").eq("service_id", serviceId);
+    if (error) return `Nepodařilo se načíst ${tabulka}: ${error.message}`;
+    const kSmazani = (existujici ?? []).map((x: { id: string }) => x.id).filter((id: string) => !zustavaji.has(id));
+    if (kSmazani.length === 0) return null;
+    const { error: delErr } = await (supabase.from(tabulka) as any).delete().in("id", kSmazani);
+    return delErr ? `Nepodařilo se smazat z ${tabulka}: ${delErr.message}` : null;
+  };
+
+  // Pořadí je dané vazbami: nejdřív opravy, pak modely, kategorie a značky.
+  for (const [tabulka, zustavaji] of [
+    ["repairs", repairIds],
+    ["device_models", modelIds],
+    ["device_categories", categoryIds],
+    ["device_brands", brandIds],
+  ] as const) {
+    const chyba = await smazChybejici(tabulka, zustavaji);
+    if (chyba) return { error: chyba };
   }
 
-  // 2) Smazat modely, které už nejsou v data
-  const { data: existingModels } = await (supabase.from("device_models") as any).select("id").eq("service_id", serviceId);
-  for (const m of existingModels ?? []) {
-    if (!modelIds.has(m.id)) {
-      await (supabase.from("device_models") as any).delete().eq("id", m.id);
-    }
-  }
-
-  // 3) Smazat kategorie, které už nejsou v data
-  const { data: existingCategories } = await (supabase.from("device_categories") as any).select("id").eq("service_id", serviceId);
-  for (const c of existingCategories ?? []) {
-    if (!categoryIds.has(c.id)) {
-      await (supabase.from("device_categories") as any).delete().eq("id", c.id);
-    }
-  }
-
-  // 4) Smazat značky, které už nejsou v data
-  const { data: existingBrands } = await (supabase.from("device_brands") as any).select("id").eq("service_id", serviceId);
-  for (const b of existingBrands ?? []) {
-    if (!brandIds.has(b.id)) {
-      await (supabase.from("device_brands") as any).delete().eq("id", b.id);
-    }
-  }
 
   // 5) Upsert brands
   if (data.brands.length > 0) {
