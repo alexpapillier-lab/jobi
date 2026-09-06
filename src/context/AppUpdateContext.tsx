@@ -72,11 +72,40 @@ function isTauriRuntime(): boolean {
 }
 
 /** Chybové hlášky z updateru jsou technické; tohle je to, co má smysl číst. */
+/** Síťová chyba (po probuzení z uspání, výpadek, DNS) – přechodná, má smysl to zkusit znovu. */
+function jeSitovaChyba(msg: string): boolean {
+  const low = msg.toLowerCase();
+  return ["error sending request", "network", "fetch", "timed out", "timeout", "dns", "connect", "reset by peer", "broken pipe"].some((k) => low.includes(k));
+}
+
+/**
+ * Kontrola s opakováním: aplikace běží dny, po probuzení Macu bývá síť pár
+ * vteřin mimo a první požadavek spadne na „error sending request“. Bez
+ * opakování by to vypadalo, že aktualizace nefungují, dokud se aplikace
+ * nerestartuje.
+ */
+async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugin-updater").Update | null> {
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const pauzy = [2000, 5000];
+  let posledni: unknown = null;
+  for (let pokus = 0; pokus <= pauzy.length; pokus++) {
+    try {
+      return await check({ timeout: 15000 });
+    } catch (err) {
+      posledni = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!jeSitovaChyba(msg) || pokus === pauzy.length) throw err;
+      await new Promise((r) => setTimeout(r, pauzy[pokus]));
+    }
+  }
+  throw posledni;
+}
+
 function humanizeUpdateError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const low = msg.toLowerCase();
-  if (low.includes("network") || low.includes("fetch") || low.includes("timed out") || low.includes("dns") || low.includes("connect")) {
-    return "Nepodařilo se spojit se serverem aktualizací. Zkontrolujte připojení a zkuste to znovu.";
+  if (jeSitovaChyba(msg)) {
+    return "Nepodařilo se spojit se serverem aktualizací. Zkusí se to znovu za minutu; jinak zkontrolujte připojení.";
   }
   if (low.includes("signature") || low.includes("pubkey") || low.includes("verify")) {
     return "Stažená verze neprošla ověřením podpisu. Aktualizace se nenainstalovala.";
@@ -141,15 +170,19 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const opakovaniRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checkForUpdate = useCallback(async () => {
     if (!isTauriRuntime()) return;
     // Hotovou verzi nepřepisujeme další kontrolou – stačí restart.
     if (downloadingRef.current) return;
 
     setState((s) => (s.phase === "ready" ? s : { ...s, phase: "checking", checking: true, error: null }));
+    if (opakovaniRef.current) {
+      clearTimeout(opakovaniRef.current);
+      opakovaniRef.current = null;
+    }
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
+      const update = await zkontrolujSOpakovanim();
       const now = Date.now();
       if (!update) {
         pendingUpdateRef.current = null;
@@ -173,6 +206,13 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       setState((s) => ({ ...s, phase: s.phase === "ready" ? "ready" : "error", checking: false, error: humanizeUpdateError(err), lastCheckedAt: Date.now() }));
+      // Přechodná síťová chyba: za minutu znovu, ne až za deset (interval) nebo po restartu.
+      if (jeSitovaChyba(err instanceof Error ? err.message : String(err))) {
+        opakovaniRef.current = setTimeout(() => {
+          opakovaniRef.current = null;
+          void checkForUpdate();
+        }, 60_000);
+      }
     }
   }, [downloadAndInstall]);
 
