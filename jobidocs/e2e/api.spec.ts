@@ -12,6 +12,7 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { startApiServer } from "../api/server";
 import { DOC_TYPES, documentsFromConfig, normalizeDocuments, renderDocument, sampleData, templateFor } from "../core/index.js";
 import { docasnyAdresar, E2E_SERVICE_ID, volnyPort } from "./pomocnici";
@@ -496,5 +497,50 @@ test.describe("Data ze zakázky (tak, jak je posílá Jobi)", () => {
     expect(p.rendery).toHaveLength(2);
     expect(p.rendery[0]).toBe(p.rendery[1]);
     expect(p.rendery[0]).toContain("Druhý Zákazník");
+  });
+});
+
+/**
+ * Místní API poslouchá na 127.0.0.1, jenže to před prohlížečem nechrání:
+ * každá otevřená stránka umí poslat POST na localhost. Tyhle testy hlídají obě
+ * pojistky – odmítnutí cizího původu a omezení cesty pro export.
+ */
+test.describe("hranice místního API", () => {
+  let p: Prostredi;
+  test.beforeAll(async () => { p = await spustApi({ sPdf: true }); });
+  test.afterAll(async () => { await zastav(p); });
+
+  test("požadavek z cizí stránky se odmítne, z Jobi projde", async () => {
+    const cizi = await fetch(`${p.api}/v1/health`, { headers: { Origin: "https://utocnik.example" } });
+    expect(cizi.status, "cizí web se dostal na API JobiDocs").toBe(403);
+
+    // macOS Tauri hlásí `tauri://localhost`, Windows `http://tauri.localhost`,
+    // vývojový server `http://localhost:1430`. Všechny tři musí projít, jinak
+    // by přestal fungovat tisk z aplikace.
+    for (const puvod of ["tauri://localhost", "http://tauri.localhost", "http://localhost:1430"]) {
+      const nase = await fetch(`${p.api}/v1/health`, { headers: { Origin: puvod } });
+      expect(nase.status, `Jobi z původu ${puvod} se na API nedostala`).toBe(200);
+    }
+  });
+
+  test("export mimo domovskou a dočasnou složku se odmítne", async () => {
+    // Bez téhle kontroly by cizí stránka nechala JobiDocs zapsat soubor
+    // kamkoli, kam má uživatel právo.
+    const res = await post(p.api, "/v1/export", { html: "<p>test</p>", target_path: "/Library/LaunchAgents/jobi.pdf" });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("target_path");
+  });
+
+  test("export bez přípony .pdf se odmítne", async () => {
+    const res = await post(p.api, "/v1/export", { html: "<p>test</p>", target_path: `${os.homedir()}/jobi-test.sh` });
+    expect(res.status).toBe(400);
+  });
+
+  test("export do domovské složky projde", async () => {
+    const cil = path.join(os.tmpdir(), `jobi-export-${Date.now()}.pdf`);
+    const res = await post(p.api, "/v1/export", { html: "<p>test</p>", target_path: cil });
+    expect(res.status, await res.text()).toBe(200);
+    expect(fs.existsSync(cil)).toBe(true);
+    fs.rmSync(cil, { force: true });
   });
 });

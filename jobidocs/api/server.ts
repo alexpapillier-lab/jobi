@@ -11,6 +11,7 @@
 import Fastify, { type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import path from "path";
+import os from "os";
 import fs from "fs/promises";
 import { listPrinters } from "./printers.js";
 import { getSettings, putSettings, setSettingsPath } from "./settings.js";
@@ -35,6 +36,54 @@ import {
 
 const PORT = 3847;
 const HOST = "127.0.0.1";
+
+/**
+ * Kdo smí na místní API JobiDocs.
+ *
+ * Server poslouchá na 127.0.0.1, jenže to před prohlížečem nechrání: každá
+ * stránka, kterou má uživatel otevřenou, umí poslat POST na localhost. Bez
+ * téhle kontroly by cizí web mohl podstrčit vlastní Supabase kontext nebo
+ * nechat JobiDocs zapsat PDF kamkoli na disk. Prohlížeč u takového požadavku
+ * vždycky pošle hlavičku `Origin`, takže stačí odmítnout všechny cizí původy;
+ * Jobi (Tauri webview i vývojový server) a volání bez prohlížeče projdou.
+ */
+export function povolenyPuvod(origin: string | undefined): boolean {
+  if (!origin) return true; // nativní klient nebo curl – prohlížeč Origin vždy pošle
+  if (origin === "null" || origin.startsWith("file://")) return true;
+  if (origin.startsWith("tauri://") || origin.startsWith("jobi://")) return true;
+  try {
+    const u = new URL(origin);
+    // Windows verze Tauri hlásí `http://tauri.localhost`, macOS `tauri://localhost`.
+    return (
+      u.hostname === "localhost" ||
+      u.hostname.endsWith(".localhost") ||
+      u.hostname === "127.0.0.1" ||
+      u.hostname === "[::1]" ||
+      u.hostname === "::1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Kam se smí exportovat PDF.
+ *
+ * `target_path` chodí zvenčí a `fs.writeFile` by ho poslechl doslova – včetně
+ * cesty do systémových složek nebo do složky, ze které se něco spouští.
+ * Povolený je domovský adresář uživatele (tam Jobi ukládá do Stažených) a
+ * dočasná složka (tam píšou testy), vždy jen soubor `.pdf`.
+ */
+export function bezpecnaCestaExportu(target: string): boolean {
+  if (!path.isAbsolute(target)) return false;
+  const cil = path.resolve(target);
+  if (!cil.toLowerCase().endsWith(".pdf")) return false;
+  const povolene = [os.homedir(), os.tmpdir(), "/private/var/folders", "/tmp"].map((d) => path.resolve(d));
+  return povolene.some((d) => cil === d || cil.startsWith(d + path.sep));
+}
+
+const CHYBA_CESTY = "target_path musí být .pdf v domovské nebo dočasné složce";
+
 const PDF_TIMEOUT_MS = 60000;
 
 type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
@@ -160,14 +209,19 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
   const appVersion = options?.appVersion ?? "dev";
   const fastify = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
-  fastify.addHook("onRequest", async (request) => {
+  fastify.addHook("onRequest", async (request, reply) => {
     const p = request.url?.split("?")[0] ?? "";
+    if (!povolenyPuvod(request.headers.origin)) {
+      reply.status(403).send({ error: "JobiDocs přijímá požadavky jen z aplikace Jobi." });
+      return reply;
+    }
     if (request.method !== "POST") return;
     if (p === "/v1/print" || p === "/v1/print-document" || p === "/v2/print") pushActivity("print", "pending", "zpracovává se…");
     else if (p === "/v1/export" || p === "/v1/export-document" || p === "/v2/export") pushActivity("export", "pending", "zpracovává se…");
   });
 
-  await fastify.register(cors, { origin: true });
+  // Stejná hranice i pro CORS: cizí stránka nesmí odpověď ani přečíst.
+  await fastify.register(cors, { origin: (origin, cb) => cb(null, povolenyPuvod(origin ?? undefined)) });
 
   const baseDir = userDataPath || path.join(process.cwd(), ".jobidocs-data");
   setSettingsPath(baseDir);
@@ -443,6 +497,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     if (!r) return;
     const target = req.body?.target_path;
     if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
+    if (!bezpecnaCestaExportu(target)) return reply.status(400).send({ error: CHYBA_CESTY });
     try {
       const pdf = await buildPdf(r, "export");
       await fs.writeFile(target, pdf);
@@ -503,6 +558,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     if (!r) return;
     const target = req.body?.target_path;
     if (!target || typeof target !== "string") return reply.status(400).send({ error: "target_path required" });
+    if (!bezpecnaCestaExportu(target)) return reply.status(400).send({ error: CHYBA_CESTY });
     try {
       const pdf = await buildPdf(r, "export");
       await fs.writeFile(target, pdf);
@@ -558,6 +614,7 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
     const { html, target_path, letterhead_pdf_url } = req.body || {};
     if (!html || typeof html !== "string") return reply.status(400).send({ error: "html required" });
     if (!target_path || typeof target_path !== "string") return reply.status(400).send({ error: "target_path required" });
+    if (!bezpecnaCestaExportu(target_path)) return reply.status(400).send({ error: CHYBA_CESTY });
     try {
       let pdf = await withTimeout(htmlToPdf(html), PDF_TIMEOUT_MS, "PDF render timeout");
       pdf = await mergeLetterhead(pdf, letterhead_pdf_url, (m) => warnUser("export", m));
