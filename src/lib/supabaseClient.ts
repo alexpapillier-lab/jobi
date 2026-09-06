@@ -12,6 +12,40 @@ function isTauri(): boolean {
 let cachedTauriFetch: typeof fetch | null = null;
 let tauriFetchLoadFailed = false;
 
+/**
+ * Nativní fetch webview místo HTTP pluginu Tauri, když ho webview pustí.
+ *
+ * Plugin (tauri-plugin-http 2.5.7) zakládá pro každý požadavek nový
+ * reqwest klient s vlastním poolem spojení; při desítkách požadavků za
+ * minutu (realtime, obnovování panelů) se po čase vyčerpají sokety a všechno
+ * padá na „error sending request“, dokud se aplikace nerestartuje. Nativní
+ * fetch webview drží jeden pool jako prohlížeč. Jestli ho webview pustí
+ * (CORS z tauri://localhost), se zjistí jedním pokusem při startu; když ne,
+ * zůstane plugin. Při selhání pluginu se navíc zkusí nativní cesta.
+ */
+type NativniStav = "nezjisteno" | "ano" | "ne";
+let nativniFetchStav: NativniStav = "nezjisteno";
+let nativniOvereni: Promise<NativniStav> | null = null;
+
+function overNativniFetch(): Promise<NativniStav> {
+  if (nativniFetchStav !== "nezjisteno") return Promise.resolve(nativniFetchStav);
+  if (nativniOvereni) return nativniOvereni;
+  nativniOvereni = (async () => {
+    try {
+      if (!supabaseUrl || typeof window === "undefined" || typeof window.fetch !== "function") return (nativniFetchStav = "ne");
+      // /auth/v1/health odpovídá bez tokenu; jde jen o to, jestli webview požadavek pustí ven.
+      const r = await window.fetch(`${supabaseUrl}/auth/v1/health`, { headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : undefined });
+      nativniFetchStav = r.status > 0 ? "ano" : "ne";
+    } catch (e) {
+      devWarn(`${LOG} nativní fetch ve webview neprošel, zůstává HTTP plugin:`, e instanceof Error ? e.message : String(e));
+      nativniFetchStav = "ne";
+    }
+    devLog(`${LOG} nativní fetch: ${nativniFetchStav}`);
+    return nativniFetchStav;
+  })();
+  return nativniOvereni;
+}
+
 const LOG = "[supabaseFetch]";
 
 /**
@@ -64,6 +98,11 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
     if (VERBOSE) devLog(`${LOG} request url=${url}`);
 
     if (inTauri) {
+      if ((await overNativniFetch()) === "ano") {
+        const res = await window.fetch(input, initClean ?? init);
+        markSupabaseReachable();
+        return res;
+      }
       if (tauriFetchLoadFailed) {
         devWarn(`${LOG} skipping – previous load failed. Zkuste „Zkusit znovu“ nebo přepnout záložku a vrátit se.`);
         return Promise.reject(
@@ -103,7 +142,16 @@ export function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Pro
           );
         }
         console.warn(`${LOG} Fetch failed (ne-blokuje další requesty):`, { message: err.message, cause });
-        return Promise.reject(e);
+        // Plugin selhal (typicky vyčerpaná spojení) – nativní fetch může projít; když ano, jede se dál nativně.
+        try {
+          const res = await window.fetch(input, initClean ?? init);
+          markSupabaseReachable();
+          nativniFetchStav = "ano";
+          devWarn(`${LOG} HTTP plugin selhal, nativní fetch prošel – přepínám na nativní.`);
+          return res;
+        } catch {
+          return Promise.reject(e);
+        }
       }
     }
 
