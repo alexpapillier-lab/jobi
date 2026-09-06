@@ -95,7 +95,10 @@
 <p>Novou zakázku založíte tlačítkem <b>+ Nová zakázka</b> nad seznamem, nebo klávesou <kbd>n</kbd>.</p>
 <p>Zákazníka stačí začít psát a Jobi napoví z těch, které už máte. U firmy vyplňte IČO, doplní se z rejstříku. Zařízení vyberete z katalogu, nebo napíšete ručně; když je model v katalogu, nabídnou se k němu rovnou opravy i s cenami.</p>
 <p>Do jedné zakázky se vejde víc zařízení. U každého se zvlášť eviduje stav při převzetí, příslušenství a fotky.</p>
-<p>Nahoře v detailu zakázky je <b>řádek kroků</b> od přijetí po předání se zvýrazněným dalším krokem a tlačítkem, které na něj skočí. Fotky, nabídka a faktura jsou nepovinné; jakmile je hotové všechno povinné, řádek zmizí.</p>
+<p>Nahoře v detailu zakázky je <b>řádek kroků</b> od přijetí po předání se zvýrazněným dalším krokem a tlačítkem, které na něj skočí. Fotky, kontrola, nabídka a faktura jsou nepovinné; jakmile je hotové všechno povinné, řádek zmizí. Kdo ho už nepotřebuje, skryje ho křížkem nebo v <b>Nastavení → Aplikace → Rozhraní</b>.</p>
+<p>K opravám z ceníku a ručním položkám se přidává i <b>hodinová práce</b>: hodiny × sazba a technik, který ji odvedl. Výchozí sazbu nastavíte v <b>Nastavení → Zakázky → Hodinová práce</b>, u konkrétní práce ji jde přepsat. Na fakturu i dokumenty jde položka jako hodiny × Kč/h.</p>
+<p>Před předáním projde technik <b>kontrolu po opravě</b>: šablona se vybere podle zařízení (telefon, počítač, obecná), každá položka je OK, Chyba nebo Neověřeno, u chyby poznámka. Výsledek se tiskne do protokolu. Vlastní šablony jsou v <b>Nastavení → Zakázky → Kontrola po opravě</b>.</p>
+<p>Když zákazníkovi půjčíte <b>náhradní zařízení</b>, zapíšete ho v detailu zakázky včetně kauce a vytisknete <b>smlouvu o zápůjčce</b>. Při vrácení stačí jedno tlačítko.</p>
 <p><b>Fotky před opravou</b> se dají nafotit telefonem: v detailu zakázky vygenerujete odkaz, otevřete ho v mobilu a fotky se objeví v zakázce. Nemusíte nic instalovat.</p>
 <p>Které údaje jsou povinné, si nastavíte v <b>Nastavení → Zakázky → Povinná pole</b>. Doporučujeme nechat povinný alespoň telefon, jinak nejde poslat SMS ani odkaz na zákaznický portál.</p>
 </section>
@@ -105,7 +108,7 @@
 <p>Stavy si servis pojmenuje sám v <b>Nastavení → Zakázky → Statusy zakázek</b>: název, barva, pořadí a jestli je stav konečný. Konečné stavy odečítají díly ze skladu a zakázka se přesune mezi dokončené.</p>
 <p>Na změnu stavu se dají navěsit zprávy. V <b>Nastavení → Komunikace → Automatizace</b> nastavíte pravidlo „když se zakázka dostane do stavu X, pošli šablonu Y“ – typicky „Oprava hotová, můžete si zařízení vyzvednout“.</p>
 <p>Automatizace umí hlídat i čas. Pošle upomínku, když zakázka čeká na vyzvednutí déle než zadaný počet dní, nebo žádost o recenzi po výdeji.</p>
-<p>Historie každé změny stavu zůstává v zakázce, včetně toho, kdo ji udělal.</p>
+<p>Historie každé změny zůstává v zakázce, včetně toho, kdo ji udělal. Když zakázka končí stornem (stav Zrušeno, Storno a podobně), Jobi se zeptá na důvod a uloží ho do historie – hodí se pro statistiku i při sporu se zákazníkem.</p>
 </section>
 
 <section id="tisk-a-jobidocs">
@@ -113,7 +116,7 @@
 <p>Jobi tiskne přes doplněk <b>JobiDocs</b>. Je to samostatná malá aplikace, která běží na pozadí a umí tisknout bez dialogového okna – na příjmu tak vyjede zakázkový list jedním kliknutím.</p>
 <p>Stáhnout a zapnout ho jde v <b>Nastavení → Dokumenty a tisk → JobiDocs a automatický tisk</b>. Tam se taky nastavuje, které dokumenty se mají tisknout samy a na jaké tiskárně.</p>
 <p>Bez JobiDocs se tiskne přes prohlížeč. Funguje to, jen se pokaždé otevře tiskový dialog.</p>
-<p>Dokumenty, které Jobi umí: zakázkový list, předávací protokol, záruční list, reklamační protokol a faktura. Hlavička se bere z údajů firmy, u poboček z údajů pobočky.</p>
+<p>Dokumenty, které Jobi umí: zakázkový list, diagnostický protokol, záruční list, reklamační příjemka a výdejka, smlouva o zápůjčce, faktura, zálohová faktura a dobropis. Hlavička se bere z údajů firmy, u poboček z údajů pobočky.</p>
 </section>
 
 <section id="nabidka-a-portal">
@@ -136,7 +139,8 @@
   <h2>7. Faktury a účetnictví</h2>
 <p>Fakturu vystavíte přímo ze zakázky, položky se převezmou z provedených oprav. Číselné řady, splatnost a údaje pro DPH nastavíte v <b>Nastavení → Firma → Fakturace a DPH</b>.</p>
 <p>Když nejste plátce DPH, nechte sazbu nulovou a do patičky faktury se doplní věta, že nejste plátce.</p>
-<p>Na faktuře může být <b>QR platba</b>, takže zákazník zaplatí telefonem a nemusíte hlídat variabilní symbol.</p>
+<p>Na faktuře může být <b>QR platba</b>, takže zákazník zaplatí telefonem a nemusíte hlídat variabilní symbol. Stačí vyplnit číslo účtu, IBAN si Jobi odvodí.</p>
+<p>Kromě běžné faktury vystavíte <b>zálohovou fakturu</b> (třeba na drahý díl) a po zaplacení ji jedním kliknutím vyúčtujete – záloha se odečte. K vystavené faktuře jde vystavit <b>dobropis</b>. Každý druh má vlastní číselnou řadu (FV, ZF, DB) a doklady na sebe odkazují.</p>
 <p>Se zapnutým modulem účetnictví jde faktura odeslat do <b>iDokladu</b> nebo <b>Fakturoidu</b>. Napojení je ve stejné sekci; potřebujete z účetní aplikace API klíč. U iDokladu ho najdete v Nastavení → Aplikace → API, ale je dostupný až od tarifu Oblíbený.</p>
 </section>
 
