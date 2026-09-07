@@ -82,6 +82,7 @@ export default mergeConfig(
       alias: {
         "@tauri-apps/api/core": stub("tauri-core.ts"),
         "@tauri-apps/api/app": stub("tauri-app.ts"),
+        "@tauri-apps/api/webview": stub("tauri-webview.ts"),
         "@tauri-apps/api/path": stub("tauri-path.ts"),
         "@tauri-apps/plugin-dialog": stub("tauri-dialog.ts"),
         "@tauri-apps/plugin-opener": stub("tauri-opener.ts"),

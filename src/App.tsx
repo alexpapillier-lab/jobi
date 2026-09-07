@@ -24,6 +24,7 @@ import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
 import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
 import { CiziServis } from "./components/CiziServis";
+import { pouzijMeritko } from "./lib/velikostRozhrani";
 import { spustHlidacFronty } from "./lib/frontaZapisu";
 
 /* Fronta neuložených změn běží od startu: co nestihl minulý běh aplikace,
@@ -752,18 +753,19 @@ export default function App() {
     }
   }, [activeServiceId]);
 
-  // Apply global UI scale – zoom na <html> škáluje celý obsah (seznamy, tlačítka, dropdowny)
+  /*
+   * Velikost rozhraní. Na desktopu se zvětšuje samotné webview (jako ⌘+
+   * v prohlížeči), v prohlížeči CSS zoomem – rozdíl a důvody popisuje
+   * `src/lib/velikostRozhrani.ts`.
+   */
   useEffect(() => {
-    const s = uiCfg.app.uiScale ?? 1;
-    // Při 100 % se zoom nenastavuje vůbec. `zoom: 1` sice nic nezvětší, ale
-    // vytvoří v prohlížeči zoomovací kontejner: souřadnice prvků pak nesedí
-    // s tím, kam se doopravdy kliká, což mate nástroje i automatické testy.
-    if (s === 1) document.documentElement.style.removeProperty("zoom");
-    else document.documentElement.style.setProperty("zoom", String(s));
-    // Jednotky vh/dvh zoom neškáluje, takže „100dvh“ je při 120 % o pětinu
-    // vyšší než okno a modály se ořezávají nahoře i dole. Rozvržení proto
-    // dělí výšku okna touhle proměnnou (viz calc(100dvh / var(--ui-scale))).
-    document.documentElement.style.setProperty("--ui-scale", String(s));
+    void pouzijMeritko(uiCfg.app.uiScale ?? 1, {
+      nastavZoomWebview: async (meritko) => {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        await getCurrentWebview().setZoom(meritko);
+      },
+      nahlasChybu: (e) => console.error("[App] zoom webview selhal:", e),
+    });
   }, [uiCfg.app.uiScale]);
 
   // Omezené efekty: vypne backdrop-filter napříč aplikací jedinou proměnnou.
