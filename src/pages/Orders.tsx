@@ -91,6 +91,7 @@ import {
   type CustomerMatch,
 } from "../components/orders";
 import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
+import { qrDataUrl } from "../../jobidocs/src/qr";
 import { spustDesktopovyDokument, spustWebovyDokument, type ZavislostiDokumentu } from "../lib/tiskDokumentu";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
@@ -8402,8 +8403,13 @@ export default function Orders({
                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", textAlign: "center" }}>{item.deviceLabel || `Zakázka ${i + 1}`}</div>
                   )}
                   <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
+                    {/* QR se kreslí lokálně. Dřív se tahal z api.qrserver.com,
+                        takže do cizí služby odcházel odkaz i s tokenem, kterým
+                        se dá k zakázce nahrát fotka – a bez internetu se QR
+                        nevykreslil vůbec. Stejná funkce kreslí QR platbu na
+                        fakturách. */}
                     <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=L&data=${encodeURIComponent(item.url)}`}
+                      src={qrDataUrl(item.url, 220, "L")}
                       alt={`QR pro ${item.deviceLabel || "zakázku"}`}
                       style={{ display: "block", width: 220, height: 220 }}
                     />

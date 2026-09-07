@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { qrDataUrl, qrMatrix } from "../../jobidocs/src/qr";
 import jsQR from "jsqr";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
+
+const KOREN = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /**
  * QR kódy se dřív tahaly z api.qrserver.com. U faktur se tím do cizí služby
@@ -108,5 +114,32 @@ describe("QR jde naskenovat", () => {
   it("zvládne diakritiku v textu", () => {
     const text = "Zakázka č. 2026/001 – Příjemka, Plzeň";
     expect(decode(text)).toBe(text);
+  });
+});
+
+/**
+ * Poslední místo, kde se QR tahal z internetu, bylo okno „Vyfotit z telefonu“.
+ * Odkaz v tom QR obsahuje token, kterým jde k zakázce nahrát fotka – posílat
+ * ho do cizí služby znamenalo poslat jí i ten token. Test hlídá, že se do
+ * zdrojáku nevrátí.
+ */
+describe("QR se nikde netahá z internetu", () => {
+  it("Zakázky kreslí QR pro focení z telefonu lokálně", () => {
+    const zdroj = readFileSync(join(KOREN, "src/pages/Orders.tsx"), "utf8");
+    expect(zdroj, "QR z api.qrserver.com je zpátky").not.toMatch(/src=\{`https:\/\/api\.qrserver\.com/);
+    expect(zdroj, "chybí lokální generování QR").toMatch(/qrDataUrl\(item\.url/);
+  });
+
+  it("nikde v aplikaci se nevolá cizí generátor QR", () => {
+    const soubory = execSync("grep -rl 'qrserver' src jobidocs/src jobidocs/core web || true", { encoding: "utf8" })
+      .split("\n").filter(Boolean)
+      // Tenhle test o té službě mluví ze své podstaty.
+      .filter((f) => !f.endsWith("src/lib/qr.test.ts"));
+    // Komentář o tom, proč se to změnilo, projít smí; volání ne.
+    for (const f of soubory) {
+      const obsah = readFileSync(join(KOREN, f), "utf8");
+      const volani = obsah.split("\n").filter((r) => r.includes("qrserver") && !r.trimStart().startsWith("*") && !r.trimStart().startsWith("//") && !r.includes("{/*"));
+      expect(volani, `${f} pořád volá api.qrserver.com`).toEqual([]);
+    }
   });
 });
