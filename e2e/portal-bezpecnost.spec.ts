@@ -134,7 +134,9 @@ test("zkrácený, prodloužený i cizí token dostanou TOTOŽNOU odpověď", asy
   const varianty: Record<string, string> = {
     zkraceny: token.slice(0, -1),
     prodlouzeny: `${token}A`,
-    zmenenyZnak: `X${token.slice(1)}`,
+    // Když token náhodou začínal na „X“, byla „změněná“ varianta ta původní
+    // a test padal jednou za 64 běhů na 200 místo 404.
+    zmenenyZnak: `${token[0] === "X" ? "Y" : "X"}${token.slice(1)}`,
     prazdny: "",
     mezery: "   ",
     neexistujici: "a".repeat(32),

@@ -78,7 +78,13 @@ test("návrh se odešle a přijme na sklad, zásoba naroste", async ({ page }) =
 
   await page.getByRole("button", { name: "Přijmout na sklad" }).click();
   await page.getByRole("button", { name: "Přijmout", exact: true }).click();
-  await expect(page.getByText(/Přijato \d+ ks/).first()).toBeVisible({ timeout: 30_000 });
+  const hlaska = page.getByText(/Přijato \d+ ks/).first();
+  await expect(hlaska).toBeVisible({ timeout: 30_000 });
+  /* Kolik kusů se přijalo, se čte z hlášky, ne napevno: v testovacím servisu
+     může po spadlém běhu zůstat rozdělaný návrh a další běh do něj přidá další
+     kus, takže objednávka má dva. Podstatné je, že zásoba naroste přesně
+     o tolik, kolik se přijalo. */
+  const prijato = Number(((await hlaska.textContent()) ?? "").match(/Přijato (\d+) ks/)?.[1] ?? "1");
 
   // Zásoba narostla a drží i po přenačtení – tedy je v databázi.
   await page.reload();
@@ -87,7 +93,7 @@ test("návrh se odešle a přijme na sklad, zásoba naroste", async ({ page }) =
   await naProdukty(page);
   await page.getByLabel("Hledat produkt").first().fill(PRODUKT);
   await expect(radek(page, PRODUKT)).toBeVisible({ timeout: 20_000 });
-  expect(await pocetKusu(page)).toBe(kusuPred + 1);
+  expect(await pocetKusu(page)).toBe(kusuPred + prijato);
 });
 
 test("přijatá objednávka zůstane v historii i po přenačtení", async ({ page }) => {
