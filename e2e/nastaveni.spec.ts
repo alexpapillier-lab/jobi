@@ -96,3 +96,35 @@ test("výchozí hodinová sazba se uloží servisu a předvyplní se v zakázce"
   await zpet.blur();
   await page.waitForTimeout(1500);
 });
+
+test("na poslední položku v Nastavení jde doscrollovat i v nízkém okně", async ({ page }) => {
+  /*
+   * Sloupec sekcí měl výšku z `calc(100vh - …)`, jenže nad stránkou je ještě
+   * lišta aplikace – sloupec tak končil pod spodní hranou okna a na poslední
+   * položku („Fotka a přezdívka“) se nedalo doscrollovat ani kliknout.
+   * Nízké okno je schválně: na velkém displeji se seznam vejde a chyba není vidět.
+   */
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await prihlasSe(page);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings" } })));
+  await expect(page.getByPlaceholder("Hledat v nastavení…")).toBeVisible({ timeout: 20_000 });
+
+  const mimoOkno = await page.evaluate(() => {
+    const nav = document.querySelector('nav[data-tour="settings-categories"]');
+    if (!nav) return "sloupec sekcí se nenašel";
+    const r = nav.getBoundingClientRect();
+    if (r.bottom > window.innerHeight + 1) return `sloupec přetéká pod okno o ${Math.round(r.bottom - window.innerHeight)} px`;
+    nav.scrollTop = nav.scrollHeight;
+    const posledni = Array.from(nav.querySelectorAll("button")).pop();
+    if (!posledni) return "sloupec nemá žádnou položku";
+    const pr = posledni.getBoundingClientRect();
+    if (pr.bottom > window.innerHeight) return `poslední položka končí ${Math.round(pr.bottom - window.innerHeight)} px pod oknem`;
+    return null;
+  });
+  expect(mimoOkno, String(mimoOkno)).toBeNull();
+
+  // A dá se na ni i kliknout – tedy otevře svou sekci. Poznávacím znamením je
+  // karta „Přidat servis pomocí pozvánky“, která je jen tady.
+  await page.getByRole("button", { name: /Fotka a přezdívka/ }).first().click();
+  await expect(page.getByText("Přidat servis pomocí pozvánky").first()).toBeVisible({ timeout: 15_000 });
+});

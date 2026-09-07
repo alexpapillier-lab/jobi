@@ -2658,6 +2658,42 @@ function SettingsNav({
   isNarrow: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  /*
+   * Výška sloupce se měří, ne počítá z `100vh`.
+   *
+   * Nastavení se vykresluje uvnitř aplikace, která má nad sebou vlastní lištu,
+   * takže `calc(100vh - …)` vyšlo vždycky o kus víc, než kolik je pod sloupcem
+   * doopravdy místa. Poslední položka („Fotka a přezdívka“) tak končila pod
+   * spodní hranou okna a nedalo se na ni doscrollovat ani kliknout. Skutečnou
+   * mezeru zná jen prohlížeč, proto se odečítá od horní hrany sloupce.
+   */
+  const navRef = useRef<HTMLElement | null>(null);
+  const [vyskaSloupce, setVyskaSloupce] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (isNarrow) { setVyskaSloupce(undefined); return; }
+    let naplanovano = 0;
+    const zmer = () => {
+      naplanovano = 0;
+      const el = navRef.current;
+      if (!el) return;
+      const shora = el.getBoundingClientRect().top;
+      // 12 px pod sloupcem, ať poslední položka nekončí přesně na hraně okna.
+      setVyskaSloupce(Math.max(200, Math.round(window.innerHeight - shora - 12)));
+    };
+    const naplanuj = () => {
+      if (naplanovano) return;
+      naplanovano = requestAnimationFrame(zmer);
+    };
+    zmer();
+    window.addEventListener("resize", naplanuj);
+    // Sloupec je přilepený: než se přilepí, jeho horní hrana se scrollem mění.
+    window.addEventListener("scroll", naplanuj, true);
+    return () => {
+      if (naplanovano) cancelAnimationFrame(naplanovano);
+      window.removeEventListener("resize", naplanuj);
+      window.removeEventListener("scroll", naplanuj, true);
+    };
+  }, [isNarrow]);
   /* Hledá se po slovech, ne celý řetězec najednou. „hodinová sazba" je
      přirozený dotaz, ale žádné klíčové slovo tuhle dvojici neobsahuje –
      dřív proto nenašel nic. Každé slovo musí sedět někde v názvu sekce,
@@ -2779,6 +2815,7 @@ function SettingsNav({
 
   return (
     <nav
+      ref={navRef}
       data-tour="settings-categories"
       aria-label="Sekce nastavení"
       style={{
@@ -2786,10 +2823,14 @@ function SettingsNav({
         top: "var(--space-3)",
         minWidth: 0,
         // Vlastní posuvník: sloupec byl jen přilepený, takže se dlouhý seznam
-        // sekcí dal projet teprve po odrolování celé stránky dolů.
-        maxHeight: "calc(100vh - var(--space-6))",
+        // sekcí dal projet teprve po odrolování celé stránky dolů. Výška se
+        // měří (viz `vyskaSloupce`), protože `100vh` nezná lištu aplikace nad
+        // stránkou a poslední položka pak končila pod hranou okna.
+        maxHeight: vyskaSloupce ? `${vyskaSloupce}px` : "calc(100vh - var(--space-6))",
         overflowY: "auto",
         overscrollBehavior: "contain",
+        // Aby poslední položka nebyla nalepená na spodní hraně posuvníku.
+        paddingBottom: "var(--space-3)",
       }}
     >
       {body}
