@@ -271,3 +271,24 @@ test.describe("Owner panel je jen pro majitele aplikace", () => {
     expect(chyby.status(), "Hlášení chyb všech servisů smí jen majitel aplikace").toBe(403);
   });
 });
+
+test("po odebrání ze servisu se neukáže zámek předplatného", async ({ page }) => {
+  /*
+   * Majitel odebral člověka ze servisu; v jeho prohlížeči zůstalo id toho
+   * servisu. Nároky se pak nenačtou (RLS ho už nepustí) a aplikace mu hlásila
+   * „Zkušební období skončilo“ u servisu bez názvu – vyhozený zaměstnanec tak
+   * dostal zprávu, že má zaplatit. Testuje se servisem, do kterého testovací
+   * účet nepatří; chová se to stejně jako po odebrání.
+   */
+  const CIZI = "bbc926bd-25ba-4da1-b528-92b6f1dee24d"; // TEST2 – e2e účet v něm není
+  await page.addInitScript(([k, v]) => localStorage.setItem(k, v), ["jobsheet_active_service_id_v1", CIZI]);
+  await prihlasSe(page);
+
+  await expect(page.getByText("Zkušební období skončilo")).toHaveCount(0);
+  // Aplikace se přepne do servisu, kde členem je, a jde v ní pracovat.
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("jobsheet_active_service_id_v1")), { timeout: 30_000 })
+    .not.toBe(CIZI);
+});
+

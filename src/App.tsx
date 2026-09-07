@@ -1192,7 +1192,22 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
    * Riziko je malé – od migrace 20260911100000 hlídá nárok „access“ i RLS
    * na serveru, takže servisu bez předplatného stejně žádný zápis neprojde.
    */
-  if (session && activeServiceId && !entitlementsLoading && !narokySelhaly && !hasModule("access") && !isRootOwnerUser) {
+  /*
+   * Zamykací obrazovka platí jen pro servis, do kterého člověk pořád patří.
+   *
+   * Když majitel někoho ze servisu odebere, zůstane mu v prohlížeči poslední
+   * `activeServiceId` – nároky se pak nenačtou (RLS ho už nepustí) a aplikace
+   * mu hlásila „Zkušební období skončilo“ u servisu bez názvu („Servis“).
+   * Vyhozený zaměstnanec tak dostal zprávu, že má zaplatit, místo aby se
+   * dozvěděl, že do toho servisu už nepatří. Když servis v seznamu není,
+   * pokračuje se dál – seznam servisů je prázdný a ukáže se „Založte si
+   * servis“ (nebo se přepne do jiného servisu, který uživatel má).
+   *
+   * Dokud se seznam servisů nenačte, zamykací obrazovka nepadá vůbec: nároky
+   * se načtou dřív než seznam a jinak by zámek probleskl i tomu, kdo platí.
+   */
+  const patrimDoAktivniho = servicesLoaded && services.some((s) => s.service_id === activeServiceId);
+  if (session && activeServiceId && patrimDoAktivniho && !entitlementsLoading && !narokySelhaly && !hasModule("access") && !isRootOwnerUser) {
     const aktivni = services.find((s) => s.service_id === activeServiceId);
     return (
       <ThemeProvider>
