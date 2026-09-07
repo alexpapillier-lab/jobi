@@ -56,6 +56,13 @@ SIGNATURE="$(cat "$SIG_FILE" | jq -Rs .)"
 # pub_date RFC 3339
 PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
+# Poznámky k vydání se skládají z titulků commitů od poslední značky – dřív
+# tu byla napevno anglická věta „See GitHub Releases for details.“ a okno
+# „Co je nového“ v aplikaci tak uživateli neřeklo vůbec nic. Vlastní text jde
+# podstrčit přes NOTES_FILE (u velkého vydání je jedna lidská věta lepší než
+# dvanáct titulků).
+NOTES="$(node "$SCRIPT_DIR/poznamky-vydani.mjs")"
+
 if [ "$UNIVERSAL" = true ]; then
   # One .tar.gz for both architectures (universal binary) – same URL and signature for both
   jq -n \
@@ -63,9 +70,10 @@ if [ "$UNIVERSAL" = true ]; then
     --arg pub_date "$PUB_DATE" \
     --arg url "$DOWNLOAD_URL" \
     --argjson signature "$SIGNATURE" \
+    --arg notes "$NOTES" \
     '{
       version: $version,
-      notes: "See GitHub Releases for details.",
+      notes: $notes,
       pub_date: $pub_date,
       platforms: {
         "darwin-aarch64": { signature: $signature, url: $url },
@@ -87,9 +95,10 @@ else
     --arg platform "$PLATFORM" \
     --arg url "$DOWNLOAD_URL" \
     --argjson signature "$SIGNATURE" \
+    --arg notes "$NOTES" \
     '{
       version: $version,
-      notes: "See GitHub Releases for details.",
+      notes: $notes,
       pub_date: $pub_date,
       platforms: {
         ($platform): {

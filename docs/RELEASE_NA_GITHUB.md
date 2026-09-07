@@ -125,3 +125,31 @@ Hotovo: na druhém Macu máš Jobi i JobiDocs z jednoho GitHub release.
 | 6 | GitHub → Releases → nový release (tag v0.1.0) → nahát všechny soubory |
 
 Podrobnosti: **docs/INSTALACE_KLIENTUM.md**, **docs/JOBIDOCS_OTA_A_RELEASE.md**.
+
+## Poznámky k vydání („Co je nového“)
+
+Okno v Nastavení → Aktualizace ukazuje text z pole `notes` v `latest.json`.
+Dřív tam byla napevno anglická věta „See GitHub Releases for details.“, takže
+uživatel nevěděl, co si stahuje.
+
+`scripts/generate-jobi-latest-json.sh` teď poznámky skládá z **titulků commitů**
+od poslední značky `jobi-v*`:
+
+```bash
+node scripts/poznamky-vydani.mjs            # co by se do vydání zapsalo
+node scripts/poznamky-vydani.mjs --od jobi-v0.5.0 --max 8
+```
+
+Titulky commitů jsou dobrý základ, ale pro zákazníka jsou často příliš
+technické. U vydání, které stojí za řeč, napiš pár vět sám:
+
+```bash
+cat > /tmp/poznamky.txt <<'TXT'
+- Seznam zakázek se otevírá dvakrát rychleji
+- Fotky u zakázky jsou nově přístupné jen přihlášeným
+TXT
+NOTES_FILE=/tmp/poznamky.txt bash scripts/generate-jobi-latest-json.sh universal
+```
+
+Aplikace text vykreslí jako seznam, když jsou všechny řádky odrážky (`- `),
+jinak ho ukáže tak, jak je (`AppUpdateCard.tsx`).
