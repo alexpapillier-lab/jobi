@@ -11,6 +11,8 @@ test.describe.configure({ mode: "serial" });
 
 const PRODUKT = "Displej AUDIT";
 let kusuPred = 0;
+/** Kolik kusů se v příjmu skutečně naskladnilo – úklid musí odepsat stejně. */
+let prijato = 1;
 let cisloObjednavky = "";
 
 async function naSklad(page: Page) {
@@ -84,7 +86,7 @@ test("návrh se odešle a přijme na sklad, zásoba naroste", async ({ page }) =
      může po spadlém běhu zůstat rozdělaný návrh a další běh do něj přidá další
      kus, takže objednávka má dva. Podstatné je, že zásoba naroste přesně
      o tolik, kolik se přijalo. */
-  const prijato = Number(((await hlaska.textContent()) ?? "").match(/Přijato (\d+) ks/)?.[1] ?? "1");
+  prijato = Number(((await hlaska.textContent()) ?? "").match(/Přijato (\d+) ks/)?.[1] ?? "1");
 
   // Zásoba narostla a drží i po přenačtení – tedy je v databázi.
   await page.reload();
@@ -110,7 +112,11 @@ test("přijatá objednávka zůstane v historii i po přenačtení", async ({ pa
   await naProdukty(page);
   await page.getByLabel("Hledat produkt").first().fill(PRODUKT);
   await expect(radek(page, PRODUKT)).toBeVisible({ timeout: 20_000 });
-  await radek(page, PRODUKT).getByRole("button", { name: "Odebrat kus" }).click();
-  await pockejNaZapisSnimku(page, "jobi_sklad_neulozeno_v1");
+  // Odepíše se přesně tolik kusů, kolik se přijalo – jinak zásoba testovacího
+  // produktu s každým během roste (a další běh pak padá na jiném čísle).
+  for (let i = 0; i < prijato; i++) {
+    await radek(page, PRODUKT).getByRole("button", { name: "Odebrat kus" }).click();
+    await pockejNaZapisSnimku(page, "jobi_sklad_neulozeno_v1");
+  }
   expect(await pocetKusu(page)).toBe(kusuPred);
 });
