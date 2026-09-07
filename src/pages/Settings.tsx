@@ -46,6 +46,7 @@ import { isJobiDocsRunning, launchJobiDocsApp, openJobiDocsDownload } from "../l
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { subscribeServiceConfig, mergeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
 import { zalozServis } from "../lib/servisy";
+import { zkontrolujFiremniUdaje, type SekceFirmy } from "./Settings/povinnaPoleFirmy";
 import { ThemeLogo } from "../components/ThemeLogo";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppUpdate } from "../context/AppUpdateContext";
@@ -417,14 +418,32 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const applyServiceConfig = useCallback((config: ServiceConfig) => {
     if (config.abbreviation || config.companyData) {
       setCompanyData((prev) => {
-        const next = {
+        /*
+         * Rozdělané pole se ze serveru nepřepisuje.
+         *
+         * Config chodí i z realtime (druhé okno, jiný počítač). Dřív se jím
+         * přepsalo všechno včetně toho, co měl člověk zrovna napsané a
+         * neuložené – rozepsané údaje firmy zmizely v půlce psaní a formulář
+         * pak hlásil, že chybí povinné pole, které uživatel právě vyplnil.
+         * Pole, které se liší od naposledy uloženého stavu, si proto drží
+         * hodnotu uživatele; zbytek se ze serveru vezme.
+         */
+        const zeServeru = {
           ...prev,
           ...(config.companyData as Partial<CompanyData> | undefined),
           abbreviation: config.abbreviation || prev.abbreviation,
         };
+        const ulozene = companySavedRef.current;
+        const next = { ...zeServeru };
+        for (const klic of Object.keys(next) as Array<keyof CompanyData>) {
+          const rozdelane = String(prev[klic] ?? "") !== String(ulozene[klic] ?? "");
+          if (rozdelane) (next as Record<string, unknown>)[klic] = prev[klic];
+        }
         localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify(next));
         setCompanyCacheOwner(activeServiceIdRef.current);
-        companySavedRef.current = next;
+        // Základ je to, co je na serveru – rozdělané změny tak zůstanou
+        // v liště „Neuložené změny“ a nezmizí tiše.
+        companySavedRef.current = zeServeru;
         return next;
       });
     }
@@ -770,19 +789,23 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const companyDirty = JSON.stringify(companyData) !== JSON.stringify(companySavedRef.current);
   /** Povinná pole (označená * v Údajích firmy a Kontaktech) a formát e-mailu – dřív se
    *  uložila i prázdná zkratka, ze které se generují kódy zakázek. */
-  const validateCompany = (d: CompanyData): string | null => {
-    const req: Array<[keyof CompanyData, string]> = [
-      ["abbreviation", "Zkratka"], ["name", "Název"], ["ico", "IČO"], ["defaultPhonePrefix", "Výchozí tel. předvolba"],
-      ["addressStreet", "Ulice"], ["addressCity", "Město"], ["addressZip", "PSČ"], ["phone", "Telefonní číslo"], ["email", "E-mailová adresa"],
-    ];
-    const missing = req.filter(([k]) => !String(d[k] ?? "").trim()).map(([, label]) => label);
-    if (missing.length) return `Vyplňte povinná pole: ${missing.join(", ")}`;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) return "E-mailová adresa nemá platný tvar";
-    if (!/^\+?\d{1,4}$/.test(d.defaultPhonePrefix.trim())) return "Výchozí předvolba má být např. +420";
-    return null;
-  };
-  const saveCompany = async () => {
-    const problem = validateCompany(companyData);
+  /*
+   * Povinná pole se hlídají **po sekcích**, ne všechna najednou.
+   *
+   * Firemní údaje jsou rozdělené na dvě obrazovky (Údaje firmy, Kontakty), ale
+   * ukládají se jedním zápisem. Když se kontrolovalo všechno naráz, nový servis
+   * se nedal vyplnit vůbec: v Údajích firmy to vynadalo za telefon a e-mail
+   * (které jsou na druhé obrazovce), v Kontaktech za zkratku a IČO – a mezi
+   * přepnutím se rozdělaná polovina ztratila. Uživatel tak dokola dostával
+   * hlášku o polích, která před sebou ani neviděl.
+   *
+   * Teď se ukládá po částech: každá obrazovka hlídá to svoje. Že chybí zbytek,
+   * připomene karta „První kroky“ a hláška u tisku dokladů.
+   */
+  const validateCompany = (d: CompanyData, kde: SekceFirmy = "vse"): string | null => zkontrolujFiremniUdaje(d, kde);
+
+  const saveCompany = async (kde: SekceFirmy = "vse") => {
+    const problem = validateCompany(companyData, kde);
     if (problem) {
       showToast(problem, "error");
       throw new Error(problem);
@@ -802,7 +825,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const registerUnsaved = useCallback((h: UnsavedHandle | null) => { childUnsavedRef.current = h; }, []);
   const isCompanySection = section.subsection === "service_basic" || section.subsection === "service_contact";
   const currentUnsaved = (): UnsavedHandle | null =>
-    isCompanySection ? { dirty: companyDirty, save: saveCompany, discard: discardCompany } : childUnsavedRef.current;
+    isCompanySection
+      // Ukládá se ta sekce, ze které uživatel odchází – jinak by ho odchod
+      // z Údajů firmy zastavil kvůli telefonu, který je až v Kontaktech.
+      ? { dirty: companyDirty, save: () => saveCompany(section.subsection as "service_basic" | "service_contact"), discard: discardCompany }
+      : childUnsavedRef.current;
   const requestSection = (next: SettingsSection) => {
     if (next.subsection === section.subsection) return;
     const h = currentUnsaved();
@@ -1084,7 +1111,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </div>
           </Card>
 
-          <UnsavedBar dirty={companyDirty} saving={companySaving} onSave={() => { saveCompany().catch(() => {}); }} onDiscard={discardCompany} />
+          <UnsavedBar dirty={companyDirty} saving={companySaving} onSave={() => { saveCompany("service_basic").catch(() => {}); }} onDiscard={discardCompany} />
         </>
       )}
 
@@ -1159,7 +1186,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
             </div>
           </Card>
-          <UnsavedBar dirty={companyDirty} saving={companySaving} onSave={() => { saveCompany().catch(() => {}); }} onDiscard={discardCompany} />
+          <UnsavedBar dirty={companyDirty} saving={companySaving} onSave={() => { saveCompany("service_contact").catch(() => {}); }} onDiscard={discardCompany} />
         </>
       )}
 

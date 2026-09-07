@@ -49,6 +49,18 @@ export function showToast(message: string, type: "success" | "error" | "info" = 
     return;
   }
 
+  /*
+   * Stejná hláška se nehromadí. Kdo klikne na Uložit třikrát, dostal dřív tři
+   * identické červené obdélníky pod sebou a přestal je číst; obnoví se místo
+   * toho odpočet té stávající, ať je vidět, že se něco stalo znovu.
+   */
+  const stejna = toasts.find((t) => t.message === message && t.type === type);
+  if (stejna) {
+    stejna.createdAt = Date.now();
+    notify();
+    return;
+  }
+
   const id = `toast-${++toastId}`;
   // Chyba potřebuje víc času na přečtení než „Uloženo“ – a kdo ji chce
   // vidět déle, najede myší (odpočet se zastaví).
