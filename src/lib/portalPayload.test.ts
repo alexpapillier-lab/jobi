@@ -582,9 +582,12 @@ describe("pojistky ve zdrojáku portal-ticket", () => {
     }
   });
 
-  it("poznámka se ořezává, ať jsonb v zakázce nespolkne megabajt", () => {
+  it("dlouhá poznámka se odmítne, ať jsonb v zakázce nespolkne megabajt", () => {
+    // Od commitu „Portál: dlouhá poznámka se místo tichého oříznutí odmítne"
+    // se nekrátí, ale vrací 400 – zákazník má vědět, že se mu půlka textu
+    // neuložila, ne to zjistit až z dokladu.
     const s = zdrojBezKomentaru(PORTAL);
-    expect(s).toMatch(/body\.note[\s\S]{0,80}?\.slice\(0, 2000\)/);
+    expect(s).toMatch(/body\.note[\s\S]{0,120}?length > 2000/);
   });
 
   it("podpis musí být PNG do 300 kB a kontroluje se signatura souboru", () => {
