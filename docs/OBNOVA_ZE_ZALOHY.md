@@ -19,7 +19,7 @@ k ničemu, měj ho i mimo GitHub** (správce hesel, papír v šuplíku).
 | Soubor | Obsah |
 |--------|-------|
 | `schema.sql` | tabulky, indexy, funkce, triggery, RLS politiky, publikace pro realtime (schéma `public`) |
-| `data.sql` | data schématu `public` **a k tomu `auth` a `storage`** – tedy i uživatelé a evidence souborů |
+| `data.sql` | data schématu `public` **a k tomu `auth` a `storage`** – tedy i uživatelé (`auth.users` včetně otisků hesel), relace a evidence souborů |
 | `roles.sql` | nastavení rolí (timeouty), ne hesla |
 | `storage-soubory.csv` | seznam souborů ve Storage – jen seznam, ne obsah |
 | `cron-ulohy.sql` | naplánované úlohy pg_cron, připravené ke spuštění |
@@ -38,6 +38,10 @@ k ničemu, měj ho i mimo GitHub** (správce hesel, papír v šuplíku).
   JWT secret. Nový projekt = nový JWT secret a nové API klíče.
 * **nasazené edge funkce** – kód je v gitu (`supabase/functions`), nasazení ne.
 * **nastavení projektu** – region, plán, vlastní doména, síťová omezení.
+
+> **Záloha je stejně citlivá jako celá databáze.** V `data.sql` jsou otisky
+> hesel z `auth.users`, telefonní čísla i celá historie zakázek. Proto je
+> artefakt šifrovaný GPG a proto se rozbalená záloha nenechává ležet na disku.
 
 ---
 
@@ -74,9 +78,40 @@ a `data.sql`, a pak ověří, že:
 Skončí `Záloha se obnovila a obnovená databáze funguje.` – jinak spadne a řekne proč.
 Chceš-li se do obnovené databáze podívat, spusť to s `KEEP_CLUSTER=1`.
 
-> Ověřeno 7. 9. 2026 nad ostrou zálohou: 61 tabulek, 320 RLS politik, 89 funkcí,
-> 50 triggerů, 25 tabulek v realtime publikaci, 31 uživatelů, 183 záznamů
-> o souborech. Chyby při obnově dat: 0.
+### Co je ověřené (7. 9. 2026)
+
+* **Skript projde do zelena.** Obnova databáze postavené ze všech 146 migrací
+  do prázdného Postgresu 17: 0 chyb ve schématu, 0 chyb v datech, počty řádků
+  sedí ve všech 61 tabulkách, 338 RLS politik, 94 funkcí, 52 triggerů,
+  25 tabulek v realtime publikaci. Kouřová zkouška (RLS, triggery, optimistické
+  zamykání) prošla. Čísla sedí s ostrou databází – ta má dnes taky 338 politik
+  a 25 tabulek v realtime.
+* **Nad ostrou zálohou to zatím proběhlo jen ve starší verzi skriptu.** Zálohu
+  jde stáhnout jen s heslem `BACKUP_PASSPHRASE` a dump ostré databáze potřebuje
+  připojovací řetězec, takže tuhle půlku dělá CI (`backup-db.yml`), ne člověk
+  u sebe. **Nezaměňuj zelený běh workflow za ověřenou zálohu:** běhy z 5. a
+  6. 9. byly zelené, ale zkouška obnovy v nich chyby jen vypisovala – v logu
+  jich je přes dvě stě (`function auth.uid() does not exist`,
+  `publication "supabase_realtime" does not exist`, chybějící tabulky `auth`
+  a `storage`). Teprve tahle verze skriptu obnovu **zastaví**, když se schéma
+  nebo data nenahrají čistě, a chybějící prostředí Supabase (role, `auth`,
+  `storage`, publikace) si nejdřív doplní z `supabase/bootstrap-test.sql`.
+  První ostrý běh nové verze je až ten po nasazení – u něj se koukni, že krok
+  „Zkouška obnovy do čistého Postgresu" doběhl bez `CHYBA:`.
+
+### Co zkouška obnovy neověří
+
+Projde i nad zálohou, ze které servis po havárii nerozjedeš. Chybí v ní totiž
+věci, které v databázi vůbec nejsou (kapitola 1 a 5):
+
+* **soubory ve Storage** – dnes 184 souborů, 73 MB; v `data.sql` je jen jejich
+  evidence (`storage.objects`), obsah je v jiném artefaktu a jen z neděle,
+* **hodnoty tajemství** – Vault (dnes 2) i tajemství edge funkcí,
+* **naplánované úlohy** – `cron.job` (dnes 4) je v `cron-ulohy.sql`, ale spustit
+  se musí ručně, po obnově se samo nerozjede nic,
+* **nastavení Auth a klíče projektu** – uživatelé (dnes 32) i otisky hesel
+  v záloze jsou, ale bez zapnutého přihlášení, SMTP a nových API klíčů se
+  do aplikace nikdo nepřihlásí.
 
 ---
 

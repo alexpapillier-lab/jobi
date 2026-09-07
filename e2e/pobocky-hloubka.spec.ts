@@ -167,20 +167,27 @@ test.afterAll(async () => {
         p_branch_id: stav.puvodniDomovska ?? null,
       });
     }
+    const uklid = async (popis: string, o: Promise<{ stav: number; text: string }>) => {
+      const v = await o;
+      // Tichý úklid je důvod, proč se v ostrém servisu hromadí zbytky testů.
+      if (v.stav >= 300) console.warn(`Úklid selhal – ${popis}: ${v.stav} ${v.text.slice(0, 200)}`);
+    };
     for (const [tabulka, id] of [
       ["ticket_documents", stav.dokument],
       ["sms_conversations", stav.konverzace],
       ["inventory_reservations", stav.rezervace],
     ] as const) {
-      if (id) await zapis(m, "DELETE", `${tabulka}?id=eq.${id}`);
+      if (id) await uklid(tabulka, zapis(m, "DELETE", `${tabulka}?id=eq.${id}`));
     }
     for (const id of [stav.zakazkaCizi, stav.zakazkaVlastni, stav.zakazkaPresun]) {
-      if (id) {
-        await zapis(m, "DELETE", `ticket_work_sessions?ticket_id=eq.${id}`);
-        await zapis(m, "DELETE", `tickets?id=eq.${id}`);
-      }
+      if (!id) continue;
+      await uklid("úseky práce", zapis(m, "DELETE", `ticket_work_sessions?ticket_id=eq.${id}`));
+      /* Zakázka se přes REST natvrdo smazat nedá – politika pro DELETE na
+         tickets neexistuje a je to tak správně (maže se do koše). Testovací
+         zakázky se proto uklízejí stejnou cestou jako v aplikaci. */
+      await uklid("zakázka do koše", rpc(m, "soft_delete_ticket", { p_ticket_id: id }));
     }
-    if (stav.novaPobocka) await zapis(m, "DELETE", `branches?id=eq.${stav.novaPobocka}`);
+    if (stav.novaPobocka) await uklid("pobočka", zapis(m, "DELETE", `branches?id=eq.${stav.novaPobocka}`));
   }
   await stav.api?.dispose();
 });
@@ -475,10 +482,14 @@ test("po přesunu zakázky se rozdělaný úsek práce zavře", async () => {
 
 test("v aplikaci technik zakázku cizí pobočky nenajde", async ({ page }) => {
   test.setTimeout(180_000);
+  /* Strop na čekání při navigaci: prihlasSe na konci čeká na „networkidle" a
+     ten u přihlášeného technika nemusí nastat vůbec – aplikace drží otevřené
+     spojení pro živé změny. Bez stropu by to čekání spolklo celý test. */
+  page.setDefaultNavigationTimeout(30_000);
   await prihlasSe(page, "technik");
-  // Vyhledávací pole má vlastní značku; podle zástupného textu ho na seznamu
-  // zakázek nejde spolehlivě chytit (stejný text nese i hledání zákazníků).
-  const hledani = page.locator('input[data-tour="orders-search"]');
+  /* Aplikace nechává schované stránky připojené, takže hledacích polí je
+     v DOM víc než jedno; bez `:visible` locator hlásí porušení strict mode. */
+  const hledani = page.locator('input[data-tour="orders-search"]:visible').first();
   await expect(hledani).toBeVisible({ timeout: 30_000 });
 
   /* Nejdřív vlastní zakázka: kdyby se rozbilo samotné hledání, druhá polovina
