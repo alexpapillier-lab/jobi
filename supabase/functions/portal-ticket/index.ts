@@ -297,7 +297,16 @@ serve(async (req) => {
     const ticket = await loadTicket(svc, token);
     if (!ticket) return neplatnyOdkaz();
 
-    const note = typeof body.note === "string" ? body.note.trim().slice(0, 2000) : null;
+    /*
+     * Poznámka se dřív mlčky ořízla na 2 000 znaků. Zákazník, který do ní
+     * napsal víc (nebo tam něco omylem vložil), tak dostal „uloženo“ nad
+     * textem, který servis nikdy neuvidí celý. Radši rovnou chyba – a půl
+     * megabajtu se stejně nemá nikam ukládat.
+     */
+    if (typeof body.note === "string" && body.note.trim().length > 2000) {
+      return json({ error: "Poznámka je příliš dlouhá (nejvýš 2 000 znaků)." }, 400);
+    }
+    const note = typeof body.note === "string" ? body.note.trim() || null : null;
     // `otiskAkce` je jediné místo, kde otisk vzniká – ořezává User-Agent
     // (hlavička chodí od klienta a brána pustí i kilobajty) a je pokrytá
     // testem. Dřív se meta skládala tady ručně a při přesunu pomocných

@@ -225,6 +225,33 @@ function uuid() {
   return crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
 }
 
+/**
+ * Sklad, do kterého kusy padnou, když servis žádný nemá.
+ *
+ * Servis má mít výchozí sklad od začátku – zakládá ho trigger nad `services`.
+ * Jenže servisy, kterým chybí, existují (trigger přibyl později a v ostré
+ * databázi se na něj spolehnout nedá), a na takovém servisu byl sklad slepá
+ * ulička: „Naskladnit“ odpovědělo „Servis nemá žádný sklad“ a nový produkt se
+ * zadaným počtem kusů se nezaložil vůbec. Nový zákazník přitom o skladech
+ * jako o samostatné věci nic neví – chce zapsat pět displejů, ne si nejdřív
+ * ve „Správě skladu“ vymyslet název skladu.
+ *
+ * Zakládá se proto sám, a to až ve chvíli, kdy je kam zapisovat – ne při
+ * otevření stránky. Prohlížení skladu nemá nic zapisovat do databáze.
+ *
+ * `branchId` se schválně nenastavuje: `undefined` znamená „sloupce se
+ * nedotýkej“, takže pobočku doplní databáze (viz `radekSkladu`).
+ */
+function novyVychoziSklad(): Warehouse {
+  return {
+    id: uuid(),
+    name: "Hlavní sklad",
+    isDefault: true,
+    publicVisible: true,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 /** Číslo z textového pole; prázdné nebo nesmysl = `null`. */
 function cisloNeboNull(s: string): number | null {
   const n = parseFloat(s);
@@ -1286,16 +1313,20 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     if (!newProduct.name.trim()) return;
     const modelIds = newProductUnassigned ? [] : (selectedModelId ? [selectedModelId] : []);
     const stock = parseInt(newProduct.stock) || 0;
-    const cilovySklad = newProductWarehouseId || vychoziSklad(data.warehouses);
     /*
      * Bez skladu se počáteční počet kusů nemá kam zapsat. Dřív se tiše
      * zahodil: produkt se založil s nulou a nikdo se nedozvěděl, že zadané
-     * množství zmizelo. Naskladnění (`naskladnit`) tu samou situaci hlásí,
-     * tady chyběla – řekne se to dřív, než se produkt založí.
+     * množství zmizelo.
+     *
+     * Servisu, který ještě žádný sklad nemá, se proto založí „Hlavní sklad“ –
+     * ve stejném `setData` jako produkt, jinak by kusy mířily do skladu,
+     * který v datech ještě není, a zápis do databáze by narazil na cizí klíč.
      */
+    let doplnenySklad: Warehouse | null = null;
+    let cilovySklad = newProductWarehouseId || vychoziSklad(data.warehouses);
     if (stock > 0 && !cilovySklad) {
-      showToast("Servis nemá žádný sklad – produkt se založí, ale počet kusů není kam zapsat. Sklad přidáte v Nastavení skladu.", "error");
-      return;
+      doplnenySklad = novyVychoziSklad();
+      cilovySklad = doplnenySklad.id;
     }
     const stavy = stock > 0 && cilovySklad ? { [cilovySklad]: stock } : {};
 
@@ -1319,7 +1350,11 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           supplierSku: newProduct.supplierSku.trim() || null,
           createdAt: new Date().toISOString(),
         };
-        setData((d) => ({ ...d, products: [...d.products, product] }));
+        setData((d) => ({
+          ...d,
+          warehouses: doplnenySklad ? [...d.warehouses, doplnenySklad] : d.warehouses,
+          products: [...d.products, product],
+        }));
         setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", minStock: "", supplierId: "", supplierSku: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
         cekaHlaska.current = "Produkt přidán";
       });
@@ -1345,7 +1380,11 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       supplierSku: newProduct.supplierSku.trim() || null,
       createdAt: new Date().toISOString(),
     };
-    setData((d) => ({ ...d, products: [...d.products, product] }));
+    setData((d) => ({
+      ...d,
+      warehouses: doplnenySklad ? [...d.warehouses, doplnenySklad] : d.warehouses,
+      products: [...d.products, product],
+    }));
     setNewProduct({ name: "", stock: "", price: "", purchasePrice: "", minStock: "", supplierId: "", supplierSku: "", sku: "", description: "", modelIds: [], imageUrl: "", repairIds: [], categoryId: "" });
     cekaHlaska.current = "Produkt přidán";
   };
@@ -1388,10 +1427,17 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   /** Naskladnění o `zmena` kusů do vybraného skladu. */
   const naskladnit = (productId: string, zmena: number) => {
     rychleUlozeni.current = true;
-    const cil = restockWarehouseId || vychoziSklad(data.warehouses);
+    let cil = restockWarehouseId || vychoziSklad(data.warehouses);
+    /*
+     * Servis bez skladu měl tlačítko „Naskladnit“ mrtvé: dialog se otevřel,
+     * produkt se našel, kusy se zadaly – a odpovědí bylo „Servis nemá žádný
+     * sklad“. Sklad si proto založíme sami, hned tady; zápis do dat musí
+     * předcházet `adjustStock`, jinak by kusy ukazovaly na neexistující sklad.
+     */
     if (!cil) {
-      showToast("Servis nemá žádný sklad", "error");
-      return;
+      const doplneny = novyVychoziSklad();
+      cil = doplneny.id;
+      setData((d) => (d.warehouses.length > 0 ? d : { ...d, warehouses: [doplneny] }));
     }
     adjustStock(productId, cil, zmena);
     const kam = data.warehouses.length > 1
@@ -2034,10 +2080,32 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
     if (!importPreview) return;
 
     setData((d) => {
-      const newData = { ...d };
+      /*
+       * Nové pole, ne `push` do toho stávajícího.
+       *
+       * `{ ...d }` sdílí pole `products` s předchozím stavem – a ten je
+       * zároveň snímkem, proti kterému se počítá, co poslat do databáze
+       * (`posledniUlozeno`). Push do něj naimportované produkty přidal i do
+       * snímku; rozdíl proti němu pak vyšel prázdný a do databáze se nezapsalo
+       * nic. Import ohlásil „hotovo“ a po přenačtení stránky byl sklad zase
+       * prázdný – bez jediné hlášky.
+       */
+      const produkty = [...d.products];
+      /*
+       * Import nese i počty kusů („SKLAD: 50“). Servisu, který ještě žádný
+       * sklad nemá, se dřív tiše zahodily a produkty se naimportovaly s nulou.
+       * Sklad se proto doplní stejně jako u ručně přidaného produktu.
+       */
+      const sklady = [...d.warehouses];
+      let skladProImport = newProductWarehouseId || vychoziSklad(d.warehouses);
+      if (!skladProImport && importPreview.products.some((p) => p.stock > 0)) {
+        const doplneny = novyVychoziSklad();
+        sklady.push(doplneny);
+        skladProImport = doplneny.id;
+      }
 
       for (const product of importPreview.products) {
-        const existing = newData.products.find(p => p.name.toLowerCase() === product.name.toLowerCase());
+        const existing = produkty.find(p => p.name.toLowerCase() === product.name.toLowerCase());
         if (existing) continue; // Skip duplicates
 
         let modelIds: string[] = [];
@@ -2055,7 +2123,6 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             .map(m => m.modelId);
         }
 
-        const skladProImport = newProductWarehouseId || vychoziSklad(data.warehouses);
         const stavyImportu = product.stock > 0 && skladProImport ? { [skladProImport]: product.stock } : {};
         const newProduct: Product = {
           id: uuid(),
@@ -2068,10 +2135,10 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           modelIds,
           createdAt: new Date().toISOString()
         };
-        newData.products.push(newProduct);
+        produkty.push(newProduct);
       }
 
-      return newData;
+      return { ...d, products: produkty, warehouses: sklady };
     });
 
     showToast("Import dokončen", "success");

@@ -14,6 +14,8 @@ import { describe, it, expect } from "vitest";
 import {
   EMPTY_COST_SOURCES,
   entryMargin,
+  marginByBranch,
+  marginByDevice,
   marginByRepair,
   marginColor,
   marginPercent,
@@ -128,6 +130,26 @@ describe("marže zakázky", () => {
       discountValue: 1500,
     });
     expect(ticketMargin(t, EMPTY_COST_SOURCES).revenue).toBe(0);
+  });
+
+  it("sleva vyšší než cena se ani nevykáže celá – strhnout jde nejvýš cena", () => {
+    // Stane se pokaždé, když se po slíbené pevné slevě zlevní oprava. Databáze
+    // to dřív neořezávala: „Slevy 2 000 Kč“ a marže −1 100 místo −100 Kč.
+    const t = zakazka({
+      performedRepairs: [{ name: "Displej", price: 1000, costs: 100 }],
+      discountType: "amount",
+      discountValue: 2000,
+    });
+    const m = ticketMargin(t, EMPTY_COST_SOURCES);
+    expect(m.discount).toBe(1000);
+    expect(m.revenue).toBe(0);
+    expect(m.margin).toBe(-100);
+  });
+
+  it("stornovaná zakázka nepřinese ani korunu, ani náklad", () => {
+    const t = zakazka({ performedRepairs: [{ name: "Displej", price: 5000, costs: 1000 }] });
+    const m = ticketMargin(t, EMPTY_COST_SOURCES, true);
+    expect(m).toMatchObject({ gross: 0, discount: 0, revenue: 0, cost: 0, margin: 0, entriesWithoutCost: 0 });
   });
 
   it("sečte všechny provedené opravy na zakázce, ne jen první", () => {
@@ -253,6 +275,46 @@ describe("žebříček oprav", () => {
 
   it("zakázky bez oprav do žebříčku nic nepřidají", () => {
     expect(marginByRepair([zakazka({}), zakazka({ performedRepairs: [] })], EMPTY_COST_SOURCES)).toEqual([]);
+  });
+});
+
+describe("žebříčky se stornem", () => {
+  const stornoVse = () => true;
+
+  it("oprava ze stornované zakázky se počítá do „Provedeno“, ne do peněz", () => {
+    const rows = marginByRepair(
+      [zakazka({ status: "cancelled", performedRepairs: [{ name: "Displej", price: 2000, costs: 800 }] })],
+      EMPTY_COST_SOURCES,
+      stornoVse,
+    );
+    expect(rows[0].count).toBe(1);
+    expect(rows[0].revenue).toBe(0);
+    expect(rows[0].cost).toBe(0);
+    // Žádný započítaný náklad neexistuje, takže řádek nesmí tvrdit, že data má.
+    expect(rows[0].noCostData).toBe(true);
+  });
+
+  it("zařízení jen ze stornovaných zakázek zůstává označené jako bez nákladů", () => {
+    const rows = marginByDevice(
+      [zakazka({ deviceLabel: "iPhone 13", status: "cancelled", performedRepairs: [{ name: "Displej", price: 2000, costs: 800 }] })],
+      EMPTY_COST_SOURCES,
+      stornoVse,
+    );
+    expect(rows[0]).toMatchObject({ count: 1, revenue: 0, cost: 0, margin: 0, noCostData: true });
+  });
+
+  it("pobočka se stornem má zakázku v počtu, ale ne v tržbě", () => {
+    const rows = marginByBranch(
+      [
+        zakazka({ branchId: "b1", status: "cancelled", performedRepairs: [{ name: "Displej", price: 2000, costs: 800 }] }),
+        zakazka({ branchId: "b1", performedRepairs: [{ name: "Baterie", price: 500, costs: 100 }] }),
+      ],
+      EMPTY_COST_SOURCES,
+      () => "Praha",
+      (t) => t.status === "cancelled",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: "Praha", count: 2, revenue: 500, cost: 100, margin: 400, noCostData: false });
   });
 });
 

@@ -282,7 +282,11 @@ export function InvoiceEditor({
                         <td style={tdStyle}>
                           <select
                             value={item.vat_rate}
-                            onChange={(e) => updateItem(idx, "vat_rate", parseFloat(e.target.value))}
+                            /* `|| 0` jako u množství a ceny vedle: kdyby se do
+                               sazby dostalo něco nečíselného, propsal by se NaN
+                               přes výpočet DPH až do celkové částky – a ta se
+                               ukládá do databáze. */
+                            onChange={(e) => updateItem(idx, "vat_rate", parseFloat(e.target.value) || 0)}
                             aria-label="Sazba DPH"
                             style={{ ...cellInput, textAlign: "right", cursor: "pointer" }}
                           >

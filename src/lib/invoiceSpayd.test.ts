@@ -63,6 +63,18 @@ describe("QR platba na faktuře", () => {
     expect(invoiceToJobiDocsVariables(doklad({ total: -1210, kind: "credit_note" }), bezPolozek).inv_spayd_qr).toBe("");
   });
 
+  it("doklad bez částky nesloží QR kód – a hlavně kvůli němu nespadne celý tisk", () => {
+    /*
+     * `undefined <= 0` je `false`, takže chybějící částka propadla až
+     * k `toFixed` a shodila `TypeError`. Nešlo přitom jen o QR kód: proměnné
+     * pro doklad se skládají tímhle jedním voláním, takže se nevytiskla celá
+     * faktura. Stejně tak `NaN`, které se do součtu dostane z rozbité sazby.
+     */
+    expect(invoiceToJobiDocsVariables(doklad({ total: undefined }), bezPolozek).inv_spayd_qr).toBe("");
+    expect(invoiceToJobiDocsVariables(doklad({ total: null }), bezPolozek).inv_spayd_qr).toBe("");
+    expect(invoiceToJobiDocsVariables(doklad({ total: NaN }), bezPolozek).inv_spayd_qr).toBe("");
+  });
+
   it("v QR je stejná částka, jakou má zákazník na dokladu zaplatit", () => {
     const inv = doklad({ total: 1234.5, currency: "CZK" });
     const v = invoiceToJobiDocsVariables(inv, bezPolozek);

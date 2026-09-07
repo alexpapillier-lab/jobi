@@ -208,14 +208,17 @@ export function marginByDevice(tickets: TicketEx[], sources: CostSources, jeStor
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     if (!t.deviceLabel) continue;
-    const m = ticketMargin(t, sources, jeStorno(t));
+    const storno = jeStorno(t);
+    const m = ticketMargin(t, sources, storno);
     const g = groups.get(t.deviceLabel) ?? { name: t.deviceLabel, count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;
     g.cost += m.cost;
     g.margin += m.margin;
+    // Stornovaná zakázka nepřinesla žádný údaj o nákladech – nesmí tedy
+    // zhasnout upozornění „ve skupině chybí náklady“.
     const entries = (t.performedRepairs || []).length;
-    if (entries - m.entriesWithoutCost > 0) g.withCost += 1;
+    if (!storno && entries - m.entriesWithoutCost > 0) g.withCost += 1;
     groups.set(t.deviceLabel, g);
   }
   return [...groups.entries()].map(([key, g]) => finishRow({ key, ...g }));
@@ -244,13 +247,14 @@ export function marginByBranch(tickets: TicketEx[], sources: CostSources, nameOf
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     const key = t.branchId ?? "";
-    const m = ticketMargin(t, sources, jeStorno(t));
+    const storno = jeStorno(t);
+    const m = ticketMargin(t, sources, storno);
     const g = groups.get(key) ?? { name: key ? nameOf(key) : "Bez pobočky", count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;
     g.cost += m.cost;
     g.margin += m.margin;
-    g.withCost += m.entriesWithoutCost < (t.performedRepairs?.length ?? 0) ? 1 : 0;
+    g.withCost += !storno && m.entriesWithoutCost < (t.performedRepairs?.length ?? 0) ? 1 : 0;
     groups.set(key, g);
   }
   return [...groups.entries()].map(([key, g]) => finishRow({ key, ...g })).sort((a, b) => b.revenue - a.revenue);
@@ -261,13 +265,14 @@ export function marginByService(tickets: TicketEx[], sources: CostSources, nameO
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     const key = (t as TicketEx & { service_id?: string }).service_id ?? "";
-    const m = ticketMargin(t, sources, jeStorno(t));
+    const storno = jeStorno(t);
+    const m = ticketMargin(t, sources, storno);
     const g = groups.get(key) ?? { name: key ? nameOf(key) : "Neznámý servis", count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;
     g.cost += m.cost;
     g.margin += m.margin;
-    g.withCost += m.entriesWithoutCost < (t.performedRepairs?.length ?? 0) ? 1 : 0;
+    g.withCost += !storno && m.entriesWithoutCost < (t.performedRepairs?.length ?? 0) ? 1 : 0;
     groups.set(key, g);
   }
   return [...groups.entries()].map(([key, g]) => finishRow({ key, ...g })).sort((a, b) => b.revenue - a.revenue);

@@ -24,8 +24,11 @@ export default defineConfig({
    *    `npm run test:e2e:servisy`.
    *  - `prohlizece.spec.ts` potřebuje statický server portálu, který startuje
    *    jen `playwright.prohlizece.config.ts`.
+   *  - `onboarding.spec.ts` navíc **registruje účty**. Ty se smazat nedají
+   *    (aplikace na to rozhraní nemá), takže by každý push nechal v Auth další
+   *    adresu. Pouští se ručně: `npm run test:e2e:onboarding`.
    */
-  testIgnore: [/servisy\.spec\.ts$/, /prohlizece\.spec\.ts$/],
+  testIgnore: [/servisy\.spec\.ts$/, /prohlizece\.spec\.ts$/, /onboarding\.spec\.ts$/],
   // Jedna zakázka se zakládá a pak se s ní pracuje – paralelně by si testy
   // přepisovaly stav pod rukama.
   fullyParallel: false,

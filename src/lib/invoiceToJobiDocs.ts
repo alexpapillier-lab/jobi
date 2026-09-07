@@ -89,8 +89,14 @@ function generateSpaydString(inv: Invoice): string {
   if (!iban) return "";
   /* Dobropis se neplatí, peníze jdou opačným směrem. Záporná částka navíc
      ve SPAYD není platná a banka takový kód odmítne – radši žádný QR kód
-     než ten, který zákazníkovi nefunguje. */
-  if (inv.total <= 0) return "";
+     než ten, který zákazníkovi nefunguje.
+
+     Ptá se `!(total > 0)`, ne `total <= 0`: chybějící částka je `undefined`
+     a `undefined <= 0` je `false`, takže by propadla dál a `toFixed` by
+     spadl na `TypeError`. Nespadl by jen QR kód – celý doklad se skládá
+     tímhle jedním voláním, takže by se faktura nevytiskla vůbec. Nulu
+     i `null` chytal starý zápis taky, `NaN` nově. */
+  if (!(inv.total > 0)) return "";
 
   const parts = ["SPD*1.0"];
   parts.push(`ACC:${iban}`);

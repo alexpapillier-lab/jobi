@@ -25,18 +25,18 @@ import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { stornoPodleStavu } from "../lib/stornoStav";
+import { MAX_OTEVRENY_USEK_HODIN } from "../lib/usekyPrace";
 import { marginByBranch, marginByService, type MarginRow } from "./Statistics/margin";
 import { useEntitlements } from "../hooks/useEntitlements";
 import {
   EMPTY_COST_SOURCES,
-  NENI_STORNO,
   marginByDevice,
   marginByRepair,
-  marginPercent,
   ticketMargin,
   type CostSources,
   type JeStorno,
 } from "./Statistics/margin";
+import { computeKpis } from "./Statistics/kpi";
 import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
 import {
   COMPARABLE_PERIODS,
@@ -61,9 +61,6 @@ type DrillDown =
 
 type DrillFacet = Exclude<DrillDown, null>["type"];
 
-/** Mapování z Orders.tsx přidává completed_at mimo typ TicketEx. */
-type TicketWithCompletion = TicketEx & { completed_at?: string | null };
-
 const PERIOD_OPTIONS: Array<{ value: PeriodType; label: string }> = [
   { value: "today", label: "Dnes" },
   { value: "week", label: "Týden" },
@@ -82,73 +79,6 @@ function inRange(t: TicketEx, range: DateRange): boolean {
 // ========================
 // Výpočty
 // ========================
-
-/**
- * Náklady a marže zakázky podle definice v `Statistics/margin.ts`:
- * náklady oprav (vlastní, jinak z ceníku) + nákupní ceny navázaných dílů.
- */
-type Kpis = {
-  totalTickets: number;
-  totalRevenue: number;
-  totalCosts: number;
-  totalDiscounts: number;
-  /** Marže v Kč = Σ(příjem − náklady) − slevy. */
-  profit: number;
-  /** Marže v % z příjmu. */
-  marginPct: number;
-  /** Provedené opravy bez jakéhokoli zdroje nákladů. */
-  entriesWithoutCost: number;
-  /** Provedené opravy, u kterých některý díl nemá nákupní cenu. */
-  entriesMissingPurchasePrice: number;
-  averageTicketPrice: number;
-  averageTicketDurationDays: number;
-};
-
-function computeKpis(list: TicketEx[], sources: CostSources, jeStorno: JeStorno = NENI_STORNO): Kpis {
-  let totalRevenue = 0;
-  let totalCosts = 0;
-  let totalDiscounts = 0;
-  let profit = 0;
-  let entriesWithoutCost = 0;
-  let entriesMissingPurchasePrice = 0;
-  let paidCount = 0;
-  let durationSum = 0;
-  let durationCount = 0;
-
-  for (const t of list) {
-    const m = ticketMargin(t, sources, jeStorno(t));
-    const rev = m.revenue;
-    totalRevenue += rev;
-    totalCosts += m.cost;
-    totalDiscounts += m.discount;
-    profit += m.margin;
-    entriesWithoutCost += m.entriesWithoutCost;
-    entriesMissingPurchasePrice += m.entriesMissingPurchasePrice;
-    if (rev > 0) paidCount += 1;
-
-    const completedAt = (t as TicketWithCompletion).completed_at;
-    if (completedAt && t.createdAt) {
-      const ms = new Date(completedAt).getTime() - new Date(t.createdAt).getTime();
-      if (ms > 0) {
-        durationSum += ms / (24 * 60 * 60 * 1000);
-        durationCount += 1;
-      }
-    }
-  }
-
-  return {
-    totalTickets: list.length,
-    totalRevenue,
-    totalCosts,
-    totalDiscounts,
-    profit,
-    marginPct: marginPercent(profit, totalRevenue),
-    entriesWithoutCost,
-    entriesMissingPurchasePrice,
-    averageTicketPrice: paidCount > 0 ? totalRevenue / paidCount : 0,
-    averageTicketDurationDays: durationCount > 0 ? durationSum / durationCount : 0,
-  };
-}
 
 function topCounts(counts: Record<string, number>, limit: number): Array<{ name: string; count: number }> {
   return Object.entries(counts)
@@ -790,7 +720,10 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <Card style={{ padding: "var(--pad-24)" }}>
           <SectionHeading icon={<StatusIcon size={18} />}>Technici</SectionHeading>
           <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 10 }}>
-            Kdo zakázky přijímá a dokončuje (z historie, podle data události; storno se nepočítá), čas ze stopek a hodinová práce (podle vzniku zakázky, jako ostatní čísla). Pobočka jako u ostatních čísel.
+            Kdo zakázky přijímá a dokončuje (z historie, podle data události; storno se nepočítá a dokončení se počítá jednou – tomu, kdo zakázku do koncového stavu přepnul naposled), čas ze stopek podle překryvu s obdobím a hodinová práce (podle vzniku zakázky, jako ostatní čísla; ze stornovaných zakázek ne). Pobočka jako u ostatních čísel.
+            {technici.some((t) => t.bezicichUseku > 0) && (
+              <> Nezastavené stopky se počítají nejvýš {MAX_OTEVRENY_USEK_HODIN} h za úsek.</>
+            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "var(--text-sm)" }}>
@@ -807,7 +740,17 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>{t.name}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.prijato}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.dokonceno}</td>
-                    <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }} title="Odpracovaný čas ze stopek na zakázkách">{t.odpracovanoHodin > 0 ? `${t.odpracovanoHodin.toLocaleString("cs-CZ")} h` : "—"}</td>
+                    <td
+                      style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}
+                      title={
+                        t.bezicichUseku > 0
+                          ? `Odpracovaný čas ze stopek na zakázkách. ${t.bezicichUseku === 1 ? "Jeden úsek nemá konec a počítá se" : `${t.bezicichUseku} úseky nemají konec a počítají se`} nejvýš ${MAX_OTEVRENY_USEK_HODIN} h.`
+                          : "Odpracovaný čas ze stopek na zakázkách"
+                      }
+                    >
+                      {t.odpracovanoHodin > 0 ? `${t.odpracovanoHodin.toLocaleString("cs-CZ")} h` : "—"}
+                      {t.bezicichUseku > 0 && <span style={{ color: "var(--muted)" }}> ⏱</span>}
+                    </td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.hodiny > 0 ? t.hodiny.toLocaleString("cs-CZ") : "—"}</td>
                     <td style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", textAlign: "right" }}>{t.trzbaHodin > 0 ? formatCurrencyRounded(t.trzbaHodin) : "—"}</td>
                   </tr>
@@ -1159,7 +1102,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             „Žádná data“ – vypadá to jako rozbitá obrazovka, ne jako prázdná.
             Jedna věta navíc řekne, že se to naplní samo.
           */}
-          {!nacitani && filteredTickets.length === 0 && (
+          {/*
+            `pocetVObdobi`, ne `filteredTickets`: v kartách a grafech se
+            jednotlivé zakázky vůbec nestahují (čísla chodí hotová ze serveru),
+            takže `filteredTickets` je tam vždycky prázdné – a tahle hláška
+            visela nad plnými Statistikami i servisu s tisíci zakázkami.
+          */}
+          {!nacitani && pocetVeVyberu === 0 && (
             <div
               role="status"
               style={{
@@ -1260,7 +1209,10 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     </thead>
                     <tbody>
                       {filteredTickets.slice(0, 100).map((t) => {
-                        const m = ticketMargin(t, costSources);
+                        // Storno i tady: bez něj tabulka ukazovala u zrušené
+                        // zakázky příjem, který karty nahoře ani export do CSV
+                        // nezapočítaly, a součet sloupce nesedl s KPI.
+                        const m = ticketMargin(t, costSources, jeStornoZakazky(t));
                         const finalPrice = m.revenue;
                         const cell = { padding: "var(--space-2) var(--space-3)", borderBottom: "1px solid var(--border)", color: "var(--text)" } as const;
                         return (

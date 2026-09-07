@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../../components/Toast";
 import { delkaSekund, formatDelka, nactiPrezdivky, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
+import { MAX_OTEVRENY_USEK_HODIN, jeZapomenuty, sekundyCelkem } from "../../lib/usekyPrace";
 
 /**
  * Karta „Čas na opravě“ v detailu zakázky (jen když to servis zapnul).
@@ -64,7 +65,11 @@ export function CasNaOprave({
   }, [bezi]);
 
   const mujBezici = userId ? useky.find((u) => !u.ended_at && u.user_id === userId) ?? null : null;
-  const celkem = useky.reduce((a, u) => a + delkaSekund(u, ted), 0);
+  // Součet za zakázku počítá zapomenuté stopky nejvýš jednu směnu – stejně
+  // jako KPI techniků ve Statistikách. Bez toho tu po víkendu svítí „61 h“
+  // za práci, která trvala hodinu. Odpočet u tlačítka Zastavit tiká dál.
+  const celkem = sekundyCelkem(useky, null, null, ted);
+  const zapomenute = useky.filter((u) => jeZapomenuty(u, ted));
   const jmeno = (id: string) => jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega");
 
   const start = async () => {
@@ -98,6 +103,11 @@ export function CasNaOprave({
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Celkem na zakázce <b style={{ color: "var(--text)" }}>{formatDelka(celkem)}</b>
           {bezi && <span> · právě běží</span>}
+          {zapomenute.length > 0 && (
+            <span title={`Úsek, který běží déle než ${MAX_OTEVRENY_USEK_HODIN} h, se do součtu započítá jen ${MAX_OTEVRENY_USEK_HODIN} h.`}>
+              {" "}· {zapomenute.length === 1 ? "jeden úsek se zapomněl zastavit" : `${zapomenute.length} úseky se zapomněly zastavit`}
+            </span>
+          )}
         </div>
         {mujBezici ? (
           <Button variant="danger" size="sm" onClick={() => void stop()} disabled={ceka}>

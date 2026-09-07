@@ -145,10 +145,17 @@ describe("žebříček techniků", () => {
 
   it("odpracované hodiny a tržby přijaté jako text jsou čísla", async () => {
     const t = await nactiTechnici(
-      klient({ data: [{ userId: "u1", name: "Petr", prijato: "12", dokonceno: "9", odpracovanoHodin: "37.5", hodiny: "40", trzbaHodin: "48000.5" }], error: null }),
+      klient({ data: [{ userId: "u1", name: "Petr", prijato: "12", dokonceno: "9", odpracovanoHodin: "37.5", bezicichUseku: "1", hodiny: "40", trzbaHodin: "48000.5" }], error: null }),
       filtr,
     );
-    expect(t[0]).toEqual({ userId: "u1", name: "Petr", prijato: 12, dokonceno: 9, odpracovanoHodin: 37.5, hodiny: 40, trzbaHodin: 48000.5 });
+    expect(t[0]).toEqual({ userId: "u1", name: "Petr", prijato: 12, dokonceno: 9, odpracovanoHodin: 37.5, bezicichUseku: 1, hodiny: 40, trzbaHodin: 48000.5 });
+  });
+
+  it("starší databáze bez počtu běžících úseků dá nulu, ne undefined", async () => {
+    // Než dojede migrace, RPC ten klíč neposílá – tabulka techniků se kvůli
+    // tomu nesmí rozsypat na „NaN úseků“.
+    const t = await nactiTechnici(klient({ data: [{ userId: "u1", name: "Petr", odpracovanoHodin: 3 }], error: null }), filtr);
+    expect(t[0].bezicichUseku).toBe(0);
   });
 
   it("technik bez jména se v žebříčku pozná pomlčkou, ne slovem undefined", async () => {

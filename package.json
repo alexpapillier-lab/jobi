@@ -76,7 +76,8 @@
     "test:migrace": "bash scripts/test-migrace-na-cisto.sh",
     "test:obnova": "bash scripts/zkouska-obnovy.sh",
     "test:e2e:servisy": "playwright test -c playwright.servisy.config.ts",
-    "test:e2e:prohlizece": "playwright test -c playwright.prohlizece.config.ts"
+    "test:e2e:prohlizece": "playwright test -c playwright.prohlizece.config.ts",
+    "test:e2e:onboarding": "playwright test -c playwright.onboarding.config.ts"
   },
   "type": "module",
   "version": "0.5.1"

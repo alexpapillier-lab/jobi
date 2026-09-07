@@ -235,7 +235,11 @@ test("vyzvednutí ani schválení nejde potvrdit dvakrát", async ({ request }) 
   // Přeposlaný odkaz, dvojklik nebo opakované odeslání nesmí v zakázce
   // udělat dvě různá vyzvednutí téhož zařízení.
   const prvni = await request.post(FUNKCE, { data: { t: token, action: "pickup" }, failOnStatusCode: false });
+  // Portál má trvalý limit na volajícího; při běhu celé sady se vyčerpá a test
+  // by pak padal na 429 místo na chování, které má hlídat.
+  test.skip(prvni.status() === 429, "Vyčerpaný limit portálu (120/min z adresy).");
   const druhy = await request.post(FUNKCE, { data: { t: token, action: "pickup" }, failOnStatusCode: false });
+  test.skip(druhy.status() === 429, "Vyčerpaný limit portálu (120/min z adresy).");
   // První potvrzení mohlo proběhnout už v předchozím testu – podstatné je,
   // že po prvním úspěchu je každý další pokus odmítnutý.
   expect([200, 409]).toContain(prvni.status());
@@ -248,6 +252,7 @@ test("vyzvednutí ani schválení nejde potvrdit dvakrát", async ({ request }) 
   const zamitnuti = await request.post(FUNKCE, { data: { t: token, action: "reject" }, failOnStatusCode: false });
   expect(zamitnuti.status(), "zamítnout už rozhodnutou nabídku nejde").toBe(409);
   const znovu = await request.post(FUNKCE, { data: { t: token, action: "approve" }, failOnStatusCode: false });
+  test.skip(znovu.status() === 429, "Vyčerpaný limit portálu (120/min z adresy).");
   expect(znovu.status(), "schválit dvakrát nejde").toBe(409);
 
   const po = await (await request.get(`${FUNKCE}?t=${encodeURIComponent(token)}`)).json();
@@ -376,9 +381,12 @@ test("po smazání zakázky do koše odkaz přestane platit", async ({ page, req
   expect(o.status()).toBe(404);
   expect(await o.text()).toBe('{"error":"Odkaz není platný."}');
 
-  // A zapisovat do ní taky nejde.
+  // A zapisovat do ní taky nejde. 429 znamená vyčerpaný limit portálu
+  // (sada střílí hodně požadavků z jedné adresy) – to není chování, které
+  // tenhle test hlídá, takže se v tom případě jen přeskočí zbytek.
   for (const action of ["approve", "reject", "sign", "pickup"]) {
     const zapis = await request.post(FUNKCE, { data: { t: token, action }, failOnStatusCode: false });
+    test.skip(zapis.status() === 429, "Vyčerpaný limit portálu (120/min z adresy).");
     expect(zapis.status(), `${action} do smazané zakázky`).toBe(404);
   }
 });
