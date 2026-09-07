@@ -8,6 +8,7 @@ import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
 import { zkratkaZConfigu } from "../../../lib/servisy";
+import { SLOUPCE_DETAILU } from "../../../lib/sloupceZakazky";
 
 // Helper: load service settings for code generation
 async function loadServiceSettingsForCode(
@@ -477,7 +478,32 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
-    const { detailedTicket, editedTicket, onSuccess, onConflict, onQueued } = params;
+    const { detailedTicket: zadanaZakazka, editedTicket, onSuccess, onConflict, onQueued } = params;
+
+    /* Pojistka proti přepsání prázdnem.
+       Uložení posílá do databáze *celý* řádek složený z toho, co má aplikace
+       v paměti. Seznam zakázek přitom čte jen svoji úzkou sadu sloupců, takže
+       nad takovým řádkem by zápis vynuloval diagnostiku, kontrolu po opravě,
+       adresu i zápůjčku. Detail se nad neúplnou zakázkou nevykreslí, ale
+       klávesová zkratka nebo zápis na pozadí se k němu dostat můžou – tady
+       je poslední místo, kde se to dá zastavit. */
+    let detailedTicket = zadanaZakazka;
+    if (zadanaZakazka && zadanaZakazka.uplna !== true && zadanaZakazka.id) {
+      const plna = await refetchTicketById(zadanaZakazka.id);
+      if (!plna?.uplna) {
+        showToast("Zakázka se ještě načítá, zkuste uložit za chvíli.", "error");
+        devLog("[SaveTicket] END (neúplná zakázka)");
+        return false;
+      }
+      /* Rozepsané změny z detailu (opravy, sleva) mají přednost před tím, co
+         je v databázi – ukládá se přece to, co má uživatel na obrazovce.
+         `undefined` se přeskakuje: u řádku ze seznamu neznamená „prázdné“,
+         ale „nenačtené“, a spread by jím plnou hodnotu přepsal. */
+      const rozepsane = Object.fromEntries(
+        Object.entries(zadanaZakazka).filter(([, v]) => v !== undefined)
+      ) as Partial<TicketEx>;
+      detailedTicket = { ...plna, ...rozepsane, uplna: true };
+    }
 
     devLog("[Save] started", { ticketId: detailedTicket?.id });
     devLog("[SaveTicket] START", { 
@@ -664,7 +690,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       }
       
       const { data, error } = await updateQuery
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+        /* Celá sada sloupců, ne jen ty zapisované: z odpovědi se skládá řádek
+           v paměti. Dřív v ní chyběla kontrola po opravě, zápůjčka a pobočka,
+           takže po každém uložení detailu z obrazovky zmizely. */
+        .select(SLOUPCE_DETAILU)
         /* maybeSingle(), ne single(): při souběžné úpravě se neaktualizuje
            žádný řádek (nesedí `version`) a single() by to ohlásil chybou
            PGRST116. Tu `jeTrvalaChyba` bere jako trvalou, takže se zápis ani

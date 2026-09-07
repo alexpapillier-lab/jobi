@@ -128,6 +128,13 @@ delete from tickets where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
 delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc19240b57';
 ```
 
+Ve stejném servisu jezdí i **syntetický hlídač** (`scripts/hlidac/`, každých
+15 minut). Zakládá zakázky s číslem `HLIDAC-…`, hned je dává do koše a denní
+úloha `jobi-uklid-hlidace` je odtud po dvou dnech maže. Kdyby test počítal
+zakázky v seznamu, musí s ním počítat – živá zakázka hlídače v seznamu
+existuje jen pár sekund, ale právě v tu chvíli může běžet i test.
+Podrobnosti: `docs/HLIDAC_PROVOZU.md`.
+
 ## Na co si dát pozor
 
 - **Testy nejsou paralelní.** Pracují se stejnou zakázkou a společným servisem.

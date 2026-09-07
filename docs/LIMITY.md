@@ -36,6 +36,16 @@ jen JPEG, PNG, WebP a HEIC. Bucket `diagnostic-photos` je veřejný, takže se d
 něj nemá dostat nic jiného než obrázek, a to ani když si někdo v požadavku
 napíše libovolný typ.
 
+## Kdo do těch limitů leze pravidelně
+
+Kromě zákazníků na ně naráží i **syntetický hlídač** (`scripts/hlidac/`),
+který každých 15 minut projde hlavní cestu. Jeho podíl je spočítaný
+v `docs/HLIDAC_PROVOZU.md`: nejvyšší využití má u akcí portálu, a to
+6,7 % stropu. Nikomu přitom nic neubere – limity se počítají na otisk
+volajícího (runner GitHubu) a na `service_id` (E2E testovací servis).
+Rezervaci schválně nezakládá, protože strop 10 za hodinu z adresy by
+dokázal vyčerpat.
+
 ## Kde se to mění
 
 Tabulka `rate_hits` a funkce `zapocitej_udalost(kanal, klic)` a

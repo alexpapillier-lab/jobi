@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { podnetyZHlidace, type SelhaniKontroly } from "../_shared/hlidac.ts";
 
 /**
  * Hlídač provozu. Jednou za hodinu se podívá, jestli se něco neděje, a když
@@ -10,6 +11,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  * Záměrně hlídá jen málo věcí, ale takových, které znamenají „zákazník teď
  * nemůže pracovat“. Upozornění, které chodí zbytečně, si člověk za týden
  * odfiltruje do koše a pak přehlédne i to důležité.
+ *
+ * DRUHÝ VSTUP: `{ secret, source: "hlidac", selhani: [...] }` posílá
+ * syntetický hlídač ze `scripts/hlidac/` (GitHub Actions, každých 15 minut).
+ * Ten se na `error_logs` nedívá vůbec – zkouší hlavní cestu zvenčí a hlásí,
+ * co dvakrát po sobě nefungovalo. Odesílá se to sem, a ne přímo přes Resend,
+ * schválně: adresa majitele, klíč k Resendu i tlumení přes `alert_events` mají
+ * zůstat na jednom místě. Druhé místo, kde se posílají e-maily, je druhé
+ * místo, kde může chybět klíč.
  */
 
 const corsHeaders = {
@@ -52,7 +61,16 @@ serve(async (req) => {
     const zkouska = body.dryRun === true;
     const od = new Date(Date.now() - oknoMinut * 60_000).toISOString();
 
-    const podnety = await zjistitPodnety(svc, od, oknoMinut);
+    // Hlášení syntetického hlídače: podněty nejdou z error_logs, ale z toho,
+    // co hlídači zvenčí nefungovalo. Všechno ostatní (tlumení, adresát,
+    // odeslání, zápis do alert_events) je odsud dál společné.
+    const zHlidace = body.source === "hlidac";
+    const podnety = zHlidace
+      ? podnetyZHlidace(
+          Array.isArray(body.selhani) ? (body.selhani as SelhaniKontroly[]) : [],
+          { pokusy: Number(body.pokusy) || 1, behUrl: typeof body.behUrl === "string" ? body.behUrl : null },
+        )
+      : await zjistitPodnety(svc, od, oknoMinut);
     if (podnety.length === 0) {
       return json({ ok: true, checked_since: od, alerts: 0 });
     }
@@ -79,7 +97,10 @@ serve(async (req) => {
     const komu = await adresat(svc);
     if (!komu) return json({ error: "Není kam upozornění poslat: nastav secret ALERT_EMAIL." }, 503);
 
-    const vysledek = await odeslat(komu, kOdeslani, oknoMinut);
+    const uvod = zHlidace
+      ? "Syntetický hlídač prošel hlavní cestu zvenčí a tohle nefungovalo."
+      : `Okno ${popisOkna(oknoMinut)}.`;
+    const vysledek = await odeslat(komu, kOdeslani, uvod);
     if (!vysledek.ok) return json({ error: vysledek.error }, 502);
 
     for (const p of kOdeslani) {
@@ -223,7 +244,7 @@ async function adresat(svc: ReturnType<typeof createClient>): Promise<string | n
   return data?.user?.email ?? null;
 }
 
-async function odeslat(komu: string, podnety: Podnet[], oknoMinut: number): Promise<{ ok: boolean; error?: string }> {
+async function odeslat(komu: string, podnety: Podnet[], uvod: string): Promise<{ ok: boolean; error?: string }> {
   const key = Deno.env.get("RESEND_API_KEY")?.trim();
   if (!key) return { ok: false, error: "Chybí RESEND_API_KEY." };
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
@@ -234,7 +255,7 @@ async function odeslat(komu: string, podnety: Podnet[], oknoMinut: number): Prom
     .join("");
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111">
 <p style="margin:0 0 4px"><strong>Hlídač provozu Jobi</strong></p>
-<p style="margin:0;color:#666">Okno ${popisOkna(oknoMinut)}. Stejné upozornění se neopakuje dřív než za ${TICHO_HODIN} hodin.</p>
+<p style="margin:0;color:#666">${esc(uvod)} Stejné upozornění se neopakuje dřív než za ${TICHO_HODIN} hodin.</p>
 ${telo}
 <p style="margin:24px 0 0;color:#666;font-size:12px">Podrobnosti jsou v aplikaci v Nastavení → Owner → Chyby.</p>
 </div>`;

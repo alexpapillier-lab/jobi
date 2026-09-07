@@ -1,6 +1,6 @@
 # Zátěžové a výkonnostní měření
 
-Naměřeno 6. 9. 2026 proti **ostrému** Supabase projektu, ale výhradně proti
+Naměřeno 6. a 7. 9. 2026 proti **ostrému** Supabase projektu, ale výhradně proti
 testovacím servisům (E2E testovací servis, ukázkový Servis Novák a zátěžový
 servis založený jen k měření, oddíl 5). Majitel to výslovně povolil –
 aplikaci nikdo nepoužívá a nikdo za ni neplatí.
@@ -422,13 +422,14 @@ ale do produkce ji má pustit člověk.
 (po opravě; před ní 8,8). Uživatele to už nebrzdí – seznam je vidět za půl
 vteřiny a zbytek dojíždí na pozadí – ale objem dat se tím nezmenšil, jen
 schoval. Roste lineárně s počtem zakázek a při 10 000 to bude přes 13 MB.
-Dvě cesty, obě zatím neudělané:
+Dvě cesty (první z nich se udělala den nato):
 
 - **Ubrat sloupce.** Do seznamu se tahá 37 sloupců včetně diagnostiky,
   kontrolních seznamů a fotek – v seznamu se z nich zobrazuje osm. Samotné
   názvy sloupců dělají v JSONu asi 500 B na řádek. Detail by si zbytek
   dotáhl podle `id` (`refetchTicketById` už existuje). Je to ale změna,
   která se dotkne celého detailu zakázky, a ta se dělat naslepo nemá.
+  **Uděláno 7. 9. 2026 – viz oddíl 6.**
 - **Filtrovat a stránkovat na serveru.** To, co doporučuje bod 8 níž.
   Znamená to přesunout hledání, počty u záložek a seskupení podle stavu do
   databáze; hotové stránkování v prohlížeči by se zahodilo.
@@ -454,6 +455,119 @@ ale je to dvacet zbytečných dotazů z celkových čtyřiceti.
 
 Zátěžový servis je smazaný i se vším, co k němu patřilo. Jediná stopa jinde
 jsou řádky v `api_read_hits` (počítadlo limitů), které denně uklízí pg_cron.
+
+## 6. Seznam zakázek přestal stahovat detail (7. 9. 2026)
+
+Oddíl 5 skončil s tím, že aplikace pořád stahuje **všechny sloupce všech
+zakázek**: 37 sloupců, z nichž seznam zobrazuje osm. Tohle je ta oprava.
+
+Měřeno na **E2E testovacím servisu** (2 146 zakázek, 2 055 zákazníků,
+410 reklamací, 214 faktur), ne na zátěžovém z oddílu 5 – ten je smazaný. Stejný skript
+(`scripts/zatez/appka.mjs`), stejný stroj, produkční balík a `vite preview`,
+medián ze tří běhů v čistém kontextu prohlížeče. Mezi oběma sadami se měnil
+jen kód aplikace.
+
+### Co se změnilo v kódu
+
+Sloupce jsou nově na jednom místě (`src/lib/sloupceZakazky.ts`) a jsou dvoje:
+
+- **`SLOUPCE_SEZNAMU`** (15) – kód, zákazník, telefon, zařízení, sériové
+  číslo, závada, cizí číslo, stav, datum, provedené opravy se slevou (kvůli
+  ceně na kartě), verze a pobočka. Přesně to, z čeho se skládají karty,
+  hledání, filtry a počty u záložek.
+- **`SLOUPCE_DETAILU`** (38) – celý řádek. Dotahuje se **jedním dotazem podle
+  `id`** při otevření zakázky a používá se všude, kde se ze zakázky tiskne,
+  fakturuje, zakládá reklamace nebo ukládá.
+
+`service_id` se v seznamu nečte vůbec – pro celý seznam je stejné a doplní se
+z proměnné. Samo o sobě to bylo 5 % přenosu (uuid v každém řádku).
+
+### Před a po
+
+| Co se měří | před | po | rozdíl |
+|---|---:|---:|---|
+| **zakázky – staženo** | **2 891 kB** | **1 507 kB** | **−48 %** |
+| **zakázky – první řádek seznamu** | **1 021 ms** | **525 ms** | **−49 %** |
+| zakázky – konec načítání | 1 990 ms | 1 805 ms | −9 % |
+| zakázky – dotazů do databáze | 42 | 42 | – |
+| zakázky – kostra stránky | 229 ms | 207 ms | – |
+| hledání – nejdelší úhoz | 40 ms | 33 ms | – |
+| filtr „Dokončené" | 51 ms | 48 ms | – |
+| detail – otevření okna | 61 ms | 28 ms | – |
+| **detail – obsah zakázky** | **~25 ms (z paměti)** | **~210 ms (1 dotaz)** | **+185 ms** |
+| zákazníci – konec načítání | 1 875 ms | 1 418 ms | −24 % |
+| sklad – konec načítání | 1 146 ms | 1 065 ms | – |
+| faktury – konec načítání | 919 ms | 909 ms | – |
+| statistiky – konec načítání | 1 807 ms | 1 140 ms | −37 % |
+
+Řádky mimo zakázky (zákazníci, statistiky) se kódem neměnily; kolísají,
+protože všechny stránky jedou proti stejné databázi ve stejnou chvíli.
+
+Samotná data z PostgREST, tentýž servis, 2 146 zakázek:
+
+| Sada | sloupců | staženo |
+|---|---:|---:|
+| původní seznam | 37 | 2 410 kB |
+| nový seznam | 15 | **999 kB** |
+| detail (jedna zakázka) | 38 | 1,2 kB |
+
+Na E2E servisu je většina sloupců prázdná, a přesto se ušetřilo 59 % – **za
+polovinu úspory můžou samotné názvy sloupců.** PostgREST je opakuje v každém
+řádku, takže i sloupec plný `null` stojí ~20 kB na tisíc zakázek. U servisu
+s vyplněnou diagnostikou, kontrolními seznamy a adresami je úspora větší:
+u iSwapu (3 590 zakázek) vychází stejný poměr na **5 MB → ~2 MB**, ve
+skutečnosti spíš míň – čím víc má servis vyplněno, tím víc se ubráním
+sloupců ušetří.
+
+### Co to stálo
+
+**Detail se otevírá o jeden dotaz později.** Okno vyskočí hned i s číslem
+zakázky (to seznam zná), ale obsah se objeví až s dotaženou zakázkou –
+~210 ms proti ~25 ms z paměti, z toho 85–150 ms je síť. Do té doby je v okně
+„Načítám zakázku…“. Je to vědomá výměna: čeká ten, kdo zakázku otevřel, ne
+každý, kdo otevřel seznam.
+
+Ze stejného důvodu přibyly dva malé dotazy navázané na otevřený detail:
+zakázka podle `id` a seznam právě půjčených náhradních zařízení (dřív se
+počítal z celého seznamu v paměti; teď se filtruje na serveru a u servisu
+bez náhradních zařízení se neposílá vůbec).
+
+### Čeho se to dotklo
+
+Riziková část nebyl seznam, ale všechno, co ze seznamu bralo **celou**
+zakázku. Ošetřená místa:
+
+| Kde | Co s tím |
+|---|---|
+| detail zakázky | vykreslí se až nad plnou zakázkou (`uplna`), jinak „Načítám zakázku…“ |
+| uložení zakázky | posílá do databáze celý řádek – když plný není, dotáhne se; když se to nepovede, uložení se odmítne místo přepsání prázdnem |
+| tisk z řádku seznamu | dotáhne zakázku před otevřením nabídky |
+| automatický tisk a automatizace při změně stavu | dotáhnou zakázku, ale jen když je pro ten stav opravdu co spustit |
+| reklamace ze zakázky | vybraná zakázka se dotáhne, než se z ní opíšou údaje |
+| diagnostika v detailu reklamace | ukáže se až s dotaženou zakázkou (zapisuje se rovnou do ní) |
+| „půjčeno na jiné zakázce“ | vlastní dotaz místo průchodu celým seznamem |
+
+Při té příležitosti se spravily tři starší chyby, které vznikly z toho, že
+seznamů sloupců byly v kódu čtyři a každý jinak dlouhý:
+
+- `select` za uložením detailu neuměl `test_checklist`, `loaner` ani
+  `branch_id` – **po každém uložení tak z obrazovky zmizela kontrola po
+  opravě, zápůjčka a pobočka** (do dalšího načtení stránky);
+- znovunačtení po souběžné úpravě neumělo `branch_id`, takže zakázka
+  vyskočila „bez pobočky“;
+- `expected_completion_at` se v Zakázkách vůbec nečetlo, takže uložení
+  detailu **přepsalo předpokládané dokončení zadané v Kalendáři** prázdnem.
+
+### Co dál
+
+**Prefetch při najetí myší.** Těch 210 ms u detailu by se dalo schovat, kdyby
+se zakázka začala dotahovat už při najetí na řádek. Karty dnes dostávají jen
+`onClick`, takže by to znamenalo protáhnout novou vlastnost sedmi
+komponentami karet – neuděláno.
+
+**Stránkovat a filtrovat na serveru** zůstává nedodělané a je to pořád ta
+větší změna: hledání, počty u záložek i seskupení podle stavu dnes počítá
+prohlížeč nad úplným seznamem. Rozbor je v doporučení 8 níž.
 
 ## Co provoz tlumí a co ne
 
@@ -561,6 +675,12 @@ filtru – seznam se vykresluje z první stránky a zbytek dojíždí na pozadí
 takže na data nikdo nečeká. **Objem přenesených dat ale zůstal** (6,6 MB při
 4 800 zakázkách) a roste dál lineárně. Až bude potřeba to řešit, začíná se
 ubráním sloupců, ne přepisem filtrování.
+
+*Doplněno 7. 9. 2026 (oddíl 6):* sloupce ubrané jsou – z řádku seznamu je
+zhruba polovina původního objemu a detail si zbytek dotáhne sám. Přenos
+pořád roste s počtem zakázek, jen o polovinu pomaleji: u 10 000 zakázek to
+vychází na ~6 MB místo 13. Skutečné stránkování na serveru tím **není**
+hotové a zůstává tímhle bodem.
 
 **9. Co zvyšovat nemusíš.** Limity 60/min na IP a 600/min na servis se
 ukázaly jako přiměřené: běžný návštěvník se k funkci vůbec nedostane (cache)

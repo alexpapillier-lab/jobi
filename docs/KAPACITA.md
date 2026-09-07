@@ -43,8 +43,12 @@ padesáti servisů**, a i tehdy je to jednotky dolarů měsíčně. Při ceně
 zanedbatelná.
 
 Volání edge funkcí: pravidelné úlohy (automatizace každých 15 minut, hlídač
-provozu každou hodinu, úklidy) dělají zhruba 3 600 volání měsíčně. Zbytek
-jsou uživatelské akce – k dvěma milionům je daleko.
+chyb každou hodinu, úklidy) dělají zhruba 3 600 volání měsíčně. K tomu od
+12. 9. 2026 přibyl **syntetický hlídač**: 96 běhů denně po 9 voláních, tedy
+zhruba **26 000 měsíčně** (s občasným druhým pokusem po neúspěchu do 30 000).
+Je to nejdražší pravidelná úloha, kterou Jobi má – a pořád jen **1,5 %**
+z dvou milionů zahrnutých v plánu Pro. Zbytek jsou uživatelské akce.
+Podrobný rozpis je v `docs/HLIDAC_PROVOZU.md`.
 
 ## Kde to praskne dřív než na ceně
 

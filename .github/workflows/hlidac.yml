@@ -1,0 +1,89 @@
+name: Hlídač provozu
+
+# Syntetický hlídač: každých 15 minut projde hlavní cestu zvenčí a při
+# poruše pošle e-mail majiteli aplikace. Vzniklo po nasazení, které rozbilo
+# zákaznický portál (každá akce vracela 500) a přišlo se na to jen náhodou
+# při testech. Až Jobi používají zákazníci, musí přijít e-mail do pár minut,
+# ne stížnost za týden.
+#
+# Co kontroluje a co který poplach znamená: docs/HLIDAC_PROVOZU.md.
+#
+# Proč tu není npm ci ani Playwright: hlídač je čistý Node bez závislostí
+# (scripts/hlidac/*.mjs). Celý běh trvá kolem půl minuty. S prohlížečem by
+# se ke každému z 96 denních běhů přidalo instalování balíčků a stahování
+# Chromia – tři minuty přípravy a tři další věci, které umí spadnout samy od
+# sebe. Falešný poplach kvůli nestaženému prohlížeči je horší než žádný
+# hlídač: po druhém takovém si člověk e-mail odfiltruje do koše.
+#
+# Potřebné secrets (Settings → Secrets and variables → Actions):
+#   E2E_PASSWORD            heslo účtu e2e@jobi.test (stejné jako u E2E testů)
+#   VITE_SUPABASE_URL       adresa projektu
+#   VITE_SUPABASE_ANON_KEY  veřejný klíč
+#   HLIDAC_SECRET           tajemství pro alerts-check (= alerts_cron_secret
+#                           z Vaultu; postup je v docs/HLIDAC_PROVOZU.md)
+# Bez prvních tří se běh ukončí s vysvětlením. Bez HLIDAC_SECRET hlídač
+# kontroly udělá, ale poplach neodešle – a job schválně spadne, ať se aspoň
+# pozná, že hlídač mlčí.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      nanecisto:
+        description: "Nanečisto – poplach se spočítá, ale e-mail se neodešle"
+        type: boolean
+        default: false
+
+concurrency:
+  # Hlídač pracuje ve společném testovacím servisu (zakládá a maže zakázku).
+  # Dva běhy naráz by si do sebe nešly, ale zbytečně by míchaly záznamy.
+  # Předchozí běh se neruší – zrušený job by po sobě nechal zakázku.
+  group: hlidac
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  kontrola:
+    name: Hlavní cesta zvenčí
+    runs-on: ubuntu-latest
+    # Dva pokusy po 20 s pauzy se vejdou do dvou minut i s rezervou na pomalé
+    # odpovědi. Delší strop nemá smysl: co se nestihne, je stejně porucha.
+    timeout-minutes: 6
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Jsou nastavené secrets?
+        env:
+          HESLO: ${{ secrets.E2E_PASSWORD }}
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          KLIC: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          chybi=""
+          [ -z "$HESLO" ] && chybi="$chybi E2E_PASSWORD"
+          [ -z "$URL" ] && chybi="$chybi VITE_SUPABASE_URL"
+          [ -z "$KLIC" ] && chybi="$chybi VITE_SUPABASE_ANON_KEY"
+          if [ -n "$chybi" ]; then
+            echo "::error::Chybí secrets:$chybi. Hlídač bez nich nemá jak nic zkontrolovat – postup je v docs/HLIDAC_PROVOZU.md."
+            exit 1
+          fi
+
+      - name: Kontrola
+        env:
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          HLIDAC_SECRET: ${{ secrets.HLIDAC_SECRET }}
+        # --nahlasit: při poruše se pošle e-mail přes alerts-check (stejná
+        # cesta, adresa i tlumení jako u hlídače chyb). Ruční spuštění se
+        # zaškrtnutým „nanecisto" jen spočítá, co by odešlo.
+        run: |
+          node scripts/hlidac/hlidac.mjs --nahlasit \
+            ${{ github.event.inputs.nanecisto == 'true' && '--nanecisto' || '' }}

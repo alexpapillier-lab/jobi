@@ -10,6 +10,12 @@ type CreateWarrantyClaimModalProps = {
   onClose: () => void;
   activeServiceId: string | null;
   tickets: TicketEx[];
+  /**
+   * Dotáhne zakázce sloupce, které seznam nečte (adresa, stav zařízení,
+   * příslušenství…). Reklamace si je kopíruje k sobě, takže se z vybrané
+   * zakázky musí vzít celá – z řádku seznamu by se založila poloprázdná.
+   */
+  nactiPlnouZakazku?: (ticketId: string) => Promise<TicketEx | null>;
   existingClaimCodes: { code: string | null }[];
   onCreated?: (claimCode: string, claim?: import("../hooks/useWarrantyClaims").WarrantyClaimRow) => void;
 };
@@ -106,6 +112,7 @@ export function CreateWarrantyClaimModal({
   onClose,
   activeServiceId,
   tickets,
+  nactiPlnouZakazku,
   existingClaimCodes,
   onCreated,
 }: CreateWarrantyClaimModalProps) {
@@ -113,6 +120,7 @@ export function CreateWarrantyClaimModal({
   const { createFromTicket, createWithoutTicket } = useWarrantyClaims(activeServiceId);
   const [query, setQuery] = useState("");
   const [selectedTicket, setSelectedTicket] = useState<TicketEx | null>(null);
+  const [nacitamZakazku, setNacitamZakazku] = useState(false);
   const [withoutTicket, setWithoutTicket] = useState(false);
   const [draft, setDraft] = useState<ClaimDraft>(() => emptyDraft);
   const [notes, setNotes] = useState("");
@@ -182,6 +190,7 @@ export function CreateWarrantyClaimModal({
 
   const handleClose = () => {
     setSelectedTicket(null);
+    setNacitamZakazku(false);
     setWithoutTicket(false);
     setQuery("");
     setDraft(emptyDraft);
@@ -253,7 +262,16 @@ export function CreateWarrantyClaimModal({
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setSelectedTicket(t)}
+                      onClick={async () => {
+                        if (!nactiPlnouZakazku) { setSelectedTicket(t); return; }
+                        setNacitamZakazku(true);
+                        try {
+                          setSelectedTicket((await nactiPlnouZakazku(t.id)) ?? t);
+                        } finally {
+                          setNacitamZakazku(false);
+                        }
+                      }}
+                      disabled={nacitamZakazku}
                       style={{
                         display: "block",
                         width: "100%",

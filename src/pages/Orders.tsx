@@ -47,6 +47,7 @@ import { CasNaOprave } from "../components/orders/CasNaOprave";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
 import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
+import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU, jePlnyRadekZakazky } from "../lib/sloupceZakazky";
 import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
@@ -247,6 +248,15 @@ export type TicketEx = Ticket & {
   version?: number; // optimistic locking version
   /** Pobočka, kde zakázka leží (null = bez pobočky / starší záznam). */
   branchId?: string | null;
+  /**
+   * Má řádek všechny sloupce (detail), nebo jen ty pro seznam?
+   *
+   * Seznam zakázek čte úzkou sadu sloupců (src/lib/sloupceZakazky.ts), takže
+   * `undefined` u diagnostiky nebo zápůjčky nemusí znamenat „prázdné“, ale
+   * „nenačtené“. Detail se proto nad neúplným řádkem vůbec nevykreslí –
+   * jinak by ho uložení přepsalo prázdnem.
+   */
+  uplna?: boolean;
 } & PortalTicketFields; // zákaznický portál: portalToken, quoteAmount, quoteNote, quoteStatus, quoteSentAt, quoteDecidedAt, quoteDecisionMeta, intakeSignatureUrl, intakeSignedAt, portalLastOpenedAt
 
 type DeviceRow = {
@@ -636,6 +646,9 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
     branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
+    // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
+    // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
+    uplna: jePlnyRadekZakazky(supabaseTicket),
     // Portálové sloupce: v hlavních selectech nejsou (migrace může chybět), přijdou z realtime nebo z PortalCard.
     ...mapPortalTicketFields(supabaseTicket),
   };
@@ -988,6 +1001,11 @@ export default function Orders({
 
   // Load tickets from cloud when activeServiceId changes
   //
+  // Čtou se jen sloupce, ze kterých se skládá seznam (SLOUPCE_SEZNAMU).
+  // Zbytek – diagnostika, fotky, kontrola po opravě, zápůjčka, adresa –
+  // se dotáhne až při otevření konkrétní zakázky. U servisu s 2 100
+  // zakázkami tím ze seznamu zmizely přes dva megabajty (docs/ZATEZ.md).
+  //
   // Načítá se ve dvou kolech. První dotaz vezme jen PRVNI_DAVKA_ZAKAZEK
   // nejnovějších zakázek – tolik, že první stránka seznamu je z čeho vykreslit –
   // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím první
@@ -1012,12 +1030,25 @@ export default function Orders({
     const stranka = (from: number, to: number) =>
       (supabase!
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version,branch_id")
+        .select(SLOUPCE_SEZNAMU)
         .eq("service_id", activeServiceId)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to);
+
+    // `service_id` se nečte – pro celý seznam je stejné a v každém řádku by to
+    // bylo jen uuid navíc po drátě. Doplní se z aktivního servisu, protože
+    // podle něj se pak tisknou dokumenty a otevírá SMS.
+    const doZakazky = (r: any): TicketEx => mapSupabaseTicketToTicketEx({ ...r, service_id: activeServiceId });
+
+    /* Zakázka, kterou si detail mezitím dotáhl celou, se nesmí vrátit na
+       sloupce seznamu – druhé kolo dojíždí vteřiny po prvním a uživatel už
+       může mít detail otevřený. */
+    const zachovejDotazene = (nove: TicketEx[], prev: TicketEx[]): TicketEx[] => {
+      const plne = new Map(prev.filter((t) => t.uplna).map((t) => [t.id, t] as const));
+      return plne.size === 0 ? nove : nove.map((t) => plne.get(t.id) ?? t);
+    };
 
     const loadTickets = async () => {
       try {
@@ -1030,7 +1061,7 @@ export default function Orders({
         if (chybaPrvni) throw chybaPrvni;
 
         const prvniRadky: any[] = prvni ?? [];
-        setCloudTickets(prvniRadky.map(mapSupabaseTicketToTicketEx));
+        setCloudTickets((prev) => zachovejDotazene(prvniRadky.map(doZakazky), prev));
         setTicketsLoading(false);
 
         // Kratší odpověď = servis nemá víc zakázek, druhé kolo nemá co dotáhnout.
@@ -1050,7 +1081,7 @@ export default function Orders({
         if (error) throw error;
 
         const zbytek: any[] = data ?? [];
-        setCloudTickets([...prvniRadky, ...zbytek].map(mapSupabaseTicketToTicketEx));
+        setCloudTickets((prev) => zachovejDotazene([...prvniRadky, ...zbytek].map(doZakazky), prev));
         setTicketsPartial(false);
       } catch (err) {
         // Check if this request is still valid before setting error
@@ -1515,6 +1546,9 @@ export default function Orders({
   const [stornoDotaz, setStornoDotaz] = useState<{ ticketId: string; next: string } | null>(null);
   const [commentDraftByTicket, setCommentDraftByTicket] = useState<Record<string, string>>({});
   const [openQuickPrintTicket, setOpenQuickPrintTicket] = useState<TicketEx | null>(null);
+  /** Jen pro přepínání tlačítka na kartě – ať se kvůli němu nepřekresluje celý seznam. */
+  const openQuickPrintTicketRef = useRef<TicketEx | null>(null);
+  openQuickPrintTicketRef.current = openQuickPrintTicket;
   const [quickPrintDropdownRect, setQuickPrintDropdownRect] = useState<{ top: number; left: number; right: number; height: number } | null>(null);
 
   const [ordersPage, setOrdersPage] = useState(0);
@@ -2331,7 +2365,7 @@ export default function Orders({
     try {
       const { data, error } = await (supabase
         .from("tickets") as any)
-        .select("id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_accessories,device_note,external_id,handoff_method,handback_method,estimated_price,performed_repairs,test_checklist,loaner,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,updated_at,version")
+        .select(SLOUPCE_DETAILU)
         .eq("id", ticketId)
         .eq("service_id", activeServiceId)
         .single();
@@ -2351,6 +2385,45 @@ export default function Orders({
       return null;
     }
   }, [activeServiceId, supabase]);
+
+  /**
+   * Dotáhne zakázce zbytek sloupců, které seznam nečte.
+   *
+   * Volá se všude, kde se ze zakázky stane víc než řádek v seznamu: otevření
+   * detailu, tisk z karty, automatický tisk při změně stavu, založení
+   * reklamace. Vrací plnou zakázku; když se dotažení nepovede (offline),
+   * vrací to, co je v paměti – ale bez příznaku `uplna`, takže se z ní pořád
+   * nesmí ukládat.
+   *
+   * Souběžná volání pro stejnou zakázku sdílí jeden dotaz: detail se otevírá
+   * a zároveň se překresluje hlavička, to by jinak byly dva stejné dotazy.
+   */
+  const dotahovaneZakazkyRef = useRef<Map<string, Promise<TicketEx | null>>>(new Map());
+  const zajistiPlnouZakazku = useCallback(async (ticketId: string): Promise<TicketEx | null> => {
+    const znama = cloudTicketsRef.current.find((t) => t.id === ticketId);
+    if (znama?.uplna) return znama;
+
+    const rozdelane = dotahovaneZakazkyRef.current;
+    let beh = rozdelane.get(ticketId);
+    if (!beh) {
+      beh = refetchTicketById(ticketId).finally(() => rozdelane.delete(ticketId));
+      rozdelane.set(ticketId, beh);
+    }
+    const plna = await beh;
+    if (!plna) return cloudTicketsRef.current.find((t) => t.id === ticketId) ?? null;
+
+    /* Provedené opravy se ukládají okamžitě; když zrovna běží (nebo čeká)
+       zápis, je verze v paměti novější než ta z databáze. Ostatní sloupce
+       detailu se z neúplného řádku měnit nedají, tak se přepsat můžou. */
+    const zapisBezi =
+      (rozpracovaneZapisyOpravRef.current.get(ticketId) ?? 0) > 0 || odlozeneZapisyOpravRef.current.has(ticketId);
+    setCloudTickets((prev) =>
+      prev.map((t) =>
+        t.id === ticketId ? (zapisBezi ? { ...plna, performedRepairs: t.performedRepairs } : plna) : t
+      )
+    );
+    return plna;
+  }, [refetchTicketById]);
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
@@ -2705,10 +2778,68 @@ export default function Orders({
    * zakázka ze seznamu ve chvíli, kdy ji přesunu na jinou pobočku – a
    * z detailu by zbylo prázdné okno s pomlčkami a tlačítkem Upravit.
    */
-  const detailedTicket: TicketEx | undefined = useMemo(
+  /** Otevřená zakázka tak, jak ji zná seznam – může jí chybět většina sloupců. */
+  const otevrenaZeSeznamu: TicketEx | undefined = useMemo(
     () => (detailId ? cloudTickets.find((t) => t.id === detailId) : undefined),
     [detailId, cloudTickets]
   );
+
+  /**
+   * Detail se vykreslí až nad zakázkou se všemi sloupci.
+   *
+   * Seznam čte jen svoji úzkou sadu (SLOUPCE_SEZNAMU), takže v jeho řádku
+   * není diagnostika, kontrola po opravě ani zápůjčka. Kdyby se z takového
+   * řádku vykreslil detail, ukazoval by prázdno – a uložení, které posílá
+   * celý řádek, by ho prázdnem přepsalo i v databázi. Dotažení je jeden
+   * dotaz podle `id` a trvá desítky milisekund; po tu dobu je v okně
+   * „Načítám zakázku…“.
+   */
+  const detailedTicket: TicketEx | undefined = otevrenaZeSeznamu?.uplna ? otevrenaZeSeznamu : undefined;
+  /* Jen když zakázku ze seznamu známe a chybí jí sloupce detailu. Odkaz na
+     zakázku, která v seznamu není (smazaná, cizí servis), skončí jako dřív –
+     prázdným oknem, ne věčným „načítám“. */
+  const detailSeNacita = !!otevrenaZeSeznamu && !detailedTicket;
+
+  /* Dotažení zbylých sloupců otevřené zakázky.
+     Podmínka je „nemáme plnou zakázku“, ne jen „otevřel se detail“: kdyby
+     řádek někdy spadl zpátky na sloupce seznamu (druhé kolo načítání,
+     ozvěna z realtime), detail by jinak zůstal viset na „Načítám zakázku…“.
+     Když dotažení selže, stav se nemění a znovu se nespustí – žádná smyčka. */
+  useEffect(() => {
+    if (detailId && !detailedTicket) void zajistiPlnouZakazku(detailId);
+  }, [detailId, detailedTicket, zajistiPlnouZakazku]);
+
+  /**
+   * Náhradní zařízení, která jsou zrovna u zákazníků.
+   *
+   * Karta zápůjčky tím říká „tenhle kus je půjčený na zakázce E2E26000123“.
+   * Dřív se to počítalo průchodem přes všechny zakázky v paměti; seznam ale
+   * zápůjčky nečte, tak se na ně ptáme rovnou databáze – s filtrem na
+   * serveru jsou to jednotky řádků místo tisíců.
+   */
+  const [pujceneKusy, setPujceneKusy] = useState<{ id: string; code: string | null; katalogId: string }[]>([]);
+  useEffect(() => {
+    // Servis bez seznamu náhradních zařízení nemá co půjčovat – ani se neptáme.
+    if (!detailId || !activeServiceId || !supabase || nahradniZarizeni.length === 0) return;
+    let zruseno = false;
+    void (supabase.from("tickets") as any)
+      .select("id,code,loaner")
+      .eq("service_id", activeServiceId)
+      .is("deleted_at", null)
+      .not("loaner", "is", null)
+      .limit(500)
+      .then(({ data }: { data: any[] | null }) => {
+        if (zruseno || !Array.isArray(data)) return;
+        setPujceneKusy(
+          data
+            .filter((r) => r?.loaner?.katalogId && !r.loaner.vraceno)
+            .map((r) => ({ id: r.id as string, code: (r.code ?? null) as string | null, katalogId: r.loaner.katalogId as string }))
+        );
+      });
+    return () => {
+      zruseno = true;
+    };
+  }, [detailId, activeServiceId, nahradniZarizeni.length]);
 
   // After detailedTicket exists: sync ref so SMS OS notifications skip this thread when panel is open
   useEffect(() => {
@@ -2748,22 +2879,35 @@ export default function Orders({
     if (komentareProZakazky.length > 0) void nactiKomentare(komentareProZakazky);
   }, [komentareProZakazky, nactiKomentare]);
 
+  /* Reklamace ukazuje diagnostiku napojené zakázky a zapisuje ji rovnou do
+     ní. Musí být proto dotažená celá – jinak by textové pole ukázalo prázdno
+     a první úhoz by původní diagnostiku přepsal. */
+  useEffect(() => {
+    const zdroj = detailedClaim?.source_ticket_id;
+    if (zdroj) void zajistiPlnouZakazku(zdroj);
+  }, [detailedClaim?.source_ticket_id, zajistiPlnouZakazku]);
+
   // Save originalTicketRef when detailId changes and reset dirty flags
   useEffect(() => {
-    if (detailId !== lastDetailIdRef.current) {
-      lastDetailIdRef.current = detailId;
-      if (detailedTicket) {
+    /* Zakázka se dotahuje až po otevření detailu, takže při přepnutí ještě
+       nemusí být v paměti celá. Základ pro porovnání změn se pak vezme, jakmile
+       dorazí – bez toho by zůstal prázdný a rozepsané změny by se neměly s čím
+       porovnat. */
+    if (detailId === lastDetailIdRef.current) {
+      if (detailedTicket && !originalTicketRef.current) {
         originalTicketRef.current = JSON.parse(JSON.stringify(detailedTicket));
-      } else {
-        originalTicketRef.current = null;
       }
-      // Reset dirty flags when opening new ticket
-      setDirtyFlags({
-        diagnosticText: false,
-        diagnosticPhotos: false,
-        performedRepairs: false,
-      });
+      return;
     }
+
+    lastDetailIdRef.current = detailId;
+    originalTicketRef.current = detailedTicket ? JSON.parse(JSON.stringify(detailedTicket)) : null;
+    // Reset dirty flags when opening new ticket
+    setDirtyFlags({
+      diagnosticText: false,
+      diagnosticPhotos: false,
+      performedRepairs: false,
+    });
   }, [detailId, detailedTicket]);
 
   /** Opravy z ceníku pro zařízení podle názvu – stejné párování pro detail i pro příjem. */
@@ -3490,7 +3634,17 @@ export default function Orders({
         }
 
         const config = await loadDocumentsConfigFromDB(activeServiceId);
-        const ticketUpdated = ticket ? { ...ticket, status: next as any } : tickets.find((t) => t.id === ticketId);
+        /* Automatický tisk i automatizace pracují s celou zakázkou – adresa,
+           stav zařízení, kontrola po opravě, cena. Ze seznamu se stav mění
+           u řádku, který má jen sloupce seznamu, takže se zbytek dotáhne.
+           Jen když je pro tenhle stav opravdu co spustit: jinak by každé
+           přepnutí stavu platilo dotazem navíc. */
+        const potrebaCelaZakazka =
+          config?.autoPrint?.ticketListOnStatusKey === next ||
+          config?.autoPrint?.warrantyOnStatusKey === next ||
+          hasAutomationRulesFor(next);
+        const zaklad = potrebaCelaZakazka ? ((await zajistiPlnouZakazku(ticketId)) ?? ticket) : ticket;
+        const ticketUpdated = zaklad ? { ...zaklad, status: next as any } : tickets.find((t) => t.id === ticketId);
         if (config?.autoPrint && ticketUpdated) {
           if (config.autoPrint.ticketListOnStatusKey === next) {
             printTicket(ticketUpdated as TicketEx, activeServiceId).then(() => {});
@@ -4149,12 +4303,20 @@ export default function Orders({
       <button
         type="button"
         data-quick-print-trigger-id={t.id}
-        onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket((prev: any) => (prev?.id === t.id ? null : t as any)); }}
+        /* Z karty se tisknou celé dokumenty – zakázkový list chce adresu, stav
+           zařízení i kontrolu po opravě, tedy sloupce, které seznam nečte.
+           Dřív se do nabídky posílala jen data karty, takže se tisklo bez nich
+           a „Diagnostický protokol" se v nabídce nikdy neobjevil. */
+        onClick={(e) => {
+          e.stopPropagation();
+          if (openQuickPrintTicketRef.current?.id === t.id) { setOpenQuickPrintTicket(null); return; }
+          void zajistiPlnouZakazku(t.id).then((plna) => setOpenQuickPrintTicket(plna));
+        }}
         title="Tisk"
         style={{ display: "flex", alignItems: "center", justifyContent: "center", width: sz, height: sz, minWidth: sz, minHeight: sz, borderRadius: small ? 6 : 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: small ? 12 : 14, flexShrink: 0 }}
       ><PrintIcon size={small ? 13 : 15} /></button>
     );
-  }, [canPrintExport, setOpenQuickPrintTicket]);
+  }, [canPrintExport, setOpenQuickPrintTicket, zajistiPlnouZakazku]);
 
   const smsUnreadForTicket = (ticketId: string) => {
     if (smsPanelOpen && detailId === ticketId) return 0;
@@ -5609,7 +5771,9 @@ export default function Orders({
         <div style={{ flex: "0 0 auto", display: "flex", flexDirection: isNarrow ? "column" : "row", justifyContent: "space-between", gap: isNarrow ? 10 : 12, alignItems: isNarrow ? "stretch" : "flex-start", zIndex: 5, background: "var(--panel)", padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
           <div style={{ minWidth: 0, paddingRight: 44 }}>
             <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
-              {detailedClaim ? detailedClaim.code : (detailedTicket ? detailedTicket.code : "—")}
+              {/* Číslo zakázky umí i řádek seznamu, takže v hlavičce nebliká pomlčka,
+                  než se dotáhne zbytek sloupců. */}
+              {detailedClaim ? detailedClaim.code : (otevrenaZeSeznamu?.code ?? "—")}
               {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
               {/* Stav přímo v hlavičce – pilulka je zároveň přepínač stavu. */}
               {detailedClaim && !isEditingClaim && (
@@ -5910,7 +6074,12 @@ export default function Orders({
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 18 }}>
         {detailedClaim && (() => {
           const c = { ...detailedClaim, ...editedClaim };
-          const sourceTicket = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
+          /* Diagnostika napojené zakázky se odsud rovnou zapisuje, takže se
+             ukáže až s celou zakázkou – z řádku seznamu by byla prázdná a
+             první úhoz by tu původní přepsal. */
+          const zdrojZeSeznamu = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
+          const sourceTicket = zdrojZeSeznamu?.uplna ? zdrojZeSeznamu : undefined;
+          const zdrojSeNacita = !!zdrojZeSeznamu && !sourceTicket;
           return (
           <>
           <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
@@ -6375,6 +6544,10 @@ export default function Orders({
                 baseFieldTextArea={baseFieldTextArea}
               />
             </>
+          ) : zdrojSeNacita ? (
+            <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
+              Načítám zakázku…
+            </div>
           ) : (
             <div style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
               Reklamace není napojená na zakázku. Diagnostiku a komentáře lze přidat u navázané zakázky.
@@ -6383,6 +6556,14 @@ export default function Orders({
           </>
           );
         })()}
+        {/* Zbytek sloupců zakázky se dotahuje jedním dotazem podle `id`.
+            Trvá to desítky milisekund, ale prázdné okno by v tu chvíli vypadalo
+            jako chyba. */}
+        {detailSeNacita && !detailedClaim && (
+          <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
+            Načítám zakázku…
+          </div>
+        )}
         {detailedTicket && (
           <>
             {!isEditing ? (
@@ -7578,11 +7759,11 @@ export default function Orders({
                     onTisk={() => void printZapujcku(detailedTicket, activeServiceId)}
                     katalog={nahradniZarizeni}
                     pujcenaJinde={(() => {
-                      // Které zařízení ze seznamu je právě u jiného zákazníka.
+                      // Které zařízení je právě u jiného zákazníka (viz pujceneKusy).
                       const out: Record<string, string> = {};
-                      for (const t of cloudTickets) {
-                        if (t.id === detailedTicket.id || !t.loaner?.katalogId || t.loaner.vraceno) continue;
-                        out[t.loaner.katalogId] = t.code ?? "jiná zakázka";
+                      for (const p of pujceneKusy) {
+                        if (p.id === detailedTicket.id) continue;
+                        out[p.katalogId] = p.code ?? "jiná zakázka";
                       }
                       return out;
                     })()}
@@ -7779,6 +7960,7 @@ export default function Orders({
         onClose={() => setCreateClaimModalOpen(false)}
         activeServiceId={activeServiceId}
         tickets={cloudTickets}
+        nactiPlnouZakazku={zajistiPlnouZakazku}
         existingClaimCodes={cloudClaims.map((c) => ({ code: c.code }))}
         onCreated={async (_claimCode, claim) => {
           setCreateClaimModalOpen(false);
