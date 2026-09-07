@@ -11,7 +11,8 @@
         "minHeight": 700,
         "minWidth": 1000,
         "title": "jobi",
-        "width": 1400
+        "width": 1400,
+        "allowLinkPreview": false
       }
     ]
   },
