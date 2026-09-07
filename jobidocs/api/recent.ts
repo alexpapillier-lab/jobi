@@ -119,8 +119,27 @@ function cestaFotky(url: string): string | null {
  * přihlášeného uživatele, takže se uplatní RLS: na cizí servis se odkaz
  * nevystaví ani tady.
  */
+/**
+ * Nejmenší tvar klienta, jaký podepisování potřebuje.
+ *
+ * Ne `ReturnType<typeof createClient>`: ten se bez typových parametrů rozpadne
+ * na variantu s `never` a build Electronu na tom skončil chybou
+ * („Type 'public' is not assignable to type 'never'“). Struktura navíc říká,
+ * co funkce opravdu dělá – sahá jen na úložiště, ne na databázi.
+ */
+type KlientUloziste = {
+  storage: {
+    from(bucket: string): {
+      createSignedUrls(
+        cesty: string[],
+        platnostSekund: number,
+      ): Promise<{ data: Array<{ path?: string | null; signedUrl?: string | null }> | null; error: unknown }>;
+    };
+  };
+};
+
 async function podepsFotkyNahledu(
-  sb: ReturnType<typeof createClient>,
+  sb: KlientUloziste,
   fotky: string[],
 ): Promise<string[]> {
   const cesty = fotky.map(cestaFotky);
