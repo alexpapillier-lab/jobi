@@ -86,10 +86,18 @@ Chceš-li se do obnovené databáze podívat, spusť to s `KEEP_CLUSTER=1`.
   25 tabulek v realtime publikaci. Kouřová zkouška (RLS, triggery, optimistické
   zamykání) prošla. Čísla sedí s ostrou databází – ta má dnes taky 338 politik
   a 25 tabulek v realtime.
-* **Nad ostrou zálohou to zatím proběhlo jen ve starší verzi skriptu.** Zálohu
-  jde stáhnout jen s heslem `BACKUP_PASSPHRASE` a dump ostré databáze potřebuje
-  připojovací řetězec, takže tuhle půlku dělá CI (`backup-db.yml`), ne člověk
-  u sebe. **Nezaměňuj zelený běh workflow za ověřenou zálohu:** běhy z 5. a
+* **Nad skutečnou zálohou ostré databáze taky.** 7. 9. 2026 se udělal dump
+  ostré databáze (`supabase db dump`, jen čtení) a obnovil se novým skriptem
+  do prázdného lokálního Postgresu: 0 chyb v datech, počty řádků sedí ve všech
+  61 tabulkách, 320 RLS politik, 89 funkcí, 50 triggerů, 25 tabulek v realtime,
+  **31 uživatelů a 183 záznamů o souborech** (ta čísla jsou nižší než u obnovy
+  z migrací výš proto, že ostrá databáze má nasazeno 142 migrací ze 146).
+  Kouřová zkouška prošla. Ověřilo se i to, že skript nemlčí: do `data.sql` se
+  vložil vadný řádek a obnova skončila chybou.
+* **Zálohu z artefaktu GitHubu obnovit nezkoušel nikdo** – potřebuje heslo
+  `BACKUP_PASSPHRASE`, které má jen majitel. Až ho budeš mít po ruce, projdi
+  kapitolu 2; obsah artefaktu je stejný jako obsah dumpu výš.
+  **Nezaměňuj zelený běh workflow za ověřenou zálohu:** běhy z 5. a
   6. 9. byly zelené, ale zkouška obnovy v nich chyby jen vypisovala – v logu
   jich je přes dvě stě (`function auth.uid() does not exist`,
   `publication "supabase_realtime" does not exist`, chybějící tabulky `auth`
