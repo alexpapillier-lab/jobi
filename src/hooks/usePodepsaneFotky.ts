@@ -14,12 +14,27 @@
  * nerozblikal a aby při výpadku podepisování zůstalo chování jako dřív.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { podepsFotky, PLATNOST_SEKUND } from "../lib/podepsaneFotky";
+import { cestaFotky, podepsFotky, podepsanaZCache, PLATNOST_SEKUND } from "../lib/podepsaneFotky";
 
 /** Obnovovat v polovině platnosti – vejde se to i do uspaného notebooku. */
 const OBNOVA_MS = (PLATNOST_SEKUND * 1000) / 2;
+
+/**
+ * Za jak dlouho zkusit znovu, když se podepsat nepovedlo.
+ *
+ * Bez tohohle by jediný neúspěch (chvilkový výpadek sítě, právě probíhající
+ * obnova přihlášení) nechal fotku nepodepsanou až do další pravidelné obnovy,
+ * tedy půl hodiny. Po přepnutí bucketu by to bylo půl hodiny prázdného místa
+ * v detailu zakázky.
+ */
+const OPAKOVANI_MS = [1500, 4000, 10_000];
+
+/** Zůstala nějaká fotka z našeho úložiště nepodepsaná? */
+function neceoZbyva(puvodni: readonly string[], nove: readonly string[]): boolean {
+  return puvodni.some((u, i) => cestaFotky(u) != null && nove[i] === u);
+}
 
 export function usePodepsaneFotky(supabase: SupabaseClient | null, urls: readonly string[] | undefined | null): string[] {
   // Pole se v Orders.tsx skládá při každém vykreslení znovu (`x || []`), takže
@@ -28,24 +43,38 @@ export function usePodepsaneFotky(supabase: SupabaseClient | null, urls: readonl
   const klic = (urls ?? []).join("\n");
   const puvodni = useMemo(() => (klic ? klic.split("\n") : []), [klic]);
 
-  const [podepsane, setPodepsane] = useState<string[]>(puvodni);
-  const posledniKlic = useRef(klic);
+  /* Co je už podepsané, se bere z cache rovnou při vykreslení. Seznam zakázek
+     se překresluje často a náhledy se přitom odpojují a připojují znovu –
+     bez tohohle by každý nový náhled začínal od uložené adresy a čekal na
+     podpis, který dorazí až k náhledu, co mezitím zmizel. */
+  const zCache = (seznam: readonly string[]) => seznam.map((u) => podepsanaZCache(u) ?? u);
 
-  // Změna seznamu (smazaná nebo přidaná fotka) musí být vidět hned, ne až
-  // doběhne podepisování – jinak by na místě smazané fotky ještě chvíli
-  // svítil starý náhled.
-  if (posledniKlic.current !== klic) {
-    posledniKlic.current = klic;
-    setPodepsane(puvodni);
+  const [podepsane, setPodepsane] = useState<string[]>(() => zCache(puvodni));
+
+  /* Změna seznamu (smazaná nebo přidaná fotka) musí být vidět hned, ne až
+     doběhne podepisování – jinak by na místě smazané fotky ještě chvíli
+     svítil starý náhled. Předchozí seznam se drží ve stavu, ne v ref: úprava
+     stavu při vykreslení je podporovaná cesta, sáhnout si při vykreslení na
+     ref není. */
+  const [predchoziKlic, setPredchoziKlic] = useState(klic);
+  if (predchoziKlic !== klic) {
+    setPredchoziKlic(klic);
+    setPodepsane(zCache(puvodni));
   }
 
   useEffect(() => {
     if (!supabase || puvodni.length === 0) return;
     let zivy = true;
 
-    const podepis = async () => {
+    let opakovani: ReturnType<typeof setTimeout> | null = null;
+
+    const podepis = async (pokus = 0) => {
       const nove = await podepsFotky(supabase, puvodni);
-      if (zivy) setPodepsane(nove);
+      if (!zivy) return;
+      setPodepsane(nove);
+      if (neceoZbyva(puvodni, nove) && pokus < OPAKOVANI_MS.length) {
+        opakovani = setTimeout(() => void podepis(pokus + 1), OPAKOVANI_MS[pokus]);
+      }
     };
 
     void podepis();
@@ -60,6 +89,7 @@ export function usePodepsaneFotky(supabase: SupabaseClient | null, urls: readonl
     return () => {
       zivy = false;
       clearInterval(timer);
+      if (opakovani) clearTimeout(opakovani);
       document.removeEventListener("visibilitychange", naViditelnost);
     };
   }, [supabase, puvodni]);

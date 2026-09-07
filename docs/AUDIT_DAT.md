@@ -224,10 +224,19 @@ select id, public, (select count(*) from storage.objects o where o.bucket_id=b.i
 from storage.buckets b;
 ```
 
-**Co s tím:** buď bucket přepnout na neveřejný a přejít na podepsané odkazy
-(zásah do kódu na 5 místech – `diagnosticPhotosStorage.ts`, `productImages.ts`,
-`portal-ticket`, `capture-upload`, `service-manage`), nebo to vědomě nechat a
-napsat to do zásad zpracování údajů. Samo se to nespraví.
+**Co s tím:** ~~buď bucket přepnout na neveřejný a přejít na podepsané odkazy,
+nebo to vědomě nechat a napsat to do zásad zpracování údajů~~ — **vyřešeno
+v kódu, čeká na nasazení.** Aplikace, portál i export si odkazy nechávají
+podepsat (`createSignedUrl`, platnost hodina; export týden), do dokumentů se
+obrázek vkládá dovnitř. Uložené URL v databázi se nemění – je z nich jen
+identifikátor souboru, takže nebylo nutné sahat na data ostrých servisů.
+
+Zbývá **poslední krok**: přepnout `storage.buckets.public` na `false`. Musí
+přijít až po nasazení edge funkcí, portálu, aplikace a migrací, jinak fotky
+zmizí dřív, než je bude kdo umět podepsat. Postup, kontroly i co dělat, kdyby
+se něco neukázalo: **[BEZPECNOST_FOTKY.md](BEZPECNOST_FOTKY.md)**.
+
+`product-images` zůstává veřejný schválně (veřejný ceník, API skladu).
 
 ---
 

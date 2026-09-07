@@ -95,6 +95,52 @@ function invoiceToData(row: Rec, items: Rec[], service: Party): DocumentData {
   };
 }
 
+/**
+ * Cesta v bucketu `diagnostic-photos` z uložené URL, nebo `null`.
+ * Stejná úvaha jako v Jobi (src/lib/podepsaneFotky.ts) – sdílet jeden soubor
+ * nejde, JobiDocs je samostatný balík.
+ */
+function cestaFotky(url: string): string | null {
+  if (typeof url !== "string" || !url.trim() || url.startsWith("data:")) return null;
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/diagnostic-photos\/(.+)$/);
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Podepíše odkazy na fotky v náhledu na reálných datech.
+ *
+ * Bucket s fotkami zákazníků není veřejný, takže uložená URL sama o sobě nic
+ * nevydá – náhled šablony by ukázal prázdné rámečky. Podepisuje se tokenem
+ * přihlášeného uživatele, takže se uplatní RLS: na cizí servis se odkaz
+ * nevystaví ani tady.
+ */
+async function podepsFotkyNahledu(
+  sb: ReturnType<typeof createClient>,
+  fotky: string[],
+): Promise<string[]> {
+  const cesty = fotky.map(cestaFotky);
+  const kPodepsani = [...new Set(cesty.filter((c): c is string => c != null))];
+  if (kPodepsani.length === 0) return fotky;
+  try {
+    // Náhled je otevřený, dokud si uživatel hraje se šablonou – hodina stačí.
+    const { data, error } = await sb.storage.from("diagnostic-photos").createSignedUrls(kPodepsani, 3600);
+    if (error || !data) return fotky;
+    const podle = new Map<string, string>();
+    for (const p of data) if (p?.path && p?.signedUrl) podle.set(p.path, p.signedUrl);
+    return fotky.map((u, i) => {
+      const c = cesty[i];
+      return (c && podle.get(c)) || u;
+    });
+  } catch {
+    return fotky;
+  }
+}
+
 export async function loadRecent(serviceId: string, docType: DocType, service: Party, auth: SupabaseAuth, limit = 6): Promise<RecentDocument[]> {
   const sb = createClient(auth.supabaseUrl, auth.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${auth.supabaseAccessToken}` } },
@@ -116,7 +162,11 @@ export async function loadRecent(serviceId: string, docType: DocType, service: P
       return ((data ?? []) as Rec[]).map((row) => ({ id: String(row.id), label: `${s(row.code) ?? "?"} · ${s(row.customer_name) ?? ""} · ${s(row.device_label) ?? ""}`.trim(), data: claimToData(row, service) }));
     }
     const { data } = await sb.from("tickets").select("*").eq("service_id", serviceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(limit);
-    return ((data ?? []) as Rec[]).map((row) => ({ id: String(row.id), label: `${s(row.code) ?? "?"} · ${s(row.customer_name) ?? ""} · ${s(row.device_label) ?? ""}`.trim(), data: ticketToData(row, service) }));
+    const zakazky = ((data ?? []) as Rec[]).map((row) => ({ id: String(row.id), label: `${s(row.code) ?? "?"} · ${s(row.customer_name) ?? ""} · ${s(row.device_label) ?? ""}`.trim(), data: ticketToData(row, service) }));
+    for (const z of zakazky) {
+      if (z.data.photos && z.data.photos.length > 0) z.data.photos = await podepsFotkyNahledu(sb, z.data.photos);
+    }
+    return zakazky;
   } catch {
     return [];
   }

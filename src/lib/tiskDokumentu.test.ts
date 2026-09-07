@@ -27,6 +27,7 @@ function zavislosti(prepis: Partial<ZavislostiDokumentu> = {}): { z: ZavislostiD
     exportPdf: async () => ({ ok: true }),
     vyberCilovySoubor: async () => "/Users/test/Desktop/zakazka-Z-1.pdf",
     tiskVProhlizeci: async () => {},
+    pripravFotky: async (data) => data,
     hlaska: (text, druh) => zaznamy.hlasky.push({ text, druh }),
     hotovyExport: (cesta) => zaznamy.exporty.push(cesta),
     telemetrie: (e) => zaznamy.telemetrie.push(e),
@@ -218,5 +219,57 @@ describe("výchozí složka pro export dokladu", () => {
       },
     });
     await expect(beh).rejects.toThrow("Stažené ani Plocha");
+  });
+});
+
+describe("fotky v dokumentu", () => {
+  /* Fotky leží v neveřejném úložišti a odkaz na ně platí hodinu. Dokument
+     se ale vykresluje jinde: JobiDocs je samostatný program bez naší relace
+     a uložené PDF si obsah odkazu nedotáhne vůbec. Proto se fotky vkládají
+     dovnitř dat ještě v Jobi – a tenhle krok se nesmí ztratit. */
+
+  it("desktopový tisk pošle do JobiDocs data s vloženými fotkami", async () => {
+    const tisk = vi.fn<ZavislostiDokumentu["tisk"]>(async () => ({ ok: true }));
+    const { z } = zavislosti({
+      tisk,
+      pripravFotky: async (data) => ({ ...data, photos: ["data:image/jpeg;base64,AAAA"] }),
+    });
+    await spustDesktopovyDokument("print", "zakazkovy_list", SERVIS, { ...DATA, photos: ["https://x/foto.jpg"] }, "z.pdf", z);
+    expect(tisk.mock.calls[0][2].photos).toEqual(["data:image/jpeg;base64,AAAA"]);
+  });
+
+  it("export do PDF taky – jinak by v uloženém souboru fotka chyběla", async () => {
+    const exportPdf = vi.fn<ZavislostiDokumentu["exportPdf"]>(async () => ({ ok: true }));
+    const { z } = zavislosti({
+      exportPdf,
+      pripravFotky: async (data) => ({ ...data, photos: ["data:image/jpeg;base64,BBBB"] }),
+    });
+    await spustDesktopovyDokument("export", "zakazkovy_list", SERVIS, { ...DATA, photos: ["https://x/foto.jpg"] }, "z.pdf", z);
+    expect(exportPdf.mock.calls[0][2].photos).toEqual(["data:image/jpeg;base64,BBBB"]);
+  });
+
+  it("tisk v prohlížeči dostane data s vloženými fotkami", async () => {
+    const tiskVProhlizeci = vi.fn<ZavislostiDokumentu["tiskVProhlizeci"]>(async () => {});
+    const { z } = zavislosti({
+      tiskVProhlizeci,
+      pripravFotky: async (data) => ({ ...data, photos: ["data:image/jpeg;base64,CCCC"] }),
+    });
+    await spustWebovyDokument("print", "zakazkovy_list", SERVIS, { ...DATA, photos: ["https://x/foto.jpg"] }, z);
+    expect(tiskVProhlizeci.mock.calls[0][2].photos).toEqual(["data:image/jpeg;base64,CCCC"]);
+  });
+
+  it("když se fotky nepodaří připravit, uživatel se to dozví a netiskne se", async () => {
+    // Tichý tisk bez fotek je horší než hláška: papír vypadá v pořádku,
+    // jen na něm chybí důkaz o stavu zařízení při příjmu.
+    const tisk = vi.fn(async () => ({ ok: true }));
+    const { z, zaznamy } = zavislosti({
+      tisk,
+      pripravFotky: async () => {
+        throw new Error("úložiště neodpovídá");
+      },
+    });
+    await spustDesktopovyDokument("print", "zakazkovy_list", SERVIS, DATA, "z.pdf", z);
+    expect(tisk).not.toHaveBeenCalled();
+    expect(chyby(zaznamy)[0].text).toContain("úložiště neodpovídá");
   });
 });

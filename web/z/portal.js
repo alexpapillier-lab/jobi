@@ -40,7 +40,12 @@
     rejectNote: '',
     fingerprints: {},    // per-card otisk dat – karta se překreslí jen při změně
     refreshTimer: null,
-    lightbox: { photos: [], index: 0, lastFocus: null },
+    lightbox: { skupina: 'after', index: 0, lastFocus: null },
+    /* Nejčerstvější podepsané odkazy na fotky. Držíme je zvlášť, protože se
+       při každém obnovení dat mění (odkaz platí hodinu a podepisuje se znovu),
+       zatímco karta s fotkami se překresluje jen když fotek opravdu přibude
+       nebo ubude – jinak by pod rukama mizely a znovu naskakovaly. */
+    fotky: { before: [], after: [] },
     sig: null,           // instance podpisového pole
     signUi: null,        // prvky karty s podpisem – při chybě se jen odblokují, nepřekresluje se
   };
@@ -445,31 +450,35 @@
 
   /* ===================== Karta: fotky ===================== */
 
-  function renderPhotos(ticket) {
+  function renderPhotos() {
     const card = el.cardPhotos;
-    const before = Array.isArray(ticket.photosBefore) ? ticket.photosBefore.filter(Boolean) : [];
-    const after = Array.isArray(ticket.photos) ? ticket.photos.filter(Boolean) : [];
+    const before = state.fotky.before;
+    const after = state.fotky.after;
     if (!before.length && !after.length) { card.hidden = true; clear(card); return; }
     clear(card);
     card.hidden = false;
     card.appendChild(h('h2', { class: 'card-title', id: 'photosTitle', text: 'Fotografie' }));
 
-    const groups = [['Fotky z příjmu', before], ['Fotky z diagnostiky', after]];
-    groups.forEach(([title, list]) => {
+    const groups = [['Fotky z příjmu', 'before'], ['Fotky z diagnostiky', 'after']];
+    groups.forEach(([title, skupina]) => {
+      const list = state.fotky[skupina];
       if (!list.length) return;
       const grid = h('div', { class: 'photo-grid' });
       list.forEach((url, i) => {
         const btn = h('button', { type: 'button', class: 'photo-thumb', 'aria-label': title + ' – fotka ' + (i + 1) + ' z ' + list.length });
         btn.appendChild(h('img', { src: url, alt: title + ' ' + (i + 1), loading: 'lazy', decoding: 'async' }));
-        btn.addEventListener('click', () => openLightbox(list, i, btn));
+        /* Do lightboxu jde jen název skupiny a pořadí, ne odkaz. Odkaz se bere
+           až při otevření z toho, co přišlo naposledy – ten, se kterým se
+           náhled vykreslil, mohl mezitím vypršet. */
+        btn.addEventListener('click', () => openLightbox(skupina, i, btn));
         grid.appendChild(btn);
       });
       card.appendChild(h('div', { class: 'photo-group' }, [h('h3', { text: title }), grid]));
     });
   }
 
-  function openLightbox(photos, index, opener) {
-    state.lightbox.photos = photos;
+  function openLightbox(skupina, index, opener) {
+    state.lightbox.skupina = skupina;
     state.lightbox.index = index;
     state.lightbox.lastFocus = opener || document.activeElement;
     el.lightbox.hidden = false;
@@ -478,7 +487,9 @@
     el.lbClose.focus();
   }
   function updateLightbox() {
-    const { photos, index } = state.lightbox;
+    const photos = state.fotky[state.lightbox.skupina] || [];
+    const index = state.lightbox.index;
+    if (!photos[index]) { closeLightbox(); return; }
     el.lbImg.src = photos[index];
     el.lbImg.alt = 'Fotka ' + (index + 1) + ' z ' + photos.length;
     el.lbCounter.textContent = (index + 1) + ' / ' + photos.length;
@@ -486,7 +497,7 @@
     el.lbNext.hidden = photos.length < 2;
   }
   function stepLightbox(delta) {
-    const n = state.lightbox.photos.length;
+    const n = (state.fotky[state.lightbox.skupina] || []).length;
     if (n < 2) return;
     state.lightbox.index = (state.lightbox.index + delta + n) % n;
     updateLightbox();
@@ -769,6 +780,22 @@
 
   /* ===================== Načtení a překreslení ===================== */
 
+  /**
+   * Odkaz bez podpisu – jen cesta k souboru.
+   *
+   * Fotky a podpis přicházejí jako podepsané odkazy, které se při každém
+   * obnovení liší v query stringu, i když jde pořád o tentýž soubor. Pro
+   * porovnávání, jestli se něco změnilo, je podstatná jen cesta.
+   */
+  function bezPodpisu(url) {
+    if (typeof url !== 'string') return url;
+    const q = url.indexOf('?');
+    return q === -1 ? url : url.slice(0, q);
+  }
+  function bezPodpisuSeznam(list) {
+    return Array.isArray(list) ? list.map(bezPodpisu) : list;
+  }
+
   function fp(obj) { try { return JSON.stringify(obj); } catch (e) { return String(Math.random()); } }
 
   /** Překreslí karty; při tichém obnovení jen ty, jejichž data se změnila. */
@@ -785,10 +812,21 @@
       status: fp([ticket.code, ticket.createdAt, ticket.expectedCompletionAt, ticket.deviceLabel, ticket.requestedRepair, ticket.status, ticket.handoffMethod, ticket.handbackMethod, ticket.estimatedPrice, ticket.totalPrice, ticket.performedRepairs, ticket.quote && ticket.quote.status]),
       quote: fp(ticket.quote),
       price: fp([ticket.performedRepairs, ticket.discount, ticket.totalPrice, payment, service.bankAccount, service.iban]),
-      photos: fp([ticket.photosBefore, ticket.photos]),
+      /* Otisk se počítá z cesty k souboru, ne z celého odkazu. Odkazy jsou
+         podepsané a při každém obnovení dat (jednou za minutu) přijdou jiné –
+         podle celého odkazu by se karta s fotkami překreslovala pořád dokola
+         a zákazníkovi by mizel otevřený náhled. */
+      photos: fp([ticket.photosBefore, ticket.photos].map(bezPodpisuSeznam)),
       // Uzavření zakázky kartu s podpisem schová, proto je stav součástí otisku.
-      sign: fp([ticket.intakeSignedAt, ticket.intakeSignatureUrl, ticket.status]),
+      sign: fp([ticket.intakeSignedAt, bezPodpisu(ticket.intakeSignatureUrl), ticket.status]),
     };
+    /* Nejčerstvější odkazy si schováme vždycky, i když se karta nepřekresluje –
+       lightbox z nich bere obrázek až v okamžiku otevření. */
+    state.fotky = {
+      before: Array.isArray(ticket.photosBefore) ? ticket.photosBefore.filter(Boolean) : [],
+      after: Array.isArray(ticket.photos) ? ticket.photos.filter(Boolean) : [],
+    };
+
     const changed = (k) => first || force || state.fingerprints[k] !== fps[k];
 
     if (changed('header')) renderHeader(service);
@@ -799,7 +837,7 @@
       renderQuote(ticket);
     }
     if (changed('price')) renderPrice(ticket, payment, service);
-    if (changed('photos')) renderPhotos(ticket);
+    if (changed('photos')) renderPhotos();
     // Podpis: rozkreslený podpis zachovat, překreslit jen při změně dat nebo když je pole prázdné
     const drawing = state.sig && state.sig.hasInk() && !ticket.intakeSignedAt;
     if (first || state.fingerprints.sign !== fps.sign || (force && !drawing)) {

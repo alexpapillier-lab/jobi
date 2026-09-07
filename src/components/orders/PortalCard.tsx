@@ -6,6 +6,7 @@ import { showToast } from "../Toast";
 import { reportError, reportSilent } from "../../lib/reportError";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../../lib/frontaZapisu";
 import { supabase } from "../../lib/supabaseClient";
+import { usePodepsanaFotka } from "../../hooks/usePodepsaneFotky";
 import { normalizePhone } from "../../lib/phone";
 import {
   cancelQuote,
@@ -129,6 +130,9 @@ export function PortalCard({
 }) {
   const ticketId = ticket.id;
   const [fields, setFields] = useState<PortalTicketFields>(() => pickPortalFields(ticket));
+  /* Podpis převzetí je osobní údaj zákazníka a leží v neveřejném úložišti.
+     URL uložená u zakázky ho sama o sobě nevydá – musí se podepsat. */
+  const podpisUrl = usePodepsanaFotka(supabase, fields.intakeSignatureUrl);
   const [token, setToken] = useState<string | null>(ticket.portalToken ?? null);
   const [serverOff, setServerOff] = useState(false);
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -568,9 +572,9 @@ export function PortalCard({
             <SectionHeading size="sm" icon={<EditIcon size={14} />}>Podpis</SectionHeading>
             {fields.intakeSignatureUrl ? (
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
-                <a href={fields.intakeSignatureUrl} target="_blank" rel="noreferrer" title="Otevřít podpis v novém okně">
+                <a href={podpisUrl ?? fields.intakeSignatureUrl} target="_blank" rel="noreferrer" title="Otevřít podpis v novém okně">
                   <img
-                    src={fields.intakeSignatureUrl}
+                    src={podpisUrl ?? fields.intakeSignatureUrl}
                     alt="Podpis zákazníka"
                     style={{ height: 48, maxWidth: 200, objectFit: "contain", background: "var(--panel-2)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", display: "block" }}
                   />

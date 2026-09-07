@@ -29,6 +29,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { devWarn } from "./devLog";
 
 export const BUCKET_FOTEK = "diagnostic-photos";
 
@@ -117,6 +118,21 @@ function zCache(cesta: string, ted: number): string | null {
 }
 
 /**
+ * Naposledy podepsaný odkaz, pokud ještě platí – bez čekání na síť.
+ *
+ * Existuje kvůli tomu, že seznam zakázek se překresluje často (realtime
+ * události, každý zápis) a náhledy fotek se přitom odpojí a připojí znovu.
+ * Kdyby si každý nový náhled začínal od uložené adresy a čekal na podpis,
+ * pod rukama by se nikdy neustálil: podpis by dorazil až k náhledu, který
+ * mezitím zmizel. Cache je společná pro celou aplikaci, tak se z ní čte
+ * rovnou při vykreslení.
+ */
+export function podepsanaZCache(url: string): string | null {
+  const cesta = cestaFotky(url);
+  return cesta ? zCache(cesta, Date.now()) : null;
+}
+
+/**
  * Podepíše jeden odkaz. Odkazy mimo náš bucket vrací beze změny.
  *
  * Souběžná volání pro tutéž cestu sdílejí jeden požadavek – detail zakázky
@@ -139,7 +155,12 @@ export async function podepsFotku(
   const p = (async () => {
     try {
       const { data, error } = await supabase.storage.from(BUCKET_FOTEK).createSignedUrl(cesta, platnostSekund);
-      if (error || !data?.signedUrl) return url;
+      if (error || !data?.signedUrl) {
+        // Tiché selhání by znamenalo prázdné místo v zakázce a nikdo by
+        // nevěděl proč – aspoň ve vývoji ať je v konzoli vidět důvod.
+        devWarn("[podepsaneFotky] podpis se nepovedl:", cesta, error);
+        return url;
+      }
       cache.set(cesta, { url: data.signedUrl, platiDo: Date.now() + platnostSekund * 1000 });
       return data.signedUrl;
     } catch {
@@ -188,7 +209,10 @@ export async function podepsFotky(
   const cesty = [...chybi.keys()];
   try {
     const { data, error } = await supabase.storage.from(BUCKET_FOTEK).createSignedUrls(cesty, platnostSekund);
-    if (error || !data) return vysledek;
+    if (error || !data) {
+      devWarn("[podepsaneFotky] dávkový podpis se nepovedl:", cesty.length, error);
+      return vysledek;
+    }
     const platiDo = Date.now() + platnostSekund * 1000;
     for (const polozka of data) {
       // `path` se vrací tak, jak jsme ho poslali; u chybné položky je null.
@@ -198,8 +222,9 @@ export async function podepsFotky(
       cache.set(cesta, { url: podepsana, platiDo });
       for (const i of chybi.get(cesta) ?? []) vysledek[i] = podepsana;
     }
-  } catch {
+  } catch (e) {
     // Beze změny – zůstanou původní odkazy.
+    devWarn("[podepsaneFotky] dávkový podpis spadl:", e);
   }
   return vysledek;
 }
@@ -236,11 +261,89 @@ async function vychoziNacti(u: string): Promise<Blob> {
   return await r.blob();
 }
 
-function blobNaDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onerror = () => reject(fr.error ?? new Error("Nepodařilo se přečíst obrázek"));
-    fr.onload = () => resolve(String(fr.result));
-    fr.readAsDataURL(blob);
-  });
+async function blobNaDataUrl(blob: Blob): Promise<string> {
+  // `FileReader` je jen v prohlížeči. Aby šla příprava dokumentu otestovat
+  // (a aby fungovala i tam, kde DOM není), je tu záložní cesta přes ArrayBuffer.
+  if (typeof FileReader === "function") {
+    return await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(fr.error ?? new Error("Nepodařilo se přečíst obrázek"));
+      fr.onload = () => resolve(String(fr.result));
+      fr.readAsDataURL(blob);
+    });
+  }
+  const bajty = new Uint8Array(await blob.arrayBuffer());
+  let binarne = "";
+  // Po částech, ať se u velké fotky nepřeteče zásobník argumentů.
+  for (let i = 0; i < bajty.length; i += 8192) {
+    binarne += String.fromCharCode(...bajty.subarray(i, i + 8192));
+  }
+  return `data:${blob.type || "image/jpeg"};base64,${btoa(binarne)}`;
+}
+
+/**
+ * Připraví fotky pro dokument – každou stáhne a vloží jako `data:` URL.
+ *
+ * Dokument se vykresluje mimo aplikaci (JobiDocs je samostatný program,
+ * tiskový dialog prohlížeče kreslí ze skrytého iframu) a při exportu se
+ * z HTML dělá PDF. Odkaz by musel platit ještě v okamžiku vykreslení a do
+ * uloženého PDF by se stejně nedostal – PDF si obsah odkazu nedotahuje.
+ * Vložený obrázek platí vždycky.
+ *
+ * Fotka, kterou se nepodaří stáhnout, se z dokumentu vypustí. Dřív by na
+ * jejím místě zůstal odkaz, který se v tiskovém náhledu tváří jako prázdné
+ * místo a v PDF jako rozbitý obrázek – a nikdo by nepoznal, že tam měla být.
+ */
+/**
+ * Nejdelší strana obrázku vloženého do dokumentu.
+ *
+ * Fotka z telefonu má klidně 4000 px a v dokumentu z ní je jedna stránka A4 –
+ * na 300 dpi se do ní vejde ani ne 2500 px, takže větší obrázek nic nepřidá.
+ * Bez zmenšení by přitom zakázka s osmi fotkami poslala do JobiDocs desítky
+ * megabajtů v base64, tisk by se táhl a u limitu 50 MB by spadl úplně.
+ */
+const NEJVETSI_STRANA_PRO_DOKUMENT = 2000;
+
+/**
+ * Zmenší obrázek pro vložení do dokumentu. Bez plátna (test, jiné prostředí)
+ * nebo při jakékoli potíži vrací původní data – radši větší dokument než
+ * dokument bez fotky.
+ */
+async function zmensiProDokument(dataUrl: string): Promise<string> {
+  if (typeof document === "undefined" || typeof Image === "undefined") return dataUrl;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("nelze načíst"));
+      i.src = dataUrl;
+    });
+    const nejdelsi = Math.max(img.width, img.height);
+    if (nejdelsi <= NEJVETSI_STRANA_PRO_DOKUMENT) return dataUrl;
+    const pomer = NEJVETSI_STRANA_PRO_DOKUMENT / nejdelsi;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * pomer);
+    canvas.height = Math.round(img.height * pomer);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return dataUrl;
+  }
+}
+
+export async function fotkyDoDokumentu(
+  supabase: SupabaseClient | null,
+  fotky: readonly string[],
+  nacti?: (u: string) => Promise<Blob>
+): Promise<string[]> {
+  if (fotky.length === 0) return [];
+  const hotove = await Promise.all(
+    fotky.map(async (u) => {
+      const d = await fotkaJakoDataUrl(supabase, u, nacti);
+      return d.startsWith("data:") ? await zmensiProDokument(d) : null;
+    })
+  );
+  return hotove.filter((u): u is string => u != null);
 }

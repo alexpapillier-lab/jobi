@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { PLATNOST_EXPORT_S, podepsFotky } from "../_shared/podepsaneFotky.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -153,7 +154,7 @@ async function exportService(svc: ReturnType<typeof createClient>, serviceId: st
   tabulky.profiles = await fetchByParents(svc, "profiles", "id", idsClenu);
 
   // K souborům se přikládá jen seznam s odkazy; binárky by JSON nafoukly.
-  const soubory = await listServiceFiles(svc, serviceId);
+  const soubory = await listServiceFiles(svc, serviceId, true);
 
   const pocty: Record<string, number> = {};
   for (const [k, v] of Object.entries(tabulky)) pocty[k] = v.length;
@@ -170,24 +171,48 @@ async function exportService(svc: ReturnType<typeof createClient>, serviceId: st
   };
 }
 
-/** Soubory servisu v úložišti: složka <service_id>/ a podpisy podle zakázek. */
+/**
+ * Soubory servisu v úložišti: složka <service_id>/ a podpisy podle zakázek.
+ *
+ * Fotky zařízení a podpisy leží v neveřejném bucketu, takže se k nim přikládá
+ * podepsaný odkaz s platností na týden – veřejná adresa by nevydala nic.
+ * Obrázky produktů zůstávají ve veřejném bucketu (ukazují se ve veřejném
+ * ceníku), tam se odkaz skládá po staru a nevyprší.
+ */
 async function listServiceFiles(
   svc: ReturnType<typeof createClient>,
   serviceId: string,
-): Promise<{ bucket: string; path: string; url: string }[]> {
-  const out: { bucket: string; path: string; url: string }[] = [];
+  podepsat: boolean,
+): Promise<{ bucket: string; path: string; url: string; url_expires_at?: string }[]> {
   // PostgREST vystavuje jen public schéma, na storage.objects se proto chodí
   // přes RPC (viz migrace 20260906090000); podpisy podle zakázek filtruje ona.
   const { data, error } = await svc.rpc("service_storage_objects", { p_service_id: serviceId });
   if (error) throw new Error(`storage.objects: ${error.message}`);
-  for (const r of (data ?? []) as { bucket_id: string; name: string }[]) {
-    out.push({
-      bucket: r.bucket_id,
-      path: r.name,
-      url: `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/public/${r.bucket_id}/${r.name}`,
-    });
-  }
-  return out;
+  const radky = (data ?? []) as { bucket_id: string; name: string }[];
+
+  const verejnaUrl = (bucket: string, name: string) =>
+    `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/public/${bucket}/${name}`;
+
+  // Před mazáním servisu se seznam pořizuje jen kvůli cestám – podepisovat
+  // odkazy na soubory, které za chvíli nebudou existovat, nemá smysl.
+  if (!podepsat) return radky.map((r) => ({ bucket: r.bucket_id, path: r.name, url: verejnaUrl(r.bucket_id, r.name) }));
+
+  const fotky = radky.filter((r) => r.bucket_id === "diagnostic-photos");
+  const podepsane = await podepsFotky(
+    svc,
+    fotky.map((r) => verejnaUrl(r.bucket_id, r.name)),
+    PLATNOST_EXPORT_S,
+  );
+  const podleCesty = new Map<string, string>();
+  fotky.forEach((r, i) => podleCesty.set(r.name, podepsane[i]));
+  const platiDo = new Date(Date.now() + PLATNOST_EXPORT_S * 1000).toISOString();
+
+  return radky.map((r) => {
+    const podepsana = podleCesty.get(r.name);
+    return r.bucket_id === "diagnostic-photos" && podepsana
+      ? { bucket: r.bucket_id, path: r.name, url: podepsana, url_expires_at: platiDo }
+      : { bucket: r.bucket_id, path: r.name, url: verejnaUrl(r.bucket_id, r.name) };
+  });
 }
 
 /** Smaže soubory z úložiště – databáze se o ně sama nepostará. */
@@ -396,7 +421,7 @@ serve(async (req) => {
     // vlastník, výchozí pobočka).
     let soubory: { bucket: string; path: string; url: string }[] = [];
     try {
-      soubory = await listServiceFiles(svc, serviceId);
+      soubory = await listServiceFiles(svc, serviceId, false);
     } catch (e) {
       return new Response(
         JSON.stringify({ error: `Failed to list files: ${e instanceof Error ? e.message : String(e)}` }),

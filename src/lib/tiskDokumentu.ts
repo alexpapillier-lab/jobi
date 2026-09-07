@@ -41,6 +41,17 @@ export type ZavislostiDokumentu = {
   vyberCilovySoubor: (vychoziNazev: string) => Promise<string | null>;
   /** Tisk v prohlížeči (webová větev). */
   tiskVProhlizeci: (docType: DocTypeForPrint, serviceId: string, data: DocumentData) => Promise<void>;
+  /**
+   * Vloží fotky do dokumentu jako data (obrázek uvnitř místo odkazu).
+   *
+   * Fotky leží v neveřejném úložišti a odkaz na ně platí jen krátce. Dokument
+   * se přitom vykresluje jinde – JobiDocs je samostatný program a nemá naši
+   * relaci, tiskový dialog prohlížeče kreslí ze skrytého iframu, a při
+   * exportu se z HTML dělá PDF, které si obsah odkazu nedotáhne. Kdyby se
+   * posílal odkaz, byl by na zákaznickém listu obrázek jen do doby, než
+   * podpis vyprší – a v uloženém PDF by nebyl vůbec.
+   */
+  pripravFotky: (data: DocumentData) => Promise<DocumentData>;
   hlaska: (text: string, druh: DruhHlasky) => void;
   /** Hotový export – na desktopu s nabídkou „Otevřít složku“. */
   hotovyExport: (cesta: string) => void;
@@ -79,8 +90,9 @@ export async function spustDesktopovyDokument(
   const zacatek = z.ted();
   const trvani = () => Math.round(z.ted() - zacatek);
   try {
+    const sFotkami = await z.pripravFotky(data);
     if (rezim === "print") {
-      const res = await z.tisk(docType, serviceId, data);
+      const res = await z.tisk(docType, serviceId, sFotkami);
       if (res.ok) {
         z.telemetrie({ action: "print", docType, result: "success", durationMs: trvani() });
         z.hlaska("Úloha odeslána do fronty", "success");
@@ -95,7 +107,7 @@ export async function spustDesktopovyDokument(
     // Zavřený dialog = uživatel si to rozmyslel. Žádná hláška, žádná telemetrie.
     if (!cesta) return;
 
-    const res = await z.exportPdf(docType, serviceId, data, cesta);
+    const res = await z.exportPdf(docType, serviceId, sFotkami, cesta);
     if (res.ok) {
       z.telemetrie({ action: "export", docType, result: "success", durationMs: trvani() });
       z.hotovyExport(cesta);
@@ -171,7 +183,7 @@ export async function spustWebovyDokument(
   const zacatek = z.ted();
   try {
     if (rezim === "export") z.hlaska("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-    await z.tiskVProhlizeci(docType, serviceId, data);
+    await z.tiskVProhlizeci(docType, serviceId, await z.pripravFotky(data));
     z.telemetrie({ action: rezim, docType, result: "success", durationMs: Math.round(z.ted() - zacatek) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -12,6 +12,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { klientskaIp, otiskKlienta } from "../_shared/limity.ts";
+import { PLATNOST_PORTAL_S, podepsFotku, podepsFotky } from "../_shared/podepsaneFotky.ts";
 import {
   otiskAkce,
   sestavPayload,
@@ -164,13 +165,27 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
       : Promise.resolve({ data: null, error: null }),
   ]);
 
-  return sestavPayload({
+  const payload = sestavPayload({
     ticket: t,
     stav: (statusRes.data ?? null) as StavRow,
     config: (settingsRes.data?.config ?? {}) as Record<string, unknown>,
     nazevServisu: (serviceRes.data?.name ?? null) as string | null,
     pobocka: (branchRes?.data ?? null) as PobockaRow,
   });
+
+  /* Odkazy na fotky a podpis se podepisují až tady, na poslední chvíli.
+     V databázi je uložený veřejný tvar URL, ale ten nic nevydá – bucket je
+     neveřejný. Kdyby se posílal ven tak, jak je, zákazník by v portálu viděl
+     prázdná místa. A kdyby se posílal veřejný odkaz do veřejného bucketu (jak
+     to bylo dřív), měl by ho natrvalo: fotky jeho zařízení by šly stáhnout
+     i dlouho po tom, co portálový token vyprší, a mohl by je přeposlat komukoli.
+     Podepsaný odkaz platí hodinu a portál si ho při obnově dat vyzvedne znovu. */
+  const [photos, photosBefore, intakeSignatureUrl] = await Promise.all([
+    podepsFotky(svc, payload.ticket.photos ?? [], PLATNOST_PORTAL_S),
+    podepsFotky(svc, payload.ticket.photosBefore ?? [], PLATNOST_PORTAL_S),
+    podepsFotku(svc, payload.ticket.intakeSignatureUrl, PLATNOST_PORTAL_S),
+  ]);
+  return { ...payload, ticket: { ...payload.ticket, photos, photosBefore, intakeSignatureUrl } };
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +422,11 @@ serve(async (req) => {
         await uvolniRezervaci();
         return json({ error: "Nepodařilo se uložit podpis." }, 500);
       }
-      await insertEvent(svc, ticket, "signed", { ...meta, url: urlData.publicUrl });
+      // Do události se odkaz na podpis neukládá. Byla by to druhá kopie téhož
+      // odkazu v databázi, která se navíc dostane do exportu dat – a podpis
+      // zákazníka je osobní údaj, který stačí mít na jednom místě (sloupec
+      // intake_signature_url).
+      await insertEvent(svc, ticket, "signed", meta);
     } else if (action === "pickup") {
       // Bez pojistky by opakované odeslání založilo druhé potvrzení převzetí
       // a servis by v historii viděl dvě různá vyzvednutí téhož zařízení.

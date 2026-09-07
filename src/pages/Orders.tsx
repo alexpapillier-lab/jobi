@@ -28,6 +28,9 @@ import {
   deleteDiagnosticPhotoFromStorage,
   isDiagnosticPhotoStorageUrl,
 } from "../lib/diagnosticPhotosStorage";
+import { FotkaZakazky } from "../components/FotkaZakazky";
+import { fotkyDoDokumentu, podepsFotku } from "../lib/podepsaneFotky";
+import { usePodepsaneFotky } from "../hooks/usePodepsaneFotky";
 import { normalizePhone } from "../lib/phone";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
@@ -697,6 +700,10 @@ const zavislostiDokumentu: ZavislostiDokumentu = {
     });
   },
   tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
+  pripravFotky: async (data) => {
+    if (!data.photos || data.photos.length === 0) return data;
+    return { ...data, photos: await fotkyDoDokumentu(supabase, data.photos) };
+  },
   hlaska: showToast,
   hotovyExport: showExportSuccessToast,
   telemetrie: trackDocumentAction,
@@ -1301,6 +1308,9 @@ export default function Orders({
   const [draftCapturePreviewUrls, setDraftCapturePreviewUrls] = useState<string[]>([]);
   const [draftCaptureLiveCount, setDraftCaptureLiveCount] = useState(0);
   const [photoLightbox, setPhotoLightbox] = useState<{ urls: string[]; index: number; ticketCode?: string } | null>(null);
+  /* Zvětšenou fotku podepisujeme zvlášť: lightbox drží pole URL zkopírované
+     v okamžiku kliknutí, takže by se v něm jinak podpis nikdy neobnovil. */
+  const fotkyLightboxu = usePodepsaneFotky(supabase, photoLightbox?.urls ?? null);
 
   useEffect(() => {
     if (!photoLightbox) return;
@@ -2399,6 +2409,8 @@ export default function Orders({
    * a zároveň se překresluje hlavička, to by jinak byly dva stejné dotazy.
    */
   const dotahovaneZakazkyRef = useRef<Map<string, Promise<TicketEx | null>>>(new Map());
+  /** Zakázka, které se nepovedlo dotáhnout zbytek sloupců (typicky výpadek sítě). */
+  const [nedotazenaZakazka, setNedotazenaZakazka] = useState<string | null>(null);
   const zajistiPlnouZakazku = useCallback(async (ticketId: string): Promise<TicketEx | null> => {
     const znama = cloudTicketsRef.current.find((t) => t.id === ticketId);
     if (znama?.uplna) return znama;
@@ -2410,7 +2422,12 @@ export default function Orders({
       rozdelane.set(ticketId, beh);
     }
     const plna = await beh;
-    if (!plna) return cloudTicketsRef.current.find((t) => t.id === ticketId) ?? null;
+    if (!plna) {
+      // Ať se to dá poznat na obrazovce; „načítám…“ do nekonečna nikomu nic neřekne.
+      setNedotazenaZakazka(ticketId);
+      return cloudTicketsRef.current.find((t) => t.id === ticketId) ?? null;
+    }
+    setNedotazenaZakazka((p) => (p === ticketId ? null : p));
 
     /* Provedené opravy se ukládají okamžitě; když zrovna běží (nebo čeká)
        zápis, je verze v paměti novější než ta z databáze. Ostatní sloupce
@@ -5598,8 +5615,8 @@ export default function Orders({
                     ))}
                     {draftCapturePreviewUrls.map((photoUrl, idx) => (
                       <div key={`draft-${idx}`} style={{ position: "relative" }}>
-                        <img
-                          src={photoUrl}
+                        <FotkaZakazky
+                          url={photoUrl}
                           alt={`QR fotka ${idx + 1}`}
                           style={{
                             width: 80,
@@ -6300,8 +6317,8 @@ export default function Orders({
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                         {(sourceTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
                           <div key={idx} style={{ position: "relative" }}>
-                            <img
-                              src={photoUrl}
+                            <FotkaZakazky
+                              url={photoUrl}
                               alt={`Fotka před ${idx + 1}`}
                               role="button"
                               tabIndex={0}
@@ -6353,8 +6370,8 @@ export default function Orders({
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                       {(sourceTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
                         <div key={idx} style={{ position: "relative" }}>
-                          <img
-                            src={photoUrl}
+                          <FotkaZakazky
+                            url={photoUrl}
                             alt={`Diagnostika ${idx + 1}`}
                             role="button"
                             tabIndex={0}
@@ -6560,8 +6577,15 @@ export default function Orders({
             Trvá to desítky milisekund, ale prázdné okno by v tu chvíli vypadalo
             jako chyba. */}
         {detailSeNacita && !detailedClaim && (
-          <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
-            Načítám zakázku…
+          <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
+            {nedotazenaZakazka === detailId ? (
+              <>
+                <span>Zakázku se nepodařilo načíst – zkontrolujte připojení.</span>
+                <Button variant="soft" onClick={() => { setNedotazenaZakazka(null); void zajistiPlnouZakazku(detailId!); }}>Zkusit znovu</Button>
+              </>
+            ) : (
+              <span>Načítám zakázku…</span>
+            )}
           </div>
         )}
         {detailedTicket && (
@@ -7397,8 +7421,8 @@ export default function Orders({
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                         {(detailedTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
                             <div key={idx} style={{ position: "relative" }}>
-                              <img
-                                src={photoUrl}
+                              <FotkaZakazky
+                                url={photoUrl}
                                 alt={`Fotka před ${idx + 1}`}
                                 role="button"
                                 tabIndex={0}
@@ -7556,8 +7580,8 @@ export default function Orders({
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
                         {(detailedTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
                           <div key={idx} style={{ position: "relative" }}>
-                            <img 
-                              src={photoUrl} 
+                            <FotkaZakazky
+                              url={photoUrl}
                               alt={`Diagnostika ${idx + 1}`}
                               role="button"
                               tabIndex={0}
@@ -8452,7 +8476,8 @@ export default function Orders({
             type="button"
             onClick={async (e) => {
               e.stopPropagation();
-              const url = photoLightbox.urls[photoLightbox.index];
+              // Bez podpisu vrátí úložiště 400 – holá URL fotku nevydá.
+              const url = await podepsFotku(supabase, photoLightbox.urls[photoLightbox.index]);
               const code = photoLightbox.ticketCode || "zakazka";
               const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
               const name = `${safe(code)}_pic${photoLightbox.index + 1}.jpg`;
@@ -8486,7 +8511,7 @@ export default function Orders({
             Stáhnout
           </button>
           <img
-            src={photoLightbox.urls[photoLightbox.index]}
+            src={fotkyLightboxu[photoLightbox.index] ?? photoLightbox.urls[photoLightbox.index]}
             alt={`Diagnostika ${photoLightbox.index + 1}`}
             style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain" }}
             onClick={(e) => e.stopPropagation()}

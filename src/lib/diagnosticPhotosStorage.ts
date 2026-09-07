@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addWatermarkToImageBlob } from "./diagnosticPhotoWatermark";
+import { cestaFotky } from "./podepsaneFotky";
 
 /**
  * Náhodné id souboru. `crypto.randomUUID` je až od Safari 15.4, a starší
@@ -33,7 +34,13 @@ function getExt(file: File): string {
 }
 
 /**
- * Nahraje soubor do Storage a vrátí veřejnou URL.
+ * Nahraje soubor do Storage a vrátí URL, která se uloží k zakázce.
+ *
+ * Tvar `…/object/public/…` zůstává schválně: v databázi to není oprávnění,
+ * ale identifikátor souboru (nese cestu v bucketu). Ke zobrazení se z něj
+ * pokaždé znovu podepíše krátkodobý odkaz – viz `podepsaneFotky.ts`. Díky
+ * tomu nebylo nutné přepisovat odkazy uložené u zakázek ostrých servisů.
+ *
  * Volat jen když má zakázka už id (po uložení).
  */
 export async function uploadDiagnosticPhoto(
@@ -59,7 +66,8 @@ export async function uploadDiagnosticPhoto(
 }
 
 /**
- * Nahraje soubor do Storage s watermarkem (datum, čas, jobi) a vrátí veřejnou URL.
+ * Nahraje soubor do Storage s watermarkem (datum, čas, jobi) a vrátí URL
+ * pro uložení k zakázce (viz `uploadDiagnosticPhoto`).
  */
 export async function uploadDiagnosticPhotoWithWatermark(
   supabase: SupabaseClient | null,
@@ -78,7 +86,7 @@ export async function uploadDiagnosticPhotoWithWatermark(
 }
 
 /**
- * Smaže soubor ze Storage podle veřejné URL (pokud jde o náš bucket).
+ * Smaže soubor ze Storage podle URL (pokud jde o náš bucket).
  * Pokud URL není z našeho Storage, nic nedělá (např. staré base64).
  */
 export async function deleteDiagnosticPhotoFromStorage(
@@ -86,7 +94,7 @@ export async function deleteDiagnosticPhotoFromStorage(
   photoUrl: string
 ): Promise<void> {
   if (!supabase) return;
-  const path = getStoragePathFromPublicUrl(photoUrl);
+  const path = cestaFotky(photoUrl);
   if (!path) return;
   await supabase.storage.from(BUCKET).remove([path]);
 }
@@ -95,15 +103,5 @@ export async function deleteDiagnosticPhotoFromStorage(
  * Vrátí true, pokud je URL z našeho bucketu (Storage). Jinak jde o data URL (base64) nebo cizí odkaz.
  */
 export function isDiagnosticPhotoStorageUrl(photoUrl: string): boolean {
-  return getStoragePathFromPublicUrl(photoUrl) != null;
-}
-
-function getStoragePathFromPublicUrl(publicUrl: string): string | null {
-  try {
-    const u = new URL(publicUrl);
-    const pathMatch = u.pathname.match(/\/storage\/v1\/object\/public\/diagnostic-photos\/(.+)/);
-    return pathMatch ? decodeURIComponent(pathMatch[1]) : null;
-  } catch {
-    return null;
-  }
+  return cestaFotky(photoUrl) != null;
 }
