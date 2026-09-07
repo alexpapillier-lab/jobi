@@ -307,7 +307,13 @@ test("nový servis má hned použitelné stavy zakázek a čísla podle své zkr
    * se to nepovedlo, zakázka by se sice založila, ale nedala by se posunout
    * dál – tedy z aplikace by nešlo dělat to hlavní.
    */
-  const stav = page.getByRole("button", { name: /Přijato/ }).first();
+  // Přepínač stavu v hlavičce otevřeného detailu; v seznamu za ním je stejný,
+  // jenže ten leží pod ztmavením a klik by do něj jen narážel.
+  const hlavicka = page
+    .getByText(new RegExp(`^${zakaznik} · `))
+    .first()
+    .locator("xpath=ancestor::*[.//button[contains(., 'Přijato')]][1]");
+  const stav = hlavicka.getByRole("button", { name: /Přijato/ }).first();
   await expect(stav, "Nová zakázka nemá výchozí stav – servis nemá zavedené stavy zakázek.").toBeVisible({
     timeout: 30_000,
   });
@@ -328,11 +334,13 @@ test("první produkt si počáteční zásobu opravdu odnese do databáze", asyn
 
   const produkt = `Displej E2E ${Date.now().toString(36)}`;
 
-  await page.getByRole("button", { name: "Nový produkt" }).click();
+  // „Nový produkt“ je v hlavičce i uprostřed prázdného seznamu – obojí dělá totéž.
+  await page.getByRole("button", { name: "Nový produkt" }).first().click();
   await page.getByLabel("Nepřiřazovat k zařízení").check();
   await page.getByPlaceholder("Název produktu…").fill(produkt);
   await page.getByPlaceholder("Sklad (ks)").fill("5");
-  await page.getByPlaceholder("Cena (Kč)").fill("1990");
+  // Přesně, ne podřetězcem: vedle je ještě „Nákupní cena (Kč)“.
+  await page.getByPlaceholder("Cena (Kč)", { exact: true }).fill("1990");
   await page.getByRole("button", { name: "Přidat produkt" }).click();
 
   /*
@@ -471,7 +479,12 @@ test("zakázkový list se ve webové verzi vytiskne s údaji, ne s prázdnými m
 
   await prihlasSeJakoNovacek(page);
   await vidZakazku(page, kodZakazky).first().click();
-  await page.getByRole("button", { name: /^Tisk/ }).first().click();
+  // Nabídka tisku z hlavičky detailu; v řádku seznamu pod ztmavením je další.
+  const hlavickaDetailu = page
+    .getByText(new RegExp(`^${zakaznik} · `))
+    .first()
+    .locator("xpath=ancestor::*[.//button[contains(., 'Tisk')]][1]");
+  await hlavickaDetailu.getByRole("button", { name: /^Tisk/ }).first().click();
   const radek = page.getByRole("menu").getByText("Zakázkový list", { exact: true }).locator("xpath=ancestor::div[1]");
   await radek.getByRole("button", { name: "Tisk" }).click();
 
@@ -564,6 +577,8 @@ test("přerušené zakládání servisu nenechá v databázi servis bez zkratky"
   );
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 60_000 });
+  // Zakázku nejde založit dřív, než servis dostane výchozí stavy zakázek.
+  await page.waitForLoadState("networkidle").catch(() => {});
 
   const kod = await zalozZakazku(page, {
     zakaznik: `Zakaznik preruseny ${Date.now().toString(36)}`,

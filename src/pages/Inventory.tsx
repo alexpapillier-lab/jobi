@@ -615,6 +615,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     let cancelled = false;
     // Jiný servis = jiná data; starý snímek by dal nesmyslný rozdíl.
     posledniUlozeno = null;
+    nactenoRef.current = false;
+    /* Co je v datech, než se začne číst. Základ pro sloučení níž. */
+    const predNactenim = dataRef.current;
     (async () => {
       const devicesRes = await loadDevicesFromDb(activeServiceId);
       if (cancelled) return;
@@ -653,7 +656,35 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       /* Sloučení, ne dosazení: rozdělaný stav může být i den starý a mezitím
          mohl kolega přidat půl skladu. Prosté dosazení by ho při dalším
          uložení smazalo, protože sklad se ukládá jako celý snímek. */
-      setData(rozdelano ? sloucData(rozdelano.zaklad, rozdelano.data, invData) : invData);
+      const zDatabaze = rozdelano ? sloucData(rozdelano.zaklad, rozdelano.data, invData) : invData;
+
+      /*
+       * Co uživatel stihl přidat, než čtení doběhlo, se nesmí zahodit.
+       *
+       * Sklad se čte na pozadí a stránka je mezitím vidět jako prázdná – nový
+       * zákazník na ni přijde a rovnou klikne na „Nový produkt“. Dosazení
+       * načtených dat pak jeho produkt smazalo z paměti, uložení proti
+       * čerstvému snímku už nemělo co zapsat, a přesto se vypsalo „Produkt
+       * přidán“ (hláška čeká na potvrzení zápisu, ne na to, že se něco
+       * zapsalo). Rozdělaný stav se tím navíc zahodil i z localStorage, takže
+       * produkt nezachránila ani obnova po restartu. Zmizel beze stopy.
+       *
+       * Slučuje se jen z prázdného základu, tedy při prvním načtení. Při
+       * přepnutí servisu drží `predNactenim` ještě data předchozího servisu
+       * a sloučení by je přeneslo do nového – to je horší než ztráta.
+       */
+      const meziTim = dataRef.current;
+      const prazdnyZaklad =
+        predNactenim.products.length === 0 &&
+        predNactenim.productCategories.length === 0 &&
+        predNactenim.warehouses.length === 0;
+      const pribyloBehemCteni = prazdnyZaklad && meziTim !== predNactenim;
+      const spojeno = pribyloBehemCteni ? sloucData(predNactenim, meziTim, zDatabaze) : zDatabaze;
+      nactenoRef.current = true;
+      /* Produkt přidaný před dočtením nese počet kusů ještě ve starém tvaru
+         (jedno číslo), protože v tu chvíli nebyl znám žádný sklad. Teď už
+         sklady známe, tak se kusy zařadí do výchozího. */
+      setData(pribyloBehemCteni ? sladitSeSklady(spojeno, spojeno.warehouses) : spojeno);
     })();
     return () => {
       cancelled = true;
@@ -669,6 +700,9 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
      přepsala cizí úpravy (typicky obrázky na null). */
 
   const dataRef = useRef(data);
+  /* Doběhlo první čtení skladu z databáze? Dokud ne, nevíme, jaké sklady
+     servis má – a nesmíme si žádný domýšlet (viz `addProduct`). */
+  const nactenoRef = useRef(false);
   const sluzbaRef = useRef(activeServiceId);
   /* Zápis do refů patří do efektu, ne do renderu (React Compiler:
      „Cannot access refs during render“). Efekt běží po každém renderu,
@@ -1324,11 +1358,19 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
      */
     let doplnenySklad: Warehouse | null = null;
     let cilovySklad = newProductWarehouseId || vychoziSklad(data.warehouses);
-    if (stock > 0 && !cilovySklad) {
+    /* Sklad si domýšlíme jen tehdy, když už víme, že servis opravdu žádný
+       nemá. Dokud se sklad čte, je `data.warehouses` prázdné jen proto, že
+       ještě nedoběhlo čtení – založit tu vlastní „Hlavní sklad“ by servisu
+       udělalo dva. */
+    if (stock > 0 && !cilovySklad && nactenoRef.current) {
       doplnenySklad = novyVychoziSklad();
       cilovySklad = doplnenySklad.id;
     }
     const stavy = stock > 0 && cilovySklad ? { [cilovySklad]: stock } : {};
+    /* Když sklad ještě neznáme, počet kusů se schová do starého tvaru
+       (jedno číslo). Načtení ho pak zařadí do výchozího skladu; kdyby se
+       tu zapsala nula, zadané kusy by byly pryč. */
+    const pocetKusu = stock > 0 && !cilovySklad ? stock : celkemKusu(stavy);
 
     if (stock < 1) {
       setLowStockCallback(() => () => {
@@ -1336,7 +1378,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
           id: uuid(),
           name: newProduct.name.trim(),
           modelIds,
-          stock: celkemKusu(stavy),
+          stock: pocetKusu,
           stockByWarehouse: stavy,
           price: parseFloat(newProduct.price) || 0,
           purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
@@ -1366,7 +1408,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       id: uuid(),
       name: newProduct.name.trim(),
       modelIds,
-      stock: celkemKusu(stavy),
+      stock: pocetKusu,
       stockByWarehouse: stavy,
       price: parseFloat(newProduct.price) || 0,
           purchasePrice: newProduct.purchasePrice.trim() === "" ? null : parseFloat(newProduct.purchasePrice),
@@ -1435,6 +1477,13 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
      * předcházet `adjustStock`, jinak by kusy ukazovaly na neexistující sklad.
      */
     if (!cil) {
+      // Dokud se sklad čte, nevíme, jestli servis nějaký má – vlastní bychom
+      // mu udělali druhý. Do dialogu se sice před dočtením nedá dostat
+      // (nemá co nabídnout), ale hádat se tu nebude.
+      if (!nactenoRef.current) {
+        showToast("Sklad se ještě načítá, zkuste to za chvíli.", "error");
+        return;
+      }
       const doplneny = novyVychoziSklad();
       cil = doplneny.id;
       setData((d) => (d.warehouses.length > 0 ? d : { ...d, warehouses: [doplneny] }));

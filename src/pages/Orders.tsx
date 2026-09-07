@@ -93,7 +93,7 @@ import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
-import { safeLoadCompanyData } from "../lib/companyData";
+import { safeLoadCompanyData, doplnFiremniUdajeZDb } from "../lib/companyData";
 import { trackDocumentAction } from "../lib/documentTelemetry";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
@@ -888,7 +888,15 @@ export default function Orders({
     loadConfig().catch((err) => {
       console.error("[Orders] Error loading documents config:", err);
     });
-    
+
+    /* Firemní údaje pro tisk se berou z kopie v prohlížeči, a tu zapisuje
+       jen obrazovka Nastavení. Kdo ji nikdy neotevřel (nový zákazník, druhý
+       počítač), tiskl zakázkový list bez názvu servisu. Doplní se z databáze,
+       kde je od založení servisu. */
+    void doplnFiremniUdajeZDb(activeServiceId).catch((err) => {
+      console.error("[Orders] Firemní údaje se nedoplnily:", err);
+    });
+
     return () => {
       docsReqIdRef.current++;
     };

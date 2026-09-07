@@ -23,6 +23,7 @@ takový test neuspokojí.
 | `kalendar.spec.ts` | slíbený termín dokončení |
 | `soubezna-prace.spec.ts` | dva lidé naráz, práva technika |
 | `servisy.spec.ts` | založení servisu, zkratka v číslech zakázek, pozvánky, smazání servisu |
+| `onboarding.spec.ts` | první hodina nového zákazníka: registrace, servis, První kroky, zakázka, faktura, tisk, portál |
 | `prohlizece.spec.ts` | hlavní cesty v Safari a Firefoxu, portál v mobilním Safari |
 | `zakaznici*.spec.ts`, `hledani`, `nastaveni`, `reklamace`, `rezervace`, `prihlaseni` | zbytek |
 
@@ -44,6 +45,23 @@ config a pouští se zvlášť:
 ```bash
 E2E_PASSWORD='…' npm run test:e2e:prohlizece
 ```
+
+## První hodina nového zákazníka
+
+`onboarding.spec.ts` jde cestou, kterou projde každý, kdo si Jobi zkusí:
+registrace → založení servisu → karta „První kroky“ → první zakázka → faktura
+→ tisk ve webové větvi → odkaz pro zákazníka. Ostatní sady jezdí v servisu,
+který má za sebou měsíce provozu, takže o prázdném servisu nevědí nic.
+
+```bash
+E2E_ONBOARDING_PASSWORD="$(openssl rand -base64 24)" npm run test:e2e:onboarding
+```
+
+Heslo se generuje při běhu a v repozitáři není. Sada **zakládá účet a servisy
+v ostré databázi**; servisy si na konci smaže (`service-delete-own`, pojistka
+na název „E2E onboarding“), účet smazat nejde – aplikace na to rozhraní nemá –
+a zůstane v Auth. Adresy jsou vždy na `@jobi.test`, takže žádný e-mail
+neodejde. Proto má sada vlastní config a v CI neběží.
 
 Projdou v ní jen cesty, bez kterých se nedá pracovat: přihlášení, seznam
 a založení zakázky, hledání, faktura, tisk dokladu ve webové větvi
@@ -175,6 +193,15 @@ delete from warranty_claims where service_id = '882beee7-4564-4d10-8ac6-16dc1924
   dva má, takže jeden zapomenutý zbytek zablokuje všechny další běhy.
   Pozvánky chodí jen na adresy `@jobi.test`; Resend je neodešle, ale pozvánka
   v databázi vznikne a test ji po sobě zase smaže.
+- **`onboarding.spec.ts` zakládá dva servisy na jeden běh** – jeden z aplikace
+  a druhý voláním `service-create` napřímo (simuluje zakládání přerušené
+  uprostřed). Účet je pokaždé nový, takže se do limitu tří vejdou, ale
+  `test.afterAll` je stejně maže oba; bez toho by opakovaný běh na tomtéž účtu
+  narazil.
+- **Tiskový dialog se v testu nepotvrdí.** Webový tisk skládá HTML a vloží ho
+  do skrytého iframu (`srcdoc`) – test si podchytí zápis do té vlastnosti,
+  takže vidí, co by se vytisklo, a `print()` v iframu vypne. Bez toho by se
+  test zastavil na dialogu prohlížeče.
 - **Adresu Supabase a klíče si `servisy.spec.ts` odposlechne z požadavků**,
   které aplikace sama dělá (`page.on("request")`). Anon klíč se do balíčku
   zapéká při buildu a na `window` není, takže jinak by test nemohl ověřit, že

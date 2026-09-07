@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { loadServiceConfig } from "./serviceSettingsSync";
 
 export type CompanyData = {
   abbreviation: string;
@@ -90,5 +91,32 @@ export function safeLoadCompanyData(): CompanyData {
     };
   } catch {
     return defaultCompanyData();
+  }
+}
+
+/**
+ * Doplní kopii firemních údajů v prohlížeči z databáze.
+ *
+ * Do dokumentů se firemní údaje berou z localStorage (`safeLoadCompanyData`),
+ * protože skládání dokumentu je synchronní. Kopii tam ale zapisuje teprve
+ * obrazovka Nastavení. Kdo ji nikdy neotevřel, tiskl zakázkový list úplně bez
+ * údajů o svém servisu – ani název firmy tam nebyl, přestože ho zadal při
+ * zakládání a v databázi je. Přesně tohle potká nového zákazníka u prvního
+ * papíru, který podá zákazníkovi, a stejně tak kohokoli na druhém počítači
+ * téhož servisu.
+ *
+ * Kopii, která už tomuhle servisu patří, nepřepisuje: ta je čerstvější než
+ * databáze (uživatel v Nastavení právě něco změnil) a přepsáním by se ztratila.
+ */
+export async function doplnFiremniUdajeZDb(serviceId: string | null): Promise<void> {
+  if (!serviceId || companyCacheBelongsTo(serviceId)) return;
+  const config = await loadServiceConfig(serviceId);
+  const zDb = (config?.companyData ?? null) as Partial<CompanyData> | null;
+  if (!zDb || typeof zDb !== "object") return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.COMPANY, JSON.stringify({ ...defaultCompanyData(), ...zDb }));
+    setCompanyCacheOwner(serviceId);
+  } catch {
+    /* prohlížeč bez úložiště – dokumenty pak vyjdou bez firemních údajů jako dosud */
   }
 }

@@ -103,20 +103,37 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
           body: { serviceId: activeServiceId },
         });
 
-        if (initError) {
-          console.error("[Statuses] load failed", initError);
-          setStatuses([]);
-          setLoading(false);
-          setError(normalizeError(initError) || "Chyba při inicializaci výchozích statusů");
-          return;
-        }
-
-        if (!initData?.ok) {
-          console.error("[Statuses] load failed", { initData });
-          setStatuses([]);
-          setLoading(false);
-          setError("Chyba při inicializaci výchozích statusů");
-          return;
+        /*
+         * Zavedení výchozích stavů může selhat proto, že je právě zavedl
+         * někdo jiný.
+         *
+         * Funkce se nejdřív ptá „už tam nějaké jsou?“ a pak je vkládá. Dva
+         * klienti nad čerstvým servisem (druhá záložka, druhý počítač,
+         * majitel a hned po něm kolega) projdou tou otázkou oba a druhý
+         * vložení narazí na unikátní klíč – vrátí se 500. Zákazník pak měl
+         * na obrazovce „Chyba při inicializaci výchozích statusů“ a prázdný
+         * seznam stavů, takže nešlo založit zakázku, dokud stránku
+         * nepřenačetl. Přitom stavy v databázi v tu chvíli byly.
+         *
+         * Proto se po neúspěchu ještě jednou přečte databáze; teprve když
+         * ani tam nic není, jde o skutečnou chybu.
+         */
+        const selhaloZavedeni = !!initError || !initData?.ok;
+        if (selhaloZavedeni) {
+          console.error("[Statuses] init failed", initError ?? { initData });
+          const { data: poSouboji } = await supabase
+            .from("service_statuses")
+            .select("*")
+            .eq("service_id", activeServiceId)
+            .order("order_index");
+          if (!poSouboji || poSouboji.length === 0) {
+            setStatuses([]);
+            setLoading(false);
+            setError(
+              (initError ? normalizeError(initError) : "") || "Chyba při inicializaci výchozích statusů",
+            );
+            return;
+          }
         }
 
         // After init, reload from DB
