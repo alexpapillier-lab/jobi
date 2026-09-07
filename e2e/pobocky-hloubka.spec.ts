@@ -46,6 +46,9 @@ const stav: {
   reklamaceCizi?: string;
   sklad?: string;
   produkt?: string;
+  kodCizi?: string;
+  kodVlastni?: string;
+  zakazkaPresun?: string;
   puvodniPrava?: Record<string, boolean>;
   puvodniDomovska?: string | null;
 } = {};
@@ -171,7 +174,7 @@ test.afterAll(async () => {
     ] as const) {
       if (id) await zapis(m, "DELETE", `${tabulka}?id=eq.${id}`);
     }
-    for (const id of [stav.zakazkaCizi, stav.zakazkaVlastni]) {
+    for (const id of [stav.zakazkaCizi, stav.zakazkaVlastni, stav.zakazkaPresun]) {
       if (id) {
         await zapis(m, "DELETE", `ticket_work_sessions?ticket_id=eq.${id}`);
         await zapis(m, "DELETE", `tickets?id=eq.${id}`);
@@ -206,13 +209,18 @@ test("příprava: druhá pobočka a technik zamčený na ni", async ({ page }) =
   expect(nova.stav, `Pobočku se nepodařilo založit: ${nova.text}`).toBeLessThan(300);
   stav.novaPobocka = (nova.radky[0] as { id: string }).id;
 
-  // Dvě zakázky: jedna na hlavní pobočce (pro technika cizí), jedna na jeho.
-  for (const [klic, pobocka] of [
-    ["zakazkaCizi", stav.hlavniPobocka],
-    ["zakazkaVlastni", stav.novaPobocka],
+  /* Dvě zakázky: jedna na hlavní pobočce (pro technika cizí), jedna na jeho.
+     Číslo se dává ručně – zakládá ho aplikace přes RPC, přes holý REST by
+     zakázka zůstala bez čísla a v rozhraní by nebylo podle čeho hledat. */
+  const razitko = Date.now().toString(36).toUpperCase();
+  for (const [klic, pobocka, znacka] of [
+    ["zakazkaCizi", stav.hlavniPobocka, "C"],
+    ["zakazkaVlastni", stav.novaPobocka, "V"],
   ] as const) {
+    const kod = `E2EHL${razitko}${znacka}`;
     const z = await zapis(m, "POST", "tickets", {
       service_id: SERVIS.id,
+      code: kod,
       title: "Hloubkový test poboček",
       status: "received",
       customer_name: "Hloubka",
@@ -220,9 +228,18 @@ test("příprava: druhá pobočka a technik zamčený na ni", async ({ page }) =
     });
     expect(z.stav, `Zakázku se nepodařilo založit: ${z.text}`).toBeLessThan(300);
     stav[klic] = (z.radky[0] as { id: string }).id;
+    stav[klic === "zakazkaCizi" ? "kodCizi" : "kodVlastni"] = kod;
   }
 
-  stav.technik = await prihlasSeAOdchytRelaci(await page.context().newPage(), "technik");
+  /* Technik potřebuje vlastní kontext: v tom majitelově je už přihlášená
+     relace a přihlašovací formulář by se vůbec neukázal. Kontext se hned
+     zavírá, odchycený token platí dál. */
+  const kontextTechnika = await page.context().browser()!.newContext({
+    baseURL: test.info().project.use.baseURL,
+    locale: "cs-CZ",
+  });
+  stav.technik = await prihlasSeAOdchytRelaci(await kontextTechnika.newPage(), "technik");
+  await kontextTechnika.close();
   const clenstvi = await cti<{ capabilities: Record<string, boolean>; home_branch_id: string | null }>(
     m,
     `service_memberships?service_id=eq.${SERVIS.id}&user_id=eq.${stav.technik.uid}&select=capabilities,home_branch_id`,
@@ -421,16 +438,30 @@ test("po přesunu zakázky se rozdělaný úsek práce zavře", async () => {
   const m = stav.majitel!;
   const t = stav.technik!;
 
+  /* Přesouvá se zakázka založená jen pro tenhle test: kdyby se hýbalo tou
+     z přípravy, technikovi by na jeho pobočce nezbylo nic a poslední test by
+     neměl co hledat. */
+  const zalozeni = await zapis(m, "POST", "tickets", {
+    service_id: SERVIS.id,
+    code: `${stav.kodVlastni}P`,
+    title: "Hloubkový test poboček – přesun",
+    status: "received",
+    customer_name: "Hloubka",
+    branch_id: stav.novaPobocka,
+  });
+  expect(zalozeni.stav, `Zakázku pro přesun nešlo založit: ${zalozeni.text}`).toBeLessThan(300);
+  stav.zakazkaPresun = (zalozeni.radky[0] as { id: string }).id;
+
   const usek = await zapis(t, "POST", "ticket_work_sessions", {
     service_id: SERVIS.id,
-    ticket_id: stav.zakazkaVlastni,
+    ticket_id: stav.zakazkaPresun,
     user_id: t.uid,
     started_at: new Date().toISOString(),
   });
   expect(usek.stav, `Úsek práce nešel založit: ${usek.text}`).toBeLessThan(300);
   const usekId = (usek.radky[0] as { id: string }).id;
 
-  const presun = await zapis(m, "PATCH", `tickets?id=eq.${stav.zakazkaVlastni}`, {
+  const presun = await zapis(m, "PATCH", `tickets?id=eq.${stav.zakazkaPresun}`, {
     branch_id: stav.hlavniPobocka,
   });
   expect(presun.stav, `Přesun zakázky selhal: ${presun.text}`).toBeLessThan(300);
@@ -444,16 +475,18 @@ test("po přesunu zakázky se rozdělaný úsek práce zavře", async () => {
 
 test("v aplikaci technik zakázku cizí pobočky nenajde", async ({ page }) => {
   test.setTimeout(180_000);
-  const [cizi] = await cti<{ ticket_number: string | null }>(
-    stav.majitel!,
-    `tickets?id=eq.${stav.zakazkaCizi}&select=ticket_number`,
-  );
-  test.skip(!cizi?.ticket_number, "Zakázka nemá číslo, podle čeho hledat.");
-
   await prihlasSe(page, "technik");
-  const hledani = page.getByPlaceholder(/Hledat/).first();
+  // Vyhledávací pole má vlastní značku; podle zástupného textu ho na seznamu
+  // zakázek nejde spolehlivě chytit (stejný text nese i hledání zákazníků).
+  const hledani = page.locator('input[data-tour="orders-search"]');
   await expect(hledani).toBeVisible({ timeout: 30_000 });
-  await hledani.fill(cizi.ticket_number!);
-  // Vyhledávání jede přes databázi; ta zakázku omezenému členovi nevydá.
-  await expect(page.locator(`:text-is("${cizi.ticket_number}"):visible`)).toHaveCount(0, { timeout: 20_000 });
+
+  /* Nejdřív vlastní zakázka: kdyby se rozbilo samotné hledání, druhá polovina
+     testu by „prošla" jen proto, že nic nenajde nikdy. */
+  await hledani.fill(stav.kodVlastni!);
+  await expect(page.locator(`:text-is("${stav.kodVlastni}"):visible`).first()).toBeVisible({ timeout: 20_000 });
+
+  // Zakázka cizí pobočky – databáze ji omezenému členovi nevydá.
+  await hledani.fill(stav.kodCizi!);
+  await expect(page.locator(`:text-is("${stav.kodCizi}"):visible`)).toHaveCount(0, { timeout: 20_000 });
 });

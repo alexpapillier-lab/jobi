@@ -13,7 +13,13 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   const zakaznik = testovaciJmeno("Rezervace");
   // Oprava z veřejného ceníku – jméno a cena se ověřují na serveru.
   const cenik = await (await request.get(`${FUNKCE.replace("public-booking", "public-catalog")}?service=e2e-servis`)).json();
-  const oprava = cenik.repairs.find((r: { name: string }) => r.name === "Výměna displeje");
+  /* Bere se první oprava, která má aspoň jeden model – konkrétní název se
+     v testovacím servisu mění (jiné sady si opravy přejmenovávají) a test na
+     tom padal, přestože rezervace fungovaly. */
+  const oprava = cenik.repairs.find(
+    (r: { model_ids?: string[] }) => Array.isArray(r.model_ids) && r.model_ids.some((id) => cenik.models.some((m: { id: string }) => m.id === id)),
+  );
+  expect(oprava, "Veřejný ceník nemá žádnou opravu s modelem – bez ní se rezervace otestovat nedá.").toBeTruthy();
   const model = cenik.models.find((m: { id: string }) => oprava.model_ids.includes(m.id));
   const odpoved = await request.post(FUNKCE, {
     data: { service: "e2e-servis", name: zakaznik, phone: "+420777555333", email: "rezervace@example.com", device: "iPad Air (rezervace)", repair: "Prasklé sklo", repair_id: oprava.id, model_id: model.id, preferred_at: "2026-09-15T10:30:00+02:00", note: "Přijdu v poledne" },
@@ -31,7 +37,7 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   await expect(panel).toBeVisible({ timeout: 30_000 });
   const radek = panel.locator("li", { hasText: zakaznik });
   await expect(radek).toBeVisible({ timeout: 20_000 });
-  await expect(radek).toContainText(`iPad Air (rezervace) (${model.name}) · Výměna displeje · cca ${Number(oprava.price).toLocaleString("cs-CZ")} Kč`);
+  await expect(radek).toContainText(`iPad Air (rezervace) (${model.name}) · ${oprava.name} · cca ${Number(oprava.price).toLocaleString("cs-CZ")} Kč`);
   await expect(radek).toContainText("Nová");
   await expect(radek).toContainText("15. 9. 10:30");
 
@@ -39,16 +45,16 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   await radek.getByRole("button", { name: "Založit zakázku" }).click();
   await expect(page.getByPlaceholder("Jan Novák")).toHaveValue(zakaznik, { timeout: 20_000 });
   await expect(page.getByPlaceholder("Název nebo typ zařízení…").first()).toHaveValue(model.name);
-  await expect(page.getByPlaceholder("Výměna displeje, výměna baterie, diagnostika").first()).toHaveValue("Výměna displeje");
+  await expect(page.getByPlaceholder("Výměna displeje, výměna baterie, diagnostika").first()).toHaveValue(oprava.name);
   // Oprava z ceníku je předvybraná – do zakázky půjde jako plánovaná oprava.
-  await expect(page.getByRole("button", { name: /^Výměna displeje/, pressed: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: new RegExp(`^${oprava.name}`), pressed: true }).first()).toBeVisible();
 
   const bezPrirazeni = page.getByRole("button", { name: /Ne, pokračovat bez přiřazení/ });
   if (await bezPrirazeni.isVisible().catch(() => false)) await bezPrirazeni.click();
   await page.getByRole("button", { name: "Vytvořit zakázku" }).click();
   await expect(page.getByText(new RegExp(`^${zakaznik} · `)).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Provedené opravy").first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator("#detail-opravy").getByText("Výměna displeje").first()).toBeVisible();
+  await expect(page.locator("#detail-opravy").getByText(oprava.name).first()).toBeVisible();
 
   // Rezervace je označená jako převedená a vede na zakázku.
   // Detail zakázky se musí zavřít, jinak leží přes kalendář a klik do

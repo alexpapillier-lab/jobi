@@ -58,6 +58,13 @@ test("návrh se odešle a přijme na sklad, zásoba naroste", async ({ page }) =
   test.setTimeout(180_000);
   await prihlasSe(page);
   await naSklad(page);
+  /* Zásoba se čte znovu na začátku tohohle testu, ne z předchozího: když
+     dřívější běh spadl mezi přijetím a úklidem, zůstal na skladě kus navíc
+     a test padal na absolutním čísle, přestože příjem fungoval. */
+  await naProdukty(page);
+  await page.getByLabel("Hledat produkt").first().fill(PRODUKT);
+  await expect(radek(page, PRODUKT)).toBeVisible({ timeout: 20_000 });
+  kusuPred = await pocetKusu(page);
   await page.getByRole("button", { name: /^Objednávky/ }).first().click();
 
   // Nejnovější návrh je ten z předchozího testu.

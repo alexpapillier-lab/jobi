@@ -201,3 +201,10 @@ a snímky by ukazovaly zamykací obrazovku.
 Hesla testovacích účtů jsou jen v GitHub secrets. Když je potřeba spustit
 něco místně a heslo není k dispozici, nastaví se nové podle postupu výš
 a secret se přepíše – nic jiného na starém hesle nezávisí.
+
+## Pojistky v datech testovacího servisu
+
+- **`FIXTURE zakazka bez cisla`** – zakázka bez `code` v E2E servisu. Nemazat:
+  drží ji test „zakázka bez čísla nesundá hledání“ (`hledani.spec.ts`). Zakázka
+  bez čísla vzniká importem nebo veřejným API a filtr hledání na ní kdysi
+  shodil celou stránku Zakázky.

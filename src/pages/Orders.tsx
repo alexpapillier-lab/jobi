@@ -2403,14 +2403,18 @@ export default function Orders({
         if (!q) return true;
         // Telefon se porovnává i po číslicích, aby „777123“ našlo „+420 777 123 456“.
         const phoneDigits = (t.customerPhone ?? "").replace(/\D/g, "");
+        // Všechna pole přes `?? ""`: zakázka bez čísla (vzniká importem nebo
+        // přes veřejné API) shodila celou stránku Zakázky na `toLowerCase`
+        // of null, jakmile někdo začal psát do hledání. Jeden vadný řádek
+        // nesmí sundat seznam všem.
         return (
-          t.code.toLowerCase().includes(q) ||
-          t.customerName.toLowerCase().includes(q) ||
+          (t.code ?? "").toLowerCase().includes(q) ||
+          (t.customerName ?? "").toLowerCase().includes(q) ||
           (t.customerPhone ?? "").toLowerCase().includes(q) ||
           (qDigits.length >= 3 && phoneDigits.includes(qDigits)) ||
-          t.deviceLabel.toLowerCase().includes(q) ||
+          (t.deviceLabel ?? "").toLowerCase().includes(q) ||
           (t.serialOrImei ?? "").toLowerCase().includes(q) ||
-          t.issueShort.toLowerCase().includes(q) ||
+          (t.issueShort ?? "").toLowerCase().includes(q) ||
           (t.externalId ?? "").toLowerCase().includes(q)
         );
       });
