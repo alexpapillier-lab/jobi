@@ -68,6 +68,7 @@
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
     "velikosti": "node scripts/velikosti.mjs src/pages/*.tsx jobidocs/src/App.tsx",
+    "hlidac": "node scripts/hlidac/hlidac.mjs",
     "zatez": "node scripts/zatez/verejne-api.mjs",
     "zatez:db": "node scripts/zatez/db-dotazy.mjs",
     "zatez:limity": "node scripts/zatez/limity.mjs",
@@ -77,7 +78,8 @@
     "test:obnova": "bash scripts/zkouska-obnovy.sh",
     "test:e2e:servisy": "playwright test -c playwright.servisy.config.ts",
     "test:e2e:prohlizece": "playwright test -c playwright.prohlizece.config.ts",
-    "test:e2e:onboarding": "playwright test -c playwright.onboarding.config.ts"
+    "test:e2e:onboarding": "playwright test -c playwright.onboarding.config.ts",
+    "platby:kontrola": "node scripts/platby-kontrola.mjs"
   },
   "type": "module",
   "version": "0.5.1"

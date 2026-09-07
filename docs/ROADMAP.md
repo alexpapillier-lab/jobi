@@ -113,13 +113,18 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Zkušební období (5. 9.: nový servis má celou aplikaci na 30 dní přes
   nárok `access`; poslední týden odpočítává proužek a po vypršení se aplikace
   zamkne obrazovkou „Vyberte si plán“ – data zůstávají, jen se do nich nedá.
-  Root owner projde vždy, plán se zapíná v Owner → Placené moduly. Zatím jen
-  v klientovi; serverová kontrola zápisů přijde s platební bránou).
+  Root owner projde vždy, plán se zapíná v Owner → Placené moduly. Hlídá to
+  i databáze: bez nároku `access` restriktivní politiky odmítnou zápis, čtení
+  a export zůstávají – migrace `20260911100000` a `20260912130000`).
 - `[~]` Placené moduly – `service_entitlements` a Owner panel hotové. Napojení
   na Stripe je předpřipravené (5. 9.: tabulka `service_billing`, edge funkce
   `billing-checkout`, `billing-portal`, `billing-webhook` s ověřením podpisu,
-  mapování cena → moduly přes lookup key). Chybí jen účet u Stripe – postup
-  v `docs/STRIPE.md`. Faktury za předplatné vystaví Stripe nebo Fakturoid.
+  mapování cena → moduly přes lookup key; 70 testů v `billingWebhook.test.ts`).
+  Chybí jen účet u Stripe – postup pro den D krok za krokem je
+  v `docs/PLATBY_DEN_D.md` (souvislosti v `docs/STRIPE.md`), nastavení pak
+  ověří `npm run platby:kontrola`. Před spuštěním je potřeba rozhodnout roční
+  ceny obou příplatků, které ceník na webu neuvádí. Faktury za předplatné
+  vystaví Stripe nebo Fakturoid.
 - `[x]` Stránka Předplatné v Nastavení (5. 9.): stav, konec zkušebního období,
   další platba, počet poboček, odkaz do Stripe Checkout a zákaznického portálu.
 

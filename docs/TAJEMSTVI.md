@@ -21,7 +21,7 @@ podobě, jen otisky.
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | SMS | console.twilio.com |
 | `ROOT_OWNER_ID` | kdo je root owner | id uživatele, není tajemství |
 | `SUPABASE_*` | doplňuje Supabase sám | nesahat |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | platby – **zatím nenastavené** | dashboard.stripe.com |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | platby – **zatím nenastavené**, postup v `docs/PLATBY_DEN_D.md` | dashboard.stripe.com |
 | `ALERT_EMAIL`, `SUPPORT_EMAIL` | kam chodí upozornění a hlášení – nenastavené, platí výchozí | — |
 
 ### Supabase – Vault

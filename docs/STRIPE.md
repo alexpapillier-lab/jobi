@@ -3,6 +3,10 @@
 Všechno v Jobi je připravené. Až založíte účet, projděte tenhle seznam;
 kód se měnit nemusí.
 
+> **Postup krok za krokem pro den D je v `docs/PLATBY_DEN_D.md`** – včetně
+> zkoušky v testovacím režimu, návratu zpět a kontrolního skriptu
+> `npm run platby:kontrola`. Tenhle soubor je kratší přehled a souvislosti.
+
 ## 1. Ve Stripe
 
 Účet ve **zkušebním (test) režimu**, přepnutí naostro až nakonec.
@@ -14,15 +18,15 @@ kdykoli změnit bez zásahu do aplikace.
 | Co | Cena podle ceníku | Lookup key |
 |---|---|---|
 | Starter měsíčně | 590 Kč / měsíc | `jobi_starter_monthly` |
-| Starter ročně | 6 012 Kč / rok | `jobi_starter_yearly` |
+| Starter ročně | 6 018 Kč / rok | `jobi_starter_yearly` |
 | Business měsíčně | 1 490 Kč / měsíc | `jobi_business_monthly` |
 | Business ročně | 15 198 Kč / rok | `jobi_business_yearly` |
 | Enterprise měsíčně | od 2 490 Kč / měsíc (u větších sítí dohodou) | `jobi_enterprise_monthly` |
 | Enterprise ročně | 25 398 Kč / rok | `jobi_enterprise_yearly` |
 | SMS k Starteru měsíčně | 199 Kč / měsíc | `jobi_sms_addon_monthly` |
-| SMS k Starteru ročně | roční částka | `jobi_sms_addon_yearly` |
+| SMS k Starteru ročně | 2 030 Kč / rok (k rozhodnutí, web ji neuvádí) | `jobi_sms_addon_yearly` |
 | Pobočka navíc měsíčně | 490 Kč / měsíc (Business i Enterprise) | `jobi_branch_addon_monthly` |
-| Pobočka navíc ročně | roční částka | `jobi_branch_addon_yearly` |
+| Pobočka navíc ročně | 4 998 Kč / rok (k rozhodnutí, web ji neuvádí) | `jobi_branch_addon_yearly` |
 
 Co který tarif zapíná, je v `supabase/functions/_shared/stripe.ts` (`PLANS`):
 Starter zakázky a faktury, Business navíc SMS, pobočky a napojení na
@@ -44,8 +48,9 @@ neprogramuje, aplikace na něj jen odkazuje.
   `customer.subscription.deleted`, `invoice.payment_failed`
 - Po uložení zkopírujte **Signing secret** (`whsec_…`).
 
-**Daně** (volitelné): Stripe Tax spočítá DPH sám. Jinak nastavte ceny včetně
-DPH a fakturu vystavujte ve svém účetnictví.
+**Daně** (volitelné): Stripe Tax spočítá DPH sám. Ceník na webu ale tvrdí
+„nejsme plátci DPH, ceny jsou konečné“ – dokud to platí, Stripe Tax nezapínejte
+a v obchodních podmínkách doplňte „není plátcem DPH“ místo `[doplňte]`.
 
 ## 2. Klíče do Supabase
 
@@ -53,9 +58,9 @@ DPH a fakturu vystavujte ve svém účetnictví.
 npx supabase secrets set STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_…
 ```
 
-Víc není potřeba. Funkce `billing-checkout`, `billing-portal`
-a `billing-webhook` jsou nasazené a do té doby vracejí „Platby zatím nejsou
-spuštěné“, takže nic nespadne.
+Víc není potřeba. Funkce `billing-checkout`, `billing-portal`,
+`billing-prices` a `billing-webhook` jsou nasazené a do té doby vracejí
+„Platby zatím nejsou spuštěné“, takže nic nespadne.
 
 ## 3. Vyzkoušení (test režim)
 
@@ -98,5 +103,6 @@ lookup key, přidat živý webhook a nastavit `sk_live_…` a nové `whsec_…`.
   datum platnosti se z nároku stane trvalý).
 - **Kdo vystaví fakturu za předplatné** – Stripe Invoicing, nebo si ji
   generovat do Fakturoidu, na který má Jobi napojení.
-- **Serverové zamčení zápisů** po vypršení. Dnes zámek hlídá jen aplikace.
-  Až budou platby živé, přidat kontrolu `access` i do RLS u zápisů.
+- **Serverové zamčení zápisů** po vypršení už hotové (migrace
+  `20260911100000` a `20260912130000`): bez nároku `access` databáze zápis
+  odmítne, čtení a export zůstávají. Není co doplňovat.
