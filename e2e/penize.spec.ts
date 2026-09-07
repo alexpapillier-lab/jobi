@@ -115,10 +115,35 @@ test("faktura s několika sazbami a slevou se v editoru sečte na haléř", asyn
 
   await page.getByRole("button", { name: "Vystavit", exact: true }).click();
 
-  // Po vystavení se otevře detail dokladu; číslo z řady je v něm.
-  const cislo = page.getByText(/FV\d{4}-\d{4}/).first();
-  await expect(cislo).toBeVisible({ timeout: 30_000 });
-  cisloFaktury = ((await cislo.textContent()) ?? "").match(/FV\d{4}-\d{4}/)?.[0] ?? "";
+  /* Číslo se hledá u odběratele tohoto testu, ne jako první „FV…“ na stránce:
+     za detailem je vidět i seznam faktur, kde bývá jako první doklad z jiné
+     sady – test pak porovnával součty s cizí fakturou. Bere se nejmenší prvek,
+     který obsahuje jméno odběratele i číslo, tedy karta právě vystaveného
+     dokladu. */
+  await expect
+    .poll(async () => await page.evaluate((jmeno) => {
+      let nejmensi: string | null = null;
+      let delka = Number.MAX_SAFE_INTEGER;
+      for (const el of Array.from(document.querySelectorAll("body *"))) {
+        const t = el.textContent ?? "";
+        if (!t.includes(jmeno)) continue;
+        const m = t.match(/FV\d{4}-\d{4}/);
+        if (m && t.length < delka) { nejmensi = m[0]; delka = t.length; }
+      }
+      return nejmensi;
+    }, zakaznik), { timeout: 30_000, message: "číslo právě vystavené faktury se nenašlo" })
+    .toMatch(/^FV\d{4}-\d{4}$/);
+  cisloFaktury = (await page.evaluate((jmeno) => {
+    let nejmensi: string | null = null;
+    let delka = Number.MAX_SAFE_INTEGER;
+    for (const el of Array.from(document.querySelectorAll("body *"))) {
+      const t = el.textContent ?? "";
+      if (!t.includes(jmeno)) continue;
+      const m = t.match(/FV\d{4}-\d{4}/);
+      if (m && t.length < delka) { nejmensi = m[0]; delka = t.length; }
+    }
+    return nejmensi;
+  }, zakaznik)) ?? "";
   expect(cisloFaktury).toMatch(/^FV\d{4}-\d{4}$/);
 });
 
