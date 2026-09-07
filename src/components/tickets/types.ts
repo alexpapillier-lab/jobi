@@ -1,6 +1,16 @@
 import type { StatusMeta } from "../../state/StatusesStore";
 import { hrubaCena, konecnaCena } from "../../lib/slevaZakazky";
 
+/**
+ * Formát částky na kartě zakázky – tentýž jako na dokladu.
+ *
+ * Karty dřív psaly `finalPrice.toLocaleString("cs-CZ")`, což u ceny
+ * s haléři vyrobilo „1 234,5 Kč“ (jedno desetinné místo), zatímco doklad,
+ * portál i e-mail říkaly „1 234,50 Kč“. Re-export drží karty na společném
+ * formátovači, aby se to znovu nerozešlo.
+ */
+export { korunami } from "../../lib/slevaZakazky";
+
 export type TicketCardData = {
   id: string;
   code: string;

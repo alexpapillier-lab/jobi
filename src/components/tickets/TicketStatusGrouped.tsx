@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
-import { type TicketCardData, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
 import { WrenchIcon } from "./icons";
 
@@ -80,7 +80,7 @@ function GroupedCard({
       )}
       {finalPrice > 0 && (
         <span style={{ fontSize: 12, fontWeight: 700, color: statusColor, whiteSpace: "nowrap", flexShrink: 0 }}>
-          {finalPrice.toLocaleString("cs-CZ")} Kč
+          {korunami(finalPrice)}
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>

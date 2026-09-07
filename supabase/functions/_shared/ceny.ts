@@ -4,13 +4,22 @@
  * Samostatný soubor, aby šel otestovat z testů Jobi (vitest) – uvnitř
  * edge funkce by se testovat nedal. Žádné Deno API se tu nepoužívá.
  */
+import { naHalere } from "./penize.ts";
+
 export type CenoveVarianty = {
   price: number;
   price_incl_vat: number;
   price_excl_vat: number;
 };
 
-const zaokrouhli = (n: number) => Math.round(n * 100) / 100;
+/**
+ * Zaokrouhlení na haléře stejné jako na faktuře (`naHalere`).
+ *
+ * Holé `Math.round(n * 100) / 100` nemá epsilon a rozcházelo se s dokladem:
+ * ceníková položka za 3,50 Kč bez DPH při 21 % vyšla ve veřejném API na
+ * 4,23 Kč s DPH, kdežto faktura z téže položky na 4,24 Kč.
+ */
+const zaokrouhli = naHalere;
 
 export function cenoveVarianty(
   cena: number,

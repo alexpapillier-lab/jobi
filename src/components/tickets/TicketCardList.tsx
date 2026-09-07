@@ -1,5 +1,5 @@
 import React from "react";
-import { type TicketCardData, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketDate, TicketDevice, TicketCustomer, TicketRepair, MetaSeparator } from "./fields";
 import { stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
@@ -89,7 +89,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         */}
         {finalPrice > 0 && (
           <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {finalPrice.toLocaleString("cs-CZ")} Kč
+            {korunami(finalPrice)}
           </span>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>

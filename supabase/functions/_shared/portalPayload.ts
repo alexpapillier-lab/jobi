@@ -158,6 +158,36 @@ export function odkazVyprsel(t: Pick<TicketRow, "portal_token_expires_at">, ted:
   return !Number.isNaN(d.getTime()) && d.getTime() <= ted.getTime();
 }
 
+/**
+ * Smí portál zakázku vůbec vydat?
+ *
+ * Tři důvody odvolání přístupu na jednom místě, aby se daly otestovat bez
+ * databáze a aby žádný z nich nešlo omylem vynechat:
+ *  - zakázka neexistuje (neznámý token) nebo je v koši,
+ *  - odkazu vypršela platnost,
+ *  - servis vypnul majitel aplikace. Edge funkce běží pod `service_role`,
+ *    takže databázová hradba (`vypnute_servisy()`) na ni neplatí a kontrola
+ *    musí být v kódu.
+ *
+ * `servisAktivni === null` znamená „nepodařilo se zjistit“ – v tom případě se
+ * zakázka vydá. Portál je pro zákazníka jediná cesta k jeho zakázce a výpadek
+ * dotazu na `services` ho o ni nesmí připravit; vypnutí servisu je stav, který
+ * hlídá i účtování, ne bezpečnostní hradba proti útočníkovi.
+ *
+ * Volající na všechny tři případy odpovídá stejným „Odkaz není platný.“, aby
+ * se přes portál nedalo zjišťovat, co existuje a který servis je vypnutý.
+ */
+export function smiVydatZakazku(
+  ticket: Pick<TicketRow, "portal_token_expires_at"> | null | undefined,
+  servisAktivni: boolean | null | undefined,
+  ted: Date = new Date(),
+): boolean {
+  if (!ticket) return false;
+  if (odkazVyprsel(ticket, ted)) return false;
+  if (servisAktivni === false) return false;
+  return true;
+}
+
 export type Zdroje = {
   ticket: TicketRow;
   stav: StavRow;

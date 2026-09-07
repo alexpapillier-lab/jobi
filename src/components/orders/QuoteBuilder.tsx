@@ -3,6 +3,7 @@ import { RepairPicker } from "./RepairPicker";
 import { XIcon } from "../icons";
 import type { QuoteItem } from "../../lib/portal";
 import type { DeviceRepair } from "../../lib/catalogStorage";
+import { korunami } from "../../lib/slevaZakazky";
 
 /**
  * Rozpis cenové nabídky.
@@ -141,7 +142,7 @@ export function QuoteBuilder({
             }}
           >
             <span>Celkem</span>
-            <span>{soucetPolozek(items).toLocaleString("cs-CZ")} Kč</span>
+            <span>{korunami(soucetPolozek(items))}</span>
           </div>
         </div>
       )}

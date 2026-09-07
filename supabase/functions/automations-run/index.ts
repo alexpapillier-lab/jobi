@@ -26,7 +26,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMS_MAX_BODY_LENGTH, normalizeE164, segmentu, textProSms, zkontrolujBalicek, type SmsKlient } from "../_shared/sms.ts";
 import { escapeHtml } from "../_shared/html.ts";
-import { castkaBezMeny, cenaZakazky, formatujCastku } from "../_shared/penize.ts";
+import { castkaBezMeny, cenaZakazky, formatujCastku, naHalere } from "../_shared/penize.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -581,7 +581,9 @@ async function actionAddFee(
   if (await hasOkRun(svc, rule.id, ticket.id)) return ["skipped", "Poplatek už byl připsán"];
 
   const multiplier = perDay ? Math.max(0, days) : 1;
-  const price = Math.round(amount * multiplier * 100) / 100;
+  // Poplatek jde do provedených oprav, odkud se počítá cena zakázky i doklad –
+  // musí se proto zaokrouhlovat týmž vzorcem, ne vlastní kopií.
+  const price = naHalere(amount * multiplier);
   if (!Number.isFinite(price) || price <= 0) return ["skipped", `Poplatek vyšel na ${price} Kč – nepřipisuje se`];
 
   // Aktuální seznam oprav znovu z DB, ať se nepřepíše, co mezitím přidal technik.

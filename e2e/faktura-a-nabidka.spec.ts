@@ -26,7 +26,8 @@ test("na zakázce jde sestavit cenová nabídka z položek", async ({ page }) =>
   await page.getByRole("button", { name: "Přidat", exact: true }).click();
 
   // Součet se dopočítá z položek – to je celý smysl rozpisu.
-  await expect(page.getByText("1 790 Kč").first()).toBeVisible();
+  // Formát je stejný jako na dokladu a v portálu – „1 790,00 Kč“, ne „1 790 Kč“.
+  await expect(page.getByText("1 790,00 Kč").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Poslat ke schválení" }).click();
   await expect(page.getByText(/Čeká na schválení/).first()).toBeVisible({ timeout: 20_000 });

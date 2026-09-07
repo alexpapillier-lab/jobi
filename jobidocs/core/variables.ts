@@ -186,13 +186,39 @@ export function formatDate(value: string | undefined | null): string {
   return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`;
 }
 
+/**
+ * Zaokrouhlení na haléře, půlka vždy od nuly.
+ *
+ * Kopie `naHalere` z `src/lib/invoiceMath.ts` – jádro dokladů je záměrně bez
+ * závislosti na Jobi (běží i v Electronu a v JobiDocs samostatně), takže se
+ * vzorec musí opsat. Shodu obou implementací hlídá `src/lib/penize.test.ts`.
+ *
+ * Proč ne holé `Math.round(x * 100) / 100`: to posílá půlku k plus nekonečnu
+ * a nemá epsilon. Zakázka za 100,75 Kč se slevou 10 % pak měla na dokladu
+ * „Sleva −10,07 Kč“, kdežto Jobi počítalo 10,08 Kč – řádky na papíře
+ * nesečetly „Celkem k úhradě“, které přišlo z Jobi.
+ */
+export function naHalere(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const setiny = Math.abs(n) * 100;
+  const zaokrouhleno = Math.round(setiny + setiny * Number.EPSILON) / 100;
+  return zaokrouhleno === 0 ? 0 : n < 0 ? -zaokrouhleno : zaokrouhleno;
+}
+
 /** Částka → „1 890,00 Kč“. */
 export function formatMoney(value: number | undefined | null, currency = "CZK"): string {
   if (value == null || !Number.isFinite(value)) return "";
+  /* Záporná nula a zbytky pod půl haléře: dobropis na −0,004 Kč se dřív
+     vytiskl jako „−0,00 Kč“, zatímco v aplikaci svítilo „0,00 Kč“.
+     Stejné tlumení má `formatCurrency` v src/lib/invoiceMath.ts. */
+  const v = Math.abs(value) < 0.005 ? 0 : value;
   try {
-    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   } catch {
-    return `${value.toFixed(2).replace(".", ",")} ${currency}`;
+    /* Neznámý kód měny nesmí shodit tisk. Formát musí i tady zůstat český
+       včetně oddělovače tisíců – `toFixed` dřív vyrobil „1234,50 CZZ“,
+       zatímco aplikace psala „1 234,50 CZZ“. */
+    return `${new Intl.NumberFormat("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)} ${currency}`;
   }
 }
 
@@ -251,7 +277,7 @@ function soucetOcenenych(data: DocumentData): number | undefined {
     sum += line;
     ocenenych += 1;
   }
-  return ocenenych > 0 ? Math.round(sum * 100) / 100 : undefined;
+  return ocenenych > 0 ? naHalere(sum) : undefined;
 }
 
 /** Součet položek před slevou; `undefined`, když u některé chybí cena. */
@@ -282,7 +308,7 @@ export function discountAmount(data: DocumentData): number | undefined {
   // částku, ke které na dokladu není z čeho dojít.
   if (subtotal == null || subtotal <= 0) return undefined;
   const raw = d.type === "percentage" ? (subtotal * d.value) / 100 : d.value;
-  return Math.min(subtotal, Math.round(raw * 100) / 100);
+  return Math.min(subtotal, naHalere(raw));
 }
 
 /**
@@ -302,9 +328,9 @@ export function vatRozpis(data: DocumentData): Array<{ rate: number; base: numbe
     const line = lineTotal(it);
     if (rate == null || !Number.isFinite(rate) || line == null) continue;
     const e = podleSazby.get(rate) ?? { base: 0, vat: 0 };
-    const zaklad = Math.round(line * 100) / 100;
-    e.base = Math.round((e.base + zaklad) * 100) / 100;
-    e.vat = Math.round((e.vat + Math.round(zaklad * (rate / 100) * 100) / 100) * 100) / 100;
+    const zaklad = naHalere(line);
+    e.base = naHalere(e.base + zaklad);
+    e.vat = naHalere(e.vat + naHalere(zaklad * (rate / 100)));
     podleSazby.set(rate, e);
   }
   return Array.from(podleSazby.entries())
@@ -317,7 +343,7 @@ export function itemsTotal(data: DocumentData): number | undefined {
   if (data.totals?.total != null) return data.totals.total;
   const subtotal = itemsSubtotal(data);
   if (subtotal == null) return undefined;
-  return Math.max(0, Math.round((subtotal - (discountAmount(data) ?? 0)) * 100) / 100);
+  return Math.max(0, naHalere(subtotal - (discountAmount(data) ?? 0)));
 }
 
 // ---------------------------------------------------------------------------

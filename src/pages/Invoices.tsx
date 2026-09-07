@@ -9,7 +9,7 @@ import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
 import { safeLoadCompanyData, companyCacheBelongsTo, defaultCompanyData, type CompanyData } from "../lib/companyData";
 import { loadServiceConfig } from "../lib/serviceSettingsSync";
-import { computeTotals, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
+import { computeLine, computeTotals, emptyLineItem, type InvoiceLineItem } from "../lib/invoiceMath";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
 import { generateInvoiceNumber, invoiceNumberToVS } from "../lib/invoiceNumbering";
 import { UzaverkaDialog, ZpusobPlatbyDialog } from "./Invoices/Uzaverka";
@@ -595,7 +595,12 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           unit: it.unit,
           unit_price: it.unit_price,
           vat_rate: it.vat_rate,
-          line_total: Math.round(it.qty * it.unit_price * 100) / 100,
+          /* Cena řádku ze společného výpočtu, ne z vlastní kopie vzorce.
+             Holé `Math.round` posílá půlku k plus nekonečnu, takže dobropis
+             na 0,5 h × 100,01 Kč uložil řádek −50,00 Kč, kdežto hlavička
+             (computeTotals) měla −50,01 Kč. Doklad pak tiskl položky, které
+             nesečetly svůj vlastní součet. */
+          line_total: computeLine(it).line_total,
         }));
         if (itemsPayload.length > 0) {
           const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(itemsPayload);
@@ -836,7 +841,8 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
             unit: it.unit,
             unit_price: it.unit_price,
             vat_rate: it.vat_rate,
-            line_total: Math.round(it.qty * it.unit_price * 100) / 100,
+            // Tentýž vzorec jako v hlavičce (computeTotals) – viz persistEditor.
+            line_total: computeLine(it).line_total,
           }));
           const { error: itemsErr } = await typedSupabase.from("invoice_items").insert(newItems);
           if (itemsErr) throw itemsErr;

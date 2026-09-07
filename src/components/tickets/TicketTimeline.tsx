@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { type TicketCardData, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 import { CheckIcon } from "../icons";
@@ -154,7 +154,7 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
 
                   {finalPrice > 0 && (
                     <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {finalPrice.toLocaleString("cs-CZ")} Kč
+                      {korunami(finalPrice)}
                     </span>
                   )}
                 </div>

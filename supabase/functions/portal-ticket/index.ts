@@ -13,9 +13,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { klientskaIp, otiskKlienta } from "../_shared/limity.ts";
 import {
-  odkazVyprsel,
   otiskAkce,
   sestavPayload,
+  smiVydatZakazku,
   TICKET_COLUMNS,
   TICKET_COLUMNS_ZAKLAD,
   type PobockaRow,
@@ -123,13 +123,18 @@ async function loadTicket(svc: SupabaseClient, token: string): Promise<TicketRow
     return null;
   }
   const t = (data as TicketRow | null) ?? null;
-  if (!t || odkazVyprsel(t)) return null;
-  // Servis vypnutý majitelem aplikace nesmí přes portál vydávat data.
-  // Edge funkce běží pod service_role, takže databázová hradba na ni neplatí
-  // a kontrola musí být tady. Odpověď je stejná jako u neznámého tokenu –
-  // navenek se nesmí poznat, který servis je vypnutý.
-  const { data: servis } = await svc.from("services").select("active").eq("id", t.service_id).maybeSingle();
-  if (servis && (servis as { active?: boolean }).active === false) return null;
+  if (!t) return null;
+  // `active` se čte zvlášť: `tickets` a `services` spojit jedním selectem sice
+  // jde, ale zakázku potřebujeme i tehdy, když dotaz na servis selže.
+  // `undefined` = nezjištěno, o vydání pak rozhoduje `smiVydatZakazku`.
+  const { data: servis, error: servisErr } = await svc
+    .from("services")
+    .select("active")
+    .eq("id", t.service_id)
+    .maybeSingle();
+  if (servisErr) console.error("[portal-ticket] service lookup error:", servisErr);
+  const aktivni = servis ? ((servis as { active?: boolean }).active ?? null) : null;
+  if (!smiVydatZakazku(t, aktivni)) return null;
   return t;
 }
 
@@ -245,13 +250,17 @@ serve(async (req) => {
 
     // ----- GET -------------------------------------------------------------
     if (req.method === "GET") {
+      // Limit na volajícího se počítá PŘED kontrolou tvaru tokenu. Kdyby se
+      // počítal až za ní, stačilo by posílat prázdné nebo přes 64 znaků dlouhé
+      // `t` a požadavky by se nezapočítávaly vůbec – přesně to, čemu se má
+      // počítadlo bránit (viz komentář u `zapocitej_udalost`).
+      if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_CTENI)) {
+        return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+      }
       const url = new URL(req.url);
       const token = (url.searchParams.get("t") ?? "").trim();
       if (!token || token.length > 64) return neplatnyOdkaz();
       if (prekrocenLimit(token)) return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
-      if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_CTENI)) {
-        return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
-      }
 
       const ticket = await loadTicket(svc, token);
       if (!ticket) return neplatnyOdkaz();
@@ -261,6 +270,14 @@ serve(async (req) => {
     }
 
     // ----- POST ------------------------------------------------------------
+    // Započítat se musí dřív, než se tělo vůbec přečte. Rozbitý JSON dřív
+    // končil na 400 ještě před počítadlem, takže se dal limit obejít
+    // posíláním nesmyslů – a každý takový požadavek se přitom celý načetl
+    // do paměti (brána pouští megabajty).
+    if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_AKCE)) {
+      return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
+    }
+
     let body: Record<string, unknown>;
     try {
       body = (await req.json()) as Record<string, unknown>;
@@ -271,9 +288,6 @@ serve(async (req) => {
     const token = typeof body?.t === "string" ? body.t.trim() : "";
     if (!token || token.length > 64) return neplatnyOdkaz();
     if (prekrocenLimit(token)) return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
-    if (await prekrocenLimitKlienta(svc, req, LIMIT_NA_KLIENTA_AKCE)) {
-      return json({ error: "Příliš mnoho požadavků, zkuste to za chvíli." }, 429);
-    }
 
     const action = typeof body?.action === "string" ? body.action : "";
     if (!["approve", "reject", "sign", "pickup"].includes(action)) {
@@ -284,11 +298,12 @@ serve(async (req) => {
     if (!ticket) return neplatnyOdkaz();
 
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 2000) : null;
-    const meta = {
-      ip: clientIp(req),
-      userAgent: req.headers.get("user-agent"),
-      note: note || null,
-    };
+    // `otiskAkce` je jediné místo, kde otisk vzniká – ořezává User-Agent
+    // (hlavička chodí od klienta a brána pustí i kilobajty) a je pokrytá
+    // testem. Dřív se meta skládala tady ručně a při přesunu pomocných
+    // funkcí do _shared zůstalo volání `clientIp`, které už neexistovalo:
+    // každé schválení, zamítnutí, podpis i vyzvednutí spadlo na 500.
+    const meta = otiskAkce(klientskaIp(req), req.headers.get("user-agent"), note);
 
     if (action === "approve" || action === "reject") {
       if (ticket.quote_status !== "sent") {
@@ -406,7 +421,11 @@ serve(async (req) => {
     const fresh = (await loadTicket(svc, token)) ?? ticket;
     return json(await buildPayload(svc, fresh));
   } catch (error) {
+    // Text výjimky ven nepatří. Portál je otevřený komukoli s odkazem a
+    // hlášky jako „clientIp is not defined“ nebo chyba z databáze prozradí
+    // cizímu člověku vnitřek aplikace i názvy sloupců. Do logu se zapíše
+    // všechno, zákazník dostane jednu větu.
     console.error("[portal-ticket] error:", error);
-    return json({ error: (error as Error)?.message || "Nastala chyba." }, 500);
+    return json({ error: "Nastala chyba, zkuste to prosím znovu." }, 500);
   }
 });

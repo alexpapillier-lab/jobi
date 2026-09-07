@@ -1,5 +1,5 @@
 import React from "react";
-import { type TicketCardData, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
 
 type Props = {
@@ -56,7 +56,7 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
         </div>
         {finalPrice > 0 && (
           <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {finalPrice.toLocaleString("cs-CZ")} Kč
+            {korunami(finalPrice)}
           </span>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>

@@ -26,6 +26,7 @@ import {
 import type { PerformedRepair } from "./types";
 import type { DeviceRepair } from "../../lib/catalogStorage";
 import { QuoteBuilder, soucetPolozek } from "./QuoteBuilder";
+import { korunami } from "../../lib/slevaZakazky";
 
 /**
  * Karta „Zákaznický portál“ v detailu zakázky.
@@ -49,19 +50,19 @@ const POLL_MS = 60_000;
 function QuoteSummary({ items, amount }: { items?: QuoteItem[]; amount?: number }) {
   const celkem = amount ?? soucetPolozek(items ?? []);
   if ((items ?? []).length === 0) {
-    return amount === undefined ? null : <span style={{ fontWeight: 700 }}>{celkem.toLocaleString("cs-CZ")} Kč</span>;
+    return amount === undefined ? null : <span style={{ fontWeight: 700 }}>{korunami(celkem)}</span>;
   }
   return (
     <div style={{ display: "grid", gap: 3, fontSize: "var(--text-sm)" }}>
       {(items ?? []).map((i) => (
         <div key={i.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
           <span style={{ color: "var(--text)" }}>{i.name}</span>
-          <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{(Number(i.price) || 0).toLocaleString("cs-CZ")} Kč</span>
+          <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{korunami(Number(i.price) || 0)}</span>
         </div>
       ))}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 3, fontWeight: 800 }}>
         <span>Celkem</span>
-        <span style={{ whiteSpace: "nowrap" }}>{celkem.toLocaleString("cs-CZ")} Kč</span>
+        <span style={{ whiteSpace: "nowrap" }}>{korunami(celkem)}</span>
       </div>
     </div>
   );

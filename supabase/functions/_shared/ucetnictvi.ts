@@ -4,6 +4,7 @@
  * Samostatný soubor bez Deno API a bez sítě, aby se dal ověřit z testů Jobi
  * (vitest) i bez účtu u poskytovatele – viz `src/lib/ucetnictvi.test.ts`.
  */
+import { naHalere } from "./penize.ts";
 
 export type ExportPolozka = {
   name: string;
@@ -74,7 +75,8 @@ export function radkyProExport(items: ExportPolozka[], rounding: number): Export
       name: RADEK_ZAOKROUHLENI,
       qty: 1,
       unit: "ks",
-      unit_price: Math.round(r * 100) / 100,
+      // Tentýž vzorec jako na dokladu – jinak by v účetnictví seděl haléř jinam.
+      unit_price: naHalere(r),
       vat_rate: 0,
       sort_order: (serazene[serazene.length - 1]?.sort_order ?? 0) + 1,
     },
@@ -84,5 +86,5 @@ export function radkyProExport(items: ExportPolozka[], rounding: number): Export
 /** Součet řádků bez DPH – kontrola, že se export trefil do dokladu. */
 export function soucetRadku(items: ExportPolozka[]): number {
   const sum = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_price) || 0), 0);
-  return Math.round(sum * 100) / 100;
+  return naHalere(sum);
 }

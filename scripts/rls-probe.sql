@@ -22,6 +22,12 @@
 -- Sloupec „ocekavano“: nic = PROSLO:0, odmitnuto = ODMITNUTO, projde/neco =
 -- PROSLO s nenulovým počtem, kontrola = podívat se ručně.
 --
+-- Některé sondy (série 600) posílají místo jednoho dotazu blok DO: potřebují
+-- si nejdřív jako správce založit řádek, který v testovacím servisu není, a
+-- pak se vydat za omezeného člena. Blok vrací vždycky nula řádků, takže se
+-- u nich čeká „nic“ – a když ochrana chybí, blok skončí vlastní výjimkou,
+-- tedy ODMITNUTO. Zapsané změny se berou zpět stejně jako u ostatních sond.
+--
 -- POZOR: funkce se MUSÍ po doběhnutí zahodit – dělá se to na posledním
 -- řádku tohohle souboru, ať se na to nedá zapomenout. Když v databázi
 -- zůstane, může přes ni kdokoli s veřejným klíčem spustit libovolné SQL
@@ -239,7 +245,62 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (521, '11111111-2222-4333-8444-555555555555', 'clen: cizi fotky smazat',           'odmitnuto',       'delete from storage.objects where bucket_id = ''diagnostic-photos'' and (storage.foldername(name))[1] <> ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
   (530, '721ef873-75c3-4ec1-bf71-13281051ce99', 'clen bez prav: reklamace zalozit',  'odmitnuto', 'insert into warranty_claims (service_id, code, status) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''HACK'', ''new'')'),
   (531, '721ef873-75c3-4ec1-bf71-13281051ce99', 'clen bez prav: reklamace smazat',   'nic',       'delete from warranty_claims where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
-  (532, '11111111-2222-4333-8444-555555555555', 'clen: telefonni cislo prepsat',     'nic',       'update service_phone_numbers set twilio_number = ''+420000000000'' where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''')
+  (532, '11111111-2222-4333-8444-555555555555', 'clen: telefonni cislo prepsat',     'nic',       'update service_phone_numbers set twilio_number = ''+420000000000'' where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
+  -- ══ 6. kolo (12. 9.): sedm děr z hloubkového testu poboček ════════════════
+  -- Ke každé díře z hlavičky migrace 20260912100000 je tu sonda. Sondy, které
+  -- potřebují řádek, jaký v TEST2 není (dokument, SMS konverzace, rezervace),
+  -- si ho v bloku DO nejdřív založí jako správce a pak se vydají za omezeného
+  -- člena; celý blok se stejně jako každá jiná sonda na konci vrátí zpět.
+  -- Očekávání „nic“ u bloku DO znamená „proběhl a nic nenamítal“; když
+  -- ochrana chybí, blok skončí výjimkou, tedy ODMITNUTO.
+
+  -- 1) domovskou pobočku si omezený člen nepřepíše sám
+  (600, '33333333-4444-4555-8666-777777777777', 'pobocka: prepsat si domovskou',   'odmitnuto', 'select set_member_home_branch(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', ''ea9faf76-26eb-4be9-922c-3705477d423c'')'),
+  (601, '33333333-4444-4555-8666-777777777777', 'pobocka: zrusit si domovskou',    'odmitnuto', 'select set_member_home_branch(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', null)'),
+
+  -- 2) bez domovské pobočky nevidí nic (dřív viděl celý servis)
+  (602, '22222222-3333-4444-8555-666666666666', 'pobocka: bez domovske necte',     'nic', 'do $blok$ declare n bigint; begin perform set_member_home_branch(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', null); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); select count(*) into n from tickets where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''; if n <> 0 then raise exception ''omezeny clen bez domovske pobocky vidi % zakazek'', n; end if; end $blok$'),
+
+  -- 3) statistiky se bez domovské pobočky taky nesmí otevřít
+  (603, '22222222-3333-4444-8555-666666666666', 'pobocka: bez domovske statistiky','nic', 'do $blok$ declare n int; begin perform set_member_home_branch(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', null); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); select (statistiky_prehled(array[''bbc926bd-25ba-4da1-b528-92b6f1dee24d'']::uuid[]) -> ''kpi'' ->> ''totalTickets'')::int into n; if n is null then raise exception ''statistiky nevratily pocet zakazek – sonda by nic nezmerila''; end if; if n <> 0 then raise exception ''statistiky bez domovske pobocky vraci % zakazek'', n; end if; end $blok$'),
+
+  -- 4) dokumenty zakázky z cizí pobočky
+  (604, '33333333-4444-4555-8666-777777777777', 'pobocka: dokument cizi zakazky',  'odmitnuto', 'insert into ticket_documents (service_id, ticket_id, doc_type, storage_path, content_hash) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', ''diagnostic_protocol'', ''hack/a.pdf'', ''hack'')'),
+  (605, '22222222-3333-4444-8555-666666666666', 'pobocka: prepis dokumentu cizi',  'nic', 'do $blok$ declare n int; begin insert into ticket_documents (id, service_id, ticket_id, doc_type, storage_path, content_hash) values (''00000000-0000-4000-8000-000000000605'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', ''diagnostic_protocol'', ''sonda/605.pdf'', ''x''); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); update ticket_documents set storage_path = ''HACK'' where id = ''00000000-0000-4000-8000-000000000605''; get diagnostics n = row_count; if n <> 0 then raise exception ''omezeny clen prepsal dokument cizi pobocky''; end if; end $blok$'),
+
+  -- 5) historie reklamace z cizí pobočky
+  (606, '33333333-4444-4555-8666-777777777777', 'pobocka: historie cizi reklamace','odmitnuto', 'insert into warranty_claim_history (service_id, warranty_claim_id, action) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''5bd994da-a3b2-49ea-a2a6-4801f9f97f8a'', ''updated'')'),
+
+  -- Poznámka ke změnám a mazání (605, 607, 608, 610, 611): řádek cizí pobočky
+  -- je pro omezeného člena neviditelný už restriktivní politikou pro SELECT a
+  -- Postgres ji uplatní i při hledání řádků pro UPDATE a DELETE. Ověřeno
+  -- mutací: po odstranění nových politik ty sondy pořád projdou. Nové politiky
+  -- jsou tedy druhá pojistka – sondy hlídají výsledek, ne konkrétní vrstvu.
+
+  -- 6) SMS konverzace cizí zakázky (archivace i smazání naslepo)
+  (607, '22222222-3333-4444-8555-666666666666', 'pobocka: archiv cizi SMS',        'nic', 'do $blok$ declare n int; begin insert into sms_conversations (id, service_id, ticket_id, customer_phone) values (''00000000-0000-4000-8000-000000000607'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', ''+420000000607''); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); update sms_conversations set archived = true where id = ''00000000-0000-4000-8000-000000000607''; get diagnostics n = row_count; if n <> 0 then raise exception ''omezeny clen archivoval SMS konverzaci cizi pobocky''; end if; end $blok$'),
+  (608, '22222222-3333-4444-8555-666666666666', 'pobocka: smazani cizi SMS',       'nic', 'do $blok$ declare n int; begin insert into sms_conversations (id, service_id, ticket_id, customer_phone) values (''00000000-0000-4000-8000-000000000608'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', ''+420000000608''); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); delete from sms_conversations where id = ''00000000-0000-4000-8000-000000000608''; get diagnostics n = row_count; if n <> 0 then raise exception ''omezeny clen smazal SMS konverzaci cizi pobocky''; end if; end $blok$'),
+
+  -- 7) rezervace dílů přes REST (RPC pobočku hlídají od 9. 9., REST ne)
+  (609, '22222222-3333-4444-8555-666666666666', 'pobocka: rezervace cizi zakazky', 'nic', 'do $blok$ declare n int; begin perform set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', (select jsonb_object_agg(k, true) from unnest(povolene_capability()) k)); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); begin insert into inventory_reservations (service_id, product_id, ticket_id, qty) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''622e4515-2d11-4f99-af4b-f4d8a7e968a6'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', 1); get diagnostics n = row_count; raise exception ''rezervace na zakazku cizi pobocky presla (radku: %)'', n; exception when sqlstate ''42501'' then null; end; end $blok$'),
+  (610, '22222222-3333-4444-8555-666666666666', 'pobocka: zmena cizi rezervace',   'nic', 'do $blok$ declare n int; begin insert into inventory_reservations (id, service_id, product_id, ticket_id, qty) values (''00000000-0000-4000-8000-000000000610'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''622e4515-2d11-4f99-af4b-f4d8a7e968a6'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', 1); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); update inventory_reservations set qty = 99 where id = ''00000000-0000-4000-8000-000000000610''; get diagnostics n = row_count; if n <> 0 then raise exception ''omezeny clen zmenil rezervaci cizi pobocky''; end if; end $blok$'),
+  (611, '22222222-3333-4444-8555-666666666666', 'pobocka: zruseni cizi rezervace', 'nic', 'do $blok$ declare n int; begin insert into inventory_reservations (id, service_id, product_id, ticket_id, qty) values (''00000000-0000-4000-8000-000000000611'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''622e4515-2d11-4f99-af4b-f4d8a7e968a6'', ''6d652acf-6359-4272-8e26-0cb57bef3c06'', 1); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); delete from inventory_reservations where id = ''00000000-0000-4000-8000-000000000611''; get diagnostics n = row_count; if n <> 0 then raise exception ''omezeny clen zrusil rezervaci cizi pobocky''; end if; end $blok$'),
+
+  -- Navíc k sedmi dírám: sklady cizí pobočky a rozdělaná práce po přesunu.
+  -- Sklad cizí pobočky: aby bylo vidět, že ho hlídá pobočka a ne jen právo na
+  -- sklad, dostane omezený člen v bloku na chvíli všechna práva včetně skladu.
+  (612, '22222222-3333-4444-8555-666666666666', 'pobocka: cizi sklad prejmenovat', 'nic', 'do $blok$ declare n int; v_msg text; begin perform set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', (select jsonb_object_agg(k, true) from unnest(povolene_capability()) k)); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); begin update inventory_warehouses set name = ''HACK'' where id = ''b7da27a9-6e6d-4492-b1fc-cdf4f39662b4''; get diagnostics n = row_count; raise exception ''sklad cizi pobocky sel prejmenovat (radku: %)'', n; exception when sqlstate ''42501'' then get stacked diagnostics v_msg = message_text; if v_msg not like ''%pobočce%'' then raise exception ''odmitnuto z jineho duvodu: %'', v_msg; end if; end; end $blok$'),
+  (613, '22222222-3333-4444-8555-666666666666', 'pobocka: cizi sklad prehodit',    'nic', 'do $blok$ declare n int; v_msg text; begin perform set_member_capabilities(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''33333333-4444-4555-8666-777777777777'', (select jsonb_object_agg(k, true) from unnest(povolene_capability()) k)); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); begin update inventory_warehouses set branch_id = ''01fa9595-3acd-442e-acda-0f84d4146609'' where id = ''b7da27a9-6e6d-4492-b1fc-cdf4f39662b4''; get diagnostics n = row_count; raise exception ''sklad cizi pobocky sel prehodit pod svou pobocku (radku: %)'', n; exception when sqlstate ''42501'' then get stacked diagnostics v_msg = message_text; if v_msg not like ''%pobočce%'' then raise exception ''odmitnuto z jineho duvodu: %'', v_msg; end if; end; end $blok$'),
+  (614, '11111111-2222-4333-8444-555555555555', 'clen bez prava na sklad: nazev',  'odmitnuto', 'update inventory_warehouses set name = ''HACK'' where id = ''b7da27a9-6e6d-4492-b1fc-cdf4f39662b4'''),
+  -- Sklad se ukládá jako celý snímek: přeuložení beze změny musí projít i tomu,
+  -- kdo právo na sklad nemá – jinak by se zaseklo ukládání celého skladu.
+  (615, '11111111-2222-4333-8444-555555555555', 'clen bez prava: sklad beze zmeny','projde',    'update inventory_warehouses set name = name where id = ''b7da27a9-6e6d-4492-b1fc-cdf4f39662b4'''),
+  (616, '33333333-4444-4555-8666-777777777777', 'pobocka: presun uzavre usek',     'nic', 'do $blok$ declare v_konec timestamptz; begin insert into ticket_work_sessions (id, service_id, ticket_id, user_id, started_at) values (''00000000-0000-4000-8000-000000000616'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6fe7dbf0-44cd-4550-88f4-1de5a7dc0397'', ''33333333-4444-4555-8666-777777777777'', now()); perform set_config(''request.jwt.claims'', ''{"sub":"22222222-3333-4444-8555-666666666666","role":"authenticated"}'', true); update tickets set branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'' where id = ''6fe7dbf0-44cd-4550-88f4-1de5a7dc0397''; select ended_at into v_konec from ticket_work_sessions where id = ''00000000-0000-4000-8000-000000000616''; if v_konec is null then raise exception ''po presunu zakazky zustal usek prace otevreny''; end if; end $blok$'),
+
+  -- Kontrola opačným směrem: oprava nesmí zavřít dveře na vlastní pobočku.
+  (620, '33333333-4444-4555-8666-777777777777', 'pobocka: dokument vlastni zakazky','projde',   'insert into ticket_documents (service_id, ticket_id, doc_type, storage_path, content_hash) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''6fe7dbf0-44cd-4550-88f4-1de5a7dc0397'', ''diagnostic_protocol'', ''sonda/620.pdf'', ''x'')'),
+  (621, '33333333-4444-4555-8666-777777777777', 'pobocka: archiv vlastni SMS',     'projde',    'update sms_conversations set archived = true where ticket_id in (select id from tickets where branch_id = ''01fa9595-3acd-442e-acda-0f84d4146609'')'),
+  (622, '22222222-3333-4444-8555-666666666666', 'pobocka: SMS bez zakazky zustava','nic', 'do $blok$ declare n int; begin insert into sms_conversations (id, service_id, ticket_id, customer_phone) values (''00000000-0000-4000-8000-000000000622'', ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', null, ''+420000000622''); perform set_config(''request.jwt.claims'', ''{"sub":"33333333-4444-4555-8666-777777777777","role":"authenticated"}'', true); update sms_conversations set archived = true where id = ''00000000-0000-4000-8000-000000000622''; get diagnostics n = row_count; if n <> 1 then raise exception ''konverzace bez zakazky se omezenemu clenovi ztratila''; end if; end $blok$')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p

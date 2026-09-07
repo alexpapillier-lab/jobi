@@ -1,5 +1,5 @@
 import React from "react";
-import { type TicketCardData, computeFinalPrice } from "./types";
+import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketDate } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 
@@ -93,7 +93,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
             {printButton}
           </div>
           {finalPrice > 0 && (
-            <span style={{ marginLeft: "auto", fontWeight: 700, color: "var(--text)", fontSize: 12, whiteSpace: "nowrap" }}>{finalPrice.toLocaleString("cs-CZ")} Kč</span>
+            <span style={{ marginLeft: "auto", fontWeight: 700, color: "var(--text)", fontSize: 12, whiteSpace: "nowrap" }}>{korunami(finalPrice)}</span>
           )}
         </div>
       </div>
