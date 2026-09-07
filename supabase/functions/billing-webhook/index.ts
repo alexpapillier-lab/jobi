@@ -107,6 +107,12 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
   }, { onConflict: "service_id" });
   if (chybaBilling) throw new ZapisError(`service_billing: ${chybaBilling.message}`);
 
+  // Platící předplatné s neznámým tarifem: aspoň `access`, ať se dílna
+  // nezamkne uprostřed zaplaceného období. Bez toho by přejmenovaný lookup key
+  // ve Stripe znamenal, že se nárok neprodlouží a zákazník, který řádně platí,
+  // v den původního konce platnosti přijde o zápis do aplikace.
+  if (!plan && plati) moduly.add("access");
+
   if (!plan) {
     // Lookup key ve Stripe se přejmenoval nebo přibyla cena, o které tabulka
     // PLANS neví. Dřív se tady skončilo ještě před zápisem nároků, takže

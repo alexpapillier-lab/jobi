@@ -18,8 +18,13 @@ import { castkaSlevy } from "../../lib/slevaZakazky";
  *   (nebo ta nemá `costs`) a žádný navázaný díl nemá nákupní cenu.
  *
  * Marže zakázky = Σ(příjem − náklady) − sleva (sleva stejně jako
- * v `computeFinalPrice`: procenta z hrubé ceny nebo pevná částka).
+ * v `computeFinalPrice`: procenta z hrubé ceny nebo pevná částka, nikdy víc
+ * než hrubá cena).
  * Marže v % = marže / příjem (0, když je příjem 0).
+ *
+ * Stornovaná zakázka do peněz nevstupuje vůbec – servis za ni nedostal nic,
+ * i když má vyplněné ceny oprav. Do počtů se počítá dál: ta práce se odvedla.
+ * Co je storno, říká `lib/stornoStav`; stejné pravidlo má i databáze.
  */
 
 /** Ceník a sklad – zdroj záložních nákladů. Chybí-li, počítá se jen z `costs`. */
@@ -31,6 +36,10 @@ export type CostSources = {
 };
 
 export const EMPTY_COST_SOURCES: CostSources = { repairs: new Map(), purchasePrices: new Map() };
+
+/** Řekne, jestli je zakázka stornovaná. Bez ní se nestornuje nic. */
+export type JeStorno = (t: TicketEx) => boolean;
+export const NENI_STORNO: JeStorno = () => false;
 
 type PerformedEntry = NonNullable<TicketEx["performedRepairs"]>[number];
 
@@ -93,7 +102,14 @@ export function ticketDiscountOf(gross: number, t: TicketEx): number {
   return castkaSlevy(gross, t.discountType, t.discountValue);
 }
 
-export function ticketMargin(t: TicketEx, sources: CostSources): TicketMargin {
+/** Nulová zakázka – použije se pro storno, aby peníze nikam neprosákly. */
+const PRAZDNA_MARZE: TicketMargin = {
+  gross: 0, discount: 0, revenue: 0, cost: 0, margin: 0,
+  entriesWithoutCost: 0, entriesMissingPurchasePrice: 0,
+};
+
+export function ticketMargin(t: TicketEx, sources: CostSources, jeStorno = false): TicketMargin {
+  if (jeStorno) return PRAZDNA_MARZE;
   let gross = 0;
   let cost = 0;
   let entriesWithoutCost = 0;
@@ -161,14 +177,19 @@ function finishRow(row: Omit<MarginRow, "marginPct" | "noCostData"> & { withCost
  * pohromadě i po přejmenování. Sleva zakázky se do řádků oprav nepromítá
  * (není jak ji rozdělit mezi opravy), proto se součty řádků liší od KPI.
  */
-export function marginByRepair(tickets: TicketEx[], sources: CostSources): MarginRow[] {
+export function marginByRepair(tickets: TicketEx[], sources: CostSources, jeStorno: JeStorno = NENI_STORNO): MarginRow[] {
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; withCost: number }>();
   for (const t of tickets) {
+    const storno = jeStorno(t);
     for (const entry of t.performedRepairs || []) {
       const key = entry.repairId ? `id:${entry.repairId}` : `name:${entry.name}`;
       const m = entryMargin(entry, sources);
       const g = groups.get(key) ?? { name: entry.name, count: 0, revenue: 0, cost: 0, withCost: 0 };
       g.count += 1;
+      if (storno) {
+        groups.set(key, g);
+        continue;
+      }
       g.revenue += m.revenue;
       g.cost += m.cost;
       if (m.hasCostSource) g.withCost += 1;
@@ -183,11 +204,11 @@ export function marginByRepair(tickets: TicketEx[], sources: CostSources): Margi
  * Marže podle zařízení – skupina podle `deviceLabel`, marže zakázky včetně
  * slevy (tady se sleva rozdělovat nemusí, patří celé zakázce).
  */
-export function marginByDevice(tickets: TicketEx[], sources: CostSources): MarginRow[] {
+export function marginByDevice(tickets: TicketEx[], sources: CostSources, jeStorno: JeStorno = NENI_STORNO): MarginRow[] {
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     if (!t.deviceLabel) continue;
-    const m = ticketMargin(t, sources);
+    const m = ticketMargin(t, sources, jeStorno(t));
     const g = groups.get(t.deviceLabel) ?? { name: t.deviceLabel, count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;
@@ -219,11 +240,11 @@ export function sortMarginRows(rows: MarginRow[], sort: MarginSort): MarginRow[]
 }
 
 /** Srovnání poboček: zakázky, příjem, náklady a marže na pobočku. */
-export function marginByBranch(tickets: TicketEx[], sources: CostSources, nameOf: (branchId: string) => string): MarginRow[] {
+export function marginByBranch(tickets: TicketEx[], sources: CostSources, nameOf: (branchId: string) => string, jeStorno: JeStorno = NENI_STORNO): MarginRow[] {
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     const key = t.branchId ?? "";
-    const m = ticketMargin(t, sources);
+    const m = ticketMargin(t, sources, jeStorno(t));
     const g = groups.get(key) ?? { name: key ? nameOf(key) : "Bez pobočky", count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;
@@ -236,11 +257,11 @@ export function marginByBranch(tickets: TicketEx[], sources: CostSources, nameOf
 }
 
 /** Srovnání servisů (konsolidované statistiky): stejná čísla jako u poboček. */
-export function marginByService(tickets: TicketEx[], sources: CostSources, nameOf: (serviceId: string) => string): MarginRow[] {
+export function marginByService(tickets: TicketEx[], sources: CostSources, nameOf: (serviceId: string) => string, jeStorno: JeStorno = NENI_STORNO): MarginRow[] {
   const groups = new Map<string, { name: string; count: number; revenue: number; cost: number; margin: number; withCost: number }>();
   for (const t of tickets) {
     const key = (t as TicketEx & { service_id?: string }).service_id ?? "";
-    const m = ticketMargin(t, sources);
+    const m = ticketMargin(t, sources, jeStorno(t));
     const g = groups.get(key) ?? { name: key ? nameOf(key) : "Neznámý servis", count: 0, revenue: 0, cost: 0, margin: 0, withCost: 0 };
     g.count += 1;
     g.revenue += m.revenue;

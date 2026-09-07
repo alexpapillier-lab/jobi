@@ -3,7 +3,7 @@ import { Button, Card, Input, Label, MenuItem, Segmented } from "../../component
 import { SectionHeading } from "../../components/SectionHeading";
 import { ChevronDownIcon, DocumentIcon, PlusIcon, UserIcon, XIcon } from "../../components/icons";
 import { CustomerAutocomplete, type CustomerMatch } from "../../components/orders/CustomerAutocomplete";
-import { emptyLineItem, formatCurrency, type InvoiceLineItem, type InvoiceTotals } from "../../lib/invoiceMath";
+import { computeLine, emptyLineItem, formatCurrency, type InvoiceLineItem, type InvoiceTotals } from "../../lib/invoiceMath";
 import { KindPill, StatusPill } from "./InvoiceList";
 import { KIND_LABELS, asKind, formatDate, type EditorLineItem, type Invoice, type InvoiceKind } from "./types";
 
@@ -76,6 +76,11 @@ export function InvoiceEditor({
   };
 
   const addItem = () => setItems([...items, emptyLineItem(vatRate)]);
+
+  /* Měna dokladu. Panel se součty ji dřív ignoroval a psal Kč i u faktury
+     v eurech – v patičce přitom svítilo €, takže na jedné obrazovce byly
+     dvě různé měny u téhož čísla. */
+  const mena = invoice.currency || "CZK";
 
   /** Záloha není zdanitelné plnění – při přepnutí na proformu DUZP zmizí, zpět se vrátí k datu vystavení. */
   const zmenDruh = (k: InvoiceKind) => {
@@ -221,7 +226,9 @@ export function InvoiceEditor({
                 </thead>
                 <tbody>
                   {items.map((item, idx) => {
-                    const lineTotal = Math.round(item.qty * item.unit_price * 100) / 100;
+                    // Cena řádku ze společného výpočtu, ne z vlastní kopie vzorce –
+                    // jinak se editor rozejde se součtem dole i s vytištěným dokladem.
+                    const lineTotal = computeLine(item).line_total;
                     return (
                       <tr key={item.id ?? idx} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={tdStyle}>
@@ -285,7 +292,7 @@ export function InvoiceEditor({
                           </select>
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", fontSize: "var(--text-base)", color: "var(--text)", whiteSpace: "nowrap" }}>
-                          {formatCurrency(lineTotal)}
+                          {formatCurrency(lineTotal, mena)}
                         </td>
                         <td style={{ ...tdStyle, textAlign: "center" }}>
                           <Button
@@ -311,12 +318,12 @@ export function InvoiceEditor({
                       </Button>
                     </td>
                   </tr>
-                  <TotalRow label="Základ" value={formatCurrency(totals.subtotal)} />
+                  <TotalRow label="Základ" value={formatCurrency(totals.subtotal, mena)} />
                   {totals.vat_breakdown.map((v) => (
-                    <TotalRow key={v.rate} label={`DPH ${v.rate} %`} value={formatCurrency(v.vat)} />
+                    <TotalRow key={v.rate} label={`DPH ${v.rate} %`} value={formatCurrency(v.vat, mena)} />
                   ))}
-                  {totals.rounding !== 0 && <TotalRow label="Zaokrouhlení" value={formatCurrency(totals.rounding)} />}
-                  <TotalRow label="Celkem" value={formatCurrency(totals.total_rounded)} strong />
+                  {totals.rounding !== 0 && <TotalRow label="Zaokrouhlení" value={formatCurrency(totals.rounding, mena)} />}
+                  <TotalRow label="Celkem" value={formatCurrency(totals.total_rounded, mena)} strong />
                 </tfoot>
               </table>
             </div>

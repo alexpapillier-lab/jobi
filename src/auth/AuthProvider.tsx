@@ -7,7 +7,15 @@ type AuthContextType = {
   /** Než se z úložiště obnoví relace. Bez tohohle problikne přihlašovací obrazovka. */
   initializing: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  /**
+   * Registrace. Vrací `potrebujePotvrzeni: true`, když Supabase relaci
+   * nevrátil – tedy když je v projektu zapnuté potvrzování e-mailu a člověk
+   * musí nejdřív kliknout na odkaz v poště. Bez téhle informace se
+   * přihlašovací obrazovka nemá jak rozhodnout, jestli má něco říct, nebo
+   * mlčky pustit dál – a vypisovala „zkontrolujte e-mail“ i tomu, kdo už byl
+   * přihlášený.
+   */
+  signUp: (email: string, password: string) => Promise<{ potrebujePotvrzeni: boolean }>;
   configError: string | null;
 };
 
@@ -70,8 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     if (!supabase) throw new Error("Supabase client není dostupný");
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
+    return { potrebujePotvrzeni: !data?.session };
   };
 
   return (

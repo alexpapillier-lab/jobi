@@ -38,13 +38,14 @@ type Prostredi = {
   rendery: string[];
 };
 
-async function spustApi(options?: { sPdf?: boolean; selhaniTisku?: string }): Promise<Prostredi> {
+async function spustApi(options?: { sPdf?: boolean; selhaniTisku?: string; klicOkna?: string }): Promise<Prostredi> {
   const port = await volnyPort();
   const dataDir = docasnyAdresar("api");
   const tisky: Prostredi["tisky"] = [];
   const rendery: string[] = [];
   const server = await startApiServer(port, dataDir, {
     appVersion: "test",
+    klicOkna: options?.klicOkna,
     htmlToPdf: options?.sPdf
       ? async (html: string) => {
           rendery.push(html);
@@ -542,5 +543,35 @@ test.describe("hranice místního API", () => {
     expect(res.status, await res.text()).toBe(200);
     expect(fs.existsSync(cil)).toBe(true);
     fs.rmSync(cil, { force: true });
+  });
+});
+
+/**
+ * Kontrola původu sama nestačí: `Origin: null` posílá jak naše okno
+ * z `file://`, tak libovolná stránka ze sandboxovaného iframu. Pro takový
+ * požadavek proto server vyžaduje klíč, který hlavní proces předá jen oknu.
+ */
+test.describe("klíč okna", () => {
+  let p: Prostredi;
+  const KLIC = "klic-pro-test-12345";
+  test.beforeAll(async () => { p = await spustApi({ sPdf: true, klicOkna: KLIC }); });
+  test.afterAll(async () => { await zastav(p); });
+
+  test("cizí stránka ze sandboxu (Origin: null) se bez klíče nedostane na kontext", async () => {
+    const bez = await fetch(`${p.api}/v1/context`, { headers: { Origin: "null" } });
+    expect(bez.status, "sandboxovaný iframe se dostal ke kontextu JobiDocs").toBe(403);
+
+    const sKlicem = await fetch(`${p.api}/v1/context`, { headers: { Origin: "null", "x-jobi-klic": KLIC } });
+    expect(sKlicem.status, "okno JobiDocs se ke svému API nedostalo").toBe(200);
+  });
+
+  test("špatný klíč neprojde", async () => {
+    const res = await fetch(`${p.api}/v1/context`, { headers: { Origin: "null", "x-jobi-klic": "neco-jineho" } });
+    expect(res.status).toBe(403);
+  });
+
+  test("Jobi z tauri původu projde i bez klíče", async () => {
+    const res = await fetch(`${p.api}/v1/health`, { headers: { Origin: "tauri://localhost" } });
+    expect(res.status).toBe(200);
   });
 });

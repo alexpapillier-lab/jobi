@@ -482,7 +482,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
   // ─── Uložení z editoru ─────────────────────────────────────
 
-  const editorTotals = useMemo(() => computeTotals(editorItems), [editorItems]);
+  /* Součty se počítají v měně dokladu: na celé jednotky se zaokrouhluje jen
+     koruna. Faktura na 99,90 € se dřív vystavila na 100,00 €. */
+  const editorTotals = useMemo(() => computeTotals(editorItems, editorInvoice.currency), [editorItems, editorInvoice.currency]);
   const editorDirty = snapshot(editorInvoice, editorItems) !== editorBaseline;
 
   /**
@@ -544,7 +546,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           return;
         }
 
-        const totals = computeTotals(editorItems);
+        const totals = computeTotals(editorItems, faktura.currency);
         const wasDraft = (faktura.status || "draft") === "draft";
         const nextStatus = issue && wasDraft ? "issued" : faktura.status || "draft";
         // Sloupce kind a related_invoice_id přidává migrace 20260907150000; u běžné
@@ -796,7 +798,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         const { data: puvodni, error: itemsLoadErr } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", zdroj.id).order("sort_order");
         if (itemsLoadErr) throw itemsLoadErr;
         const polozky = volby.polozky(puvodni ?? []);
-        const totals = computeTotals(polozky);
+        const totals = computeTotals(polozky, zdroj.currency);
 
         const newInv = {
           ...hlavickaZDokladu(zdroj),
@@ -899,7 +901,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         notes: `Vyúčtování zálohové faktury ${zaloha.number}`,
         polozky: (p) => {
           const kopie = p.map(radekZPolozky);
-          const rozpis = computeTotals(kopie).vat_breakdown;
+          const rozpis = computeTotals(kopie, zaloha.currency).vat_breakdown;
           const uhrazeno = formatDate(zaloha.paid_at) || formatDate(zaloha.issue_date);
           const odecty: InvoiceLineItem[] = rozpis.map((r) => ({
             name: `Uhrazená záloha ${zaloha.number} ze dne ${uhrazeno}${rozpis.length > 1 ? ` (základ DPH ${r.rate} %)` : ""}`,

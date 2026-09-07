@@ -6,6 +6,7 @@ import { demoStopa, smazatDemoData, vytvoritDemoData } from "../lib/demoData";
 import { showToast } from "./Toast";
 import { isDesktop } from "../lib/platform";
 import { isJobiDocsRunning, JOBIDOCS_DOWNLOAD_URL } from "../lib/jobidocs";
+import { onboardingKroky, pocetHotovych, vsePovinneHotovo as vsePovinneHotovoZ } from "../lib/onboardingKroky";
 
 /**
  * První kroky nového servisu.
@@ -17,23 +18,6 @@ import { isJobiDocsRunning, JOBIDOCS_DOWNLOAD_URL } from "../lib/jobidocs";
  * Příznak leží v nastavení servisu, ne v prohlížeči, takže se kolegům
  * neukazuje znovu na každém počítači.
  */
-type Krok = {
-  id: string;
-  label: string;
-  popis: string;
-  hotovo: boolean;
-  /** Kam odskočit; podsekce Nastavení. */
-  cil?: string;
-  /** Externí odkaz místo odskoku do Nastavení (stažení JobiDocs z webu). */
-  odkaz?: string;
-  akce?: string;
-  volitelny?: boolean;
-};
-
-function jeVyplneno(v: unknown): boolean {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
 export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeServiceId: string; ticketCount: number }) {
   const [config, setConfig] = useState<ServiceConfig | null>(null);
   const [clenu, setClenu] = useState(1);
@@ -93,67 +77,21 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
     // Ceník i seznam zakázek se překreslí z realtime; sklad si načte své.
   }, [activeServiceId, maDemo]);
 
-  const kroky = useMemo<Krok[]>(() => {
-    const cd = (config?.companyData ?? {}) as Record<string, unknown>;
-    const zkratka = jeVyplneno(config?.abbreviation) || jeVyplneno(cd.abbreviation);
-    return [
-      {
-        id: "firma",
-        label: "Vyplňte údaje firmy",
-        popis: "Název, IČO a adresa se tisknou v hlavičce příjemky a faktury.",
-        hotovo: jeVyplneno(cd.name) && jeVyplneno(cd.ico) && jeVyplneno(cd.addressStreet) && jeVyplneno(cd.addressCity),
-        cil: "service_basic",
-        akce: "Doplnit údaje",
-      },
-      {
-        id: "zkratka",
-        label: "Nastavte zkratku servisu",
-        popis: "Je z ní číslo zakázky, například SRV26000001.",
-        hotovo: zkratka,
-        cil: "service_basic",
-        akce: "Nastavit zkratku",
-      },
-      {
-        id: "kontakt",
-        label: "Doplňte telefon a e-mail",
-        popis: "Zákazník je uvidí na dokumentech i v odkazu na stav zakázky.",
-        hotovo: jeVyplneno(cd.phone) || jeVyplneno(cd.email),
-        cil: "service_contact",
-        akce: "Doplnit kontakt",
-      },
-      {
-        id: "jobidocs",
-        label: "Nainstalujte JobiDocs pro tisk dokumentů",
-        popis: isDesktop()
-          ? "Zakázkový a záruční list se tisknou jedním kliknutím, bez dialogu. Webová verze na appjobi.com je pak doplněk, třeba na tabletu u příjmu."
-          : "Tisk dokumentů funguje v desktopové aplikaci s doplňkem JobiDocs. V prohlížeči dokumenty nevytisknete.",
-        hotovo: jobiDocsBezi,
-        cil: isDesktop() ? "orders_tisk_dokumentu" : undefined,
-        odkaz: isDesktop() ? undefined : JOBIDOCS_DOWNLOAD_URL,
-        akce: isDesktop() ? "Nastavit tisk" : "Stáhnout aplikaci",
-        // V prohlížeči se splnit nedá; kdyby byl povinný, seznam by se nikdy nezavřel sám.
-        volitelny: !isDesktop(),
-      },
-      {
-        id: "zakazka",
-        label: "Založte první zakázku",
-        popis: "Vyzkoušejte si příjem i tisk, než přijde první zákazník.",
-        hotovo: ticketCount > 0,
-      },
-      {
-        id: "tym",
-        label: "Pozvěte kolegu",
-        popis: "Každý uvidí stejné zakázky a je poznat, kdo co udělal.",
-        hotovo: clenu > 1,
-        cil: "service_team",
-        akce: "Pozvat",
-        volitelny: true,
-      },
-    ];
-  }, [config, ticketCount, clenu, jobiDocsBezi]);
+  const kroky = useMemo(
+    () =>
+      onboardingKroky({
+        config,
+        zakazek: ticketCount,
+        clenu,
+        jobiDocsBezi,
+        desktop: isDesktop(),
+        odkazJobiDocs: JOBIDOCS_DOWNLOAD_URL,
+      }),
+    [config, ticketCount, clenu, jobiDocsBezi],
+  );
 
-  const hotovych = kroky.filter((k) => k.hotovo).length;
-  const vsePovinneHotovo = kroky.every((k) => k.hotovo || k.volitelny);
+  const hotovych = pocetHotovych(kroky);
+  const vsePovinneHotovo = vsePovinneHotovoZ(kroky);
 
   const schovat = useCallback(async () => {
     setSkryto(true);

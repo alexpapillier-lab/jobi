@@ -13,7 +13,7 @@
 import { qrDataUrl } from "../src/qr.js";
 import { ROBOTO_FONT_FACES } from "./fonts.js";
 import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
-import { VARIABLES, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, warrantyDurationText } from "./variables.js";
+import { VARIABLES, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, vatRozpis, warrantyDurationText } from "./variables.js";
 
 export type RenderInput = {
   template: Template;
@@ -235,8 +235,21 @@ function renderVatSummary(ctx: Ctx, block: Extract<Block, { type: "vatSummary" }
   const total = itemsTotal(ctx.data);
   const payer = t.vatPayer !== false;
   const rows: string[] = [];
-  if (payer && t.subtotal != null) rows.push(`<tr><th>Základ daně</th><td class="num">${formatMoney(t.subtotal, ctx.currency)}</td></tr>`);
-  if (payer && t.vat != null) rows.push(`<tr><th>DPH</th><td class="num">${formatMoney(t.vat, ctx.currency)}</td></tr>`);
+  const rozpis = payer ? vatRozpis(ctx.data) : [];
+  if (rozpis.length > 1) {
+    // Víc sazeb na jednom dokladu: základ i daň patří na doklad ke každé
+    // sazbě zvlášť, jinak si účetní daň zpětně nerozpočítá.
+    for (const r of rozpis) {
+      rows.push(`<tr><th>Základ daně ${formatQty(r.rate)} %</th><td class="num">${formatMoney(r.base, ctx.currency)}</td></tr>`);
+      rows.push(`<tr><th>DPH ${formatQty(r.rate)} %</th><td class="num">${formatMoney(r.vat, ctx.currency)}</td></tr>`);
+    }
+    if (t.subtotal != null) rows.push(`<tr><th>Základ daně celkem</th><td class="num">${formatMoney(t.subtotal, ctx.currency)}</td></tr>`);
+    if (t.vat != null) rows.push(`<tr><th>DPH celkem</th><td class="num">${formatMoney(t.vat, ctx.currency)}</td></tr>`);
+  } else {
+    const sazba = rozpis.length === 1 ? ` ${formatQty(rozpis[0].rate)} %` : "";
+    if (payer && t.subtotal != null) rows.push(`<tr><th>Základ daně${sazba}</th><td class="num">${formatMoney(t.subtotal, ctx.currency)}</td></tr>`);
+    if (payer && t.vat != null) rows.push(`<tr><th>DPH${sazba}</th><td class="num">${formatMoney(t.vat, ctx.currency)}</td></tr>`);
+  }
   if (t.rounding) rows.push(`<tr><th>Zaokrouhlení</th><td class="num">${formatMoney(t.rounding, ctx.currency)}</td></tr>`);
   if (total != null) rows.push(`<tr class="total"><th>Celkem k úhradě</th><td class="num">${formatMoney(total, ctx.currency)}</td></tr>`);
   if (!payer) rows.push(`<tr><td colspan="2" class="muted">Nejsme plátci DPH.</td></tr>`);

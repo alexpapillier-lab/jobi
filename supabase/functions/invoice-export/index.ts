@@ -11,6 +11,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { lzeExportovat, radkyProExport, sazbaIdokladu } from "../_shared/ucetnictvi.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,7 @@ type InvoiceRow = {
   customer_name: string | null; customer_ico: string | null; customer_dic: string | null;
   customer_address: string | null; customer_email: string | null; customer_phone: string | null;
   notes: string | null; external_provider: string | null; external_id: string | null; external_number: string | null; external_url: string | null;
+  kind: string | null; rounding: number | null;
 };
 type ItemRow = { name: string; qty: number; unit: string; unit_price: number; vat_rate: number; sort_order: number };
 
@@ -71,14 +73,6 @@ async function idoklad<T>(token: string, method: "GET" | "POST", path: string, b
   }
   // v3 obaluje odpověď do { Data, Status, Message } – u seznamů Data.Items
   return (parsed && typeof parsed === "object" && "Data" in parsed ? parsed.Data : parsed) as T;
-}
-
-/** Sazba DPH → typ sazby iDokladu (Basic=1, Reduced1=0, Reduced2=3, Zero=2). */
-function vatRateType(rate: number): number {
-  if (rate <= 0) return 2;
-  if (rate >= 20) return 1;
-  if (rate >= 14) return 0; // 15 % (i historická 15 %)
-  return 3; // 10–12 %
 }
 
 function splitName(name: string): { first: string; last: string } {
@@ -158,15 +152,16 @@ async function exportToIdoklad(token: string, inv: InvoiceRow, items: ItemRow[])
     OrderNumber: inv.number,
     IsEet: false,
     IsIncomeTax: typeof def.IsIncomeTax === "boolean" ? def.IsIncomeTax : true,
-    Items: [...items]
-      .sort((a, b) => a.sort_order - b.sort_order)
+    // Zaokrouhlení jde ven jako vlastní řádek, jinak by doklad v účetnictví
+    // zněl na jinou částku než ten, který dostal zákazník.
+    Items: radkyProExport(items, Number(inv.rounding) || 0)
       .map((it) => ({
         Name: it.name.slice(0, 200),
         Amount: Number(it.qty) || 1,
         Unit: (it.unit || "ks").slice(0, 20),
         UnitPrice: Number(it.unit_price) || 0,
         PriceType: 1, // bez DPH – Jobi drží jednotkové ceny bez DPH
-        VatRateType: vatRateType(Number(it.vat_rate) || 0),
+        VatRateType: sazbaIdokladu(Number(it.vat_rate) || 0),
         DiscountPercentage: 0,
         IsTaxMovement: false,
         ItemType: 0,
@@ -298,7 +293,7 @@ async function exportToFakturoid(cfg: Record<string, unknown>, inv: InvoiceRow, 
       currency: inv.currency || "CZK",
       // Jobi drží jednotkové ceny bez DPH.
       vat_price_mode: "without_vat",
-      lines: [...items].sort((a, b) => a.sort_order - b.sort_order).map((it) => ({
+      lines: radkyProExport(items, Number(inv.rounding) || 0).map((it) => ({
         name: it.name.slice(0, 200),
         quantity: String(Number(it.qty) || 1),
         unit_name: (it.unit || "ks").slice(0, 20),
@@ -382,6 +377,13 @@ serve(async (req) => {
     if (!inv) return json({ error: "Faktura nenalezena." }, 404);
     const invoice = inv as InvoiceRow;
     if (invoice.status === "draft") return json({ error: "Koncept nejde odeslat – fakturu nejdřív vystavte." }, 400);
+    /* Dobropis a zálohová faktura ven nejdou: dobropis má záporná množství
+       a záloha není zdanitelné plnění, takže by v účetnictví vznikla běžná
+       vydaná faktura ve špatné řadě. Aplikace tlačítko skrývá, ale funkci
+       lze zavolat i přímo. */
+    if (!lzeExportovat(invoice.kind)) {
+      return json({ error: "Do účetnictví se posílají jen běžné faktury; dobropis a zálohovou fakturu vystavte přímo tam." }, 400);
+    }
     if (invoice.external_provider) {
       return json({ ok: true, already: true, external_id: invoice.external_id, external_number: invoice.external_number, external_url: invoice.external_url });
     }

@@ -99,6 +99,12 @@ type CustomerDetailProps = {
   onSave: (updatedCustomer: CustomerRecord, finalCustomerId: string) => void;
   onDelete: (customerId: string) => void;
   onHistoryRefresh?: () => void;
+  /**
+   * Má servis vůbec nějakého zákazníka? Bez toho tu na novém servisu svítilo
+   * „Vyber zákazníka vlevo.“ a vlevo nebyl nikdo – půl obrazovky vybízela
+   * k něčemu, co nejde udělat.
+   */
+  prazdnyAdresar?: boolean;
 };
 
 export function CustomerDetail({
@@ -113,6 +119,7 @@ export function CustomerDetail({
   onSave,
   onDelete,
   onHistoryRefresh,
+  prazdnyAdresar,
 }: CustomerDetailProps) {
   const smsEnabled = useSmsEnabled(activeServiceId);
   const { getByKey } = useStatuses();
@@ -250,7 +257,11 @@ export function CustomerDetail({
           }}
         >
           {!customer ? (
-            <div style={{ color: "var(--muted)" }}>Vyber zákazníka vlevo.</div>
+            <div style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>
+              {prazdnyAdresar
+                ? "Adresář je zatím prázdný. Zákazník do něj přibude sám, jakmile na něj v Zakázkách založíte první zakázku – telefon a jméno stačí zadat jednou."
+                : "Vyberte zákazníka vlevo."}
+            </div>
           ) : (
             <>
               {/*

@@ -7,15 +7,7 @@ import { showToast } from "../../../components/Toast";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
-import { odvodZkratku } from "../../../lib/servisy";
-
-// Helper: normalize prefix for code generation
-function normalizePrefix(raw: string): string {
-  const cleaned = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (cleaned.length === 0) return "SRV";
-  if (cleaned.length > 6) return cleaned.slice(0, 6);
-  return cleaned;
-}
+import { zkratkaZConfigu } from "../../../lib/servisy";
 
 // Helper: load service settings for code generation
 async function loadServiceSettingsForCode(
@@ -42,24 +34,10 @@ async function loadServiceSettingsForCode(
       return "SRV";
     }
     
-    /*
-     * Zkratka se v configu ukládá na dvě místa: `abbreviation` na vrcholu
-     * (odsud ji čte tenhle generátor) a `companyData.abbreviation` (odsud ji
-     * ukazuje a ukládá Nastavení). Kdo zapsal jen jedno z nich, měl zakázky
-     * číslované „SRV…“ místo své zkratky – a přečíslovat je zpětně nejde,
-     * protože číslo je na vytištěných dokladech u zákazníka. Proto se zkouší
-     * obě místa a teprve pak se zkratka odvodí z názvu firmy; „SRV“ zbude jen
-     * pro servis, který nemá vyplněné vůbec nic.
-     */
-    const config = typedData.config as { abbreviation?: unknown; companyData?: { abbreviation?: unknown; name?: unknown } };
-    const kandidati = [config.abbreviation, config.companyData?.abbreviation];
-    for (const kandidat of kandidati) {
-      if (typeof kandidat === "string" && kandidat.trim()) return normalizePrefix(kandidat);
-    }
-    const nazev = config.companyData?.name;
-    if (typeof nazev === "string" && nazev.trim()) return normalizePrefix(odvodZkratku(nazev));
-
-    return "SRV";
+    // Zkratka leží v configu na dvou místech a musí se hledat na obou –
+    // podrobnosti proč jsou u `zkratkaZConfigu`. Sdílené s ukázkovými daty,
+    // ať vzorová zakázka nedostane jinou předponu než ta příští ostrá.
+    return zkratkaZConfigu(typedData.config);
   } catch (err) {
     console.error("[makeCode] Error loading service settings:", err);
     return "SRV";

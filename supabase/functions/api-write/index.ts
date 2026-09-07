@@ -71,6 +71,12 @@ serve(async (req) => {
   // který token existoval.
   if (!zaznam || zaznam.revoked_at) return json({ error: "Neplatný token" }, 401);
 
+  // Vypnutý servis (Owner → deaktivovat) nesmí přes API zapisovat. Edge funkce
+  // jede pod service_role, takže se jí databázová hradba netýká; odpověď je
+  // stejná jako u neplatného tokenu, ať se navenek nepozná, co je vypnuté.
+  const { data: servis } = await svc.from("services").select("active").eq("id", zaznam.service_id).maybeSingle();
+  if (servis && (servis as { active?: boolean }).active === false) return json({ error: "Neplatný token" }, 401);
+
   const rozsahy = (zaznam.scopes ?? []) as Rozsah[];
 
   /**

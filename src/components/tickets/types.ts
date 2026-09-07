@@ -1,5 +1,5 @@
 import type { StatusMeta } from "../../state/StatusesStore";
-import { konecnaCena } from "../../lib/slevaZakazky";
+import { hrubaCena, konecnaCena } from "../../lib/slevaZakazky";
 
 export type TicketCardData = {
   id: string;
@@ -55,9 +55,7 @@ export function formatPhone(value: string): string {
 }
 
 export function computeFinalPrice(t: TicketCardData): number {
-  const repairs = t.performedRepairs ?? [];
-  const totalPrice = repairs.reduce((sum, r) => sum + (r.price || 0), 0);
-  return konecnaCena(totalPrice, t.discountType, t.discountValue);
+  return konecnaCena(hrubaCena(t.performedRepairs), t.discountType, t.discountValue);
 }
 
 export type TicketComment = {

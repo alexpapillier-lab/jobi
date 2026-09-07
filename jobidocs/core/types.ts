@@ -118,6 +118,15 @@ export type DocumentData = {
     vat?: number;
     total?: number;
     rounding?: number;
+    /**
+     * Rekapitulace po sazbách DPH – základ a daň zvlášť pro každou sazbu.
+     *
+     * Daňový doklad je musí uvádět po sazbách (§ 29 zákona o DPH). Bez toho
+     * se na faktuře s 21% i 12% položkou vytiskl jeden slitý řádek „DPH“,
+     * zatímco aplikace v editoru ukazovala oba – účetní si z dokladu
+     * nedokázala rozpočítat daň zpátky.
+     */
+    vatBreakdown?: Array<{ rate: number; base: number; vat: number }>;
     currency?: string;
     /** false = servis není plátce DPH; DPH řádky se netisknou. */
     vatPayer?: boolean;

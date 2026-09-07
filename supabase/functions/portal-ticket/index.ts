@@ -11,8 +11,17 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildSpayd } from "../_shared/spayd.ts";
-import { otiskKlienta } from "../_shared/limity.ts";
+import { klientskaIp, otiskKlienta } from "../_shared/limity.ts";
+import {
+  odkazVyprsel,
+  otiskAkce,
+  sestavPayload,
+  TICKET_COLUMNS,
+  TICKET_COLUMNS_ZAKLAD,
+  type PobockaRow,
+  type StavRow,
+  type TicketRow,
+} from "../_shared/portalPayload.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,119 +93,55 @@ async function prekrocenLimitKlienta(
 }
 
 // ---------------------------------------------------------------------------
-// Typy
-
-type TicketRow = {
-  id: string;
-  service_id: string;
-  branch_id?: string | null;
-  code: string | null;
-  status: string;
-  notes: string | null;
-  created_at: string;
-  expected_completion_at: string | null;
-  device_label: string | null;
-  device_brand: string | null;
-  device_model: string | null;
-  estimated_price: number | string | null;
-  performed_repairs: unknown;
-  diagnostic_photos: unknown;
-  diagnostic_photos_before: unknown;
-  discount_type: string | null;
-  discount_value: number | string | null;
-  handoff_method: string | null;
-  handback_method: string | null;
-  quote_amount: number | string | null;
-  quote_items: unknown;
-  quote_note: string | null;
-  quote_status: string;
-  quote_sent_at: string | null;
-  quote_decided_at: string | null;
-  intake_signature_url: string | null;
-  intake_signed_at: string | null;
-};
-
-const TICKET_COLUMNS =
-  "id, service_id, code, status, notes, created_at, expected_completion_at, " +
-  "device_label, device_brand, device_model, estimated_price, performed_repairs, " +
-  "diagnostic_photos, diagnostic_photos_before, discount_type, discount_value, " +
-  "handoff_method, handback_method, quote_amount, quote_items, quote_note, quote_status, " +
-  "quote_sent_at, quote_decided_at, intake_signature_url, intake_signed_at, branch_id";
-
-type Repair = { name: string; price: number };
-
-// ---------------------------------------------------------------------------
-// Pomocné
-
-function toNumber(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function stringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter((x): x is string => typeof x === "string" && x.length > 0);
-}
-
-function parseRepairs(v: unknown): Repair[] {
-  if (!Array.isArray(v)) return [];
-  const out: Repair[] = [];
-  for (const r of v) {
-    if (!r || typeof r !== "object") continue;
-    const o = r as Record<string, unknown>;
-    out.push({
-      name: typeof o.name === "string" ? o.name : "",
-      price: toNumber(o.price) ?? 0,
-    });
-  }
-  return out;
-}
-
-/** Stejné pravidlo jako computeFinalPrice v src/components/tickets/types.ts */
-function computeFinalPrice(repairs: Repair[], discountType: string | null, discountValue: number | null): number {
-  const total = repairs.reduce((s, r) => s + (r.price || 0), 0);
-  const value = discountValue || 0;
-  let discount = 0;
-  if (discountType === "percentage") discount = (total * value) / 100;
-  else if (discountType === "amount") discount = value;
-  return Math.max(0, total - discount);
-}
-
-function deviceLabel(t: TicketRow): string {
-  if (t.device_label && t.device_label.trim()) return t.device_label.trim();
-  return [t.device_brand, t.device_model].filter((x) => x && x.trim()).join(" ").trim();
-}
-
-function clientIp(req: Request): string | null {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim() || null;
-  return req.headers.get("cf-connecting-ip");
-}
-
-function strOrNull(v: unknown): string | null {
-  return typeof v === "string" && v.trim() ? v.trim() : null;
-}
-
-// ---------------------------------------------------------------------------
 // Načtení zakázky podle tokenu
 
+/**
+ * Zakázka podle tokenu. Vrací null pro neznámý token, zakázku v koši
+ * i pro odkaz, kterému vypršela platnost – volající pak odpoví stejným
+ * „Odkaz není platný.“, aby se přes portál nedalo zjišťovat, co existuje.
+ */
 async function loadTicket(svc: SupabaseClient, token: string): Promise<TicketRow | null> {
-  const { data, error } = await svc
+  let { data, error } = await svc
     .from("tickets")
     .select(TICKET_COLUMNS)
     .eq("portal_token", token)
     .is("deleted_at", null)
     .maybeSingle();
+  if (error && /portal_token_expires_at/.test(error.message ?? "")) {
+    // Migrace s platností odkazu ještě není nasazená. Bez tohohle ústupu by
+    // funkce nasazená dřív než migrace přestala vydávat cokoli a zákazník
+    // by neměl jinou cestu ke své zakázce.
+    ({ data, error } = await svc
+      .from("tickets")
+      .select(TICKET_COLUMNS_ZAKLAD)
+      .eq("portal_token", token)
+      .is("deleted_at", null)
+      .maybeSingle());
+  }
   if (error) {
     console.error("[portal-ticket] ticket lookup error:", error);
     return null;
   }
-  return (data as TicketRow | null) ?? null;
+  const t = (data as TicketRow | null) ?? null;
+  if (!t || odkazVyprsel(t)) return null;
+  // Servis vypnutý majitelem aplikace nesmí přes portál vydávat data.
+  // Edge funkce běží pod service_role, takže databázová hradba na ni neplatí
+  // a kontrola musí být tady. Odpověď je stejná jako u neznámého tokenu –
+  // navenek se nesmí poznat, který servis je vypnutý.
+  const { data: servis } = await svc.from("services").select("active").eq("id", t.service_id).maybeSingle();
+  if (servis && (servis as { active?: boolean }).active === false) return null;
+  return t;
 }
 
 // ---------------------------------------------------------------------------
 // Sestavení odpovědi pro zákazníka
+//
+// Co se do odpovědi smí dostat, rozhoduje `_shared/portalPayload.ts`; tady
+// se jen dotahují řádky z databáze. Díky tomu hlídá obsah odpovědi vitest
+// nad stejným kódem (src/lib/portalPayload.test.ts).
+
+const POBOCKA_SLOUPCE =
+  "name, phone, email, address_street, address_city, address_zip, opening_hours, is_default, company_name, ico, bank_account, iban";
 
 async function buildPayload(svc: SupabaseClient, t: TicketRow) {
   const [statusRes, settingsRes, serviceRes, branchRes] = await Promise.all([
@@ -210,101 +155,17 @@ async function buildPayload(svc: SupabaseClient, t: TicketRow) {
     svc.from("services").select("name").eq("id", t.service_id).maybeSingle(),
     // Pobočka zakázky: její adresa, telefon a e-mail mají v portálu přednost před firemními.
     t.branch_id
-      ? svc.from("branches").select("name, phone, email, address_street, address_city, address_zip, opening_hours, is_default, company_name, ico, bank_account, iban").eq("id", t.branch_id).maybeSingle()
+      ? svc.from("branches").select(POBOCKA_SLOUPCE).eq("id", t.branch_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
-  const branch = (branchRes?.data ?? null) as
-    | { name: string; phone: string | null; email: string | null; address_street: string | null; address_city: string | null; address_zip: string | null; opening_hours: string | null; is_default: boolean; company_name: string | null; ico: string | null; bank_account: string | null; iban: string | null }
-    | null;
-  const branchHasAddress = !!(branch && (strOrNull(branch.address_street) || strOrNull(branch.address_city) || strOrNull(branch.address_zip)));
 
-  const st = statusRes.data as { key: string; label: string; bg: string | null; fg: string | null; is_final: boolean } | null;
-  // Zákazníkovi jde jen „uzavřeno / neuzavřeno“; interní název a barva
-  // stavu jsou pracovní členění servisu a na portál nepatří.
-  const status = {
-    isFinal: st?.is_final === true,
-  };
-
-  const config = (settingsRes.data?.config ?? {}) as Record<string, unknown>;
-  const cd = (config.companyData && typeof config.companyData === "object"
-    ? config.companyData
-    : {}) as Record<string, unknown>;
-  // Pobočka jako vlastní subjekt: název a účet pobočky mají přednost před firemními.
-  const serviceName = (branch && strOrNull(branch.company_name)) ?? strOrNull(cd.name) ?? strOrNull(serviceRes.data?.name) ?? "";
-  const branchHasBank = !!(branch && (strOrNull(branch.bank_account) || strOrNull(branch.iban)));
-
-  const service = {
-    name: serviceName,
-    // Název pobočky jen u vedlejších poboček – u výchozí („Hlavní pobočka“) by za názvem servisu jen překážel.
-    branch: branch && !branch.is_default ? strOrNull(branch.name) : null,
-    openingHours: branch ? strOrNull(branch.opening_hours) : null,
-    phone: (branch && strOrNull(branch.phone)) ?? strOrNull(cd.phone),
-    email: (branch && strOrNull(branch.email)) ?? strOrNull(cd.email),
-    website: strOrNull(cd.website),
-    addressStreet: branchHasAddress ? strOrNull(branch!.address_street) : strOrNull(cd.addressStreet),
-    addressCity: branchHasAddress ? strOrNull(branch!.address_city) : strOrNull(cd.addressCity),
-    addressZip: branchHasAddress ? strOrNull(branch!.address_zip) : strOrNull(cd.addressZip),
-    bankAccount: branchHasBank ? strOrNull(branch!.bank_account) : strOrNull(cd.bankAccount),
-    iban: branchHasBank ? strOrNull(branch!.iban) : strOrNull(cd.iban),
-  };
-
-  const repairs = parseRepairs(t.performed_repairs);
-  const discountValue = toNumber(t.discount_value);
-  const discount =
-    t.discount_type && discountValue !== null ? { type: t.discount_type, value: discountValue } : null;
-  const totalPrice = computeFinalPrice(repairs, t.discount_type, discountValue);
-  const quoteAmount = toNumber(t.quote_amount);
-
-  const ticket = {
-    code: t.code ?? "",
-    createdAt: t.created_at,
-    expectedCompletionAt: t.expected_completion_at,
-    deviceLabel: deviceLabel(t),
-    requestedRepair: t.notes ?? "",
-    status,
-    photosBefore: stringArray(t.diagnostic_photos_before),
-    photos: stringArray(t.diagnostic_photos),
-    performedRepairs: repairs,
-    discount,
-    totalPrice,
-    estimatedPrice: toNumber(t.estimated_price),
-    quote: {
-      amount: quoteAmount,
-      // Rozpis nabídky – zákazník má vidět, za co platí, ne jen součet.
-      items: parseRepairs(t.quote_items),
-      note: t.quote_note,
-      status: t.quote_status ?? "none",
-      sentAt: t.quote_sent_at,
-      decidedAt: t.quote_decided_at,
-    },
-    intakeSignedAt: t.intake_signed_at,
-    intakeSignatureUrl: t.intake_signature_url,
-    handoffMethod: t.handoff_method,
-    handbackMethod: t.handback_method,
-  };
-
-  // Platba: schválená nabídka má přednost, jinak cena provedených oprav
-  let amount: number | null = null;
-  if (t.quote_status === "approved" && quoteAmount !== null && quoteAmount > 0) amount = quoteAmount;
-  else if (totalPrice > 0) amount = totalPrice;
-
-  let payment: { amount: number; vs: string; spayd: string | null } | null = null;
-  if (amount !== null && (service.iban || service.bankAccount)) {
-    const vs = (t.code ?? "").replace(/\D/g, "").slice(-10);
-    payment = {
-      amount,
-      vs,
-      spayd: buildSpayd({
-        iban: service.iban,
-        bankAccount: service.bankAccount,
-        amount,
-        vs,
-        message: `Zakazka ${t.code ?? ""}`.trim(),
-      }),
-    };
-  }
-
-  return { ok: true, ticket, service, payment };
+  return sestavPayload({
+    ticket: t,
+    stav: (statusRes.data ?? null) as StavRow,
+    config: (settingsRes.data?.config ?? {}) as Record<string, unknown>,
+    nazevServisu: (serviceRes.data?.name ?? null) as string | null,
+    pobocka: (branchRes?.data ?? null) as PobockaRow,
+  });
 }
 
 // ---------------------------------------------------------------------------

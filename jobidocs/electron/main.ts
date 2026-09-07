@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import { randomUUID } from "node:crypto";
 import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, autoUpdater as electronAutoUpdater } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
@@ -19,6 +20,15 @@ dns.setDefaultResultOrder("ipv4first");
  * spouštěče) tak nemůže rozbít tisk.
  */
 const VYCHOZI_PORT = 3847;
+/**
+ * Klíč, kterým se okno JobiDocs hlásí svému API.
+ *
+ * Okno se načítá z `file://` a posílá `Origin: null` – jenže to samé posílá
+ * i libovolná stránka ze sandboxovaného iframu, takže by se cizí web dostal
+ * k seznamu servisů, posledním fakturám i k přepsání přihlášení. Klíč vzniká
+ * při startu, žije jen v paměti procesu a předává se oknu v adrese.
+ */
+const KLIC_OKNA = randomUUID();
 const API_PORT = app.isPackaged ? VYCHOZI_PORT : Number(process.env.JOBIDOCS_API_PORT) || VYCHOZI_PORT;
 // V zabalené aplikaci vždy načítat zabudovaný dist; jinak by se načítal localhost → prázdné okno
 const isDev = !app.isPackaged;
@@ -291,10 +301,10 @@ async function createWindow() {
   // v parametru `?api=`, který src/api.ts už uměl číst.
   const apiUrl = `http://127.0.0.1:${API_PORT}`;
   if (isDev && !loadFromDist) {
-    mainWindow.loadURL(`http://localhost:5173/?api=${encodeURIComponent(apiUrl)}`);
+    mainWindow.loadURL(`http://localhost:5173/?api=${encodeURIComponent(apiUrl)}&klic=${encodeURIComponent(KLIC_OKNA)}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"), { query: { api: apiUrl } });
+    mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"), { query: { api: apiUrl, klic: KLIC_OKNA } });
   }
 
   mainWindow.on("closed", () => {
@@ -527,6 +537,7 @@ app.whenReady().then(async () => {
       printPdfNative: isWindows ? printPdfElectronWindows : undefined,
       listPrintersNative: isWindows ? listPrintersElectronWindows : undefined,
       appVersion: app.getVersion(),
+      klicOkna: KLIC_OKNA,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

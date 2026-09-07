@@ -60,8 +60,11 @@ type Servis = { id: string; name: string | null; nastaveni: Nastaveni; email: st
 /** Servis podle slugu, včetně kontroly modulu a zapnutých rezervací. */
 async function najdiServis(svc: ReturnType<typeof createClient>, slug: string): Promise<Servis | null> {
   if (!slug) return null;
-  const { data: servis } = await svc.from("services").select("id, name").eq("public_slug", slug).maybeSingle();
-  if (!servis) return null;
+  // `active` schválně: servis vypnutý majitelem aplikace nesmí přijímat
+  // rezervace. Databázová hradba se edge funkcí netýká (jede pod service_role),
+  // takže se to musí zkontrolovat tady.
+  const { data: servis } = await svc.from("services").select("id, name, active").eq("public_slug", slug).maybeSingle();
+  if (!servis || servis.active === false) return null;
   const { data: nast } = await svc.from("service_settings").select("config").eq("service_id", servis.id).maybeSingle();
   const config = (nast?.config ?? {}) as Record<string, unknown>;
   const nastaveni = nastaveniZConfigu(config.rezervace);

@@ -628,6 +628,7 @@ export default function Customers({
         {(!isNarrow || !selectedCustomer) && (
         <CustomerList
           customers={filtered}
+          celkem={customers.length}
           selectedCustomerId={openId}
           onSelect={(id) => setOpenId(id)}
           loading={customersLoading}
@@ -638,6 +639,7 @@ export default function Customers({
         {(!isNarrow || selectedCustomer) && (
         <CustomerDetail
           customer={selectedCustomer}
+          prazdnyAdresar={customers.length === 0}
           tickets={customerTickets}
           ticketsLoading={customerTicketsLoading}
           customerHistory={customerHistory}

@@ -131,6 +131,11 @@ async function exportService(svc: ReturnType<typeof createClient>, serviceId: st
     tabulky[t] = await fetchAll(svc, t, "service_id", serviceId);
   }
 
+  // Skryté členství (majitel aplikace kvůli podpoře) se do exportu nedává.
+  // Export se předává zákazníkovi, takže by to bylo nejjednodušší místo, kde
+  // se o něm dozví – a rozhodnutí je, že vidět nemá. Zbytek týmu zůstává.
+  tabulky.service_memberships = (tabulky.service_memberships ?? []).filter((r) => r.skryty !== true);
+
   // Podřízené tabulky bez service_id se dotahují přes rodiče.
   const idsFaktur = (tabulky.invoices ?? []).map((r) => String(r.id));
   tabulky.invoice_items = await fetchByParents(svc, "invoice_items", "invoice_id", idsFaktur);
@@ -280,9 +285,13 @@ serve(async (req) => {
      * ne `owner` – majitelství firmy patří zákazníkovi.
      */
     if (action === "join") {
+      // `skryty: true` je podstatné: bez něj by se majitel aplikace zákazníkovi
+      // objevil v týmu (výchozí hodnota sloupce je false). Trigger u nových
+      // servisů zakládá skryté členství, tohle je jen záchrana tam, kde řádek
+      // chybí – a musí se chovat stejně.
       const { error } = await svc
         .from("service_memberships")
-        .upsert({ service_id: serviceId, user_id: user.id, role: "admin" }, { onConflict: "service_id,user_id" });
+        .upsert({ service_id: serviceId, user_id: user.id, role: "admin", skryty: true }, { onConflict: "service_id,user_id" });
       if (error) {
         return new Response(JSON.stringify({ error: `Nepodařilo se získat přístup: ${error.message}` }), {
           status: 500,
@@ -303,7 +312,10 @@ serve(async (req) => {
         .delete()
         .eq("service_id", serviceId)
         .eq("user_id", user.id)
-        .eq("role", "admin");
+        .eq("role", "admin")
+        // Jen skryté členství: viditelné admin členství v cizím servisu může
+        // patřit skutečné dohodě se zákazníkem.
+        .eq("skryty", true);
       if (error) {
         return new Response(JSON.stringify({ error: `Přístup se nepodařilo odebrat: ${error.message}` }), {
           status: 500,

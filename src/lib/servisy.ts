@@ -33,6 +33,46 @@ export function odvodZkratku(nazev: string): string {
 }
 
 /**
+ * Očistí zkratku do tvaru, ve kterém smí být v čísle zakázky: jen A–Z a
+ * číslice, nejvýš šest znaků. Z prázdného vstupu je nouzové „SRV“.
+ */
+export function normalizujZkratku(surova: string): string {
+  const cleaned = surova.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return cleaned ? cleaned.slice(0, 6) : "SRV";
+}
+
+/** Nastavení servisu v podobě, ve které z něj jde vyčíst zkratka. */
+export type ConfigSeZkratkou = {
+  abbreviation?: unknown;
+  companyData?: { abbreviation?: unknown; name?: unknown } | null;
+} | null | undefined;
+
+/**
+ * Zkratka servisu z jeho nastavení – jediné místo, kde se to rozhoduje.
+ *
+ * Zkratka leží v configu na dvou místech: `abbreviation` na vrcholu (odsud ji
+ * čte generátor čísel zakázek) a `companyData.abbreviation` (odsud ji ukazuje
+ * a ukládá Nastavení). Kdo zapsal jen jedno z nich – starší servis, import,
+ * ruční zásah – měl čísla „SRV…“ místo své zkratky, a přečíslovat je zpětně
+ * nejde: číslo je na dokladech, které zákazník drží v ruce.
+ *
+ * Proto se zkouší obě místa a teprve pak se zkratka odvodí z názvu firmy.
+ * „SRV“ zbude jen servisu, který nemá vyplněné vůbec nic. Funkce je společná
+ * pro generátor čísel i pro ukázková data, aby ukázková zakázka nedostala
+ * jinou předponu než ta, kterou si servis založí sám.
+ */
+export function zkratkaZConfigu(config: ConfigSeZkratkou): string {
+  if (!config) return "SRV";
+  const kandidati = [config.abbreviation, config.companyData?.abbreviation];
+  for (const kandidat of kandidati) {
+    if (typeof kandidat === "string" && kandidat.trim()) return normalizujZkratku(kandidat);
+  }
+  const nazev = config.companyData?.name;
+  if (typeof nazev === "string" && nazev.trim()) return normalizujZkratku(odvodZkratku(nazev));
+  return "SRV";
+}
+
+/**
  * Založí servis a vrátí jeho id.
  *
  * Zkratku dopisuje klient, ne edge funkce: `service-create` zakládá servis

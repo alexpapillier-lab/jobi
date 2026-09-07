@@ -8,6 +8,18 @@ import type { DocType, DocumentData, DocumentsV2, SampleKind } from "../core/ind
 /** Ve vývoji lze API přesměrovat: http://localhost:5173/?api=http://127.0.0.1:3848 */
 export const API_BASE = (typeof location !== "undefined" && new URLSearchParams(location.search).get("api")) || "http://127.0.0.1:3847";
 
+/**
+ * Klíč okna z adresy. Server ho vyžaduje u požadavků z `file://` (tedy
+ * ze zabalené aplikace), protože stejný původ hlásí i cizí sandboxovaný
+ * iframe. Ve vývoji na localhostu klíč není potřeba a hlavička je prázdná.
+ */
+const KLIC_OKNA = (typeof location !== "undefined" && new URLSearchParams(location.search).get("klic")) || "";
+
+/** Hlavičky ke každému volání API – přidává klíč okna, když ho máme. */
+export function hlavickyApi(dalsi?: Record<string, string>): Record<string, string> {
+  return { ...(KLIC_OKNA ? { "x-jobi-klic": KLIC_OKNA } : {}), ...(dalsi ?? {}) };
+}
+
 export type ServiceEntry = { service_id: string; service_name: string; role: string };
 export type Context = {
   services: ServiceEntry[];
@@ -45,10 +57,10 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   async health(): Promise<{ ok: boolean; version: string }> {
-    return json(await fetch(`${API_BASE}/v1/health`));
+    return json(await fetch(`${API_BASE}/v1/health`, { headers: hlavickyApi() }));
   },
   async context(): Promise<Context> {
-    const d = await json<Partial<Context>>(await fetch(`${API_BASE}/v1/context`));
+    const d = await json<Partial<Context>>(await fetch(`${API_BASE}/v1/context`, { headers: hlavickyApi() }));
     return {
       services: d.services ?? [],
       activeServiceId: d.activeServiceId ?? null,
@@ -57,38 +69,38 @@ export const api = {
     };
   },
   async printers(): Promise<Printer[]> {
-    const d = await json<{ printers: Printer[] }>(await fetch(`${API_BASE}/v1/printers`));
+    const d = await json<{ printers: Printer[] }>(await fetch(`${API_BASE}/v1/printers`, { headers: hlavickyApi() }));
     return d.printers ?? [];
   },
   async settings(serviceId: string): Promise<{ preferred_printer_name?: string }> {
-    return json(await fetch(`${API_BASE}/v1/settings?service_id=${encodeURIComponent(serviceId)}`));
+    return json(await fetch(`${API_BASE}/v1/settings?service_id=${encodeURIComponent(serviceId)}`, { headers: hlavickyApi() }));
   },
   async saveSettings(serviceId: string, preferred_printer_name: string): Promise<void> {
-    await json(await fetch(`${API_BASE}/v1/settings?service_id=${encodeURIComponent(serviceId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferred_printer_name }) }));
+    await json(await fetch(`${API_BASE}/v1/settings?service_id=${encodeURIComponent(serviceId)}`, { method: "PUT", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify({ preferred_printer_name }) }));
   },
   async activity(): Promise<ActivityEntry[]> {
-    const d = await json<{ entries: ActivityEntry[] }>(await fetch(`${API_BASE}/v1/activity`));
+    const d = await json<{ entries: ActivityEntry[] }>(await fetch(`${API_BASE}/v1/activity`, { headers: hlavickyApi() }));
     return d.entries ?? [];
   },
   async recent(serviceId: string, docType: DocType): Promise<{ items: { id: string; label: string; data: DocumentData }[]; online: boolean }> {
-    return json(await fetch(`${API_BASE}/v2/recent?service_id=${encodeURIComponent(serviceId)}&doc_type=${docType}`));
+    return json(await fetch(`${API_BASE}/v2/recent?service_id=${encodeURIComponent(serviceId)}&doc_type=${docType}`, { headers: hlavickyApi() }));
   },
   async documents(serviceId: string): Promise<LoadedDocuments> {
-    return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`));
+    return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`, { headers: hlavickyApi() }));
   },
   async saveDocuments(serviceId: string, documents: DocumentsV2, ifVersion?: number): Promise<{ ok: true; version: number; updated_at: string | null; documents: DocumentsV2; savedTo: "supabase" | "local" }> {
-    return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documents, ifVersion }) }));
+    return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`, { method: "PUT", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify({ documents, ifVersion }) }));
   },
   async pdf(body: { service_id: string; doc_type: DocType; sample?: SampleKind; data?: DocumentData; documents?: DocumentsV2 }): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/v2/pdf`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await fetch(`${API_BASE}/v2/pdf`, { method: "POST", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error || res.statusText);
     return res.blob();
   },
   async print(body: { service_id: string; doc_type: DocType; sample?: SampleKind; data?: DocumentData; documents?: DocumentsV2; printer?: string }): Promise<{ ok: boolean; printer?: string }> {
-    return json(await fetch(`${API_BASE}/v2/print`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    return json(await fetch(`${API_BASE}/v2/print`, { method: "POST", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify(body) }));
   },
   async exportPdf(body: { service_id: string; doc_type: DocType; sample?: SampleKind; data?: DocumentData; documents?: DocumentsV2; target_path: string }): Promise<{ ok: boolean; path: string }> {
-    return json(await fetch(`${API_BASE}/v2/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    return json(await fetch(`${API_BASE}/v2/export`, { method: "POST", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify(body) }));
   },
 };
 

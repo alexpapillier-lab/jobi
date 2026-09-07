@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { getPendingInviteToken, setPendingInviteToken, clearPendingInviteToken } from "../lib/pendingInvite";
 import { supabase } from "../lib/supabaseClient";
 import { setRememberSession } from "../lib/authStorage";
+import { prelozAuthChybu } from "../lib/authChyby";
 import { ThemeLogo } from "./ThemeLogo";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
@@ -18,6 +19,12 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [error, setError] = useState("");
+  /*
+   * Hlášky typu „účet je založený, potvrďte e-mail“ nejsou chyba a nesmí se
+   * vypisovat červeně s vykřičníkem – nový zákazník to čte jako „nepovedlo se“
+   * a zkouší registraci znovu (a podruhé už dostane „účet už existuje“).
+   */
+  const [info, setInfo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [prefillError, setPrefillError] = useState("");
@@ -117,15 +124,19 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setInfo("");
     setIsLoading(true);
 
     try {
       if (isSignUp) {
-        if (!inviteToken || !inviteToken.trim()) {
-          setError("Kód z pozvánky je povinný.");
-          setIsLoading(false);
-          return;
-        }
+        /*
+         * Kód z pozvánky je NEPOVINNÝ. Dřív se bez něj registrace odmítla –
+         * jenže pozvánku vystaví jen někdo, kdo už servis má. Nový zákazník,
+         * který si Jobi stáhl z webu, si tak nemohl založit účet vůbec, i když
+         * na to je připravená obrazovka „Založte si servis“ (FirstServiceSetup)
+         * i funkce service-create. Kdo kód má, přidá se rovnou do cizího
+         * servisu; kdo ne, založí si po registraci vlastní.
+         */
         if (password !== confirmPassword) {
           setError("Hesla se neshodují.");
           setIsLoading(false);
@@ -136,9 +147,14 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
           setIsLoading(false);
           return;
         }
-        setPendingInviteToken(inviteToken.trim());
-        await signUp(email, password);
-        setError("Registrace úspěšná! Zkontrolujte svůj email pro potvrzení.");
+        if (inviteToken.trim()) setPendingInviteToken(inviteToken.trim());
+        else clearPendingInviteToken();
+        const { potrebujePotvrzeni } = await signUp(email, password);
+        // Když relace přišla hned, je uživatel přihlášený a App přepne na
+        // další obrazovku sám – hláška „zkontrolujte e-mail“ by lhala.
+        if (potrebujePotvrzeni) {
+          setInfo("Účet je založený. Otevřete odkaz, který jsme vám poslali e-mailem, a pak se přihlaste.");
+        }
         setIsLoading(false);
       } else {
         // Volba musí platit UŽ při přihlášení – rozhoduje, kam se relace uloží
@@ -151,8 +167,8 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
           localStorage.removeItem("jobsheet_last_email");
         }
       }
-    } catch (err: any) {
-      setError(err?.message || "Neočekávaná chyba při přihlašování");
+    } catch (err: unknown) {
+      setError(prelozAuthChybu(err as Record<string, unknown>, isSignUp ? "Účet se nepodařilo založit." : "Přihlášení se nepodařilo."));
       setIsLoading(false);
     }
   };
@@ -576,7 +592,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                     marginBottom: 8,
                   }}
                 >
-                  Kód z pozvánky
+                  Kód z pozvánky <span style={{ fontWeight: 500, color: "#64748b" }}>· nepovinné</span>
                 </label>
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <input
@@ -592,20 +608,19 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                         clearPendingInviteToken();
                       }
                     }}
-                    placeholder="Zadej kód z e-mailu"
-                    required
+                    placeholder="Zadejte kód z e-mailu"
                     style={{
                       flex: 1,
                       padding: "16px 18px",
                       borderRadius: 12,
-                      border: error && !inviteToken.trim() ? "2px solid #ef4444" : "1px solid #e2e8f0",
+                      border: "1px solid #e2e8f0",
                       background: "#ffffff",
                       color: "#1e293b",
                       fontSize: 15,
                       fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
                       outline: "none",
                       transition: "all 0.2s ease",
-                      boxShadow: error && !inviteToken.trim() ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                      boxShadow: "none",
                     }}
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = "#8b5cf6";
@@ -638,6 +653,9 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                 {prefillError && (
                   <div style={{ marginTop: 6, fontSize: 12, color: "#dc2626" }}>{prefillError}</div>
                 )}
+                <div style={{ marginTop: 6, fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                  Máte kód od kolegy? Vyplňte ho a přidáte se do jeho servisu. Zakládáte si Jobi sami? Nechte pole prázdné – vlastní servis si založíte hned po registraci.
+                </div>
               </div>
               <div>
                 <label
@@ -649,7 +667,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
                     marginBottom: 8,
                   }}
                 >
-                  Email (doplněn z pozvánky)
+                  Email
                 </label>
                 <input
                   type="email"
@@ -865,8 +883,27 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
             </>
           )}
 
+          {info && (
+            <div
+              role="status"
+              style={{
+                padding: "14px 18px",
+                borderRadius: 12,
+                background: "rgba(16, 185, 129, 0.1)",
+                border: "1px solid rgba(16, 185, 129, 0.35)",
+                color: "#047857",
+                fontSize: 13,
+                fontWeight: 500,
+                lineHeight: 1.5,
+              }}
+            >
+              {info}
+            </div>
+          )}
+
           {error && (
             <div
+              role="alert"
               style={{
                 padding: "14px 18px",
                 borderRadius: 12,
@@ -985,6 +1022,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
             onClick={() => {
               setIsSignUp(!isSignUp);
               setError("");
+              setInfo("");
               setPrefillError("");
               if (!isSignUp) setConfirmPassword("");
             }}
@@ -1009,12 +1047,12 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
               e.currentTarget.style.background = "transparent";
             }}
           >
-            {isSignUp ? "Mám už účet" : "Mám kód z pozvánky"}
+            {isSignUp ? "Mám už účet – přihlásit se" : "Nemám účet – vytvořit nový"}
           </button>
         </div>
         {isSignUp && (
           <p style={{ marginTop: 12, fontSize: 13, color: "var(--muted)", textAlign: "center", maxWidth: 320 }}>
-            Už máš účet? Zadej kód z pozvánky, přepni na „Mám už účet“ a přihlas se – přidáš se do servisu bez nové registrace.
+            Už účet máte a dostali jste kód z pozvánky? Vyplňte kód, přepněte na „Mám už účet“ a přihlaste se – do servisu se přidáte bez nové registrace.
           </p>
         )}
         </>

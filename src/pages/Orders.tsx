@@ -50,6 +50,7 @@ import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeni
 import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
+import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
@@ -4581,13 +4582,46 @@ export default function Orders({
               gap: 12,
             }}
           >
-            <div style={{ fontSize: 48, opacity: 0.5 }}>{activeGroup === "reklamace" ? "—" : <DocumentIcon size={48} />}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
-              {activeGroup === "reklamace" ? "Žádné reklamace neodpovídají filtru" : "Žádné zakázky neodpovídají filtru"}
-            </div>
-            <div style={{ fontSize: 13 }}>
-              {activeGroup === "reklamace" ? "Zkuste změnit vyhledávání nebo vytvořte reklamaci" : "Zkuste změnit filtry nebo vytvořte novou zakázku"}
-            </div>
+            {/*
+              Prázdný seznam má dvě úplně různé příčiny a nový servis potkává tu
+              druhou: buď filtr nic nenašel, nebo servis ještě nic nemá. Do teď
+              se v obou případech psalo „neodpovídají filtru“ – zákazník první
+              den v aplikaci tak četl, že má něco špatně nastaveného, a hledal
+              filtr, který nezapnul.
+            */}
+            {(() => {
+              const jeReklamace = activeGroup === "reklamace";
+              const nicNeexistuje = jeReklamace ? cloudClaims.length === 0 : cloudTickets.length === 0;
+              return (
+                <>
+                  <div style={{ fontSize: 48, opacity: 0.5 }}>{jeReklamace ? "—" : <DocumentIcon size={48} />}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+                    {nicNeexistuje
+                      ? jeReklamace
+                        ? "Zatím žádné reklamace"
+                        : "Zatím žádné zakázky"
+                      : jeReklamace
+                        ? "Žádné reklamace neodpovídají filtru"
+                        : "Žádné zakázky neodpovídají filtru"}
+                  </div>
+                  <div style={{ fontSize: 13, maxWidth: 460 }}>
+                    {nicNeexistuje
+                      ? jeReklamace
+                        ? "Reklamaci založíte tlačítkem „+ Nová reklamace“ nahoře – navazuje na už dokončenou zakázku."
+                        : "Začněte příjmem prvního zařízení: jméno, telefon a co je rozbité. Číslo zakázky i doklad k tisku vzniknou samy."
+                      : jeReklamace
+                        ? "Zkuste změnit vyhledávání nebo vytvořte reklamaci"
+                        : "Zkuste změnit filtry nebo vytvořte novou zakázku"}
+                  </div>
+                  {nicNeexistuje && !jeReklamace && (
+                    // Jiný popis než tlačítko v liště schválně: dvě tlačítka se
+                    // stejným názvem na jedné obrazovce se nedají rozlišit ani
+                    // odečítačkou, ani testem.
+                    <Button variant="primary" onClick={openNewOrder}>Přijmout první zakázku</Button>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -7016,16 +7050,16 @@ export default function Orders({
                       </div>
                     )}
                     {(detailedTicket.performedRepairs ?? []).length > 0 && (() => {
-                      const totalPrice = (detailedTicket.performedRepairs ?? []).reduce((sum, r) => sum + (r.price || 0), 0);
+                      const totalPrice = hrubaCena(detailedTicket.performedRepairs);
                       const discountType: "percentage" | "amount" | null = detailedTicket.discountType ?? null;
                       const discountValue = detailedTicket.discountValue || 0;
-                      let discountAmount = 0;
-                      if (discountType === "percentage") {
-                        discountAmount = (totalPrice * discountValue) / 100;
-                      } else if (discountType === "amount") {
-                        discountAmount = discountValue;
-                      }
-                      const finalPrice = Math.max(0, totalPrice - discountAmount);
+                      /* Sleva i konečná cena přes společný vzorec (slevaZakazky.ts).
+                         Vlastní kopie, která tu byla, neznala strop ani zaokrouhlení:
+                         sleva 5 000 Kč na zakázce za 1 500 Kč vypsala „Sleva −5 000,00
+                         Kč“ vedle „Finální cena 0,00 Kč“ – dvě čísla, která si na
+                         obrazovce odporují a na dokladu jsou pak jiná. */
+                      const discountAmount = castkaSlevy(totalPrice, discountType, discountValue);
+                      const finalPrice = konecnaCena(totalPrice, discountType, discountValue);
                       
                       return (
                         <div style={{ 
@@ -7039,7 +7073,7 @@ export default function Orders({
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span style={{ fontWeight: 950, fontSize: 14, color: "var(--text)" }}>Celková cena oprav:</span>
                               <span style={{ fontWeight: 950, fontSize: 16, color: "var(--accent)" }}>
-                                {totalPrice} Kč
+                                {formatCurrency(totalPrice)}
                               </span>
                             </div>
                             
@@ -7065,7 +7099,7 @@ export default function Orders({
                                     Sleva {discountType === "percentage" ? `(${discountValue}%)` : ""}:
                                   </span>
                                   <span style={{ fontSize: 13, color: "var(--accent)", fontWeight: 700 }}>
-                                    -{discountAmount.toFixed(2)} Kč
+                                    −{formatCurrency(discountAmount)}
                                   </span>
                                 </div>
                               )}
@@ -7074,7 +7108,7 @@ export default function Orders({
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 4, borderTop: "1px solid var(--border)" }}>
                                   <span style={{ fontWeight: 950, fontSize: 14, color: "var(--text)" }}>Finální cena:</span>
                                   <span style={{ fontWeight: 950, fontSize: 18, color: "var(--accent)" }}>
-                                    {finalPrice.toFixed(2)} Kč
+                                    {formatCurrency(finalPrice)}
                                   </span>
                         </div>
                               )}

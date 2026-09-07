@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { escapeHtml } from "../_shared/html.ts";
+import { formatujCastku, formatujDatum } from "../_shared/penize.ts";
+import { buildSpayd } from "../_shared/spayd.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -120,6 +122,17 @@ serve(async (req) => {
     const druhSoubor = kind === "proforma" ? "Zalohova_faktura" : kind === "credit_note" ? "Dobropis" : "Faktura";
     const druhNadpis = kind === "invoice" ? "" : druhNazev;
 
+    /* Je servis plátce DPH? Bez toho se neplátci do e-mailované faktury
+       vytiskla rekapitulace DPH, kterou na vytištěné nemá. Sloupec přidává
+       pozdější migrace, proto se chyba jen spolkne a platí výchozí „plátce“. */
+    let vatPayer = true;
+    {
+      const { data: sluzba } = await svc.from("services").select("vat_payer").eq("id", service_id).maybeSingle();
+      if (sluzba && typeof (sluzba as Record<string, unknown>).vat_payer === "boolean") {
+        vatPayer = (sluzba as Record<string, boolean>).vat_payer;
+      }
+    }
+
     // Load items
     const { data: items } = await svc
       .from("invoice_items")
@@ -137,9 +150,13 @@ serve(async (req) => {
       // Nadpis dokladu podle druhu; u běžné faktury se nechá výchozí text šablony.
       if (druhNadpis) variables.inv_title = druhNadpis;
       variables.inv_vs = inv.variable_symbol || "";
-      variables.inv_issue_date = inv.issue_date || "";
-      variables.inv_due_date = inv.due_date || "";
-      variables.inv_taxable_date = inv.taxable_date || "";
+      /* Data i částky se posílají naformátované pro člověka, stejně jako
+         je posílá aplikace (src/lib/invoiceToJobiDocs.ts). Dřív odsud šlo
+         holé „2026-09-07“ a „1234.5“, takže e-mailem odeslaná faktura
+         vypadala jinak než ta vytištěná od pultu. */
+      variables.inv_issue_date = formatujDatum(inv.issue_date);
+      variables.inv_due_date = formatujDatum(inv.due_date);
+      variables.inv_taxable_date = kind === "proforma" ? "" : formatujDatum(inv.taxable_date);
       variables.inv_supplier_name = inv.supplier_name || "";
       variables.inv_supplier_ico = inv.supplier_ico || "";
       variables.inv_supplier_dic = inv.supplier_dic || "";
@@ -154,6 +171,7 @@ serve(async (req) => {
       variables.inv_customer_dic = inv.customer_dic || "";
       variables.inv_customer_address = inv.customer_address || "";
       variables.inv_customer_email = inv.customer_email || "";
+      variables.inv_customer_phone = inv.customer_phone || "";
       variables.inv_items_json = JSON.stringify(
         ((items as any[]) || []).map((it: any) => ({
           name: it.name,
@@ -164,11 +182,36 @@ serve(async (req) => {
           line_total: it.line_total,
         })),
       );
-      variables.inv_subtotal = String(inv.subtotal);
-      variables.inv_vat = String(inv.vat_amount);
-      variables.inv_total = String(inv.total);
-      variables.inv_rounding = String(inv.rounding);
-      variables.inv_currency = inv.currency || "CZK";
+      const mena = inv.currency || "CZK";
+      variables.inv_subtotal = formatujCastku(Number(inv.subtotal) || 0, mena);
+      variables.inv_vat = formatujCastku(Number(inv.vat_amount) || 0, mena);
+      // Šablona čte inv_vat_amount; bez něj na e-mailované faktuře řádek
+      // s DPH vůbec nevyšel, i když na vytištěné byl.
+      variables.inv_vat_amount = variables.inv_vat;
+      variables.inv_total = formatujCastku(Number(inv.total) || 0, mena);
+      variables.inv_rounding = formatujCastku(Number(inv.rounding) || 0, mena);
+      // Sazby, které se na dokladu skutečně vyskytly – jinak šablona tiskne
+      // napevno „DPH 21 %“ i u 12% položky.
+      variables.inv_vat_rates = [...new Set(((items as any[]) || []).map((it: any) => Number(it.vat_rate)))]
+        .filter((r) => Number.isFinite(r))
+        .sort((a, b) => a - b)
+        .map((r) => `${r}%`)
+        .join(", ");
+      // Neplátci DPH se rekapitulace daně tisknout nesmí.
+      variables.inv_vat_payer = vatPayer ? "1" : "0";
+      // QR platba: na vytištěné faktuře byla, v e-mailu chyběla. Dobropis
+      // (a doklad na nulu) se neplatí, tam se kód negeneruje.
+      variables.inv_spayd_qr = Number(inv.total) > 0
+        ? (buildSpayd({
+            iban: inv.supplier_iban || "",
+            bankAccount: inv.supplier_bank_account || "",
+            amount: Number(inv.total),
+            vs: inv.variable_symbol || "",
+            currency: mena,
+            message: `${druhNazev} ${inv.number || ""}`.trim(),
+          }) ?? "")
+        : "";
+      variables.inv_currency = mena;
       variables.inv_notes = inv.notes || "";
 
       const companyData: Record<string, string> = {
@@ -228,8 +271,8 @@ serve(async (req) => {
       `<p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6">${safeBody}</p>`,
       '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;border-radius:8px;margin:16px 0"><tr><td style="padding:16px">',
       `<p style="margin:0 0 4px;font-size:12px;color:#6b7280">Celkem k úhradě</p>`,
-      `<p style="margin:0;font-size:22px;font-weight:800;color:#111827">${escapeHtml(String(inv.total))} ${escapeHtml(inv.currency || "CZK")}</p>`,
-      `<p style="margin:4px 0 0;font-size:12px;color:#6b7280">Splatnost: ${escapeHtml(inv.due_date || "—")}</p>`,
+      `<p style="margin:0;font-size:22px;font-weight:800;color:#111827">${escapeHtml(formatujCastku(Number(inv.total) || 0, inv.currency))}</p>`,
+      `<p style="margin:4px 0 0;font-size:12px;color:#6b7280">Splatnost: ${escapeHtml(formatujDatum(inv.due_date) || "—")}</p>`,
       "</td></tr></table>",
       pdfBase64 ? '<p style="margin:16px 0 0;font-size:13px;color:#6b7280">PDF faktura je v příloze tohoto e-mailu.</p>' : "",
       "</td></tr></table>",

@@ -49,7 +49,6 @@ const HOST = "127.0.0.1";
  */
 export function povolenyPuvod(origin: string | undefined): boolean {
   if (!origin) return true; // nativní klient nebo curl – prohlížeč Origin vždy pošle
-  if (origin === "null" || origin.startsWith("file://")) return true;
   if (origin.startsWith("tauri://") || origin.startsWith("jobi://")) return true;
   try {
     const u = new URL(origin);
@@ -67,6 +66,14 @@ export function povolenyPuvod(origin: string | undefined): boolean {
 }
 
 /**
+ * Původ `null` posílá naše okno z `file://` – ale i cizí stránka
+ * ze sandboxovaného iframu. Takový požadavek se pouští jen s klíčem okna.
+ */
+export function puvodPotrebujeKlic(origin: string | undefined): boolean {
+  return origin === "null" || (typeof origin === "string" && origin.startsWith("file://"));
+}
+
+/**
  * Kam se smí exportovat PDF.
  *
  * `target_path` chodí zvenčí a `fs.writeFile` by ho poslechl doslova – včetně
@@ -78,11 +85,21 @@ export function bezpecnaCestaExportu(target: string): boolean {
   if (!path.isAbsolute(target)) return false;
   const cil = path.resolve(target);
   if (!cil.toLowerCase().endsWith(".pdf")) return false;
-  const povolene = [os.homedir(), os.tmpdir(), "/private/var/folders", "/tmp"].map((d) => path.resolve(d));
-  return povolene.some((d) => cil === d || cil.startsWith(d + path.sep));
+  // Zakázané jsou systémové složky, ne všechno kromě domovské: uživatel si
+  // v nativním dialogu běžně vybere externí disk, síťový svazek nebo na
+  // Windows jiný oddíl, a takový export musí projít.
+  const zakazane = [
+    "/System", "/Library", "/usr", "/bin", "/sbin", "/etc", "/var/db", "/Applications",
+    "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
+  ];
+  const porovnani = process.platform === "win32" ? cil.toLowerCase() : cil;
+  return !zakazane.some((d) => {
+    const koren = process.platform === "win32" ? d.toLowerCase() : d;
+    return porovnani === koren || porovnani.startsWith(koren + path.sep);
+  });
 }
 
-const CHYBA_CESTY = "target_path musí být .pdf v domovské nebo dočasné složce";
+const CHYBA_CESTY = "target_path musí být .pdf mimo systémové složky";
 
 const PDF_TIMEOUT_MS = 60000;
 
@@ -122,6 +139,15 @@ type PrinterInfo = { name: string; status: string; available: boolean };
 
 export type StartOptions = {
   htmlToPdf?: (html: string) => Promise<Buffer>;
+  /**
+   * Jednorázový klíč, kterým se hlásí okno JobiDocs.
+   *
+   * Okno se v zabalené aplikaci načítá z `file://`, takže posílá `Origin: null`
+   * – a to samé posílá **libovolná stránka ze sandboxovaného iframu**. Kontrola
+   * původu proto sama o sobě nestačí: pro požadavky bez našeho původu se
+   * vyžaduje tenhle klíč, který hlavní proces předá jen svému oknu.
+   */
+  klicOkna?: string;
   /** Nativní tisk pro platformy bez CUPS (Windows). Bez něj se použije lp. */
   printPdfNative?: (pdf: Buffer, printerName?: string) => Promise<string>;
   listPrintersNative?: () => Promise<PrinterInfo[]>;
@@ -209,9 +235,19 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
   const appVersion = options?.appVersion ?? "dev";
   const fastify = Fastify({ logger: true, bodyLimit: 50 * 1024 * 1024 });
 
+  const klicOkna = options?.klicOkna ?? "";
+
   fastify.addHook("onRequest", async (request, reply) => {
     const p = request.url?.split("?")[0] ?? "";
-    if (!povolenyPuvod(request.headers.origin)) {
+    const origin = request.headers.origin;
+    const klic = request.headers["x-jobi-klic"];
+    const klicSedi = !!klicOkna && typeof klic === "string" && klic === klicOkna;
+    // Origin `null` (naše okno z file://, ale i cizí sandboxovaný iframe)
+    // projde jen s klíčem okna. Bez klíče (vývoj, testy) se chová jako dřív.
+    const puvodOk = puvodPotrebujeKlic(origin) && klicOkna
+      ? klicSedi
+      : povolenyPuvod(origin) || klicSedi;
+    if (!puvodOk) {
       reply.status(403).send({ error: "JobiDocs přijímá požadavky jen z aplikace Jobi." });
       return reply;
     }
@@ -221,7 +257,10 @@ export async function startApiServer(port: number = PORT, userDataPath?: string,
   });
 
   // Stejná hranice i pro CORS: cizí stránka nesmí odpověď ani přečíst.
-  await fastify.register(cors, { origin: (origin, cb) => cb(null, povolenyPuvod(origin ?? undefined)) });
+  await fastify.register(cors, {
+    origin: (origin, cb) => cb(null, povolenyPuvod(origin ?? undefined)),
+    allowedHeaders: ["content-type", "x-jobi-klic"],
+  });
 
   const baseDir = userDataPath || path.join(process.cwd(), ".jobidocs-data");
   setSettingsPath(baseDir);

@@ -144,7 +144,16 @@ export function RestockDialog({
 
         {nalezene.length === 0 ? (
           <div style={{ padding: "var(--space-5)", textAlign: "center", color: "var(--muted)", fontSize: "var(--text-base)" }}>
-            {hledane ? "Žádný produkt neodpovídá hledání." : "Začněte psát název nebo SKU produktu."}
+            {/*
+              Nový servis má sklad prázdný a dialog mu do teď nabízel „začněte
+              psát název produktu“ – a pak na cokoli odpověděl „nic nenalezeno“.
+              Nikdy se nedozvěděl, že hledá v prázdném skladu.
+            */}
+            {products.length === 0
+              ? "Ve skladu zatím není žádný produkt. Nejdřív ho založte tlačítkem „Nový produkt“, nebo použijte Import."
+              : hledane
+                ? "Žádný produkt neodpovídá hledání."
+                : "Začněte psát název nebo SKU produktu."}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", maxHeight: 360, overflowY: "auto" }}>

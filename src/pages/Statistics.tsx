@@ -24,22 +24,32 @@ import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
 import { useBranches, filterByBranch } from "../context/BranchContext";
+import { stornoPodleStavu } from "../lib/stornoStav";
 import { marginByBranch, marginByService, type MarginRow } from "./Statistics/margin";
 import { useEntitlements } from "../hooks/useEntitlements";
 import {
   EMPTY_COST_SOURCES,
+  NENI_STORNO,
   marginByDevice,
   marginByRepair,
   marginPercent,
   ticketMargin,
   type CostSources,
+  type JeStorno,
 } from "./Statistics/margin";
 import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
+import {
+  COMPARABLE_PERIODS,
+  periodRange,
+  previousPeriodRange,
+  vObdobi,
+  type DateRange,
+  type PeriodType,
+} from "./Statistics/obdobi";
 
 const TICKETS_SELECT =
   "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
 
-type PeriodType = "all" | "today" | "week" | "month" | "quarter" | "year" | "custom";
 type ViewMode = "cards" | "table" | "charts";
 
 type DrillDown =
@@ -54,8 +64,6 @@ type DrillFacet = Exclude<DrillDown, null>["type"];
 /** Mapování z Orders.tsx přidává completed_at mimo typ TicketEx. */
 type TicketWithCompletion = TicketEx & { completed_at?: string | null };
 
-type DateRange = { start: Date; end: Date };
-
 const PERIOD_OPTIONS: Array<{ value: PeriodType; label: string }> = [
   { value: "today", label: "Dnes" },
   { value: "week", label: "Týden" },
@@ -66,96 +74,10 @@ const PERIOD_OPTIONS: Array<{ value: PeriodType; label: string }> = [
   { value: "custom", label: "Vlastní" },
 ];
 
-/** Období, pro která má smysl „předchozí období“ (stejná délka, o krok dozadu). */
-const COMPARABLE_PERIODS: PeriodType[] = ["today", "week", "month", "quarter", "year"];
-
-// ========================
-// Období
-// ========================
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
-
-function endOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-
-/** Pondělí týdne, do kterého spadá `d`. */
-function mondayOf(d: Date): Date {
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
-}
-
-function periodRange(period: PeriodType, customStart: string, customEnd: string, now: Date): DateRange | null {
-  switch (period) {
-    case "all":
-      return null;
-    case "today":
-      return { start: startOfDay(now), end: endOfDay(now) };
-    case "week":
-      return { start: mondayOf(now), end: endOfDay(now) };
-    case "month":
-      return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: endOfDay(now) };
-    case "quarter": {
-      const q = Math.floor(now.getMonth() / 3);
-      return { start: new Date(now.getFullYear(), q * 3, 1), end: endOfDay(now) };
-    }
-    case "year":
-      return { start: new Date(now.getFullYear(), 0, 1), end: endOfDay(now) };
-    case "custom": {
-      if (!customStart || !customEnd) return null;
-      const start = new Date(customStart);
-      const end = new Date(customEnd);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-      return { start: startOfDay(start), end: endOfDay(end) };
-    }
-    default:
-      return null;
-  }
-}
-
-/** Posun o celé měsíce; den v měsíci se ořízne na poslední den cílového měsíce (31. 3. → 28. 2.). */
-function shiftMonths(d: Date, months: number): Date {
-  const target = new Date(d.getFullYear(), d.getMonth() + months, 1, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
-  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  target.setDate(Math.min(d.getDate(), lastDay));
-  return target;
-}
-
-function shiftDays(d: Date, days: number): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
-}
-
-/**
- * Předchozí období stejné délky – včera, minulý týden do stejného dne,
- * minulý měsíc do stejného dne… Aktuální období běží jen „do dneška“, takže
- * porovnávat ho s celým minulým měsícem by vždy vycházelo v neprospěch.
- */
-function previousPeriodRange(period: PeriodType, now: Date): DateRange | null {
-  const current = periodRange(period, "", "", now);
-  if (!current) return null;
-  switch (period) {
-    case "today":
-      return { start: shiftDays(current.start, -1), end: shiftDays(current.end, -1) };
-    case "week":
-      return { start: shiftDays(current.start, -7), end: shiftDays(current.end, -7) };
-    case "month":
-      return { start: shiftMonths(current.start, -1), end: shiftMonths(current.end, -1) };
-    case "quarter":
-      return { start: shiftMonths(current.start, -3), end: shiftMonths(current.end, -3) };
-    case "year":
-      return { start: shiftMonths(current.start, -12), end: shiftMonths(current.end, -12) };
-    default:
-      return null;
-  }
-}
-
 function inRange(t: TicketEx, range: DateRange): boolean {
-  const d = new Date(t.createdAt);
-  return d >= range.start && d <= range.end;
+  return vObdobi(t.createdAt, range);
 }
+
 
 // ========================
 // Výpočty
@@ -182,7 +104,7 @@ type Kpis = {
   averageTicketDurationDays: number;
 };
 
-function computeKpis(list: TicketEx[], sources: CostSources): Kpis {
+function computeKpis(list: TicketEx[], sources: CostSources, jeStorno: JeStorno = NENI_STORNO): Kpis {
   let totalRevenue = 0;
   let totalCosts = 0;
   let totalDiscounts = 0;
@@ -194,7 +116,7 @@ function computeKpis(list: TicketEx[], sources: CostSources): Kpis {
   let durationCount = 0;
 
   for (const t of list) {
-    const m = ticketMargin(t, sources);
+    const m = ticketMargin(t, sources, jeStorno(t));
     const rev = m.revenue;
     totalRevenue += rev;
     totalCosts += m.cost;
@@ -308,7 +230,7 @@ type StatisticsProps = {
 };
 
 export default function Statistics({ activeServiceId, onOpenTicket }: StatisticsProps) {
-  const { getByKey } = useStatuses();
+  const { getByKey, statuses } = useStatuses();
   /**
    * Stav v databázi je anglický klíč ("received", "ready"). Zbytek aplikace
    * ho překládá přes getByKey; tady taky, aby uživatel neviděl "received"
@@ -318,6 +240,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     (key: string) => (key === "unknown" ? "Neznámý" : getByKey(key)?.label ?? key),
     [getByKey]
   );
+
+  /**
+   * Stornované zakázky se do peněz nepočítají – servis za ně nic nedostal.
+   * Stejné pravidlo má i databázová funkce `statistiky_prehled`, jinak by se
+   * čísla ze serveru rozešla se záložním výpočtem v prohlížeči.
+   */
+  const jeStornoStatus = useMemo(() => stornoPodleStavu(statuses), [statuses]);
+  const jeStornoZakazky = useCallback<JeStorno>((t: TicketEx) => jeStornoStatus(t.status), [jeStornoStatus]);
 
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
@@ -340,6 +270,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const { has: maModul } = useEntitlements(activeServiceId);
   const [konsolidovane, setKonsolidovane] = useState(false);
   const [mojeServisy, setMojeServisy] = useState<Array<{ id: string; name: string }>>([]);
+  /**
+   * Plátce DPH a jestli jsou ceny oprav uvedené s daní. Statistiky sčítají
+   * ceny tak, jak jsou u zakázky – u plátce s cenami včetně DPH je tedy
+   * „Celkový příjem“ částka s daní, ne základ. Účetní má jiné číslo, tak to
+   * musí být pod kartami napsané.
+   */
+  const [dphServisu, setDphServisu] = useState<{ platce: boolean; cenySDph: boolean } | null>(null);
   /**
    * Hotové agregace ze serveru. Dokud dorazí, stránka nemusí stahovat žádnou
    * zakázku – ty se načítají jen pro tabulku a export, kde jde o jednotlivé
@@ -367,8 +304,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         .eq("skryty", false);
       const ids = ((clenstvi ?? []) as Array<{ service_id: string }>).map((m) => m.service_id);
       if (ids.length === 0) return;
-      const { data: servisy } = await (supabase!.from("services") as any).select("id, name").in("id", ids);
-      if (!cancelled && Array.isArray(servisy)) setMojeServisy(servisy.map((x: any) => ({ id: String(x.id), name: String(x.name ?? "Servis") })));
+      const { data: servisy } = await (supabase!.from("services") as any)
+        .select("id, name, vat_payer, prices_include_vat")
+        .in("id", ids);
+      if (cancelled || !Array.isArray(servisy)) return;
+      setMojeServisy(servisy.map((x: any) => ({ id: String(x.id), name: String(x.name ?? "Servis") })));
+      const aktivni = servisy.find((x: any) => String(x.id) === activeServiceId);
+      setDphServisu(aktivni ? { platce: aktivni.vat_payer === true, cenySDph: aktivni.prices_include_vat !== false } : null);
     })();
     return () => { cancelled = true; };
   }, [activeServiceId]);
@@ -593,12 +535,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   );
 
   const kpis = useMemo(
-    () => serverStats?.kpi ?? computeKpis(filteredTickets, costSources),
-    [serverStats, filteredTickets, costSources]
+    () => serverStats?.kpi ?? computeKpis(filteredTickets, costSources, jeStornoZakazky),
+    [serverStats, filteredTickets, costSources, jeStornoZakazky]
   );
   const prevKpis = useMemo(
-    () => serverStats?.kpiPredchozi ?? computeKpis(previousPeriodTickets, costSources),
-    [serverStats, previousPeriodTickets, costSources]
+    () => serverStats?.kpiPredchozi ?? computeKpis(previousPeriodTickets, costSources, jeStornoZakazky),
+    [serverStats, previousPeriodTickets, costSources, jeStornoZakazky]
   );
 
   /**
@@ -649,12 +591,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   }, [serverStats, facetTickets]);
 
   const marginRepairRows = useMemo<MarginRow[]>(
-    () => serverStats?.marzeOpravy.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByRepair(facetTickets("repair"), costSources),
-    [serverStats, facetTickets, costSources]
+    () => serverStats?.marzeOpravy.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByRepair(facetTickets("repair"), costSources, jeStornoZakazky),
+    [serverStats, facetTickets, costSources, jeStornoZakazky]
   );
   const marginDeviceRows = useMemo<MarginRow[]>(
-    () => serverStats?.marzeZarizeni.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByDevice(facetTickets("device"), costSources),
-    [serverStats, facetTickets, costSources]
+    () => serverStats?.marzeZarizeni.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByDevice(facetTickets("device"), costSources, jeStornoZakazky),
+    [serverStats, facetTickets, costSources, jeStornoZakazky]
   );
   const branchNames = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
   const jmenaServisu = useMemo(() => new Map(mojeServisy.map((x) => [x.id, x.name])), [mojeServisy]);
@@ -662,15 +604,15 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     if (!konsolidovane) return [];
     // Server vrací jen id servisu; jméno zná stránka ze seznamu členství.
     if (serverStats) return serverStats.marzeServisy.map((r) => ({ ...r, name: jmenaServisu.get(r.key) ?? "Servis" }));
-    return marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis");
-  }, [konsolidovane, serverStats, filteredTickets, costSources, jmenaServisu]);
+    return marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis", jeStornoZakazky);
+  }, [konsolidovane, serverStats, filteredTickets, costSources, jmenaServisu, jeStornoZakazky]);
   const marginBranchRows = useMemo<MarginRow[]>(() => {
     if (!hasBranches || activeBranchId) return [];
     if (serverStats) {
       return serverStats.marzePobocky.map((r) => ({ ...r, name: r.key ? branchNames.get(r.key) ?? "Bez pobočky" : "Bez pobočky" }));
     }
-    return marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky");
-  }, [hasBranches, activeBranchId, serverStats, filteredTickets, costSources, branchNames]);
+    return marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky", jeStornoZakazky);
+  }, [hasBranches, activeBranchId, serverStats, filteredTickets, costSources, branchNames, jeStornoZakazky]);
 
   const monthlyStats = useMemo<MonthStat[]>(() => {
     const now = new Date();
@@ -694,14 +636,14 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       maxTime = Math.max(maxTime, time);
       const key = `${d.getFullYear()}-${d.getMonth()}`;
       const entry = byMonth.get(key) ?? { year: d.getFullYear(), monthIndex: d.getMonth(), count: 0, revenue: 0, margin: 0 };
-      const m = ticketMargin(t, costSources);
+      const m = ticketMargin(t, costSources, jeStornoZakazky(t));
       entry.count += 1;
       entry.revenue += m.revenue;
       entry.margin += m.margin;
       byMonth.set(key, entry);
     }
     return doplnPrazdneMesice([...byMonth.values()], minTime, maxTime, obdobi, now);
-  }, [serverStats, facetTickets, obdobi, costSources]);
+  }, [serverStats, facetTickets, obdobi, costSources, jeStornoZakazky]);
 
   const toggleStatus = useCallback((key: string) => {
     setDrillDown((prev) => (prev?.type === "status" && prev.value === key ? null : { type: "status", value: key }));
@@ -738,7 +680,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     const header = ["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)", "Náklady (Kč)", "Marže (Kč)"];
     const castka = (n: number) => n.toFixed(2).replace(".", ",");
     const rows = filteredTickets.map((t) => {
-      const m = ticketMargin(t, costSources);
+      const m = ticketMargin(t, costSources, jeStornoZakazky(t));
       return [
         t.code ?? "",
         t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "",
@@ -762,7 +704,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [filteredTickets, nazevStavu, costSources]);
+  }, [filteredTickets, nazevStavu, costSources, jeStornoZakazky]);
 
   if (!activeServiceId) {
     return (
@@ -917,12 +859,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     if (kpis.entriesWithoutCost > 0) {
       const n = kpis.entriesWithoutCost;
       parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} chybí náklady.`);
-    } else {
+    } else if (topRepairs.length > 0) {
+      // Na servisu bez jediné opravy je „všechny opravy mají náklady“ tvrzení
+      // o prázdné množině – nový zákazník to čte jako pochvalu za data, která
+      // nemá.
       parts.push("Všechny provedené opravy mají náklady.");
     }
     if (kpis.entriesMissingPurchasePrice > 0) {
       const n = kpis.entriesMissingPurchasePrice;
       parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} nemá některý díl nákupní cenu (počítá se jako 0 Kč).`);
+    }
+    // Peníze jsou z cen na zakázkách, ne z faktur – a stornované zakázky do
+    // nich nepatří. Bez téhle věty se čísla nedají porovnat s účetnictvím.
+    parts.push("Počítá se z cen na zakázkách (ne z faktur); stornované zakázky se počítají do počtu, ne do peněz.");
+    if (dphServisu?.platce) {
+      parts.push(dphServisu.cenySDph ? "Servis je plátce DPH a ceny oprav jsou s DPH – částky jsou včetně daně." : "Servis je plátce DPH a ceny oprav jsou bez DPH – částky jsou bez daně.");
     }
     return parts.join(" ");
   })();
@@ -1200,6 +1151,29 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                     : undefined
                 }
               />
+            </div>
+          )}
+
+          {/*
+            Nový servis vidí na Statistikách zeď nul a pod ní čtyři karty
+            „Žádná data“ – vypadá to jako rozbitá obrazovka, ne jako prázdná.
+            Jedna věta navíc řekne, že se to naplní samo.
+          */}
+          {!nacitani && filteredTickets.length === 0 && (
+            <div
+              role="status"
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--muted)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-lg)",
+                background: "var(--panel)",
+                padding: "var(--space-4)",
+                lineHeight: 1.6,
+              }}
+            >
+              Za vybrané období tu zatím nic není. Čísla se naplní sama, jakmile projdou první zakázky – nic se
+              nemusí nastavovat.
             </div>
           )}
 

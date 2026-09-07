@@ -21,6 +21,15 @@ type CustomerListProps = {
   onSelect: (customerId: string) => void;
   loading: boolean;
   error: string | null;
+  /**
+   * Kolik zákazníků servis má celkem, tedy před vyhledáváním.
+   *
+   * Bez toho seznam na obou případech psal „Nic nenalezeno.“ – i novému
+   * servisu, který zákazníka ještě žádného nemá. Ten to čte jako „hledání
+   * nic nenašlo“ a hledá chybu v tom, co napsal do vyhledávání, přestože
+   * nehledal nic. Rozlišuje se proto prázdný adresář od prázdného výsledku.
+   */
+  celkem?: number;
 };
 
 /** 1 zákazník, 2–4 zákazníci, 0 a 5+ zákazníků – „1 zákazníků“ vypadalo jako překlep. */
@@ -30,7 +39,7 @@ function pocetZakazniku(n: number): string {
   return `${n} zákazníků`;
 }
 
-export function CustomerList({ customers, selectedCustomerId, onSelect, loading, error }: CustomerListProps) {
+export function CustomerList({ customers, selectedCustomerId, onSelect, loading, error, celkem }: CustomerListProps) {
   const border = "1px solid var(--border)";
 
   return (
@@ -91,7 +100,19 @@ export function CustomerList({ customers, selectedCustomerId, onSelect, loading,
             );
           })}
 
-          {customers.length === 0 && <div style={{ padding: 14, color: "var(--muted)" }}>Nic nenalezeno.</div>}
+          {customers.length === 0 && (
+            <div style={{ padding: 16, color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>
+              {(celkem ?? customers.length) === 0 ? (
+                <>
+                  <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>Zatím žádní zákazníci</div>
+                  Zákazník se do adresáře přidá sám, jakmile na něj založíte zakázku. Hotový seznam odjinud nahrajete
+                  tlačítkem <strong>Import z CSV</strong> nahoře.
+                </>
+              ) : (
+                "Hledání nic nenašlo. Zkuste jiné jméno, telefon nebo e-mail."
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

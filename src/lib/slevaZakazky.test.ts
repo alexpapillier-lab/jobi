@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { castkaSlevy, konecnaCena, korunami } from "./slevaZakazky";
+import { formatCurrency } from "./invoiceMath";
 
 /**
  * Sleva je jediné místo, kde se na zakázce počítají peníze pro zákazníka.
@@ -40,7 +41,11 @@ describe("sleva na zakázce", () => {
   it("částka se tiskne česky, s mezerou v tisících a čárkou", () => {
     // Oddělovač tisíců je nedělitelná mezera, ne obyčejná – doklad se
     // nesmí zalomit uprostřed částky.
-    expect(korunami(1234.5).replace(/\s/gu, " ")).toBe("1 234,50 Kč");
-    expect(korunami(0)).toBe("0,00 Kč");
+    expect(korunami(1234.5)).toBe("1\u00A0234,50\u00A0Kč");
+    // I mezera před „Kč“ je nedělitelná – jinak se částka na dokladu
+    // zalomí přes dva řádky a účetní hledá, kam se poděla měna.
+    expect(korunami(0)).toBe("0,00\u00A0Kč");
+    // Stejný řetězec jako formatCurrency: jeden formát na kartě i na dokladu.
+    expect(korunami(1234.5)).toBe(formatCurrency(1234.5, "CZK"));
   });
 });

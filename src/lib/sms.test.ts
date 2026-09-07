@@ -86,6 +86,8 @@ function falesnyKlient(data: Record<string, Radek[]>): SmsKlient & { dotazy: str
     const filtry: Array<(r: Radek) => boolean> = [];
     let razeni: { sloupec: string; ascending: boolean } | null = null;
     let strop: number | null = null;
+    /** Stránkování jako v PostgREST – `range` je půlotevřený interval včetně obou konců. */
+    let rozsah: { od: number; do: number } | null = null;
 
     const vysledek = (): Radek[] => {
       let radky = (data[tabulka] ?? []).filter((r) => filtry.every((f) => f(r)));
@@ -97,6 +99,7 @@ function falesnyKlient(data: Record<string, Radek[]>): SmsKlient & { dotazy: str
           return ascending ? x.localeCompare(y) : y.localeCompare(x);
         });
       }
+      if (rozsah) radky = radky.slice(rozsah.od, rozsah.do + 1);
       return strop === null ? radky : radky.slice(0, strop);
     };
 
@@ -128,6 +131,10 @@ function falesnyKlient(data: Record<string, Radek[]>): SmsKlient & { dotazy: str
       },
       limit: (n) => {
         strop = n;
+        return dotaz;
+      },
+      range: (od, do_) => {
+        rozsah = { od, do: do_ };
         return dotaz;
       },
       maybeSingle: () => Promise.resolve({ data: vysledek()[0] ?? null, error: null }),

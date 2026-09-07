@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ACTION_LABELS, loadRules, runAutomations, type ActionType, type AutomationRule } from "../../../lib/automations";
 import { loadDocumentsConfigRawFromDB } from "../../../lib/documentSettings";
+import { castkaBezMeny } from "../../../lib/invoiceMath";
 import { supabase, supabaseUrl, supabaseFetch } from "../../../lib/supabaseClient";
 import { reportSilent } from "../../../lib/reportError";
 import { normalizePhone } from "../../../lib/phone";
@@ -211,7 +212,9 @@ export async function legacySmsAutomation(input: LegacySmsInput): Promise<void> 
     code: ticket.code ?? "",
     customer_name: ticket.customerName ?? "",
     device_label: ticket.deviceLabel ?? "",
-    total_price: String(input.totalPrice),
+    // Stejný formát jako na serveru (_shared/penize.ts), jinak náhled SMS
+    // v aplikaci ukazuje „1234.5“ a odeslaná zpráva „1 234,50“.
+    total_price: castkaBezMeny(input.totalPrice),
     status: input.statusLabel,
     notes: ticket.issueShort ?? "",
     portal_url: portalUrlVar,

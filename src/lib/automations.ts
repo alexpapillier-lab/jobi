@@ -90,7 +90,7 @@ export const TEMPLATE_VARIABLES: Array<{ key: string; label: string; sample: str
   { key: "customer_name", label: "Jméno zákazníka", sample: "Jan Novák" },
   { key: "device_label", label: "Zařízení", sample: "iPhone 13 Pro" },
   { key: "status", label: "Stav zakázky", sample: "Připraveno k vyzvednutí" },
-  { key: "total_price", label: "Celková cena", sample: "2 490" },
+  { key: "total_price", label: "Celková cena", sample: "2 490,00" },
   { key: "notes", label: "Požadovaná oprava", sample: "Výměna displeje" },
   { key: "expected_date", label: "Předpokládané dokončení", sample: "8. 9. 2026" },
   { key: "days", label: "Počet dní (u časových pravidel)", sample: "3" },

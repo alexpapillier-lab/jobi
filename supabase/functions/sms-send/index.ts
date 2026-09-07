@@ -113,6 +113,16 @@ serve(async (req) => {
     // Nárok na modul SMS. Kontrola členství výš nestačí – schování modulu
     // v UI obejde každý, kdo si otevře vývojářské nástroje a zavolá tuhle
     // funkci přímo. Placený modul se proto ověřuje tady, na serveru.
+    // Vypnutý servis neodesílá nic – edge funkce běží pod service_role, takže
+    // databázová hradba z 11. 9. na ni neplatí.
+    const { data: servisRow } = await svc.from("services").select("active").eq("id", serviceId).maybeSingle();
+    if (servisRow && (servisRow as { active?: boolean }).active === false) {
+      return new Response(
+        JSON.stringify({ error: "Servis je dočasně vypnutý, zprávy z něj neodcházejí." }),
+        { status: 403, headers: jsonHeaders },
+      );
+    }
+
     const { data: hasSms, error: entErr } = await svc.rpc("has_entitlement", {
       p_service_id: serviceId,
       p_module: "sms",
@@ -135,6 +145,15 @@ serve(async (req) => {
     // Přetypování: _shared/sms.ts schválně nezná typy z esm.sh, aby se dal
     // v testu poslat i pár řádků místo celého klienta.
     const balicek = await zkontrolujBalicek(svc as unknown as SmsKlient, serviceId, potreba);
+    // Rozbité počítadlo neznamená „posílej“: zpráva se neodešle a je to
+    // v logu. Zákazník uvidí, že to teď nejde, ne tichý přesah balíčku.
+    if (balicek.chyba) {
+      console.error("[sms-send] balíček se nepodařilo spočítat:", serviceId, balicek.chyba);
+      return new Response(
+        JSON.stringify({ error: "Zprávu teď nejde odeslat: nepodařilo se ověřit balíček SMS. Zkuste to prosím za chvíli." }),
+        { status: 503, headers: jsonHeaders },
+      );
+    }
     if (balicek.prekroceno) {
       return new Response(
         JSON.stringify({

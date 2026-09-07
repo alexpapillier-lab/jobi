@@ -121,8 +121,12 @@ Plán: na Free používat ruční zálohy podle potřeby; po přechodu na Pro ($
 ## 6. Automatická denní záloha (GitHub Actions)
 
 Od 5. 9. 2026 běží `.github/workflows/backup-db.yml`: každý den ve 2:30 UTC
-udělá dump, ověří ho obnovou a uloží zašifrovaný artefakt na 90 dní. Jde
-spustit i ručně (Actions → Záloha databáze → Run workflow).
+udělá dump, ověří ho obnovou do prázdného Postgresu a uloží zašifrovaný
+artefakt na 90 dní. Jde spustit i ručně (Actions → Záloha databáze → Run workflow).
+
+**Obnova po havárii má vlastní postup krok za krokem:
+[docs/OBNOVA_ZE_ZALOHY.md](OBNOVA_ZE_ZALOHY.md).** Tady je jen popis, co
+zálohování dělá.
 
 ### Co se musí jednou nastavit
 
@@ -131,32 +135,49 @@ V repozitáři **Settings → Secrets and variables → Actions → New reposito
 | Secret | Hodnota |
 |--------|---------|
 | `SUPABASE_DB_URL` | connection string i s heslem (session pooler, port 5432) – viz kapitola 1 |
-| `BACKUP_PASSPHRASE` | heslo k šifrování zálohy; **ulož si ho zvlášť**, bez něj je záloha k ničemu |
+| `BACKUP_PASSPHRASE` | heslo k šifrování zálohy; **ulož si ho zvlášť, i mimo GitHub**, bez něj je záloha k ničemu |
 
 Dokud secrets nejsou, workflow se ukončí hláškou, která to řekne. Nic
 nezkouší naslepo.
 
 ### Co záloha obsahuje
 
-`roles.sql`, `schema.sql`, `data.sql` a `storage-soubory.csv` (seznam souborů
-v úložišti i s velikostí – **samotné soubory v záloze nejsou**, dump je nebere).
-Všechno zabalené do `zaloha-RRRRMMDD.tar.gz.gpg`, symetricky šifrované AES-256.
+`roles.sql`, `schema.sql`, `data.sql` (data schémat `public`, `auth`
+i `storage` – tedy včetně uživatelů), `storage-soubory.csv` (seznam souborů
+v úložišti), `cron-ulohy.sql` (naplánované úlohy pg_cron), `migrace.csv`
+(historie migrací), `vault-nazvy.txt` (názvy tajemství, nikdy hodnoty)
+a `CO_CHYBI.md`. Všechno zabalené do `zaloha-RRRRMMDD.tar.gz.gpg`,
+symetricky šifrované AES-256.
+
+**Soubory ve Storage** (fotky z diagnostiky, obrázky produktů) se zálohují
+zvlášť jednou týdně, v neděli, do artefaktu `zaloha-storage-RRRRMMDD.tar.gz.gpg`.
+Ručně to jde vynutit vstupem „soubory" při spuštění workflow. Denně by to byla
+skoro totožná kopie desítek megabajtů.
 
 ### Zkouška obnovy
 
-Součástí běhu je krok, který zálohu nahraje do prázdného Postgresu a porovná
-počty řádků v `services`, `tickets`, `customers`, `invoices`, `repairs` a
-`service_memberships` proti ostré databázi. Když nesedí, workflow spadne.
-Smysl je jediný: o nepoužitelné záloze se má vědět hned, ne v den havárie.
+Součástí každého běhu je `scripts/zkouska-obnovy.sh` – ten samý skript, který
+si člověk pustí lokálně nad staženou zálohou (`npm run test:obnova -- <složka>`).
+Nahraje zálohu do prázdného Postgresu a ověří, že se obnovila bez chyb, že
+v každé tabulce sedí počet řádků proti záloze, že jsou zpátky RLS politiky,
+funkce, triggery, realtime publikace i uživatelé, a že databáze funguje
+(RLS, triggery, optimistické zamykání). Když ne, workflow spadne.
 
-Na chybějících rozšířeních (pg_cron, pgjwt) a rolích Supabase krok
-nezáleží – schéma se nahrává s `ON_ERROR_STOP=0` a hlídají se data.
+Druhý krok pak porovná ostrou databázi s obnovenou a hlásí tabulku, která je
+v ostré plná a v záloze prázdná – tak se pozná, že z dumpu vypadla celá tabulka.
+Přesná shoda počtů proti ostré databázi se nehlídá schválně: mezi dumpem
+a kontrolou vznikne na ostré databázi další zakázka a kontrola by padala náhodně.
+
+Na chybějících rozšířeních (`pg_cron`, `pg_net`, `supabase_vault`) v holém
+Postgresu nezáleží – na Supabase je má platforma.
 
 ### Rozbalení zálohy
 
 ```bash
+gh run download <ID_BEHU> -n zaloha-db-20260906
 gpg --decrypt --output zaloha.tar.gz zaloha-20260906.tar.gz.gpg
-tar -xzf zaloha.tar.gz
+mkdir zaloha && tar -xzf zaloha.tar.gz -C zaloha
+npm run test:obnova -- zaloha
 ```
 
-Obnova pak podle kapitoly 4.
+Obnova do nového projektu: [docs/OBNOVA_ZE_ZALOHY.md](OBNOVA_ZE_ZALOHY.md).

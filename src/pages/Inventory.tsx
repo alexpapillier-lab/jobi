@@ -1287,6 +1287,16 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     const modelIds = newProductUnassigned ? [] : (selectedModelId ? [selectedModelId] : []);
     const stock = parseInt(newProduct.stock) || 0;
     const cilovySklad = newProductWarehouseId || vychoziSklad(data.warehouses);
+    /*
+     * Bez skladu se počáteční počet kusů nemá kam zapsat. Dřív se tiše
+     * zahodil: produkt se založil s nulou a nikdo se nedozvěděl, že zadané
+     * množství zmizelo. Naskladnění (`naskladnit`) tu samou situaci hlásí,
+     * tady chyběla – řekne se to dřív, než se produkt založí.
+     */
+    if (stock > 0 && !cilovySklad) {
+      showToast("Servis nemá žádný sklad – produkt se založí, ale počet kusů není kam zapsat. Sklad přidáte v Nastavení skladu.", "error");
+      return;
+    }
     const stavy = stock > 0 && cilovySklad ? { [cilovySklad]: stock } : {};
 
     if (stock < 1) {

@@ -26,6 +26,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMS_MAX_BODY_LENGTH, normalizeE164, segmentu, textProSms, zkontrolujBalicek, type SmsKlient } from "../_shared/sms.ts";
 import { escapeHtml } from "../_shared/html.ts";
+import { castkaBezMeny, cenaZakazky, formatujCastku } from "../_shared/penize.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -175,11 +176,16 @@ function substituteTemplate(template: string, vars: Record<string, string>): str
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => vars[k] ?? "");
 }
 
-/** „2 490“ – celé koruny s mezerou po tisících (obyčejná mezera, ne NBSP, kvůli SMS). */
+/**
+ * „2 490,50“ – stejný formát jako v aplikaci i na dokladu, bez měny.
+ *
+ * Měnu si do šablony píše servis sám („{{total_price}} Kč“), proto se tu
+ * nepřidává. Dřív se zaokrouhlovalo na celé koruny, takže SMS zákazníkovi
+ * hlásila „1 235 Kč“, kdežto doklad zněl na 1 234,50 Kč. Nedělitelné mezery
+ * z Intl převádí `textProSms` na obyčejné, takže se SMS nepřeklopí do UCS-2.
+ */
 function formatPrice(n: number): string {
-  const rounded = Math.round(n);
-  const sign = rounded < 0 ? "-" : "";
-  return sign + String(Math.abs(rounded)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return castkaBezMeny(n);
 }
 
 /** „8. 9. 2026“ v pražském čase. */
@@ -214,14 +220,14 @@ function parseRepairs(v: unknown): Repair[] {
   return out;
 }
 
-/** Stejné pravidlo jako computeFinalPrice v src/components/tickets/types.ts. */
+/**
+ * Konečná cena zakázky. Sdílený vzorec (_shared/penize.ts), aby SMS říkala
+ * totéž co karta zakázky, portál i doklad. Vlastní kopie, která tu byla,
+ * neuměla strop ani zaokrouhlení: záporná sleva cenu zvýšila a 33,33 %
+ * z 1 000 Kč dalo 666,6700000000001.
+ */
 function computeFinalPrice(repairs: Repair[], discountType: string | null, discountValue: number | null): number {
-  const total = repairs.reduce((s, r) => s + (r.price || 0), 0);
-  const value = discountValue || 0;
-  let discount = 0;
-  if (discountType === "percentage") discount = (total * value) / 100;
-  else if (discountType === "amount") discount = value;
-  return Math.max(0, total - discount);
+  return cenaZakazky(repairs, discountType as "percentage" | "amount" | null, discountValue);
 }
 
 function deviceLabel(t: TicketRow): string {
@@ -427,6 +433,9 @@ async function actionSms(svc: SupabaseClient, ctx: ServiceCtx, ticket: TicketRow
      měsíc tak mohl protelefonovat mnohonásobek toho, co si koupil. */
   const potreba = segmentu(body);
   const balicek = await zkontrolujBalicek(svc as unknown as SmsKlient, ctx.serviceId, potreba);
+  // Když se balíček nepodařilo spočítat, zpráva se neodesílá – běh skončí
+  // jako chyba, ať je to v `automation_runs` vidět a dá se to zopakovat.
+  if (balicek.chyba) return ["error", `Balíček SMS se nepodařilo ověřit: ${balicek.chyba}`];
   if (balicek.prekroceno) return ["skipped", balicek.zprava ?? "Balíček SMS je vyčerpaný"];
 
   const to = normalizeE164(phoneRaw);
@@ -582,14 +591,14 @@ async function actionAddFee(
     ? ((fresh as { performed_repairs: unknown[] }).performed_repairs)
     : [];
 
-  const label = perDay && days > 0 ? `${name} (${days} × ${formatPrice(amount)} Kč)` : name;
+  const label = perDay && days > 0 ? `${name} (${days} × ${formatujCastku(amount, "CZK")})` : name;
   const item = { id: `auto-${rule.id.slice(0, 8)}-${Date.now().toString(36)}`, name: label, type: "manual", price };
   const next = [...current, item];
 
   const { error } = await svc.from("tickets").update({ performed_repairs: next }).eq("id", ticket.id);
   if (error) return ["error", `Připsání poplatku selhalo: ${error.message}`];
   ticket.performed_repairs = next;
-  return ["ok", `Připsáno „${label}“ ${formatPrice(price)} Kč`];
+  return ["ok", `Připsáno „${label}“ ${formatujCastku(price, "CZK")}`];
 }
 
 async function actionNotify(svc: SupabaseClient, ctx: ServiceCtx, ticket: TicketRow, messageTpl: string, days: number): Promise<ActionOutcome> {

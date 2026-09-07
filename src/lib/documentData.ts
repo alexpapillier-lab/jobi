@@ -6,7 +6,8 @@
  * i ve webové verzi.
  */
 import type { DocumentData, LineItem, Party } from "../../jobidocs/core/types";
-import { konecnaCena } from "./slevaZakazky";
+import { hrubaCena, konecnaCena } from "./slevaZakazky";
+import { computeTotals } from "./invoiceMath";
 import { ibanZCislaUctu } from "./banka";
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
@@ -81,7 +82,7 @@ export function pridejDny(d: Date, dnu: number): Date {
 /** Zakázkový list, záruční list, diagnostika. */
 export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<string, unknown>, opts?: { completedAt?: string; warrantyMonths?: number; warrantyDays?: number }): DocumentData {
   const items = repairsToItems(ticket);
-  const hruba = items.reduce((sum, it) => sum + (it.total ?? 0), 0);
+  const hruba = hrubaCena(items.map((it) => ({ price: it.total })));
   // Stejný výpočet jako itemsTotal() v jobidocs/core – jinak by řádek Sleva byl
   // na dokladu vidět, ale Celkem by zůstalo bez ní.
   const total = konecnaCena(hruba, ticket.discountType, ticket.discountValue);
@@ -206,6 +207,18 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
 
 type InvoiceKind = "invoice" | "proforma" | "credit_note";
 
+/**
+ * Rekapitulace DPH po sazbách z uložených položek dokladu.
+ *
+ * Vychází z uloženého `line_total`, ne z přepočtu `qty × unit_price`:
+ * databáze drží množství na tři desetinná místa, takže by přepočet mohl
+ * dát jiný základ, než jaký je uložený v hlavičce faktury.
+ */
+function rozpisDph(items: InvoiceItem[]): Array<{ rate: number; base: number; vat: number }> | undefined {
+  const r = computeTotals(items.map((it) => ({ name: it.name, qty: 1, unit: it.unit, unit_price: it.line_total, vat_rate: it.vat_rate }))).vat_breakdown;
+  return r.length > 0 ? r : undefined;
+}
+
 /** Nadpis dokladu podle druhu; „daňový doklad“ smí na fakturu psát jen plátce DPH. */
 export function nadpisDokladu(kind: InvoiceKind, vatPayer: boolean): string {
   if (kind === "proforma") return "Zálohová faktura";
@@ -256,7 +269,18 @@ export function invoiceDocumentData(inv: Invoice, items: InvoiceItem[], cd: Comp
     // Záloha není zdanitelné plnění – DUZP na ní být nesmí.
     dates: { issued: inv.issue_date, due: inv.due_date, taxable: kind === "proforma" ? undefined : s(inv.taxable_date) },
     items: sorted.map((it) => ({ name: it.name, qty: it.qty, unit: it.unit, unitPrice: it.unit_price, vatRate: it.vat_rate, total: it.line_total })),
-    totals: { subtotal: inv.subtotal, vat: inv.vat_amount, total: inv.total, rounding: inv.rounding || undefined, currency: inv.currency || "CZK", vatPayer },
+    totals: {
+      subtotal: inv.subtotal,
+      vat: inv.vat_amount,
+      total: inv.total,
+      rounding: inv.rounding || undefined,
+      // Rekapitulace po sazbách se počítá z položek dokladu stejným výpočtem
+      // jako v editoru – doklad tak ukazuje přesně ta čísla, která uživatel
+      // před vystavením viděl na obrazovce.
+      vatBreakdown: vatPayer ? rozpisDph(sorted) : undefined,
+      currency: inv.currency || "CZK",
+      vatPayer,
+    },
     note,
     payment: {
       account: s(inv.supplier_bank_account) ?? s(cd.bankAccount),

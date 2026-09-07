@@ -285,6 +285,33 @@ export function discountAmount(data: DocumentData): number | undefined {
   return Math.min(subtotal, Math.round(raw * 100) / 100);
 }
 
+/**
+ * Rekapitulace DPH po sazbách.
+ *
+ * Přednost má rozpis poslaný z Jobi; když chybí (starší šablona, doklad
+ * poslaný e-mailem přes proměnné), odvodí se z položek. Bez toho se na
+ * faktuře s 21% i 12% položkou tiskl jediný slitý řádek „DPH“ a účetní
+ * si daň zpětně nerozpočítala.
+ */
+export function vatRozpis(data: DocumentData): Array<{ rate: number; base: number; vat: number }> {
+  const poslany = data.totals?.vatBreakdown;
+  if (poslany && poslany.length > 0) return [...poslany].sort((a, b) => a.rate - b.rate);
+  const podleSazby = new Map<number, { base: number; vat: number }>();
+  for (const it of data.items ?? []) {
+    const rate = it.vatRate;
+    const line = lineTotal(it);
+    if (rate == null || !Number.isFinite(rate) || line == null) continue;
+    const e = podleSazby.get(rate) ?? { base: 0, vat: 0 };
+    const zaklad = Math.round(line * 100) / 100;
+    e.base = Math.round((e.base + zaklad) * 100) / 100;
+    e.vat = Math.round((e.vat + Math.round(zaklad * (rate / 100) * 100) / 100) * 100) / 100;
+    podleSazby.set(rate, e);
+  }
+  return Array.from(podleSazby.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, v]) => ({ rate, base: v.base, vat: v.vat }));
+}
+
 /** Součet položek po slevě, když Jobi neposlalo totals.total. */
 export function itemsTotal(data: DocumentData): number | undefined {
   if (data.totals?.total != null) return data.totals.total;

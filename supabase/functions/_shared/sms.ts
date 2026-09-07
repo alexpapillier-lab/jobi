@@ -164,6 +164,7 @@ export interface SmsDotaz extends PromiseLike<{ data: unknown; error?: unknown }
   gte(sloupec: string, hodnota: unknown): SmsDotaz;
   order(sloupec: string, volby: { ascending: boolean }): SmsDotaz;
   limit(kolik: number): SmsDotaz;
+  range(od: number, do_: number): SmsDotaz;
   maybeSingle(): PromiseLike<{ data: unknown; error?: unknown }>;
 }
 
@@ -181,6 +182,8 @@ export type StavBalicku = {
   prekroceno: boolean;
   /** Hláška pro uživatele, když je balíček vyčerpaný. */
   zprava: string | null;
+  /** Balíček se nepodařilo spočítat (chyba dotazu) – volající nesmí odeslat. */
+  chyba?: string;
 };
 
 export function zpravaOVycerpani(spotrebovano: number, limit: number): string {
@@ -204,28 +207,50 @@ export async function zkontrolujBalicek(
   potreba: number,
   ted: Date = new Date(),
 ): Promise<StavBalicku> {
-  const { data: narok } = await svc
+  const { data: narok, error: chybaNaroku } = await svc
     .from("service_entitlements")
     .select("quota")
     .eq("service_id", serviceId)
     .eq("module", "sms")
     .maybeSingle();
+  /*
+   * Selhání se hlásí, nepolyká. Dřív z chyby dotazu vyšel `limit = null`,
+   * tedy „bez omezení“, a z chyby druhého dotazu `spotrebovano = 0`:
+   * rozbité počítadlo tím pádem znamenalo odesílání bez stropu – přesně
+   * naopak, než má strop dělat.
+   */
+  if (chybaNaroku) {
+    return { limit: null, spotrebovano: 0, potreba, prekroceno: true, zprava: null, chyba: String((chybaNaroku as { message?: string }).message ?? chybaNaroku) };
+  }
   const quota = (narok as { quota?: unknown } | null)?.quota;
   const limit = typeof quota === "number" ? quota : null;
   if (limit === null) {
     return { limit: null, spotrebovano: 0, potreba, prekroceno: false, zprava: null };
   }
 
-  const { data: odeslane } = await svc
-    .from("sms_messages")
-    .select("body, conversation_id, sms_conversations!inner(service_id)")
-    .eq("direction", "outbound")
-    .eq("sms_conversations.service_id", serviceId)
-    .gte("sent_at", zacatekMesice(ted));
-  const spotrebovano = ((odeslane as Array<{ body?: string | null }> | null) ?? []).reduce(
-    (soucet, m) => soucet + segmentu(m.body ?? ""),
-    0,
-  );
+  /*
+   * Odeslané zprávy se čtou po stránkách. PostgREST vrací nejvýš 1000 řádků
+   * a bez chyby – servis, který za měsíc pošle víc, by se podpočítal a strop
+   * by pro něj přestal platit.
+   */
+  let spotrebovano = 0;
+  const VELIKOST = 1000;
+  for (let od = 0; ; od += VELIKOST) {
+    const { data, error } = await svc
+      .from("sms_messages")
+      .select("body, conversation_id, sms_conversations!inner(service_id)")
+      .eq("direction", "outbound")
+      .eq("sms_conversations.service_id", serviceId)
+      .gte("sent_at", zacatekMesice(ted))
+      .order("sent_at", { ascending: true })
+      .range(od, od + VELIKOST - 1);
+    if (error) {
+      return { limit, spotrebovano, potreba, prekroceno: true, zprava: null, chyba: String((error as { message?: string }).message ?? error) };
+    }
+    const davka = (data as Array<{ body?: string | null }> | null) ?? [];
+    for (const m of davka) spotrebovano += segmentu(m.body ?? "");
+    if (davka.length < VELIKOST) break;
+  }
 
   const prekroceno = spotrebovano + potreba > limit;
   return {

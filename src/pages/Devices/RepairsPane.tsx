@@ -82,6 +82,10 @@ export function RepairsPane(p: RepairsPaneProps) {
 
   const emptyText = (() => {
     if (p.search.trim()) return "Žádné opravy neodpovídají hledání.";
+    // Nový servis nemá v ceníku vůbec nic. „Vyberte značku“ ho posílalo vybrat
+    // značku, která neexistuje – místo aby mu někdo řekl, že se první značka
+    // zakládá vlevo ve stromu (a že jde ceník i naimportovat).
+    if (data.brands.length === 0) return "Ceník je zatím prázdný. Přidejte vlevo první značku, nebo použijte Import.";
     if (!selection) return data.repairs.length === 0 ? "Vyberte značku nebo hledejte." : "Žádné opravy.";
     if (selection.kind === "model") return "Tento model zatím nemá opravy.";
     if (selection.kind === "category") return "Tato kategorie zatím nemá opravy.";

@@ -9,6 +9,7 @@
  */
 import { supabase } from "./supabaseClient";
 import { loadServiceConfig, mergeServiceConfig } from "./serviceSettingsSync";
+import { zkratkaZConfigu } from "./servisy";
 
 export type DemoStopa = {
   brandIds: string[];
@@ -40,11 +41,19 @@ const KATALOG: Array<{ model: string; opravy: Array<{ name: string; price: numbe
   },
 ];
 
-/** Číslo pro ukázkovou zakázku ve stejném tvaru, jaký servis používá. */
+/**
+ * Číslo pro ukázkovou zakázku ve stejném tvaru, jaký servis používá.
+ *
+ * Zkratka se hledá stejně jako v generátoru čísel (`zkratkaZConfigu`), tedy
+ * na obou místech configu i podle názvu firmy. Dřív se tu četlo jen
+ * `config.abbreviation`: servisu, který má zkratku uloženou jen v
+ * `companyData` (starší servis, ruční zásah), pak ukázková zakázka přistála
+ * v seznamu jako „SRV…“ vedle ostrých „ASB…“ a vypadalo to jako chyba
+ * číslování.
+ */
 async function dalsiKodZakazky(serviceId: string): Promise<string> {
   const config = await loadServiceConfig(serviceId);
-  const surova = typeof config?.abbreviation === "string" ? config.abbreviation : "";
-  const prefix = (surova.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || "SRV").slice(0, 6);
+  const prefix = zkratkaZConfigu(config);
   const rok = new Date().getFullYear().toString().slice(-2);
   const zaklad = prefix + rok;
   let dalsi = 1;
