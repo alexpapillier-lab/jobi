@@ -2677,8 +2677,19 @@ function SettingsNav({
       const el = navRef.current;
       if (!el) return;
       const shora = el.getBoundingClientRect().top;
+      /*
+       * Velikost rozhraní se dělá `zoom`em na `<html>` a ten míchá dvě
+       * soustavy: `getBoundingClientRect()` i `window.innerHeight` jsou
+       * v pixelech okna, ale `max-height` se zapisuje v pixelech rozvržení,
+       * které zoom teprve zvětší. Volné místo se proto měří v pixelech okna
+       * a teprve výsledek se dělí měřítkem – jinak sloupec při 125 % přetekl
+       * o 140 px pod okno, tedy přesně ta chyba, kterou to má opravovat.
+       * Měřítko drží App.tsx v `--ui-scale`.
+       */
+      const meritko = Number(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")) || 1;
+      const volnoVOkne = window.innerHeight - shora;
       // 12 px pod sloupcem, ať poslední položka nekončí přesně na hraně okna.
-      setVyskaSloupce(Math.max(200, Math.round(window.innerHeight - shora - 12)));
+      setVyskaSloupce(Math.max(200, Math.round(volnoVOkne / meritko - 12)));
     };
     const naplanuj = () => {
       if (naplanovano) return;
@@ -2831,6 +2842,9 @@ function SettingsNav({
         overscrollBehavior: "contain",
         // Aby poslední položka nebyla nalepená na spodní hraně posuvníku.
         paddingBottom: "var(--space-3)",
+        // Bez tohohle by se odsazení připočetlo k naměřené výšce a sloupec by
+        // přetekl přesně o tu jednu mezeru – při zvětšeném rozhraní o víc.
+        boxSizing: "border-box",
       }}
     >
       {body}

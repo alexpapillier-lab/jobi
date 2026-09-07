@@ -127,4 +127,38 @@ test("na poslední položku v Nastavení jde doscrollovat i v nízkém okně", a
   // karta „Přidat servis pomocí pozvánky“, která je jen tady.
   await page.getByRole("button", { name: /Fotka a přezdívka/ }).first().click();
   await expect(page.getByText("Přidat servis pomocí pozvánky").first()).toBeVisible({ timeout: 15_000 });
+
+  /*
+   * A totéž při zvětšeném rozhraní. Velikost se dělá `zoom`em na `<html>`,
+   * který míchá dvě soustavy souřadnic: bez přepočtu sloupec při 125 %
+   * přetekl o 140 px pod okno. Zoom se sahá přímo na dokument, ne přes
+   * Nastavení – předvolba se ukládá k účtu a zůstala by zapnutá i dalším
+   * sadám (viz e2e/README.md).
+   */
+  for (const meritko of [1.1, 1.25]) {
+    await page.evaluate((s) => {
+      document.documentElement.style.setProperty("zoom", String(s));
+      document.documentElement.style.setProperty("--ui-scale", String(s));
+      window.dispatchEvent(new Event("resize"));
+    }, meritko);
+    await page.waitForTimeout(400);
+    const chyba = await page.evaluate((s) => {
+      const nav = document.querySelector('nav[data-tour="settings-categories"]');
+      if (!nav) return "sloupec sekcí se nenašel";
+      nav.scrollTop = nav.scrollHeight;
+      const posledni = Array.from(nav.querySelectorAll("button")).pop();
+      if (!posledni) return "sloupec nemá žádnou položku";
+      // `getBoundingClientRect()` i `innerHeight` jsou v pixelech okna, takže
+      // se porovnávají přímo – měřítko se do nich promítlo obojím stejně.
+      const dole = posledni.getBoundingClientRect().bottom;
+      return dole > window.innerHeight
+        ? `při ${Math.round(s * 100)} % končí poslední položka ${Math.round(dole - window.innerHeight)} px pod oknem`
+        : null;
+    }, meritko);
+    expect(chyba, String(chyba)).toBeNull();
+  }
+  await page.evaluate(() => {
+    document.documentElement.style.removeProperty("zoom");
+    document.documentElement.style.setProperty("--ui-scale", "1");
+  });
 });
