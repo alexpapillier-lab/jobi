@@ -48,11 +48,18 @@ export function PrepinacUctu({ userId, email, profil }: {
     const naZaparkovane = () => setZaparkovane(nactiZaparkovane());
     const otevri = () => { setRezim("dialog"); setVybrany(null); setPin(""); setChyba(null); setPridavam(false); };
     const zamkni = () => {
-      if (mamPin === false) {
-        showToast("Nejdřív si v Nastavení → Můj profil nastavte PIN, jinak by obrazovka nešla odemknout.", "info");
-        return;
-      }
-      setRezim("zamek"); setVybrany(null); setPin(""); setChyba(null); setPridavam(false);
+      // Stav PINu se po jeho uložení teprve dotahuje ze serveru; kdo klepne
+      // na „Zamknout“ hned po nastavení, nesmí dostat „nejdřív nastavte PIN“.
+      const rozhodni = (ma: boolean) => {
+        setMamPin(ma);
+        if (!ma) {
+          showToast("Nejdřív si v Nastavení → Můj profil nastavte PIN, jinak by obrazovka nešla odemknout.", "info");
+          return;
+        }
+        setRezim("zamek"); setVybrany(null); setPin(""); setChyba(null); setPridavam(false);
+      };
+      if (mamPin === true) rozhodni(true);
+      else maPin(userId).then(rozhodni).catch(() => showToast("Stav PINu se nepodařilo ověřit – zkuste to znovu.", "error"));
     };
     window.addEventListener(UDALOST_ZAPARKOVANE, naZaparkovane);
     window.addEventListener("storage", naZaparkovane);
@@ -66,7 +73,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       window.removeEventListener(UDALOST_OTEVRIT_PREPINAC, otevri);
       window.removeEventListener(UDALOST_ZAMKNOUT, zamkni);
     };
-  }, [nactiPin, mamPin]);
+  }, [nactiPin, mamPin, userId]);
 
   /* Zámek po nečinnosti. Časovač se natahuje při každé aktivitě; pohyb myši
      se bere nejvýš jednou za sekundu, ať se neobnovuje stokrát za vteřinu. */
