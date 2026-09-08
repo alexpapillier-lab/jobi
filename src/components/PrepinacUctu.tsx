@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { createPortal } from "react-dom";
 import { Button } from "./ui";
 import { showToast } from "./Toast";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import {
   UDALOST_OTEVRIT_PREPINAC, UDALOST_PIN_ZMENEN, UDALOST_ZAMEK_ZMENEN, UDALOST_ZAMKNOUT, UDALOST_ZAPARKOVANE,
   jePlatnyPin, maPin, nactiZaparkovane, odeberZaparkovanyUcet, odemkniAktualni, prepniNaUcet, pridejUcetHeslem,
@@ -48,6 +49,8 @@ export function PrepinacUctu({ userId, email, profil }: {
   const [novyPin, setNovyPin] = useState("");
   const [novyPinZnovu, setNovyPinZnovu] = useState("");
   const pinRef = useRef<HTMLInputElement>(null);
+  /* Telefon se po nečinnosti nezamyká – je osobní a zamyká ho systém. */
+  const telefon = useIsNarrow();
 
   const nactiPin = useCallback(() => {
     maPin(userId).then(setMamPin).catch(() => setMamPin(null));
@@ -96,7 +99,7 @@ export function PrepinacUctu({ userId, email, profil }: {
     const naplanuj = () => {
       if (casovac) window.clearTimeout(casovac);
       casovac = null;
-      if (minut <= 0 || mamPin !== true) return;
+      if (minut <= 0 || mamPin !== true || telefon) return;
       casovac = window.setTimeout(() => window.dispatchEvent(new CustomEvent(UDALOST_ZAMKNOUT)), minut * 60_000);
     };
     const aktivita = () => {
@@ -114,7 +117,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       for (const u of ["pointerdown", "keydown", "mousemove", "touchstart", "wheel"]) window.removeEventListener(u, aktivita);
       window.removeEventListener(UDALOST_ZAMEK_ZMENEN, zmenaNastaveni);
     };
-  }, [mamPin]);
+  }, [mamPin, telefon]);
 
   useEffect(() => {
     if (vybrany) window.setTimeout(() => pinRef.current?.focus(), 0);

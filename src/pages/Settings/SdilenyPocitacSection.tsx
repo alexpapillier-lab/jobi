@@ -4,6 +4,7 @@ import { Button, SettingRow, SettingRows } from "../../components/ui";
 import { showToast } from "../../components/Toast";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAuth } from "../../auth/AuthProvider";
+import { useIsNarrow } from "../../hooks/useIsNarrow";
 import {
   UDALOST_OTEVRIT_PREPINAC, UDALOST_ZAMKNOUT, UDALOST_ZAPARKOVANE, ZAMEK_MOZNOSTI,
   jePlatnyPin, maPin, nactiZaparkovane, nastavPin, nastavZamekPoMinutach, odeberZaparkovanyUcet, zamekPoMinutach,
@@ -15,9 +16,14 @@ import {
  * zaparkované účty. PIN patří k účtu (server), zámek a zaparkované účty
  * k tomuhle počítači (localStorage) – u pultu se zamyká, na notebooku
  * majitele ne.
+ *
+ * Na telefonu se sekce neukazuje vůbec: je to osobní zařízení, zamyká ho
+ * systém a lidé se u něj nestřídají (rozhodnutí majitele 8. 9. 2026).
+ * Tablet na šířku je širší než 900 px a bere se jako sdílený počítač.
  */
 export function SdilenyPocitacSection() {
   const { session } = useAuth();
+  const telefon = useIsNarrow();
   const userId = session?.user?.id ?? null;
   const [mamPin, setMamPin] = useState<boolean | null>(null);
   const [pin, setPin] = useState("");
@@ -67,6 +73,8 @@ export function SdilenyPocitacSection() {
   };
 
   const pole = { width: 110, textAlign: "center" as const, letterSpacing: 6 };
+
+  if (telefon) return null;
 
   return (
     <>
