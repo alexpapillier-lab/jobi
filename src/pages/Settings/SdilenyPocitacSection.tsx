@@ -11,7 +11,7 @@ import {
 } from "../../lib/prepinaniUctu";
 
 /**
- * Nastavení → Můj profil → Sdílený počítač: PIN, zámek po nečinnosti,
+ * Nastavení → Můj účet → Sdílený počítač: PIN, zámek po nečinnosti,
  * zaparkované účty. PIN patří k účtu (server), zámek a zaparkované účty
  * k tomuhle počítači (localStorage) – u pultu se zamyká, na notebooku
  * majitele ne.

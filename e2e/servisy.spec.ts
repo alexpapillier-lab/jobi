@@ -129,7 +129,7 @@ test("nový servis jde založit z aplikace a první zakázka má číslo podle z
   await prihlasSe(page);
 
   novyServisNazev = `${PREDPONA} ${Date.now().toString(36)}`;
-  await otevriNastaveni(page, "nový servis", "Fotka a přezdívka");
+  await otevriNastaveni(page, "nový servis", "Můj účet");
   await page.getByPlaceholder("např. Servis Novák").fill(novyServisNazev);
   await page.getByRole("button", { name: "Založit servis" }).click();
   await expect(page.getByText(`Servis „${novyServisNazev}“ je připravený`).first()).toBeVisible({ timeout: 60_000 });

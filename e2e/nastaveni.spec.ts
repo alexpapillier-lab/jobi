@@ -101,7 +101,7 @@ test("na poslední položku v Nastavení jde doscrollovat i v nízkém okně", a
   /*
    * Sloupec sekcí měl výšku z `calc(100vh - …)`, jenže nad stránkou je ještě
    * lišta aplikace – sloupec tak končil pod spodní hranou okna a na poslední
-   * položku („Fotka a přezdívka“) se nedalo doscrollovat ani kliknout.
+   * položku („Můj účet“) se nedalo doscrollovat ani kliknout.
    * Nízké okno je schválně: na velkém displeji se seznam vejde a chyba není vidět.
    */
   await page.setViewportSize({ width: 1280, height: 700 });
@@ -125,7 +125,7 @@ test("na poslední položku v Nastavení jde doscrollovat i v nízkém okně", a
 
   // A dá se na ni i kliknout – tedy otevře svou sekci. Poznávacím znamením je
   // karta „Přidat servis pomocí pozvánky“, která je jen tady.
-  await page.getByRole("button", { name: /Fotka a přezdívka/ }).first().click();
+  await page.getByRole("button", { name: /Můj účet/ }).first().click();
   await expect(page.getByText("Přidat servis pomocí pozvánky").first()).toBeVisible({ timeout: 15_000 });
 
   /*

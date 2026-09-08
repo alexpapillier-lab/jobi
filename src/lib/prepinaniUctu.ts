@@ -239,7 +239,7 @@ export async function odemkniAktualni(userId: string, pin: string): Promise<void
 export async function pridejUcetHeslem(email: string, heslo: string, profilAktualniho: ProfilProZaparkovani): Promise<void> {
   const s = await aktualniSession();
   if (!s) throw new Error("Nikdo není přihlášený.");
-  if (!(await maPin(s.user.id))) throw new Error("Nejdřív si v Nastavení → Můj profil nastavte PIN, ať se k vašemu účtu dá vrátit.");
+  if (!(await maPin(s.user.id))) throw new Error("Nejdřív si v Nastavení → Můj účet nastavte PIN, ať se k vašemu účtu dá vrátit.");
   await odesliFrontuNeboSelz();
   const zaparkovany = await zaparkujAktualni(profilAktualniho);
   const { error } = await klient().auth.signInWithPassword({ email: email.trim(), password: heslo });

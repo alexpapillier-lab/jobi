@@ -53,7 +53,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       const rozhodni = (ma: boolean) => {
         setMamPin(ma);
         if (!ma) {
-          showToast("Nejdřív si v Nastavení → Můj profil nastavte PIN, jinak by obrazovka nešla odemknout.", "info");
+          showToast("Nejdřív si v Nastavení → Můj účet nastavte PIN, jinak by obrazovka nešla odemknout.", "info");
           return;
         }
         setRezim("zamek"); setVybrany(null); setPin(""); setChyba(null); setPridavam(false);
@@ -227,7 +227,7 @@ export function PrepinacUctu({ userId, email, profil }: {
             )}
             <Button variant="soft" onClick={() => { setPridavam(true); setChyba(null); }}>Přidat účet…</Button>
             {mamPin === false && !zamek && (
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Abyste se mohli k tomuto účtu vrátit, nastavte si nejdřív PIN v Nastavení → Můj profil.</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Abyste se mohli k tomuto účtu vrátit, nastavte si nejdřív PIN v Nastavení → Můj účet.</div>
             )}
           </div>
         )}

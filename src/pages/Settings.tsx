@@ -961,7 +961,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        { key: "profile_me", label: "Fotka a přezdívka", keywords: ["profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis", "nový servis", "založit servis", "další provozovna", "pin", "přepnout účet", "zámek", "sdílený počítač"] },
+        { key: "profile_me", label: "Můj účet", keywords: ["účet", "profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis", "nový servis", "založit servis", "další provozovna", "pin", "přepnout účet", "zámek", "sdílený počítač"] },
       ],
     },
   // Skupina bez viditelné podsekce se neukazuje (např. Komunikace pro člena).
@@ -2701,7 +2701,7 @@ function SettingsNav({
    *
    * Nastavení se vykresluje uvnitř aplikace, která má nad sebou vlastní lištu,
    * takže `calc(100vh - …)` vyšlo vždycky o kus víc, než kolik je pod sloupcem
-   * doopravdy místa. Poslední položka („Fotka a přezdívka“) tak končila pod
+   * doopravdy místa. Poslední položka („Můj účet“) tak končila pod
    * spodní hranou okna a nedalo se na ni doscrollovat ani kliknout. Skutečnou
    * mezeru zná jen prohlížeč, proto se odečítá od horní hrany sloupce.
    */
