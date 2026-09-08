@@ -50,6 +50,7 @@ import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { CasNaOprave } from "../components/orders/CasNaOprave";
+import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
 import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
@@ -980,6 +981,7 @@ export default function Orders({
   const pouzijConfigServisu = useCallback((config: any) => {
     setOrdersShowClaimsInList(!!config?.orders_show_claims_in_list);
     setHodinovaSazba(typeof config?.hodinova_sazba === "number" ? config.hodinova_sazba : null);
+    setZaokrouhleniPrace(normalizujZaokrouhleni(config?.zaokrouhleni_prace));
     setKontrolniSeznamy(normalizujSablony(config?.kontrolniSeznamy));
     setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
     setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
@@ -1579,6 +1581,8 @@ export default function Orders({
   const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
   /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
   const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
+  /** Krok zaokrouhlení naměřeného času na hodinovou práci (service_settings.config.zaokrouhleni_prace). */
+  const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
   /** Šablony kontroly po opravě (service_settings.config.kontrolniSeznamy, jinak výchozí). */
   const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
   /** Stálý seznam náhradních zařízení servisu (service_settings.config.nahradniZarizeni). */
@@ -7817,6 +7821,7 @@ export default function Orders({
                       userId={session?.user?.id ?? null}
                       jmena={session?.user?.id && userProfile?.nickname ? { [session.user.id]: userProfile.nickname } : {}}
                       sazba={hodinovaSazba}
+                      zaokrouhleniMinut={zaokrouhleniPrace}
                       uzPridano={(detailedTicket.performedRepairs ?? []).some((r) => r.type === "hourly" && r.zMereni)}
                       onPridatHodinovouPraci={(prace) => addPerformedRepair(detailedTicket.id, { name: "Práce technika", type: "hourly", zMereni: true, ...prace })}
                     />

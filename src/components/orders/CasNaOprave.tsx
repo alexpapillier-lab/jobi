@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../../components/Toast";
 import { delkaSekund, formatDelka, nactiPrezdivky, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
-import { MAX_OTEVRENY_USEK_HODIN, castkaZaCas, hodinyKUctovani, jeZapomenuty, nejvytizenejsi, sekundyCelkem } from "../../lib/usekyPrace";
+import { MAX_OTEVRENY_USEK_HODIN, VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, castkaZaCas, hodinyKUctovani, jeZapomenuty, nejvytizenejsi, sekundyCelkem } from "../../lib/usekyPrace";
 import { formatCurrency } from "../../lib/invoiceMath";
 
 /**
@@ -22,6 +22,7 @@ export function CasNaOprave({
   userId,
   jmena,
   sazba,
+  zaokrouhleniMinut = VYCHOZI_ZAOKROUHLENI_PRACE,
   uzPridano = false,
   onPridatHodinovouPraci,
 }: {
@@ -32,6 +33,8 @@ export function CasNaOprave({
   jmena: Record<string, string>;
   /** Hodinová sazba servisu (Kč/h). Bez ní se částka ani tlačítko neukážou. */
   sazba?: number | null;
+  /** Krok zaokrouhlení naměřeného času v minutách, 0 = nezaokrouhlovat (nastavení servisu). */
+  zaokrouhleniMinut?: number;
   /** Hodinová práce z měření už v zakázce je – tlačítko se jen ukáže jako hotové. */
   uzPridano?: boolean;
   /** Přidá naměřený čas do provedených oprav jako položku „Hodinová práce“. */
@@ -88,7 +91,8 @@ export function CasNaOprave({
   const jmeno = (id: string) => jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega");
   const maSazbu = typeof sazba === "number" && sazba > 0;
   const castka = maSazbu && celkem > 0 ? castkaZaCas(celkem, sazba) : null;
-  const hodiny = hodinyKUctovani(celkem);
+  const hodiny = hodinyKUctovani(celkem, zaokrouhleniMinut);
+  const popisZaokrouhleni = (ZAOKROUHLENI_PRACE.find((z) => z.minut === zaokrouhleniMinut)?.label ?? "Každá započatá čtvrthodina").toLowerCase();
 
   const pridatHodinovouPraci = () => {
     if (!onPridatHodinovouPraci || !maSazbu || hodiny <= 0) return;
@@ -129,7 +133,7 @@ export function CasNaOprave({
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Celkem na zakázce <b style={{ color: "var(--text)" }}>{formatDelka(celkem)}</b>
           {castka !== null && (
-            <span title={`Odhad podle sazby servisu ${formatCurrency(sazba as number)}/h. Účtuje se po započatých čtvrthodinách.`}>
+            <span title={`Odhad podle sazby servisu ${formatCurrency(sazba as number)}/h. Účtuje se: ${popisZaokrouhleni}.`}>
               {" "}· ≈ <b style={{ color: "var(--text)" }}>{formatCurrency(castka)}</b>
             </span>
           )}

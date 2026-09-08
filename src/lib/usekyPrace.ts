@@ -76,14 +76,39 @@ export function jeZapomenuty(usek: Usek, ted: number = Date.now()): boolean {
 }
 
 /**
- * Hodiny k účtování z naměřeného času: každá započatá čtvrthodina.
- *
- * Tak to servisy účtují ručně a položka „Hodinová práce“ v zakázce stejně
- * bere hodiny po 0,25. Přesné minuty by na dokladu vypadaly jako 1,37 h.
+ * Kroky, po kterých se naměřený čas zaokrouhluje na hodiny k účtování
+ * (Nastavení → Zakázky → Hodinová práce, `config.zaokrouhleni_prace`).
+ * 0 = nezaokrouhlovat. Výchozí je čtvrthodina – tak servisy účtují ručně.
  */
-export function hodinyKUctovani(sekund: number): number {
+export const ZAOKROUHLENI_PRACE = [
+  { minut: 0, label: "Nezaokrouhlovat (na minuty)" },
+  { minut: 5, label: "Každých započatých 5 minut" },
+  { minut: 10, label: "Každých započatých 10 minut" },
+  { minut: 15, label: "Každá započatá čtvrthodina" },
+  { minut: 30, label: "Každá započatá půlhodina" },
+  { minut: 60, label: "Každá započatá hodina" },
+] as const;
+export const VYCHOZI_ZAOKROUHLENI_PRACE = 15;
+
+/** Nastavení z configu servisu: neznámou hodnotu nahradí výchozí čtvrthodinou. */
+export function normalizujZaokrouhleni(raw: unknown): number {
+  return typeof raw === "number" && ZAOKROUHLENI_PRACE.some((z) => z.minut === raw) ? raw : VYCHOZI_ZAOKROUHLENI_PRACE;
+}
+
+/**
+ * Hodiny k účtování z naměřeného času: nahoru na započatý krok.
+ *
+ * Bez zaokrouhlení (krok 0) se hodiny berou na setiny – položka „Hodinová
+ * práce“ v zakázce stejně s víc desetinnými místy nepočítá a na dokladu
+ * by 1,3667 h vypadalo divně.
+ */
+export function hodinyKUctovani(sekund: number, krokMinut: number = VYCHOZI_ZAOKROUHLENI_PRACE): number {
   if (sekund <= 0) return 0;
-  return Math.ceil(sekund / 900) / 4;
+  if (krokMinut <= 0) return Math.ceil(sekund / 36) / 100;
+  const krokSekund = krokMinut * 60;
+  // Kroky po 5 a 10 minutách nedávají „hezké“ desetiny (65 min = 1,0833 h);
+  // čtyři desetinná místa stačí, aby hodiny × sazba seděly na haléř.
+  return Math.round((Math.ceil(sekund / krokSekund) * krokMinut / 60) * 10000) / 10000;
 }
 
 /** Odhad ceny naměřeného času podle sazby (Kč/h), zaokrouhlený na koruny. */

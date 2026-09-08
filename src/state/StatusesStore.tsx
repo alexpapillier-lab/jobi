@@ -18,6 +18,8 @@ type StatusesContextValue = {
   loading: boolean;
   error: string | null;
   upsertStatus: (s: StatusMeta) => Promise<void>;
+  /** Posune status o jedno místo výš (-1) nebo níž (+1) a pořadí uloží. */
+  moveStatus: (key: StatusKey, smer: -1 | 1) => Promise<void>;
   removeStatus: (key: StatusKey) => void;
   resetToDefaults: () => void;
   getByKey: (key: StatusKey) => StatusMeta | undefined;
@@ -282,20 +284,46 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       return;
     }
 
-    // Update local state only after successful DB upsert
-    setStatuses((prev) => {
-      const next = prev.filter((x) => x.key !== key);
-      next.push({
-        key,
-        label,
-        bg: s.bg?.trim() || undefined,
-        fg: s.fg?.trim() || undefined,
-        isFinal: !!s.isFinal,
-      });
-      return next;
-    });
+    // Update local state only after successful DB upsert. Upravený status
+    // zůstává na svém místě – seznam je seřazený podle order_index a
+    // v databázi se pořadí nezměnilo; dřív skočil na konec a při dalším
+    // načtení se zase vrátil, což vypadalo jako rozbité řazení.
+    const ulozeny: StatusMeta = {
+      key,
+      label,
+      bg: s.bg?.trim() || undefined,
+      fg: s.fg?.trim() || undefined,
+      isFinal: !!s.isFinal,
+    };
+    setStatuses((prev) => (prev.some((x) => x.key === key) ? prev.map((x) => (x.key === key ? ulozeny : x)) : [...prev, ulozeny]));
 
     showToast("Status uložen", "success");
+  }, [activeServiceId, statuses]);
+
+  const moveStatus = useCallback(async (key: StatusKey, smer: -1 | 1) => {
+    if (!activeServiceId || !supabase) return;
+    const i = statuses.findIndex((x) => x.key === key);
+    const j = i + smer;
+    if (i < 0 || j < 0 || j >= statuses.length) return;
+    const nove = [...statuses];
+    [nove[i], nove[j]] = [nove[j], nove[i]];
+    // Pořadí drží order_index; přečíslují se všechny, ať v databázi
+    // nezůstanou díry ani duplicity po dřívějším mazání.
+    const predchozi = statuses;
+    setStatuses(nove);
+    const zapisy = nove.map((st, idx) =>
+      (supabase!.from("service_statuses") as any)
+        .update({ order_index: idx })
+        .eq("service_id", activeServiceId)
+        .eq("key", st.key)
+    );
+    const vysledky = await Promise.all(zapisy);
+    const chyba = vysledky.find((r: { error?: { message?: string } | null }) => r?.error)?.error;
+    if (chyba) {
+      console.error("[Statuses] move failed", chyba);
+      setStatuses(predchozi);
+      showToast(`Pořadí se nepodařilo uložit: ${chyba.message || "Neznámá chyba"}`, "error");
+    }
   }, [activeServiceId, statuses]);
 
   const removeStatus = useCallback((key: StatusKey) => {
@@ -315,13 +343,14 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       loading,
       error,
       upsertStatus,
+      moveStatus,
       removeStatus,
       resetToDefaults,
       getByKey,
       isFinal,
       fallbackKey: FALLBACK_KEY,
     }),
-    [statuses, loading, error, upsertStatus, removeStatus, resetToDefaults, getByKey, isFinal]
+    [statuses, loading, error, upsertStatus, moveStatus, removeStatus, resetToDefaults, getByKey, isFinal]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

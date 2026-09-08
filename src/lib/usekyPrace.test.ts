@@ -100,7 +100,7 @@ describe("součet za víc úseků", () => {
 /**
  * Přenos naměřeného času do hodinové práce: co se zaúčtuje a komu.
  */
-import { castkaZaCas, hodinyKUctovani, nejvytizenejsi } from "./usekyPrace";
+import { castkaZaCas, hodinyKUctovani, nejvytizenejsi, normalizujZaokrouhleni } from "./usekyPrace";
 
 describe("hodiny k účtování", () => {
   it("zaokrouhluje nahoru na započatou čtvrthodinu", () => {
@@ -109,6 +109,27 @@ describe("hodiny k účtování", () => {
     expect(hodinyKUctovani(15 * 60)).toBe(0.25);
     expect(hodinyKUctovani(15 * 60 + 1)).toBe(0.5);
     expect(hodinyKUctovani(82 * 60)).toBe(1.5);
+  });
+
+  it("respektuje nastavený krok", () => {
+    expect(hodinyKUctovani(82 * 60, 30)).toBe(1.5);
+    expect(hodinyKUctovani(82 * 60, 60)).toBe(2);
+    expect(hodinyKUctovani(82 * 60, 10)).toBe(1.5);
+    expect(hodinyKUctovani(61 * 60, 5)).toBe(1.0833);
+    expect(hodinyKUctovani(82 * 60 + 1, 5)).toBe(1.4167);
+  });
+
+  it("bez zaokrouhlení bere minuty na setiny hodiny", () => {
+    expect(hodinyKUctovani(82 * 60, 0)).toBe(1.37);
+    expect(hodinyKUctovani(3600, 0)).toBe(1);
+    expect(hodinyKUctovani(1, 0)).toBe(0.01);
+  });
+
+  it("neznámé nastavení spadne na čtvrthodinu", () => {
+    expect(normalizujZaokrouhleni(30)).toBe(30);
+    expect(normalizujZaokrouhleni(0)).toBe(0);
+    expect(normalizujZaokrouhleni(7)).toBe(15);
+    expect(normalizujZaokrouhleni(undefined)).toBe(15);
   });
 
   it("částka je z přesného času, na koruny", () => {

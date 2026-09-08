@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef, useCallback, type ChangeEvent, type ReactNode } from "react";
 import { Button, Segmented, Input, MenuItem, SettingRow, SettingRows, UnsavedBar, useSavedHint } from "../components/ui";
-import { SearchIcon, CheckIcon } from "../components/icons";
+import { SearchIcon, CheckIcon, ChevronDownIcon } from "../components/icons";
 import { UnsavedGuardProvider, type UnsavedHandle } from "./Settings/hooks/useUnsavedGuard";
 import { UnsavedChangesDialog } from "./Settings/components/UnsavedChangesDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -29,6 +29,7 @@ import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
 import { KontrolniSeznamySettingsSection } from "./Settings/KontrolniSeznamySettingsSection";
 import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSettingsSection";
+import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
 import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
@@ -305,7 +306,7 @@ type SettingsProps = {
 export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
   const isNarrow = useIsNarrow();
   const { session } = useAuth();
-  const { statuses, fallbackKey } = useStatuses();
+  const { statuses, fallbackKey, moveStatus } = useStatuses();
   const { preference, setPreference } = useTheme();
   const appUpdate = useAppUpdate();
   const updateAvailable = !!(appUpdate?.update);
@@ -449,6 +450,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     }
     setOrdersShowClaimsInList(!!config.orders_show_claims_in_list);
     setHodinovaSazbaText(typeof config.hodinova_sazba === "number" ? String(config.hodinova_sazba) : "");
+    setZaokrouhleniPrace(normalizujZaokrouhleni(config.zaokrouhleni_prace));
     setCasNaOprave(config.cas_na_oprave === true);
   }, []);
 
@@ -588,6 +590,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   /** Hodinová sazba servisu (Kč/h) – výchozí pro položku „Hodinová práce“ v zakázce. */
   const [hodinovaSazbaText, setHodinovaSazbaText] = useState("");
+  /** Krok zaokrouhlení naměřeného času při přenosu do hodinové práce (config.zaokrouhleni_prace). */
+  const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
+  const saveZaokrouhleniPrace = useCallback(async (minut: number) => {
+    if (!activeServiceId || !supabase) return;
+    setZaokrouhleniPrace(minut);
+    try {
+      const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { zaokrouhleni_prace: minut } } });
+      if (error) throw new Error(error.message);
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    } catch (err) {
+      console.error("[Settings] saveZaokrouhleniPrace", err);
+      showToast("Nastavení se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId]);
   /** Stopky na zakázce – volitelná funkce (service_settings.config.cas_na_oprave). */
   const [casNaOprave, setCasNaOprave] = useState(false);
   const saveCasNaOprave = useCallback(async (zapnuto: boolean) => {
@@ -1822,13 +1838,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {statuses.map((s) => (
+              {statuses.map((s, poradi) => (
                 <div
                   key={s.key}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    gap: 8,
                     padding: 12,
                     borderRadius: 10,
                     border,
@@ -1855,7 +1872,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     )}
                   </div>
 
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {/* Pořadí statusů je i pořadí v nabídkách a ve sloupcích – šipky
+                        místo tažení, ať to jde i na dotykové obrazovce. */}
+                    <Button size="sm" iconOnly icon={<span style={{ display: "inline-flex", transform: "rotate(180deg)" }}><ChevronDownIcon size={14} /></span>} aria-label="Posunout výš" title="Posunout výš" disabled={poradi === 0} onClick={() => { void moveStatus(s.key, -1); }} />
+                    <Button size="sm" iconOnly icon={<ChevronDownIcon size={14} />} aria-label="Posunout níž" title="Posunout níž" disabled={poradi === statuses.length - 1} onClick={() => { void moveStatus(s.key, 1); }} />
                     <Button size="sm" onClick={() => setDraft({ ...s })}>
                       Upravit
                     </Button>
@@ -2350,6 +2371,21 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               }
             />
+            {casNaOprave && (
+              <SettingRow
+                label="Zaokrouhlení naměřeného času"
+                description="Když se čas ze stopek přidá do zakázky jako hodinová práce, zaokrouhlí se nahoru na započatý krok. Bez zaokrouhlení se účtují minuty (na setiny hodiny)."
+                control={
+                  <select
+                    aria-label="Zaokrouhlení naměřeného času"
+                    value={zaokrouhleniPrace}
+                    onChange={(e) => { void saveZaokrouhleniPrace(Number(e.target.value)).then(() => hintSazba.show()); }}
+                  >
+                    {ZAOKROUHLENI_PRACE.map((z) => <option key={z.minut} value={z.minut}>{z.label}</option>)}
+                  </select>
+                }
+              />
+            )}
           </SettingRows>
         </Card>
       )}
