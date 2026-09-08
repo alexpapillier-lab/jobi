@@ -232,20 +232,36 @@ export async function odemkniAktualni(userId: string, pin: string): Promise<void
 }
 
 /**
- * Přihlásí dalšího člověka heslem a toho současného zaparkuje. Současný
- * musí mít PIN – jinak by se k němu už nedalo vrátit jinak než heslem a
- * parkování by nedávalo smysl.
+ * Přihlásí dalšího člověka heslem a toho současného zaparkuje. Slouží pro
+ * „Přidat účet“ i pro zaparkovaný účet bez PINu (nebo se zapomenutým PINem)
+ * – `cilUserId` pak říká, koho z trezoru po přihlášení vyhodit.
+ *
+ * Nový člověk si při tom rovnou nastaví PIN (`novyPin`): heslo se na
+ * sdíleném počítači zadává jen jednou, dál už se přepíná PINem. Když se
+ * PIN nepovede uložit, přihlášení se neruší – nastaví se v Nastavení.
  */
-export async function pridejUcetHeslem(email: string, heslo: string, profilAktualniho: ProfilProZaparkovani): Promise<void> {
+export async function pridejUcetHeslem(
+  email: string,
+  heslo: string,
+  profilAktualniho: ProfilProZaparkovani,
+  novyPin: string,
+  cilUserId?: string,
+): Promise<void> {
+  if (!jePlatnyPin(novyPin)) throw new Error("PIN musí mít přesně čtyři číslice.");
   const s = await aktualniSession();
   if (!s) throw new Error("Nikdo není přihlášený.");
-  if (!(await maPin(s.user.id))) throw new Error("Nejdřív si v Nastavení → Můj účet nastavte PIN, ať se k vašemu účtu dá vrátit.");
   await odesliFrontuNeboSelz();
   const zaparkovany = await zaparkujAktualni(profilAktualniho);
-  const { error } = await klient().auth.signInWithPassword({ email: email.trim(), password: heslo });
-  if (error) {
+  const { data, error } = await klient().auth.signInWithPassword({ email: email.trim(), password: heslo });
+  if (error || !data.session) {
     if (zaparkovany) ulozZaparkovane(odeberZaparkovany(nactiZaparkovane(), zaparkovany.userId));
-    throw new Error(error.message === "Invalid login credentials" ? "Nesprávný e-mail nebo heslo." : error.message);
+    throw new Error(error?.message === "Invalid login credentials" ? "Nesprávný e-mail nebo heslo." : error?.message ?? "Přihlášení se nezdařilo.");
+  }
+  ulozZaparkovane(odeberZaparkovany(nactiZaparkovane(), cilUserId ?? data.session.user.id));
+  try {
+    await nastavPin(novyPin);
+  } catch (e) {
+    console.warn("[prepinani] PIN se po přihlášení nepodařilo uložit", e);
   }
   vycistiProNovehoClovekaAZnovuNacti();
 }

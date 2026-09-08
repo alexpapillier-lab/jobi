@@ -74,7 +74,7 @@ export function SdilenyPocitacSection() {
         <div style={{ fontWeight: 900, fontSize: "var(--text-base)", marginBottom: "var(--space-2)", color: "var(--text)" }}>Sdílený počítač</div>
         <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: "var(--space-4)" }}>
           Když se u jednoho počítače střídá víc lidí, nemusí se odhlašovat: účty zůstanou přihlášené a přepíná se mezi nimi čtyřmístným PINem.
-          Bez PINu se váš účet zaparkovat nedá – nebylo by, jak se k němu vrátit.
+          Kdo PIN nemá, vrací se ke svému účtu heslem a PIN si při tom nastaví.
         </div>
         <SettingRows>
           <SettingRow
@@ -111,7 +111,7 @@ export function SdilenyPocitacSection() {
         </SettingRows>
         {zaparkovane.filter((u) => u.userId !== userId).length > 0 && (
           <div style={{ marginTop: "var(--space-4)" }}>
-            <FieldLabel>Účty zaparkované na tomto počítači</FieldLabel>
+            <FieldLabel>Další přihlášené účty na tomto počítači</FieldLabel>
             <div style={{ display: "grid", gap: 6 }}>
               {zaparkovane.filter((u) => u.userId !== userId).map((u) => (
                 <div key={u.userId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)" }}>
@@ -119,7 +119,7 @@ export function SdilenyPocitacSection() {
                     <b>{u.nickname?.trim() || u.email?.split("@")[0] || "Účet"}</b>
                     {u.email && <span style={{ color: "var(--muted)" }}> · {u.email}</span>}
                   </span>
-                  <Button size="sm" variant="ghost" onClick={() => odeberZaparkovanyUcet(u.userId)} title="Odebrat z tohoto počítače – účet se tím neodhlásí, jen se sem bude muset přihlásit heslem.">Odebrat</Button>
+                  <Button size="sm" variant="ghost" onClick={() => odeberZaparkovanyUcet(u.userId)} title="Odebrat z tohoto počítače – ke svému účtu se pak člověk vrátí jen heslem.">Odebrat</Button>
                 </div>
               ))}
             </div>
