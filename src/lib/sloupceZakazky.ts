@@ -46,6 +46,7 @@ export const SLOUPCE_SEZNAMU = [
   "created_at",
   "version",
   "branch_id",
+  "assigned_to",
 ].join(",");
 
 /**
@@ -94,6 +95,7 @@ export const SLOUPCE_DETAILU = [
   "updated_at",
   "version",
   "branch_id",
+  "assigned_to",
 ].join(",");
 
 /**

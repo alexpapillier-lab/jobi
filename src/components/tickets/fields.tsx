@@ -121,6 +121,19 @@ export function TicketCustomer({ name }: { name?: string | null }) {
   );
 }
 
+/** Přidělený technik – štítek na kartě; bez technika nic. */
+export function TicketTechnik({ name }: { name?: string | null }) {
+  if (!name) return null;
+  return (
+    <span
+      title={`Technik: ${name}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--accent)", background: "var(--accent-soft)", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {name}
+    </span>
+  );
+}
+
 /** Požadovaná oprava nebo popis závady. */
 export function TicketRepair({ text }: { text?: string | null }) {
   if (!text) return null;

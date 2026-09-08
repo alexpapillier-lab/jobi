@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { MenuItem } from "../../components/ui";
+import { MenuItem, SettingRow, SettingRows } from "../../components/ui";
 import { createPortal } from "react-dom";
 import { supabase } from "../../lib/supabaseClient";
 import { devLog, devWarn } from "../../lib/devLog";
@@ -116,6 +116,25 @@ type TeamSettingsProps = {
 };
 
 export function TeamSettings({ activeServiceId, setActiveServiceId, services }: TeamSettingsProps) {
+  /* Přidělování technika: servis s jedním technikem ho vypne a v zakázkách
+     zmizí karta Technik i skupina „Moje“ (config.pridelovani_technika). */
+  const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
+  useEffect(() => {
+    if (!supabase || !activeServiceId) return;
+    let zruseno = false;
+    void (supabase as any).from("service_settings").select("config").eq("service_id", activeServiceId).maybeSingle()
+      .then(({ data }: { data: { config?: { pridelovani_technika?: unknown } } | null }) => {
+        if (!zruseno) setPridelovaniTechnika(data?.config?.pridelovani_technika !== false);
+      });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+  const ulozPridelovani = async (zapnuto: boolean) => {
+    if (!supabase || !activeServiceId) return;
+    setPridelovaniTechnika(zapnuto);
+    const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { pridelovani_technika: zapnuto } } });
+    if (error) { showToast("Nastavení se nepodařilo uložit", "error"); return; }
+    window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+  };
   const { session } = useAuth();
   const isRootOwner = useIsRootOwner();
   const rootOwnerId = getRootOwnerId();
@@ -636,6 +655,16 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
   return (
     <>
+      <Card>
+        <SettingRows>
+          <SettingRow
+            clickable
+            label="Přidělování zakázek technikům"
+            description="V detailu zakázky karta Technik („Přidělit mně“), v seznamu skupina Moje a jméno technika na kartě. Servis s jedním technikem to nepotřebuje."
+            control={<input type="checkbox" checked={pridelovaniTechnika} onChange={(e) => { void ulozPridelovani(e.target.checked); }} />}
+          />
+        </SettingRows>
+      </Card>
       <Card>
         {isRootOwner && services.length > 1 && (
           <div ref={serviceDropdownRef} style={{ marginBottom: 16, position: "relative" }}>

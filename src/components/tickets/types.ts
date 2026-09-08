@@ -26,6 +26,8 @@ export type TicketCardData = {
   discountValue?: number;
   performedRepairs?: { name?: string; price?: number }[];
   expectedDoneAt?: string;
+  /** Jméno přiděleného technika; jen když má servis přidělování zapnuté. */
+  technik?: string | null;
 };
 
 export type TicketCardActions = {

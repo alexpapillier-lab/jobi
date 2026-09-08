@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketDate } from "./fields";
+import { TicketCode, TicketDate, TicketTechnik } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 
 type Props = {
@@ -62,7 +62,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</div>
-            <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)" }}>{t.customerName}</div>
+            <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>{t.customerName}<TicketTechnik name={t.technik} /></div>
           </div>
         </div>
 

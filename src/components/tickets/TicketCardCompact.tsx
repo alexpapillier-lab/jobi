@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator, TicketTechnik } from "./fields";
 import { CheckIcon } from "../icons";
 
 type Props = {
@@ -54,6 +54,7 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
         <MetaSeparator />
         <TicketDevice label={t.deviceLabel} />
         <TicketCustomer name={t.customerName} />
+        <TicketTechnik name={t.technik} />
 
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />

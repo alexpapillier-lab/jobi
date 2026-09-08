@@ -50,6 +50,8 @@ import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { CasNaOprave } from "../components/orders/CasNaOprave";
+import { TechnikZakazky } from "../components/orders/TechnikZakazky";
+import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
@@ -117,7 +119,7 @@ export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
 
 
-type GroupKey = "all" | "active" | "final" | "reklamace";
+type GroupKey = "all" | "active" | "final" | "reklamace" | "moje";
 type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
@@ -243,6 +245,8 @@ export type TicketEx = Ticket & {
   handbackMethod?: string;
   deviceNote?: string;
   externalId?: string;
+  /** Přidělený technik (auth.users.id), null = nepřiděleno. */
+  assignedTo?: string | null;
   estimatedPrice?: number;
   performedRepairs?: PerformedRepair[];
   /** Kontrola po opravě (tickets.test_checklist). */
@@ -656,6 +660,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
     branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
+    assignedTo: typeof supabaseTicket.assigned_to === "string" ? supabaseTicket.assigned_to : null,
     // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
     // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
     uplna: jePlnyRadekZakazky(supabaseTicket),
@@ -985,6 +990,7 @@ export default function Orders({
     setKontrolniSeznamy(normalizujSablony(config?.kontrolniSeznamy));
     setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
     setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
+    setPridelovaniTechnika(config?.pridelovani_technika !== false);
   }, []);
 
   const nactiConfigServisu = useCallback(() => {
@@ -1589,6 +1595,9 @@ export default function Orders({
   const [nahradniZarizeni, setNahradniZarizeni] = useState<NahradniZarizeni[]>([]);
   /** Stopky na zakázce – volitelné (service_settings.config.cas_na_oprave). */
   const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
+  /** Přidělování technika (config.pridelovani_technika, výchozí zapnuto). Servis s jedním technikem si ho vypne. */
+  const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
+  const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -2484,6 +2493,7 @@ export default function Orders({
     setActiveStatusKey(null);
   }, [activeStatusKey, statusKeysSet]);
 
+  const mojeId = session?.user?.id ?? null;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const qDigits = q.replace(/\D/g, "");
@@ -2498,6 +2508,8 @@ export default function Orders({
 
         if (activeGroup === "all") return true;
         if (activeGroup === "final") return isFinal(st);
+        // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
+        if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
         return !isFinal(st);
       })
       .filter((t) => {
@@ -2533,7 +2545,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     );
-  }, [tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
+  }, [mojeId, tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
 
   /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
   const claimsInBranch = useMemo(
@@ -2592,13 +2604,16 @@ export default function Orders({
     let active = 0;
     let final = 0;
     let all = 0;
+    let moje = 0;
     for (const t of tickets) {
       const raw = (t.status as any) ?? statusById[t.id];
       const st = normalizeStatus(raw);
       if (showSecondaryFiltersRow && activeStatusKey && st !== null && st !== activeStatusKey) continue;
       all += 1;
-      if (st === null || !isFinal(st)) active += 1;
-      else final += 1;
+      if (st === null || !isFinal(st)) {
+        active += 1;
+        if (mojeId && t.assignedTo === mojeId) moje += 1;
+      } else final += 1;
     }
     if (ordersShowClaimsInList) {
       for (const c of claimsInBranch) {
@@ -2608,8 +2623,13 @@ export default function Orders({
         else final += 1;
       }
     }
-    return { all, active, final, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, claimsInBranch]);
+    return { all, active, final, moje, reklamace: claimsInBranch.length };
+  }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
+
+  // Vypnuté přidělování nesmí nechat seznam na skupině, která už neexistuje.
+  useEffect(() => {
+    if (!pridelovaniTechnika && activeGroup === "moje") setActiveGroup("active");
+  }, [pridelovaniTechnika, activeGroup]);
 
   const groupLabel = (label: string, count: number) => (
     <>
@@ -3261,6 +3281,31 @@ export default function Orders({
    * ořízla nebo zmizela. Odklad pošle jen poslední stav; před zavřením
    * detailu a při odchodu ze stránky se dopíše okamžitě.
    */
+  /** Přidělený technik – hned do databáze, bez spojení do fronty. */
+  const ulozTechnika = useCallback(async (ticketId: string, userId: string | null) => {
+    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.assignedTo ?? null;
+    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assignedTo: userId } : t)));
+    if (!supabase) return;
+    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ assigned_to: userId }).eq("id", ticketId));
+    if (!error) return;
+    devLog("[technik] zápis selhal", error);
+    if (jeTrvalaChyba(error)) {
+      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assignedTo: puvodni } : t)));
+      showToast("Technika se nepodařilo uložit", "error");
+      return;
+    }
+    ulozNaPozdeji({
+      klic: `tickets:${ticketId}:assigned_to`,
+      tabulka: "tickets",
+      id: ticketId,
+      data: { assigned_to: userId },
+      popis: "Zakázka · technik",
+      serviceId: activeServiceId,
+      chyba: error,
+    });
+    showToast("Spojení vypadlo – technik se uloží, jakmile bude připojení.", "info");
+  }, [activeServiceId, sOkamzitymZapisem]);
+
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
@@ -4310,6 +4355,7 @@ export default function Orders({
     deviceLabel: t.deviceLabel,
     serialOrImei: t.serialOrImei,
     issueShort: t.issueShort,
+    technik: pridelovaniTechnika ? clenove.jmeno(t.assignedTo) : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
     status: (t.status as any) ?? statusById[t.id] ?? null,
@@ -4317,7 +4363,7 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
-  }), [statusById]);
+  }), [statusById, pridelovaniTechnika, clenove]);
 
   const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
     if (currentStatus !== null) {
@@ -4489,6 +4535,7 @@ export default function Orders({
           options={[
             { value: "all", label: groupLabel("Vše", groupCounts.all) },
             { value: "active", label: groupLabel("Aktivní", groupCounts.active) },
+            ...(pridelovaniTechnika ? [{ value: "moje" as GroupKey, label: groupLabel("Moje", groupCounts.moje) }] : []),
             { value: "final", label: groupLabel("Dokončené", groupCounts.final) },
             { value: "reklamace", label: groupLabel("Reklamace", groupCounts.reklamace) },
           ]}
@@ -7812,6 +7859,18 @@ export default function Orders({
                   />
                 </div>
 
+                {pridelovaniTechnika && (
+                  <div id="detail-technik" style={{ ...card, marginTop: 16 }}>
+                    <SectionHeading icon={<UserIcon size={16} />}>Technik</SectionHeading>
+                    <TechnikZakazky
+                      clenove={clenove.clenove}
+                      hodnota={detailedTicket.assignedTo}
+                      jaId={session?.user?.id ?? null}
+                      onChange={(userId) => void ulozTechnika(detailedTicket.id, userId)}
+                    />
+                  </div>
+                )}
+
                 {casNaOpraveZapnuto && activeServiceId && (
                   <div id="detail-cas" style={{ ...card, marginTop: 16 }}>
                     <SectionHeading icon={<HistoryIcon size={16} />}>Čas na opravě</SectionHeading>
@@ -8102,6 +8161,7 @@ export default function Orders({
                   expected_completion_at: "Předpokládané dokončení",
                   completed_at: "Dokončeno",
                   branch_id: "Pobočka",
+                  assigned_to: "Technik",
                   test_checklist: "Kontrola po opravě",
                   loaner: "Náhradní zařízení",
                   quote_items: "Cenová nabídka",
@@ -8141,6 +8201,7 @@ export default function Orders({
                   if (key === "quote_status") return ({ none: "bez nabídky", draft: "koncept", sent: "odeslána", approved: "schválena", rejected: "zamítnuta" } as Record<string, string>)[String(val)] ?? String(val);
                   if (key === "quote_amount" && typeof val === "number") return formatCurrency(val);
                   if (key === "branch_id") return getCachedBranch(activeServiceId ?? undefined, String(val))?.name ?? "jiná pobočka";
+                  if (key === "assigned_to") return val ? clenove.jmeno(String(val)) ?? "kolega" : "nikdo";
                   if (key === "intake_signature_url") return "podepsáno";
                   if ((key === "expected_completion_at" || key === "completed_at" || key === "quote_sent_at" || key === "quote_decided_at" || key === "intake_signed_at") && typeof val === "string") return formatCZ(val);
                   if (Array.isArray(val)) return `${val.length} položek`;

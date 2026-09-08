@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketTechnik } from "./fields";
 
 type Props = {
   ticket: TicketCardData;
@@ -51,6 +51,7 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
         <TicketDate value={t.createdAt} />
         <TicketDevice label={t.deviceLabel} dense />
         <TicketCustomer name={t.customerName} />
+        <TicketTechnik name={t.technik} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>
