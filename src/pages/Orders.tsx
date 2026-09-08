@@ -3154,7 +3154,7 @@ export default function Orders({
   );
 
   const addPerformedRepair = useCallback(
-    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string }) => {
+    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string; zMereni?: boolean }) => {
       // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
       let repairPrice: number | undefined = undefined;
       let repairCosts: number | undefined = undefined;
@@ -3196,7 +3196,7 @@ export default function Orders({
         costs: repairCosts,
         estimatedTime: repairTime,
         productIds: repairProductIds,
-        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId } : {}),
+        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId, ...(repair.zMereni ? { zMereni: true } : {}) } : {}),
       };
       upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
@@ -7816,6 +7816,9 @@ export default function Orders({
                       ticketId={detailedTicket.id}
                       userId={session?.user?.id ?? null}
                       jmena={session?.user?.id && userProfile?.nickname ? { [session.user.id]: userProfile.nickname } : {}}
+                      sazba={hodinovaSazba}
+                      uzPridano={(detailedTicket.performedRepairs ?? []).some((r) => r.type === "hourly" && r.zMereni)}
+                      onPridatHodinovouPraci={(prace) => addPerformedRepair(detailedTicket.id, { name: "Práce technika", type: "hourly", zMereni: true, ...prace })}
                     />
                   </div>
                 )}

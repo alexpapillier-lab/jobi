@@ -2,25 +2,40 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../../components/Toast";
 import { delkaSekund, formatDelka, nactiPrezdivky, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
-import { MAX_OTEVRENY_USEK_HODIN, jeZapomenuty, sekundyCelkem } from "../../lib/usekyPrace";
+import { MAX_OTEVRENY_USEK_HODIN, castkaZaCas, hodinyKUctovani, jeZapomenuty, nejvytizenejsi, sekundyCelkem } from "../../lib/usekyPrace";
+import { formatCurrency } from "../../lib/invoiceMath";
 
 /**
  * Karta „Čas na opravě“ v detailu zakázky (jen když to servis zapnul).
  *
  * Technik spustí a zastaví práci; vidí se, kdo právě pracuje a kolik času
  * zakázka celkem stála. Úseky jsou po lidech, každý mění jen své.
+ *
+ * Když má servis hodinovou sazbu, ukáže se vedle času i odhad ceny a
+ * tlačítko, které naměřený čas přidá do provedených oprav jako hodinovou
+ * práci – dřív technik hodiny opisoval ručně. Částku vidí každý, kdo vidí
+ * kartu (rozhodnutí majitele 8. 9. 2026).
  */
 export function CasNaOprave({
   serviceId,
   ticketId,
   userId,
   jmena,
+  sazba,
+  uzPridano = false,
+  onPridatHodinovouPraci,
 }: {
   serviceId: string;
   ticketId: string;
   userId: string | null;
   /** user_id → přezdívka; kdo chybí, ukáže se jako „Kolega“. */
   jmena: Record<string, string>;
+  /** Hodinová sazba servisu (Kč/h). Bez ní se částka ani tlačítko neukážou. */
+  sazba?: number | null;
+  /** Hodinová práce z měření už v zakázce je – tlačítko se jen ukáže jako hotové. */
+  uzPridano?: boolean;
+  /** Přidá naměřený čas do provedených oprav jako položku „Hodinová práce“. */
+  onPridatHodinovouPraci?: (prace: { hodiny: number; sazba: number; technik?: string; technikUserId?: string }) => void;
 }) {
   const [useky, setUseky] = useState<UsekPrace[]>([]);
   const [prezdivky, setPrezdivky] = useState<Record<string, string>>({});
@@ -71,6 +86,17 @@ export function CasNaOprave({
   const celkem = sekundyCelkem(useky, null, null, ted);
   const zapomenute = useky.filter((u) => jeZapomenuty(u, ted));
   const jmeno = (id: string) => jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega");
+  const maSazbu = typeof sazba === "number" && sazba > 0;
+  const castka = maSazbu && celkem > 0 ? castkaZaCas(celkem, sazba) : null;
+  const hodiny = hodinyKUctovani(celkem);
+
+  const pridatHodinovouPraci = () => {
+    if (!onPridatHodinovouPraci || !maSazbu || hodiny <= 0) return;
+    const technikUserId = nejvytizenejsi(useky, ted) ?? undefined;
+    const technik = technikUserId ? jmeno(technikUserId) : undefined;
+    onPridatHodinovouPraci({ hodiny, sazba, technik, technikUserId });
+    showToast(`Přidána hodinová práce ${hodiny.toLocaleString("cs-CZ")} h × ${formatCurrency(sazba)}.`, "success");
+  };
 
   const start = async () => {
     if (!userId) return;
@@ -102,6 +128,11 @@ export function CasNaOprave({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
           Celkem na zakázce <b style={{ color: "var(--text)" }}>{formatDelka(celkem)}</b>
+          {castka !== null && (
+            <span title={`Odhad podle sazby servisu ${formatCurrency(sazba as number)}/h. Účtuje se po započatých čtvrthodinách.`}>
+              {" "}· ≈ <b style={{ color: "var(--text)" }}>{formatCurrency(castka)}</b>
+            </span>
+          )}
           {bezi && <span> · právě běží</span>}
           {zapomenute.length > 0 && (
             <span title={`Úsek, který běží déle než ${MAX_OTEVRENY_USEK_HODIN} h, se do součtu započítá jen ${MAX_OTEVRENY_USEK_HODIN} h.`}>
@@ -137,6 +168,19 @@ export function CasNaOprave({
           ))}
           {useky.length > 8 && <li style={{ fontSize: 12, color: "var(--muted)" }}>… a dalších {useky.length - 8}</li>}
         </ul>
+      )}
+      {maSazbu && celkem > 0 && onPridatHodinovouPraci && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Button
+            variant="soft"
+            size="sm"
+            onClick={pridatHodinovouPraci}
+            disabled={uzPridano || bezi}
+            title={uzPridano ? "Hodinová práce z měření už v provedených opravách je." : bezi ? "Nejdřív zastavte běžící práci, ať se započítá celý čas." : undefined}
+          >
+            {uzPridano ? "Hodinová práce už je v opravách" : `Přidat jako hodinovou práci · ${hodiny.toLocaleString("cs-CZ")} h × ${formatCurrency(sazba as number)}`}
+          </Button>
+        </div>
       )}
     </div>
   );

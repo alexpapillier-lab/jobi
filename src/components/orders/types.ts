@@ -10,6 +10,8 @@ export type PerformedRepair = {
   technik?: string;
   /** Účet technika, když je to přihlášený člověk (jméno jde přepsat, účet zůstává pro KPI). */
   technikUserId?: string;
+  /** Hodinová práce vznikla z karty „Čas na opravě“ – aby se z měření nepřidala dvakrát. */
+  zMereni?: boolean;
   price?: number; // cena opravy (lze upravit)
   costs?: number; // náklady (lze upravit)
   estimatedTime?: number; // čas (lze upravit)

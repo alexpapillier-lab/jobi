@@ -74,3 +74,36 @@ export function jeZapomenuty(usek: Usek, ted: number = Date.now()): boolean {
   const zacatek = cas(usek.started_at);
   return zacatek !== null && ted - zacatek > MAX_OTEVRENY_USEK_SEKUND * 1000;
 }
+
+/**
+ * Hodiny k účtování z naměřeného času: každá započatá čtvrthodina.
+ *
+ * Tak to servisy účtují ručně a položka „Hodinová práce“ v zakázce stejně
+ * bere hodiny po 0,25. Přesné minuty by na dokladu vypadaly jako 1,37 h.
+ */
+export function hodinyKUctovani(sekund: number): number {
+  if (sekund <= 0) return 0;
+  return Math.ceil(sekund / 900) / 4;
+}
+
+/** Odhad ceny naměřeného času podle sazby (Kč/h), zaokrouhlený na koruny. */
+export function castkaZaCas(sekund: number, sazba: number): number {
+  if (sekund <= 0 || sazba <= 0) return 0;
+  return Math.round((sekund / 3600) * sazba);
+}
+
+/**
+ * Kdo na zakázce odpracoval nejvíc – ten se zapíše k hodinové práci jako
+ * technik. Když se o zakázku dělí dva, vyhraje ten s větším podílem; jméno
+ * jde v položce přepsat.
+ */
+export function nejvytizenejsi(useky: readonly (Usek & { user_id: string })[], ted: number = Date.now()): string | null {
+  const podle = new Map<string, number>();
+  for (const u of useky) podle.set(u.user_id, (podle.get(u.user_id) ?? 0) + sekundyVObdobi(u, null, null, ted));
+  let nej: string | null = null;
+  let max = 0;
+  for (const [id, s] of podle) {
+    if (s > max) { max = s; nej = id; }
+  }
+  return nej;
+}

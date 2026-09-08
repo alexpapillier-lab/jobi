@@ -96,3 +96,43 @@ describe("součet za víc úseků", () => {
     expect(sekundyCelkem([])).toBe(0);
   });
 });
+
+/**
+ * Přenos naměřeného času do hodinové práce: co se zaúčtuje a komu.
+ */
+import { castkaZaCas, hodinyKUctovani, nejvytizenejsi } from "./usekyPrace";
+
+describe("hodiny k účtování", () => {
+  it("zaokrouhluje nahoru na započatou čtvrthodinu", () => {
+    expect(hodinyKUctovani(0)).toBe(0);
+    expect(hodinyKUctovani(1)).toBe(0.25);
+    expect(hodinyKUctovani(15 * 60)).toBe(0.25);
+    expect(hodinyKUctovani(15 * 60 + 1)).toBe(0.5);
+    expect(hodinyKUctovani(82 * 60)).toBe(1.5);
+  });
+
+  it("částka je z přesného času, na koruny", () => {
+    expect(castkaZaCas(82 * 60, 900)).toBe(1230);
+    expect(castkaZaCas(3600, 850)).toBe(850);
+    expect(castkaZaCas(0, 850)).toBe(0);
+    expect(castkaZaCas(3600, 0)).toBe(0);
+  });
+});
+
+describe("nejvytíženější technik", () => {
+  const ted = new Date("2026-09-08T12:00:00Z").getTime();
+  const usek = (user_id: string, minut: number, zacatek = "2026-09-08T08:00:00Z") => ({
+    user_id,
+    started_at: zacatek,
+    ended_at: new Date(new Date(zacatek).getTime() + minut * 60_000).toISOString(),
+  });
+
+  it("sečte úseky po lidech a vrátí toho s největším součtem", () => {
+    const useky = [usek("a", 20), usek("b", 50), usek("a", 40, "2026-09-08T09:00:00Z")];
+    expect(nejvytizenejsi(useky, ted)).toBe("a");
+  });
+
+  it("bez úseků nikoho", () => {
+    expect(nejvytizenejsi([], ted)).toBeNull();
+  });
+});
