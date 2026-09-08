@@ -12,6 +12,15 @@
   const ticketId = params.get('ticket') || '';
   const token = params.get('token') || '';
   const scope = params.get('scope') || 'after'; // 'before' = fotky při příjmu
+  // Popisek vodoznaku doplní aplikace do odkazu při tvorbě QR (číslo zakázky
+  // a název servisu), ať je na fotce totéž jako u fotek nahraných z aplikace.
+  // Jde jen o text na fotce – nahrání dál hlídá token.
+  const cisloZakazky = (params.get('c') || '').trim();
+  const nazevServisu = (params.get('s') || '').trim();
+  // Delší strana fotky po zmenšení – stejně jako v aplikaci
+  // (src/lib/diagnosticPhotoWatermark.ts). Fotka z galerie má 3–5 MB a přes
+  // mobilní data se nahrávala celá.
+  const MAX_STRANA_FOTKY = 2560;
 
   const $ = (id) => document.getElementById(id);
   const loading = $('loading');
@@ -94,27 +103,47 @@
     });
   }
 
-  function drawWatermark(ctx, w, h) {
+  function radkyVodoznaku() {
     const now = new Date();
     const dateStr = now.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const label = dateStr + ' ' + timeStr + ' · jobi';
-    const fontSize = Math.max(12, Math.round(Math.min(w, h) * 0.03));
-    ctx.font = fontSize + 'px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const hlavicka = [cisloZakazky, nazevServisu].filter(Boolean).join(' · ');
+    return hlavicka ? [hlavicka, dateStr + ' ' + timeStr] : [dateStr + ' ' + timeStr + ' · jobi'];
+  }
+
+  // Tmavý štítek místo bílého textu se stínem: stín měl pevné 4 px, což na
+  // fotce z telefonu není vidět, a na světlém pultu bylo datum nečitelné.
+  // Stejná kresba jako nakresliStitek() v aplikaci.
+  function drawWatermark(ctx, w, h) {
+    const radky = radkyVodoznaku();
+    const pismo = Math.max(14, Math.round(Math.min(w, h) * 0.028));
+    ctx.font = '600 ' + pismo + 'px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'right';
-    ctx.textBaseline = 'bottom';
-    const pad = Math.round(fontSize * 0.8);
-    const x = w - pad;
-    const y = h - pad;
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.fillText(label, x, y);
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
+    ctx.textBaseline = 'alphabetic';
+    const okrajX = Math.round(pismo * 0.7);
+    const okrajY = Math.round(pismo * 0.45);
+    const odkraje = Math.round(pismo * 0.8);
+    const radek = Math.round(pismo * 1.25);
+    const sirkaStitku = Math.max.apply(null, radky.map((r) => ctx.measureText(r).width)) + okrajX * 2;
+    const vyskaStitku = radek * radky.length + okrajY * 2;
+    const x1 = w - odkraje;
+    const y1 = h - odkraje;
+    const x0 = x1 - sirkaStitku;
+    const y0 = y1 - vyskaStitku;
+    const r = Math.round(pismo * 0.35);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y0);
+    ctx.arcTo(x1, y0, x1, y1, r);
+    ctx.arcTo(x1, y1, x0, y1, r);
+    ctx.arcTo(x0, y1, x0, y0, r);
+    ctx.arcTo(x0, y0, x1, y0, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    radky.forEach((text, i) => {
+      ctx.fillText(text, x1 - okrajX, y0 + okrajY + radek * (i + 1) - Math.round(pismo * 0.3));
+    });
   }
 
   function setZoom(value) {
@@ -212,11 +241,14 @@
       const img = new Image();
       img.onload = () => {
         setCameraAspectRatio(img.width, img.height);
-        canvas.width = img.width;
-        canvas.height = img.height;
+        const pomer = Math.min(1, MAX_STRANA_FOTKY / Math.max(img.width, img.height));
+        const w = Math.round(img.width * pomer);
+        const h = Math.round(img.height * pomer);
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        drawWatermark(ctx, img.width, img.height);
+        ctx.drawImage(img, 0, 0, w, h);
+        drawWatermark(ctx, w, h);
         canvas.toBlob(
           (blob) => {
             if (blob) {

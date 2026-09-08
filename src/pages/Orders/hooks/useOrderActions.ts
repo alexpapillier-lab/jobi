@@ -229,6 +229,8 @@ async function ensureCustomerIdForTicketSnapshot(
 
 type UseOrderActionsDeps = {
   activeServiceId: string | null;
+  /** Název servisu do vodoznaku přijímacích fotek. */
+  serviceName?: string | null;
   userId: string | null;
   cloudTickets: TicketEx[];
   setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
@@ -293,6 +295,7 @@ function zaradDoFronty(
 export function useOrderActions(deps: UseOrderActionsDeps) {
   const {
     activeServiceId,
+    serviceName = null,
     userId,
     cloudTickets,
     setCloudTickets,
@@ -420,7 +423,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
             const urls: string[] = [];
             for (const dataUrl of photosBefore) {
               if (!dataUrl || typeof dataUrl !== "string") continue;
-              const blob = await addWatermarkToImageBlob(dataUrl);
+              const blob = await addWatermarkToImageBlob(dataUrl, { cislo: ticket.code, servis: serviceName });
               const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
               const url = await uploadDiagnosticPhoto(supabase, activeServiceId, ticket.id!, file);
               urls.push(url);

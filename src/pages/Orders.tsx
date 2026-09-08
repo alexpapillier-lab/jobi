@@ -41,6 +41,9 @@ import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
+import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
+import { VyberFotek } from "../components/orders/VyberFotek";
+import { popisDoOdkazu } from "../lib/diagnosticPhotoWatermark";
 import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
@@ -145,6 +148,8 @@ type OpenTicketIntent = {
 
 type OrdersProps = {
   activeServiceId: string | null;
+  /** Název aktivního servisu – jde do vodoznaku fotek. */
+  serviceName?: string | null;
   smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
   newOrderPrefill: { customerId?: string; rezervace?: Rezervace } | null;
   onNewOrderPrefillConsumed: () => void;
@@ -823,6 +828,7 @@ type ModelWithHierarchy = DeviceModel & {
 
 export default function Orders({
   activeServiceId,
+  serviceName = null,
   newOrderPrefill,
   onNewOrderPrefillConsumed,
   openTicketIntent,
@@ -838,6 +844,7 @@ export default function Orders({
   smsEnabled = false,
 }: OrdersProps) {
   const isNarrow = useIsNarrow();
+  const naTelefonu = useFoceniNaTelefonu();
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
@@ -2445,6 +2452,7 @@ export default function Orders({
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
+    serviceName,
     userId: session?.user?.id ?? null,
     cloudTickets,
     setCloudTickets,
@@ -5648,7 +5656,7 @@ export default function Orders({
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
-                    <label style={{ ...baseFieldInput, width: "auto", padding: "6px 12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>
+                    <VyberFotek popisek={<><CameraIcon size={14} /> Nahrát fotky</>} style={{ ...baseFieldInput, width: "auto", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>
                       <input
                         ref={newOrderPhotosBeforeInputRef}
                         type="file"
@@ -5674,8 +5682,8 @@ export default function Orders({
                           });
                         }}
                       />
-                      <CameraIcon size={14} /> Nahrát fotky
-                    </label>
+                    </VyberFotek>
+                    {!naTelefonu && (
                     <Button
                       variant="soft"
                       size="sm"
@@ -5702,7 +5710,7 @@ export default function Orders({
                           setDraftCaptureLiveCount(0);
                           if (data.token) draftCaptureTokenRef.current = data.token;
                           if (data.url) {
-                            setCaptureQRItems([{ deviceLabel: "Přijímací fotky (před vytvořením zakázky)", url: data.url }]);
+                            setCaptureQRItems([{ deviceLabel: "Přijímací fotky (před vytvořením zakázky)", url: popisDoOdkazu(data.url, { servis: serviceName }) }]);
                           }
                         } catch (err) {
                           showToast(normalizeError(err) || "Nepodařilo se vytvořit QR pro focení.", "error");
@@ -5715,6 +5723,7 @@ export default function Orders({
                     >
                       {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu (QR)"}
                     </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -6425,6 +6434,7 @@ export default function Orders({
                       ))}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                      {!naTelefonu && (
                       <Button variant="soft"
                         onClick={async () => {
                           if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !sourceTicket?.id) return;
@@ -6462,7 +6472,7 @@ export default function Orders({
                               }
                               if (data?.error) throw new Error(data.error);
                               if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                              setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
+                              setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: popisDoOdkazu(data.url, { cislo: sourceTicket.code, servis: serviceName }) }]);
                               return;
                             } catch (err) {
                               lastErr = err;
@@ -6483,7 +6493,8 @@ export default function Orders({
                       >
                         {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                       </Button>
-                      <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                      )}
+                      <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
                         <input
                           type="file"
                           accept="image/*"
@@ -6500,7 +6511,7 @@ export default function Orders({
                               try {
                                 const urls: string[] = [];
                                 for (const file of files) {
-                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file);
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file, { cislo: sourceTicket.code, servis: serviceName });
                                   urls.push(url);
                                 }
                                 const vsechny = [...(sourceTicket.diagnosticPhotos || []), ...urls];
@@ -6538,8 +6549,7 @@ export default function Orders({
                             }
                           }}
                         />
-                        Nahrát soubory
-                      </label>
+                      </VyberFotek>
                       {diagnosticPhotosUploading && (
                         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
                       )}
@@ -7498,6 +7508,7 @@ export default function Orders({
                           ))}
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        {!naTelefonu && (
                         <Button variant="soft"
                           onClick={async () => {
                             if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
@@ -7518,7 +7529,7 @@ export default function Orders({
                                   const raw = await res.text();
                                   const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
                                   if (!res.ok) throw new Error(data.error || res.statusText);
-                                  if (data.url) setCaptureQRItems([{ deviceLabel: detailedTicket.deviceLabel || "Zakázka", url: data.url }]);
+                                  if (data.url) setCaptureQRItems([{ deviceLabel: detailedTicket.deviceLabel || "Zakázka", url: popisDoOdkazu(data.url, { cislo: detailedTicket.code, servis: serviceName }) }]);
                                   return;
                                 } catch (err) {
                                   lastErr = err;
@@ -7539,7 +7550,8 @@ export default function Orders({
                         >
                           {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                         </Button>
-                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                        )}
+                        <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
                           <input
                             type="file"
                             accept="image/*"
@@ -7554,7 +7566,7 @@ export default function Orders({
                               try {
                                 const urls: string[] = [];
                                 for (const file of files) {
-                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file);
+                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file, { cislo: detailedTicket.code, servis: serviceName });
                                   urls.push(url);
                                 }
                                 setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
@@ -7572,8 +7584,7 @@ export default function Orders({
                               }
                             }}
                           />
-                          Nahrát soubory
-                        </label>
+                        </VyberFotek>
                       </div>
                     </div>
                     <div>
@@ -7643,6 +7654,7 @@ export default function Orders({
                         ))}
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
+                        {!naTelefonu && (
                         <Button variant="soft"
                           onClick={async () => {
                             if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
@@ -7680,7 +7692,7 @@ export default function Orders({
                                 }
                                 if (data?.error) throw new Error(data.error);
                                 if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                                setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: data.url }]);
+                                setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: popisDoOdkazu(data.url, { cislo: detailedTicket.code, servis: serviceName }) }]);
                                 return;
                               } catch (err) {
                                 lastErr = err;
@@ -7701,7 +7713,8 @@ export default function Orders({
                         >
                           {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
                         </Button>
-                        <label style={{ ...baseFieldInput, padding: "8px 12px", cursor: diagnosticPhotosUploading ? "wait" : "pointer", margin: 0 }}>
+                        )}
+                        <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
                           <input
                             type="file"
                             accept="image/*"
@@ -7722,7 +7735,8 @@ export default function Orders({
                                     supabase,
                                     activeServiceId!,
                                     detailedTicket.id!,
-                                    file
+                                    file,
+                                    { cislo: detailedTicket.code, servis: serviceName }
                                   );
                                     urls.push(url);
                                   }
@@ -7766,8 +7780,7 @@ export default function Orders({
                               }
                             }}
                           />
-                          Nahrát soubory
-                        </label>
+                        </VyberFotek>
                         {diagnosticPhotosUploading && (
                           <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
                         )}

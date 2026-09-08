@@ -1337,6 +1337,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               <div style={{ display: activePage === "orders" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "orders"}>
                 <Orders
                   activeServiceId={activeServiceId}
+                  serviceName={services.find((s) => s.service_id === activeServiceId)?.service_name ?? null}
                   smsPanelTicketIdRef={smsPanelTicketIdRef}
                   newOrderPrefill={newOrderPrefill}
                   onNewOrderPrefillConsumed={() => setNewOrderPrefill(null)}
