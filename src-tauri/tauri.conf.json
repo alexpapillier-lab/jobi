@@ -6,13 +6,13 @@
     },
     "windows": [
       {
+        "allowLinkPreview": false,
         "height": 900,
         "label": "main",
         "minHeight": 700,
         "minWidth": 1000,
         "title": "jobi",
-        "width": 1400,
-        "allowLinkPreview": false
+        "width": 1400
       }
     ]
   },
@@ -51,5 +51,5 @@
     }
   },
   "productName": "jobi",
-  "version": "0.6.0"
+  "version": "0.6.1"
 }
