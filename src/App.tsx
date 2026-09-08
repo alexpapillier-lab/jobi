@@ -23,6 +23,7 @@ import { ToastContainer } from "./components/Toast";
 import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
 import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
+import { PrepinacUctu } from "./components/PrepinacUctu";
 import { CiziServis } from "./components/CiziServis";
 import { pouzijMeritko } from "./lib/velikostRozhrani";
 import { spustHlidacFronty } from "./lib/frontaZapisu";
@@ -1250,6 +1251,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     <ThemeProvider>
       <OnlineGate>
         <NeulozeneZmeny />
+        <PrepinacUctu userId={session.user.id} email={session.user.email ?? null} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} />
         <CiziServis serviceId={activeServiceId} onPristupZiskan={() => { void refreshServices(); }} />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>

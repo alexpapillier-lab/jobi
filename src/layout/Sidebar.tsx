@@ -1126,6 +1126,29 @@ export function Sidebar({
               <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: "var(--text-sm)", color: "var(--muted)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {userEmail || displayName}
               </div>
+              {/* Sdílený počítač: přepnutí na kolegu PINem a zámek obrazovky (viz PrepinacUctu). */}
+              <MenuItem
+                size="md"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setUserMenuOpen(false);
+                  window.dispatchEvent(new CustomEvent("jobi:prepnout-ucet"));
+                }}
+              >
+                Přepnout účet…
+              </MenuItem>
+              <MenuItem
+                size="md"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setUserMenuOpen(false);
+                  window.dispatchEvent(new CustomEvent("jobi:zamknout"));
+                }}
+              >
+                Zamknout obrazovku
+              </MenuItem>
               <MenuItem
                 size="md"
                 onClick={(e) => {

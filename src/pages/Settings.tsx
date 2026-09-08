@@ -29,6 +29,7 @@ import { ShortcutsSettingsSection } from "./Settings/ShortcutsSettingsSection";
 import { DeviceOptionsSettingsSection } from "./Settings/DeviceOptionsSettingsSection";
 import { KontrolniSeznamySettingsSection } from "./Settings/KontrolniSeznamySettingsSection";
 import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSettingsSection";
+import { SdilenyPocitacSection } from "./Settings/SdilenyPocitacSection";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
 import { HandoffOptionsSettingsSection } from "./Settings/HandoffOptionsSettingsSection";
@@ -960,7 +961,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        { key: "profile_me", label: "Fotka a přezdívka", keywords: ["profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis", "nový servis", "založit servis", "další provozovna"] },
+        { key: "profile_me", label: "Fotka a přezdívka", keywords: ["profil", "přezdívka", "avatar", "fotka", "nick", "pozvánka", "kód", "přidat servis", "nový servis", "založit servis", "další provozovna", "pin", "přepnout účet", "zámek", "sdílený počítač"] },
       ],
     },
   // Skupina bez viditelné podsekce se neukazuje (např. Komunikace pro člena).
@@ -1406,6 +1407,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {section.subsection === "profile_me" && (
         <>
           <ProfileSettingsSection />
+          <SdilenyPocitacSection />
           <div>
             <Card>
               <CardHeader title="Přidat servis pomocí pozvánky" description="Máte kód z e-mailu s pozvánkou do dalšího servisu? Zadejte ho a přidáte se bez odhlášení." />

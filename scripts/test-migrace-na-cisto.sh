@@ -152,6 +152,11 @@ select
 echo ""
 echo "=== Kouřová zkouška ==="
 $PSQL <<'SMOKE'
+-- Od migrace 20260910150000 přidává trigger na services skrytého root
+-- ownera (public.root_owner_id()) mezi členy. V ostrém Supabase ten účet
+-- existuje; tady ho musí založit zkouška, jinak insert servisu spadne na FK.
+insert into auth.users (id, email)
+  select public.root_owner_id(), 'root@test.cz';
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111','sef@test.cz'),
   ('22222222-2222-2222-2222-222222222222','cizi@test.cz');
