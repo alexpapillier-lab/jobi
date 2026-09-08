@@ -610,8 +610,23 @@ export default function App() {
   useEffect(() => {
     activeServiceIdRef.current = activeServiceId;
   }, [activeServiceId]);
+  /*
+   * Seznam servisů patří k člověku. Po odhlášení a přihlášení jiného účtu
+   * ve stejném okně tu dřív zůstal seznam toho předchozího: účet bez
+   * jediného členství pak „patřil“ do cizího servisu, nároky se mu (správně)
+   * nenačetly a aplikace mu ukázala „Zkušební období skončilo“ u servisu,
+   * který má přístup trvalý. Při změně uživatele se seznam vyprázdní dřív,
+   * než se načte nový.
+   */
+  const posledniUzivatelRef = useRef<string | null>(null);
   useEffect(() => {
     if (!session || !supabase) return;
+    if (posledniUzivatelRef.current !== null && posledniUzivatelRef.current !== session.user.id) {
+      setServices([]);
+      setServicesLoaded(false);
+      setActiveServiceId(null);
+    }
+    posledniUzivatelRef.current = session.user.id;
     const runId = ++servicesListRunRef.current;
     (async () => {
       try {
@@ -630,11 +645,13 @@ export default function App() {
         
         const servicesList = (data.services as Array<{ service_id: string; service_name: string; role: string }>) || [];
         setServicesLoaded(true);
+        // Prázdný seznam se musí zapsat, ne přeskočit – jinak zůstane ten
+        // předchozí (viz komentář nad efektem a stejná oprava v refreshServices).
+        setServices(servicesList);
         if (servicesList.length === 0) {
+          setActiveServiceId(null);
           return;
         }
-        
-        setServices(servicesList);
         
         // If activeServiceId is null, try to restore from localStorage or use first service
         const aktivni = activeServiceIdRef.current;

@@ -76,6 +76,10 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
           <ThemeLogo size={64} />
         </div>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text)", textAlign: "center" }}>Založte si servis</h1>
+        {/* Říct rovnou, PROČ je tu tahle obrazovka – i člověk, kterého ze servisu odebrali, má vědět, že jde o členství, ne o chybu. */}
+        <p style={{ margin: "10px 0 0", fontSize: 14, fontWeight: 700, color: "var(--text)", textAlign: "center" }}>
+          Účet {email ? <span style={{ fontWeight: 900 }}>{email}</span> : "zatím"} není členem žádného servisu.
+        </p>
         <p style={{ margin: "10px 0 22px", fontSize: 14, lineHeight: 1.6, color: "var(--muted)", textAlign: "center" }}>
           Servis je vaše provozovna: zakázky, zákazníci, sklad i ceník patří k němu. Stačí název, zbytek doplníte později v Nastavení. Prvních 30 dní máte celou aplikaci bez omezení a bez karty, pak si vyberete tarif.
         </p>
