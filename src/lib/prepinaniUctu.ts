@@ -233,21 +233,21 @@ export async function odemkniAktualni(userId: string, pin: string): Promise<void
 
 /**
  * Přihlásí dalšího člověka heslem a toho současného zaparkuje. Slouží pro
- * „Přidat účet“ i pro zaparkovaný účet bez PINu (nebo se zapomenutým PINem)
- * – `cilUserId` pak říká, koho z trezoru po přihlášení vyhodit.
+ * „Přidat účet“ i pro odložený účet bez PINu / se zapomenutým PINem
+ * (`cilUserId` říká, koho z trezoru po přihlášení vyhodit).
  *
- * Nový člověk si při tom rovnou nastaví PIN (`novyPin`): heslo se na
- * sdíleném počítači zadává jen jednou, dál už se přepíná PINem. Když se
- * PIN nepovede uložit, přihlášení se neruší – nastaví se v Nastavení.
+ * PIN patří k účtu, ne k počítači: kdo už ho má (nastavil si ho jinde),
+ * jde rovnou dál. Kdo ho nemá – nebo přišel přes „Nevíte PIN?“
+ * (`vzdyNovyPin`) – dostane krok „Nastavte si PIN“; ten se dokončí přes
+ * `nastavPin` + `dokonciPrepnuti`. Relace je v tu chvíli už přepnutá.
  */
 export async function pridejUcetHeslem(
   email: string,
   heslo: string,
   profilAktualniho: ProfilProZaparkovani,
-  novyPin: string,
   cilUserId?: string,
-): Promise<void> {
-  if (!jePlatnyPin(novyPin)) throw new Error("PIN musí mít přesně čtyři číslice.");
+  vzdyNovyPin = false,
+): Promise<{ potrebujePin: boolean }> {
   const s = await aktualniSession();
   if (!s) throw new Error("Nikdo není přihlášený.");
   await odesliFrontuNeboSelz();
@@ -258,11 +258,16 @@ export async function pridejUcetHeslem(
     throw new Error(error?.message === "Invalid login credentials" ? "Nesprávný e-mail nebo heslo." : error?.message ?? "Přihlášení se nezdařilo.");
   }
   ulozZaparkovane(odeberZaparkovany(nactiZaparkovane(), cilUserId ?? data.session.user.id));
-  try {
-    await nastavPin(novyPin);
-  } catch (e) {
-    console.warn("[prepinani] PIN se po přihlášení nepodařilo uložit", e);
+  const maUzPin = vzdyNovyPin ? false : await maPin(data.session.user.id).catch(() => true);
+  if (maUzPin) {
+    vycistiProNovehoClovekaAZnovuNacti();
+    return { potrebujePin: false };
   }
+  return { potrebujePin: true };
+}
+
+/** Po přihlášení heslem (a případném nastavení PINu): vyčistit a znovu načíst. */
+export function dokonciPrepnuti(): void {
   vycistiProNovehoClovekaAZnovuNacti();
 }
 

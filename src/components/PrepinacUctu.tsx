@@ -5,7 +5,7 @@ import { showToast } from "./Toast";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import {
   UDALOST_OTEVRIT_PREPINAC, UDALOST_PIN_ZMENEN, UDALOST_ZAMEK_ZMENEN, UDALOST_ZAMKNOUT, UDALOST_ZAPARKOVANE,
-  jePlatnyPin, maPin, nactiZaparkovane, odeberZaparkovanyUcet, odemkniAktualni, prepniNaUcet, pridejUcetHeslem,
+  dokonciPrepnuti, jePlatnyPin, maPin, nactiZaparkovane, nastavPin, odeberZaparkovanyUcet, odemkniAktualni, prepniNaUcet, pridejUcetHeslem,
   zamekPoMinutach, type ZaparkovanyUcet,
 } from "../lib/prepinaniUctu";
 
@@ -25,7 +25,7 @@ import {
  * by byla horší než žádný zámek.
  */
 type Rezim = "dialog" | "zamek";
-type Heslem = { email: string; userId?: string; duvod?: string };
+type Heslem = { email: string; userId?: string; duvod?: string; vzdyNovyPin?: boolean };
 
 const BEZ_PINU = "Tento účet ještě nemá PIN. Přihlaste se heslem a PIN si rovnou nastavte – příště už stačí ten.";
 
@@ -46,6 +46,8 @@ export function PrepinacUctu({ userId, email, profil }: {
   const [heslem, setHeslem] = useState<Heslem | null>(null);
   const [novyEmail, setNovyEmail] = useState("");
   const [noveHeslo, setNoveHeslo] = useState("");
+  /* Krok po přihlášení heslem, když účet PIN ještě nemá (nebo ho člověk zapomněl). */
+  const [pinKrok, setPinKrok] = useState<{ jmeno: string } | null>(null);
   const [novyPin, setNovyPin] = useState("");
   const [novyPinZnovu, setNovyPinZnovu] = useState("");
   const pinRef = useRef<HTMLInputElement>(null);
@@ -56,7 +58,7 @@ export function PrepinacUctu({ userId, email, profil }: {
     maPin(userId).then(setMamPin).catch(() => setMamPin(null));
   }, [userId]);
 
-  const vynuluj = () => { setVybrany(null); setPin(""); setChyba(null); setHeslem(null); };
+  const vynuluj = () => { setVybrany(null); setPin(""); setChyba(null); setHeslem(null); setPinKrok(null); };
 
   useEffect(() => {
     nactiPin();
@@ -124,9 +126,12 @@ export function PrepinacUctu({ userId, email, profil }: {
   }, [vybrany]);
 
   const zavri = useCallback(() => {
+    // Zámek nejde zavřít; a po přihlášení heslem už je relace přepnutá –
+    // zavření by nechalo aplikaci v půli cesty, tak se místo toho dokončí.
     if (rezim === "zamek") return;
+    if (pinKrok) { dokonciPrepnuti(); return; }
     setRezim(null);
-  }, [rezim]);
+  }, [rezim, pinKrok]);
 
   useEffect(() => {
     if (!rezim) return;
@@ -190,15 +195,36 @@ export function PrepinacUctu({ userId, email, profil }: {
   const pridej = async (e: FormEvent) => {
     e.preventDefault();
     if (pracuje || !heslem) return;
+    setPracuje(true);
+    setChyba(null);
+    try {
+      const { potrebujePin } = await pridejUcetHeslem(novyEmail, noveHeslo, profil, heslem.userId, heslem.vzdyNovyPin);
+      if (potrebujePin) {
+        setPinKrok({ jmeno: novyEmail.split("@")[0] });
+        setHeslem(null);
+        setNovyPin("");
+        setNovyPinZnovu("");
+      }
+      // Jinak se stránka znovu načítá.
+    } catch (err) {
+      setChyba(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPracuje(false);
+    }
+  };
+
+  const ulozNovyPin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (pracuje) return;
     if (!jePlatnyPin(novyPin)) { setChyba("PIN musí mít přesně čtyři číslice."); return; }
     if (novyPin !== novyPinZnovu) { setChyba("PIN se v obou polích neshoduje."); return; }
     setPracuje(true);
     setChyba(null);
     try {
-      await pridejUcetHeslem(novyEmail, noveHeslo, profil, novyPin, heslem.userId);
+      await nastavPin(novyPin);
+      dokonciPrepnuti();
     } catch (err) {
       setChyba(err instanceof Error ? err.message : String(err));
-    } finally {
       setPracuje(false);
     }
   };
@@ -207,7 +233,8 @@ export function PrepinacUctu({ userId, email, profil }: {
 
   const jmeno = profil?.nickname?.trim() || email?.split("@")[0] || "Já";
   const zamek = rezim === "zamek";
-  const poleStyl = { padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", font: "inherit" } as const;
+  // width + box-sizing: bez nich vstupy v Safari přetečou kartu (výchozí šířka inputu je „size“, ne rodič).
+  const poleStyl = { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", font: "inherit" } as const;
 
   const avatar = (nick: string | null, url: string | null, mail: string | null) => {
     const text = (nick?.trim() || mail?.split("@")[0] || "?").trim();
@@ -291,13 +318,13 @@ export function PrepinacUctu({ userId, email, profil }: {
         background: zamek ? "var(--bg)" : "rgba(0,0,0,0.45)", backdropFilter: zamek ? undefined : "blur(4px)",
       }}
     >
-      <div style={{ width: "min(420px, 100%)", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 16, boxShadow: "var(--shadow-soft)", padding: 20, display: "grid", gap: 14 }}>
+      <div style={{ width: "min(420px, 100%)", minWidth: 0, boxSizing: "border-box", background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 16, boxShadow: "var(--shadow-soft)", padding: 20, display: "grid", gap: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div style={{ fontWeight: 900, fontSize: 18 }}>{zamek ? "Kdo pokračuje?" : "Přepnout účet"}</div>
           {!zamek && <Button size="sm" variant="ghost" onClick={zavri} aria-label="Zavřít">✕</Button>}
         </div>
 
-        {!vybrany && !heslem && (
+        {!vybrany && !heslem && !pinKrok && (
           <div style={{ display: "grid", gap: 8 }}>
             {radek("ja", profil?.nickname ?? null, profil?.avatarUrl ?? null, email, zamek ? (email ?? "přihlášen") : "přihlášen", true, zamek ? () => setVybrany("ja") : null, null)}
             {zaparkovane.filter((u) => u.userId !== userId).map((u) =>
@@ -336,7 +363,7 @@ export function PrepinacUctu({ userId, email, profil }: {
             <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
               <Button variant="ghost" size="sm" onClick={() => { setVybrany(null); setPin(""); setChyba(null); }} disabled={pracuje}>Zpět</Button>
               {vybrany !== "ja" && (
-                <button type="button" disabled={pracuje} onClick={() => otevriHeslem({ email: vybrany.email ?? "", userId: vybrany.userId, duvod: "Přihlaste se heslem a nastavte si nový PIN." })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, textDecoration: "underline", font: "inherit" }}>
+                <button type="button" disabled={pracuje} onClick={() => otevriHeslem({ email: vybrany.email ?? "", userId: vybrany.userId, duvod: "Přihlaste se heslem a nastavte si nový PIN.", vzdyNovyPin: true })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, textDecoration: "underline", font: "inherit" }}>
                   Nevíte PIN? Přihlásit heslem
                 </button>
               )}
@@ -345,21 +372,32 @@ export function PrepinacUctu({ userId, email, profil }: {
         )}
 
         {heslem && (
-          <form onSubmit={pridej} style={{ display: "grid", gap: 10 }}>
+          <form onSubmit={pridej} style={{ display: "grid", gap: 10, minWidth: 0 }}>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
               {heslem.duvod ?? <>Přihlásí dalšího člověka heslem; <b>{jmeno}</b> zůstane přihlášený a vrátí se PINem.</>}
             </div>
             <input type="email" required autoComplete="username" placeholder="E-mail" value={novyEmail} onChange={(e) => setNovyEmail(e.target.value)} readOnly={!!heslem.userId} disabled={pracuje} aria-label="E-mail" style={{ ...poleStyl, opacity: heslem.userId ? 0.7 : 1 }} />
             <input type="password" required autoComplete="current-password" placeholder="Heslo" value={noveHeslo} onChange={(e) => setNoveHeslo(e.target.value)} disabled={pracuje} aria-label="Heslo" autoFocus={!!heslem.userId} style={poleStyl} />
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>Nový PIN pro přepínání na tomto počítači – čtyři číslice, zadejte dvakrát.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} required placeholder="PIN" value={novyPin} onChange={(e) => setNovyPin(e.target.value.replace(/\D/g, ""))} disabled={pracuje} aria-label="Nový PIN" autoComplete="new-password" style={{ ...poleStyl, textAlign: "center", letterSpacing: 8 }} />
-              <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} required placeholder="PIN znovu" value={novyPinZnovu} onChange={(e) => setNovyPinZnovu(e.target.value.replace(/\D/g, ""))} disabled={pracuje} aria-label="Nový PIN znovu" autoComplete="new-password" style={{ ...poleStyl, textAlign: "center", letterSpacing: 8 }} />
-            </div>
             {chyba && <div role="alert" style={{ color: "var(--danger, #c0392b)", fontSize: 13 }}>{chyba}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
               <Button variant="ghost" size="sm" type="button" onClick={() => { setHeslem(null); setChyba(null); }} disabled={pracuje}>Zpět</Button>
-              <Button variant="primary" size="sm" type="submit" disabled={pracuje || !novyEmail || !noveHeslo || novyPin.length !== 4 || novyPinZnovu.length !== 4}>{pracuje ? "Přihlašuji…" : "Přihlásit a přepnout"}</Button>
+              <Button variant="primary" size="sm" type="submit" disabled={pracuje || !novyEmail || !noveHeslo}>{pracuje ? "Přihlašuji…" : "Přihlásit a přepnout"}</Button>
+            </div>
+          </form>
+        )}
+
+        {pinKrok && (
+          <form onSubmit={ulozNovyPin} style={{ display: "grid", gap: 10, minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>
+              Přihlášeno jako <b>{pinKrok.jmeno}</b>. Nastavte si PIN pro přepínání na tomto počítači – čtyři číslice, dvakrát. Příště už stačí ten.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} required autoFocus placeholder="PIN" value={novyPin} onChange={(e) => setNovyPin(e.target.value.replace(/\D/g, ""))} disabled={pracuje} aria-label="Nový PIN" autoComplete="new-password" style={{ ...poleStyl, textAlign: "center", letterSpacing: 8 }} />
+              <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={4} required placeholder="PIN znovu" value={novyPinZnovu} onChange={(e) => setNovyPinZnovu(e.target.value.replace(/\D/g, ""))} disabled={pracuje} aria-label="Nový PIN znovu" autoComplete="new-password" style={{ ...poleStyl, textAlign: "center", letterSpacing: 8 }} />
+            </div>
+            {chyba && <div role="alert" style={{ color: "var(--danger, #c0392b)", fontSize: 13 }}>{chyba}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button variant="primary" size="sm" type="submit" disabled={pracuje || novyPin.length !== 4 || novyPinZnovu.length !== 4}>{pracuje ? "Ukládám…" : "Uložit PIN a pokračovat"}</Button>
             </div>
           </form>
         )}
