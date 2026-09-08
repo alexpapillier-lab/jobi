@@ -1,15 +1,15 @@
 {
-  "version": "0.6.0",
-  "notes": "- Release jobi v0.6.0\n- Co je nového: poznámky k vydání se berou z commitů, ne z anglické věty\n- QR pro focení z telefonu se kreslí lokálně, ne přes cizí službu\n- Fotky zařízení a podpisy zákazníků za podepsané odkazy\n- Hlídač provozu: každých 15 minut projde hlavní cestu a ozve se\n- Audit ostrých dat: osm věcí k ručnímu srovnání\n- Den D pro platby: postup krok za krokem a skript, který řekne, co chybí\n- Tři nespolehlivé testy: kolik kusů se přijalo, ne kolik se čekalo\n- Zkouška obnovy zálohy hlásila nulu chyb, protože je neuměla najít\n- První hodina nového zákazníka: sedm chyb, které by ho odradily hned\n- Statistiky: tržby počítaly i zrušené zakázky\n- Portál: dlouhá poznámka se místo tichého oříznutí odmítne",
-  "pub_date": "2026-09-07T06:13:55Z",
+  "version": "0.6.1",
+  "notes": "- Release jobi v0.6.1\n- Čas na opravě ukazuje částku podle sazby a přenese se do hodinové práce\n- Fotky zakázky rovnou z telefonu a čitelný vodoznak s číslem zakázky\n- Vyhozenému zaměstnanci aplikace tvrdila, že mu skončilo předplatné\n- Velikost rozhraní: na desktopu zvětšuje webview, ne CSS zoom\n- Sloupec Nastavení počítá výšku správně i při zvětšeném rozhraní\n- Na poslední položku v Nastavení nešlo doscrollovat\n- Firemní údaje nešly v novém servisu vyplnit vůbec\n- Vypnuté náhledy při silném kliknutí – padal na nich systémový WebKit\n- Build JobiDocs padal na typu klienta u podepisování fotek\n- Release jobidocs v0.4.0",
+  "pub_date": "2026-09-08T18:55:48Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTRIMEJQZklOSGpPakQ2andEU1lIODRwdTJXODNwbkRGOHlocjI2VG5kWEpaS2xXRHlFNzJrc1ZNQTJ6ZXAwZmZIamZHdmxKUHR3Rnc0MCtHaGNlOXdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4NzYxNjM1CWZpbGU6am9iaS5hcHAudGFyLmd6CmozNVZMZnV4aVM1N2JlK0hOM3M2TmVxelhwSWUvWFJNV1RuTi95eW5oNXpaVURtVk1HeE5Zc3FUUVI5RWtmbmJVMmExSmtVOHI1VGxyZGhkU2Q5R0NBPT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.0/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXpwbXNjZEUxVXI2RFYrWVRramI1azYySjYrUEtWSUp3aHZ4b0hGTDBMZC9qUFplV2ZZcmQyaVNkbXdWM2dKNXRHL1JFVitUSGVNbHE3YUZtR1ZiRFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4ODkzNzQ4CWZpbGU6am9iaS5hcHAudGFyLmd6CnV1ZEl5K09YL3Y1aFVCNFZIR2h0TVV4Sjl1VnlHRkVHazQ2V0NxZ3JzcTFpSmZqSWVPT2g3Um5lQ3ZOMmw4MUN3NklVS2RGQ2lzcjRFZkZCVHZnbENnPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.1/jobi.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTRIMEJQZklOSGpPakQ2andEU1lIODRwdTJXODNwbkRGOHlocjI2VG5kWEpaS2xXRHlFNzJrc1ZNQTJ6ZXAwZmZIamZHdmxKUHR3Rnc0MCtHaGNlOXdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4NzYxNjM1CWZpbGU6am9iaS5hcHAudGFyLmd6CmozNVZMZnV4aVM1N2JlK0hOM3M2TmVxelhwSWUvWFJNV1RuTi95eW5oNXpaVURtVk1HeE5Zc3FUUVI5RWtmbmJVMmExSmtVOHI1VGxyZGhkU2Q5R0NBPT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.0/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXpwbXNjZEUxVXI2RFYrWVRramI1azYySjYrUEtWSUp3aHZ4b0hGTDBMZC9qUFplV2ZZcmQyaVNkbXdWM2dKNXRHL1JFVitUSGVNbHE3YUZtR1ZiRFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4ODkzNzQ4CWZpbGU6am9iaS5hcHAudGFyLmd6CnV1ZEl5K09YL3Y1aFVCNFZIR2h0TVV4Sjl1VnlHRkVHazQ2V0NxZ3JzcTFpSmZqSWVPT2g3Um5lQ3ZOMmw4MUN3NklVS2RGQ2lzcjRFZkZCVHZnbENnPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.1/jobi.app.tar.gz"
     }
   }
 }
