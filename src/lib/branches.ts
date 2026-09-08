@@ -150,21 +150,49 @@ export async function loadMyHomeBranch(serviceId: string, userId: string): Promi
   return (await loadMyBranchAccess(serviceId, userId)).homeBranchId;
 }
 
+export type MujPristupKPobockam = {
+  homeBranchId: string | null;
+  /** Staré „jen vlastní pobočka“ – dnes už jen záloha, rozhoduje `allowedBranchIds`. */
+  branchOnly: boolean;
+  /** Pobočky, na které člen vidí; null = všechny (majitel, správce, neomezený člen). */
+  allowedBranchIds: string[] | null;
+};
+
 /**
- * Domovská pobočka a případné omezení „jen vlastní pobočka“ (capabilities
- * členství, hlídá ho i databáze). Správce a majitel omezení nemají.
+ * Domovská pobočka a omezení člena na pobočky (`service_memberships.branch_ids`,
+ * hlídá ho i databáze přes pobocka_povolena). Správce a majitel omezení nemají.
+ * Staré `capabilities.branch_only` bez množiny se čte jako „jen domovská“.
  */
-export async function loadMyBranchAccess(serviceId: string, userId: string): Promise<{ homeBranchId: string | null; branchOnly: boolean }> {
-  if (!supabase) return { homeBranchId: null, branchOnly: false };
+export async function loadMyBranchAccess(serviceId: string, userId: string): Promise<MujPristupKPobockam> {
+  const nic: MujPristupKPobockam = { homeBranchId: null, branchOnly: false, allowedBranchIds: null };
+  if (!supabase) return nic;
   const { data, error } = await (supabase.from("service_memberships") as any)
-    .select("home_branch_id, role, capabilities")
+    .select("home_branch_id, role, capabilities, branch_ids")
     .eq("service_id", serviceId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (error || !data) return { homeBranchId: null, branchOnly: false };
+  if (error || !data) return nic;
   const role = typeof data.role === "string" ? data.role : "";
-  const branchOnly = role !== "owner" && role !== "admin" && (data.capabilities as Record<string, unknown> | null)?.branch_only === true;
-  return { homeBranchId: typeof data.home_branch_id === "string" ? data.home_branch_id : null, branchOnly };
+  const spravce = role === "owner" || role === "admin";
+  const home = typeof data.home_branch_id === "string" ? data.home_branch_id : null;
+  const branchOnly = !spravce && (data.capabilities as Record<string, unknown> | null)?.branch_only === true;
+  let allowedBranchIds: string[] | null = null;
+  if (!spravce) {
+    if (Array.isArray(data.branch_ids)) allowedBranchIds = data.branch_ids.filter((x: unknown): x is string => typeof x === "string");
+    else if (branchOnly) allowedBranchIds = home ? [home] : [];
+  }
+  return { homeBranchId: home, branchOnly, allowedBranchIds };
+}
+
+/** Nastaví členovi pobočky, na které vidí; null = všechny. Jen majitel a správce (hlídá databáze). */
+export async function setMemberBranches(serviceId: string, userId: string, branchIds: string[] | null): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Supabase není k dispozici" };
+  const { error } = await (supabase as any).rpc("set_member_branches", {
+    p_service_id: serviceId,
+    p_user_id: userId,
+    p_branch_ids: branchIds,
+  });
+  return error ? { error: error.message } : {};
 }
 
 export function subscribeBranches(serviceId: string, onChange: () => void): () => void {

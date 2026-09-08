@@ -10,6 +10,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
 import { normalizeError, formatInviteEmailReason } from "../../utils/errorNormalizer";
 import { useServiceOnlinePresence } from "../../lib/presence";
+import { setMemberBranches } from "../../lib/branches";
 import { CheckIcon } from "../../components/icons";
 import { useBranches } from "../../context/BranchContext";
 import { setMemberHomeBranch } from "../../lib/branches";
@@ -42,9 +43,12 @@ const CAPABILITY_KEYS = [
 type CapabilityInfo = { label: string; description: string; group?: string };
 
 const CAPABILITY_INFO: Record<string, CapabilityInfo> = {
+  // Staré „jen vlastní pobočka“ – v dialogu se už neukazuje, nahradil ho
+  // výběr poboček u člena (branch_ids). Klíč zůstává kvůli paritě
+  // s edge funkcí a databází (test opravneniSeznam) a starým řádkům.
   branch_only: {
     label: "Jen vlastní pobočka",
-    description: "Vidí a mění jen zakázky, reklamace a faktury své domovské pobočky. Přepínač poboček se mu neukáže. Správce a majitel vidí vždy vše.",
+    description: "Nahrazeno výběrem poboček u člena.",
     group: "Pobočky",
   },
   can_manage_tickets_basic: {
@@ -141,6 +145,18 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   const onlineUserIds = useServiceOnlinePresence(activeServiceId, session?.user?.id ?? null);
   const { isMulti: hasBranches, branches } = useBranches();
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  /* Pobočky, na které člen vidí (null = všechny). Nastavuje jen majitel a
+     správce; domovská pobočka se v databázi srovná, aby ležela v množině. */
+  const [branchMenuFor, setBranchMenuFor] = useState<string | null>(null);
+  const changeMemberBranches = async (member: { user_id: string; service_id: string; branch_ids?: string[] | null; home_branch_id?: string | null }, ids: string[] | null) => {
+    const prev = teamMembers;
+    setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, branch_ids: ids, home_branch_id: ids && m.home_branch_id && !ids.includes(m.home_branch_id) ? ids[0] : m.home_branch_id } : m)));
+    const res = await setMemberBranches(member.service_id, member.user_id, ids);
+    if (res.error) {
+      setTeamMembers(prev);
+      showToast(`Pobočky se nepodařilo uložit: ${res.error}`, "error");
+    }
+  };
   /** Domovská pobočka člena: výchozí filtr a výchozí pobočka nové zakázky. */
   const changeHomeBranch = async (member: { user_id: string; service_id: string }, branchId: string | null) => {
     const prev = teamMembers;
@@ -285,6 +301,17 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         if (rootOwnerId) members = members.filter((m: any) => m.user_id !== rootOwnerId);
         // Admin a member nesmí vidět nikoho s rolí owner (majitel aplikace) v seznamu týmu
         if (!isRootOwner) members = members.filter((m: any) => m.role !== "owner");
+        // Pobočky členů: team-list je nevrací a měnit ho znamená nasazovat edge
+        // funkci; správce smí členství svého servisu číst přímo.
+        try {
+          const { data: pobocky } = await (client.from("service_memberships") as any)
+            .select("user_id, branch_ids")
+            .eq("service_id", activeServiceId);
+          if (Array.isArray(pobocky)) {
+            const podle = new Map<string, string[] | null>(pobocky.map((r: any) => [String(r.user_id), Array.isArray(r.branch_ids) ? r.branch_ids : null]));
+            members = members.map((m: any) => ({ ...m, branch_ids: podle.get(m.user_id) ?? null }));
+          }
+        } catch { /* bez poboček se obejde – ukáže se „Všechny“ */ }
         setTeamMembers(members);
         setPendingInvites(membersData?.invites ?? []);
       } catch (err: any) {
@@ -832,10 +859,53 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                           style={{ width: "auto", padding: "2px 6px", fontSize: 11 }}
                         >
                           <option value="">Všechny pobočky</option>
-                          {branches.map((b) => (
+                          {(member.branch_ids ? branches.filter((b) => member.branch_ids.includes(b.id)) : branches).map((b) => (
                             <option key={b.id} value={b.id}>{b.name}</option>
                           ))}
                         </select>
+                      )}
+                      {hasBranches && member.role === "member" && (
+                        <span style={{ position: "relative" }}>
+                          <button
+                            type="button"
+                            className="ui-input"
+                            aria-label="Přístup k pobočkám"
+                            aria-expanded={branchMenuFor === member.user_id}
+                            title="Na které pobočky člen vidí – zakázky, reklamace, faktury i sklady ostatních poboček se mu neukážou."
+                            onClick={() => setBranchMenuFor((v) => (v === member.user_id ? null : member.user_id))}
+                            style={{ width: "auto", padding: "2px 6px", fontSize: 11, cursor: "pointer" }}
+                          >
+                            Vidí: {member.branch_ids
+                              ? (branches.filter((b) => member.branch_ids.includes(b.id)).map((b) => b.name).join(", ") || "žádnou pobočku")
+                              : "všechny pobočky"} ▾
+                          </button>
+                          {branchMenuFor === member.user_id && (
+                            <div role="group" aria-label="Pobočky člena" style={{ position: "absolute", top: "100%", left: 0, zIndex: 20, marginTop: 4, minWidth: 220, padding: 8, borderRadius: 10, border, background: "var(--panel)", boxShadow: "var(--shadow-soft)", display: "grid", gap: 4 }}>
+                              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 6px", cursor: "pointer" }}>
+                                <input type="checkbox" checked={member.branch_ids == null} onChange={(e) => { if (e.target.checked) void changeMemberBranches(member, null); else void changeMemberBranches(member, member.home_branch_id ? [member.home_branch_id] : [branches[0]?.id].filter(Boolean)); }} />
+                                Všechny pobočky
+                              </label>
+                              {branches.map((b) => {
+                                const vybrane: string[] = member.branch_ids ?? branches.map((x) => x.id);
+                                const zaskrtnuto = vybrane.includes(b.id);
+                                return (
+                                  <label key={b.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 6px", cursor: "pointer", opacity: member.branch_ids == null ? 0.6 : 1 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={zaskrtnuto}
+                                      onChange={(e) => {
+                                        const dalsi = e.target.checked ? [...new Set([...vybrane, b.id])] : vybrane.filter((id) => id !== b.id);
+                                        if (dalsi.length === 0) { showToast("Aspoň jedna pobočka musí zůstat.", "error"); return; }
+                                        void changeMemberBranches(member, dalsi);
+                                      }}
+                                    />
+                                    {b.name}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1317,7 +1387,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}>
               {(["Zakázky", "Zákazníci", "Nastavení", "Sklad a zařízení"] as const).map((group) => {
-                const keysInGroup = CAPABILITY_KEYS.filter((k) => CAPABILITY_INFO[k]?.group === group);
+                const keysInGroup = CAPABILITY_KEYS.filter((k) => k !== "branch_only" && CAPABILITY_INFO[k]?.group === group);
                 if (keysInGroup.length === 0) return null;
                 return (
                   <div key={group}>

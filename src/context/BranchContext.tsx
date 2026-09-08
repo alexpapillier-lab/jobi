@@ -80,8 +80,10 @@ export function BranchProvider({ serviceId, userId, enabled = true, children }: 
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [homeBranchId, setHomeBranchId] = useState<string | null>(null);
-  /** Člen omezený na svou pobočku: přepínač se neukáže, aktivní je vždy domovská. */
+  /** Člen omezený na jedinou pobočku: přepínač se neukáže, aktivní je vždy ta jedna. */
   const [zamcena, setZamcena] = useState(false);
+  /** Pobočky, na které člen vidí; null = všechny. Podle toho se filtruje i po změnách v pobočkách. */
+  const [povolene, setPovolene] = useState<string[] | null>(null);
   const [activeBranchId, setActiveState] = useState<string | null>(null);
   const initializedFor = useRef<string | null>(null);
 
@@ -92,12 +94,12 @@ export function BranchProvider({ serviceId, userId, enabled = true, children }: 
       return;
     }
     const res = await loadBranches(serviceId);
-    // Omezený člen vidí i po změně v pobočkách jen tu svou.
-    const viditelne = zamcena && homeBranchId ? res.branches.filter((b) => b.id === homeBranchId) : res.branches;
+    // Omezený člen vidí i po změně v pobočkách jen ty své.
+    const viditelne = povolene ? res.branches.filter((b) => povolene.includes(b.id)) : res.branches;
     setBranches(viditelne);
     setUnavailable(res.unavailable === true);
     setCachedBranches(serviceId, viditelne);
-  }, [serviceId, zamcena, homeBranchId]);
+  }, [serviceId, povolene]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,20 +115,21 @@ export function BranchProvider({ serviceId, userId, enabled = true, children }: 
     (async () => {
       const [res, pristup] = await Promise.all([
         loadBranches(serviceId),
-        userId ? loadMyBranchAccess(serviceId, userId) : Promise.resolve({ homeBranchId: null, branchOnly: false }),
+        userId ? loadMyBranchAccess(serviceId, userId) : Promise.resolve({ homeBranchId: null, branchOnly: false, allowedBranchIds: null }),
       ]);
       if (cancelled) return;
       const home = pristup.homeBranchId;
-      const jenVlastni = pristup.branchOnly && home != null && res.branches.some((b) => b.id === home);
-      setZamcena(jenVlastni);
-      // Omezený člen dostane jen svou pobočku – zbytek aplikace pak nemá co přepínat.
-      const viditelne = jenVlastni ? res.branches.filter((b) => b.id === home) : res.branches;
+      const allowed = pristup.allowedBranchIds;
+      // Omezený člen dostane jen své pobočky; s jedinou pak nemá co přepínat.
+      const viditelne = allowed ? res.branches.filter((b) => allowed.includes(b.id)) : res.branches;
+      setPovolene(allowed);
+      setZamcena(allowed !== null && viditelne.length <= 1);
       setBranches(viditelne);
       setUnavailable(res.unavailable === true);
       setCachedBranches(serviceId, viditelne);
       setHomeBranchId(home);
       const stored = readStored(serviceId);
-      const valid = (id: string | null | undefined) => id != null && res.branches.some((b) => b.id === id);
+      const valid = (id: string | null | undefined) => id != null && viditelne.some((b) => b.id === id);
       if (stored === null) setActiveState(null);
       else if (valid(stored)) setActiveState(stored as string);
       else if (valid(home)) setActiveState(home);
