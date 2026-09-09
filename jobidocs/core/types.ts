@@ -270,4 +270,18 @@ export type RenderOptions = {
   mode: RenderMode;
   /** V editoru: zástupné texty {{…}} místo hodnot. */
   showPlaceholders?: boolean;
+  /**
+   * Tisk z prohlížeče (webová verze), ne z JobiDocs.
+   *
+   * JobiDocs si papír řídí sám, takže se stránka může roztáhnout na plnou
+   * výšku A4 a spodní řádek s podpisy sedí na spodním okraji. Prohlížeč
+   * ale papír neřídí: Safari na iOS si z A4 ubere ~14 mm nahoře a ~34 mm
+   * dole na vlastní hlavičku a patičku a `@page{margin:0}` to nezmění.
+   * Rámec vysoký 296,6 mm se pak na zbylých ~249 mm nevejde a všechno,
+   * co je přilepené k jeho spodku, spadne na druhou stránku.
+   *
+   * S touhle volbou je stránka vysoká podle obsahu, takže se vejde na
+   * jakýkoli papír, který si prohlížeč vybere.
+   */
+  browserPrint?: boolean;
 };

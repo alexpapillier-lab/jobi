@@ -6,6 +6,9 @@
  * na Node nebo Electronu, tenhle test spadne.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderDocument, defaultTemplate, DEFAULT_BRAND, DEFAULT_THEME } from "../../jobidocs/core/index";
 import { ticketDocumentData } from "./documentData";
 import type { TicketEx } from "../pages/Orders";
@@ -43,5 +46,17 @@ describe("jádro JobiDocs z Jobi", () => {
     const html = renderDocument({ template: defaultTemplate("zarucni_list"), data, brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
     expect(html.replace(/\s/g, " ")).toContain("3 490,00 Kč");
     expect(html).toContain("12 měsíců");
+  });
+});
+
+describe("tisk z prohlížeče", () => {
+  // Samotné buildDocumentHtmlForWeb sem zavolat nejde – tahá konfiguraci ze
+  // Supabase. Hlídá se proto propojení ve zdroji: že se dokumentu pro web
+  // opravdu předá browserPrint. Bez toho má rámec stránky pevnou výšku
+  // 296,6 mm, ta se do tiskové plochy Safari na iOS (~249 mm z A4) nevejde
+  // a podpisy skončí na druhé, jinak prázdné stránce.
+  it("předává rendereru browserPrint", () => {
+    const zdroj = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "webPrint.ts"), "utf8");
+    expect(zdroj, "bez browserPrint spadnou podpisy na iOS na druhou stránku").toContain("browserPrint: true");
   });
 });

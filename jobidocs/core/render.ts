@@ -420,7 +420,7 @@ const FONTS: Record<Theme["font"], string> = {
   system: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
 };
 
-function css(t: Template, theme: Theme, editor: boolean): string {
+function css(t: Template, theme: Theme, editor: boolean, browserPrint: boolean): string {
   const m = t.page.margins;
   const style = theme.style;
   const accent = style === "plain" ? "#111111" : theme.accent;
@@ -462,7 +462,7 @@ function css(t: Template, theme: Theme, editor: boolean): string {
 html,body{margin:0;padding:0}
 body{font-family:${FONTS[theme.font] ?? FONTS.roboto};font-size:var(--fs);line-height:1.35;color:var(--text);background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @page{size:A4;margin:0}
-.page{width:210mm;min-height:296.6mm;padding:${mm(m.top)} ${mm(m.right)} ${mm(m.bottom)} ${mm(m.left)};display:flex;flex-direction:column;position:relative;background:#fff;break-after:page;page-break-after:always}
+.page{width:210mm;min-height:${browserPrint ? "auto" : "296.6mm"};padding:${mm(m.top)} ${mm(m.right)} ${mm(m.bottom)} ${mm(m.left)};display:flex;flex-direction:column;position:relative;background:#fff;break-after:page;page-break-after:always}
 /* :last-of-type, ne :last-child – za stránkami stojí v těle dokumentu ještě
    měřicí skript (viz fitScript níž), takže .page není posledním potomkem
    a reset zalomení by nikdy nesedl. Safari pak za poslední stránku přidá
@@ -780,7 +780,7 @@ export function renderDocument(input: RenderInput): string {
 <meta charset="utf-8">
 <title>${escapeHtml(data.title?.trim() || DOC_TYPE_LABELS[template.docType])}${data.number ? " " + escapeHtml(data.number) : ""}</title>
 ${fontLink}
-<style>${css(template, theme, editor)}</style>
+<style>${css(template, theme, editor, options.browserPrint === true)}</style>
 </head>
 <body class="${editor ? "mode-editor" : "mode-print"} style-${theme.style}">
 ${mainPage}${photoPages}
