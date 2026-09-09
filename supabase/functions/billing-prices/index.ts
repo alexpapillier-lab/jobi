@@ -43,6 +43,7 @@ serve(async (req) => {
       interval: def.interval,
       modules: def.modules,
       branchesIncluded: def.branchesIncluded,
+      membersIncluded: def.membersIncluded,
       amount: podleKlice.get(lookup_key)?.amount ?? null,
       currency: podleKlice.get(lookup_key)?.currency ?? "czk",
     }));

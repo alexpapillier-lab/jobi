@@ -210,6 +210,41 @@ serve(async (req) => {
     expiresAt.setDate(expiresAt.getDate() + 14);
     const expiresAtISO = expiresAt.toISOString();
 
+    // Limit členů podle tarifu (Starter je pro jednoho člověka). Hlídá to
+    // databáze triggerem na service_invites; tady se to zjistí dřív a vrátí
+    // se hláška, kterou jde ukázat v Týmu. Čekající pozvánky se počítají
+    // jako obsazené místo – jinak jde limit obejít tím, že se nechají viset.
+    // Opakovaná pozvánka na stejný e-mail (upsert níž) nové místo nezabírá.
+    {
+      const { data: opakovana } = await svc
+        .from("service_invites")
+        .select("id")
+        .eq("service_id", targetServiceId)
+        .eq("email", emailTrim.toLowerCase())
+        .maybeSingle();
+      if (!opakovana) {
+        const [{ data: limitRes }, { data: seatsRes }] = await Promise.all([
+          svc.rpc("members_allowed", { p_service_id: targetServiceId }),
+          svc.rpc("service_seat_count", { p_service_id: targetServiceId }),
+        ]);
+        const limit = typeof limitRes === "number" ? limitRes : Number.MAX_SAFE_INTEGER;
+        const seats = typeof seatsRes === "number" ? seatsRes : 0;
+        if (seats >= limit) {
+          return new Response(
+            JSON.stringify({
+              error: limit <= 1
+                ? "Tarif je pro jednoho člena. Další členy umí Business a vyšší."
+                : `Tarif umožňuje nejvýš ${limit} členů (včetně čekajících pozvánek). Další členy umí vyšší tarif.`,
+              code: "members_limit",
+              limit,
+              seats,
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
+
     const { data: invite, error: inviteError } = await svc
       .from("service_invites")
       .upsert(
@@ -229,9 +264,11 @@ serve(async (req) => {
       .single();
 
     if (inviteError) {
+      // check_violation = trigger na limit členů (souběh dvou pozvánek naráz).
+      const limitem = (inviteError as { code?: string }).code === "23514";
       return new Response(
-        JSON.stringify({ error: `Failed to create invite: ${inviteError.message}` }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify(limitem ? { error: inviteError.message, code: "members_limit" } : { error: `Failed to create invite: ${inviteError.message}` }),
+        { status: limitem ? 409 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

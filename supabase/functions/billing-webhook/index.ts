@@ -88,6 +88,11 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
   // Balíček SMS: co dává tarif plus dokoupené balíčky. Je to strop na měsíc,
   // nad něj se neodesílá (viz sms-send) – nic se nedoúčtovává.
   const smsCelkem = (plan?.smsIncluded ?? 0) + smsNavic;
+  // Počet členů: Starter je pro jednoho člověka. Nárok `members` s kvótou
+  // vzniká jen u tarifu, který počet omezuje – bez řádku vrací
+  // members_allowed() „bez omezení“ a úklid níž případný starý řádek vypne
+  // (přechod ze Starteru na Business limit zruší).
+  if (plan?.membersIncluded != null) moduly.add("members");
 
   const plati = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
   const konec = new Date((sub.current_period_end || 0) * 1000);
@@ -135,6 +140,9 @@ async function zapsatNaroky(svc: SupabaseClient, serviceId: string, sub: Subscri
     // Vždycky číslo, i kdyby vyšlo 0. `quota: null` čte sms-send jako
     // „bez omezení“ a takový nárok smí vzniknout jen ruční správou.
     if (modul === "sms") radek.quota = smsCelkem;
+    // Kolik lidí smí být v servisu (viz members_allowed a triggery na
+    // service_memberships / service_invites).
+    if (modul === "members") radek.quota = plan?.membersIncluded ?? null;
     const { error } = await svc.from("service_entitlements").upsert(radek, { onConflict: "service_id,module" });
     if (error) throw new ZapisError(`service_entitlements (${modul}): ${error.message}`);
   }

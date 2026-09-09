@@ -218,6 +218,12 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
   // Profily členů (nickname, avatar) pro zobrazení v Tým
   const [memberProfiles, setMemberProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
+  // Limit členů podle tarifu (Starter je pro jednoho člověka) a obsazená místa
+  // včetně čekajících pozvánek. Zdroj pravdy je databáze (members_allowed,
+  // service_seat_count) – tady se to jen ukáže; pozvánku nad limit odmítne
+  // invite_create i trigger.
+  const [limitClenu, setLimitClenu] = useState<number | null>(null);
+  const [obsazenoMist, setObsazenoMist] = useState<number | null>(null);
 
   // Load profiles (nickname, avatar) for team members
   useEffect(() => {
@@ -314,6 +320,15 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
         } catch { /* bez poboček se obejde – ukáže se „Všechny“ */ }
         setTeamMembers(members);
         setPendingInvites(membersData?.invites ?? []);
+        try {
+          const [{ data: limitRes }, { data: seatsRes }] = await Promise.all([
+            (client as any).rpc("members_allowed", { p_service_id: activeServiceId }),
+            (client as any).rpc("service_seat_count", { p_service_id: activeServiceId }),
+          ]);
+          // 2147483647 = bez omezení; v UI se pak limit neukazuje.
+          setLimitClenu(typeof limitRes === "number" && limitRes < 1_000_000 ? limitRes : null);
+          setObsazenoMist(typeof seatsRes === "number" ? seatsRes : null);
+        } catch { /* bez limitu se obejde – tlačítko zůstane aktivní, server pozvánku stejně ohlídá */ }
       } catch (err: any) {
         const step = err?.__step ?? lastStep;
         // Podrobné logování pro diagnostiku (Tauri / Edge Function)
@@ -992,8 +1007,24 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
           </div>
         )}
 
+        {limitClenu != null && obsazenoMist != null && (
+          <div style={{ fontSize: 12, color: obsazenoMist >= limitClenu ? "var(--danger, #dc2626)" : "var(--muted)", marginBottom: 8 }}>
+            {obsazenoMist >= limitClenu
+              ? limitClenu === 1
+                ? "Tarif je pro jednoho člověka. Další členy umí Business a vyšší – změnit ho jde v Předplatném."
+                : `Tarif je plný: ${obsazenoMist} / ${limitClenu} členů (včetně čekajících pozvánek). Další členy umí vyšší tarif.`
+              : `${obsazenoMist} / ${limitClenu} členů (včetně čekajících pozvánek)`}
+          </div>
+        )}
         <button
-          onClick={() => setInviteDialogOpen(true)}
+          onClick={() => {
+            if (limitClenu != null && obsazenoMist != null && obsazenoMist >= limitClenu) {
+              showToast(limitClenu === 1 ? "Tarif je pro jednoho člena. Další členy umí Business a vyšší." : "Tarif je plný – další členy umí vyšší tarif.", "error");
+              return;
+            }
+            setInviteDialogOpen(true);
+          }}
+          aria-disabled={limitClenu != null && obsazenoMist != null && obsazenoMist >= limitClenu}
           style={{
             padding: "10px 14px",
             borderRadius: 12,
@@ -1003,6 +1034,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
             fontWeight: 900,
             cursor: "pointer",
             fontSize: 13,
+            opacity: limitClenu != null && obsazenoMist != null && obsazenoMist >= limitClenu ? 0.55 : 1,
           }}
         >
           Pozvat člena

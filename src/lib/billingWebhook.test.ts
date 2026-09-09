@@ -244,6 +244,8 @@ function naroky(serviceId: string, sub: Predplatne): Zapis[] {
   }
   const pobocekCelkem = (plan?.branchesIncluded ?? 0) + pobocekNavic;
   const smsCelkem = (plan?.smsIncluded ?? 0) + smsNavic;
+  // Počet členů: nárok `members` jen u tarifu, který ho omezuje (Starter).
+  if (plan?.membersIncluded != null) moduly.add("members");
 
   const plati = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
   const konec = new Date((sub.current_period_end || 0) * 1000);
@@ -278,6 +280,7 @@ function naroky(serviceId: string, sub: Predplatne): Zapis[] {
     if (modul === "branches") radek.quota = Math.max(1, pobocekCelkem);
     // Vždycky číslo: `quota: null` čte sms-send jako „bez omezení“.
     if (modul === "sms") radek.quota = smsCelkem;
+    if (modul === "members") radek.quota = plan?.membersIncluded ?? null;
     zapisy.push({ tabulka: "service_entitlements", op: "upsert", radek });
   }
 
@@ -421,7 +424,28 @@ describe("zaplacené předplatné zapíná moduly", () => {
 
   it("Starter dostane zakázky a faktury, ale ne SMS ani pobočky", () => {
     const z = naroky(SERVIS, predplatne([polozka("jobi_starter_monthly")]));
-    expect(moduly(z)).toEqual(new Set(["access", "invoices"]));
+    expect(moduly(z)).toEqual(new Set(["access", "invoices", "members"]));
+  });
+
+  // Starter je pro jednoho člověka. Limit žije v nároku `members` s kvótou,
+  // databáze ho hlídá triggerem (members_allowed) – bez tohohle řádku by
+  // Starter mohl pozvat celou dílnu za cenu jednoho místa.
+  it("Starter omezí počet členů na jednoho, Business a Enterprise ne", () => {
+    for (const key of ["jobi_starter_monthly", "jobi_starter_yearly"]) {
+      expect(PLANS[key].membersIncluded, key).toBe(1);
+      const z = naroky(SERVIS, predplatne([polozka(key)]));
+      expect(narokyPodleModulu(z).get("members")?.quota, key).toBe(1);
+    }
+    for (const key of ["jobi_business_monthly", "jobi_business_yearly", "jobi_enterprise_monthly", "jobi_enterprise_yearly"]) {
+      expect(PLANS[key].membersIncluded, key).toBeNull();
+      const z = naroky(SERVIS, predplatne([polozka(key)]));
+      // Bez řádku `members` vrací members_allowed() „bez omezení“…
+      expect(narokyPodleModulu(z).has("members"), key).toBe(false);
+      // …a úklid vypne případný starý řádek ze Starteru (přechod výš limit zruší).
+      const uklid = z.find((x): x is Extract<Zapis, { op: "update" }> => x.op === "update");
+      expect(uklid, key).toBeDefined();
+      expect(uklid!.filtry.some((f) => f.includes("members")), key).toBe(false);
+    }
   });
 
   it("Enterprise zapne i veřejné API a přehled přes servisy", () => {
@@ -565,7 +589,8 @@ describe("přechod na nižší tarif", () => {
   it("downgrade zapíše nároky nového tarifu a moduly navíc vypne", () => {
     const pred = naroky(SERVIS, predplatne([polozka("jobi_enterprise_monthly")]));
     const po = naroky(SERVIS, predplatne([polozka("jobi_starter_monthly")]));
-    expect(moduly(po)).toEqual(new Set(["access", "invoices"]));
+    // `members` není modul k používání, ale limit počtu lidí (Starter = 1).
+    expect(moduly(po)).toEqual(new Set(["access", "invoices", "members"]));
     const u = uklid(po);
     expect(u, "downgrade musí moduly navíc vypnout").toBeTruthy();
     expect(u!.zmena.active).toBe(false);
