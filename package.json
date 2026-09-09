@@ -82,5 +82,5 @@
     "zatez:prohlizec": "node scripts/zatez/prohlizec.mjs"
   },
   "type": "module",
-  "version": "0.6.3"
+  "version": "0.6.4"
 }
