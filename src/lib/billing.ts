@@ -43,6 +43,8 @@ export type Plan = {
   interval: "month" | "year";
   modules: string[];
   branchesIncluded: number;
+  /** Kolik lidí smí být v servisu; `null` = bez omezení. */
+  membersIncluded: number | null;
   amount: number | null;
   currency: string;
 };
@@ -130,6 +132,8 @@ export type TarifInfo = {
   modules: string[];
   branchesIncluded: number;
   smsIncluded: number;
+  /** Kolik lidí smí být v servisu; `null` = bez omezení. Starter je pro jednoho. */
+  membersIncluded: number | null;
 };
 
 const ZAKLAD = ["access", "invoices"];
@@ -140,10 +144,11 @@ export const TARIFY: TarifInfo[] = [
   {
     tier: "starter",
     label: "Starter",
-    popis: "Pro jednu provozovnu, která chce mít pořádek v zakázkách a fakturách.",
+    popis: "Pro jednoho člověka a jednu provozovnu – pořádek v zakázkách a fakturách. Víc lidí v týmu má Business.",
     modules: ZAKLAD,
     branchesIncluded: 1,
     smsIncluded: 0,
+    membersIncluded: 1,
   },
   {
     tier: "business",
@@ -152,6 +157,7 @@ export const TARIFY: TarifInfo[] = [
     modules: BUSINESS,
     branchesIncluded: 1,
     smsIncluded: 300,
+    membersIncluded: null,
   },
   {
     tier: "enterprise",
@@ -160,6 +166,7 @@ export const TARIFY: TarifInfo[] = [
     modules: ENTERPRISE,
     branchesIncluded: 2,
     smsIncluded: 600,
+    membersIncluded: null,
   },
 ];
 

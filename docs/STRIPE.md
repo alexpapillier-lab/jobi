@@ -106,3 +106,15 @@ lookup key, přidat živý webhook a nastavit `sk_live_…` a nové `whsec_…`.
 - **Serverové zamčení zápisů** po vypršení už hotové (migrace
   `20260911100000` a `20260912130000`): bez nároku `access` databáze zápis
   odmítne, čtení a export zůstávají. Není co doplňovat.
+
+## Počet členů podle tarifu
+
+Starter je pro jednoho člověka. Stejný vzor jako pobočky: tarif zapíše nárok
+`members` s `quota` (u Starteru 1), `members_allowed()` ho přečte a triggery
+na `service_memberships` a `service_invites` odmítnou, co by limit překročilo.
+Do obsazených míst se počítají i čekající pozvánky, jinak by šlo limit obejít
+tím, že se nechají viset. Business a vyšší nárok nemají = bez omezení; stejně
+tak stávající servisy a zkušební období – limit vzniká jen tam, kde ho tarif
+výslovně stanoví. Při přechodu na nižší tarif se nikdo nevyhazuje, jen se
+nedá pozvat další.
+

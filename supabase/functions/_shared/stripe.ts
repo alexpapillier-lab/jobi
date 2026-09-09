@@ -138,6 +138,11 @@ export type PlanDef = {
   branchesIncluded: number;
   /** Kolik SMS měsíčně je v ceně. 0 = modul SMS není součástí tarifu. */
   smsIncluded: number;
+  /**
+   * Kolik lidí smí být v servisu (členové + čekající pozvánky). `null` = bez
+   * omezení. Starter je pro jednoho člověka; hlídá to databáze (members_allowed).
+   */
+  membersIncluded: number | null;
   interval: "month" | "year";
   /** Stupeň tarifu – kvůli řazení a přepínači měsíčně/ročně. */
   tier: "starter" | "business" | "enterprise";
@@ -148,12 +153,12 @@ const BUSINESS = [...ZAKLAD, "accounting", "sms", "branches"];
 const ENTERPRISE = [...BUSINESS, "api_catalog", "api_inventory", "consolidated"];
 
 export const PLANS: Record<string, PlanDef> = {
-  jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "month", tier: "starter" },
-  jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, interval: "year", tier: "starter" },
-  jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "month", tier: "business" },
-  jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, interval: "year", tier: "business" },
-  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, interval: "month", tier: "enterprise" },
-  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, interval: "year", tier: "enterprise" },
+  jobi_starter_monthly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, membersIncluded: 1, interval: "month", tier: "starter" },
+  jobi_starter_yearly: { label: "Starter", modules: ZAKLAD, branchesIncluded: 1, smsIncluded: 0, membersIncluded: 1, interval: "year", tier: "starter" },
+  jobi_business_monthly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, membersIncluded: null, interval: "month", tier: "business" },
+  jobi_business_yearly: { label: "Business", modules: BUSINESS, branchesIncluded: 1, smsIncluded: 300, membersIncluded: null, interval: "year", tier: "business" },
+  jobi_enterprise_monthly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, membersIncluded: null, interval: "month", tier: "enterprise" },
+  jobi_enterprise_yearly: { label: "Enterprise", modules: ENTERPRISE, branchesIncluded: 2, smsIncluded: 600, membersIncluded: null, interval: "year", tier: "enterprise" },
 };
 
 /**

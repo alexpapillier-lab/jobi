@@ -274,6 +274,16 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
                             {t.smsIncluded > 0 ? `, ${t.smsIncluded} SMS měsíčně` : ""}
                           </span>
                         </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+                          <CheckIcon size={11} />
+                          <span>
+                            {t.membersIncluded == null
+                              ? "libovolný počet členů týmu"
+                              : t.membersIncluded === 1
+                                ? "pro jednoho člověka (bez dalších členů)"
+                                : `až ${t.membersIncluded} členů týmu`}
+                          </span>
+                        </div>
                       </div>
                     </button>
                   );
