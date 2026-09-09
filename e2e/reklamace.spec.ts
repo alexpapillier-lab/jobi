@@ -96,8 +96,14 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
   await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 30_000 });
 
+  /* Do detailu přes zakázku, ne přes první reklamaci v seznamu: předchozí
+     testy tam nechaly reklamace bez zakázky a na té by diagnostika nebyla
+     vůbec (ukáže se jen u napojených). Zakázka má v detailu sekci
+     „Reklamace k této zakázce“, a tou se dostaneme právě k té naší. */
+  await vidZakazku(page, kod).first().click();
+  await page.getByRole("button", { name: /^R\d{8}/ }).first().click();
+
   // Detail reklamace ukazuje diagnostiku zakázky; dřív se odtud neukládala vůbec.
-  await page.getByText(/^R\d{8}$/).first().click();
   const protokol = page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...");
   await expect(protokol).toBeVisible({ timeout: 20_000 });
   const text = `Naměřeno v reklamaci ${Date.now().toString(36)}`;
