@@ -463,7 +463,11 @@ html,body{margin:0;padding:0}
 body{font-family:${FONTS[theme.font] ?? FONTS.roboto};font-size:var(--fs);line-height:1.35;color:var(--text);background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @page{size:A4;margin:0}
 .page{width:210mm;min-height:296.6mm;padding:${mm(m.top)} ${mm(m.right)} ${mm(m.bottom)} ${mm(m.left)};display:flex;flex-direction:column;position:relative;background:#fff;break-after:page;page-break-after:always}
-.page:last-child{break-after:auto;page-break-after:auto}
+/* :last-of-type, ne :last-child – za stránkami stojí v těle dokumentu ještě
+   měřicí skript (viz fitScript níž), takže .page není posledním potomkem
+   a reset zalomení by nikdy nesedl. Safari pak za poslední stránku přidá
+   prázdný list; Chromium ho zahodí sám, proto se to projeví jen na iOS. */
+.page:last-of-type{break-after:auto;page-break-after:auto}
 ${theme.color === "bw" ? "img{filter:grayscale(1)}" : ""}
 .hdr{display:flex;justify-content:space-between;align-items:flex-end;gap:8mm;margin-bottom:calc(5mm*var(--sp))}
 .slot{display:flex;flex-direction:column;gap:calc(2.5mm*var(--sp));min-width:0}
