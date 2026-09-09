@@ -12,6 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Test „skutečná historie repozitáře dá čitelné odrážky“
+          # (src/lib/poznamkyVydani.test.ts) si čte `git log -25`.
+          #
+          # Ve výchozím nastavení stahuje checkout jediný commit, a u události
+          # pull_request je tím commitem synteticky vyrobený „Merge <sha> into
+          # <sha>“. Generátor poznámek k vydání ho správně zahodí (v NEZAJIMAVE
+          # je /^merge\b/), takže nezbude žádná odrážka a test spadne –
+          # u KAŽDÉHO pull requestu, bez ohledu na to, co v něm je.
+          #
+          # 50 stačí s rezervou na 25 titulků i po odečtení merge commitů;
+          # kdyby se v testu zvedl počet, je potřeba zvednout i tohle.
+          fetch-depth: 50
 
       - uses: actions/setup-node@v7
         with:
