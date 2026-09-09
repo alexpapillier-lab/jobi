@@ -181,4 +181,20 @@ describe("migrace", () => {
       expect(desktop).toContain("min-height:296.6mm");
     });
   }
+
+  // Tisk z prohlížeče – dvě díry, které jednostránkové doklady neodhalí:
+  // fotka na výšku (230 mm + hlavička + okraje > 249 mm) vyrobila za každou
+  // fotostránkou skoro prázdný list, a u dokumentu delšího než stránka se
+  // řádek tabulky nebo podpisový blok rozřízl přes hranici.
+  it("tisk z prohlížeče stropuje fotky a nedělí řádky ani podpisy přes stránku", () => {
+    const spolecne = { template: defaultTemplate("diagnosticky_protokol"), data: sampleData("diagnosticky_protokol", "long"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME };
+    const web = renderDocument({ ...spolecne, options: { mode: "print", browserPrint: true } });
+    expect(web).toContain(".photo-page .photo img{max-height:190mm}");
+    expect(web).toMatch(/\.items tbody tr,\.bottom,\.sig-row[^{]*\{break-inside:avoid/);
+
+    // Desktop (JobiDocs) si papír řídí sám – tam se nic z toho nepřidává.
+    const desktop = renderDocument({ ...spolecne, options: { mode: "print" } });
+    expect(desktop).not.toContain("max-height:190mm");
+    expect(desktop).not.toContain(".items tbody tr,.bottom");
+  });
 });
