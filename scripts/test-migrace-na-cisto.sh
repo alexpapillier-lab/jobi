@@ -220,7 +220,7 @@ declare chybi text;
 begin
   select string_agg(t, ', ') into chybi
     from unnest(array[
-      'bookings','branches','customers','device_brands','device_categories',
+      'bookings','branches','chat_messages','chat_reactions','customers','device_brands','device_categories',
       'device_models','inventory_product_categories','inventory_products',
       'repairs','service_document_settings','service_settings',
       'service_statuses','sms_messages','ticket_comments',

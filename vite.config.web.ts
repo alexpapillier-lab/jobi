@@ -89,6 +89,7 @@ export default mergeConfig(
         "@tauri-apps/plugin-http": stub("tauri-http.ts"),
         "@tauri-apps/plugin-updater": stub("tauri-updater.ts"),
         "@tauri-apps/plugin-process": stub("tauri-process.ts"),
+        "@tauri-apps/plugin-notification": stub("tauri-notification.ts"),
       },
     },
     base: WEB_BASE,

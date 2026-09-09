@@ -991,6 +991,7 @@ export default function Orders({
     setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
     setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
     setPridelovaniTechnika(config?.pridelovani_technika !== false);
+    setChatZapnuty(config?.chat !== false);
   }, []);
 
   const nactiConfigServisu = useCallback(() => {
@@ -1597,6 +1598,8 @@ export default function Orders({
   const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
   /** Přidělování technika (config.pridelovani_technika, výchozí zapnuto). Servis s jedním technikem si ho vypne. */
   const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
+  /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
+  const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
@@ -6123,6 +6126,20 @@ export default function Orders({
                     items={[
                       { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setTicketHistoryModalOpen(true) },
                       ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
+                      // Karta zakázky do chatu místo opisování čísla – nejčastější důvod, proč si lidé v servisu píšou.
+                      ...(chatZapnuty ? [{
+                        label: "Sdílet do chatu",
+                        icon: <ChatIcon size={14} />,
+                        onSelect: () => {
+                          const kod = detailedTicket.code || "";
+                          window.dispatchEvent(new CustomEvent("jobi:chat-otevrit", {
+                            detail: {
+                              text: `#${kod} – ${detailedTicket.deviceLabel || "zakázka"}, ${detailedTicket.customerName || ""} `,
+                              zminka: { typ: "zakazka", id: detailedTicket.id, popis: kod },
+                            },
+                          }));
+                        },
+                      }] : []),
                       {
                         label: "Smazat zakázku",
                         icon: <TrashIcon size={14} />,

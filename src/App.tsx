@@ -24,6 +24,8 @@ import { Login, isAuthenticated, setAuthenticated } from "./components/Login";
 import { OnlineGate } from "./components/OnlineGate";
 import { NeulozeneZmeny } from "./components/NeulozeneZmeny";
 import { PrepinacUctu } from "./components/PrepinacUctu";
+import { ChatPlovouci } from "./components/chat/ChatPlovouci";
+import { useChatZapnuty } from "./hooks/useChatZapnuty";
 import { CiziServis } from "./components/CiziServis";
 import { pouzijMeritko } from "./lib/velikostRozhrani";
 import { spustHlidacFronty } from "./lib/frontaZapisu";
@@ -249,6 +251,8 @@ export default function App() {
   const { has: hasModule, loading: entitlementsLoading, nacteniSelhalo: narokySelhaly } = useEntitlements(activeServiceId);
   /** Majitel aplikace musí dovnitř i u servisu po zkušebním období. */
   const isRootOwnerUser = useIsRootOwner();
+  /** Chat týmu visí nad celou aplikací; vypínač je v Nastavení → Komunikace. */
+  const chatZapnuty = useChatZapnuty(activeServiceId);
 
   // Modul je dostupný, jen když ho má servis ZAPLACENÝ.
   // U SMS navíc musí být zřízené telefonní číslo – nárok sám o sobě nestačí.
@@ -889,8 +893,15 @@ export default function App() {
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {
     const onNav = (e: Event) => {
-      const ev = e as CustomEvent<{ page: NavKey; subsection?: string }>;
+      const ev = e as CustomEvent<{ page: NavKey; subsection?: string; openTicketId?: string; openCustomerId?: string }>;
       const page = ev.detail?.page;
+      // Zmínka v chatu (#SN26000012, #Pavel Konečný) otevře rovnou detail.
+      if (page === "orders" && typeof ev.detail?.openTicketId === "string") {
+        setOpenTicketIntent({ ticketId: ev.detail.openTicketId, mode: "detail" });
+      }
+      if (page === "customers" && typeof ev.detail?.openCustomerId === "string") {
+        setOpenCustomerIntent({ customerId: ev.detail.openCustomerId });
+      }
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
@@ -1269,6 +1280,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       <OnlineGate>
         <NeulozeneZmeny />
         <PrepinacUctu userId={session.user.id} email={session.user.email ?? null} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} />
+        <ChatPlovouci serviceId={activeServiceId} userId={session.user.id} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} zapnuto={chatZapnuty} />
         <CiziServis serviceId={activeServiceId} onPristupZiskan={() => { void refreshServices(); }} />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>

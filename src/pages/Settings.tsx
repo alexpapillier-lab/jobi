@@ -63,7 +63,7 @@ import { useAuth } from "../auth/AuthProvider";
 export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
-  | "communication_automations"
+  | "communication_automations" | "communication_chat"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
@@ -80,7 +80,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_tisk_dokumentu: "documents",
-  service_sms: "communication", communication_automations: "communication",
+  service_sms: "communication", communication_automations: "communication", communication_chat: "communication",
   service_team: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
   profile_me: "profile",
@@ -453,6 +453,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     setHodinovaSazbaText(typeof config.hodinova_sazba === "number" ? String(config.hodinova_sazba) : "");
     setZaokrouhleniPrace(normalizujZaokrouhleni(config.zaokrouhleni_prace));
     setCasNaOprave(config.cas_na_oprave === true);
+    setChatZapnuty(config.chat !== false);
   }, []);
 
   // Load service_settings from DB when activeServiceId changes
@@ -602,6 +603,20 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
     } catch (err) {
       console.error("[Settings] saveZaokrouhleniPrace", err);
+      showToast("Nastavení se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId]);
+  /** Chat týmu (service_settings.config.chat, výchozí zapnuto – je zdarma). */
+  const [chatZapnuty, setChatZapnuty] = useState(true);
+  const saveChatZapnuty = useCallback(async (zapnuto: boolean) => {
+    if (!activeServiceId || !supabase) return;
+    setChatZapnuty(zapnuto);
+    try {
+      const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { chat: zapnuto } } });
+      if (error) throw new Error(error.message);
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+    } catch (err) {
+      console.error("[Settings] saveChatZapnuty", err);
       showToast("Nastavení se nepodařilo uložit", "error");
     }
   }, [activeServiceId]);
@@ -918,6 +933,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       subsections: [
         ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS", keywords: ["sms", "telefonní číslo", "zprávy", "přesměrování", "hovory", "šablona zprávy"] }] : []),
         ...(isAdmin ? [{ key: "communication_automations" as const, label: "Automatizace", keywords: ["automatizace", "pravidla", "připomínka", "sms", "e-mail", "skladné", "recenze", "vyzvednutí"] }] : []),
+        ...(isAdmin ? [{ key: "communication_chat" as const, label: "Chat týmu", keywords: ["chat", "zprávy", "tým", "pobočka", "soukromá zpráva", "upozornění", "zvuk"] }] : []),
       ],
     },
     {
@@ -971,7 +987,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -2333,6 +2349,28 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* ZAKÁZKY - HODINOVÁ PRÁCE */}
+      {section.subsection === "communication_chat" && (
+        <Card>
+          <CardHeader
+            title="Chat týmu"
+            description="Zprávy mezi lidmi v servisu: kanál celého servisu, kanál každé pobočky (jen pro ty, kdo na ni vidí) a soukromé zprávy. Ve zprávě jde zmínit zakázku (#SN26000012) nebo zákazníka (#Pavel Konečný) a kolegu (@Aleki). Zdarma, pro každý servis."
+          />
+          <SettingRows>
+            <SettingRow
+              clickable
+              label="Chat zapnutý"
+              description="Vpravo dole vedle tlačítka nové zakázky se ukáže bublina s obálkou a počtem nepřečtených zpráv. Vypnutí chat schová všem, zprávy zůstanou uložené."
+              control={<input type="checkbox" checked={chatZapnuty} onChange={(e) => { void saveChatZapnuty(e.target.checked); }} />}
+            />
+            <SettingRow
+              label="Zvuk a upozornění"
+              description="Zvuk a systémová upozornění si každý zapíná sám v panelu chatu (ikona zvonku); platí pro jeho zařízení."
+              control={<span style={{ fontSize: 12, color: "var(--muted)" }}>v panelu chatu</span>}
+            />
+          </SettingRows>
+        </Card>
+      )}
+
       {section.subsection === "orders_prace" && (
         <Card>
           <CardHeader
