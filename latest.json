@@ -1,15 +1,15 @@
 {
-  "version": "0.6.2",
-  "notes": "- Release jobi v0.6.2\n- Chat: panel s rozostřením pozadí, ať pod ním neprosvítá seznam\n- Chat týmu: kanál servisu, pobočky, soukromé zprávy, zmínky zakázek a lidí\n- E2E: správce omezí technika na dvě pobočky, technik jiné nevidí\n- Člen může vidět na víc poboček: správce mu vybere, které\n- Po přihlášení jiného účtu ve stejném okně nezůstává seznam servisů toho předchozího\n- Přidělený technik na zakázce: karta Technik, skupina Moje, jméno na kartě\n- Přepínač účtů: heslo bez PINu ve formuláři, PIN až po přihlášení a jen když chybí\n- Na telefonu bez PINu a přepínání účtů\n- Přepínač účtů: číselná klávesnice, účet bez PINu se otevře heslem a PIN si nastaví\n- Nastavení: sekce „Fotka a přezdívka“ se jmenuje „Můj účet“\n- E2E přepínání účtů a fotek na dotykovém zařízení; zámek hned po nastavení PINu",
-  "pub_date": "2026-09-09T06:04:48Z",
+  "version": "0.6.4",
+  "notes": "- Release jobi v0.6.4\n- Release jobi v0.6.3\n- Opravy před vydáním: bublina chatu, přenačítání kalendáře a falešné „Uloženo“\n- Předplatné: Starter je pro jednoho člena\n- Tisk z prohlížeče: strop fotek a nedělit řádky ani podpisy přes stránku\n- Tisk z prohlížeče: stránka vysoká podle obsahu, ne napevno\n- Tisk: nepřidávat prázdnou stránku na konec dokumentu\n- Tisk na telefonu: nemazat iframe, dokud je otevřený dialog\n- Zkouška obnovy: řadit počty řádků podle bajtů, ne podle locale",
+  "pub_date": "2026-09-09T20:47:16Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTM5aG5UdVRyVmh4dnIwbHN5TG1GMmNBRUFDVC91cFFTR2dTMWwzdm45c2RnN1VvK2g1UzRWVS9ZNjN1MGVFWjFpTnFYckIrNnZuVkdMNTAwWm9xandFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTMzODg4CWZpbGU6am9iaS5hcHAudGFyLmd6CjNoNmpoaUVLdk93Y2lMVjZOZHp5WU1FY3J1dUNUMlptTGg0NTZtc2ZiOCsxTHFPdFFkRUhDQkJKaHpYQmxsYXhpaW5rOE9ZeXJVTk80cCtkYjB0bER3PT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.2/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTlYTHFlVnZiTmtza1lGZXduSXllMklmWUV2M1dZYnhab1NCV05mcjliY1BiSEN5bzlFQlhzRlFwclVlMlJ5Q2czWkxqekFJdDdOYTBVVnRFUGNrWndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTg2ODM2CWZpbGU6am9iaS5hcHAudGFyLmd6CkxnaDlhYmJLT3ZOUXJSRTMzczEzWXYweG4wWXFiUDk0U1FZK3pVK0gwT2o1MVdsQWIra0pkd3dKd09nNENDRUhhdzZvdFM5QTRxVCtiTFBjQWhrNEJRPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.4/jobi.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTM5aG5UdVRyVmh4dnIwbHN5TG1GMmNBRUFDVC91cFFTR2dTMWwzdm45c2RnN1VvK2g1UzRWVS9ZNjN1MGVFWjFpTnFYckIrNnZuVkdMNTAwWm9xandFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTMzODg4CWZpbGU6am9iaS5hcHAudGFyLmd6CjNoNmpoaUVLdk93Y2lMVjZOZHp5WU1FY3J1dUNUMlptTGg0NTZtc2ZiOCsxTHFPdFFkRUhDQkJKaHpYQmxsYXhpaW5rOE9ZeXJVTk80cCtkYjB0bER3PT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.2/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTlYTHFlVnZiTmtza1lGZXduSXllMklmWUV2M1dZYnhab1NCV05mcjliY1BiSEN5bzlFQlhzRlFwclVlMlJ5Q2czWkxqekFJdDdOYTBVVnRFUGNrWndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTg2ODM2CWZpbGU6am9iaS5hcHAudGFyLmd6CkxnaDlhYmJLT3ZOUXJSRTMzczEzWXYweG4wWXFiUDk0U1FZK3pVK0gwT2o1MVdsQWIra0pkd3dKd09nNENDRUhhdzZvdFM5QTRxVCtiTFBjQWhrNEJRPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.4/jobi.app.tar.gz"
     }
   }
 }
