@@ -139,4 +139,25 @@ describe("migrace", () => {
     expect(JSON.stringify(t.blocks)).toContain("Můj právní text.");
     expect(JSON.stringify(t.blocks)).toContain("Ahoj");
   });
+
+  // Regrese: na iOS z tisku vyjížděl prázdný list navíc.
+  //
+  // .page má page-break-after:always a reset dělá pravidlo pro POSLEDNÍ
+  // stránku. Za stránkami ale v těle dokumentu stojí ještě měřicí skript,
+  // takže poslední .page není posledním potomkem a :last-child by nesedl –
+  // zalomení by zůstalo v platnosti a Safari za dokument přidá prázdnou
+  // stránku. Chromium ji zahodí sám, proto se to na desktopu neprojeví
+  // a bez tohohle testu by se to snadno vrátilo.
+  it("reset zalomení sedí i na poslední stránku, za kterou stojí skript", () => {
+    const html = renderDocument({ template: defaultTemplate("zakazkovy_list"), data: sampleData("zakazkovy_list", "short"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
+
+    // Předpoklad, na kterém to celé stojí: za poslední stránkou opravdu
+    // něco je. Kdyby to jednou přestalo platit, tenhle test to připomene.
+    const posledniStranka = html.lastIndexOf("</section>");
+    const skript = html.lastIndexOf("<scr" + "ipt>");
+    expect(skript, "za stránkami už neleží skript – pak jde :last-child vrátit").toBeGreaterThan(posledniStranka);
+
+    expect(html).toContain(".page:last-of-type{break-after:auto");
+    expect(html, ":last-child nikdy nesedne, protože .page není poslední potomek").not.toContain(".page:last-child");
+  });
 });
