@@ -311,6 +311,9 @@ export function ChatPlovouci({ serviceId, userId, profil, zapnuto }: ChatPlovouc
         display: "flex",
         flexDirection: "column",
         background: "var(--panel)",
+        // Panel je z 92 % krytý jako ostatní plochy; bez rozostření pod ním prosvítal seznam zakázek.
+        backdropFilter: "var(--blur)",
+        WebkitBackdropFilter: "var(--blur)",
         border: "1px solid var(--border)",
         boxShadow: "var(--shadow)",
         overflow: "hidden",
