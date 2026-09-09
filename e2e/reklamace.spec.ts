@@ -94,12 +94,21 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   await page.getByPlaceholder("Vyhledat zakázku (kód, zákazník, SN, telefon…)").fill(kod);
   await page.getByRole("button", { name: new RegExp(kod) }).first().click();
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
-  await expect(vidZakazku(page, kod).first()).toBeVisible({ timeout: 30_000 });
+
+  /* Seznam se po založení přepne na Reklamace. Do detailu se jde přes jméno
+     zákazníka, protože je pro tenhle běh unikátní: reklamací je v ostrém
+     servisu spousta z minulých běhů a „první R…“ v seznamu klidně patří
+     jiné – a na reklamaci bez zakázky se diagnostika neukazuje vůbec.
+     Čekání na jméno zároveň nahrazuje dřívější kontrolu čísla zakázky, která
+     stihla projít ještě na zavírajícím se okně, a tím netvrdila nic. */
+  const naseReklamace = page.locator(`:text-is("${zakaznik}"):visible`).first();
+  await expect(naseReklamace).toBeVisible({ timeout: 30_000 });
+  await naseReklamace.click();
 
   // Detail reklamace ukazuje diagnostiku zakázky; dřív se odtud neukládala vůbec.
-  await page.getByText(/^R\d{8}$/).first().click();
+  // Zakázka se k reklamaci dotahuje celá, což chvíli trvá.
   const protokol = page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...");
-  await expect(protokol).toBeVisible({ timeout: 20_000 });
+  await expect(protokol).toBeVisible({ timeout: 30_000 });
   const text = `Naměřeno v reklamaci ${Date.now().toString(36)}`;
   await protokol.fill(text);
   await page.waitForTimeout(2000);

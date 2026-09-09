@@ -275,6 +275,9 @@ test("termín z kalendáře zadaný při výpadku se neztratí", async ({ page }
 
   const zmenit = page.locator(`[aria-label="Změnit termín ${kod}"]`).first();
   await expect(zmenit).toBeVisible({ timeout: 30_000 });
+  /* Doprostřed okna: u spodní hrany plave „+“ a bublina chatu a řádek, který
+     skončí pod nimi, je sice vidět, ale klik spolknou ony. */
+  await zmenit.evaluate((el) => el.scrollIntoView({ block: "center" }));
 
   /* Termín se dřív při chybě zápisu vrátil na původní hodnotu a zůstala jen
      hláška. Zákazníkovi ho přitom technik do telefonu už slíbil. */

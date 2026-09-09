@@ -1280,7 +1280,11 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       <OnlineGate>
         <NeulozeneZmeny />
         <PrepinacUctu userId={session.user.id} email={session.user.email ?? null} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} />
-        <ChatPlovouci serviceId={activeServiceId} userId={session.user.id} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} zapnuto={chatZapnuty} />
+        {/* Ve Fakturách sedí bublina na spodní liště editoru („Vystavit“,
+            „Uložit koncept“) a tlačítka pak nejdou kliknout. Plovoucí „+“ je
+            tam ze stejného důvodu schované už dřív; chat běží dál, jen
+            kolečko na téhle stránce není. */}
+        <ChatPlovouci serviceId={activeServiceId} userId={session.user.id} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} zapnuto={chatZapnuty} bublinaSkryta={activePage === "invoices"} />
         <CiziServis serviceId={activeServiceId} onPristupZiskan={() => { void refreshServices(); }} />
         <StatusesProvider activeServiceId={activeServiceId}>
         <BranchProvider serviceId={activeServiceId} userId={presenceUserId} enabled={hasModule("branches")}>

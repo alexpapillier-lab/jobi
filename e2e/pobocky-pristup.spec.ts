@@ -67,6 +67,17 @@ async function rpc(r: Relace, jmeno: string, argumenty: unknown): Promise<{ stav
   return { stav: o.status(), text: await o.text() };
 }
 
+/**
+ * Jméno technika tak, jak je vidět v Týmu.
+ *
+ * Stejné jméno visí i na kartách zakázek jako štítek přiděleného technika.
+ * Stránka Zakázky zůstává pod Nastavením v DOM, takže hledání podle textu
+ * na ni narazí dřív – a čeká pak na prvek, který je schovaný.
+ */
+function clenTymu(page: Page) {
+  return page.locator(`:text-is("${TECHNIK.prezdivka}"):visible`).first();
+}
+
 /** Nastavení → Lidé a přístupy → Tým a oprávnění. */
 async function otevriTym(page: Page): Promise<void> {
   // Sekce pro správce se odemyká až po načtení role – přímý skok událostí
@@ -75,7 +86,7 @@ async function otevriTym(page: Page): Promise<void> {
   const polozka = page.getByRole("button", { name: "Tým a oprávnění" }).first();
   await expect(polozka).toBeVisible({ timeout: 30_000 });
   await polozka.click();
-  await expect(page.getByText(TECHNIK.prezdivka, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(clenTymu(page)).toBeVisible({ timeout: 30_000 });
 }
 
 test.beforeAll(async () => { stav.api = await novaZadost.newContext(); });
@@ -120,7 +131,7 @@ test("správce vybere technikovi v Týmu Brno a Ostravu", async ({ page }) => {
   test.setTimeout(180_000);
   await prihlasSe(page);
   await otevriTym(page);
-  const radek = page.getByText(TECHNIK.prezdivka, { exact: true }).first().locator('xpath=ancestor::*[.//button[@aria-label="Přístup k pobočkám"]][1]');
+  const radek = clenTymu(page).locator('xpath=ancestor::*[.//button[@aria-label="Přístup k pobočkám"]][1]');
   const tlacitko = radek.getByRole("button", { name: "Přístup k pobočkám" });
   await tlacitko.click();
   const skupina = page.getByRole("group", { name: "Pobočky člena" });
