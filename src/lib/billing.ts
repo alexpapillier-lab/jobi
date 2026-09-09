@@ -144,7 +144,7 @@ export const TARIFY: TarifInfo[] = [
   {
     tier: "starter",
     label: "Starter",
-    popis: "Pro jednu provozovnu, která chce mít pořádek v zakázkách a fakturách.",
+    popis: "Pro jednoho člověka a jednu provozovnu – pořádek v zakázkách a fakturách. Víc lidí v týmu má Business.",
     modules: ZAKLAD,
     branchesIncluded: 1,
     smsIncluded: 0,
