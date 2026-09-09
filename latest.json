@@ -1,15 +1,15 @@
 {
-  "version": "0.6.1",
-  "notes": "- Release jobi v0.6.1\n- Čas na opravě ukazuje částku podle sazby a přenese se do hodinové práce\n- Fotky zakázky rovnou z telefonu a čitelný vodoznak s číslem zakázky\n- Vyhozenému zaměstnanci aplikace tvrdila, že mu skončilo předplatné\n- Velikost rozhraní: na desktopu zvětšuje webview, ne CSS zoom\n- Sloupec Nastavení počítá výšku správně i při zvětšeném rozhraní\n- Na poslední položku v Nastavení nešlo doscrollovat\n- Firemní údaje nešly v novém servisu vyplnit vůbec\n- Vypnuté náhledy při silném kliknutí – padal na nich systémový WebKit\n- Build JobiDocs padal na typu klienta u podepisování fotek\n- Release jobidocs v0.4.0",
-  "pub_date": "2026-09-08T18:55:48Z",
+  "version": "0.6.2",
+  "notes": "- Release jobi v0.6.2\n- Chat: panel s rozostřením pozadí, ať pod ním neprosvítá seznam\n- Chat týmu: kanál servisu, pobočky, soukromé zprávy, zmínky zakázek a lidí\n- E2E: správce omezí technika na dvě pobočky, technik jiné nevidí\n- Člen může vidět na víc poboček: správce mu vybere, které\n- Po přihlášení jiného účtu ve stejném okně nezůstává seznam servisů toho předchozího\n- Přidělený technik na zakázce: karta Technik, skupina Moje, jméno na kartě\n- Přepínač účtů: heslo bez PINu ve formuláři, PIN až po přihlášení a jen když chybí\n- Na telefonu bez PINu a přepínání účtů\n- Přepínač účtů: číselná klávesnice, účet bez PINu se otevře heslem a PIN si nastaví\n- Nastavení: sekce „Fotka a přezdívka“ se jmenuje „Můj účet“\n- E2E přepínání účtů a fotek na dotykovém zařízení; zámek hned po nastavení PINu",
+  "pub_date": "2026-09-09T06:04:48Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXpwbXNjZEUxVXI2RFYrWVRramI1azYySjYrUEtWSUp3aHZ4b0hGTDBMZC9qUFplV2ZZcmQyaVNkbXdWM2dKNXRHL1JFVitUSGVNbHE3YUZtR1ZiRFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4ODkzNzQ4CWZpbGU6am9iaS5hcHAudGFyLmd6CnV1ZEl5K09YL3Y1aFVCNFZIR2h0TVV4Sjl1VnlHRkVHazQ2V0NxZ3JzcTFpSmZqSWVPT2g3Um5lQ3ZOMmw4MUN3NklVS2RGQ2lzcjRFZkZCVHZnbENnPT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.1/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTM5aG5UdVRyVmh4dnIwbHN5TG1GMmNBRUFDVC91cFFTR2dTMWwzdm45c2RnN1VvK2g1UzRWVS9ZNjN1MGVFWjFpTnFYckIrNnZuVkdMNTAwWm9xandFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTMzODg4CWZpbGU6am9iaS5hcHAudGFyLmd6CjNoNmpoaUVLdk93Y2lMVjZOZHp5WU1FY3J1dUNUMlptTGg0NTZtc2ZiOCsxTHFPdFFkRUhDQkJKaHpYQmxsYXhpaW5rOE9ZeXJVTk80cCtkYjB0bER3PT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.2/jobi.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXpwbXNjZEUxVXI2RFYrWVRramI1azYySjYrUEtWSUp3aHZ4b0hGTDBMZC9qUFplV2ZZcmQyaVNkbXdWM2dKNXRHL1JFVitUSGVNbHE3YUZtR1ZiRFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4ODkzNzQ4CWZpbGU6am9iaS5hcHAudGFyLmd6CnV1ZEl5K09YL3Y1aFVCNFZIR2h0TVV4Sjl1VnlHRkVHazQ2V0NxZ3JzcTFpSmZqSWVPT2g3Um5lQ3ZOMmw4MUN3NklVS2RGQ2lzcjRFZkZCVHZnbENnPT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.1/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTM5aG5UdVRyVmh4dnIwbHN5TG1GMmNBRUFDVC91cFFTR2dTMWwzdm45c2RnN1VvK2g1UzRWVS9ZNjN1MGVFWjFpTnFYckIrNnZuVkdMNTAwWm9xandFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTMzODg4CWZpbGU6am9iaS5hcHAudGFyLmd6CjNoNmpoaUVLdk93Y2lMVjZOZHp5WU1FY3J1dUNUMlptTGg0NTZtc2ZiOCsxTHFPdFFkRUhDQkJKaHpYQmxsYXhpaW5rOE9ZeXJVTk80cCtkYjB0bER3PT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.6.2/jobi.app.tar.gz"
     }
   }
 }
