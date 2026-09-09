@@ -36,7 +36,10 @@ export async function loadDocumentsForWeb(serviceId: string | null): Promise<Doc
 /** Sestaví HTML dokumentu stejně, jako to dělá JobiDocs. */
 export async function buildDocumentHtmlForWeb(docType: WebPrintDocType, serviceId: string | null, data: DocumentData): Promise<string> {
   const docs = await loadDocumentsForWeb(serviceId);
-  return renderDocument({ template: templateFor(docs, docType), data, brand: docs.brand, theme: docs.theme, options: { mode: "print" } });
+  // browserPrint: papír tady řídí prohlížeč, ne my. Safari na iOS si z A4
+  // ubere ~48 mm na vlastní hlavičku a patičku, takže rámec stránky nesmí
+  // mít pevnou výšku – jinak spodní řádek s podpisy spadne na druhý list.
+  return renderDocument({ template: templateFor(docs, docType), data, brand: docs.brand, theme: docs.theme, options: { mode: "print", browserPrint: true } });
 }
 
 /** Počká, až se v dokumentu načtou obrázky (logo, razítko, QR) a doběhne měření stránky. */

@@ -160,4 +160,25 @@ describe("migrace", () => {
     expect(html).toContain(".page:last-of-type{break-after:auto");
     expect(html, ":last-child nikdy nesedne, protože .page není poslední potomek").not.toContain(".page:last-child");
   });
+
+  // Tisk z prohlížeče nesmí rámec stránky roztahovat na pevnou výšku.
+  //
+  // JobiDocs si papír řídí sám, tam plná A4 sedí. Prohlížeč ale ne: Safari
+  // na iOS si z A4 ubere ~14 mm nahoře a ~34 mm dole na vlastní hlavičku
+  // a patičku, takže na obsah zbyde ~249 mm. Rámec vysoký 296,6 mm se tam
+  // nevejde a spodní řádek s podpisy (margin-top:auto) spadne na druhý list.
+  // Ověřeno tiskem všech typů dokumentů na stránku 210x249 mm.
+  for (const docType of DOC_TYPES) {
+    it(`${docType}: tisk z prohlížeče nemá pevnou výšku stránky`, () => {
+      const spolecne = { template: defaultTemplate(docType), data: sampleData(docType, "short"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME };
+
+      const web = renderDocument({ ...spolecne, options: { mode: "print", browserPrint: true } });
+      expect(web).toContain("min-height:auto");
+      expect(web, "pevná výška by na iOS shodila podpisy na druhou stránku").not.toContain("min-height:296.6mm");
+
+      // JobiDocs zůstává beze změny – tam je plná výška správně.
+      const desktop = renderDocument({ ...spolecne, options: { mode: "print" } });
+      expect(desktop).toContain("min-height:296.6mm");
+    });
+  }
 });
