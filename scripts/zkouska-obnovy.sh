@@ -211,7 +211,16 @@ begin
     insert into _pocty values (r.tablename, n);
   end loop;
 end $$;
-select t, n from _pocty order by t;
+-- collate "C" je tady nutnost, ne kosmetika: druhou stranu porovnání
+-- (ocekavano.txt) řadí Python podle bajtů. Bez tohohle řadí databáze podle
+-- svého locale, a glibc v en_US.UTF-8 podtržítko ignoruje – takže vrátí
+-- „invoices" před „invoice_series", kdežto Python obráceně. Diff pak hlásí
+-- rozdíl, i když se všechny počty shodují.
+--
+-- Lokálně se to neprojeví (vlastní cluster se zakládá s --locale=C), ale
+-- service container v CI běží v en_US.UTF-8. LC_ALL=C na začátku skriptu
+-- řídí jen shell, do řazení uvnitř databáze nemluví.
+select t, n from _pocty order by t collate "C";
 SQL
 
 if ! diff -u "$WORKDIR/ocekavano.txt" "$WORKDIR/obnoveno.txt" > "$WORKDIR/rozdil.txt"; then
