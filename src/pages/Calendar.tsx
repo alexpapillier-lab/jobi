@@ -511,7 +511,11 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
       />
 
       {mainView === "agenda" ? (
-        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        // Místo pod posledním řádkem: vpravo dole plave „+“ a bublina chatu
+        // a bez něj se poslední „Změnit termín“ nedá odscrollovat zpod nich –
+        // tlačítko je vidět, ale klik spolkne kolečko. Na telefonu jsou obě
+        // kolečka nad spodní navigací, tedy výš.
+        <div style={{ flex: 1, overflow: "auto", minHeight: 0, paddingBottom: isNarrow ? 140 : 96 }}>
           <Agenda items={filteredItems} now={now} isNarrow={isNarrow} onOpen={openItem} onReschedule={rescheduleItem} />
         </div>
       ) : (

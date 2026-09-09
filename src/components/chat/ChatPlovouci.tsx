@@ -39,6 +39,13 @@ export type ChatPlovouciProps = {
   profil: { nickname: string | null; avatarUrl: string | null } | null;
   /** Modul chatu zapnutý pro servis. Bez něj se nevykreslí nic. */
   zapnuto: boolean;
+  /**
+   * Schová bublinu na stránce, kde by seděla na tlačítkách (Faktury).
+   * Chat běží dál – nepřečtené se počítají a otevřený panel zůstane –
+   * jen kolečko na pár obrazovkách nepřekáží. Stejné pravidlo má
+   * plovoucí „+“ v App.tsx.
+   */
+  bublinaSkryta?: boolean;
 };
 
 const KLIC_OTEVRENO = "jobi_chat_otevreno";
@@ -100,7 +107,7 @@ function Odznak({ pocet, maly }: { pocet: number; maly?: boolean }) {
   );
 }
 
-export function ChatPlovouci({ serviceId, userId, profil, zapnuto }: ChatPlovouciProps) {
+export function ChatPlovouci({ serviceId, userId, profil, zapnuto, bublinaSkryta }: ChatPlovouciProps) {
   const [otevreno, setOtevrenoState] = useState<boolean>(() => nactiOtevreno());
   const setOtevreno = useCallback((v: boolean) => {
     setOtevrenoState(v);
@@ -522,7 +529,7 @@ export function ChatPlovouci({ serviceId, userId, profil, zapnuto }: ChatPlovouc
   if (typeof document === "undefined") return null;
   return createPortal(
     <>
-      {(!uzky || !otevreno) && bublina}
+      {(!uzky || !otevreno) && !bublinaSkryta && bublina}
       {panel}
     </>,
     document.body
