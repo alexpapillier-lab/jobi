@@ -1,0 +1,7 @@
+- Tisk z telefonu: dokument se vytiskne celý, i když v dialogu přepnete formát papíru
+- Tisk už nepřidává prázdný list na konec a podpisy nepadají na druhou stránku
+- Fotky u zakázky se vejdou na stránku, každá už nezabírá dvě
+- Kalendář se sám nepřenačítá dokola
+- Ve fakturách šlo vpravo dole kliknout na Vystavit, teď to nepřekrývá bublina chatu
+- Nastavení hlásí „Uloženo“ jen tehdy, když se opravdu uložilo
+- Tarif Starter je nově pro jednoho člena týmu
