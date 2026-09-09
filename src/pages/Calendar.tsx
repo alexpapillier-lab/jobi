@@ -4,6 +4,7 @@ import { Button, PageHeader, Segmented } from "../components/ui";
 import { showToast } from "../components/Toast";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
+import { maSeObnovit } from "../lib/obnovaKalendare";
 import { reportError } from "../lib/reportError";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
 import { useStatuses } from "../state/StatusesStore";
@@ -117,9 +118,12 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
   const korenRef = useRef<HTMLDivElement | null>(null);
   const zastaraleRef = useRef(false);
   const posledniNacteniRef = useRef(0);
-  /** Po zobrazení načíst znovu, když je stav starší než tohle – realtime umí zprávu ztratit. */
-  const STARE_PO_MS = 5_000;
-  const jePotrebaObnovit = () => zastaraleRef.current || Date.now() - posledniNacteniRef.current > STARE_PO_MS;
+  /** Kalendář je zrovna vidět – z minulé kontroly, kvůli poznání návratu. */
+  const byloVidetRef = useRef(false);
+  /** Načítání běží; druhé se do něj nepouští. */
+  const nacitaRef = useRef(false);
+  /** Servis, pro který už data jednou dorazila – po přepnutí se čeká znovu. */
+  const nactenoProRef = useRef<string | null>(null);
   const [obnovaToken, setObnovaToken] = useState(0);
   const obnov = useCallback(() => {
     zastaraleRef.current = false;
@@ -149,9 +153,21 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
     // protože kořen kalendáře ještě nebyl v DOM (stránka byla ve stavu „načítám“).
     // Čtení offsetParent je levné a stav se ověří i po ztrátě realtime zprávy.
     const zkus = () => {
-      if (document.visibilityState !== "visible") return;
-      if (korenRef.current?.offsetParent == null) return;
-      if (jePotrebaObnovit()) obnov();
+      const videt = document.visibilityState === "visible" && korenRef.current?.offsetParent != null;
+      const bylVidet = byloVidetRef.current;
+      byloVidetRef.current = videt;
+      // Rozhodování je v obnovaKalendare.ts, ať se dá otestovat bez prohlížeče.
+      if (
+        maSeObnovit({
+          videt,
+          bylVidet,
+          zastarale: zastaraleRef.current,
+          stari: Date.now() - posledniNacteniRef.current,
+          nacita: nacitaRef.current,
+        })
+      ) {
+        obnov();
+      }
     };
     const id = window.setInterval(zkus, 2000);
     document.addEventListener("visibilitychange", zkus);
@@ -170,10 +186,15 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
       setLoading(false);
       return;
     }
-    setLoading(true);
+    /* „Načítání kalendáře…“ nahrazuje celý obsah, takže patří jen k prvnímu
+       načtení servisu. Obnova na pozadí ho nechá stát a jen vymění data –
+       jinak kalendář při každém návratu na vteřinu zmizí i s odscrollováním. */
+    const prvni = nactenoProRef.current !== activeServiceId;
+    if (prvni) setLoading(true);
     setError(null);
     const load = async () => {
       if (!supabase) return;
+      nacitaRef.current = true;
       try {
         const { data: tData, error: tErr } = await fetchAllPages((from, to) =>
           (supabase!.from("tickets") as any)
@@ -199,10 +220,12 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
         setTickets((tData || []).map((r: any) => mapSupabaseTicketToTicketEx(r)));
         setClaims((cData || []) as WarrantyClaimRow[]);
         posledniNacteniRef.current = Date.now();
+        nactenoProRef.current = activeServiceId;
         zastaraleRef.current = false;
       } catch (e: any) {
         setError(e?.message || "Chyba při načítání");
       } finally {
+        nacitaRef.current = false;
         setLoading(false);
       }
     };
