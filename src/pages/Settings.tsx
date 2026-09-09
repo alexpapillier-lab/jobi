@@ -594,36 +594,48 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const [hodinovaSazbaText, setHodinovaSazbaText] = useState("");
   /** Krok zaokrouhlení naměřeného času při přenosu do hodinové práce (config.zaokrouhleni_prace). */
   const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
-  const saveZaokrouhleniPrace = useCallback(async (minut: number) => {
-    if (!activeServiceId || !supabase) return;
+  /*
+   * Samoukládací prvky vrací, jestli se zápis povedl.
+   *
+   * Volají se jako `save…(…).then(() => hint.show())`, a protože chybu
+   * spolknou uvnitř, doběhly i po neúspěchu – vedle hlášky „nepodařilo se
+   * uložit“ tak naskočilo zelené „Uloženo“. Kdo to přehlédl, odešel od
+   * počítače s tím, že je hotovo, a hodnota zůstala stará.
+   */
+  const saveZaokrouhleniPrace = useCallback(async (minut: number): Promise<boolean> => {
+    if (!activeServiceId || !supabase) return false;
     setZaokrouhleniPrace(minut);
     try {
       const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { zaokrouhleni_prace: minut } } });
       if (error) throw new Error(error.message);
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      return true;
     } catch (err) {
       console.error("[Settings] saveZaokrouhleniPrace", err);
       showToast("Nastavení se nepodařilo uložit", "error");
+      return false;
     }
   }, [activeServiceId]);
   /** Chat týmu (service_settings.config.chat, výchozí zapnuto – je zdarma). */
   const [chatZapnuty, setChatZapnuty] = useState(true);
-  const saveChatZapnuty = useCallback(async (zapnuto: boolean) => {
-    if (!activeServiceId || !supabase) return;
+  const saveChatZapnuty = useCallback(async (zapnuto: boolean): Promise<boolean> => {
+    if (!activeServiceId || !supabase) return false;
     setChatZapnuty(zapnuto);
     try {
       const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { chat: zapnuto } } });
       if (error) throw new Error(error.message);
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      return true;
     } catch (err) {
       console.error("[Settings] saveChatZapnuty", err);
       showToast("Nastavení se nepodařilo uložit", "error");
+      return false;
     }
   }, [activeServiceId]);
   /** Stopky na zakázce – volitelná funkce (service_settings.config.cas_na_oprave). */
   const [casNaOprave, setCasNaOprave] = useState(false);
-  const saveCasNaOprave = useCallback(async (zapnuto: boolean) => {
-    if (!activeServiceId || !supabase) return;
+  const saveCasNaOprave = useCallback(async (zapnuto: boolean): Promise<boolean> => {
+    if (!activeServiceId || !supabase) return false;
     setCasNaOprave(zapnuto);
     try {
       // RPC chybu nevyhazuje, vrací ji – bez téhle kontroly by `catch` níž
@@ -631,14 +643,16 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       const { error } = await (supabase as any).rpc("update_service_settings", { p_service_id: activeServiceId, p_patch: { config: { cas_na_oprave: zapnuto } } });
       if (error) throw new Error(error.message);
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      return true;
     } catch (err) {
       console.error("[Settings] saveCasNaOprave", err);
       showToast("Nastavení se nepodařilo uložit", "error");
+      return false;
     }
   }, [activeServiceId]);
 
-  const saveHodinovaSazba = useCallback(async (text: string) => {
-    if (!activeServiceId || !supabase) return;
+  const saveHodinovaSazba = useCallback(async (text: string): Promise<boolean> => {
+    if (!activeServiceId || !supabase) return false;
     const cislo = parseFloat(text.replace(",", "."));
     const hodnota = Number.isFinite(cislo) && cislo > 0 ? Math.round(cislo * 100) / 100 : null;
     try {
@@ -649,9 +663,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       if (error) throw new Error(error.message);
       setHodinovaSazbaText(hodnota == null ? "" : String(hodnota));
       window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      return true;
     } catch (err) {
       console.error("[Settings] saveHodinovaSazba", err);
       showToast("Sazbu se nepodařilo uložit", "error");
+      return false;
     }
   }, [activeServiceId]);
 
@@ -2390,7 +2406,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     step={10}
                     value={hodinovaSazbaText}
                     onChange={(e) => setHodinovaSazbaText(e.target.value)}
-                    onBlur={(e) => { void saveHodinovaSazba(e.target.value).then(() => hintSazba.show()); }}
+                    onBlur={(e) => { void saveHodinovaSazba(e.target.value).then((ok) => { if (ok) hintSazba.show(); }); }}
                     placeholder="např. 800"
                     aria-label="Výchozí hodinová sazba v Kč za hodinu"
                     style={{ width: 120 }}
@@ -2407,7 +2423,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 <input
                   type="checkbox"
                   checked={casNaOprave}
-                  onChange={(e) => { void saveCasNaOprave(e.target.checked).then(() => hintSazba.show()); }}
+                  onChange={(e) => { void saveCasNaOprave(e.target.checked).then((ok) => { if (ok) hintSazba.show(); }); }}
                 />
               }
             />
@@ -2419,7 +2435,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   <select
                     aria-label="Zaokrouhlení naměřeného času"
                     value={zaokrouhleniPrace}
-                    onChange={(e) => { void saveZaokrouhleniPrace(Number(e.target.value)).then(() => hintSazba.show()); }}
+                    onChange={(e) => { void saveZaokrouhleniPrace(Number(e.target.value)).then((ok) => { if (ok) hintSazba.show(); }); }}
                   >
                     {ZAOKROUHLENI_PRACE.map((z) => <option key={z.minut} value={z.minut}>{z.label}</option>)}
                   </select>

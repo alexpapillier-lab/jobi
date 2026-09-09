@@ -132,7 +132,9 @@ test("hodinová práce se přidá jako hodiny × sazba", async ({ page }) => {
   await page.getByLabel("Popis práce").fill("Diagnostika a čištění (E2E)");
   await page.getByLabel("Hodiny").fill("1.5");
   await page.getByLabel("Sazba (Kč/h)").fill("800");
-  await page.getByLabel("Technik").fill("Technik E2E");
+  // Přesně „Technik“: v detailu je vedle toho i výběr „Přidělený technik“,
+  // který by se do hledání podle části popisku trefil taky.
+  await page.getByLabel("Technik", { exact: true }).fill("Technik E2E");
   await page.getByRole("button", { name: "Přidat práci" }).click();
 
   // Položka ukazuje hodiny × sazbu a technika; cena je jejich součin.
