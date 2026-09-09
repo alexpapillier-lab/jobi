@@ -552,6 +552,19 @@ table.summary{border-collapse:collapse;margin-left:auto;min-width:70mm}
 ${styleCss}
 ${editor ? EDITOR_CSS : ""}
 @media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0}}
+${
+  browserPrint
+    ? `/* Tisk z prohlížeče: papír řídí prohlížeč a Safari na iOS nechá na obsah
+   jen ~249 mm z A4. Co se přes tu hranici nevejde, se rozřízne – proto:
+   - fotka na výšku smí mít nejvýš 190 mm (s hlavičkou a okraji je to ~223 mm),
+     jinak každá fotostránka vyrobí druhý, skoro prázdný list;
+   - řádek tabulky, podpisový blok a menší bloky se přes hranici stránky
+     nedělí, ale jdou celé na další list.
+   Musí být AŽ ZA ostatními pravidly – přebíjí .photo-page .photo img výš. */
+.photo-page .photo img{max-height:190mm}
+.items tbody tr,.bottom,.sig-row,.blk-fields,.blk-columns,.blk-vatSummary,.blk-payment{break-inside:avoid;page-break-inside:avoid}`
+    : ""
+}
 `;
 }
 
