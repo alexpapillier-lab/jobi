@@ -49,14 +49,31 @@ async function waitForDocument(doc: Document, timeoutMs = 6000): Promise<void> {
 }
 
 /**
- * Otevře tiskový dialog prohlížeče nad daným HTML.
+ * Skrytý iframe, ze kterého se tiskne. Je JEDEN na celou dobu běhu
+ * aplikace a záměrně se nikdy nemaže.
  *
- * Tiskne se ze skrytého iframu, aby uživatel nepřišel o rozdělanou práci
- * ve stránce. Iframe se uklidí po zavření dialogu.
+ * PROČ: dřív se pro každý tisk vyráběl nový a po `afterprint` (a nejpozději
+ * po minutě) se odstraňoval. Na iOS ale `afterprint` přijde už ve chvíli,
+ * kdy se otevře tiskový sheet – ne po dotisku. Iframe tedy zmizel po
+ * vteřině, zatímco uživatel teprve vybíral tiskárnu nebo formát papíru.
+ *
+ * A protože Safari při každé změně nastavení v dialogu (formát papíru,
+ * orientace, měřítko) sazbu přepočítá ZE ZDROJE, neměl už z čeho tisknout:
+ * vyjela prázdná stránka, na které byla jen hlavička a patička prohlížeče.
+ *
+ * Výběr tiskárny může trvat libovolně dlouho, takže žádný časový limit
+ * nesedí. Jediné bezpečné je iframe držet a při dalším tisku mu jen
+ * vyměnit obsah – v paměti tak zůstává jeden skrytý dokument.
  */
-export async function printHtmlInBrowser(html: string): Promise<void> {
+let tiskovyIframe: HTMLIFrameElement | null = null;
+
+/** Vrátí připravený iframe a řekne, jestli právě vznikl. */
+function ziskatTiskovyIframe(): { iframe: HTMLIFrameElement; novy: boolean } {
+  if (tiskovyIframe?.isConnected) return { iframe: tiskovyIframe, novy: false };
+
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
+  iframe.title = "Tiskový náhled";
   iframe.style.position = "fixed";
   iframe.style.right = "0";
   iframe.style.bottom = "0";
@@ -64,31 +81,45 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
   iframe.style.height = "0";
   iframe.style.border = "0";
   iframe.style.visibility = "hidden";
+  tiskovyIframe = iframe;
+  return { iframe, novy: true };
+}
+
+/**
+ * Otevře tiskový dialog prohlížeče nad daným HTML.
+ *
+ * Tiskne se ze skrytého iframu, aby uživatel nepřišel o rozdělanou práci
+ * ve stránce. Iframe zůstává i po zavření dialogu – viz komentář výš.
+ */
+export async function printHtmlInBrowser(html: string): Promise<void> {
+  const { iframe, novy } = ziskatTiskovyIframe();
 
   const loaded = new Promise<void>((resolve) => {
     iframe.addEventListener("load", () => resolve(), { once: true });
   });
 
-  // POZOR na pořadí: srcdoc se musí nastavit PŘED vložením do stránky.
-  // Jinak se "load" spustí už pro about:blank a tiskne se prázdná stránka.
-  iframe.srcdoc = html;
-  document.body.appendChild(iframe);
+  if (novy) {
+    // POZOR na pořadí: srcdoc se musí nastavit PŘED vložením do stránky.
+    // Jinak se "load" spustí už pro about:blank a tiskne se prázdná stránka.
+    iframe.srcdoc = html;
+    document.body.appendChild(iframe);
+  } else {
+    // Už je ve stránce, načtení about:blank má dávno za sebou – tady
+    // "load" přijde až pro nový obsah.
+    iframe.srcdoc = html;
+  }
   await loaded;
 
   const win = iframe.contentWindow;
   const doc = iframe.contentDocument;
   if (!win || !doc) {
+    // Rozbitý iframe zahodit, ať se příští tisk nepokouší o totéž znovu.
     iframe.remove();
+    tiskovyIframe = null;
     throw new Error("Nepodařilo se připravit tiskový náhled.");
   }
 
   await waitForDocument(doc);
-
-  const cleanup = () => {
-    setTimeout(() => iframe.remove(), 1000);
-  };
-  win.addEventListener("afterprint", cleanup, { once: true });
-  setTimeout(cleanup, 60000);
 
   win.focus();
   win.print();
