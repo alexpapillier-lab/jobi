@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
+import { promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type ClaimLike = {
   id: string;
@@ -19,6 +20,8 @@ type Props = {
   statusPickerFor: (claim: ClaimLike) => React.ReactNode;
   printButtonFor: (claim: ClaimLike) => React.ReactNode;
   customOrder?: string[];
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
 function formatCZ(dtIso: string | null | undefined): string {
@@ -34,12 +37,14 @@ function formatCZ(dtIso: string | null | undefined): string {
 function GroupedClaimRow({
   claim,
   statusColor,
+  stav,
   onClickDetail,
   statusPicker,
   printButton,
 }: {
   claim: ClaimLike;
   statusColor: string;
+  stav: StylStavu;
   onClickDetail: (id: string) => void;
   statusPicker: React.ReactNode;
   printButton: React.ReactNode;
@@ -48,10 +53,12 @@ function GroupedClaimRow({
     <div
       onClick={() => onClickDetail(claim.id)}
       style={{
+        ...promenneRadku(stav),
         padding: "8px 12px",
         borderRadius: 8,
-        border: `1px solid ${statusColor}20`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
+        color: stav.barvaPisma,
         cursor: "pointer",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
@@ -70,7 +77,7 @@ function GroupedClaimRow({
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 12, color: "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
+      <span style={{ fontWeight: 800, fontSize: 12, color: stav.plnaVyplne ? "var(--text)" : "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
       <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZ(claim.created_at ?? null)}</span>
       <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{claim.device_label || "—"}</span>
       <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.customer_name || "—"}</span>
@@ -82,7 +89,7 @@ function GroupedClaimRow({
   );
 }
 
-export function ClaimStatusGrouped({ claims, statuses, normalizeStatus, onClickDetail, statusPickerFor, printButtonFor, customOrder }: Props) {
+export function ClaimStatusGrouped({ claims, statuses, normalizeStatus, onClickDetail, statusPickerFor, printButtonFor, customOrder, zvyrazneni = "jemne" }: Props) {
   const groups = useMemo(() => {
     const result: { status: StatusMeta; claims: ClaimLike[] }[] = [];
     const unassigned: ClaimLike[] = [];
@@ -121,6 +128,7 @@ export function ClaimStatusGrouped({ claims, statuses, normalizeStatus, onClickD
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {groups.map(({ status, claims: groupClaims }) => {
         const color = status.bg || "var(--muted)";
+        const stav = stylStavu(status.bg, zvyrazneni, status.isFinal);
         return (
           <div key={status.key}>
             <div style={{
@@ -150,6 +158,7 @@ export function ClaimStatusGrouped({ claims, statuses, normalizeStatus, onClickD
                   key={c.id}
                   claim={c}
                   statusColor={color}
+                  stav={stav}
                   onClickDetail={onClickDetail}
                   statusPicker={statusPickerFor(c)}
                   printButton={printButtonFor(c)}

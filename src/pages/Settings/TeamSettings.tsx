@@ -37,6 +37,7 @@ const CAPABILITY_KEYS = [
   "can_edit_inventory",
   "can_adjust_inventory_quantity",
   "can_edit_service_settings",
+  "can_view_statistics",
   "branch_only",
 ] as const;
 
@@ -95,6 +96,11 @@ const CAPABILITY_INFO: Record<string, CapabilityInfo> = {
     label: "Nastavení servisu",
     description: "Může měnit základní a kontaktní údaje servisu v Nastavení.",
     group: "Nastavení",
+  },
+  can_view_statistics: {
+    label: "Vidět statistiky",
+    description: "Může otevřít stránku Statistiky – obrat, zisk, marže a žebříčky. Bez tohoto práva stránku v navigaci nevidí a server mu čísla nevydá.",
+    group: "Statistiky",
   },
   can_edit_devices: {
     label: "Stránka Zařízení",
@@ -1418,7 +1424,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               {capabilitiesMember.email || capabilitiesMember.user_id} · zaškrtnutá povolení platí v tomto servisu pro roli Člen.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}>
-              {(["Zakázky", "Zákazníci", "Nastavení", "Sklad a zařízení"] as const).map((group) => {
+              {(["Zakázky", "Zákazníci", "Nastavení", "Sklad a zařízení", "Statistiky"] as const).map((group) => {
                 const keysInGroup = CAPABILITY_KEYS.filter((k) => k !== "branch_only" && CAPABILITY_INFO[k]?.group === group);
                 if (keysInGroup.length === 0) return null;
                 return (

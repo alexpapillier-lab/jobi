@@ -131,6 +131,8 @@ export type SidebarProps = {
   smsUnreadCount?: number;
   /** When false, "SMS chaty" is hidden from the nav. */
   smsEnabled?: boolean;
+  /** Člen bez práva can_view_statistics stránku Statistiky v navigaci nevidí. */
+  statisticsEnabled?: boolean;
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
   /** Strana obrazovky – určuje hranu, na které leží proužek aktivní položky. */
@@ -225,6 +227,7 @@ export function Sidebar({
   invoicingEnabled = true,
   smsUnreadCount = 0,
   smsEnabled = false,
+  statisticsEnabled = true,
   onJobiDocsFirstConnect,
   horizontal = false,
   side = "left",
@@ -262,9 +265,10 @@ export function Sidebar({
       { key: "inventory", label: "Sklad", icon: BoxIcon },
       { key: "devices", label: "Zařízení", icon: DevicesIcon },
     ];
-    const ostatni: NavItem[] = [{ key: "statistics", label: "Statistiky", icon: StatisticsIcon }];
-    return [prace, katalog, ostatni];
-  }, [smsEnabled, invoicingEnabled]);
+    /* Bez práva na statistiky skupina zmizí celá – prázdná by nechala jen oddělovač. */
+    const ostatni: NavItem[] = statisticsEnabled ? [{ key: "statistics", label: "Statistiky", icon: StatisticsIcon }] : [];
+    return ostatni.length > 0 ? [prace, katalog, ostatni] : [prace, katalog];
+  }, [smsEnabled, invoicingEnabled, statisticsEnabled]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<

@@ -3,6 +3,7 @@ import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { WrenchIcon } from "./icons";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
+import { promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 export type ClaimLike = {
   id: string;
@@ -27,6 +28,8 @@ type Props = {
   printButtonForClaim: (claim: ClaimLike) => React.ReactNode;
   customOrder?: string[];
   smsUnreadByTicketId?: Record<string, number>;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
 const smsBadge = (n: number) =>
@@ -49,6 +52,7 @@ function formatCZ(dt: string | null | undefined): string {
 function TicketRow({
   ticket: t,
   statusColor,
+  stav,
   onClickDetail,
   statusPicker,
   printButton,
@@ -56,6 +60,7 @@ function TicketRow({
 }: {
   ticket: TicketCardData;
   statusColor: string;
+  stav: StylStavu;
   onClickDetail: (id: string) => void;
   statusPicker: React.ReactNode;
   printButton: React.ReactNode;
@@ -66,10 +71,12 @@ function TicketRow({
     <div
       onClick={() => onClickDetail(t.id)}
       style={{
+        ...promenneRadku(stav),
         padding: "8px 12px",
         borderRadius: 8,
-        border: `1px solid ${statusColor}20`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
+        color: stav.barvaPisma,
         cursor: "pointer",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
@@ -101,7 +108,7 @@ function TicketRow({
         </div>
       )}
       {finalPrice > 0 && (
-        <span style={{ fontSize: 12, fontWeight: 700, color: statusColor, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: stav.plnaVyplne ? "var(--text)" : statusColor, whiteSpace: "nowrap", flexShrink: 0 }}>
           {korunami(finalPrice)}
         </span>
       )}
@@ -116,12 +123,14 @@ function TicketRow({
 function ClaimRow({
   claim,
   statusColor,
+  stav,
   onClickDetail,
   statusPicker,
   printButton,
 }: {
   claim: ClaimLike;
   statusColor: string;
+  stav: StylStavu;
   onClickDetail: (id: string) => void;
   statusPicker: React.ReactNode;
   printButton: React.ReactNode;
@@ -130,10 +139,12 @@ function ClaimRow({
     <div
       onClick={() => onClickDetail(claim.id)}
       style={{
+        ...promenneRadku(stav),
         padding: "8px 12px",
         borderRadius: 8,
-        border: `1px solid ${statusColor}20`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
+        color: stav.barvaPisma,
         cursor: "pointer",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
@@ -152,7 +163,7 @@ function ClaimRow({
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <span style={{ fontWeight: 800, fontSize: 12, color: "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
+      <span style={{ fontWeight: 800, fontSize: 12, color: stav.plnaVyplne ? "var(--text)" : "#0d9488", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.code}</span>
       <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZ(claim.created_at ?? null)}</span>
       <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{claim.device_label || "—"}</span>
       <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.customer_name || "—"}</span>
@@ -185,6 +196,7 @@ export function CombinedStatusGrouped({
   printButtonForClaim,
   customOrder,
   smsUnreadByTicketId = {},
+  zvyrazneni = "jemne",
 }: Props) {
   const groups = useMemo(() => {
     const items: Item[] = [
@@ -231,6 +243,7 @@ export function CombinedStatusGrouped({
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {groups.map(({ status, items: groupItems }) => {
         const color = status.bg || "var(--muted)";
+        const stav = stylStavu(status.bg, zvyrazneni, status.isFinal);
         return (
           <div key={status.key}>
             <div style={{
@@ -261,6 +274,7 @@ export function CombinedStatusGrouped({
                     key={`t-${it.data.id}`}
                     ticket={it.data}
                     statusColor={color}
+                    stav={stav}
                     onClickDetail={onClickTicket}
                     statusPicker={statusPickerForTicket(it.data, normalizeStatus(it.data.status))}
                     printButton={printButtonForTicket(it.data)}
@@ -271,6 +285,7 @@ export function CombinedStatusGrouped({
                     key={`c-${it.data.id}`}
                     claim={it.data}
                     statusColor={color}
+                    stav={stav}
                     onClickDetail={onClickClaim}
                     statusPicker={statusPickerForClaim(it.data)}
                     printButton={printButtonForClaim(it.data)}

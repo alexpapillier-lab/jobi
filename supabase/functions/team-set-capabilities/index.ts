@@ -22,6 +22,7 @@ const ALLOWED_KEYS = [
   // Omezení, ne oprávnění: člen vidí a mění jen záznamy své domovské pobočky.
   "branch_only",
   "can_edit_service_settings",
+  "can_view_statistics",
 ];
 
 serve(async (req) => {

@@ -468,3 +468,10 @@ verify_jwt = false
 # sdíleným tajemstvím z Vaultu (nebo tokenem root ownera při ruční zkoušce).
 [functions.alerts-check]
 verify_jwt = false
+
+# Report statistik e-mailem: volá ho pg_cron (tajemství z Vaultu) i aplikace
+# (token majitele/správce, ověřuje se uvnitř). Písma pro PDF s českými znaky
+# se přibalují jako statické soubory – vestavěná Helvetica diakritiku neumí.
+[functions.statistics-report-send]
+verify_jwt = false
+static_files = ["functions/statistics-report-send/LiberationSans-Regular.ttf", "functions/statistics-report-send/LiberationSans-Bold.ttf"]

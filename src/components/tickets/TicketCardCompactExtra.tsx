@@ -2,6 +2,7 @@ import React from "react";
 import { type TicketCardData } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketTechnik } from "./fields";
 import { CheckIcon } from "../icons";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -9,39 +10,45 @@ type Props = {
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
-export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker, printButton }: Props) {
+export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker, printButton, zvyrazneni = "jemne" }: Props) {
   const bg = meta?.bg || "var(--border)";
+  const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
+  /* Podklad se při najetí jen o chlup ztmaví; u plné výplně nechat barvu stavu. */
+  const hoverBg = stav.plnaVyplne ? stav.pozadi : `${bg}08`;
 
   return (
     <div
       onClick={onClick}
       style={{
+        ...promenneRadku(stav),
         textAlign: "left",
         padding: 0,
         borderRadius: 6,
-        border: `1px solid ${bg}25`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
         cursor: "pointer",
         transition: "background 0.1s ease, border-color 0.1s ease",
-        color: "var(--text)",
+        color: stav.barvaPisma,
         overflow: "hidden",
         display: "flex",
         alignItems: "center",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = `${bg}08`;
-        e.currentTarget.style.borderColor = `${bg}40`;
+        e.currentTarget.style.background = hoverBg;
+        e.currentTarget.style.borderColor = stav.plnaVyplne ? stav.ramecek : `${bg}40`;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = "var(--panel)";
-        e.currentTarget.style.borderColor = `${bg}25`;
+        e.currentTarget.style.background = stav.pozadi;
+        e.currentTarget.style.borderColor = stav.ramecek;
       }}
     >
       {/* Status dot */}
       <div style={{
-        width: 8, height: 8, borderRadius: 4, background: bg,
+        width: 8, height: 8, borderRadius: 4, background: stav.plnaVyplne ? stav.barvaPisma : bg,
         flexShrink: 0, marginLeft: 10,
       }} />
 
