@@ -32,6 +32,8 @@ import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSett
 import { SlevySettingsSection } from "./Settings/SlevySettingsSection";
 import { DetailZakazkySettingsSection } from "./Settings/DetailZakazkySettingsSection";
 import { ZasilkySettingsSection } from "./Settings/ZasilkySettingsSection";
+import { MotivZlSection } from "./Settings/MotivZlSection";
+import { useMotivZl } from "../hooks/useMotivZl";
 import { SdilenyPocitacSection } from "./Settings/SdilenyPocitacSection";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
@@ -117,11 +119,21 @@ const ACCENT_SWATCHES: { id: ThemeAccent; label: string; color: string }[] = [
   { id: "pink", label: "Růžová", color: "#ec4899" },
 ];
 
-const THEME_PRESETS: { id: ThemeMode; title: string; desc: string; bg: string; panel: string; accent: string; text: string; jenRootOwner?: boolean }[] = [
+const THEME_PRESETS: {
+  id: ThemeMode; title: string; desc: string; bg: string; panel: string; accent: string; text: string;
+  jenRootOwner?: boolean;
+  /** Ukáže se jen se zapnutým modulem (Nastavení → Vzhled → Moduly). */
+  modul?: "zl";
+  /** Motiv, který dává smysl jen s určitým zobrazením seznamu – nastaví se spolu s ním. */
+  seznam?: { displayMode: DisplayMode; zvyrazneniStavu: ZvyrazneniStavu };
+}[] = [
   { id: "paper-mint", title: "Paper Mint", desc: "Světlé, mátový akcent, papírový dojem.", bg: "#F7FBFA", panel: "#FFFFFF", accent: "#14B8A6", text: "#0F172A" },
   { id: "sand-ink", title: "Sand & Ink", desc: "Světlé, jantarový akcent, teplé tóny.", bg: "#FBF7F1", panel: "#FFFFFF", accent: "#F59E0B", text: "#111827" },
   { id: "sky-blueprint", title: "Sky Blueprint", desc: "Světlé, modrý akcent, technický styl.", bg: "#F5FAFF", panel: "#FFFFFF", accent: "#2563EB", text: "#0B1220" },
   { id: "lilac-frost", title: "Lilac Frost", desc: "Světlé, fialový akcent, jemné.", bg: "#FAF8FF", panel: "#FFFFFF", accent: "#7C3AED", text: "#111827" },
+  /* Modul ZL: vzhled Zakázkového listu. Plné barvy řádků a seznam k němu
+     patří – bez nich to není ono, proto se nastaví spolu s motivem. */
+  { id: "zl", title: "ZL", desc: "Vzhled Zakázkového listu: bílé panely, modrý akcent, tmavá lišta. Zapne i seznam s plnými barvami řádků.", bg: "#eef1f6", panel: "#FFFFFF", accent: "#1d6ff2", text: "#111827", modul: "zl", seznam: { displayMode: "list", zvyrazneniStavu: "plne" } },
   /* Jen pro majitele aplikace – neon z osmdesátek: magenta, azurová, fialová noc. */
   { id: "synthwave", title: "Synthwave", desc: "Tmavé, neonová magenta a azur, mřížka na obzoru. Jen pro vás.", bg: "linear-gradient(180deg, #0d0821 0%, #2a0e4f 70%, #ff2bd6 140%)", panel: "rgba(22, 11, 51, 0.92)", accent: "#ff2bd6", text: "#7ef9ff", jenRootOwner: true },
 ];
@@ -324,6 +336,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   /** Sekce API se ukazuje, jen když servis aspoň jeden z modulů má. */
   const maApi = maModul("api_catalog") || maModul("api_inventory");
   const isRootOwner = useIsRootOwner();
+  /** Modul „Motiv ZL“ – bez něj se předvolba ZL v nabídce neukáže. */
+  const motivZlZapnuty = useMotivZl(activeServiceId);
   const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
   const { createStatus, deleteStatus, saveServiceSettings } = useSettingsActions({ activeServiceId });
   
@@ -1009,7 +1023,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu", "asistent postupu", "postup zakázky", "kroky"] },
         { key: "appearance_theme", label: "Vzhled", keywords: ["tmavý", "světlý", "barva", "motiv", "téma", "akcent", "vzhled", "logo", "ikona", "podle systému", "dark mode", "předvolby"] },
         { key: "appearance_shortcuts", label: "Klávesové zkratky", keywords: ["klávesové zkratky", "zkratky", "klávesnice", "hotkey"] },
-        { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul"] },
+        { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul", "zl", "zakázkový list", "motiv zl"] },
         // Aktualizace jsou jen pro desktop – web je vždy aktuální.
         ...(isDesktop() ? [{ key: "about_updates" as const, label: "Aktualizace", keywords: ["aktualizace", "verze", "update", "nová verze", "nainstalovat"], badge: updateAvailable ? 1 : undefined }] : []),
         { key: "about_help", label: "Nápověda a podpora", keywords: ["nápověda", "napoveda", "help", "podpora", "nahlásit chybu", "chyba", "nefunguje", "návod", "manuál", "kontakt"] },
@@ -1662,14 +1676,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   </span>
                 </summary>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "var(--space-2)", paddingTop: "var(--space-2)" }}>
-                  {THEME_PRESETS.filter((t) => !t.jenRootOwner || isRootOwner).map((t) => {
+                  {THEME_PRESETS.filter((t) => (!t.jenRootOwner || isRootOwner) && (t.modul !== "zl" || motivZlZapnuty)).map((t) => {
                     const selected = activePreset === t.id;
                     return (
                       <button
                         key={t.id}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => apply(t.id)}
+                        onClick={() => {
+                          apply(t.id);
+                          // Seznam k motivu: mění se jen při jeho zapnutí, zpátky se nevrací.
+                          if (t.seznam) updateUi({ ...uiCfg, orders: { ...uiCfg.orders, ...t.seznam } });
+                        }}
                         style={{
                           padding: 0, overflow: "hidden", textAlign: "left", cursor: "pointer",
                           border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--panel)",
@@ -2341,6 +2359,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             />
           </SettingRows>
         </Card>
+      )}
+      {section.subsection === "appearance_modules" && activeServiceId && isAdmin && (
+        <MotivZlSection activeServiceId={activeServiceId} />
       )}
 
       {section.subsection === "orders_device_options" && (

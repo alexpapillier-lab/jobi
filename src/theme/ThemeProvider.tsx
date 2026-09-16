@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
-export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost" | "synthwave";
+export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost" | "synthwave" | "zl";
 
 /** Barevný akcent – společný pro světlou i tmavou variantu. */
 export type ThemeAccent = "default" | "blue" | "green" | "orange" | "purple" | "pink";
@@ -36,7 +36,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = STORAGE_KEYS.THEME;
-const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink", "synthwave"];
+const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "zl", "dark", "blue", "green", "orange", "purple", "pink", "synthwave"];
 
 /** Pojmenované předvolby, které jsou tmavé (kvůli přepínači Režim a ikoně). */
 export const DARK_PRESETS: ReadonlySet<ThemeMode> = new Set<ThemeMode>(["synthwave"]);

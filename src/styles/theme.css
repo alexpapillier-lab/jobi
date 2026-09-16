@@ -517,6 +517,88 @@
 }
 
 /* ---------------------------------------------------------------
+   ZL – světlé rozhraní s tmavou boční lištou.
+
+   Pro servisy, které přecházejí ze Zakázkového listu: bílé panely na
+   šedém podkladu, modrý akcent, malé poloměry, ploché stíny a žádné
+   rozostření – tedy pravý opak skleněného vzhledu ostatních motivů.
+   Tmavá lišta se dělá přepsáním barevných proměnných jen uvnitř <aside>
+   (a spodní lišty na telefonu): vnitřek lišty čte --panel/--text/--border
+   jako každá jiná část aplikace, takže stačí je tam podstrčit jiné
+   a nikde se nemusí měnit komponenty.
+
+   Zapíná se jako modul v Nastavení → Vzhled → Moduly; bez něj se motiv
+   v předvolbách vůbec nenabízí.
+   --------------------------------------------------------------- */
+[data-theme="zl"] {
+  --bg: #eef1f6;
+  --panel: #ffffff;
+  --panel-2: #f3f5f9;
+  --text: #111827;
+  --muted: #667085;
+  --border: #dfe3ea;
+  --icon: #667085;
+
+  /* Ploché stíny místo měkkých září – tabulka, ne sklo. */
+  --shadow: 0 2px 6px rgba(16, 24, 40, 0.10);
+  --shadow-soft: 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.12);
+  --glow: none;
+
+  --accent: #1d6ff2;
+  --accent-soft: rgba(29, 111, 242, 0.12);
+  --accent-hover: #1558c8;
+  --accent-glow: rgba(29, 111, 242, 0.22);
+  --accent-focus: #1d6ff2;
+
+  /* Hranatější tvary – původní 12/18/24 px vypadají vedle tabulky měkce. */
+  --radius-2xs: 3px;
+  --radius-xs: 5px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+
+  --blur: none;
+  color-scheme: light;
+}
+
+/* Tmavá boční lišta: uvnitř ní platí jiné --panel/--text/--border. */
+html[data-theme="zl"] aside,
+html[data-theme="zl"] nav[data-bottom-nav="1"] {
+  --panel: #1f2937;
+  --panel-2: rgba(255, 255, 255, 0.10);
+  --text: #e8ecf2;
+  --muted: #9aa6b6;
+  --border: rgba(255, 255, 255, 0.10);
+  --icon: #cbd5e1;
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.14);
+  --accent-glow: rgba(255, 255, 255, 0.18);
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+/* Bez rozostření nemá lišta vlastní pozadí na čem stavět – proužek
+   aktivní položky proto necháme modrý, ať je poznat i na tmavé. */
+html[data-theme="zl"] aside [aria-current="page"] {
+  font-weight: 800;
+}
+
+/* Tlačítka a pole: plná barva, tenký rámeček, bez gradientu a záře. */
+html[data-theme="zl"] .ui-btn--primary {
+  background: var(--accent);
+  box-shadow: none;
+}
+html[data-theme="zl"] .ui-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: none;
+  transform: none;
+}
+html[data-theme="zl"] .ui-card {
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+}
+
+/* ---------------------------------------------------------------
    Synthwave – neon z osmdesátek (jen pro majitele aplikace).
 
    Fialová noc s hvězdami, azurové záře po stranách, pruhované slunce
