@@ -37,6 +37,7 @@ const CAPABILITY_KEYS = [
   "can_edit_inventory",
   "can_adjust_inventory_quantity",
   "can_edit_service_settings",
+  "can_view_statistics",
   "branch_only",
 ] as const;
 
@@ -95,6 +96,11 @@ const CAPABILITY_INFO: Record<string, CapabilityInfo> = {
     label: "Nastavení servisu",
     description: "Může měnit základní a kontaktní údaje servisu v Nastavení.",
     group: "Nastavení",
+  },
+  can_view_statistics: {
+    label: "Vidět statistiky",
+    description: "Může otevřít stránku Statistiky – obrat, zisk, marže a žebříčky. Po odebrání stránku v navigaci nevidí a server mu čísla nevydá. Nově pozvaní členové ji vidí, dokud jim právo neodeberete.",
+    group: "Statistiky",
   },
   can_edit_devices: {
     label: "Stránka Zařízení",
@@ -203,6 +209,25 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   } | null>(null);
   const [capabilitiesEdit, setCapabilitiesEdit] = useState<Record<string, boolean>>({});
   const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
+  /**
+   * Práva, která zná databáze (povolene_capability()). Aplikace se
+   * aktualizuje sama, migrace se nasazuje ručně – když klient zná právo
+   * dřív než databáze, zápis všech práv najednou spadne na jediném
+   * neznámém klíči a majitel neuloží vůbec nic (viz opravneniSeznam.test).
+   * Neznámé právo se proto neposílá a v dialogu je jen šedé s vysvětlením.
+   * null = nepodařilo se zjistit, posílá se všechno jako dřív.
+   */
+  const [serverCapabilityKeys, setServerCapabilityKeys] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!supabase || !activeServiceId) return;
+    let zruseno = false;
+    void (supabase as any).rpc("povolene_capability").then(({ data }: { data: unknown }) => {
+      if (zruseno) return;
+      setServerCapabilityKeys(Array.isArray(data) ? data.filter((k): k is string => typeof k === "string") : null);
+    }).catch(() => { if (!zruseno) setServerCapabilityKeys(null); });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+  const serverZnaPravo = (key: string) => serverCapabilityKeys === null || serverCapabilityKeys.includes(key);
 
   const loadTeamDataInProgressRef = useRef(false);
 
@@ -935,6 +960,10 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                       CAPABILITY_KEYS.forEach((k) => {
                         initial[k] = caps[k] === true;
                       });
+                      // Statistiky viděl dřív každý; řádek bez klíče (starší člen,
+                      // databáze bez migrace) je proto „povoleno“, ne „zakázáno“.
+                      // Stejně to čte App.tsx i databázová kontrola.
+                      initial.can_view_statistics = caps.can_view_statistics !== false;
                       setCapabilitiesEdit(initial);
                       setCapabilitiesMember({
                         user_id: member.user_id,
@@ -1418,7 +1447,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               {capabilitiesMember.email || capabilitiesMember.user_id} · zaškrtnutá povolení platí v tomto servisu pro roli Člen.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 24 }}>
-              {(["Zakázky", "Zákazníci", "Nastavení", "Sklad a zařízení"] as const).map((group) => {
+              {(["Zakázky", "Zákazníci", "Nastavení", "Sklad a zařízení", "Statistiky"] as const).map((group) => {
                 const keysInGroup = CAPABILITY_KEYS.filter((k) => k !== "branch_only" && CAPABILITY_INFO[k]?.group === group);
                 if (keysInGroup.length === 0) return null;
                 return (
@@ -1438,6 +1467,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {keysInGroup.map((key) => {
                         const info = CAPABILITY_INFO[key];
+                        const podporovano = serverZnaPravo(key);
                         return (
                           <label
                             key={key}
@@ -1468,18 +1498,24 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                             <input
                               type="checkbox"
                               checked={capabilitiesEdit[key] === true}
+                              disabled={!podporovano}
                               onChange={(e) => {
                                 setCapabilitiesEdit((prev) => ({ ...prev, [key]: e.target.checked }));
                               }}
                               style={{ marginTop: 2, flexShrink: 0 }}
                             />
-                            <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ flex: 1, minWidth: 0, opacity: podporovano ? 1 : 0.6 }}>
                               <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)", marginBottom: 2 }}>
                                 {info?.label ?? key}
                               </div>
                               <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
                                 {info?.description ?? ""}
                               </div>
+                              {!podporovano && (
+                                <div style={{ fontSize: 12, color: "var(--warning, #b45309)", marginTop: 4 }}>
+                                  Databáze tohle právo ještě nezná – je potřeba nasadit poslední migrace. Do té doby se neukládá.
+                                </div>
+                              )}
                             </div>
                           </label>
                         );
@@ -1516,6 +1552,11 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                 onClick={async () => {
                   if (!supabase || !capabilitiesMember || !session) return;
                   setCapabilitiesSaving(true);
+                  // Právo, které databáze nezná, by shodilo celý zápis – neposílá se.
+                  const kOdeslani: Record<string, boolean> = {};
+                  for (const [k, v] of Object.entries(capabilitiesEdit)) {
+                    if (serverZnaPravo(k)) kOdeslani[k] = v;
+                  }
                   try {
                     if (isRootOwner) {
                       const { data: sessionData } = await supabase.auth.getSession();
@@ -1524,7 +1565,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                         body: {
                           serviceId: capabilitiesMember.service_id,
                           userId: capabilitiesMember.user_id,
-                          capabilities: capabilitiesEdit,
+                          capabilities: kOdeslani,
                         },
                         ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
                       });
@@ -1534,7 +1575,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                       const { error: rpcError } = await (supabase as any).rpc("set_member_capabilities", {
                         p_service_id: capabilitiesMember.service_id,
                         p_user_id: capabilitiesMember.user_id,
-                        p_capabilities: capabilitiesEdit,
+                        p_capabilities: kOdeslani,
                       });
                       if (rpcError) throw rpcError;
                     }
@@ -1544,7 +1585,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                     setTeamMembers((prev) =>
                       prev.map((m) =>
                         m.user_id === capabilitiesMember.user_id && m.service_id === capabilitiesMember.service_id
-                          ? { ...m, capabilities: { ...capabilitiesEdit } }
+                          ? { ...m, capabilities: { ...(m.capabilities as Record<string, boolean> | null ?? {}), ...kOdeslani } }
                           : m
                       )
                     );

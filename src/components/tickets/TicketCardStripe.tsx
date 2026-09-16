@@ -1,6 +1,7 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketTechnik } from "./fields";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -8,40 +9,46 @@ type Props = {
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
-export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, printButton }: Props) {
+export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, printButton, zvyrazneni = "jemne" }: Props) {
   const bg = meta?.bg || "var(--border)";
   const finalPrice = computeFinalPrice(t);
+  const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
+  const hoverBg = stav.plnaVyplne ? stav.pozadi : `${bg}06`;
 
   return (
     <div
       onClick={onClick}
       style={{
+        ...promenneRadku(stav),
         textAlign: "left",
         borderRadius: 6,
-        border: `1px solid ${bg}20`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
         cursor: "pointer",
         transition: "background 0.1s ease, border-color 0.1s ease",
-        color: "var(--text)",
+        color: stav.barvaPisma,
         overflow: "hidden",
         display: "flex",
         alignItems: "stretch",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = `${bg}06`;
-        e.currentTarget.style.borderColor = `${bg}40`;
+        e.currentTarget.style.background = hoverBg;
+        e.currentTarget.style.borderColor = stav.plnaVyplne ? stav.ramecek : `${bg}40`;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = "var(--panel)";
-        e.currentTarget.style.borderColor = `${bg}20`;
+        e.currentTarget.style.background = stav.pozadi;
+        e.currentTarget.style.borderColor = stav.ramecek;
       }}
     >
-      {/* Status color bar */}
+      {/* Status color bar – na plné výplni by splynul, tak se přebarví písmem. */}
       <div style={{
         width: 6,
-        background: bg,
+        background: stav.plnaVyplne ? stav.barvaPisma : bg,
+        opacity: stav.plnaVyplne ? 0.55 : 1,
         flexShrink: 0,
       }} />
 

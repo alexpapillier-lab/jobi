@@ -6,7 +6,7 @@
  * žluté.
  */
 import { describe, it, expect } from "vitest";
-import { barvaTextu, jas, rozlozBarvu, stylStavu, jeZvyrazneni } from "./zvyrazneniStavu";
+import { barvaTextu, jas, rozlozBarvu, stylStavu, jeZvyrazneni, promenneRadku } from "./zvyrazneniStavu";
 
 const CERNA = "#10171A";
 const BILA = "#FFFFFF";
@@ -84,6 +84,28 @@ describe("stylStavu", () => {
     const s = stylStavu(undefined, "vyrazne");
     expect(s.pozadi).toBe("var(--panel)");
     expect(s.barvaPisma).toBe("var(--text)");
+  });
+});
+
+describe("promenneRadku", () => {
+  it("bez plné výplně nic nepřepisuje", () => {
+    expect(promenneRadku(stylStavu("#0E7C6B", "jemne"))).toEqual({});
+    expect(promenneRadku(stylStavu("#0E7C6B", "zadne"))).toEqual({});
+    // Ztlumený hotový stav není plná výplň – písmo zůstává z motivu.
+    expect(promenneRadku(stylStavu("#0E7C6B", "vyrazne", true))).toEqual({});
+  });
+
+  // Sdílené prvky karty berou barvu z proměnných, ne z rodiče. Bez přepisu
+  // by na sytě modrém řádku zůstalo šedé datum a jméno zákazníka.
+  it("na plné výplni přepíše text, tlumený text i akcent podle písma", () => {
+    const tmave = promenneRadku(stylStavu("#1B3A6B", "vyrazne"));
+    expect(tmave["--text"]).toBe(BILA);
+    expect(tmave["--muted"]).toContain("255,255,255");
+    expect(tmave["--accent"]).toBe(BILA);
+
+    const svetle = promenneRadku(stylStavu("#FFE500", "vyrazne"));
+    expect(svetle["--text"]).toBe(CERNA);
+    expect(svetle["--muted"]).toContain("16,23,26");
   });
 });
 

@@ -208,7 +208,7 @@ export default function App() {
       return null;
     }
   });
-  const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const { isAdmin, hasCapability, capabilities } = useActiveRole(activeServiceId);
 
   // Přítomnost v týmu (zelená tečka v Nastavení → Tým, bubliny „kdo tu je“
   // u zakázky). Jeden kanál na servis, spuštěný tady, aby byl online každý,
@@ -221,6 +221,13 @@ export default function App() {
     return startServicePresence(activeServiceId, presenceUserId, { nickname: presenceNickname, avatarUrl: presenceAvatarUrl });
   }, [activeServiceId, presenceUserId, presenceNickname, presenceAvatarUrl]);
   const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
+  /* Statistiky ukazují peníze celého servisu – člen je vidí, dokud mu právo
+     can_view_statistics někdo neodebere (Nastavení → Tým). Chybějící klíč
+     znamená „povoleno“, ne „zakázáno“: statistiky dřív viděl každý a řádek
+     bez klíče je starší člen nebo databáze bez migrace – ani jednomu se
+     nesmí stránka ztratit. Server to čte stejně; tady jde o to, aby po
+     odebrání stránka zmizela z navigace a nešla otevřít zkratkou. */
+  const canViewStatistics = isAdmin || capabilities.can_view_statistics !== false;
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
   /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
   const [servicesLoaded, setServicesLoaded] = useState(false);
@@ -830,6 +837,14 @@ export default function App() {
     }
   }, [smsEnabled, activePage]);
 
+  // Člen bez práva na statistiky na nich nesmí zůstat (po přepnutí servisu,
+  // po odebrání práva za běhu).
+  useEffect(() => {
+    if (!canViewStatistics && activePage === "statistics") {
+      setActivePage("orders");
+    }
+  }, [canViewStatistics, activePage]);
+
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
   useEffect(() => {
     const onUiUpdated = () => setUiCfg(safeLoadUIConfig());
@@ -871,12 +886,12 @@ export default function App() {
     ];
     const offs = navMap.map(([id, page]) =>
       registerShortcut(id, () => setActivePage(page), {
-        enabled: () => page !== "invoices" || invoicesAvailable,
+        enabled: () => (page !== "invoices" || invoicesAvailable) && (page !== "statistics" || canViewStatistics),
       })
     );
     offs.push(registerShortcut("help", () => setShortcutsHelpOpen(true)));
     return () => { for (const off of offs) off(); };
-  }, [session, invoicesAvailable]);
+  }, [session, invoicesAvailable, canViewStatistics]);
 
   // Escape zavře nápovědu zkratek. Není to nastavitelná zkratka, proto zvlášť.
   useEffect(() => {
@@ -907,6 +922,7 @@ export default function App() {
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
       if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
+        if (page === "statistics" && !canViewStatistics) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
         const sub = ev.detail?.subsection;
@@ -921,7 +937,7 @@ export default function App() {
 window.removeEventListener("jobsheet:navigate" as any, onNav);
     document.removeEventListener("jobsheet:navigate" as any, onNav);
     };
-  }, [invoicesAvailable]);
+  }, [invoicesAvailable, canViewStatistics]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -1350,6 +1366,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           }}
           smsUnreadCount={globalSmsUnreadCount}
           smsEnabled={smsEnabled}
+          statisticsEnabled={canViewStatistics}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1479,7 +1496,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
-          {visitedPages.has("statistics") && (
+          {canViewStatistics && visitedPages.has("statistics") && (
             <div style={{ display: activePage === "statistics" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "statistics"}>
               <Statistics
                 activeServiceId={activeServiceId}

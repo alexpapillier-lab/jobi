@@ -41,6 +41,8 @@ export type BottomNavProps = {
   invoicingEnabled?: boolean;
   smsEnabled?: boolean;
   smsUnreadCount?: number;
+  /** Člen bez práva can_view_statistics záložku Statistiky nevidí. */
+  statisticsEnabled?: boolean;
   services?: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId?: string | null;
   setActiveServiceId?: (serviceId: string | null) => void;
@@ -55,6 +57,7 @@ export function BottomNav({
   invoicingEnabled = true,
   smsEnabled = false,
   smsUnreadCount = 0,
+  statisticsEnabled = true,
   services = [],
   activeServiceId = null,
   setActiveServiceId,
@@ -80,7 +83,7 @@ export function BottomNav({
     ...(smsEnabled ? [SMS] : []),
     DEVICES,
     ...(invoicingEnabled ? [INVOICES] : []),
-    STATS,
+    ...(statisticsEnabled ? [STATS] : []),
     SETTINGS,
   ];
 

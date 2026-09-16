@@ -64,7 +64,35 @@ export type StylStavu = {
   barvaPisma: string;
   ramecek: string;
   sirkaProuzku: number;
+  /** Řádek je vyplněný plnou barvou stavu – písmo uvnitř se musí přebarvit. */
+  plnaVyplne: boolean;
 };
+
+/**
+ * CSS proměnné pro řádek s plnou výplní.
+ *
+ * Sdílené prvky karty (`fields.tsx`) berou barvy z `var(--text)` a
+ * `var(--muted)`, ne z `color` rodiče. Na plně vyplněném řádku by tak datum
+ * nebo jméno zákazníka zůstaly šedé na sytě modré. Místo přepisování každého
+ * prvku se proměnné přepíšou na samotném řádku – potomci se přizpůsobí sami.
+ *
+ * `--accent` a `--accent-soft` (štítek technika, ikona zařízení) se pro
+ * jistotu srovnají se stejnou barvou; na barevném podkladu je jinak akcent
+ * často nečitelný.
+ */
+export function promenneRadku(stav: StylStavu): Record<string, string> {
+  if (!stav.plnaVyplne) return {};
+  const pismo = stav.barvaPisma;
+  const tlumene = pismo === "#FFFFFF" ? "rgba(255,255,255,0.78)" : "rgba(16,23,26,0.72)";
+  const jemne = pismo === "#FFFFFF" ? "rgba(255,255,255,0.35)" : "rgba(16,23,26,0.25)";
+  return {
+    "--text": pismo,
+    "--muted": tlumene,
+    "--border": jemne,
+    "--accent": pismo,
+    "--accent-soft": pismo === "#FFFFFF" ? "rgba(255,255,255,0.18)" : "rgba(16,23,26,0.10)",
+  };
+}
 
 /**
  * Styl řádku zakázky podle barvy stavu.
@@ -81,7 +109,7 @@ export function stylStavu(
   const jeHex = rozlozBarvu(bg) !== null;
 
   if (rezim === "zadne" || !jeHex) {
-    return { pozadi: "var(--panel)", barvaPisma: "var(--text)", ramecek: `${bg}30`, sirkaProuzku: 4 };
+    return { pozadi: "var(--panel)", barvaPisma: "var(--text)", ramecek: `${bg}30`, sirkaProuzku: 4, plnaVyplne: false };
   }
 
   if (rezim === "vyrazne") {
@@ -90,6 +118,7 @@ export function stylStavu(
       barvaPisma: konecny ? "var(--text)" : barvaTextu(bg),
       ramecek: bg,
       sirkaProuzku: 6,
+      plnaVyplne: !konecny,
     };
   }
 
@@ -99,5 +128,6 @@ export function stylStavu(
     barvaPisma: "var(--text)",
     ramecek: konecny ? `${bg}30` : `${bg}55`,
     sirkaProuzku: 6,
+    plnaVyplne: false,
   };
 }

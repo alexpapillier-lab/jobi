@@ -194,6 +194,8 @@ type OrdersProps = {
 const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
 /** Zda je v okně Nová zakázka rozbalená sekce „Další údaje“. */
 const NEW_ORDER_MORE_OPEN_KEY = "jobsheet_new_order_more_open_v1";
+/** Zda jsou u zařízení v nové zakázce rozbalené „Další údaje zařízení“. */
+const NEW_ORDER_DEVICE_MORE_OPEN_KEY = "jobsheet_new_order_device_more_open_v1";
 
 /** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
 type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
@@ -1527,6 +1529,15 @@ export default function Orders({
       return false;
     }
   });
+  /** „Další údaje zařízení“ u každého zařízení v nové zakázce – výchozí otevřené, sbalení se pamatuje. */
+  const [newOrderDeviceMoreOpen, setNewOrderDeviceMoreOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(NEW_ORDER_DEVICE_MORE_OPEN_KEY);
+      return v === null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
   /** Které zařízení v nové zakázce je rozbalené (ostatní jsou sbalené karty). */
   const [expandedDeviceIdx, setExpandedDeviceIdx] = useState<number>(0);
   /** Rozbalený úplný seznam oprav z ceníku u zařízení (index → true). */
@@ -2147,6 +2158,14 @@ export default function Orders({
       // ignore
     }
   }, [newOrderMoreOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NEW_ORDER_DEVICE_MORE_OPEN_KEY, newOrderDeviceMoreOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [newOrderDeviceMoreOpen]);
 
   /**
    * Našeptávač zákazníků v nové zakázce: jméno, telefon, e-mail nebo firma.
@@ -4461,18 +4480,21 @@ export default function Orders({
         <React.Fragment key={t.id}>{node}</React.Fragment>
       );
 
+    /* Síla zvýraznění stavu platí pro všechny režimy zobrazení – dřív ji
+       znal jen Seznam a v ostatních režimech volba v Nastavení nic nedělala. */
+    const zvyrazneni = uiCfg.orders.zvyrazneniStavu;
     switch (mode) {
       case "compact":
-        return wrap(<TicketCardCompact ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
+        return wrap(<TicketCardCompact ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
       case "compact-extra":
-        return wrap(<TicketCardCompactExtra ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
+        return wrap(<TicketCardCompactExtra ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
       case "grid":
-        return wrap(<TicketCardGrid ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
+        return wrap(<TicketCardGrid ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
       case "stripe":
-        return wrap(<TicketCardStripe ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} />);
+        return wrap(<TicketCardStripe ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
       case "list":
       default:
-        return wrap(<TicketCardList ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={uiCfg.orders.zvyrazneniStavu} />);
+        return wrap(<TicketCardList ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
     }
   };
 
@@ -4636,6 +4658,7 @@ export default function Orders({
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
             smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
+            zvyrazneni={uiCfg.orders.zvyrazneniStavu}
           />
         )}
         {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
@@ -4653,6 +4676,7 @@ export default function Orders({
               printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
               smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
+              zvyrazneni={uiCfg.orders.zvyrazneniStavu}
             />
           ) : (
             <TicketStatusGrouped
@@ -4664,6 +4688,7 @@ export default function Orders({
               printButtonFor={(t) => renderPrintButton(t, true)}
               customOrder={uiCfg.orders.statusGroupedOrder}
               smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
+              zvyrazneni={uiCfg.orders.zvyrazneniStavu}
             />
           )
         )}
@@ -4676,6 +4701,7 @@ export default function Orders({
             statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
             printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
             customOrder={uiCfg.orders.statusGroupedOrder}
+            zvyrazneni={uiCfg.orders.zvyrazneniStavu}
           />
         )}
         {/* Card-based modes: render individual cards (skip if table/timeline/status-grouped already rendered above) */}
@@ -5313,153 +5339,30 @@ export default function Orders({
                             {multi && idx === 0 && <div style={fieldMuted}>Termín prvního zařízení se přenese na ostatní.</div>}
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <Button
-              variant="soft"
-              size="sm"
-              icon={<PlusIcon size={14} />}
-              style={{ marginTop: 10 }}
-              disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
-              onClick={() => {
-                setNewDraft((p) => ({
-                  ...p,
-                  devices: [
-                    ...p.devices,
-                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
-                  ],
-                }));
-                setExpandedDeviceIdx(newDraft.devices.length);
-              }}
-              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Nejdřív vyplňte název posledního zařízení" : "Přidat další zařízení"}
-            >
-              Přidat další zařízení
-            </Button>
-          </div>
 
-          {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
-          <div style={{ ...card, padding: 0, overflow: "hidden" }}>
-            <button
-              type="button"
-              onClick={() => setNewOrderMoreOpen((v) => !v)}
-              aria-expanded={newOrderMoreOpen}
-              aria-controls="new-order-more"
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={16} /></span>
-              <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
-              {!newOrderMoreOpen && (
-                <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  e-mail, adresa, firma · IMEI, heslo, příslušenství, cena · přijímací fotky
-                </span>
-              )}
-            </button>
-
-            {newOrderMoreOpen && (
-              <div id="new-order-more" style={{ padding: 12, paddingTop: 0, display: "grid", gap: 16 }}>
-                {/* Zákazník – doplňující */}
-                <div>
-                  <div style={subHeading}>Zákazník</div>
-                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
-                      <input
-                        id="new-order-email"
-                        type="email"
-                        value={newDraft.customerEmail}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
-                        style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
-                        placeholder="jan.novak@email.cz"
-                      />
-                      {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
-                    </div>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
-                      <input
-                        value={newDraft.company}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Novák s.r.o."
-                      />
-                    </div>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
-                      <input
-                        id="new-order-ico"
-                        inputMode="numeric"
-                        value={formatIco(newDraft.ico)}
-                        onChange={(e) => {
-                          const cleaned = e.target.value.replace(/[^\d]/g, "");
-                          setNewDraft((p) => ({ ...p, ico: cleaned }));
-                        }}
-                        style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
-                        placeholder="1234 5678"
-                        maxLength={9}
-                      />
-                      {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
-                    </div>
-                  </div>
-
-                  {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
-                      by sebral půlku šířky, proto tam jsou dva sloupce. */}
-                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
-                    <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
-                      <div style={fieldLabel}>Ulice</div>
-                      <input
-                        value={newDraft.addressStreet}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Dlouhá 12"
-                      />
-                    </div>
-                    <div>
-                      <div style={fieldLabel}>Město</div>
-                      <input
-                        value={newDraft.addressCity}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Praha"
-                      />
-                    </div>
-                    <div>
-                      <div style={fieldLabel}>PSČ</div>
-                      <input
-                        id="new-order-zip"
-                        inputMode="numeric"
-                        value={formatZipCode(newDraft.addressZip)}
-                        onChange={(e) => {
-                          const cleaned = e.target.value.replace(/[^\d]/g, "");
-                          setNewDraft((p) => ({ ...p, addressZip: cleaned }));
-                        }}
-                        style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
-                        placeholder="110 00"
-                        maxLength={6}
-                      />
-                      {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
-                    </div>
-                  </div>
-
-                  <div style={fieldLabel}>Poznámka k zákazníkovi</div>
-                  <textarea
-                    value={newDraft.customerInfo}
-                    onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
-                    style={{ ...baseFieldTextArea, minHeight: 64 }}
-                    placeholder="Volá jen odpoledne, preferuje SMS"
-                  />
-                </div>
-
-                {/* Zařízení – doplňující, pro každé zařízení zvlášť */}
-                {newDraft.devices.map((dev, idx) => (
-                  <div key={idx}>
-                    <div style={subHeading}>
-                      Zařízení
-                      {newDraft.devices.length > 1 && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0 }}> {idx + 1} · {dev.deviceLabel.trim() || "bez názvu"}</span>}
-                      {newDraft.devices.length === 1 && dev.deviceLabel.trim() && <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0 }}> · {dev.deviceLabel.trim()}</span>}
-                    </div>
+                        {/* Další údaje zařízení (IMEI, heslo, stav, příslušenství, převzetí,
+                            cena, poznámka). Dřív bydlely až dole v samostatné sekci „Další
+                            údaje“ – při příjmu se pak přeskakovalo mezi zařízením nahoře
+                            a jeho údaji o obrazovku níž. Patří k zařízení, tak jsou u něj;
+                            sbalení si aplikace pamatuje stejně jako u sekce Další údaje. */}
+                        <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => setNewOrderDeviceMoreOpen((v) => !v)}
+                            aria-expanded={newOrderDeviceMoreOpen}
+                            aria-controls={`new-order-device-more-${idx}`}
+                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
+                          >
+                            <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderDeviceMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
+                            <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zařízení</span>
+                            {!newOrderDeviceMoreOpen && (
+                              <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                IMEI, heslo, stav, příslušenství, převzetí, cena
+                              </span>
+                            )}
+                          </button>
+                          {newOrderDeviceMoreOpen && (
+                            <div id={`new-order-device-more-${idx}`}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
                       <div>
                         <div style={{ ...fieldLabel, marginTop: 0 }}>IMEI / SN</div>
@@ -5626,8 +5529,147 @@ export default function Orders({
                       style={{ ...baseFieldTextArea, minHeight: 64 }}
                       placeholder="Zákazník si přeje zachovat data"
                     />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                );
+              })}
+            </div>
+            <Button
+              variant="soft"
+              size="sm"
+              icon={<PlusIcon size={14} />}
+              style={{ marginTop: 10 }}
+              disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
+              onClick={() => {
+                setNewDraft((p) => ({
+                  ...p,
+                  devices: [
+                    ...p.devices,
+                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
+                  ],
+                }));
+                setExpandedDeviceIdx(newDraft.devices.length);
+              }}
+              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Nejdřív vyplňte název posledního zařízení" : "Přidat další zařízení"}
+            >
+              Přidat další zařízení
+            </Button>
+          </div>
+
+          {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
+          <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+            <button
+              type="button"
+              onClick={() => setNewOrderMoreOpen((v) => !v)}
+              aria-expanded={newOrderMoreOpen}
+              aria-controls="new-order-more"
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
+            >
+              <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={16} /></span>
+              <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
+              {!newOrderMoreOpen && (
+                <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  e-mail, adresa, firma, poznámka · přijímací fotky
+                </span>
+              )}
+            </button>
+
+            {newOrderMoreOpen && (
+              <div id="new-order-more" style={{ padding: 12, paddingTop: 0, display: "grid", gap: 16 }}>
+                {/* Zákazník – doplňující */}
+                <div>
+                  <div style={subHeading}>Zákazník</div>
+                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
+                    <div>
+                      <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
+                      <input
+                        id="new-order-email"
+                        type="email"
+                        value={newDraft.customerEmail}
+                        onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
+                        style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
+                        placeholder="jan.novak@email.cz"
+                      />
+                      {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
+                    </div>
+                    <div>
+                      <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
+                      <input
+                        value={newDraft.company}
+                        onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
+                        style={baseFieldInput}
+                        placeholder="Novák s.r.o."
+                      />
+                    </div>
+                    <div>
+                      <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
+                      <input
+                        id="new-order-ico"
+                        inputMode="numeric"
+                        value={formatIco(newDraft.ico)}
+                        onChange={(e) => {
+                          const cleaned = e.target.value.replace(/[^\d]/g, "");
+                          setNewDraft((p) => ({ ...p, ico: cleaned }));
+                        }}
+                        style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
+                        placeholder="1234 5678"
+                        maxLength={9}
+                      />
+                      {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
+                    </div>
+                  </div>
+
+                  {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
+                      by sebral půlku šířky, proto tam jsou dva sloupce. */}
+                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
+                    <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
+                      <div style={fieldLabel}>Ulice</div>
+                      <input
+                        value={newDraft.addressStreet}
+                        onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
+                        style={baseFieldInput}
+                        placeholder="Dlouhá 12"
+                      />
+                    </div>
+                    <div>
+                      <div style={fieldLabel}>Město</div>
+                      <input
+                        value={newDraft.addressCity}
+                        onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
+                        style={baseFieldInput}
+                        placeholder="Praha"
+                      />
+                    </div>
+                    <div>
+                      <div style={fieldLabel}>PSČ</div>
+                      <input
+                        id="new-order-zip"
+                        inputMode="numeric"
+                        value={formatZipCode(newDraft.addressZip)}
+                        onChange={(e) => {
+                          const cleaned = e.target.value.replace(/[^\d]/g, "");
+                          setNewDraft((p) => ({ ...p, addressZip: cleaned }));
+                        }}
+                        style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
+                        placeholder="110 00"
+                        maxLength={6}
+                      />
+                      {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
+                    </div>
+                  </div>
+
+                  <div style={fieldLabel}>Poznámka k zákazníkovi</div>
+                  <textarea
+                    value={newDraft.customerInfo}
+                    onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
+                    style={{ ...baseFieldTextArea, minHeight: 64 }}
+                    placeholder="Volá jen odpoledne, preferuje SMS"
+                  />
+                </div>
 
                 {/* Přijímací fotky – nahrají se po vytvoření zakázky */}
                 <div id="new-order-photos-before">

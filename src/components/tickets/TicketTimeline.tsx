@@ -3,6 +3,7 @@ import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 import { CheckIcon } from "../icons";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   tickets: TicketCardData[];
@@ -10,6 +11,8 @@ type Props = {
   normalizeStatus: (raw: any) => string | null;
   onClickDetail: (id: string) => void;
   smsUnreadByTicketId?: Record<string, number>;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
 const smsBadge = (n: number) =>
@@ -48,7 +51,7 @@ function groupByDay(tickets: TicketCardData[]): { date: string; label: string; t
     });
 }
 
-export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDetail, smsUnreadByTicketId = {} }: Props) {
+export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDetail, smsUnreadByTicketId = {}, zvyrazneni = "jemne" }: Props) {
   const groups = useMemo(() => groupByDay(tickets), [tickets]);
 
   return (
@@ -87,19 +90,26 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
               const meta = st !== null ? getByKey(st) : undefined;
               const statusColor = meta?.bg || "var(--muted)";
               const finalPrice = computeFinalPrice(t);
+              const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
+              /* Odznak stavu na plné výplni: barva stavu by splynula s pozadím. */
+              const odznak = stav.plnaVyplne
+                ? { color: stav.barvaPisma, background: "rgba(0,0,0,0.12)", border: `1px solid ${stav.ramecek}` }
+                : { color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}30` };
 
               return (
                 <div
                   key={t.id}
                   onClick={() => onClickDetail(t.id)}
                   style={{
+                    ...promenneRadku(stav),
                     display: "flex",
                     alignItems: "center",
                     gap: 12,
                     padding: "10px 14px",
                     borderRadius: 10,
-                    border: `1px solid ${statusColor}20`,
-                    background: "var(--panel)",
+                    border: `1px solid ${stav.ramecek}`,
+                    background: stav.pozadi,
+                    color: stav.barvaPisma,
                     cursor: "pointer",
                     transition: "transform 0.12s ease, box-shadow 0.12s ease",
                     position: "relative",
@@ -147,13 +157,13 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
                   )}
 
                   {meta?.label && (
-                    <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: statusColor, padding: "2px 7px", borderRadius: 5, background: `${statusColor}18`, border: `1px solid ${statusColor}30`, whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, ...odznak, padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
                       {meta.isFinal && <CheckIcon size={10} />}{meta.label}
                     </span>
                   )}
 
                   {finalPrice > 0 && (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: stav.plnaVyplne ? "var(--text)" : "var(--accent)", whiteSpace: "nowrap", flexShrink: 0 }}>
                       {korunami(finalPrice)}
                     </span>
                   )}

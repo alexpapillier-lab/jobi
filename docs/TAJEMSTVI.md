@@ -33,6 +33,7 @@ Sdílená tajemství mezi pg_cron a edge funkcemi. Vytvářejí se
 |---|---|
 | `automations_cron_secret` | pg_cron → `automations-run` |
 | `alerts_cron_secret` | pg_cron → `alerts-check` |
+| `statistiky_report_cron_secret` | pg_cron → `statistics-report-send` (report statistik e-mailem, viz `docs/STATISTIKY_EMAILEM.md`) |
 
 Nikam jinam se nekopírují a nikdo je nepotřebuje znát.
 

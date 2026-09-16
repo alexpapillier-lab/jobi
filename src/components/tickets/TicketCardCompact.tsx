@@ -2,6 +2,7 @@ import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator, TicketTechnik } from "./fields";
 import { CheckIcon } from "../icons";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -9,37 +10,43 @@ type Props = {
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
-export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, printButton }: Props) {
+export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, printButton, zvyrazneni = "jemne" }: Props) {
   const bg = meta?.bg || "var(--border)";
   const finalPrice = computeFinalPrice(t);
+  /* Stejný dopočet jako u režimu Seznam – dřív měl kompaktní řádek
+     barvu stavu jen v proužku, ať bylo v Nastavení zvoleno cokoli. */
+  const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
 
   return (
     <div
       onClick={onClick}
       style={{
+        ...promenneRadku(stav),
         textAlign: "left",
         padding: 0,
         borderRadius: 10,
-        border: `1px solid ${bg}30`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
         cursor: "pointer",
         boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         transition: "transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease",
-        color: "var(--text)",
+        color: stav.barvaPisma,
         overflow: "hidden",
         display: "flex",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-1px)";
         e.currentTarget.style.boxShadow = `0 4px 12px ${bg}14`;
-        e.currentTarget.style.borderColor = `${bg}50`;
+        e.currentTarget.style.borderColor = stav.plnaVyplne ? stav.ramecek : `${bg}50`;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "translateY(0)";
         e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.03)";
-        e.currentTarget.style.borderColor = `${bg}30`;
+        e.currentTarget.style.borderColor = stav.ramecek;
       }}
     >
       <div style={{ width: 4, background: bg, flexShrink: 0 }} />

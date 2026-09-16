@@ -6,6 +6,7 @@ import { TrialBanner } from "../components/TrialBanner";
 import { JobiDocsGuideModal } from "../components/JobiDocsGuideModal";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { BottomNav } from "./BottomNav";
+import { BranchBar } from "./BranchBar";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
 type SidebarPosition = "left" | "right" | "bottom";
@@ -43,6 +44,7 @@ export function AppLayout({
   sidebarPosition = "left",
   smsUnreadCount = 0,
   smsEnabled = false,
+  statisticsEnabled = true,
   sidebarPinned = false,
   onSidebarPinnedChange,
 }: {
@@ -60,6 +62,8 @@ export function AppLayout({
   sidebarPosition?: SidebarPosition;
   smsUnreadCount?: number;
   smsEnabled?: boolean;
+  /** Člen bez práva can_view_statistics stránku Statistiky v navigaci nevidí. */
+  statisticsEnabled?: boolean;
   /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
   sidebarPinned?: boolean;
   onSidebarPinnedChange?: (pinned: boolean) => void;
@@ -259,6 +263,7 @@ export function AppLayout({
             onTogglePin: isBottom ? undefined : togglePinned,
             smsUnreadCount,
             smsEnabled,
+            statisticsEnabled,
           } satisfies SidebarProps)}
         />
       </aside>
@@ -271,6 +276,7 @@ export function AppLayout({
           invoicingEnabled={invoicingEnabled}
           smsEnabled={smsEnabled}
           smsUnreadCount={smsUnreadCount}
+          statisticsEnabled={statisticsEnabled}
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
@@ -294,6 +300,8 @@ export function AppLayout({
         }}
       >
         <TrialBanner activeServiceId={activeServiceId} />
+        {/* Aktivní pobočka na očích – na každé stránce, ne jen dole v liště. */}
+        <BranchBar narrow={isNarrow} />
         <JobiDocsGuideModal open={showJobiDocsGuide} onClose={handleCloseJobiDocsGuide} />
         <main
           ref={mainRef}

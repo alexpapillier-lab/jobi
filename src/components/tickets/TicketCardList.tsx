@@ -1,7 +1,7 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketDate, TicketDevice, TicketCustomer, TicketRepair, MetaSeparator, TicketTechnik } from "./fields";
-import { stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -24,6 +24,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
     <div
       onClick={onClick}
       style={{
+        ...promenneRadku(stav),
         textAlign: "left",
         padding: 0,
         borderRadius: 10,

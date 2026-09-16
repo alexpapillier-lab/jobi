@@ -20,6 +20,7 @@ const DEFAULT_MEMBER_CAPABILITIES: Record<string, boolean> = {
   can_edit_inventory: true,
   can_adjust_inventory_quantity: true,
   can_edit_service_settings: true,
+  can_view_statistics: true,
 };
 
 serve(async (req) => {

@@ -37,6 +37,7 @@ import { ProfileSettingsSection } from "./Settings/ProfileSettingsSection";
 import { AppUpdateCard } from "./Settings/AppUpdateCard";
 import { AutomationsSection } from "./Settings/Automations/AutomationsSection";
 import { BranchesSettings } from "./Settings/BranchesSettings";
+import { StatistikyReportSection } from "./Settings/StatistikyReportSection";
 import { useIsRootOwner } from "../hooks/useIsRootOwner";
 import { isDesktop } from "../lib/platform";
 import { showToast } from "../components/Toast";
@@ -63,7 +64,7 @@ import { useAuth } from "../auth/AuthProvider";
 export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
-  | "communication_automations" | "communication_chat"
+  | "communication_automations" | "communication_chat" | "communication_report"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
@@ -80,7 +81,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_tisk_dokumentu: "documents",
-  service_sms: "communication", communication_automations: "communication", communication_chat: "communication",
+  service_sms: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
   service_team: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
   profile_me: "profile",
@@ -950,6 +951,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         ...(isAdmin ? [{ key: "service_sms" as const, label: "SMS", keywords: ["sms", "telefonní číslo", "zprávy", "přesměrování", "hovory", "šablona zprávy"] }] : []),
         ...(isAdmin ? [{ key: "communication_automations" as const, label: "Automatizace", keywords: ["automatizace", "pravidla", "připomínka", "sms", "e-mail", "skladné", "recenze", "vyzvednutí"] }] : []),
         ...(isAdmin ? [{ key: "communication_chat" as const, label: "Chat týmu", keywords: ["chat", "zprávy", "tým", "pobočka", "soukromá zpráva", "upozornění", "zvuk"] }] : []),
+        ...(isAdmin ? [{ key: "communication_report" as const, label: "Report statistik", keywords: ["report", "statistiky", "e-mail", "email", "pdf", "měsíční", "týdenní", "obrat", "zisk", "přehled", "zpráva", "souhrn"] }] : []),
       ],
     },
     {
@@ -1003,7 +1005,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "communication_report" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -1407,6 +1409,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* KOMUNIKACE - AUTOMATIZACE */}
       {section.subsection === "communication_automations" && activeServiceId && (
         <AutomationsSection activeServiceId={activeServiceId} />
+      )}
+
+      {/* KOMUNIKACE - REPORT STATISTIK E-MAILEM */}
+      {section.subsection === "communication_report" && activeServiceId && isAdmin && (
+        <StatistikyReportSection activeServiceId={activeServiceId} />
       )}
 
       {section.subsection === "service_subscription" && activeServiceId && isAdmin && (
@@ -2135,13 +2142,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <Card>
             <CardHeader
               title="Zvýraznění stavu"
-              description="Jak silně se barva stavu propíše do řádku zakázky. Samotné barvy nastavujete u jednotlivých stavů. Hotové zakázky jsou vždy ztlumené, ať vyskočí ty, které na někoho čekají."
+              description="Jak silně se barva stavu propíše do řádku zakázky – platí pro všechny režimy zobrazení výše. Samotné barvy nastavujete u jednotlivých stavů. Hotové zakázky jsou vždy ztlumené, ať vyskočí ty, které na někoho čekají."
               right={hintZvyrazneni.node}
             />
             {(() => {
               const volby: [ZvyrazneniStavu, string, string][] = [
                 ["jemne", "Jemné", "Řádek je lehce podbarvený barvou stavu. Doporučeno."],
-                ["vyrazne", "Výrazné", "Řádek se vyplní barvou stavu. Barva písma se dopočítá, ať zůstane čitelné."],
+                ["vyrazne", "Výrazné", "Celý řádek se vyplní barvou stavu jako v Zakázkovém listu. Barva písma se dopočítá, ať zůstane čitelné."],
                 ["zadne", "Žádné", "Jen tenký proužek vlevo a odznak vpravo."],
               ];
               const aktualni = uiCfg.orders?.zvyrazneniStavu ?? VYCHOZI_ZVYRAZNENI;

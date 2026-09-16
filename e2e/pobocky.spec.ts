@@ -26,14 +26,23 @@ async function otevriPobocky(page: Page) {
   await expect(page.getByRole("button", { name: "Přidat pobočku" })).toBeVisible({ timeout: 20_000 });
 }
 
+/**
+ * Seznam poboček v Nastavení leží v <main>. Název pobočky je ale i v liště
+ * s aktivní pobočkou nad obsahem (přepínač), a ta je v DOM dřív – bez
+ * zúžení na <main> by `.first()` sáhl na tlačítko přepínače místo řádku.
+ */
+function obsah(page: Page) {
+  return page.locator("main");
+}
+
 /** Smaže testovací pobočku, pokud existuje. Testy po sobě uklízejí. */
 async function smazPobocku(page: Page) {
-  const radek = page.locator(`:text-is("${nazevPobocky}"):visible`).first();
+  const radek = obsah(page).locator(`:text-is("${nazevPobocky}"):visible`).first();
   if ((await radek.count()) === 0) return;
   await radek.locator('xpath=ancestor::*[.//button[@aria-label="Smazat pobočku"]][1]')
     .getByRole("button", { name: "Smazat pobočku" }).click();
   await page.getByRole("button", { name: "Smazat", exact: true }).click();
-  await expect(page.locator(`:text-is("${nazevPobocky}"):visible`)).toHaveCount(0, { timeout: 20_000 });
+  await expect(obsah(page).locator(`:text-is("${nazevPobocky}"):visible`)).toHaveCount(0, { timeout: 20_000 });
 }
 
 test("pobočku jde založit i se zkratkou", async ({ page }) => {
@@ -47,10 +56,10 @@ test("pobočku jde založit i se zkratkou", async ({ page }) => {
   await page.getByPlaceholder("PH").fill(zkratka);
   await page.getByRole("button", { name: "Uložit pobočku" }).click();
 
-  await expect(page.locator(`:text-is("${nazevPobocky}"):visible`).first()).toBeVisible({ timeout: 30_000 });
+  await expect(obsah(page).locator(`:text-is("${nazevPobocky}"):visible`).first()).toBeVisible({ timeout: 30_000 });
   // Zkratka se ukazuje u pobočky jako štítek – bez ní by čísla zakázek
   // z různých poboček vypadala stejně.
-  const radek = page.locator(`:text-is("${nazevPobocky}"):visible`).first().locator("xpath=ancestor::*[3]");
+  const radek = obsah(page).locator(`:text-is("${nazevPobocky}"):visible`).first().locator("xpath=ancestor::*[3]");
   await expect(radek).toContainText(zkratka);
 });
 
@@ -58,7 +67,7 @@ test("pobočka drží i po přenačtení aplikace", async ({ page }) => {
   test.setTimeout(150_000);
   await prihlasSe(page);
   await otevriPobocky(page);
-  await expect(page.locator(`:text-is("${nazevPobocky}"):visible`).first()).toBeVisible({ timeout: 30_000 });
+  await expect(obsah(page).locator(`:text-is("${nazevPobocky}"):visible`).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test("zakázku jde přesunout na pobočku a je to vidět v historii", async ({ page }) => {

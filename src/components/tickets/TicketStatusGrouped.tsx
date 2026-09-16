@@ -3,6 +3,7 @@ import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
 import { WrenchIcon } from "./icons";
+import { promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   tickets: TicketCardData[];
@@ -13,6 +14,8 @@ type Props = {
   printButtonFor: (ticket: TicketCardData) => React.ReactNode;
   customOrder?: string[];
   smsUnreadByTicketId?: Record<string, number>;
+  /** Jak výrazně se propíše barva stavu do řádku. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
 const smsBadge = (n: number) =>
@@ -25,6 +28,7 @@ const smsBadge = (n: number) =>
 function GroupedCard({
   ticket: t,
   statusColor,
+  stav,
   currentStatus: _currentStatus,
   onClickDetail,
   statusPicker,
@@ -33,6 +37,7 @@ function GroupedCard({
 }: {
   ticket: TicketCardData;
   statusColor: string;
+  stav: StylStavu;
   currentStatus: string | null;
   onClickDetail: (id: string) => void;
   statusPicker: React.ReactNode;
@@ -44,10 +49,12 @@ function GroupedCard({
     <div
       onClick={() => onClickDetail(t.id)}
       style={{
+        ...promenneRadku(stav),
         padding: "8px 12px",
         borderRadius: 8,
-        border: `1px solid ${statusColor}20`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
+        color: stav.barvaPisma,
         cursor: "pointer",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         display: "flex",
@@ -79,7 +86,7 @@ function GroupedCard({
         </div>
       )}
       {finalPrice > 0 && (
-        <span style={{ fontSize: 12, fontWeight: 700, color: statusColor, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: stav.plnaVyplne ? "var(--text)" : statusColor, whiteSpace: "nowrap", flexShrink: 0 }}>
           {korunami(finalPrice)}
         </span>
       )}
@@ -91,7 +98,7 @@ function GroupedCard({
   );
 }
 
-export function TicketStatusGrouped({ tickets, statuses, normalizeStatus, onClickDetail, statusPickerFor, printButtonFor, customOrder, smsUnreadByTicketId = {} }: Props) {
+export function TicketStatusGrouped({ tickets, statuses, normalizeStatus, onClickDetail, statusPickerFor, printButtonFor, customOrder, smsUnreadByTicketId = {}, zvyrazneni = "jemne" }: Props) {
   const groups = useMemo(() => {
     const result: { status: StatusMeta; tickets: TicketCardData[] }[] = [];
     const unassigned: TicketCardData[] = [];
@@ -130,6 +137,7 @@ export function TicketStatusGrouped({ tickets, statuses, normalizeStatus, onClic
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {groups.map(({ status, tickets: groupTickets }) => {
         const color = status.bg || "var(--muted)";
+        const stav = stylStavu(status.bg, zvyrazneni, status.isFinal);
         return (
           <div key={status.key}>
             {/* Status section header */}
@@ -163,6 +171,7 @@ export function TicketStatusGrouped({ tickets, statuses, normalizeStatus, onClic
                     key={t.id}
                     ticket={t}
                     statusColor={color}
+                    stav={stav}
                     currentStatus={currentStatus}
                     onClickDetail={onClickDetail}
                     statusPicker={statusPickerFor(t, currentStatus)}

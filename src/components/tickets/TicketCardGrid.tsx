@@ -2,6 +2,7 @@ import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketDate, TicketTechnik } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
+import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -9,24 +10,33 @@ type Props = {
   onClick: () => void;
   statusPicker: React.ReactNode;
   printButton?: React.ReactNode;
+  /** Jak výrazně se propíše barva stavu do karty. */
+  zvyrazneni?: ZvyrazneniStavu;
 };
 
-export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printButton }: Props) {
+export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printButton, zvyrazneni = "jemne" }: Props) {
   const bg = meta?.bg || "var(--border)";
   const finalPrice = computeFinalPrice(t);
+  const stav = stylStavu(meta?.bg, zvyrazneni, meta?.isFinal);
+  /* Mřížka má vlastní barevnou hlavičku; u „jemné“ a „žádné“ zůstává jen ta.
+     U „výrazné“ se vyplní celá karta. */
+  const hlavicka = stav.plnaVyplne
+    ? { background: "rgba(0,0,0,0.12)", borderBottom: `1px solid ${stav.ramecek}` }
+    : { background: `linear-gradient(135deg, ${bg}15, ${bg}06)`, borderBottom: `1px solid ${bg}18` };
 
   return (
     <div
       onClick={onClick}
       style={{
+        ...promenneRadku(stav),
         textAlign: "left",
         borderRadius: 14,
-        border: `1px solid ${bg}30`,
-        background: "var(--panel)",
+        border: `1px solid ${stav.ramecek}`,
+        background: stav.pozadi,
         cursor: "pointer",
         boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
         transition: "transform 0.15s ease, box-shadow 0.15s ease",
-        color: "var(--text)",
+        color: stav.barvaPisma,
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -43,8 +53,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
       {/* Status color header */}
       <div style={{
         padding: "8px 12px",
-        background: `linear-gradient(135deg, ${bg}15, ${bg}06)`,
-        borderBottom: `1px solid ${bg}18`,
+        ...hlavicka,
         display: "flex",
         alignItems: "center",
         gap: 6,
