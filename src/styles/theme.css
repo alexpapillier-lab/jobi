@@ -516,6 +516,78 @@
   color-scheme: light;
 }
 
+/* ---------------------------------------------------------------
+   Synthwave – neon z osmdesátek (jen pro majitele aplikace).
+
+   Fialová noc, hot-pink akcent, azurové písmo, mřížka na obzoru a růžové
+   slunce nízko za ní. Panely jsou tmavé sklo s magentovým okrajem, ať se
+   na nich čte stejně dobře jako v tmavém motivu; svícení je jen v akcentu
+   a stínech, ne v textu, aby oči vydržely celý den.
+   --------------------------------------------------------------- */
+[data-theme="synthwave"] {
+  --danger: #ff5c7a;
+  --danger-soft: rgba(255, 92, 122, 0.2);
+  --warning: #ffb347;
+  --warning-soft: rgba(255, 179, 71, 0.2);
+  --success: #3dffb0;
+  --success-soft: rgba(61, 255, 176, 0.18);
+  --info: #7ef9ff;
+  --info-soft: rgba(126, 249, 255, 0.18);
+  --danger-strong: #b91c1c;
+  --warning-strong: #9a3412;
+  --success-strong: #15803d;
+  --info-strong: #075985;
+  --danger-text: #ff8fa3;
+  --warning-text: #ffc978;
+  --success-text: #7dffc9;
+  --info-text: #a9fbff;
+
+  /* Vrstvy odspodu: fialová noc, slunce nízko za obzorem, azurová záře
+     vlevo nahoře, a přes to jemná perspektivní mřížka ve spodní třetině. */
+  --bg:
+    repeating-linear-gradient(90deg, rgba(126, 249, 255, 0.07) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(180deg, rgba(255, 43, 214, 0.09) 0 1px, transparent 1px 40px),
+    radial-gradient(ellipse 70% 45% at 50% 108%, rgba(255, 43, 214, 0.55) 0%, rgba(255, 110, 60, 0.25) 35%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 8% -8%, rgba(126, 249, 255, 0.22) 0%, transparent 60%),
+    linear-gradient(180deg, #0d0821 0%, #170b3a 45%, #2a0e4f 100%);
+  --panel: rgba(22, 11, 51, 0.9);
+  --panel-2: rgba(42, 20, 84, 0.86);
+  --text: #f4f0ff;
+  --muted: #b8a6e6;
+  --border: rgba(255, 43, 214, 0.32);
+  --icon: #7ef9ff;
+
+  --shadow: 0 24px 72px rgba(5, 0, 20, 0.7), 0 0 40px rgba(255, 43, 214, 0.18);
+  --shadow-soft: 0 12px 36px rgba(5, 0, 20, 0.55), 0 0 18px rgba(255, 43, 214, 0.12);
+  --shadow-hover: 0 28px 84px rgba(5, 0, 20, 0.8), 0 0 48px rgba(255, 43, 214, 0.28);
+  --glow: 0 0 30px rgba(126, 249, 255, 0.45);
+
+  --accent: #ff2bd6;
+  --accent-soft: rgba(255, 43, 214, 0.22);
+  --accent-hover: #ff5ce0;
+  --accent-glow: rgba(255, 43, 214, 0.6);
+  --accent-focus: #7ef9ff;
+
+  --blur: blur(14px);
+  color-scheme: dark;
+}
+
+/* Mřížka a slunce se nemají posouvat s obsahem – zůstávají „na obzoru“. */
+[data-theme="synthwave"] html,
+html[data-theme="synthwave"],
+html[data-theme="synthwave"] body {
+  background-attachment: fixed;
+}
+
+/* Neon jen tam, kde nese význam: nadpis stránky a aktivní akcent. */
+html[data-theme="synthwave"] .ui-page-header__title {
+  color: #7ef9ff;
+  text-shadow: 0 0 10px rgba(126, 249, 255, 0.55), 0 0 28px rgba(126, 249, 255, 0.25);
+}
+html[data-theme="synthwave"] .ui-input:focus-visible {
+  box-shadow: 0 0 0 3px rgba(126, 249, 255, 0.35), 0 0 16px rgba(126, 249, 255, 0.35);
+}
+
 html, body, #root {
   height: 100%;
 }
@@ -665,7 +737,8 @@ button:active:not(:disabled), a:active, [role="button"]:active {
 @media (prefers-reduced-motion: reduce) {
   :root,
   [data-theme="dark"],
-  [data-theme="blue"] {
+  [data-theme="blue"],
+  [data-theme="synthwave"] {
     --blur: blur(6px);
   }
   body {

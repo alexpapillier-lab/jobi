@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { STORAGE_KEYS } from "../constants/storageKeys";
 
-export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost";
+export type ThemeMode = "light" | "dark" | "blue" | "green" | "orange" | "purple" | "pink" | "light-blue" | "light-green" | "light-orange" | "light-purple" | "light-pink" | "paper-mint" | "sand-ink" | "sky-blueprint" | "lilac-frost" | "synthwave";
 
 /** Barevný akcent – společný pro světlou i tmavou variantu. */
 export type ThemeAccent = "default" | "blue" | "green" | "orange" | "purple" | "pink";
@@ -36,7 +36,13 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = STORAGE_KEYS.THEME;
-const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink"];
+const AVAILABLE_THEMES: ThemeMode[] = ["light", "light-blue", "light-green", "light-orange", "light-purple", "light-pink", "paper-mint", "sand-ink", "sky-blueprint", "lilac-frost", "dark", "blue", "green", "orange", "purple", "pink", "synthwave"];
+
+/** Pojmenované předvolby, které jsou tmavé (kvůli přepínači Režim a ikoně). */
+export const DARK_PRESETS: ReadonlySet<ThemeMode> = new Set<ThemeMode>(["synthwave"]);
+
+/** Motivy jen pro majitele aplikace (root owner) – v nabídce se ostatním neukážou. */
+export const ROOT_ONLY_THEMES: ReadonlySet<ThemeMode> = new Set<ThemeMode>(["synthwave"]);
 const ACCENTS: ThemeAccent[] = ["default", "blue", "green", "orange", "purple", "pink"];
 
 const LIGHT_BY_ACCENT: Record<ThemeAccent, ThemeMode> = {
@@ -57,7 +63,7 @@ export function splitTheme(t: ThemeMode): { mode: "light" | "dark"; accent: Them
     if (DARK_BY_ACCENT[a] === t) return { mode: "dark", accent: a };
     if (LIGHT_BY_ACCENT[a] === t) return { mode: "light", accent: a };
   }
-  return { mode: "light", accent: null };
+  return { mode: DARK_PRESETS.has(t) ? "dark" : "light", accent: null };
 }
 
 export function isThemeMode(v: unknown): v is ThemeMode {
