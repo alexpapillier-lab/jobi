@@ -5098,8 +5098,8 @@ export default function Orders({
 
         <div ref={newOrderBodyRef} style={{ marginTop: 14, display: "grid", gap: 14 }}>
           {/* ===== ZÁKAZNÍK – rychlá část ===== */}
-          <div style={card}>
-            <SectionHeading icon={<UserIcon size={16} />} size="sm">Zákazník</SectionHeading>
+          <div style={{ ...card, ...stylSekce("zakaznik") }}>
+            <SectionHeading icon={<UserIcon size={16} />} size="sm" barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
             <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ ...fieldLabel, marginTop: 0 }}>Jméno</div>
@@ -5403,8 +5403,8 @@ export default function Orders({
           </div>
 
           {/* ===== ZAŘÍZENÍ – rychlá část (seznam sbalitelných karet) ===== */}
-          <div style={card}>
-            <SectionHeading icon={<DeviceIcon size={16} />} size="sm">Zařízení</SectionHeading>
+          <div style={{ ...card, ...stylSekce("zarizeni") }}>
+            <SectionHeading icon={<DeviceIcon size={16} />} size="sm" barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
             <div style={{ display: "grid", gap: 8 }}>
               {newDraft.devices.map((dev, idx) => {
                 const multi = newDraft.devices.length > 1;
@@ -5814,7 +5814,7 @@ export default function Orders({
           </div>
 
           {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
-          <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+          <div style={{ ...card, ...stylSekce("diagnostika"), padding: 0, overflow: "hidden" }}>
             <button
               type="button"
               onClick={() => setNewOrderMoreOpen((v) => !v)}
@@ -5823,6 +5823,7 @@ export default function Orders({
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
             >
               <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={16} /></span>
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, background: `${BARVA_SEKCE.diagnostika}22`, color: BARVA_SEKCE.diagnostika, flexShrink: 0 }}><SearchIcon size={14} /></span>
               <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
               {!newOrderMoreOpen && (
                 <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -6382,8 +6383,8 @@ export default function Orders({
           return (
           <>
           <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
-            <div style={card}>
-              <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
+            <div style={{ ...card, ...stylSekce("zakaznik") }}>
+              <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
               {!isEditingClaim ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.customer_name ?? "—"}</div>
@@ -6424,8 +6425,8 @@ export default function Orders({
                 </div>
               )}
             </div>
-            <div style={card}>
-              <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
+            <div style={{ ...card, ...stylSekce("zarizeni") }}>
+              <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
               {!isEditingClaim ? (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.device_label || c.device_serial || "—"}</div>
@@ -6573,8 +6574,8 @@ export default function Orders({
 
           {sourceTicket ? (
             <>
-              <div style={{ ...card, marginTop: 16 }}>
-                <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
+              <div style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
+                <SectionHeading icon={<SearchIcon size={16} />} barva={BARVA_SEKCE.diagnostika}>Diagnostika</SectionHeading>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky {sourceTicket.code ? `(${sourceTicket.code})` : ""}. Změny se ukládají rovnou do ní.</div>
                 <div style={{ display: "grid", gap: 12 }}>
                   <div>

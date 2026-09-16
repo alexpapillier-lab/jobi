@@ -54,7 +54,18 @@ export function normalizujSkryteSekce(raw: unknown): Set<SkrytelnaSekce> {
   return out;
 }
 
-/** Styl karty sekce: barevný proužek vlevo. Přidává se k běžnému stylu karty. */
+/**
+ * Styl karty sekce: celá karta jemně podbarvená svou barvou a rámeček v ní.
+ *
+ * První verze měla jen 4px proužek vlevo – při scrollování ho oko minulo.
+ * Tón se pokládá průhledně přes pozadí karty (var(--panel)), takže sedí
+ * i na tmavém motivu: 9 % barvy je na světlém pozadí sotva znatelný
+ * nádech, na tmavém pořád čitelný. Přidává se k běžnému stylu karty.
+ */
 export function stylSekce(sekce: SekceDetailu): React.CSSProperties {
-  return { borderLeft: `4px solid ${BARVA_SEKCE[sekce]}` };
+  const barva = BARVA_SEKCE[sekce];
+  return {
+    background: `linear-gradient(${barva}17, ${barva}17), var(--panel)`,
+    border: `1px solid ${barva}55`,
+  };
 }
