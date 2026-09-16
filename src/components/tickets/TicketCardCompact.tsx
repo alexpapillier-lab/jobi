@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator, TicketTechnik, TicketUmisteni } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, MetaSeparator, TicketPobocka, TicketTechnik, TicketUmisteni } from "./fields";
 import { CheckIcon } from "../icons";
 import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
@@ -62,7 +62,7 @@ export function TicketCardCompact({ ticket: t, meta, onClick, statusPicker, prin
         <TicketDevice label={t.deviceLabel} />
         <TicketCustomer name={t.customerName} />
         <TicketTechnik name={t.technik} />
-        <TicketUmisteni label={t.umisteni} />
+        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} />
 
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />

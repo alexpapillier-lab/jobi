@@ -134,6 +134,19 @@ export function TicketTechnik({ name }: { name?: string | null }) {
   );
 }
 
+/** Pobočka přijetí zakázky – ukazuje se, když není ta právě vybraná. */
+export function TicketPobocka({ label }: { label?: string | null }) {
+  if (!label) return null;
+  return (
+    <span
+      title={`Přijato na pobočce ${label}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** Kde zakázka fyzicky je, když ne na své pobočce (zásilky mezi pobočkami). */
 export function TicketUmisteni({ label }: { label?: string | null }) {
   if (!label) return null;

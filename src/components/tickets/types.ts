@@ -28,6 +28,8 @@ export type TicketCardData = {
   expectedDoneAt?: string;
   /** Jméno přiděleného technika; jen když má servis přidělování zapnuté. */
   technik?: string | null;
+  /** Pobočka přijetí, když není ta právě vybraná (nebo je vybráno „Všechny pobočky“). */
+  pobocka?: string | null;
   /** Kde zakázka fyzicky je, když ne na své pobočce („Praha“, „→ Praha“); jen se zapnutými zásilkami. */
   umisteni?: string | null;
 };

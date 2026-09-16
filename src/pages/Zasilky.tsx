@@ -215,6 +215,11 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
         <span style={{ fontSize: 13, color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1 1 160px" }}>
           {t ? `${t.title}${t.serial ? ` · ${t.serial}` : ""} · ${t.customerName}` : "zakázka mimo váš přístup"}
         </span>
+        {t?.branchId && otevrena && t.branchId !== otevrena.fromBranchId && (
+          <span title={`Přijato na pobočce ${nazevPobocky(t.branchId)}`} style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap" }}>
+            {nazevPobocky(t.branchId)}
+          </span>
+        )}
         {meta && <StatusBadge label={meta.label} bg={meta.bg ?? "var(--muted)"} isFinal={meta.isFinal} size="sm" />}
         {vpravo}
       </div>
