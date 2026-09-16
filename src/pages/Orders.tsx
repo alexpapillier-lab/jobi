@@ -2607,7 +2607,17 @@ export default function Orders({
     });
   }, [activeGroup, claimsSubGroup, filteredClaims, normalizeStatus, isFinal]);
 
-  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "active" || activeGroup === "final") && ordersShowClaimsInList;
+  /* Aktivní: reklamace se do stránkovaného seznamu nemíchají – jsou vždy
+     všechny pod zakázkami v bloku „Aktivní reklamace“ (viz aktivniReklamace).
+     Míchání podle data zůstává jen ve Vše a Dokončené, a jen když je zapnuté. */
+  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "final") && ordersShowClaimsInList;
+  const aktivniReklamace = useMemo(
+    () => activeGroup !== "active" ? [] : filteredClaims.filter((c) => {
+      const st = normalizeStatus((c.status as string) ?? "");
+      return st === null || !isFinal(st);
+    }),
+    [activeGroup, filteredClaims, normalizeStatus, isFinal],
+  );
   const combinedList = useMemo(() => {
     if (!showClaimsInOrdersList) return [];
     const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
@@ -2640,12 +2650,15 @@ export default function Orders({
         if (mojeId && t.assignedTo === mojeId) moje += 1;
       } else final += 1;
     }
-    if (ordersShowClaimsInList) {
-      for (const c of claimsInBranch) {
-        const st = normalizeStatus((c.status as string) ?? "");
+    // Aktivní reklamace jsou v záložce Aktivní vždy; do Vše a Dokončené jen
+    // když se tam míchají (nastavení).
+    for (const c of claimsInBranch) {
+      const st = normalizeStatus((c.status as string) ?? "");
+      const aktivni = st === null || !isFinal(st);
+      if (aktivni) active += 1;
+      if (ordersShowClaimsInList) {
         all += 1;
-        if (st === null || !isFinal(st)) active += 1;
-        else final += 1;
+        if (!aktivni) final += 1;
       }
     }
     return { all, active, final, moje, reklamace: claimsInBranch.length };
@@ -4519,6 +4532,8 @@ export default function Orders({
         displayMode={uiCfg.orders.displayMode}
         statusColor={statusColor}
         statusLabel={claimMeta?.label}
+        isFinal={claimMeta?.isFinal === true}
+        zvyrazneni={uiCfg.orders.zvyrazneniStavu}
         onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
         statusPicker={<StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
         printButton={renderPrintButton(claimAsCardData, isSmall)}
@@ -4850,6 +4865,41 @@ export default function Orders({
             </div>
           );
         })()}
+
+        {/* Aktivní reklamace: v záložce Aktivní vždy pod zakázkami, všechny
+            najednou bez ohledu na stránkování. Reklamací bývá pár a nesmí se
+            ztratit na třetí stránce mezi zakázkami. */}
+        {activeGroup === "active" && aktivniReklamace.length > 0 && (
+          <div data-testid="aktivni-reklamace" style={{ gridColumn: "1 / -1", marginTop: 16, minWidth: 0 }}>
+            <SectionHeading size="sm">
+              Aktivní reklamace
+              <span style={{ marginLeft: 6, fontSize: "var(--text-xs)", color: "var(--muted)", fontWeight: 600 }}>{aktivniReklamace.length}</span>
+            </SectionHeading>
+            {uiCfg.orders.displayMode === "status-grouped" ? (
+              <ClaimStatusGrouped
+                claims={aktivniReklamace}
+                statuses={statuses as any}
+                normalizeStatus={normalizeStatus}
+                onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
+                statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
+                printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
+                customOrder={uiCfg.orders.statusGroupedOrder}
+                zvyrazneni={uiCfg.orders.zvyrazneniStavu}
+              />
+            ) : (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 280px), 1fr))" : "minmax(min(100%, 260px), 1fr)",
+                gap: uiCfg.orders.displayMode === "grid" ? 12
+                  : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" || uiCfg.orders.zvyrazneniStavu === "plne" ? 2
+                  : 6,
+                minWidth: 0,
+              }}>
+                {aktivniReklamace.map((c) => renderClaimCard(c, "aktivni-"))}
+              </div>
+            )}
+          </div>
+        )}
 
         {listLength === 0 && (
           <div

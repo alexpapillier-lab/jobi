@@ -2355,11 +2355,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* ZAKÁZKY - REKLAMACE */}
       {section.subsection === "orders_reklamace" && (
         <Card>
-          <CardHeader title="Reklamace v seznamu" description="Reklamace budou v seznamu výrazně odlišené od běžných zakázek." right={hintReklamace.node} />
+          <CardHeader title="Reklamace v seznamu" description="V záložce Aktivní jsou aktivní reklamace vždy pod zakázkami v bloku „Aktivní reklamace“ – všechny najednou, bez stránkování. Tady nastavíte, jestli se reklamace mají navíc míchat mezi zakázky podle data i v záložkách Vše a Dokončené." right={hintReklamace.node} />
           <SettingRows>
             <SettingRow
               clickable
-              label="Zobrazit reklamace v záložkách Vše a Aktivní"
+              label="Zobrazit reklamace i v záložkách Vše a Dokončené"
               control={
                 <input
                   type="checkbox"
