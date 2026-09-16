@@ -130,7 +130,18 @@
   --accent-glow: rgba(37, 99, 235, 0.4);
 
   color-scheme: light;
-  
+
+  /* Kopie barev motivu pro místa, kde je rodič přepsal (plně obarvený řádek
+     zakázky mění --text/--muted/--accent podle barvy stavu). Ovládací prvky
+     uvnitř řádku – pilulka stavu, tlačítko tisku – se k původním barvám
+     vrátí přes tyhle proměnné. Počítají se na <html>, kde platí i motiv
+     z [data-theme], a dolů se dědí už jako hotové hodnoty. */
+  --text-puvodni: var(--text);
+  --muted-puvodni: var(--muted);
+  --border-puvodni: var(--border);
+  --accent-puvodni: var(--accent);
+  --accent-soft-puvodni: var(--accent-soft);
+
   /* Backdrop blur pro glassmorphism */
   --blur: blur(24px);
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

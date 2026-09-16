@@ -85,6 +85,26 @@ export type StylStavu = {
  * jistotu srovnají se stejnou barvou; na barevném podkladu je jinak akcent
  * často nečitelný.
  */
+/**
+ * Návrat k barvám motivu pro ovládací prvky uvnitř plně obarveného řádku.
+ *
+ * Pilulka stavu a tlačítko tisku mají vlastní světlý podklad (var(--panel)),
+ * ale písmo berou z var(--text) – a to řádek přepsal na bílou. Na tmavém
+ * stavu tak vyšel bílý text na bílé pilulce. Obal ovládání proto proměnné
+ * vrátí na kopie z <html> (theme.css: --text-puvodni a spol.).
+ */
+export function promenneOvladani(stav: StylStavu): Record<string, string> {
+  if (!stav.plnaVyplne) return {};
+  return {
+    "--text": "var(--text-puvodni)",
+    "--muted": "var(--muted-puvodni)",
+    "--border": "var(--border-puvodni)",
+    "--accent": "var(--accent-puvodni)",
+    "--accent-soft": "var(--accent-soft-puvodni)",
+    color: "var(--text-puvodni)",
+  };
+}
+
 export function promenneRadku(stav: StylStavu): Record<string, string> {
   if (!stav.plnaVyplne) return {};
   const pismo = stav.barvaPisma;
