@@ -80,6 +80,16 @@ describe("stylStavu", () => {
     expect(v.barvaPisma).toBe("var(--text)");
   });
 
+  // Zakázkový list: plná barva bez průhlednosti, hotové zakázky stejně syté.
+  it("plné vyplní každý řádek plnou barvou, i hotový", () => {
+    const s = stylStavu("#111111", "plne", true);
+    expect(s.pozadi).toBe("#111111");
+    expect(s.barvaPisma).toBe(BILA);
+    expect(s.ramecek).toBe("#111111");
+    expect(s.plnaVyplne).toBe(true);
+    expect(stylStavu("#FFE500", "plne").barvaPisma).toBe(CERNA);
+  });
+
   it("na proměnnou CSS se chová jako bez zvýraznění – nedá se z ní počítat", () => {
     const s = stylStavu(undefined, "vyrazne");
     expect(s.pozadi).toBe("var(--panel)");
@@ -114,6 +124,7 @@ describe("jeZvyrazneni", () => {
     expect(jeZvyrazneni("jemne")).toBe(true);
     expect(jeZvyrazneni("vyrazne")).toBe(true);
     expect(jeZvyrazneni("zadne")).toBe(true);
+    expect(jeZvyrazneni("plne")).toBe(true);
     expect(jeZvyrazneni("silne")).toBe(false);
     expect(jeZvyrazneni(null)).toBe(false);
   });

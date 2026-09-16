@@ -311,18 +311,34 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
     // nezůstanou díry ani duplicity po dřívějším mazání.
     const predchozi = statuses;
     setStatuses(nove);
-    const zapisy = nove.map((st, idx) =>
-      (supabase!.from("service_statuses") as any)
-        .update({ order_index: idx })
-        .eq("service_id", activeServiceId)
-        .eq("key", st.key)
-    );
-    const vysledky = await Promise.all(zapisy);
-    const chyba = vysledky.find((r: { error?: { message?: string } | null }) => r?.error)?.error;
+    /*
+     * Dvě fáze. Na (service_id, order_index) je unikátní index a ten se
+     * kontroluje při každém řádku zvlášť: při prohození dvou stavů dostal
+     * první z nich index, který ještě držel ten druhý, a zápis spadl na
+     * „duplicate key value violates unique constraint
+     * ux_service_statuses_service_order_index“. Nejdřív se proto všem
+     * přidělí záporná (dočasná, navzájem různá) čísla, teprve pak cílová.
+     */
+    const zapis = (hodnota: (idx: number) => number) =>
+      Promise.all(
+        nove.map((st, idx) =>
+          (supabase!.from("service_statuses") as any)
+            .update({ order_index: hodnota(idx) })
+            .eq("service_id", activeServiceId)
+            .eq("key", st.key)
+        )
+      );
+    const najdiChybu = (vysledky: Array<{ error?: { message?: string } | null }>) =>
+      vysledky.find((r) => r?.error)?.error;
+    let chyba = najdiChybu(await zapis((idx) => -(idx + 1)));
+    if (!chyba) chyba = najdiChybu(await zapis((idx) => idx));
     if (chyba) {
       console.error("[Statuses] move failed", chyba);
       setStatuses(predchozi);
       showToast(`Pořadí se nepodařilo uložit: ${chyba.message || "Neznámá chyba"}`, "error");
+      // Po pádu v druhé fázi by v databázi zůstala záporná čísla; pořadí by
+      // se sice načetlo správně (řadí se podle order_index), ale ať je čisto.
+      void zapis((idx) => idx).catch(() => {});
     }
   }, [activeServiceId, statuses]);
 

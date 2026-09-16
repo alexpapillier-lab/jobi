@@ -4646,7 +4646,11 @@ export default function Orders({
           : {
               display: "grid",
               gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 280px), 1fr))" : "minmax(min(100%, 260px), 1fr)",
-              gap: uiCfg.orders.displayMode === "grid" ? 12 : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" ? 2 : 6,
+              /* U plné výplně řádky těsně u sebe jako v Zakázkovém listu – mezery
+                 mezi sytě barevnými pruhy by rozbily dojem souvislého seznamu. */
+              gap: uiCfg.orders.displayMode === "grid" ? 12
+                : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" || uiCfg.orders.zvyrazneniStavu === "plne" ? 2
+                : 6,
               minWidth: 0,
             }),
       }}>
