@@ -8,6 +8,8 @@ import { useIsNarrow } from "../hooks/useIsNarrow";
 import { BottomNav } from "./BottomNav";
 import { BranchBar } from "./BranchBar";
 import { STORAGE_KEYS } from "../constants/storageKeys";
+import { useBranches } from "../context/BranchContext";
+import { usePrichoziZasilky } from "../hooks/usePrichoziZasilky";
 
 type SidebarPosition = "left" | "right" | "bottom";
 
@@ -85,6 +87,9 @@ export function AppLayout({
   /** Otevřená nabídka servisů drží lištu rozbalenou – viz Sidebar. */
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const isNarrow = useIsNarrow();
+  /* Odznak u Zásilek: kolik jich je na cestě k vybrané pobočce. */
+  const { activeBranchId } = useBranches();
+  const zasilkyBadge = usePrichoziZasilky(activeServiceId, activeBranchId, zasilkyEnabled);
 
   // Změna zvenku (např. z Nastavení) – reagovat jen na skutečnou změnu prop,
   // ne při připojení, kdy má přednost hodnota z localStorage. Úprava stavu
@@ -268,6 +273,7 @@ export function AppLayout({
             smsEnabled,
             statisticsEnabled,
             zasilkyEnabled,
+            zasilkyBadge,
           } satisfies SidebarProps)}
         />
       </aside>
@@ -282,6 +288,7 @@ export function AppLayout({
           smsUnreadCount={smsUnreadCount}
           statisticsEnabled={statisticsEnabled}
           zasilkyEnabled={zasilkyEnabled}
+          zasilkyBadge={zasilkyBadge}
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
