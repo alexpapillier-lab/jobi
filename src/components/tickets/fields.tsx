@@ -134,6 +134,20 @@ export function TicketTechnik({ name }: { name?: string | null }) {
   );
 }
 
+/** Kde zakázka fyzicky je, když ne na své pobočce (zásilky mezi pobočkami). */
+export function TicketUmisteni({ label }: { label?: string | null }) {
+  if (!label) return null;
+  const naCeste = label.startsWith("→");
+  return (
+    <span
+      title={naCeste ? `Na cestě: ${label.slice(1).trim()}` : `Fyzicky na pobočce ${label}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--warning-text)", background: "var(--warning-soft)", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** Požadovaná oprava nebo popis závady. */
 export function TicketRepair({ text }: { text?: string | null }) {
   if (!text) return null;

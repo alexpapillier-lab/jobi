@@ -47,6 +47,9 @@ export const SLOUPCE_SEZNAMU = [
   "version",
   "branch_id",
   "assigned_to",
+  // Zásilky mezi pobočkami: kde zakázka fyzicky je a jestli právě cestuje.
+  "location_branch_id",
+  "transit_shipment_id",
 ].join(",");
 
 /**
@@ -96,6 +99,8 @@ export const SLOUPCE_DETAILU = [
   "version",
   "branch_id",
   "assigned_to",
+  "location_branch_id",
+  "transit_shipment_id",
 ].join(",");
 
 /**

@@ -67,6 +67,8 @@ import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaS
 import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
 import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
+import { stitekUmisteni, umisteniZakazky } from "../lib/zasilky";
+import { KdeJeZakazka } from "../components/orders/KdeJeZakazka";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
@@ -259,6 +261,10 @@ export type TicketEx = Ticket & {
   externalId?: string;
   /** Přidělený technik (auth.users.id), null = nepřiděleno. */
   assignedTo?: string | null;
+  /** Kde zařízení fyzicky je (zásilky mezi pobočkami); null = na své pobočce. */
+  locationBranchId?: string | null;
+  /** Zásilka, ve které právě cestuje; null = necestuje. */
+  transitShipmentId?: string | null;
   estimatedPrice?: number;
   performedRepairs?: PerformedRepair[];
   /** Kontrola po opravě (tickets.test_checklist). */
@@ -683,6 +689,8 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
     branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
     assignedTo: typeof supabaseTicket.assigned_to === "string" ? supabaseTicket.assigned_to : null,
+    locationBranchId: typeof supabaseTicket.location_branch_id === "string" ? supabaseTicket.location_branch_id : null,
+    transitShipmentId: typeof supabaseTicket.transit_shipment_id === "string" ? supabaseTicket.transit_shipment_id : null,
     // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
     // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
     uplna: jePlnyRadekZakazky(supabaseTicket),
@@ -1016,6 +1024,7 @@ export default function Orders({
     setChatZapnuty(config?.chat !== false);
     setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
     setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
+    setZasilkyZapnuty(config?.zasilky === true);
   }, []);
 
   const nactiConfigServisu = useCallback(() => {
@@ -1654,6 +1663,8 @@ export default function Orders({
   const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
   /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
   const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
+  /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
+  const [zasilkyZapnuty, setZasilkyZapnuty] = useState(false);
   /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
   const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
@@ -4443,6 +4454,7 @@ export default function Orders({
     serialOrImei: t.serialOrImei,
     issueShort: t.issueShort,
     technik: pridelovaniTechnika ? clenove.jmeno(t.assignedTo) : null,
+    umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka") : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
     status: (t.status as any) ?? statusById[t.id] ?? null,
@@ -4450,7 +4462,7 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
-  }), [statusById, pridelovaniTechnika, clenove]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById]);
 
   const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
     if (currentStatus !== null) {
@@ -8101,6 +8113,20 @@ export default function Orders({
                   </div>
                   )}
                 </div>
+
+                {zasilkyZapnuty && hasBranches && activeServiceId && (
+                  <div id="detail-presun" style={{ ...card, ...stylSekce("presun"), marginTop: 16 }}>
+                    <SectionHeading icon={<PinIcon size={16} />} barva={BARVA_SEKCE.presun}>Kde je zakázka</SectionHeading>
+                    <KdeJeZakazka
+                      key={detailedTicket.id}
+                      ticket={detailedTicket}
+                      serviceId={activeServiceId}
+                      branches={branches}
+                      nazevPobocky={(id) => branchById(id)?.name ?? "jiná pobočka"}
+                      onOtevritZasilky={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "zasilky" } }))}
+                    />
+                  </div>
+                )}
 
                 {!skryteSekce.has("nahradni") && (
                 <div id="detail-zapujcka" style={{ ...card, ...stylSekce("nahradni"), marginTop: 16 }}>
