@@ -32,8 +32,6 @@ import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSett
 import { SlevySettingsSection } from "./Settings/SlevySettingsSection";
 import { DetailZakazkySettingsSection } from "./Settings/DetailZakazkySettingsSection";
 import { ZasilkySettingsSection } from "./Settings/ZasilkySettingsSection";
-import { MotivZlSection } from "./Settings/MotivZlSection";
-import { useMotivZl } from "../hooks/useMotivZl";
 import { SdilenyPocitacSection } from "./Settings/SdilenyPocitacSection";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
@@ -335,9 +333,10 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const { has: maModul } = useEntitlements(activeServiceId);
   /** Sekce API se ukazuje, jen když servis aspoň jeden z modulů má. */
   const maApi = maModul("api_catalog") || maModul("api_inventory");
+  /* Motiv ZL je modul servisu: povoluje ho majitel aplikace v Owner →
+     Nároky servisů. Bez něj se předvolba v nabídce vůbec neukáže. */
+  const motivZlZapnuty = maModul("motiv_zl");
   const isRootOwner = useIsRootOwner();
-  /** Modul „Motiv ZL“ – bez něj se předvolba ZL v nabídce neukáže. */
-  const motivZlZapnuty = useMotivZl(activeServiceId);
   const canManageDocuments = isAdmin || (hasCapability && hasCapability("can_manage_documents"));
   const { createStatus, deleteStatus, saveServiceSettings } = useSettingsActions({ activeServiceId });
   
@@ -1021,9 +1020,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu", "asistent postupu", "postup zakázky", "kroky"] },
-        { key: "appearance_theme", label: "Vzhled", keywords: ["tmavý", "světlý", "barva", "motiv", "téma", "akcent", "vzhled", "logo", "ikona", "podle systému", "dark mode", "předvolby"] },
+        { key: "appearance_theme", label: "Vzhled", keywords: ["tmavý", "světlý", "barva", "motiv", "téma", "akcent", "vzhled", "logo", "ikona", "podle systému", "dark mode", "předvolby", "zl", "zakázkový list"] },
         { key: "appearance_shortcuts", label: "Klávesové zkratky", keywords: ["klávesové zkratky", "zkratky", "klávesnice", "hotkey"] },
-        { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul", "zl", "zakázkový list", "motiv zl"] },
+        { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul"] },
         // Aktualizace jsou jen pro desktop – web je vždy aktuální.
         ...(isDesktop() ? [{ key: "about_updates" as const, label: "Aktualizace", keywords: ["aktualizace", "verze", "update", "nová verze", "nainstalovat"], badge: updateAvailable ? 1 : undefined }] : []),
         { key: "about_help", label: "Nápověda a podpora", keywords: ["nápověda", "napoveda", "help", "podpora", "nahlásit chybu", "chyba", "nefunguje", "návod", "manuál", "kontakt"] },
@@ -2360,10 +2359,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           </SettingRows>
         </Card>
       )}
-      {section.subsection === "appearance_modules" && activeServiceId && isAdmin && (
-        <MotivZlSection activeServiceId={activeServiceId} />
-      )}
-
       {section.subsection === "orders_device_options" && (
         <DeviceOptionsSettingsSection activeServiceId={activeServiceId} />
       )}
