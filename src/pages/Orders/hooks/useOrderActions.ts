@@ -401,8 +401,9 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
           diagnostic_photos_before: [] as string[],
           expected_completion_at: (dev.expectedCompletionAt ?? newDraft.devices[0]?.expectedCompletionAt) || null,
-          discount_type: (newDraft as any).discountType ?? null,
-          discount_value: (newDraft as any).discountValue ?? null,
+          // Sleva zadaná u zařízení při příjmu (DeviceRow.discountType); starší koncept ji měl na celé zakázce.
+          discount_type: dev.discountType ?? (newDraft as any).discountType ?? null,
+          discount_value: dev.discountType ? (dev.discountValue ?? null) : ((newDraft as any).discountValue ?? null),
         };
 
         const { data, error } = await (supabase

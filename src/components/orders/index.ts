@@ -3,6 +3,7 @@ export { DeviceAutocomplete } from "./DeviceAutocomplete";
 export { RepairPicker } from "./RepairPicker";
 export { HandoffMethodSelect } from "./HandoffMethodSelect";
 export { DiscountPicker } from "./DiscountPicker";
+export { TlacitkaSlev, SlevaNovaZakazka } from "./RychlaSleva";
 export { StatusPicker } from "./StatusPicker";
 export { PerformedRepairItem } from "./PerformedRepairItem";
 export { PerformedRepairAdder } from "./PerformedRepairAdder";
