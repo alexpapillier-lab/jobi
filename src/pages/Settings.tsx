@@ -117,11 +117,13 @@ const ACCENT_SWATCHES: { id: ThemeAccent; label: string; color: string }[] = [
   { id: "pink", label: "Růžová", color: "#ec4899" },
 ];
 
-const THEME_PRESETS: { id: ThemeMode; title: string; desc: string; bg: string; panel: string; accent: string; text: string }[] = [
+const THEME_PRESETS: { id: ThemeMode; title: string; desc: string; bg: string; panel: string; accent: string; text: string; jenRootOwner?: boolean }[] = [
   { id: "paper-mint", title: "Paper Mint", desc: "Světlé, mátový akcent, papírový dojem.", bg: "#F7FBFA", panel: "#FFFFFF", accent: "#14B8A6", text: "#0F172A" },
   { id: "sand-ink", title: "Sand & Ink", desc: "Světlé, jantarový akcent, teplé tóny.", bg: "#FBF7F1", panel: "#FFFFFF", accent: "#F59E0B", text: "#111827" },
   { id: "sky-blueprint", title: "Sky Blueprint", desc: "Světlé, modrý akcent, technický styl.", bg: "#F5FAFF", panel: "#FFFFFF", accent: "#2563EB", text: "#0B1220" },
   { id: "lilac-frost", title: "Lilac Frost", desc: "Světlé, fialový akcent, jemné.", bg: "#FAF8FF", panel: "#FFFFFF", accent: "#7C3AED", text: "#111827" },
+  /* Jen pro majitele aplikace – neon z osmdesátek: magenta, azurová, fialová noc. */
+  { id: "synthwave", title: "Synthwave", desc: "Tmavé, neonová magenta a azur, mřížka na obzoru. Jen pro vás.", bg: "linear-gradient(180deg, #0d0821 0%, #2a0e4f 70%, #ff2bd6 140%)", panel: "rgba(22, 11, 51, 0.92)", accent: "#ff2bd6", text: "#7ef9ff", jenRootOwner: true },
 ];
 
 /** Křížek – nahrazuje textové ✕, které se v každém systému kreslilo jinak. */
@@ -1636,11 +1638,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)", padding: "var(--space-2) 0" }}>
                   Předvolby
                   <span style={{ color: "var(--muted)", fontWeight: 500, marginLeft: "var(--space-2)", fontSize: "var(--text-sm)" }}>
-                    {activePreset ? THEME_PRESETS.find((t) => t.id === activePreset)?.title : "pojmenované světlé motivy"}
+                    {activePreset ? THEME_PRESETS.find((t) => t.id === activePreset)?.title : "pojmenované motivy"}
                   </span>
                 </summary>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "var(--space-2)", paddingTop: "var(--space-2)" }}>
-                  {THEME_PRESETS.map((t) => {
+                  {THEME_PRESETS.filter((t) => !t.jenRootOwner || isRootOwner).map((t) => {
                     const selected = activePreset === t.id;
                     return (
                       <button
