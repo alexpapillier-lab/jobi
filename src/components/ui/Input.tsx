@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 
 /**
  * Textové pole.
@@ -12,7 +12,7 @@ export function Input({
   className = "",
   invalid = false,
   ...rest
-}: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+}: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean; ref?: Ref<HTMLInputElement> }) {
   return (
     <input
       className={["ui-input", invalid ? "ui-input--invalid" : "", className].filter(Boolean).join(" ")}

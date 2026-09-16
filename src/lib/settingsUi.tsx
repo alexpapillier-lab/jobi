@@ -23,7 +23,8 @@ export function FieldLabel({ children }: { children: string }) {
  * Textové pole. Přesunuto do components/ui jako Input; re-export tu zůstává
  * kvůli 34 stávajícím použitím.
  */
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+/** `ref` je v Reactu 19 obyčejná prop – propadá až na <input> (fokus po „Upravit“ u statusu). */
+export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
   return <Input {...props} />;
 }
 
