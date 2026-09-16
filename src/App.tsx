@@ -121,6 +121,9 @@ type UIConfig = {
  */
 function defaultReducedEffects(): boolean {
   if (typeof navigator === "undefined") return false;
+  // Web v prohlížeči startuje s omezenými efekty vždy – rozostření tam
+  // trhá i na Macu, a kdo má výkonný stroj, zapne si je v Nastavení.
+  if (isWeb()) return true;
   return /Windows|Win64|Win32/i.test(navigator.userAgent || "");
 }
 
