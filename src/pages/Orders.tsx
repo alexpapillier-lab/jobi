@@ -640,7 +640,9 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     customerName: supabaseTicket.customer_name || "Cloud Customer",
     customerPhone: supabaseTicket.customer_phone || undefined,
     deviceLabel: supabaseTicket.title || "Nová zakázka",
-    serialOrImei: supabaseTicket.device_serial || undefined,
+    // Jedno pole "Sériové číslo / IMEI": importované zakázky (zakazkovylist)
+    // mají u telefonů jen device_imei, bez fallbacku by pole zůstalo prázdné.
+    serialOrImei: supabaseTicket.device_serial || supabaseTicket.device_imei || undefined,
     issueShort: supabaseTicket.notes || "—",
     status: (supabaseTicket.status || "received") as any,
     createdAt: supabaseTicket.created_at, // DB guarantees NOT NULL with default now()
