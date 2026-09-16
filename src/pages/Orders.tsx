@@ -65,6 +65,7 @@ import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
+import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
@@ -301,6 +302,8 @@ type DeviceRow = {
   /** Sleva zadaná už při příjmu (přednastavená nebo vlastní) – na zakázku jde hned při založení. */
   discountType?: "percentage" | "amount" | null;
   discountValue?: number;
+  /** Ručně napsaná předschválená cena před slevou (viz lib/cenaPriPrijmu). */
+  cenaPredSlevou?: number;
   /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
   expectedCompletionAt?: string | null;
 };
@@ -3090,18 +3093,15 @@ export default function Orders({
                 productIds: repair.productIds,
               },
             ];
-        const oldSum = planned.reduce((a, r) => a + (r.price || 0), 0);
-        const newSum = nextPlanned.reduce((a, r) => a + (r.price || 0), 0);
         // Text požadované opravy: jména z ceníku oddělená čárkou, ruční text zůstává.
         const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
         const nextParts = has ? parts.filter((x) => x !== repair.name) : parts.includes(repair.name) ? parts : [...parts, repair.name];
-        // Předschválenou cenu přepisujeme jen dokud ji uživatel nezadal ručně.
-        const priceUntouched = d.estimatedPrice === undefined || d.estimatedPrice === oldSum;
+        // Předschválená cena (i se slevou) se přepisuje jen dokud ji uživatel nezadal ručně.
         return {
           ...d,
+          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
           plannedRepairs: nextPlanned,
           requestedRepair: nextParts.join(", "),
-          estimatedPrice: priceUntouched ? (newSum > 0 ? newSum : undefined) : d.estimatedPrice,
         };
       }),
     }));
@@ -5543,7 +5543,7 @@ export default function Orders({
                             {(() => {
                               const typ = dev.discountType ?? null;
                               const hodnota = dev.discountValue ?? 0;
-                              const zaklad = (dev.plannedRepairs ?? []).reduce((a, r) => a + (r.price || 0), 0) || (dev.estimatedPrice ?? 0);
+                              const zaklad = zakladCeny(dev, soucetOprav(dev.plannedRepairs));
                               const sleva = castkaSlevy(zaklad, typ, hodnota);
                               return (
                                 <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
@@ -5557,15 +5557,16 @@ export default function Orders({
                                     onChange={(type, value) =>
                                       setNewDraft((p) => ({
                                         ...p,
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, discountType: type, discountValue: type ? value : undefined } : d)),
+                                        // Sleva se propíše i do předschválené ceny (lib/cenaPriPrijmu).
+                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poZmeneSlevy(d, soucetOprav(d.plannedRepairs), type, value) } : d)),
                                       }))
                                     }
                                   />
                                   {typ && hodnota > 0 && (
                                     <div style={{ fontSize: 12, color: "var(--muted)" }}>
                                       {zaklad > 0
-                                        ? `Sleva −${formatCurrency(sleva)} · po slevě ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
-                                        : "Sleva se odečte z ceny oprav v zakázce."}
+                                        ? `Sleva −${formatCurrency(sleva)} z ${formatCurrency(zaklad)} · předschválená cena ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
+                                        : "Sleva se odečte z ceny oprav v zakázce. Zadejte předschválenou cenu nebo vyberte opravy z ceníku a propíše se hned."}
                                     </div>
                                   )}
                                 </div>
@@ -5758,7 +5759,8 @@ export default function Orders({
                           onChange={(e) =>
                             setNewDraft((p) => ({
                               ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, estimatedPrice: e.target.value ? Number(e.target.value) : undefined } : d)),
+                              // Ručně napsaná cena je od teď základ pro slevu (lib/cenaPriPrijmu).
+                              devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poRucniCene(d, e.target.value) } : d)),
                             }))
                           }
                           style={baseFieldInput}
@@ -5766,7 +5768,12 @@ export default function Orders({
                           min="0"
                           step="1"
                         />
-                        <div style={fieldMuted}>V Kč. Cena, se kterou zákazník předem souhlasí.</div>
+                        <div style={fieldMuted}>
+                          V Kč. Cena, se kterou zákazník předem souhlasí – už po slevě.
+                          {dev.discountType && (dev.discountValue ?? 0) > 0 && (dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs)) > 0
+                            ? ` Bez slevy ${formatCurrency(dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs))}.`
+                            : ""}
+                        </div>
                       </div>
                     </div>
 
