@@ -4,6 +4,7 @@ import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "
 import { useConfigNacteno } from "./useConfigNacteno";
 import { useBranches } from "../../context/BranchContext";
 import { showToast } from "../../components/Toast";
+import { normalizujNastaveniZasilek, type NastaveniZasilek } from "../../lib/zasilky";
 
 /** Stejná hlavička karty jako v Settings.tsx (tam je jen lokální). */
 function CardHeader({ title, description, right }: { title: ReactNode; description?: ReactNode; right?: ReactNode }) {
@@ -27,6 +28,7 @@ function CardHeader({ title, description, right }: { title: ReactNode; descripti
  */
 export function ZasilkySettingsSection({ activeServiceId }: { activeServiceId: string | null }) {
   const [zapnuto, setZapnuto] = useState(false);
+  const [volby, setVolby] = useState<NastaveniZasilek>(() => normalizujNastaveniZasilek(undefined));
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
   const { branches, isMulti } = useBranches();
   const hint = useSavedHint();
@@ -37,11 +39,28 @@ export function ZasilkySettingsSection({ activeServiceId }: { activeServiceId: s
     nactiServiceConfig(activeServiceId).then((r) => {
       if (zruseno || r.stav === "chyba") return;
       setZapnuto(r.stav === "ok" && r.config.zasilky === true);
+      setVolby(normalizujNastaveniZasilek(r.stav === "ok" ? r.config : undefined));
       oznacNacteno();
     });
-    const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => setZapnuto(config.zasilky === true), "zasilky-nastaveni");
+    const unsubscribe = subscribeServiceConfig(activeServiceId, (config) => {
+      setZapnuto(config.zasilky === true);
+      setVolby(normalizujNastaveniZasilek(config));
+    }, "zasilky-nastaveni");
     return () => { zruseno = true; unsubscribe(); };
   }, [activeServiceId, oznacNacteno]);
+
+  const ulozPatch = useCallback(async (patch: Record<string, unknown>) => {
+    if (!nacteno || !activeServiceId) return;
+    try {
+      const r = await mergeServiceConfig(activeServiceId, patch);
+      if (r.error) throw new Error(r.error);
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      hint.show();
+    } catch (e) {
+      console.error("[Zasilky] uložení selhalo", e);
+      showToast("Nastavení se nepodařilo uložit", "error");
+    }
+  }, [activeServiceId, nacteno, hint]);
 
   const ulozit = useCallback(async (hodnota: boolean) => {
     if (!nacteno || !activeServiceId) return;
@@ -81,6 +100,53 @@ export function ZasilkySettingsSection({ activeServiceId }: { activeServiceId: s
             />
           }
         />
+        {zapnuto && (
+          <>
+            <SettingRow
+              clickable
+              label="Kroky přesunu v Postupu zakázky"
+              description="V detailu se do postupu přidá „Odesláno do Prahy → Převzato v Praze → Zpět v Brně“, aby recepce viděla, kde zakázka vázne. Jen u zakázek, které někam jely."
+              control={<input type="checkbox" checked={volby.postup} disabled={!nacteno} aria-label="Kroky přesunu v postupu zakázky" onChange={(e) => { setVolby({ ...volby, postup: e.target.checked }); void ulozPatch({ zasilky_postup: e.target.checked }); }} />}
+            />
+            <SettingRow
+              clickable
+              label="Rychlý filtr „Přesuny“ v seznamu zakázek"
+              description="Vedle Aktivní / Vše přibude záložka se zakázkami, které jsou na cestě nebo leží na jiné pobočce."
+              control={<input type="checkbox" checked={volby.filtr} disabled={!nacteno} aria-label="Rychlý filtr Přesuny" onChange={(e) => { setVolby({ ...volby, filtr: e.target.checked }); void ulozPatch({ zasilky_filtr: e.target.checked }); }} />}
+            />
+            <SettingRow
+              label="Upozornit, když zakázka leží jinde bez změny"
+              description="Zakázka mimo svou pobočku, která se tolik dní neuložila (žádná změna stavu ani oprav), dostane v seznamu červený štítek a v detailu upozornění. 0 = vypnuto."
+              control={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="number"
+                    className="ui-input"
+                    min={0}
+                    max={365}
+                    step={1}
+                    defaultValue={volby.upozorneniDni}
+                    disabled={!nacteno}
+                    aria-label="Počet dní bez změny"
+                    style={{ width: 80 }}
+                    onBlur={(e) => {
+                      const n = Math.max(0, Math.min(365, Math.floor(Number(e.target.value) || 0)));
+                      e.target.value = String(n);
+                      if (n !== volby.upozorneniDni) { setVolby({ ...volby, upozorneniDni: n }); void ulozPatch({ zasilky_upozorneni_dni: n }); }
+                    }}
+                  />
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>dní</span>
+                </span>
+              }
+            />
+            <SettingRow
+              clickable
+              label="Zákaznický portál: „Zařízení je v opravně“"
+              description="Když je zakázka mimo svou pobočku nebo na cestě, portál zákazníkovi řekne jen to, že zařízení je v opravně – bez názvu pobočky. Vyžaduje nasazenou edge funkci portal-ticket."
+              control={<input type="checkbox" checked={volby.portal} disabled={!nacteno} aria-label="Zákaznický portál: zařízení je v opravně" onChange={(e) => { setVolby({ ...volby, portal: e.target.checked }); void ulozPatch({ zasilky_portal: e.target.checked }); }} />}
+            />
+          </>
+        )}
       </SettingRows>
     </Card>
   );

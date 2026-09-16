@@ -263,3 +263,119 @@ export function htmlProtokolu(z: Zasilka, ctx: {
 <div class="podpisy"><div>Odeslal (jméno, podpis)</div><div>Převzal (jméno, podpis, datum)</div></div>
 </body></html>`;
 }
+
+// ---------------------------------------------------------------------------
+// Nastavení modulu a odvozené věci (postup zakázky, upozornění)
+
+/** Volby modulu (service_settings.config.zasilky_*). */
+export type NastaveniZasilek = {
+  /** Kroky „Odesláno / Převzato / Zpět“ v Postupu zakázky. */
+  postup: boolean;
+  /** Rychlý filtr „Přesuny“ v seznamu zakázek. */
+  filtr: boolean;
+  /** Po kolika dnech bez změny na cizí pobočce zakázka svítí; 0 = vypnuto. */
+  upozorneniDni: number;
+  /** Zákaznický portál řekne „Zařízení je v opravně“, když je zakázka mimo svou pobočku. */
+  portal: boolean;
+};
+
+export function normalizujNastaveniZasilek(config: Record<string, unknown> | null | undefined): NastaveniZasilek {
+  const c = config ?? {};
+  const dni = typeof c.zasilky_upozorneni_dni === "number" && Number.isFinite(c.zasilky_upozorneni_dni) ? Math.max(0, Math.floor(c.zasilky_upozorneni_dni)) : 0;
+  return {
+    postup: c.zasilky_postup !== false,
+    filtr: c.zasilky_filtr !== false,
+    upozorneniDni: Math.min(365, dni),
+    portal: c.zasilky_portal !== false,
+  };
+}
+
+/**
+ * Kolik dní zakázka leží mimo svou pobočku bez změny; null, když je doma
+ * nebo když upozornění není zapnuté / limit nepřekročila.
+ * „Bez změny“ = podle updated_at (mění se s každým uložením, i změnou stavu).
+ */
+export function dniBezZmenyJinde(
+  t: { branchId?: string | null; locationBranchId?: string | null; transitShipmentId?: string | null; updatedAt?: string | null },
+  limitDni: number,
+  ted: Date = new Date(),
+): number | null {
+  if (limitDni <= 0 || !t.updatedAt) return null;
+  if (umisteniZakazky(t).druh === "doma") return null;
+  const d = new Date(t.updatedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const dni = Math.floor((ted.getTime() - d.getTime()) / 86_400_000);
+  return dni >= limitDni ? dni : null;
+}
+
+export type KrokPresunu = {
+  id: "odeslano" | "prevzato" | "zpet";
+  label: string;
+  hotovo: boolean;
+  poznamka?: string;
+  /** Nabídnout tlačítko „Kde je zakázka“ (přidání do zásilky). */
+  akce?: boolean;
+};
+
+/**
+ * Kroky přesunu do Postupu zakázky. Prázdné, dokud zakázka nikam nejela
+ * a není v žádném konceptu – zakázka opravená doma žádné kroky nedostane.
+ *
+ *   predOpravou: „Odesláno do Prahy“, „Převzato v Praze“
+ *   poOprave:    „Zpět v Brně“
+ */
+export function krokyPresunu(
+  t: { id: string; branchId?: string | null; locationBranchId?: string | null; transitShipmentId?: string | null },
+  historie: Zasilka[],
+  nazevPobocky: (id: string) => string,
+  hotovaOprava: boolean,
+): { predOpravou: KrokPresunu[]; poOprave: KrokPresunu[] } {
+  const home = t.branchId ?? null;
+  const u = umisteniZakazky(t);
+  const serazene = [...historie].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const tam = serazene.find((z) => z.toBranchId !== home) ?? null;
+  const zpet = [...serazene].reverse().find((z) => z.toBranchId === home && (!tam || z.createdAt >= tam.createdAt)) ?? null;
+  if (!tam && u.druh === "doma") return { predOpravou: [], poOprave: [] };
+
+  const polozka = (z: Zasilka | null) => z?.polozky.find((p) => p.ticketId === t.id) ?? null;
+  const ciziId = tam?.toBranchId ?? (u.druh === "jinde" ? u.branchId : u.druh === "na_ceste" ? u.doBranchId : null);
+  const cizi = ciziId ? nazevPobocky(ciziId) : "jiné pobočky";
+  const doma = home ? nazevPobocky(home) : "své pobočky";
+
+  const odeslano = !!tam && tam.status !== "draft";
+  const prevzato = !!polozka(tam)?.receivedAt || u.druh === "jinde" || (!!zpet && zpet.status !== "draft");
+  const zpetPrevzato = !!polozka(zpet)?.receivedAt || (odeslano && u.druh === "doma" && !t.transitShipmentId && !!zpet);
+
+  const predOpravou: KrokPresunu[] = [
+    {
+      id: "odeslano",
+      label: `Odesláno do pobočky ${cizi}`,
+      hotovo: odeslano,
+      poznamka: !odeslano && tam?.status === "draft" ? `V konceptu zásilky ${cisloZasilky(tam)}, čeká na odeslání` : undefined,
+    },
+    {
+      id: "prevzato",
+      label: `Převzato v pobočce ${cizi}`,
+      hotovo: prevzato,
+      poznamka: odeslano && !prevzato ? "Na cestě" : undefined,
+    },
+  ];
+  const poOprave: KrokPresunu[] = [
+    {
+      id: "zpet",
+      label: `Zpět v pobočce ${doma}`,
+      hotovo: zpetPrevzato,
+      poznamka: zpetPrevzato
+        ? undefined
+        : zpet?.status === "draft"
+          ? `V konceptu zpáteční zásilky ${cisloZasilky(zpet)}`
+          : zpet?.status === "sent"
+            ? "Na cestě zpět"
+            : prevzato && hotovaOprava
+              ? "Opraveno – přidejte do zásilky zpět"
+              : undefined,
+      akce: !zpetPrevzato && !zpet && prevzato && hotovaOprava,
+    },
+  ];
+  return { predOpravou, poOprave };
+}

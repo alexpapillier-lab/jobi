@@ -154,6 +154,33 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
   /* Pobočky, na které člen vidí (null = všechny). Nastavuje jen majitel a
      správce; domovská pobočka se v databázi srovná, aby ležela v množině. */
   const [branchMenuFor, setBranchMenuFor] = useState<string | null>(null);
+  /* Nabídka poboček se vykresluje portálem na pevné pozici: uvnitř řádku
+     člena ji další řádek (a u posledního člena okraj karty) překrýval
+     a nešlo v ní nic zaškrtnout. */
+  const [branchMenuPos, setBranchMenuPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const otevritBranchMenu = (userId: string, btn: HTMLElement) => {
+    if (branchMenuFor === userId) { setBranchMenuFor(null); return; }
+    const r = btn.getBoundingClientRect();
+    const dole = window.innerHeight - r.bottom;
+    // Odhad výšky nabídky: řádek na pobočku + „Všechny“ + odsazení.
+    const vyska = 16 + (branches.length + 1) * 28;
+    setBranchMenuPos(dole < vyska + 12 && r.top > vyska ? { left: r.left, bottom: window.innerHeight - r.top + 4 } : { left: r.left, top: r.bottom + 4 });
+    setBranchMenuFor(userId);
+  };
+  useEffect(() => {
+    if (!branchMenuFor) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('[data-branch-menu="1"]') || t?.closest?.('[aria-label="Přístup k pobočkám"]')) return;
+      setBranchMenuFor(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBranchMenuFor(null); };
+    const onScroll = () => setBranchMenuFor(null);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", onScroll, true); };
+  }, [branchMenuFor]);
   const changeMemberBranches = async (member: { user_id: string; service_id: string; branch_ids?: string[] | null; home_branch_id?: string | null }, ids: string[] | null) => {
     const prev = teamMembers;
     setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, branch_ids: ids, home_branch_id: ids && m.home_branch_id && !ids.includes(m.home_branch_id) ? ids[0] : m.home_branch_id } : m)));
@@ -913,15 +940,15 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                             aria-label="Přístup k pobočkám"
                             aria-expanded={branchMenuFor === member.user_id}
                             title="Přístup: na které pobočky člen vůbec vidí. Zakázky, reklamace, faktury i sklady ostatních poboček se mu neukážou – hlídá to i databáze."
-                            onClick={() => setBranchMenuFor((v) => (v === member.user_id ? null : member.user_id))}
+                            onClick={(e) => otevritBranchMenu(member.user_id, e.currentTarget)}
                             style={{ width: "auto", padding: "2px 6px", fontSize: 11, cursor: "pointer" }}
                           >
                             Přístup: {member.branch_ids
                               ? (branches.filter((b) => member.branch_ids.includes(b.id)).map((b) => b.name).join(", ") || "žádnou pobočku")
                               : "všechny pobočky"} ▾
                           </button>
-                          {branchMenuFor === member.user_id && (
-                            <div role="group" aria-label="Pobočky člena" style={{ position: "absolute", top: "100%", left: 0, zIndex: 20, marginTop: 4, minWidth: 220, padding: 8, borderRadius: 10, border, background: "var(--panel)", boxShadow: "var(--shadow-soft)", display: "grid", gap: 4 }}>
+                          {branchMenuFor === member.user_id && branchMenuPos && createPortal(
+                            <div data-branch-menu="1" role="group" aria-label="Pobočky člena" style={{ position: "fixed", left: branchMenuPos.left, top: branchMenuPos.top, bottom: branchMenuPos.bottom, zIndex: 10000, minWidth: 220, maxHeight: "60vh", overflowY: "auto", padding: 8, borderRadius: 10, border, background: "var(--panel)", boxShadow: "var(--shadow)", display: "grid", gap: 4 }}>
                               <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "4px 6px", cursor: "pointer" }}>
                                 <input type="checkbox" checked={member.branch_ids == null} onChange={(e) => { if (e.target.checked) void changeMemberBranches(member, null); else void changeMemberBranches(member, member.home_branch_id ? [member.home_branch_id] : [branches[0]?.id].filter(Boolean)); }} />
                                 Všechny pobočky
@@ -944,7 +971,8 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                                   </label>
                                 );
                               })}
-                            </div>
+                            </div>,
+                            document.body,
                           )}
                         </span>
                       )}

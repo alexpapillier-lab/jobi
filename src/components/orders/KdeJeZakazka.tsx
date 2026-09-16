@@ -2,11 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui";
 import { showToast } from "../Toast";
 import { reportError } from "../../lib/reportError";
-import { supabase } from "../../lib/supabaseClient";
 import {
   cisloZasilky,
   druhaPobocka,
-  mapZasilka,
   nactiZasilky,
   otevrenyKoncept,
   popisUmisteni,
@@ -31,12 +29,18 @@ export function KdeJeZakazka({
   branches,
   nazevPobocky,
   onOtevritZasilky,
+  onHistorie,
+  dniBezZmeny,
 }: {
   ticket: { id: string; code?: string | null; branchId?: string | null; locationBranchId?: string | null; transitShipmentId?: string | null };
   serviceId: string;
   branches: Array<{ id: string; name: string }>;
   nazevPobocky: (id: string) => string;
   onOtevritZasilky: () => void;
+  /** Načtená historie zásilek zakázky – rodič z ní skládá kroky v Postupu zakázky. */
+  onHistorie?: (historie: Zasilka[]) => void;
+  /** Leží mimo pobočku tolik dní bez změny (Nastavení → Přesuny mezi pobočkami); null = v pořádku. */
+  dniBezZmeny?: number | null;
 }) {
   const [historie, setHistorie] = useState<Zasilka[]>([]);
   const [koncepty, setKoncepty] = useState<Zasilka[]>([]);
@@ -49,25 +53,21 @@ export function KdeJeZakazka({
   const odkud = u.druh === "jinde" ? u.branchId : (ticket.branchId ?? null);
 
   const nacti = useCallback(async () => {
-    if (!supabase) return;
     try {
-      const [{ data, error }, vsechny] = await Promise.all([
-        (supabase.from("ticket_shipment_items") as any)
-          .select("ticket_id, ticket_shipments(id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at)")
-          .eq("ticket_id", ticket.id),
-        nactiZasilky(serviceId),
-      ]);
-      if (error) throw new Error(error.message);
-      const rows = ((data ?? []) as Array<{ ticket_shipments: Record<string, unknown> | null }>)
-        .map((r) => r.ticket_shipments)
-        .filter((r): r is Record<string, unknown> => !!r)
-        .map(mapZasilka)
+      // Jeden dotaz: zásilky servisu i s položkami. Historie zakázky jsou ty,
+      // ve kterých je mezi položkami; koncepty pro „přidat do zásilky“ taky.
+      const vsechny = await nactiZasilky(serviceId);
+      const rows = vsechny
+        .filter((z) => z.polozky.some((p) => p.ticketId === ticket.id))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setHistorie(rows);
+      onHistorie?.(rows);
       setKoncepty(vsechny.filter((z) => z.status === "draft"));
     } catch (error) {
       reportError({ code: "zasilky.ticket_history_failed", error, source: "KdeJeZakazka", serviceId, context: { ticketId: ticket.id } });
     }
+    // onHistorie se nemění záměrně – rodič ji předává jako inline funkci.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceId, ticket.id]);
 
   useEffect(() => {
@@ -120,6 +120,11 @@ export function KdeJeZakazka({
         )}
         {u.druh !== "doma" && ticket.branchId && <span style={muted}>Přijato a vydá se: {domaci}</span>}
       </div>
+      {dniBezZmeny ? (
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger-text)", background: "var(--danger-soft)", borderRadius: 8, padding: "6px 10px" }}>
+          Zakázka je mimo svou pobočku už {dniBezZmeny} {dniBezZmeny === 1 ? "den" : dniBezZmeny < 5 ? "dny" : "dní"} bez změny. Zkontrolujte, jestli se na ní pracuje, nebo ji pošlete zpět.
+        </div>
+      ) : null}
 
       {u.druh !== "na_ceste" && odkud && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

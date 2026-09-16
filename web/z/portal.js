@@ -271,6 +271,8 @@
     };
     add('Přijato', fmtDate(ticket.createdAt));
     if (!status.isFinal) add('Předpokládané dokončení', fmtDateTime(ticket.expectedCompletionAt));
+    // Zásilky mezi pobočkami: jen „je v opravně“, bez názvu pobočky (viz _shared/portalPayload.ts).
+    if (!status.isFinal) add('Kde je zařízení', str(ticket.locationNote));
     add('Zařízení', str(ticket.deviceLabel));
     add('Požadovaná oprava', str(ticket.requestedRepair), true);
     add('Předání do servisu', methodLabel(ticket.handoffMethod));
@@ -809,7 +811,7 @@
     const fps = {
       header: fp(service),
       // Stav nese i stav nabídky – odeslaná nabídka schová odhad ceny.
-      status: fp([ticket.code, ticket.createdAt, ticket.expectedCompletionAt, ticket.deviceLabel, ticket.requestedRepair, ticket.status, ticket.handoffMethod, ticket.handbackMethod, ticket.estimatedPrice, ticket.totalPrice, ticket.performedRepairs, ticket.quote && ticket.quote.status]),
+      status: fp([ticket.code, ticket.createdAt, ticket.expectedCompletionAt, ticket.deviceLabel, ticket.requestedRepair, ticket.status, ticket.handoffMethod, ticket.handbackMethod, ticket.estimatedPrice, ticket.totalPrice, ticket.performedRepairs, ticket.quote && ticket.quote.status, ticket.locationNote]),
       quote: fp(ticket.quote),
       price: fp([ticket.performedRepairs, ticket.discount, ticket.totalPrice, payment, service.bankAccount, service.iban]),
       /* Otisk se počítá z cesty k souboru, ne z celého odkazu. Odkazy jsou

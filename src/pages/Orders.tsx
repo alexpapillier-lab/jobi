@@ -67,7 +67,7 @@ import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaS
 import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
 import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
-import { stitekUmisteni, umisteniZakazky } from "../lib/zasilky";
+import { dniBezZmenyJinde, krokyPresunu, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
 import { KdeJeZakazka } from "../components/orders/KdeJeZakazka";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
@@ -127,7 +127,7 @@ export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
 
 
-type GroupKey = "all" | "active" | "final" | "reklamace" | "moje";
+type GroupKey = "all" | "active" | "final" | "reklamace" | "moje" | "presun";
 type ClaimsSubGroup = "all" | "active" | "final";
 
 const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
@@ -265,6 +265,8 @@ export type TicketEx = Ticket & {
   locationBranchId?: string | null;
   /** Zásilka, ve které právě cestuje; null = necestuje. */
   transitShipmentId?: string | null;
+  /** Poslední uložení (updated_at) – upozornění „leží jinde X dní bez změny“. */
+  updatedAt?: string | null;
   estimatedPrice?: number;
   performedRepairs?: PerformedRepair[];
   /** Kontrola po opravě (tickets.test_checklist). */
@@ -691,6 +693,7 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     assignedTo: typeof supabaseTicket.assigned_to === "string" ? supabaseTicket.assigned_to : null,
     locationBranchId: typeof supabaseTicket.location_branch_id === "string" ? supabaseTicket.location_branch_id : null,
     transitShipmentId: typeof supabaseTicket.transit_shipment_id === "string" ? supabaseTicket.transit_shipment_id : null,
+    updatedAt: typeof supabaseTicket.updated_at === "string" ? supabaseTicket.updated_at : null,
     // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
     // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
     uplna: jePlnyRadekZakazky(supabaseTicket),
@@ -1025,6 +1028,7 @@ export default function Orders({
     setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
     setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
     setZasilkyZapnuty(config?.zasilky === true);
+    setNastaveniZasilek(normalizujNastaveniZasilek(config ?? undefined));
   }, []);
 
   const nactiConfigServisu = useCallback(() => {
@@ -1665,6 +1669,9 @@ export default function Orders({
   const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
   /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
   const [zasilkyZapnuty, setZasilkyZapnuty] = useState(false);
+  const [nastaveniZasilek, setNastaveniZasilek] = useState<NastaveniZasilek>(() => normalizujNastaveniZasilek(undefined));
+  /** Zásilky otevřené zakázky (dodá karta Kde je zakázka) – pro kroky v Postupu zakázky. */
+  const [historieZasilek, setHistorieZasilek] = useState<{ ticketId: string; zasilky: Zasilka[] } | null>(null);
   /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
   const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
@@ -2596,6 +2603,8 @@ export default function Orders({
         if (activeGroup === "final") return isFinal(st);
         // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
         if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
+        // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
+        if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
         return !isFinal(st);
       })
       .filter((t) => {
@@ -2701,11 +2710,13 @@ export default function Orders({
     let final = 0;
     let all = 0;
     let moje = 0;
+    let presun = 0;
     for (const t of tickets) {
       const raw = (t.status as any) ?? statusById[t.id];
       const st = normalizeStatus(raw);
       if (showSecondaryFiltersRow && activeStatusKey && st !== null && st !== activeStatusKey) continue;
       all += 1;
+      if (umisteniZakazky(t).druh !== "doma") presun += 1;
       if (st === null || !isFinal(st)) {
         active += 1;
         if (mojeId && t.assignedTo === mojeId) moje += 1;
@@ -2722,13 +2733,16 @@ export default function Orders({
         if (!aktivni) final += 1;
       }
     }
-    return { all, active, final, moje, reklamace: claimsInBranch.length };
+    return { all, active, final, moje, presun, reklamace: claimsInBranch.length };
   }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
+
+  const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
 
   // Vypnuté přidělování nesmí nechat seznam na skupině, která už neexistuje.
   useEffect(() => {
     if (!pridelovaniTechnika && activeGroup === "moje") setActiveGroup("active");
-  }, [pridelovaniTechnika, activeGroup]);
+    if (!filtrPresunu && activeGroup === "presun") setActiveGroup("active");
+  }, [pridelovaniTechnika, filtrPresunu, activeGroup]);
 
   const groupLabel = (label: string, count: number) => (
     <>
@@ -4458,6 +4472,7 @@ export default function Orders({
     // „Všechny pobočky“ vždy). Oranžový: kde fyzicky je, když ne doma.
     pobocka: hasBranches && t.branchId && t.branchId !== activeBranchId ? (branchById(t.branchId)?.name ?? null) : null,
     umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka") : null,
+    umisteniVaruje: zasilkyZapnuty && hasBranches ? dniBezZmenyJinde(t, nastaveniZasilek.upozorneniDni) : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
     status: (t.status as any) ?? statusById[t.id] ?? null,
@@ -4465,7 +4480,7 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni]);
 
   const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
     if (currentStatus !== null) {
@@ -4643,6 +4658,7 @@ export default function Orders({
             { value: "all", label: groupLabel("Vše", groupCounts.all) },
             { value: "active", label: groupLabel("Aktivní", groupCounts.active) },
             ...(pridelovaniTechnika ? [{ value: "moje" as GroupKey, label: groupLabel("Moje", groupCounts.moje) }] : []),
+            ...(filtrPresunu ? [{ value: "presun" as GroupKey, label: groupLabel("Přesuny", groupCounts.presun) }] : []),
             { value: "final", label: groupLabel("Dokončené", groupCounts.final) },
             { value: "reklamace", label: groupLabel("Reklamace", groupCounts.reklamace) },
           ]}
@@ -6907,6 +6923,19 @@ export default function Orders({
                   const nabidka = t.quoteStatus ?? "none";
                   const maFakturu = !!invoiceIdByTicketId[t.id];
                   const hotovo = isFinal(t.status);
+                  /* Kroky přesunu (zásilky mezi pobočkami): jen když zakázka někam
+                     jela nebo je v konceptu; opravená doma je nedostane. */
+                  const presun = zasilkyZapnuty && hasBranches && nastaveniZasilek.postup
+                    ? krokyPresunu(t, historieZasilek?.ticketId === t.id ? historieZasilek.zasilky : [], (id) => branchById(id)?.name ?? "jiná pobočka", maOpravy || hotovo)
+                    : { predOpravou: [], poOprave: [] };
+                  const krokPresunu = (k: (typeof presun.predOpravou)[number]) => ({
+                    id: k.id,
+                    label: k.label,
+                    hotovo: k.hotovo,
+                    poznamka: k.poznamka,
+                    akce: k.akce ? "Přidat do zásilky" : undefined,
+                    onAkce: k.akce ? () => sjetNaKartu("detail-presun") : undefined,
+                  });
                   return (
                     <div style={{ marginTop: 16 }}>
                       <PostupZakazky
@@ -6914,6 +6943,7 @@ export default function Orders({
                         kroky={[
                           { id: "prijato", label: "Přijato", hotovo: true },
                           { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaSbalenouKartu("detail-diagnostika") },
+                          ...presun.predOpravou.map(krokPresunu),
                           { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
                           /* Vypnutá sekce (Nastavení → Detail zakázky) nemá v postupu co nabízet. */
                           ...(skryteSekce.has("kontrola") ? [] : [
@@ -6928,6 +6958,7 @@ export default function Orders({
                             onAkce: nabidka === "sent" ? undefined : () => sjetNaSbalenouKartu("detail-portal"),
                             poznamka: nabidka === "sent" ? "Čeká na schválení zákazníkem" : undefined,
                           }]),
+                          ...presun.poOprave.map(krokPresunu),
                           {
                             id: "faktura",
                             label: "Faktura",
@@ -8127,6 +8158,8 @@ export default function Orders({
                       branches={branches}
                       nazevPobocky={(id) => branchById(id)?.name ?? "jiná pobočka"}
                       onOtevritZasilky={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "zasilky" } }))}
+                      onHistorie={(zasilky) => setHistorieZasilek({ ticketId: detailedTicket.id, zasilky })}
+                      dniBezZmeny={dniBezZmenyJinde(detailedTicket, nastaveniZasilek.upozorneniDni)}
                     />
                   </div>
                 )}

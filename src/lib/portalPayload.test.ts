@@ -164,8 +164,8 @@ describe("TICKET_COLUMNS – co portál z tickets čte", () => {
   it("záložní seznam je ten hlavní bez platnosti odkazu", () => {
     // `loadTicket` na něj přepne, když migrace s platností ještě není
     // nasazená. Nesmí přitom povolit nic navíc.
-    expect(TICKET_COLUMNS).toBe(`${TICKET_COLUMNS_ZAKLAD}, portal_token_expires_at`);
-    expect(TICKET_COLUMNS_ZAKLAD).not.toMatch(/portal_token_expires_at/);
+    expect(TICKET_COLUMNS).toBe(`${TICKET_COLUMNS_ZAKLAD}, portal_token_expires_at, location_branch_id, transit_shipment_id`);
+    expect(TICKET_COLUMNS_ZAKLAD).not.toMatch(/portal_token_expires_at|location_branch_id|transit_shipment_id/);
   });
 
   it("čte portal_token_expires_at, jinak by platnost odkazu nefungovala", () => {
@@ -196,6 +196,7 @@ describe("sestavPayload – přesný obsah odpovědi", () => {
       "handoffMethod",
       "intakeSignatureUrl",
       "intakeSignedAt",
+      "locationNote",
       "performedRepairs",
       "photos",
       "photosBefore",

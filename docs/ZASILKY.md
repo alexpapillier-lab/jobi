@@ -43,3 +43,16 @@ v detailu a štítek místa v seznamu („Praha“, „→ Praha“).
 
 Bez migrace se stránka Zásilky po zapnutí modulu nenačte (tabulky chybí)
 a seznam zakázek hlásí chybějící sloupce – proto migrace jde první.
+
+## Volby modulu (Nastavení → Zakázky → Přesuny mezi pobočkami)
+
+| Klíč v `config`           | Výchozí | Co dělá                                                                 |
+| ------------------------- | ------- | ----------------------------------------------------------------------- |
+| `zasilky_postup`          | true    | kroky „Odesláno → Převzato → Zpět“ v Postupu zakázky (`krokyPresunu`)   |
+| `zasilky_filtr`           | true    | rychlý filtr „Přesuny“ v seznamu zakázek                                |
+| `zasilky_upozorneni_dni`  | 0       | po tolika dnech bez uložení mimo pobočku červený štítek (`dniBezZmenyJinde`) |
+| `zasilky_portal`          | true    | portál řekne „Zařízení je v opravně“ (edge funkce `portal-ticket`, `locationNote`) |
+
+Volba portálu vyžaduje nasazení edge funkce `portal-ticket` (čte
+`location_branch_id` a `transit_shipment_id`; bez migrace se sama vrátí
+k základním sloupcům).
