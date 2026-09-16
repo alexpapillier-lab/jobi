@@ -208,7 +208,7 @@ export default function App() {
       return null;
     }
   });
-  const { isAdmin, hasCapability } = useActiveRole(activeServiceId);
+  const { isAdmin, hasCapability, capabilities } = useActiveRole(activeServiceId);
 
   // Přítomnost v týmu (zelená tečka v Nastavení → Tým, bubliny „kdo tu je“
   // u zakázky). Jeden kanál na servis, spuštěný tady, aby byl online každý,
@@ -221,10 +221,13 @@ export default function App() {
     return startServicePresence(activeServiceId, presenceUserId, { nickname: presenceNickname, avatarUrl: presenceAvatarUrl });
   }, [activeServiceId, presenceUserId, presenceNickname, presenceAvatarUrl]);
   const canManageDocuments = isAdmin || hasCapability("can_manage_documents");
-  /* Statistiky ukazují peníze celého servisu – člen je vidí jen s právem
-     can_view_statistics (Nastavení → Tým). Server to hlídá taky; tady jde
-     o to, aby stránka zmizela z navigace a nešla otevřít zkratkou. */
-  const canViewStatistics = isAdmin || hasCapability("can_view_statistics");
+  /* Statistiky ukazují peníze celého servisu – člen je vidí, dokud mu právo
+     can_view_statistics někdo neodebere (Nastavení → Tým). Chybějící klíč
+     znamená „povoleno“, ne „zakázáno“: statistiky dřív viděl každý a řádek
+     bez klíče je starší člen nebo databáze bez migrace – ani jednomu se
+     nesmí stránka ztratit. Server to čte stejně; tady jde o to, aby po
+     odebrání stránka zmizela z navigace a nešla otevřít zkratkou. */
+  const canViewStatistics = isAdmin || capabilities.can_view_statistics !== false;
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
   /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
   const [servicesLoaded, setServicesLoaded] = useState(false);

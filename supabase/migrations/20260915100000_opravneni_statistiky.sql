@@ -6,10 +6,14 @@
 -- se na dvou místech: v aplikaci (stránka zmizí z navigace) a tady v
 -- databázi (funkce statistiky_prehled / statistiky_technici čísla nevydají).
 --
--- Stávající členové právo DOSTANOU: dnes statistiky vidí a nasazení
--- migrace jim nesmí bez varování nic sebrat. Kdo je nemá vidět, tomu ho
--- majitel odebere. Noví členové ho dostávají výchozím nastavením pozvánky
--- (invite-accept) stejně jako všechna ostatní práva.
+-- Chybějící klíč znamená POVOLENO, ne zakázáno – na rozdíl od ostatních
+-- práv. Statistiky dřív viděl každý; řádek bez klíče je starší člen nebo
+-- člen pozvaný starší edge funkcí, a ani jednomu se stránka nesmí ztratit
+-- jen proto, že se aplikace aktualizovala dřív než databáze. Stejně to čte
+-- App.tsx a dialog práv v Týmu. Stávajícím členům se klíč přesto zapíše
+-- výslovně, ať je v dialogu vidět, co platí; noví ho dostávají výchozím
+-- nastavením pozvánky (invite-accept). Kdo statistiky vidět nemá, tomu
+-- majitel právo odebere (false).
 --
 -- Zároveň se obě funkce statistik otvírají pro service_role: edge funkce
 -- statistics-report-send (report e-mailem) je volá bez přihlášeného
@@ -47,7 +51,7 @@ $$;
 revoke all on function public.povolene_capability() from public, anon;
 grant execute on function public.povolene_capability() to authenticated, service_role;
 
--- 2) Stávající členové statistiky vidí dál -----------------------------------
+-- 2) Stávajícím členům se právo zapíše výslovně (viz výše) --------------------
 update public.service_memberships
    set capabilities = coalesce(capabilities, '{}'::jsonb) || '{"can_view_statistics": true}'::jsonb
  where role = 'member'
@@ -55,7 +59,8 @@ update public.service_memberships
 
 -- 3) Jedna kontrola pro obě funkce statistik ---------------------------------
 -- Volající musí být členem každého z vybraných servisů a – pokud je jen
--- člen – mít právo can_view_statistics. Majitel a správce ho mají vždy.
+-- člen – nesmí mít právo can_view_statistics odebrané (false). Chybějící
+-- klíč = povoleno (viz úvod). Majitel a správce vidí vždy.
 create or replace function public.overit_pristup_ke_statistikam(p_service_ids uuid[])
 returns void
 language plpgsql
@@ -76,7 +81,7 @@ begin
         and m.user_id = auth.uid()
         and (
           m.role in ('owner', 'admin')
-          or (coalesce(m.capabilities, '{}'::jsonb) ->> 'can_view_statistics') = 'true'
+          or coalesce(m.capabilities ->> 'can_view_statistics', 'true') <> 'false'
         )
     )
   ) <> (select count(distinct x) from unnest(p_service_ids) x) then
@@ -89,7 +94,7 @@ revoke all on function public.overit_pristup_ke_statistikam(uuid[]) from public,
 grant execute on function public.overit_pristup_ke_statistikam(uuid[]) to authenticated, service_role;
 
 comment on function public.overit_pristup_ke_statistikam(uuid[]) is
-  'Vyhodí 42501, když volající není členem každého ze servisů nebo jako člen nemá právo can_view_statistics.';
+  'Vyhodí 42501, když volající není členem každého ze servisů nebo má jako člen právo can_view_statistics odebrané (false). Chybějící klíč = povoleno.';
 
 -- 4) statistiky_prehled – tělo beze změny (migrace 20260913160000), jen
 --    kontrola přístupu nahoře. -----------------------------------------------

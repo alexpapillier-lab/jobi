@@ -87,7 +87,12 @@ přeskočily a proč (`skipped`) a případné chyby.
 ## Právo „vidět statistiky“
 
 Zároveň přibylo právo člena `can_view_statistics` (Nastavení → Tým →
-Povolení). Bez něj člen stránku Statistiky v navigaci nevidí a databázové
-funkce mu čísla nevydají. Stávající členové ho migrací dostali (dosud
-statistiky viděli všichni), noví ho dostávají výchozím nastavením pozvánky;
-majitel ho může kdykoli odebrat.
+Povolení). Po jeho **odebrání** (`false`) člen stránku Statistiky v navigaci
+nevidí a databázové funkce mu čísla nevydají. Chybějící klíč znamená
+povoleno – statistiky dřív viděl každý a aktualizace aplikace před migrací
+nesmí nikomu stránku sebrat. Stávajícím členům migrace klíč zapíše
+výslovně, noví ho dostávají výchozím nastavením pozvánky.
+
+Dialog práv v Týmu si z databáze čte `povolene_capability()` a právo, které
+databáze ještě nezná, neposílá (ukáže ho šedě s vysvětlením). Bez toho by
+klient s novým právem po jediném neznámém klíči neuložil vůbec nic.

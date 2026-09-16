@@ -21,8 +21,15 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   );
   expect(oprava, "Veřejný ceník nemá žádnou opravu s modelem – bez ní se rezervace otestovat nedá.").toBeTruthy();
   const model = cenik.models.find((m: { id: string }) => oprava.model_ids.includes(m.id));
+  /* Termín nejbližší všední den v 10:30: server odmítá termíny víc než
+     hodinu v minulosti (400 „Termín je v minulosti“), takže napevno zapsané
+     datum test po jeho uplynutí položí, i když rezervace fungují. */
+  const termin = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  while (termin.getUTCDay() === 0 || termin.getUTCDay() === 6) termin.setUTCDate(termin.getUTCDate() + 1);
+  const preferredAt = `${termin.toISOString().slice(0, 10)}T10:30:00+02:00`;
+  const terminPopisek = `${termin.getUTCDate()}. ${termin.getUTCMonth() + 1}. 10:30`;
   const odpoved = await request.post(FUNKCE, {
-    data: { service: "e2e-servis", name: zakaznik, phone: "+420777555333", email: "rezervace@example.com", device: "iPad Air (rezervace)", repair: "Prasklé sklo", repair_id: oprava.id, model_id: model.id, preferred_at: "2026-09-15T10:30:00+02:00", note: "Přijdu v poledne" },
+    data: { service: "e2e-servis", name: zakaznik, phone: "+420777555333", email: "rezervace@example.com", device: "iPad Air (rezervace)", repair: "Prasklé sklo", repair_id: oprava.id, model_id: model.id, preferred_at: preferredAt, note: "Přijdu v poledne" },
   });
   /* Veřejné rezervace mají strop 10 za hodinu z jedné adresy – při mnoha
      bězích za sebou se vyčerpá. Není to chyba aplikace, ale test by na tom
@@ -39,7 +46,7 @@ test("rezervace z webu se objeví v Kalendáři a jde z ní založit zakázka", 
   await expect(radek).toBeVisible({ timeout: 20_000 });
   await expect(radek).toContainText(`iPad Air (rezervace) (${model.name}) · ${oprava.name} · cca ${Number(oprava.price).toLocaleString("cs-CZ")} Kč`);
   await expect(radek).toContainText("Nová");
-  await expect(radek).toContainText("15. 9. 10:30");
+  await expect(radek).toContainText(terminPopisek);
 
   // Založit zakázku → formulář příjmu s údaji z rezervace.
   await radek.getByRole("button", { name: "Založit zakázku" }).click();
