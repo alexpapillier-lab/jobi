@@ -38,9 +38,12 @@ export function SbalitelnaHlavicka({
   ovlada,
   souhrn,
   vpravo,
+  barva,
 }: {
   icon?: ReactNode;
   title: ReactNode;
+  /** Barva sekce – viz SectionHeading. */
+  barva?: string;
   otevreno: boolean;
   onToggle: () => void;
   /** id rozbaleného obsahu (aria-controls). */
@@ -62,7 +65,7 @@ export function SbalitelnaHlavicka({
         <span style={{ display: "inline-flex", color: "var(--muted)", transform: otevreno ? "rotate(180deg)" : "none", transition: "transform 120ms ease", marginBottom: "var(--space-3)" }}>
           <ChevronDownIcon size={16} />
         </span>
-        <SectionHeading icon={icon}>{title}</SectionHeading>
+        <SectionHeading icon={icon} barva={barva}>{title}</SectionHeading>
         {!otevreno && souhrn && (
           <span style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginBottom: "var(--space-3)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {souhrn}

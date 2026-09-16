@@ -64,6 +64,8 @@ import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
+import { jeSlevaAktivni, normalizujSlevy, popisSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
+import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
@@ -1004,6 +1006,8 @@ export default function Orders({
     setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
     setPridelovaniTechnika(config?.pridelovani_technika !== false);
     setChatZapnuty(config?.chat !== false);
+    setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
+    setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
   }, []);
 
   const nactiConfigServisu = useCallback(() => {
@@ -1638,6 +1642,10 @@ export default function Orders({
   const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
   /** Přidělování technika (config.pridelovani_technika, výchozí zapnuto). Servis s jedním technikem si ho vypne. */
   const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
+  /** Přednastavené slevy (config.prednastavene_slevy) – tlačítka u ceny oprav v detailu. */
+  const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
+  /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
+  const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
   /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
   const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
@@ -6845,8 +6853,11 @@ export default function Orders({
                           { id: "prijato", label: "Přijato", hotovo: true },
                           { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaSbalenouKartu("detail-diagnostika") },
                           { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
-                          { id: "kontrola", label: "Kontrola po opravě", hotovo: shrnutiKontroly(t.testChecklist).dokonceno, volitelny: true, akce: "Přejít na kontrolu", onAkce: () => sjetNaKartu("detail-kontrola") },
-                          {
+                          /* Vypnutá sekce (Nastavení → Detail zakázky) nemá v postupu co nabízet. */
+                          ...(skryteSekce.has("kontrola") ? [] : [
+                            { id: "kontrola", label: "Kontrola po opravě", hotovo: shrnutiKontroly(t.testChecklist).dokonceno, volitelny: true, akce: "Přejít na kontrolu", onAkce: () => sjetNaKartu("detail-kontrola") },
+                          ]),
+                          ...(skryteSekce.has("portal") ? [] : [{
                             id: "nabidka",
                             label: "Nabídka zákazníkovi",
                             hotovo: nabidka === "approved",
@@ -6854,7 +6865,7 @@ export default function Orders({
                             akce: nabidka === "sent" ? undefined : "Přejít na nabídku",
                             onAkce: nabidka === "sent" ? undefined : () => sjetNaSbalenouKartu("detail-portal"),
                             poznamka: nabidka === "sent" ? "Čeká na schválení zákazníkem" : undefined,
-                          },
+                          }]),
                           {
                             id: "faktura",
                             label: "Faktura",
@@ -6870,8 +6881,8 @@ export default function Orders({
                   );
                 })()}
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
-                  <div style={card}>
-                    <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
+                  <div style={{ ...card, ...stylSekce("zakaznik") }}>
+                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
                       <div
                         onClick={() => {
@@ -6948,8 +6959,8 @@ export default function Orders({
                     ) : null;
                   })()}
 
-                  <div style={card}>
-                    <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
+                  <div style={{ ...card, ...stylSekce("zarizeni") }}>
+                    <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{detailedTicket.deviceLabel}</div>
                       {detailedTicket.serialOrImei && (
@@ -7001,8 +7012,8 @@ export default function Orders({
                 <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", marginBottom: 16 }}>Upravit zakázku</div>
 
                 <div style={{ display: "grid", gap: 16 }}>
-                  <div style={card}>
-                    <SectionHeading icon={<UserIcon size={16} />}>Zákazník</SectionHeading>
+                  <div style={{ ...card, ...stylSekce("zakaznik") }}>
+                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 12 }}>
                       <div>
                         <div style={fieldLabel}>Jméno *</div>
@@ -7242,8 +7253,8 @@ export default function Orders({
                     </div>
                   </div>
 
-                  <div style={card}>
-                    <SectionHeading icon={<DeviceIcon size={16} />}>Zařízení</SectionHeading>
+                  <div style={{ ...card, ...stylSekce("zarizeni") }}>
+                    <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
                     <div style={{ display: "grid", gap: 12 }}>
                       <div>
                         <div style={fieldLabel}>Zařízení *</div>
@@ -7464,8 +7475,8 @@ export default function Orders({
                   </div>
                 </div>
 
-                <div id="detail-opravy" style={{ ...card, marginTop: 16 }}>
-                  <SectionHeading icon={<WrenchIcon size={16} />}>Provedené opravy</SectionHeading>
+                <div id="detail-opravy" style={{ ...card, ...stylSekce("opravy"), marginTop: 16 }}>
+                  <SectionHeading icon={<WrenchIcon size={16} />} barva={BARVA_SEKCE.opravy}>Provedené opravy</SectionHeading>
 
                   <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
                     {(detailedTicket.performedRepairs ?? []).map((repair) => {
@@ -7545,7 +7556,49 @@ export default function Orders({
                                   );
                                 }}
                               />
-                              
+
+                              {/* Přednastavené slevy (Nastavení → Zakázky → Slevy): jedno
+                                  klepnutí místo výběru typu a vypisování hodnoty. Druhé
+                                  klepnutí na aktivní slevu ji zase sundá. */}
+                              {prednastaveneSlevy.length > 0 && (
+                                <div role="group" aria-label="Rychlá sleva" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                  {prednastaveneSlevy.map((s) => {
+                                    const aktivni = jeSlevaAktivni(s, discountType, discountValue);
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        type="button"
+                                        aria-pressed={aktivni}
+                                        onClick={() => {
+                                          setCloudTickets((prev) =>
+                                            prev.map((t) =>
+                                              t.id === detailedTicket.id
+                                                ? (aktivni
+                                                    ? { ...t, discountType: null, discountValue: undefined }
+                                                    : { ...t, discountType: s.typ, discountValue: s.hodnota })
+                                                : t
+                                            )
+                                          );
+                                        }}
+                                        style={{
+                                          padding: "4px 10px",
+                                          borderRadius: 999,
+                                          border: aktivni ? "1px solid var(--accent)" : "1px solid var(--border)",
+                                          background: aktivni ? "var(--accent)" : "var(--panel)",
+                                          color: aktivni ? "#fff" : "var(--text)",
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                          fontFamily: "inherit",
+                                        }}
+                                      >
+                                        {popisSlevy(s)}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
                               {discountAmount > 0 && (
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                   <span style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -7611,7 +7664,7 @@ export default function Orders({
                   />
                 </div>
 
-                {activeServiceId && (
+                {activeServiceId && !skryteSekce.has("portal") && (
                   <div id="detail-portal">
                   <PortalCard
                     key={detailedTicket.id}
@@ -7620,7 +7673,8 @@ export default function Orders({
                     smsAvailable={smsAvailable}
                     availableRepairs={availableRepairs}
                     onQuoteApprovedRepairs={applyQuoteRepairs}
-                    style={{ marginTop: 16 }}
+                    style={{ marginTop: 16, ...stylSekce("portal") }}
+                    barva={BARVA_SEKCE.portal}
                     onFieldsChange={(ticketId, fields) =>
                       setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))
                     }
@@ -7630,9 +7684,10 @@ export default function Orders({
                   </div>
                 )}
 
-                <div id="detail-diagnostika" style={{ ...card, marginTop: 16 }}>
+                <div id="detail-diagnostika" style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
                   <SbalitelnaHlavicka
                     icon={<SearchIcon size={16} />}
+                    barva={BARVA_SEKCE.diagnostika}
                     title="Diagnostika"
                     otevreno={detailDiagnostikaOpen}
                     onToggle={prepnoutDetailDiagnostiku}
@@ -8024,8 +8079,9 @@ export default function Orders({
                   )}
                 </div>
 
-                <div id="detail-zapujcka" style={{ ...card, marginTop: 16 }}>
-                  <SectionHeading icon={<DeviceIcon size={16} />}>Náhradní zařízení</SectionHeading>
+                {!skryteSekce.has("nahradni") && (
+                <div id="detail-zapujcka" style={{ ...card, ...stylSekce("nahradni"), marginTop: 16 }}>
+                  <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.nahradni}>Náhradní zařízení</SectionHeading>
                   <ZapujckaKarta
                     zapujcka={detailedTicket.loaner}
                     onChange={(z) => void ulozZapujcku(detailedTicket.id, z)}
@@ -8042,10 +8098,11 @@ export default function Orders({
                     })()}
                   />
                 </div>
+                )}
 
                 {pridelovaniTechnika && (
-                  <div id="detail-technik" style={{ ...card, marginTop: 16 }}>
-                    <SectionHeading icon={<UserIcon size={16} />}>Technik</SectionHeading>
+                  <div id="detail-technik" style={{ ...card, ...stylSekce("technik"), marginTop: 16 }}>
+                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.technik}>Technik</SectionHeading>
                     <TechnikZakazky
                       clenove={clenove.clenove}
                       hodnota={detailedTicket.assignedTo}
@@ -8056,8 +8113,8 @@ export default function Orders({
                 )}
 
                 {casNaOpraveZapnuto && activeServiceId && (
-                  <div id="detail-cas" style={{ ...card, marginTop: 16 }}>
-                    <SectionHeading icon={<HistoryIcon size={16} />}>Čas na opravě</SectionHeading>
+                  <div id="detail-cas" style={{ ...card, ...stylSekce("cas"), marginTop: 16 }}>
+                    <SectionHeading icon={<HistoryIcon size={16} />} barva={BARVA_SEKCE.cas}>Čas na opravě</SectionHeading>
                     <CasNaOprave
                       serviceId={activeServiceId}
                       ticketId={detailedTicket.id}
@@ -8071,8 +8128,9 @@ export default function Orders({
                   </div>
                 )}
 
-                <div id="detail-kontrola" style={{ ...card, marginTop: 16 }}>
-                  <SectionHeading icon={<CheckIcon size={16} />}>Kontrola po opravě</SectionHeading>
+                {!skryteSekce.has("kontrola") && (
+                <div id="detail-kontrola" style={{ ...card, ...stylSekce("kontrola"), marginTop: 16 }}>
+                  <SectionHeading icon={<CheckIcon size={16} />} barva={BARVA_SEKCE.kontrola}>Kontrola po opravě</SectionHeading>
                   <KontrolaPoOprave
                     kontrola={detailedTicket.testChecklist}
                     sablony={kontrolniSeznamy}
@@ -8080,6 +8138,7 @@ export default function Orders({
                     onChange={(k) => void ulozKontrolu(detailedTicket.id, k)}
                   />
                 </div>
+                )}
               </>
             )}
 

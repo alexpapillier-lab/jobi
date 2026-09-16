@@ -118,6 +118,7 @@ export function PortalCard({
   style,
   otevreno = true,
   onToggle,
+  barva,
 }: {
   ticket: PortalCardTicket;
   serviceId: string;
@@ -133,6 +134,8 @@ export function PortalCard({
   /** Sbalitelná karta: bez `onToggle` je vždy rozbalená. Stav drží rodič, ať ho může rozbalit skok z Postupu zakázky. */
   otevreno?: boolean;
   onToggle?: () => void;
+  /** Barva sekce – viz SectionHeading. */
+  barva?: string;
 }) {
   const ticketId = ticket.id;
   const [fields, setFields] = useState<PortalTicketFields>(() => pickPortalFields(ticket));
@@ -470,6 +473,7 @@ export function PortalCard({
       {onToggle ? (
         <SbalitelnaHlavicka
           icon={<LinkIcon size={16} />}
+          barva={barva}
           title="Zákaznický portál"
           otevreno={otevreno}
           onToggle={onToggle}
@@ -479,7 +483,7 @@ export function PortalCard({
         />
       ) : (
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <SectionHeading icon={<LinkIcon size={16} />}>Zákaznický portál</SectionHeading>
+          <SectionHeading icon={<LinkIcon size={16} />} barva={barva}>Zákaznický portál</SectionHeading>
           {naposledy}
         </div>
       )}
