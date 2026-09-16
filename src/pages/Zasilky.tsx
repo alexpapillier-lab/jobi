@@ -135,6 +135,19 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   }, [activeServiceId, nacti]);
 
   const otevrena = useMemo(() => zasilky.find((z) => z.id === otevrenaId) ?? null, [zasilky, otevrenaId]);
+
+  /* „Naše“ pobočka pro rozlišení příchozí / odchozí: vybraná ve filtru,
+     jinak ta pro novou zakázku (domovská). */
+  const mojePobocka = activeBranchId ?? branchForNew?.id ?? null;
+  const kNam = useCallback((z: Zasilka) => !!mojePobocka && z.toBranchId === mojePobocka, [mojePobocka]);
+  /* Po prvním načtení: když k nám něco jede, otevřít rovnou „Na cestě“ – to
+     je to, co příjemce řeší nejdřív. */
+  const [vychoziZalozkaNastavena, setVychoziZalozkaNastavena] = useState(false);
+  useEffect(() => {
+    if (nacitam || vychoziZalozkaNastavena) return;
+    setVychoziZalozkaNastavena(true);
+    if (zasilky.some((z) => z.status === "sent" && kNam(z))) setZalozka("sent");
+  }, [nacitam, vychoziZalozkaNastavena, zasilky, kNam]);
   useEffect(() => { setVybraneKPrevzeti(new Set()); }, [otevrenaId]);
 
   const vZalozce = useMemo(() => zasilky.filter((z) => z.status === zalozka), [zasilky, zalozka]);
@@ -147,23 +160,39 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   /* Zakázky, které jdou do konceptu: fyzicky na pobočce odeslání, necestují,
      nejsou už v téhle zásilce. Hotové zakázky jen na přání – zpátky se
      posílají opravené, takže u zpáteční cesty se hodí i ty. */
+  /* Zakázky, které patří cílové pobočce a jsou tu jen na opravu, se vrací
+     domů – ty jsou pro zpáteční zásilku to hlavní, proto jdou zvlášť
+     a nahoru, hotové vždycky (přepínač „i hotové“ se týká jen ostatních). */
   const nabidka = useMemo(() => {
-    if (!otevrena || otevrena.status !== "draft") return [];
+    const domu: ZakazkaRadek[] = [];
+    const ostatni: ZakazkaRadek[] = [];
+    if (!otevrena || otevrena.status !== "draft") return { domu, ostatni };
     const uz = new Set(otevrena.polozky.map((p) => p.ticketId));
     const q = hledat.trim().toLowerCase();
-    const out: ZakazkaRadek[] = [];
     for (const t of zakazky.values()) {
       if (uz.has(t.id) || t.transitShipmentId) continue;
       const u = umisteniZakazky(t);
       const mistoId = u.druh === "jinde" ? u.branchId : t.branchId;
       if (mistoId !== otevrena.fromBranchId) continue;
-      if (!iHotove && t.status && isFinal(t.status)) continue;
       if (q && !`${t.code} ${t.title} ${t.customerName} ${t.serial}`.toLowerCase().includes(q)) continue;
-      out.push(t);
-      if (out.length >= 60) break;
+      const vraciSe = !!t.branchId && t.branchId === otevrena.toBranchId;
+      if (vraciSe) {
+        if (domu.length < 100) domu.push(t);
+        continue;
+      }
+      if (!iHotove && t.status && isFinal(t.status)) continue;
+      if (ostatni.length < 60) ostatni.push(t);
     }
-    return out;
+    // Hotové napřed – ty se posílají zpátky nejdřív.
+    domu.sort((a, b) => Number(!!b.status && isFinal(b.status)) - Number(!!a.status && isFinal(a.status)));
+    return { domu, ostatni };
   }, [otevrena, zakazky, hledat, iHotove, isFinal]);
+
+  const pridatVse = (radky: ZakazkaRadek[]) =>
+    akce(async () => {
+      if (!otevrena) return;
+      for (const t of radky) await pridejDoZasilky(otevrena.id, t.id);
+    }, `Přidáno ${radky.length} zakázek.`);
 
   const akce = async (co: () => Promise<void>, hotovo?: string) => {
     if (zauzlovano) return;
@@ -207,19 +236,26 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   const card: React.CSSProperties = { display: "grid", gap: 12 };
   const radekZakazky = (t: ZakazkaRadek | undefined, ticketId: string, vpravo?: React.ReactNode) => {
     const meta = t?.status ? getByKey(t.status) : undefined;
+    /* Zakázka z cílové pobočky: v zásilce tam jede domů. Podbarvit, ať je
+       na první pohled vidět, co se vrací a co jede na opravu. */
+    const domu = !!t?.branchId && !!otevrena && t.branchId === otevrena.toBranchId;
     return (
-      <div key={ticketId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", flexWrap: "wrap" }}>
+      <div key={ticketId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 8, border: `1px solid ${domu ? "var(--success)" : "var(--border)"}`, background: domu ? "var(--success-soft)" : "var(--panel)", flexWrap: "wrap" }}>
         <button type="button" onClick={() => onOpenTicket(ticketId)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--accent)", fontWeight: 800, fontFamily: "inherit", fontSize: 13 }}>
           {t?.code ?? "zakázka"}
         </button>
         <span style={{ fontSize: 13, color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1 1 160px" }}>
           {t ? `${t.title}${t.serial ? ` · ${t.serial}` : ""} · ${t.customerName}` : "zakázka mimo váš přístup"}
         </span>
-        {t?.branchId && otevrena && t.branchId !== otevrena.fromBranchId && (
+        {domu && t?.branchId ? (
+          <span title={`Zakázka z pobočky ${nazevPobocky(t.branchId)} – touhle zásilkou se vrací domů`} style={{ fontSize: 11, fontWeight: 800, color: "var(--success-text)", background: "var(--panel)", border: "1px solid var(--success)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap" }}>
+            domů → {nazevPobocky(t.branchId)}
+          </span>
+        ) : t?.branchId && otevrena && t.branchId !== otevrena.fromBranchId ? (
           <span title={`Přijato na pobočce ${nazevPobocky(t.branchId)}`} style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap" }}>
             {nazevPobocky(t.branchId)}
           </span>
-        )}
+        ) : null}
         {meta && <StatusBadge label={meta.label} bg={meta.bg ?? "var(--muted)"} isFinal={meta.isFinal} size="sm" />}
         {vpravo}
       </div>
@@ -286,7 +322,14 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                       style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, border: `1px solid ${aktivni ? "var(--accent)" : "var(--border)"}`, background: aktivni ? "var(--accent-soft)" : "var(--panel)", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", display: "grid", gap: 2 }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                        <span style={{ fontWeight: 800 }}>{cisloZasilky(z)} · {nazevPobocky(z.fromBranchId)} → {nazevPobocky(z.toBranchId)}</span>
+                        <span style={{ fontWeight: 800 }}>
+                          {cisloZasilky(z)} · {nazevPobocky(z.fromBranchId)} → {nazevPobocky(z.toBranchId)}
+                          {mojePobocka && z.status === "sent" && (
+                            <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, padding: "0 7px", borderRadius: 999, background: kNam(z) ? "var(--accent)" : "var(--panel-2)", color: kNam(z) ? "#fff" : "var(--muted)", border: kNam(z) ? "none" : "1px solid var(--border)" }}>
+                              {kNam(z) ? "k nám" : "od nás"}
+                            </span>
+                          )}
+                        </span>
                         <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{z.polozky.length} {z.polozky.length === 1 ? "zakázka" : z.polozky.length < 5 ? "zakázky" : "zakázek"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -399,18 +442,42 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                       Přidat zakázky z pobočky {nazevPobocky(otevrena.fromBranchId)}
                     </div>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={iHotove} onChange={(e) => setIHotove(e.target.checked)} /> i hotové
+                      <input type="checkbox" checked={iHotove} onChange={(e) => setIHotove(e.target.checked)} /> i hotové (mimo vracející se)
                     </label>
                   </div>
                   <Input value={hledat} onChange={(e) => setHledat(e.target.value)} placeholder="Hledat podle čísla, zařízení, zákazníka nebo IMEI…" aria-label="Hledat zakázku" />
-                  {nabidka.length === 0 ? (
+                  {nabidka.domu.length === 0 && nabidka.ostatni.length === 0 ? (
                     <div style={{ color: "var(--muted)", fontSize: 13 }}>Žádná další zakázka na této pobočce k odeslání.</div>
                   ) : (
-                    <div style={{ display: "grid", gap: 6, maxHeight: 420, overflowY: "auto" }}>
-                      {nabidka.map((t) =>
-                        radekZakazky(t, t.id, (
-                          <Button size="sm" variant="soft" disabled={zauzlovano} onClick={() => void akce(() => pridejDoZasilky(otevrena.id, t.id))}>Přidat</Button>
-                        )),
+                    <div style={{ display: "grid", gap: 6, maxHeight: 480, overflowY: "auto" }}>
+                      {nabidka.domu.length > 0 && (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--success-text)", flex: 1 }}>
+                              Vrací se domů do pobočky {nazevPobocky(otevrena.toBranchId)} ({nabidka.domu.length})
+                            </span>
+                            <Button size="sm" variant="soft" disabled={zauzlovano} onClick={() => void pridatVse(nabidka.domu)}>
+                              Přidat vše ({nabidka.domu.length})
+                            </Button>
+                          </div>
+                          {nabidka.domu.map((t) =>
+                            radekZakazky(t, t.id, (
+                              <Button size="sm" variant="soft" disabled={zauzlovano} onClick={() => void akce(() => pridejDoZasilky(otevrena.id, t.id))}>Přidat</Button>
+                            )),
+                          )}
+                        </>
+                      )}
+                      {nabidka.ostatni.length > 0 && (
+                        <>
+                          {nabidka.domu.length > 0 && (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginTop: 6 }}>Ostatní zakázky na pobočce ({nabidka.ostatni.length})</div>
+                          )}
+                          {nabidka.ostatni.map((t) =>
+                            radekZakazky(t, t.id, (
+                              <Button size="sm" variant="soft" disabled={zauzlovano} onClick={() => void akce(() => pridejDoZasilky(otevrena.id, t.id))}>Přidat</Button>
+                            )),
+                          )}
+                        </>
                       )}
                     </div>
                   )}

@@ -45,6 +45,7 @@ export type BottomNavProps = {
   /** Člen bez práva can_view_statistics záložku Statistiky nevidí. */
   statisticsEnabled?: boolean;
   zasilkyEnabled?: boolean;
+  zasilkyBadge?: number;
   services?: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId?: string | null;
   setActiveServiceId?: (serviceId: string | null) => void;
@@ -61,6 +62,7 @@ export function BottomNav({
   smsUnreadCount = 0,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  zasilkyBadge = 0,
   services = [],
   activeServiceId = null,
   setActiveServiceId,
@@ -219,7 +221,7 @@ export function BottomNav({
                 tabButton(t, active === t.key, () => {
                   onNavigate(t.key);
                   setMoreOpen(false);
-                }, t.key === "sms" ? smsUnreadCount : 0)
+                }, t.key === "sms" ? smsUnreadCount : t.key === "zasilky" ? zasilkyBadge : 0)
               )}
             </div>
 
@@ -396,7 +398,7 @@ export function BottomNav({
           { key: "settings", label: "Více", icon: icon("M4 12h.01M12 12h.01M20 12h.01") },
           moreActive || moreOpen,
           () => setMoreOpen((v) => !v),
-          smsEnabled && !moreOpen ? smsUnreadCount : 0
+          !moreOpen ? (smsEnabled ? smsUnreadCount : 0) + (zasilkyEnabled ? zasilkyBadge : 0) : 0
         )}
       </nav>
     </>

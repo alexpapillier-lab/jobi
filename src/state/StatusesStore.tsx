@@ -317,8 +317,11 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
      * první z nich index, který ještě držel ten druhý, a zápis spadl na
      * „duplicate key value violates unique constraint
      * ux_service_statuses_service_order_index“. Nejdřív se proto všem
-     * přidělí záporná (dočasná, navzájem různá) čísla, teprve pak cílová.
+     * přidělí dočasná, navzájem různá čísla daleko mimo běžný rozsah,
+     * teprve pak cílová. Kladná: na order_index je kontrola >= 0 (záporná
+     * dočasná čísla padala na „service_statuses_order_index_gte_0“).
      */
+    const DOCASNY_POSUN = 100000;
     const zapis = (hodnota: (idx: number) => number) =>
       Promise.all(
         nove.map((st, idx) =>
@@ -330,13 +333,13 @@ export function StatusesProvider({ children, activeServiceId }: { children: Reac
       );
     const najdiChybu = (vysledky: Array<{ error?: { message?: string } | null }>) =>
       vysledky.find((r) => r?.error)?.error;
-    let chyba = najdiChybu(await zapis((idx) => -(idx + 1)));
+    let chyba = najdiChybu(await zapis((idx) => DOCASNY_POSUN + idx));
     if (!chyba) chyba = najdiChybu(await zapis((idx) => idx));
     if (chyba) {
       console.error("[Statuses] move failed", chyba);
       setStatuses(predchozi);
       showToast(`Pořadí se nepodařilo uložit: ${chyba.message || "Neznámá chyba"}`, "error");
-      // Po pádu v druhé fázi by v databázi zůstala záporná čísla; pořadí by
+      // Po pádu v druhé fázi by v databázi zůstala dočasná čísla; pořadí by
       // se sice načetlo správně (řadí se podle order_index), ale ať je čisto.
       void zapis((idx) => idx).catch(() => {});
     }

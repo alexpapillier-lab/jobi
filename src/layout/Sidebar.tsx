@@ -135,6 +135,8 @@ export type SidebarProps = {
   statisticsEnabled?: boolean;
   /** Modul „Přesuny mezi pobočkami“ (Nastavení → Zakázky) přidá stránku Zásilky. */
   zasilkyEnabled?: boolean;
+  /** Počet zásilek na cestě k vybrané pobočce – odznak u položky Zásilky. */
+  zasilkyBadge?: number;
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
   /** Strana obrazovky – určuje hranu, na které leží proužek aktivní položky. */
@@ -242,6 +244,7 @@ export function Sidebar({
   smsEnabled = false,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  zasilkyBadge = 0,
   onJobiDocsFirstConnect,
   horizontal = false,
   side = "left",
@@ -410,6 +413,7 @@ export function Sidebar({
 
   const badgeCountFor = (key: NavKey): number => {
     if (key === "sms") return smsUnreadCount;
+    if (key === "zasilky") return zasilkyBadge;
     if (key === "settings" && updateAvailable) return 1;
     return 0;
   };
