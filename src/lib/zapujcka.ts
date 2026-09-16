@@ -24,6 +24,8 @@ export type NahradniZarizeni = {
   seriove?: string;
   prislusenstvi?: string;
   kauce?: number;
+  /** Pobočka, kde zařízení fyzicky je. Bez ní je společné a nabízí se všude. */
+  branchId?: string;
 };
 
 export function normalizujNahradni(raw: unknown): NahradniZarizeni[] {
@@ -37,9 +39,27 @@ export function normalizujNahradni(raw: unknown): NahradniZarizeni[] {
       seriove: typeof z.seriove === "string" && z.seriove.trim() ? z.seriove.trim() : undefined,
       prislusenstvi: typeof z.prislusenstvi === "string" && z.prislusenstvi.trim() ? z.prislusenstvi.trim() : undefined,
       kauce: typeof z.kauce === "number" && z.kauce > 0 ? z.kauce : undefined,
+      branchId: typeof z.branchId === "string" && z.branchId ? z.branchId : undefined,
     });
   }
   return out;
+}
+
+/**
+ * Rozdělí seznam podle pobočky zakázky: napřed to, co je na její pobočce
+ * nebo společné, zvlášť zařízení z jiných poboček (jdou vybrat taky – když
+ * si je kolega přiveze – ale ať je vidět, že jsou jinde).
+ * Bez pobočky zakázky (servis s jednou pobočkou) je všechno „vlastní“.
+ */
+export function rozdelPodlePobocky(
+  katalog: NahradniZarizeni[],
+  branchId: string | null | undefined,
+): { vlastni: NahradniZarizeni[]; jine: NahradniZarizeni[] } {
+  if (!branchId) return { vlastni: katalog, jine: [] };
+  const vlastni: NahradniZarizeni[] = [];
+  const jine: NahradniZarizeni[] = [];
+  for (const z of katalog) (!z.branchId || z.branchId === branchId ? vlastni : jine).push(z);
+  return { vlastni, jine };
 }
 
 export function dnesDatum(): string {
