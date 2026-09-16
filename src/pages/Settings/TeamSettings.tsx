@@ -893,14 +893,15 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                         <select
                           className="ui-input"
                           aria-label="Domovská pobočka"
-                          title="Domovská pobočka – výchozí filtr a pobočka nových zakázek tohoto člena"
+                          title="Výchozí pobočka: co se členovi předvybere po přihlášení – filtr poboček a pobočka nové zakázky. Není to omezení, přepnout si může kdykoli."
                           value={member.home_branch_id ?? ""}
                           onChange={(e) => void changeHomeBranch(member, e.target.value || null)}
                           style={{ width: "auto", padding: "2px 6px", fontSize: 11 }}
                         >
-                          <option value="">Všechny pobočky</option>
+                          {/* „Výchozí:“ v textu volby, ať se na první pohled liší od „Přístup:“ vedle. */}
+                          <option value="">Výchozí: všechny pobočky</option>
                           {(member.branch_ids ? branches.filter((b) => member.branch_ids.includes(b.id)) : branches).map((b) => (
-                            <option key={b.id} value={b.id}>{b.name}</option>
+                            <option key={b.id} value={b.id}>Výchozí: {b.name}</option>
                           ))}
                         </select>
                       )}
@@ -911,11 +912,11 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                             className="ui-input"
                             aria-label="Přístup k pobočkám"
                             aria-expanded={branchMenuFor === member.user_id}
-                            title="Na které pobočky člen vidí – zakázky, reklamace, faktury i sklady ostatních poboček se mu neukážou."
+                            title="Přístup: na které pobočky člen vůbec vidí. Zakázky, reklamace, faktury i sklady ostatních poboček se mu neukážou – hlídá to i databáze."
                             onClick={() => setBranchMenuFor((v) => (v === member.user_id ? null : member.user_id))}
                             style={{ width: "auto", padding: "2px 6px", fontSize: 11, cursor: "pointer" }}
                           >
-                            Vidí: {member.branch_ids
+                            Přístup: {member.branch_ids
                               ? (branches.filter((b) => member.branch_ids.includes(b.id)).map((b) => b.name).join(", ") || "žádnou pobočku")
                               : "všechny pobočky"} ▾
                           </button>
