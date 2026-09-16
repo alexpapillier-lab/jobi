@@ -198,6 +198,7 @@ const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
  *  Musí odpovídat stejnojmenné funkci v App.tsx. */
 function defaultReducedEffects(): boolean {
   if (typeof navigator === "undefined") return false;
+  if (!isDesktop()) return true; // web v prohlížeči – viz App.tsx
   return /Windows|Win64|Win32/i.test(navigator.userAgent || "");
 }
 
@@ -1951,7 +1952,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <Card>
             <CardHeader
               title="Výkon"
-              description="Rozostření za průhlednými panely je náročné na grafiku. Pokud aplikace sekne při posouvání, omezením efektů se chod znatelně zrychlí. Na Windows je to zapnuté od začátku."
+              description="Rozostření za průhlednými panely je náročné na grafiku. Pokud aplikace sekne při posouvání, omezením efektů se chod znatelně zrychlí. Na Windows a ve webové verzi je to zapnuté od začátku. Volba platí jen pro tohle zařízení – na ostatní se nepřenáší."
               right={hintEfekty.node}
             />
             <SettingRows>

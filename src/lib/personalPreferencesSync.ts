@@ -46,6 +46,41 @@ const REFRESH_EVENT: Record<SyncedKey, string> = {
   [STORAGE_KEYS.KEYBOARD_SHORTCUTS]: SHORTCUTS_CHANGED_EVENT,
 };
 
+/**
+ * Volby vázané na zařízení, ne na člověka: „Omezit efekty“ a měřítko
+ * rozhraní. Slabý notebook s Windows je chce zapnuté, Mac vedle něj ne –
+ * a web v prohlížeči zase jinak než desktopová aplikace. Dřív je sync
+ * sdílel s ostatními: po přihlášení na webu přišla hodnota z desktopu
+ * a volba „se nepamatovala“. Ven se neposílají a při pullu zůstává místní.
+ */
+const JEN_NA_ZARIZENI_V_APP = ["reducedEffects", "uiScale"] as const;
+
+function bezVolebZarizeni(ui: unknown): unknown {
+  if (!ui || typeof ui !== "object" || !("app" in ui) || !(ui as { app?: unknown }).app || typeof (ui as { app: unknown }).app !== "object") return ui;
+  const app = { ...((ui as { app: Record<string, unknown> }).app) };
+  for (const k of JEN_NA_ZARIZENI_V_APP) delete app[k];
+  return { ...(ui as Record<string, unknown>), app };
+}
+
+function sMistnimiVolbamiZarizeni(prichozi: unknown, mistniRaw: string | null): unknown {
+  if (!prichozi || typeof prichozi !== "object") return prichozi;
+  let mistni: unknown = null;
+  try { mistni = mistniRaw ? JSON.parse(mistniRaw) : null; } catch { mistni = null; }
+  const mistniApp = mistni && typeof mistni === "object" && (mistni as { app?: unknown }).app && typeof (mistni as { app: unknown }).app === "object"
+    ? ((mistni as { app: Record<string, unknown> }).app)
+    : {};
+  const prichoziApp = (prichozi as { app?: Record<string, unknown> }).app;
+  const maMistni = JEN_NA_ZARIZENI_V_APP.some((k) => k in mistniApp);
+  // Bez `app` v příchozích datech a bez místních voleb se nic nevymýšlí.
+  if ((!prichoziApp || typeof prichoziApp !== "object") && !maMistni) return prichozi;
+  const app: Record<string, unknown> = { ...(prichoziApp ?? {}) };
+  for (const k of JEN_NA_ZARIZENI_V_APP) {
+    if (k in mistniApp) app[k] = mistniApp[k];
+    else delete app[k];
+  }
+  return { ...(prichozi as Record<string, unknown>), app };
+}
+
 export function readSyncedKeys(): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of SYNCED_KEYS) {
@@ -54,7 +89,7 @@ export function readSyncedKeys(): Record<string, unknown> {
     // UI_SETTINGS je JSON, LOGO_PRESET holý řetězec ("auto", "blue"...) –
     // obojí se do jsonb sloupce uloží stejně přes JSON.parse/hodnotu.
     try {
-      out[key] = JSON.parse(raw);
+      out[key] = key === STORAGE_KEYS.UI_SETTINGS ? bezVolebZarizeni(JSON.parse(raw)) : JSON.parse(raw);
     } catch {
       out[key] = raw;
     }
@@ -65,7 +100,7 @@ export function readSyncedKeys(): Record<string, unknown> {
 export function writeSyncedKeys(data: Record<string, unknown>): void {
   for (const key of SYNCED_KEYS) {
     if (!(key in data)) continue;
-    const value = data[key];
+    const value = key === STORAGE_KEYS.UI_SETTINGS ? sMistnimiVolbamiZarizeni(data[key], localStorage.getItem(key)) : data[key];
     const raw = typeof value === "string" ? value : JSON.stringify(value);
     if (localStorage.getItem(key) === raw) continue; // beze změny, ať se zbytečně nepřekresluje
     localStorage.setItem(key, raw);

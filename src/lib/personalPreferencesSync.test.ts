@@ -114,3 +114,24 @@ describe("readSyncedKeys / writeSyncedKeys", () => {
     expect(localStorage.getItem("jobsheet_devices_v1")).toBeNull();
   });
 });
+
+describe("volby vázané na zařízení (reducedEffects, uiScale)", () => {
+  it("ven se neposílají", async () => {
+    const { readSyncedKeys } = await nacti();
+    localStorage.setItem("jobsheet_ui_settings_v1", JSON.stringify({ app: { reducedEffects: true, uiScale: 1.1, fabNewOrderEnabled: false }, orders: { pageSize: 50 } }));
+    expect(readSyncedKeys().jobsheet_ui_settings_v1).toEqual({ app: { fabNewOrderEnabled: false }, orders: { pageSize: 50 } });
+  });
+
+  it("při pullu zůstává místní hodnota, cizí se zahodí", async () => {
+    const { writeSyncedKeys } = await nacti();
+    localStorage.setItem("jobsheet_ui_settings_v1", JSON.stringify({ app: { reducedEffects: true, uiScale: 1.1 }, orders: { pageSize: 25 } }));
+    writeSyncedKeys({ jobsheet_ui_settings_v1: { app: { reducedEffects: false, uiScale: 1, fabNewOrderEnabled: true }, orders: { pageSize: 100 } } });
+    expect(JSON.parse(localStorage.getItem("jobsheet_ui_settings_v1")!)).toEqual({ app: { reducedEffects: true, uiScale: 1.1, fabNewOrderEnabled: true }, orders: { pageSize: 100 } });
+  });
+
+  it("bez místní hodnoty se cizí volba zařízení nepřevezme (platí výchozí pro tohle zařízení)", async () => {
+    const { writeSyncedKeys } = await nacti();
+    writeSyncedKeys({ jobsheet_ui_settings_v1: { app: { reducedEffects: false, fabNewOrderEnabled: true } } });
+    expect(JSON.parse(localStorage.getItem("jobsheet_ui_settings_v1")!)).toEqual({ app: { fabNewOrderEnabled: true } });
+  });
+});
