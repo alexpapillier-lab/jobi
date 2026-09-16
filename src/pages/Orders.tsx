@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
-import { type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
+import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
 import { showToast, showPersistentToast } from "../components/Toast";
@@ -324,7 +324,7 @@ function defaultUIConfig(): UIConfig {
     app: { fabNewOrderEnabled: true, uiScale: 1, postupZakazky: true },
     sidebar: { position: "left" },
     home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true },
+    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true, zvyrazneniStavu: VYCHOZI_ZVYRAZNENI },
   };
 }
 
@@ -367,6 +367,9 @@ function safeLoadUIConfig(): UIConfig {
         pageSize: validPageSize,
         customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
         statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
+        // Bez tohohle řádku se volba z Nastavení sem nikdy nedostala a karty
+        // dostaly vždy výchozí „jemné“ – „Výrazné“ i „Plné“ nedělaly nic.
+        zvyrazneniStavu: jeZvyrazneni(parsed?.orders?.zvyrazneniStavu) ? parsed.orders.zvyrazneniStavu : VYCHOZI_ZVYRAZNENI,
       },
     };
   } catch {
