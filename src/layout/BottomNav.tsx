@@ -375,6 +375,7 @@ export function BottomNav({
       )}
 
       <nav
+        data-bottom-nav="1"
         aria-label="Hlavní navigace"
         style={{
           position: "fixed",

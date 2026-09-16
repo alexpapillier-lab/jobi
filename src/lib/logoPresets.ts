@@ -32,6 +32,7 @@ const THEME_LOGO_COLORS: Record<ThemeMode, LogoColors> = {
   "sky-blueprint": { background: "#F5FAFF", jInner: "#2563EB", foreground: "#0B1220" },
   "lilac-frost": { background: "#FAF8FF", jInner: "#7C3AED", foreground: "#111827" },
   synthwave: { background: "#160b33", jInner: "#ff2bd6", foreground: "#7ef9ff" },
+  zl: { background: "#1f2937", jInner: "#3b82f6", foreground: "#ffffff" },
 };
 
 /** Předvolby barev loga – výběr v Nastavení → Barevné téma → Logo */
@@ -53,6 +54,7 @@ export const LOGO_PRESETS: LogoPreset[] = [
   { id: "sky-blueprint", label: "Sky Blueprint", background: "#F5FAFF", jInner: "#2563EB", foreground: "#0B1220" },
   { id: "lilac-frost", label: "Lilac Frost", background: "#FAF8FF", jInner: "#7C3AED", foreground: "#111827" },
   { id: "synthwave", label: "Synthwave", background: "#160b33", jInner: "#ff2bd6", foreground: "#7ef9ff" },
+  { id: "zl", label: "ZL", background: "#1f2937", jInner: "#3b82f6", foreground: "#ffffff" },
 ];
 
 export function getLogoColors(theme: ThemeMode, presetId: LogoPresetId | null): LogoColors {
