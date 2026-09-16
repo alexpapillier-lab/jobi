@@ -6,7 +6,7 @@
  * žluté.
  */
 import { describe, it, expect } from "vitest";
-import { barvaTextu, jas, rozlozBarvu, stylStavu, jeZvyrazneni, promenneRadku } from "./zvyrazneniStavu";
+import { barvaTextu, jas, rozlozBarvu, stylStavu, jeZvyrazneni, promenneRadku, promenneOvladani } from "./zvyrazneniStavu";
 
 const CERNA = "#10171A";
 const BILA = "#FFFFFF";
@@ -116,6 +116,17 @@ describe("promenneRadku", () => {
     const svetle = promenneRadku(stylStavu("#FFE500", "vyrazne"));
     expect(svetle["--text"]).toBe(CERNA);
     expect(svetle["--muted"]).toContain("16,23,26");
+  });
+});
+
+describe("promenneOvladani", () => {
+  // Pilulka stavu má světlý podklad – na tmavém řádku nesmí zdědit bílé písmo.
+  it("na plné výplni vrátí ovládání k barvám motivu, jinak nic", () => {
+    const o = promenneOvladani(stylStavu("#111111", "plne"));
+    expect(o["--text"]).toBe("var(--text-puvodni)");
+    expect(o["--accent"]).toBe("var(--accent-puvodni)");
+    expect(o.color).toBe("var(--text-puvodni)");
+    expect(promenneOvladani(stylStavu("#111111", "jemne"))).toEqual({});
   });
 });
 

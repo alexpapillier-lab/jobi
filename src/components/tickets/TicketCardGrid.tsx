@@ -2,7 +2,7 @@ import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketDate, TicketTechnik } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
-import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -97,7 +97,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+          <div style={{ ...promenneOvladani(stav), display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
             {statusPicker}
             {printButton}
           </div>

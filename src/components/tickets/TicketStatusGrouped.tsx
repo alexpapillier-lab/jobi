@@ -3,7 +3,7 @@ import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice } from "./fields";
 import { WrenchIcon } from "./icons";
-import { promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneOvladani, promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   tickets: TicketCardData[];
@@ -90,7 +90,7 @@ function GroupedCard({
           {korunami(finalPrice)}
         </span>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      <div style={{ ...promenneOvladani(stav), display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}
       </div>

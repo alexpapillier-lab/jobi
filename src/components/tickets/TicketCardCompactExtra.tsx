@@ -2,7 +2,7 @@ import React from "react";
 import { type TicketCardData } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketTechnik } from "./fields";
 import { CheckIcon } from "../icons";
-import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -62,7 +62,7 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>
         {meta?.isFinal && <span style={{ fontSize: "var(--text-xs)", fontWeight: 800, padding: "1px 4px", borderRadius: 4, background: `${bg}18`, color: bg, flexShrink: 0, display: "inline-flex", alignItems: "center" }}><CheckIcon size={10} /></span>}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ ...promenneOvladani(stav), display: "flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}
         </div>

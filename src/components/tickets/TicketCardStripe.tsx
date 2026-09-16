@@ -1,7 +1,7 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
 import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketTechnik } from "./fields";
-import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
   ticket: TicketCardData;
@@ -67,7 +67,7 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
             {korunami(finalPrice)}
           </span>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ ...promenneOvladani(stav), display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {statusPicker}
           {printButton}
         </div>

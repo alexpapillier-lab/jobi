@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
-import { promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
+import { promenneOvladani, promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type ClaimLike = {
   id: string;
@@ -81,7 +81,7 @@ function GroupedClaimRow({
       <span style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{formatCZ(claim.created_at ?? null)}</span>
       <span style={{ fontWeight: 600, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{claim.device_label || "—"}</span>
       <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>{claim.customer_name || "—"}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      <div style={{ ...promenneOvladani(stav), display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: "auto" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
         {statusPicker}
         {printButton}
       </div>
