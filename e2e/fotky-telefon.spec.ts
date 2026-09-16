@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku } from "./pomocnici";
 
 /**
  * Fotky zakázky na dotykovém zařízení.
@@ -30,6 +30,7 @@ test("na dotykovém zařízení nabízí sekce fotek Vyfotit a Z galerie místo 
   await prihlasSe(page);
   await zalozZakazku(page, { zakaznik, zarizeni: "iPhone (telefon)", popis: "Focení z telefonu", nechatOtevrene: true });
 
+  await rozbalSekci(page, "Diagnostika");
   const sekce = page.getByText("Diagnostické fotografie", { exact: true }).locator("xpath=..");
   await expect(sekce).toBeVisible({ timeout: 30_000 });
 

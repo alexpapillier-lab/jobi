@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku } from "./pomocnici";
 
 /**
  * Peníze: cenová nabídka pro zákazníka a faktura ze zakázky.
@@ -17,6 +17,7 @@ test("na zakázce jde sestavit cenová nabídka z položek", async ({ page }) =>
   // Detail se po vytvoření otevře sám a rovnou v něm nabídku sestavíme.
   kod = await zalozZakazku(page, { zakaznik, zarizeni: "MacBook (faktura)", popis: "Nejde nabíjet", nechatOtevrene: true });
 
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna baterie");
   await page.getByPlaceholder("Kč", { exact: true }).fill("1490");

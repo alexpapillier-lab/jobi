@@ -196,3 +196,17 @@ export async function pockejNaZapisSnimku(page: Page, predpona: string): Promise
     )
     .toBe(0);
 }
+
+/**
+ * Rozbalí sbalenou sekci v detailu zakázky („Zákaznický portál“, „Diagnostika“).
+ *
+ * Obě jsou výchozím stavem sbalené a stav si prohlížeč pamatuje, takže test
+ * nesmí počítat ani s jedním – klikne jen tehdy, když je hlavička zavřená.
+ */
+export async function rozbalSekci(page: Page, nazev: "Zákaznický portál" | "Diagnostika"): Promise<void> {
+  // Jen sbalitelné hlavičky (mají aria-controls) – tlačítko stavu se může jmenovat „Diagnostika“ taky.
+  const hlavicka = page.locator("button[aria-controls]", { hasText: new RegExp(`^${nazev}`) }).first();
+  await expect(hlavicka).toBeVisible({ timeout: 30_000 });
+  if ((await hlavicka.getAttribute("aria-expanded")) !== "true") await hlavicka.click();
+  await expect(hlavicka).toHaveAttribute("aria-expanded", "true");
+}

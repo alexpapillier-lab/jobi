@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { SERVIS, heslo, prihlasSe, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
+import { SERVIS, heslo, prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * Výpadky spojení na cestách, které je dosud neměly otestované.
@@ -239,6 +239,7 @@ test("cenová nabídka odeslaná při výpadku se uloží sama", async ({ page }
   await prihlasSe(page);
   await otevriZakazku(page);
 
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   const nazev = `Výměna konektoru ${Date.now().toString(36).slice(-4)}`;
   await page.getByPlaceholder("Vlastní položka").first().fill(nazev);

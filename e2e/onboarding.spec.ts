@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { zalozZakazku, vidZakazku, zavriDetail, pockejNaZapisSnimku } from "./pomocnici";
+import { pockejNaZapisSnimku, rozbalSekci, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * První hodina nového zákazníka.
@@ -402,6 +402,7 @@ test("z první zakázky vznikne nabídka, odkaz pro zákazníka i faktura", asyn
   await prihlasSeJakoNovacek(page);
   await vidZakazku(page, kodZakazky).first().click();
 
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 30_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna displeje");
   await page.getByPlaceholder("Kč", { exact: true }).fill("3500");

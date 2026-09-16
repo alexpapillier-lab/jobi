@@ -63,6 +63,7 @@ import { formatCurrency } from "../lib/invoiceMath";
 import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
+import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
@@ -196,6 +197,10 @@ const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
 const NEW_ORDER_MORE_OPEN_KEY = "jobsheet_new_order_more_open_v1";
 /** Zda jsou u zařízení v nové zakázce rozbalené „Další údaje zařízení“. */
 const NEW_ORDER_DEVICE_MORE_OPEN_KEY = "jobsheet_new_order_device_more_open_v1";
+const NEW_ORDER_CUSTOMER_MORE_OPEN_KEY = "jobsheet_new_order_customer_more_open_v1";
+/** Sbalené sekce v detailu zakázky – stav se pamatuje na zařízení. */
+const DETAIL_PORTAL_OPEN_KEY = "jobsheet_detail_portal_open_v1";
+const DETAIL_DIAGNOSTIKA_OPEN_KEY = "jobsheet_detail_diagnostika_open_v1";
 
 /** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
 type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
@@ -1541,6 +1546,25 @@ export default function Orders({
       return true;
     }
   });
+  /** „Další údaje zákazníka“ (e-mail, firma, adresa, poznámka) v kartě Zákazník – výchozí otevřené, sbalení se pamatuje. */
+  const [newOrderCustomerMoreOpen, setNewOrderCustomerMoreOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(NEW_ORDER_CUSTOMER_MORE_OPEN_KEY);
+      return v === null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+  /* Zákaznický portál a Diagnostika v detailu jsou výchozím stavem sbalené –
+     při běžné práci se nečtou a odsouvaly opravy a stav o obrazovku níž. */
+  const [detailPortalOpen, prepnoutDetailPortal, setDetailPortalOpen] = useSbaleno(DETAIL_PORTAL_OPEN_KEY, false);
+  const [detailDiagnostikaOpen, prepnoutDetailDiagnostiku, setDetailDiagnostikaOpen] = useSbaleno(DETAIL_DIAGNOSTIKA_OPEN_KEY, false);
+  /** Skok z „Postupu zakázky“ na sbalenou sekci ji nejdřív rozbalí, jinak by se sjelo na prázdnou hlavičku. */
+  const sjetNaSbalenouKartu = (id: "detail-portal" | "detail-diagnostika") => {
+    if (id === "detail-portal") setDetailPortalOpen(true);
+    else setDetailDiagnostikaOpen(true);
+    window.setTimeout(() => sjetNaKartu(id), 0);
+  };
   /** Které zařízení v nové zakázce je rozbalené (ostatní jsou sbalené karty). */
   const [expandedDeviceIdx, setExpandedDeviceIdx] = useState<number>(0);
   /** Rozbalený úplný seznam oprav z ceníku u zařízení (index → true). */
@@ -2169,6 +2193,14 @@ export default function Orders({
       // ignore
     }
   }, [newOrderDeviceMoreOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NEW_ORDER_CUSTOMER_MORE_OPEN_KEY, newOrderCustomerMoreOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [newOrderCustomerMoreOpen]);
 
   /**
    * Našeptávač zákazníků v nové zakázce: jméno, telefon, e-mail nebo firma.
@@ -4084,16 +4116,18 @@ export default function Orders({
   const focusFirstInvalidField = () => {
     const deviceIdx = newDraft.devices.findIndex((_, i) => !!errors[`deviceLabel_${i}`]);
     let selector: string | null = null;
-    let needsMore = false;
+    // E-mail, PSČ a IČO leží v kartě Zákazník pod sbalitelnými „Dalšími údaji zákazníka“.
+    let needsCustomerMore = false;
     if (errors.customerPhone) selector = "#new-order-phone";
+    else if (errors.customerEmail) { selector = "#new-order-email"; needsCustomerMore = true; }
+    else if (errors.addressZip) { selector = "#new-order-zip"; needsCustomerMore = true; }
+    else if (errors.ico) { selector = "#new-order-ico"; needsCustomerMore = true; }
     else if (deviceIdx >= 0) {
       setExpandedDeviceIdx(deviceIdx);
       selector = `#new-order-device-${deviceIdx} input`;
-    } else if (errors.customerEmail) { selector = "#new-order-email"; needsMore = true; }
-    else if (errors.addressZip) { selector = "#new-order-zip"; needsMore = true; }
-    else if (errors.ico) { selector = "#new-order-ico"; needsMore = true; }
+    }
     if (!selector) return;
-    if (needsMore) setNewOrderMoreOpen(true);
+    if (needsCustomerMore) setNewOrderCustomerMoreOpen(true);
     const sel = selector;
     window.setTimeout(() => {
       const root = newOrderBodyRef.current ?? document;
@@ -5238,6 +5272,119 @@ export default function Orders({
                 )}
               </div>
             </div>
+
+              {/* Další údaje zákazníka (e-mail, firma, IČO, adresa, poznámka).
+                  Dřív ležely až dole v sekci „Další údaje“ – při příjmu se pak
+                  přeskakovalo mezi zákazníkem nahoře a jeho údaji o obrazovku
+                  níž. Patří k zákazníkovi, tak jsou u něj; sbalení si aplikace
+                  pamatuje stejně jako u zařízení. */}
+              <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setNewOrderCustomerMoreOpen((v) => !v)}
+                  aria-expanded={newOrderCustomerMoreOpen}
+                  aria-controls="new-order-customer-more"
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
+                >
+                  <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderCustomerMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
+                  <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zákazníka</span>
+                  {!newOrderCustomerMoreOpen && (
+                    <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      e-mail, firma, IČO, adresa, poznámka
+                    </span>
+                  )}
+                </button>
+                {newOrderCustomerMoreOpen && (
+                  <div id="new-order-customer-more">
+                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
+                      <div>
+                        <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
+                        <input
+                          id="new-order-email"
+                          type="email"
+                          value={newDraft.customerEmail}
+                          onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
+                          style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
+                          placeholder="jan.novak@email.cz"
+                        />
+                        {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
+                      </div>
+                      <div>
+                        <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
+                        <input
+                          value={newDraft.company}
+                          onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
+                          style={baseFieldInput}
+                          placeholder="Novák s.r.o."
+                        />
+                      </div>
+                      <div>
+                        <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
+                        <input
+                          id="new-order-ico"
+                          inputMode="numeric"
+                          value={formatIco(newDraft.ico)}
+                          onChange={(e) => {
+                            const cleaned = e.target.value.replace(/[^\d]/g, "");
+                            setNewDraft((p) => ({ ...p, ico: cleaned }));
+                          }}
+                          style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
+                          placeholder="1234 5678"
+                          maxLength={9}
+                        />
+                        {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
+                      </div>
+                    </div>
+
+                    {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
+                        by sebral půlku šířky, proto tam jsou dva sloupce. */}
+                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
+                      <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
+                        <div style={fieldLabel}>Ulice</div>
+                        <input
+                          value={newDraft.addressStreet}
+                          onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
+                          style={baseFieldInput}
+                          placeholder="Dlouhá 12"
+                        />
+                      </div>
+                      <div>
+                        <div style={fieldLabel}>Město</div>
+                        <input
+                          value={newDraft.addressCity}
+                          onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
+                          style={baseFieldInput}
+                          placeholder="Praha"
+                        />
+                      </div>
+                      <div>
+                        <div style={fieldLabel}>PSČ</div>
+                        <input
+                          id="new-order-zip"
+                          inputMode="numeric"
+                          value={formatZipCode(newDraft.addressZip)}
+                          onChange={(e) => {
+                            const cleaned = e.target.value.replace(/[^\d]/g, "");
+                            setNewDraft((p) => ({ ...p, addressZip: cleaned }));
+                          }}
+                          style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
+                          placeholder="110 00"
+                          maxLength={6}
+                        />
+                        {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
+                      </div>
+                    </div>
+
+                    <div style={fieldLabel}>Poznámka k zákazníkovi</div>
+                    <textarea
+                      value={newDraft.customerInfo}
+                      onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
+                      style={{ ...baseFieldTextArea, minHeight: 64 }}
+                      placeholder="Volá jen odpoledne, preferuje SMS"
+                    />
+                  </div>
+                )}
+              </div>
           </div>
 
           {/* ===== ZAŘÍZENÍ – rychlá část (seznam sbalitelných karet) ===== */}
@@ -5630,104 +5777,13 @@ export default function Orders({
               <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
               {!newOrderMoreOpen && (
                 <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  e-mail, adresa, firma, poznámka · přijímací fotky
+                  přijímací fotky
                 </span>
               )}
             </button>
 
             {newOrderMoreOpen && (
               <div id="new-order-more" style={{ padding: 12, paddingTop: 0, display: "grid", gap: 16 }}>
-                {/* Zákazník – doplňující */}
-                <div>
-                  <div style={subHeading}>Zákazník</div>
-                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
-                      <input
-                        id="new-order-email"
-                        type="email"
-                        value={newDraft.customerEmail}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
-                        style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
-                        placeholder="jan.novak@email.cz"
-                      />
-                      {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
-                    </div>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
-                      <input
-                        value={newDraft.company}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Novák s.r.o."
-                      />
-                    </div>
-                    <div>
-                      <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
-                      <input
-                        id="new-order-ico"
-                        inputMode="numeric"
-                        value={formatIco(newDraft.ico)}
-                        onChange={(e) => {
-                          const cleaned = e.target.value.replace(/[^\d]/g, "");
-                          setNewDraft((p) => ({ ...p, ico: cleaned }));
-                        }}
-                        style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
-                        placeholder="1234 5678"
-                        maxLength={9}
-                      />
-                      {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
-                    </div>
-                  </div>
-
-                  {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
-                      by sebral půlku šířky, proto tam jsou dva sloupce. */}
-                  <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
-                    <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
-                      <div style={fieldLabel}>Ulice</div>
-                      <input
-                        value={newDraft.addressStreet}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Dlouhá 12"
-                      />
-                    </div>
-                    <div>
-                      <div style={fieldLabel}>Město</div>
-                      <input
-                        value={newDraft.addressCity}
-                        onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
-                        style={baseFieldInput}
-                        placeholder="Praha"
-                      />
-                    </div>
-                    <div>
-                      <div style={fieldLabel}>PSČ</div>
-                      <input
-                        id="new-order-zip"
-                        inputMode="numeric"
-                        value={formatZipCode(newDraft.addressZip)}
-                        onChange={(e) => {
-                          const cleaned = e.target.value.replace(/[^\d]/g, "");
-                          setNewDraft((p) => ({ ...p, addressZip: cleaned }));
-                        }}
-                        style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
-                        placeholder="110 00"
-                        maxLength={6}
-                      />
-                      {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
-                    </div>
-                  </div>
-
-                  <div style={fieldLabel}>Poznámka k zákazníkovi</div>
-                  <textarea
-                    value={newDraft.customerInfo}
-                    onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
-                    style={{ ...baseFieldTextArea, minHeight: 64 }}
-                    placeholder="Volá jen odpoledne, preferuje SMS"
-                  />
-                </div>
-
                 {/* Přijímací fotky – nahrají se po vytvoření zakázky */}
                 <div id="new-order-photos-before">
                   <div style={subHeading}>Přijímací fotky</div>
@@ -6785,7 +6841,7 @@ export default function Orders({
                         onSkryt={skrytPostupZakazky}
                         kroky={[
                           { id: "prijato", label: "Přijato", hotovo: true },
-                          { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaKartu("detail-diagnostika") },
+                          { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaSbalenouKartu("detail-diagnostika") },
                           { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
                           { id: "kontrola", label: "Kontrola po opravě", hotovo: shrnutiKontroly(t.testChecklist).dokonceno, volitelny: true, akce: "Přejít na kontrolu", onAkce: () => sjetNaKartu("detail-kontrola") },
                           {
@@ -6794,7 +6850,7 @@ export default function Orders({
                             hotovo: nabidka === "approved",
                             volitelny: true,
                             akce: nabidka === "sent" ? undefined : "Přejít na nabídku",
-                            onAkce: nabidka === "sent" ? undefined : () => sjetNaKartu("detail-portal"),
+                            onAkce: nabidka === "sent" ? undefined : () => sjetNaSbalenouKartu("detail-portal"),
                             poznamka: nabidka === "sent" ? "Čeká na schválení zákazníkem" : undefined,
                           },
                           {
@@ -7566,14 +7622,23 @@ export default function Orders({
                     onFieldsChange={(ticketId, fields) =>
                       setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))
                     }
+                    otevreno={detailPortalOpen}
+                    onToggle={prepnoutDetailPortal}
                   />
                   </div>
                 )}
 
                 <div id="detail-diagnostika" style={{ ...card, marginTop: 16 }}>
-                  <SectionHeading icon={<SearchIcon size={16} />}>Diagnostika</SectionHeading>
-                  
-                  <div style={{ display: "grid", gap: 12 }}>
+                  <SbalitelnaHlavicka
+                    icon={<SearchIcon size={16} />}
+                    title="Diagnostika"
+                    otevreno={detailDiagnostikaOpen}
+                    onToggle={prepnoutDetailDiagnostiku}
+                    ovlada="detail-diagnostika-obsah"
+                    souhrn="protokol, fotky"
+                  />
+                  {detailDiagnostikaOpen && (
+                  <div id="detail-diagnostika-obsah" style={{ display: "grid", gap: 12 }}>
                     <div>
                       <div style={fieldLabel}>Diagnostický protokol</div>
                       <textarea
@@ -7954,6 +8019,7 @@ export default function Orders({
                       </div>
                     </div>
                   </div>
+                  )}
                 </div>
 
                 <div id="detail-zapujcka" style={{ ...card, marginTop: 16 }}>

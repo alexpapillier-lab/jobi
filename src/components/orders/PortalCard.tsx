@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Input, Label, Pill } from "../ui";
 import { SectionHeading } from "../SectionHeading";
+import { SbalitelnaHlavicka } from "./SbalitelnaSekce";
 import { CheckIcon, ClockIcon, CoinsIcon, EditIcon, HistoryIcon, LinkIcon, XIcon } from "../icons";
 import { showToast } from "../Toast";
 import { reportError, reportSilent } from "../../lib/reportError";
@@ -115,6 +116,8 @@ export function PortalCard({
   onQuoteApprovedRepairs,
   onFieldsChange,
   style,
+  otevreno = true,
+  onToggle,
 }: {
   ticket: PortalCardTicket;
   serviceId: string;
@@ -127,6 +130,9 @@ export function PortalCard({
   /** Promítne načtená/změněná portálová pole do stavu zakázek nadřazené stránky. */
   onFieldsChange?: (ticketId: string, fields: PortalTicketFields) => void;
   style?: React.CSSProperties;
+  /** Sbalitelná karta: bez `onToggle` je vždy rozbalená. Stav drží rodič, ať ho může rozbalit skok z Postupu zakázky. */
+  otevreno?: boolean;
+  onToggle?: () => void;
 }) {
   const ticketId = ticket.id;
   const [fields, setFields] = useState<PortalTicketFields>(() => pickPortalFields(ticket));
@@ -446,18 +452,39 @@ export function PortalCard({
   const muted: React.CSSProperties = { color: "var(--muted)", fontSize: "var(--text-sm)" };
   const block: React.CSSProperties = { paddingTop: "var(--space-3)", marginTop: "var(--space-3)", borderTop: "1px solid var(--border)" };
 
+  const rozbaleno = !onToggle || otevreno;
+  const naposledy = !serverOff && (
+    <div style={{ ...muted, marginBottom: "var(--space-3)" }}>
+      {fields.portalLastOpenedAt ? `Naposledy otevřeno ${formatPortalDateTime(fields.portalLastOpenedAt)}` : "Zákazník odkaz zatím neotevřel"}
+    </div>
+  );
+  /* Sbalená karta řekne aspoň to podstatné: v jakém stavu je nabídka. */
+  const souhrnNabidky =
+    quoteStatus === "sent" ? "nabídka čeká na schválení"
+    : quoteStatus === "approved" ? "nabídka schválena"
+    : quoteStatus === "rejected" ? "nabídka zamítnuta"
+    : "odkaz, nabídka, podpis";
+
   return (
     <Card style={style}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>
-        <SectionHeading icon={<LinkIcon size={16} />}>Zákaznický portál</SectionHeading>
-        {!serverOff && (
-          <div style={{ ...muted, marginBottom: "var(--space-3)" }}>
-            {fields.portalLastOpenedAt ? `Naposledy otevřeno ${formatPortalDateTime(fields.portalLastOpenedAt)}` : "Zákazník odkaz zatím neotevřel"}
-          </div>
-        )}
-      </div>
+      {onToggle ? (
+        <SbalitelnaHlavicka
+          icon={<LinkIcon size={16} />}
+          title="Zákaznický portál"
+          otevreno={otevreno}
+          onToggle={onToggle}
+          ovlada={`portal-obsah-${ticketId}`}
+          souhrn={souhrnNabidky}
+          vpravo={naposledy}
+        />
+      ) : (
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>
+          <SectionHeading icon={<LinkIcon size={16} />}>Zákaznický portál</SectionHeading>
+          {naposledy}
+        </div>
+      )}
 
-      {serverOff ? (
+      {!rozbaleno ? null : serverOff ? (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <span style={muted}>Portál není na serveru zapnutý.</span>
           <Button size="sm" variant="ghost" onClick={() => setTokenAttempt((n) => n + 1)} disabled={tokenLoading}>
@@ -465,7 +492,7 @@ export function PortalCard({
           </Button>
         </div>
       ) : (
-        <>
+        <div id={`portal-obsah-${ticketId}`}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
             <a
               href={url || undefined}
@@ -607,7 +634,7 @@ export function PortalCard({
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </Card>
   );
