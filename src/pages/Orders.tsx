@@ -4454,6 +4454,9 @@ export default function Orders({
     serialOrImei: t.serialOrImei,
     issueShort: t.issueShort,
     technik: pridelovaniTechnika ? clenove.jmeno(t.assignedTo) : null,
+    // Šedý štítek: odkud zakázka je, když to není vybraná pobočka (v pohledu
+    // „Všechny pobočky“ vždy). Oranžový: kde fyzicky je, když ne doma.
+    pobocka: hasBranches && t.branchId && t.branchId !== activeBranchId ? (branchById(t.branchId)?.name ?? null) : null,
     umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka") : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
@@ -4462,7 +4465,7 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId]);
 
   const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
     if (currentStatus !== null) {
