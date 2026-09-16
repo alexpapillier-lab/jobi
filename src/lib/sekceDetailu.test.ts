@@ -21,7 +21,10 @@ describe("normalizujSkryteSekce", () => {
 });
 
 describe("stylSekce", () => {
-  it("dá proužek v barvě sekce", () => {
-    expect(stylSekce("opravy").borderLeft).toBe(`4px solid ${BARVA_SEKCE.opravy}`);
+  it("podbarví kartu barvou sekce a nechá pod ní pozadí motivu", () => {
+    const s = stylSekce("opravy");
+    expect(String(s.background)).toContain(BARVA_SEKCE.opravy);
+    expect(String(s.background)).toContain("var(--panel)");
+    expect(String(s.border)).toContain(BARVA_SEKCE.opravy);
   });
 });
