@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "../ui";
 import { formatCurrency } from "../../lib/invoiceMath";
-import { dnesDatum, type NahradniZarizeni, type ZapujckaData } from "../../lib/zapujcka";
+import { dnesDatum, rozdelPodlePobocky, type NahradniZarizeni, type ZapujckaData } from "../../lib/zapujcka";
 
 /**
  * Karta „Náhradní zařízení“ v detailu zakázky.
@@ -15,6 +15,8 @@ export function ZapujckaKarta({
   onTisk,
   katalog = [],
   pujcenaJinde = {},
+  branchId = null,
+  nazevPobocky = () => "jiná pobočka",
 }: {
   zapujcka: ZapujckaData | undefined;
   onChange: (zapujcka: ZapujckaData | null) => void;
@@ -23,6 +25,9 @@ export function ZapujckaKarta({
   katalog?: NahradniZarizeni[];
   /** id položky katalogu → kód zakázky, u které je zařízení právě půjčené. */
   pujcenaJinde?: Record<string, string>;
+  /** Pobočka zakázky – zařízení z ní a společná jsou napřed, ostatní zvlášť. */
+  branchId?: string | null;
+  nazevPobocky?: (branchId: string) => string;
 }) {
   const [upravuji, setUpravuji] = useState(false);
   const [navrh, setNavrh] = useState<ZapujckaData>(() => zapujcka ?? { nazev: "", pujceno: dnesDatum() });
@@ -55,11 +60,27 @@ export function ZapujckaKarta({
               style={input}
             >
               <option value="">– vyplnit ručně –</option>
-              {katalog.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.nazev}{k.seriove ? ` · ${k.seriove}` : ""}{pujcenaJinde[k.id] ? ` (půjčeno – ${pujcenaJinde[k.id]})` : ""}
-                </option>
-              ))}
+              {(() => {
+                const { vlastni, jine } = rozdelPodlePobocky(katalog, branchId);
+                const polozka = (k: NahradniZarizeni) => (
+                  <option key={k.id} value={k.id}>
+                    {k.nazev}{k.seriove ? ` · ${k.seriove}` : ""}{pujcenaJinde[k.id] ? ` (půjčeno – ${pujcenaJinde[k.id]})` : ""}
+                  </option>
+                );
+                if (jine.length === 0) return vlastni.map(polozka);
+                return (
+                  <>
+                    <optgroup label="Na této pobočce">{vlastni.map(polozka)}</optgroup>
+                    <optgroup label="Na jiných pobočkách">
+                      {jine.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.nazev}{k.seriove ? ` · ${k.seriove}` : ""} – {nazevPobocky(k.branchId!)}{pujcenaJinde[k.id] ? ` (půjčeno – ${pujcenaJinde[k.id]})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </>
+                );
+              })()}
             </select>
           </label>
         )}

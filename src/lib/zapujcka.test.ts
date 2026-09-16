@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dnesDatum, jeVraceno, normalizujNahradni } from "./zapujcka";
+import { dnesDatum, jeVraceno, normalizujNahradni, rozdelPodlePobocky } from "./zapujcka";
 
 describe("zápůjčka", () => {
   it("normalizace seznamu náhradních zařízení: nesmysly pryč, id pořadové, kauce jen kladné číslo", () => {
@@ -19,6 +19,25 @@ describe("zápůjčka", () => {
       { id: "n_2", nazev: "Nokia", seriove: undefined, prislusenstvi: undefined, kauce: undefined },
       { id: "n_3", nazev: "Moto", seriove: undefined, prislusenstvi: undefined, kauce: undefined },
     ]);
+  });
+
+  it("pobočka u náhradního zařízení: jen neprázdný text, jinak společné", () => {
+    expect(normalizujNahradni([{ nazev: "A", branchId: "b1" }, { nazev: "B", branchId: "" }, { nazev: "C", branchId: 5 }]).map((z) => z.branchId))
+      .toEqual(["b1", undefined, undefined]);
+  });
+
+  it("rozdelPodlePobocky: vlastní pobočka a společná napřed, cizí zvlášť", () => {
+    const katalog = normalizujNahradni([
+      { id: "a", nazev: "A", branchId: "b1" },
+      { id: "b", nazev: "B" },
+      { id: "c", nazev: "C", branchId: "b2" },
+    ]);
+    const r = rozdelPodlePobocky(katalog, "b1");
+    expect(r.vlastni.map((z) => z.id)).toEqual(["a", "b"]);
+    expect(r.jine.map((z) => z.id)).toEqual(["c"]);
+    // Servis bez poboček: všechno vlastní.
+    expect(rozdelPodlePobocky(katalog, null).jine).toEqual([]);
+    expect(rozdelPodlePobocky(katalog, null).vlastni).toHaveLength(3);
   });
 
   it("jeVraceno: jen neprázdné datum vrácení", () => {

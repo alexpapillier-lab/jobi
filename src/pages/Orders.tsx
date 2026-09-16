@@ -8110,6 +8110,8 @@ export default function Orders({
                     onChange={(z) => void ulozZapujcku(detailedTicket.id, z)}
                     onTisk={() => void printZapujcku(detailedTicket, activeServiceId)}
                     katalog={nahradniZarizeni}
+                    branchId={hasBranches ? detailedTicket.branchId ?? null : null}
+                    nazevPobocky={(id) => branchById(id)?.name ?? "jiná pobočka"}
                     pujcenaJinde={(() => {
                       // Které zařízení je právě u jiného zákazníka (viz pujceneKusy).
                       const out: Record<string, string> = {};
