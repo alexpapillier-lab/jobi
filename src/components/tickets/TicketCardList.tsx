@@ -77,7 +77,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         <TicketDevice label={t.deviceLabel} />
         <TicketCustomer name={t.customerName} />
         <TicketTechnik name={t.technik} />
-        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} />
+        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
 
         {/* Volný střed: oprava se roztáhne podle dostupného místa */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>

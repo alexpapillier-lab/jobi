@@ -225,6 +225,10 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md",
           transition: "transform 120ms ease, box-shadow 160ms ease",
           userSelect: "none",
           whiteSpace: "nowrap",
+          /* V seznamu má každá zakázka výběr stejně široký – dřív se šířka
+             řídila délkou názvu stavu a sloupec s cenami a tiskem skákal. */
+          width: size === "sm" ? 156 : undefined,
+          boxSizing: "border-box",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = "translateY(-1px)";
@@ -251,8 +255,8 @@ export function StatusPicker({ value, statuses, getByKey, onChange, size = "md",
             border: `1px solid ${current?.bg ? `${current.bg}60` : "transparent"}`,
           }}
         />
-        <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{current?.label ?? "Status"}</span>
-        <span style={{ opacity: 0.65, fontWeight: 900, marginLeft: 2 }}>▾</span>
+        <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", flex: size === "sm" ? 1 : undefined, minWidth: 0, textAlign: "left" }}>{current?.label ?? "Status"}</span>
+        <span style={{ opacity: 0.65, fontWeight: 900, marginLeft: size === "sm" ? "auto" : 2 }}>▾</span>
       </button>
 
       {open ? createPortal(menu, document.body) : null}

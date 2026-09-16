@@ -108,7 +108,7 @@ async function loadTicket(svc: SupabaseClient, token: string): Promise<TicketRow
     .eq("portal_token", token)
     .is("deleted_at", null)
     .maybeSingle();
-  if (error && /portal_token_expires_at/.test(error.message ?? "")) {
+  if (error && /portal_token_expires_at|location_branch_id|transit_shipment_id/.test(error.message ?? "")) {
     // Migrace s platností odkazu ještě není nasazená. Bez tohohle ústupu by
     // funkce nasazená dřív než migrace přestala vydávat cokoli a zákazník
     // by neměl jinou cestu ke své zakázce.

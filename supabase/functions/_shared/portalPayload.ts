@@ -38,7 +38,7 @@ export const TICKET_COLUMNS_ZAKLAD =
  * nemusí trefit do stejné minuty – při opačném pořadí by portál přestal
  * vydávat cokoli a zákazník by neměl jinou cestu k zakázce.
  */
-export const TICKET_COLUMNS = `${TICKET_COLUMNS_ZAKLAD}, portal_token_expires_at`;
+export const TICKET_COLUMNS = `${TICKET_COLUMNS_ZAKLAD}, portal_token_expires_at, location_branch_id, transit_shipment_id`;
 
 export type TicketRow = {
   id: string;
@@ -71,6 +71,9 @@ export type TicketRow = {
   portal_last_opened_at?: string | null;
   /** Do kdy odkaz platí. NULL = odkazy založené před zavedením platnosti, ty nevyprší. */
   portal_token_expires_at?: string | null;
+  /** Zásilky mezi pobočkami: kde zařízení fyzicky je / jestli cestuje (migrace zasilky_mezi_pobockami). */
+  location_branch_id?: string | null;
+  transit_shipment_id?: string | null;
 };
 
 export type StavRow = { key: string; label: string; bg: string | null; fg: string | null; is_final: boolean } | null;
@@ -239,6 +242,15 @@ export function sestavPayload(z: Zdroje) {
   const totalPrice = computeFinalPrice(repairs, t.discount_type, discountValue);
   const quoteAmount = toNumber(t.quote_amount);
 
+  /* Zásilky mezi pobočkami: zákazník se nedozví, na které pobočce zařízení
+     je (to je interní věc), jen že je v opravně a ne na místě, kde ho podal.
+     Jen se zapnutým modulem a volbou zasilky_portal. */
+  const mimoPobocku = !!t.transit_shipment_id || (!!t.location_branch_id && t.location_branch_id !== (t.branch_id ?? null));
+  const locationNote =
+    z.config.zasilky === true && z.config.zasilky_portal !== false && mimoPobocku
+      ? "Zařízení je v opravně. K vyzvednutí bude na pobočce, kde jste ho předali."
+      : null;
+
   const ticket = {
     code: t.code ?? "",
     createdAt: t.created_at,
@@ -246,6 +258,7 @@ export function sestavPayload(z: Zdroje) {
     deviceLabel: deviceLabel(t),
     requestedRepair: t.notes ?? "",
     status,
+    locationNote,
     photosBefore: stringArray(t.diagnostic_photos_before),
     photos: stringArray(t.diagnostic_photos),
     performedRepairs: repairs,

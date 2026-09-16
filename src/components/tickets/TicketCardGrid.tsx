@@ -71,7 +71,7 @@ export function TicketCardGrid({ ticket: t, meta, onClick, statusPicker, printBu
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.deviceLabel || "—"}</div>
-            <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>{t.customerName}<TicketTechnik name={t.technik} /><TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} /></div>
+            <div style={{ fontWeight: 500, fontSize: "var(--text-xs)", color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>{t.customerName}<TicketTechnik name={t.technik} /><TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} /></div>
           </div>
         </div>
 

@@ -59,7 +59,7 @@ export function TicketCardStripe({ ticket: t, meta, onClick, statusPicker, print
         <TicketDevice label={t.deviceLabel} dense />
         <TicketCustomer name={t.customerName} />
         <TicketTechnik name={t.technik} />
-        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} />
+        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>

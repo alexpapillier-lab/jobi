@@ -32,6 +32,8 @@ export type TicketCardData = {
   pobocka?: string | null;
   /** Kde zakázka fyzicky je, když ne na své pobočce („Praha“, „→ Praha“); jen se zapnutými zásilkami. */
   umisteni?: string | null;
+  /** Kolik dní leží mimo pobočku bez změny, když přesáhla nastavený limit. */
+  umisteniVaruje?: number | null;
 };
 
 export type TicketCardActions = {

@@ -134,29 +134,40 @@ export function TicketTechnik({ name }: { name?: string | null }) {
   );
 }
 
-/** Pobočka přijetí zakázky – ukazuje se, když není ta právě vybraná. */
+/**
+ * Pobočka přijetí zakázky – ukazuje se, když není ta právě vybraná.
+ *
+ * Barvy jdou z `currentColor` (barva písma řádku), ne z motivu: plně
+ * obarvený řádek přepisuje --muted na světlou, ale --panel-2 zůstává
+ * světlé pozadí, takže štítek na tmavých stavech zmizel.
+ */
 export function TicketPobocka({ label }: { label?: string | null }) {
   if (!label) return null;
   return (
     <span
       title={`Přijato na pobočce ${label}`}
-      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--muted)", background: "color-mix(in srgb, currentColor 10%, transparent)", border: "1px solid color-mix(in srgb, currentColor 35%, transparent)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
     >
       {label}
     </span>
   );
 }
 
-/** Kde zakázka fyzicky je, když ne na své pobočce (zásilky mezi pobočkami). */
-export function TicketUmisteni({ label }: { label?: string | null }) {
+/**
+ * Kde zakázka fyzicky je, když ne na své pobočce (zásilky mezi pobočkami).
+ * `varovani` = leží tam moc dlouho bez změny (Nastavení → Přesuny mezi pobočkami).
+ */
+export function TicketUmisteni({ label, varovani }: { label?: string | null; varovani?: number | null }) {
   if (!label) return null;
   const naCeste = label.startsWith("→");
+  const zaklad = naCeste ? `Na cestě: ${label.slice(1).trim()}` : `Fyzicky na pobočce ${label}`;
+  const barva = varovani ? "var(--danger)" : "var(--warning)";
   return (
     <span
-      title={naCeste ? `Na cestě: ${label.slice(1).trim()}` : `Fyzicky na pobočce ${label}`}
-      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--warning-text)", background: "var(--warning-soft)", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap", flexShrink: 0 }}
+      title={varovani ? `${zaklad} · ${varovani} dní bez změny` : zaklad}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "inherit", background: `color-mix(in srgb, ${barva} 28%, transparent)`, border: `1px solid ${barva}`, borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
     >
-      {label}
+      {label}{varovani ? ` · ${varovani} d` : ""}
     </span>
   );
 }

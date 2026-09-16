@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisloZasilky, druhaPobocka, htmlProtokolu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
+import { cisloZasilky, druhaPobocka, htmlProtokolu, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
 
 const nazev = (id: string) => ({ b: "Brno", p: "Praha" }[id] ?? id);
 
@@ -64,5 +64,69 @@ describe("zásilka", () => {
     expect(html).toContain("iPhone &lt;13&gt;");
     expect(html).toContain("Novák &amp; syn");
     expect(html).toContain("PPL");
+  });
+});
+
+describe("nastavení modulu", () => {
+  it("výchozí hodnoty a normalizace", async () => {
+    const { normalizujNastaveniZasilek } = await import("./zasilky");
+    expect(normalizujNastaveniZasilek(undefined)).toEqual({ postup: true, filtr: true, upozorneniDni: 0, portal: true });
+    expect(normalizujNastaveniZasilek({ zasilky_postup: false, zasilky_filtr: false, zasilky_upozorneni_dni: 3.7, zasilky_portal: false }))
+      .toEqual({ postup: false, filtr: false, upozorneniDni: 3, portal: false });
+    expect(normalizujNastaveniZasilek({ zasilky_upozorneni_dni: -5 }).upozorneniDni).toBe(0);
+    expect(normalizujNastaveniZasilek({ zasilky_upozorneni_dni: "7" }).upozorneniDni).toBe(0);
+  });
+});
+
+describe("dniBezZmenyJinde", () => {
+  it("hlásí jen zakázky mimo pobočku po limitu", async () => {
+    const { dniBezZmenyJinde } = await import("./zasilky");
+    const ted = new Date("2026-09-16T12:00:00Z");
+    const pred5 = "2026-09-11T10:00:00Z";
+    expect(dniBezZmenyJinde({ branchId: "b", locationBranchId: "p", updatedAt: pred5 }, 3, ted)).toBe(5);
+    expect(dniBezZmenyJinde({ branchId: "b", locationBranchId: "p", updatedAt: pred5 }, 7, ted)).toBeNull();
+    expect(dniBezZmenyJinde({ branchId: "b", updatedAt: pred5 }, 3, ted)).toBeNull(); // doma
+    expect(dniBezZmenyJinde({ branchId: "b", locationBranchId: "p", updatedAt: pred5 }, 0, ted)).toBeNull(); // vypnuto
+    expect(dniBezZmenyJinde({ branchId: "b", locationBranchId: null, transitShipmentId: "z", updatedAt: pred5 }, 3, ted)).toBe(5); // na cestě zpět
+  });
+});
+
+describe("krokyPresunu", () => {
+  const z = (prepis: Partial<Zasilka> & { polozkaPrevzata?: boolean }): Zasilka => ({
+    id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
+    createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null,
+    polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, note: "" }],
+    ...prepis,
+  });
+  const t = (u: Partial<{ locationBranchId: string | null; transitShipmentId: string | null }> = {}) => ({ id: "t", branchId: "b", ...u });
+
+  it("zakázka opravená doma žádné kroky nemá", () => {
+    expect(krokyPresunu(t(), [], nazev, false)).toEqual({ predOpravou: [], poOprave: [] });
+  });
+
+  it("v konceptu: čeká na odeslání", () => {
+    const k = krokyPresunu(t(), [z({ status: "draft", sentAt: null })], nazev, false);
+    expect(k.predOpravou[0]).toMatchObject({ id: "odeslano", hotovo: false, poznamka: "V konceptu zásilky Z-0001, čeká na odeslání" });
+    expect(k.predOpravou[1]).toMatchObject({ id: "prevzato", hotovo: false });
+  });
+
+  it("na cestě → převzato v Praze → opraveno, čeká na zpáteční zásilku", () => {
+    const naCeste = krokyPresunu(t({ locationBranchId: "p", transitShipmentId: "z" }), [z({})], nazev, false);
+    expect(naCeste.predOpravou[0].hotovo).toBe(true);
+    expect(naCeste.predOpravou[1]).toMatchObject({ hotovo: false, poznamka: "Na cestě" });
+
+    const vPraze = krokyPresunu(t({ locationBranchId: "p" }), [z({ polozkaPrevzata: true, status: "received" })], nazev, true);
+    expect(vPraze.predOpravou[1].hotovo).toBe(true);
+    expect(vPraze.poOprave[0]).toMatchObject({ id: "zpet", label: "Zpět v pobočce Brno", hotovo: false, poznamka: "Opraveno – přidejte do zásilky zpět", akce: true });
+  });
+
+  it("zpáteční zásilka: koncept, na cestě, doma", () => {
+    const tam = z({ polozkaPrevzata: true, status: "received" });
+    const zpetKoncept = z({ id: "y", cislo: 2, fromBranchId: "p", toBranchId: "b", status: "draft", createdAt: "2026-09-12T10:00:00Z", sentAt: null });
+    expect(krokyPresunu(t({ locationBranchId: "p" }), [tam, zpetKoncept], nazev, true).poOprave[0]).toMatchObject({ hotovo: false, poznamka: "V konceptu zpáteční zásilky Z-0002", akce: false });
+    const zpetSent = { ...zpetKoncept, status: "sent" as const };
+    expect(krokyPresunu(t({ locationBranchId: null, transitShipmentId: "y" }), [tam, zpetSent], nazev, true).poOprave[0]).toMatchObject({ hotovo: false, poznamka: "Na cestě zpět" });
+    const zpetDoma = { ...zpetSent, status: "received" as const, polozky: [{ ...zpetSent.polozky[0], receivedAt: "2026-09-13T08:00:00Z" }] };
+    expect(krokyPresunu(t(), [tam, zpetDoma], nazev, true).poOprave[0]).toMatchObject({ hotovo: true });
   });
 });
