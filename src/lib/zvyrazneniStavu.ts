@@ -14,12 +14,17 @@
  * světlým i tmavým podkladem vyjde správně sama.
  */
 
-export type ZvyrazneniStavu = "zadne" | "jemne" | "vyrazne";
+/**
+ * „plne“ = jako Zakázkový list: každý řádek plnou barvou stavu bez
+ * průhlednosti a bez ztlumení hotových zakázek. „vyrazne“ hotové ztlumí,
+ * což někomu vadí – chce vidět barvu, kterou si u stavu nastavil, a nic jiného.
+ */
+export type ZvyrazneniStavu = "zadne" | "jemne" | "vyrazne" | "plne";
 
 export const VYCHOZI_ZVYRAZNENI: ZvyrazneniStavu = "jemne";
 
 export function jeZvyrazneni(x: unknown): x is ZvyrazneniStavu {
-  return x === "zadne" || x === "jemne" || x === "vyrazne";
+  return x === "zadne" || x === "jemne" || x === "vyrazne" || x === "plne";
 }
 
 /** #rgb i #rrggbb; cokoli jiného (proměnná CSS) vrátí null. */
@@ -110,6 +115,16 @@ export function stylStavu(
 
   if (rezim === "zadne" || !jeHex) {
     return { pozadi: "var(--panel)", barvaPisma: "var(--text)", ramecek: `${bg}30`, sirkaProuzku: 4, plnaVyplne: false };
+  }
+
+  if (rezim === "plne") {
+    return {
+      pozadi: bg,
+      barvaPisma: barvaTextu(bg),
+      ramecek: bg,
+      sirkaProuzku: 0,
+      plnaVyplne: true,
+    };
   }
 
   if (rezim === "vyrazne") {

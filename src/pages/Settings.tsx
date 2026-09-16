@@ -2142,13 +2142,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <Card>
             <CardHeader
               title="Zvýraznění stavu"
-              description="Jak silně se barva stavu propíše do řádku zakázky – platí pro všechny režimy zobrazení výše. Samotné barvy nastavujete u jednotlivých stavů. Hotové zakázky jsou vždy ztlumené, ať vyskočí ty, které na někoho čekají."
+              description="Jak silně se barva stavu propíše do řádku zakázky – platí pro všechny režimy zobrazení výše. Samotné barvy nastavujete u jednotlivých stavů. Kromě volby „Plné“ jsou hotové zakázky ztlumené, ať vyskočí ty, které na někoho čekají."
               right={hintZvyrazneni.node}
             />
             {(() => {
               const volby: [ZvyrazneniStavu, string, string][] = [
                 ["jemne", "Jemné", "Řádek je lehce podbarvený barvou stavu. Doporučeno."],
-                ["vyrazne", "Výrazné", "Celý řádek se vyplní barvou stavu jako v Zakázkovém listu. Barva písma se dopočítá, ať zůstane čitelné."],
+                ["vyrazne", "Výrazné", "Celý řádek se vyplní barvou stavu, hotové zakázky jsou ztlumené. Barva písma se dopočítá, ať zůstane čitelné."],
+                ["plne", "Plné", "Jako v Zakázkovém listu: každý řádek plnou barvou stavu bez průhlednosti, hotové zakázky stejně syté jako ostatní."],
                 ["zadne", "Žádné", "Jen tenký proužek vlevo a odznak vpravo."],
               ];
               const aktualni = uiCfg.orders?.zvyrazneniStavu ?? VYCHOZI_ZVYRAZNENI;
