@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail, vidZakazku, nahodnyTelefon } from "./pomocnici";
+import { nahodnyTelefon, prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * Zákaznický portál z pohledu útočníka.
@@ -55,6 +55,7 @@ test("servis založí zakázku s citlivými údaji a vytvoří odkaz", async ({ 
   });
 
   // Odkaz vzniká až s nabídkou – do té doby zakázka žádný token nemá.
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna displeje");
   await page.getByPlaceholder("Kč", { exact: true }).fill("3500");

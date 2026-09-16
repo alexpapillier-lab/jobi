@@ -1,5 +1,5 @@
 import { test, expect, devices, type Page } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail, vidZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * Hlavní cesty v Safari (WebKit) a Firefoxu.
@@ -201,6 +201,7 @@ test("servis pošle nabídku a získá odkaz na portál", async ({ page }) => {
     nechatOtevrene: true,
   });
 
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 30_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna displeje");
   await page.getByPlaceholder("Kč", { exact: true }).fill("3500");

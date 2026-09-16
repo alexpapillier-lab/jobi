@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, zavriDetail, vidZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * Zákaznický portál: servis pošle cenovou nabídku, zákazník ji na svém
@@ -21,6 +21,7 @@ test("servis sestaví nabídku a pošle ji zákazníkovi", async ({ page }) => {
   await prihlasSe(page);
   kod = await zalozZakazku(page, { zakaznik, zarizeni: "iPhone (portál)", popis: "Rozbitý displej", nechatOtevrene: true });
 
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna displeje");
   await page.getByPlaceholder("Kč", { exact: true }).fill("3500");

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku } from "./pomocnici";
 
 /**
  * Fotky zařízení se zobrazují jen na podepsaný odkaz.
@@ -37,6 +37,7 @@ test("fotka v detailu zakázky se vykresluje podepsaným odkazem", async ({ page
      Vstup se hledá podle nadpisu sekce – v detailu jsou tři pole na soubory
      (přijímací fotky, fotky před, diagnostické) a pořadí se mění podle toho,
      co je zrovna vyplněné. */
+  await rozbalSekci(page, "Diagnostika");
   const sekce = page.getByText("Diagnostické fotografie", { exact: true }).locator("xpath=..");
   await expect(sekce).toBeVisible({ timeout: 30_000 });
 
