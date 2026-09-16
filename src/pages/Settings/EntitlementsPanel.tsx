@@ -64,6 +64,7 @@ const MODULE_LABELS: Record<string, string> = {
   branches: "Pobočky",
   accounting: "Napojení na účetnictví",
   consolidated: "Konsolidované statistiky",
+  motiv_zl: "Motiv ZL (vzhled Zakázkového listu)",
 };
 
 /** Popisek jednotky u modulů prodávaných po kusech. */
@@ -112,7 +113,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
     try {
       const data = await callManage({ action: "list" });
       setRows(data.entitlements ?? []);
-      setModules(data.modules ?? ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting", "consolidated"]);
+      setModules(data.modules ?? ["access", "sms", "invoices", "api_catalog", "api_inventory", "branches", "accounting", "consolidated", "motiv_zl"]);
       setQuotaModules(data.quotaModules ?? ["branches"]);
       setBranchCounts(data.branchCounts ?? {});
       setBilling(data.billing ?? {});

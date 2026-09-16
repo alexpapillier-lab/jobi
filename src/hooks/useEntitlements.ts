@@ -16,7 +16,7 @@ import { supabase } from "../lib/supabaseClient";
  * (migrace 20260911100000).
  */
 
-export type ModuleName = "access" | "sms" | "invoices" | "api_catalog" | "api_inventory" | "branches" | "accounting" | "consolidated";
+export type ModuleName = "access" | "sms" | "invoices" | "api_catalog" | "api_inventory" | "branches" | "accounting" | "consolidated" | "motiv_zl";
 
 /** Řádek tabulky service_entitlements v podobě, v jaké ho hook potřebuje. */
 export type NarokRadek = { module: string; active: boolean; valid_until: string | null; quota: number | null };
