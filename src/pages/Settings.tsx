@@ -736,6 +736,26 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   });
   
   const [showCustomColor, setShowCustomColor] = useState(false);
+  /* „Upravit“ u existujícího statusu: editor je nad seznamem, u delšího
+     seznamu mimo obrazovku – kliknutí dřív jen tiše naplnilo formulář
+     a nic viditelného se nestalo. Sjede se k němu a fokus jde do názvu. */
+  const statusEditorRef = useRef<HTMLDivElement | null>(null);
+  const statusNazevRef = useRef<HTMLInputElement | null>(null);
+  const upravitStatus = (s: StatusMeta) => {
+    setDraft({ ...s });
+    // Vlastní barva mimo paletu: rovnou ukázat pole s barvou, ať je jasné, odkud je.
+    setShowCustomColor(!!s.bg && !STATUS_COLOR_PALETTE.some((c) => c.bg.toLowerCase() === s.bg!.toLowerCase()));
+    window.setTimeout(() => {
+      statusEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      statusNazevRef.current?.focus({ preventScroll: true });
+    }, 30);
+  };
+  const zrusitUpravuStatusu = () => {
+    setDraft({ key: "", label: "", bg: STATUS_COLOR_PALETTE[0].bg, fg: STATUS_COLOR_PALETTE[0].fg, isFinal: false });
+    setShowCustomColor(false);
+  };
+  /** Nativní výběr barvy (kolečko) chce vždycky #rrggbb; nevalidní hex nechá poslední platnou. */
+  const hexProKolecko = (v: string | undefined, zaloha: string) => (/^#[0-9a-f]{6}$/i.test(v ?? "") ? (v as string) : zaloha);
 
   // Generate unique key from label automatically
   const generateKeyFromLabel = (label: string, existingKeys: Set<string> = new Set()): string => {
@@ -1684,12 +1704,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {section.subsection === "orders_statuses" && (
         <>
           <Card>
-            <div style={{ fontWeight: 900, fontSize: "var(--text-base)", marginBottom: "var(--space-2)", color: "var(--text)" }}>Přidat / upravit status</div>
+            <div ref={statusEditorRef} style={{ scrollMarginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: "var(--space-2)" }}>
+              <div style={{ fontWeight: 900, fontSize: "var(--text-base)", color: "var(--text)" }}>
+                {keyExists ? <>Upravit status <span style={{ color: "var(--accent)" }}>{statuses.find((x) => x.key === draft.key)?.label ?? draft.label}</span></> : "Přidat status"}
+              </div>
+              {keyExists && <Button size="sm" variant="ghost" onClick={zrusitUpravuStatusu}>Zrušit úpravu</Button>}
+            </div>
 
             <div style={{ display: "grid", gap: 10 }}>
               <div>
                 <FieldLabel>Název (zobrazovaný text)</FieldLabel>
                 <TextInput
+                  ref={statusNazevRef}
                   placeholder="Přijato, V opravě, Hotovo"
                   value={draft.label}
                   onChange={(e: any) => {
@@ -1808,25 +1834,47 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{showCustomColor ? <XIcon size={12} /> : <span aria-hidden="true">+</span>} Vlastní barva</span>
                     </button>
                     {showCustomColor && (
-                      <div style={{ display: "flex", gap: 8, flex: 1 }}>
-                        <div style={{ flex: 1 }}>
-                          <FieldLabel>Pozadí (hex)</FieldLabel>
-                          <TextInput
-                            placeholder="#DCFCE7"
-                            value={draft.bg ?? ""}
-                            onChange={(e: any) => {
-                              const bg = e.target.value;
-                              setDraft((p) => ({ ...p, bg, fg: getContrastText(bg) }));
-                            }}
-                          />
+                      <div style={{ display: "flex", gap: 8, flex: 1, flexWrap: "wrap" }}>
+                        {/* Kolečko = nativní výběr barvy prohlížeče (na Macu barevný kruh, na
+                            Windows paleta); hex vedle něj zůstává pro přesné zadání. */}
+                        <div style={{ flex: 1, minWidth: 160 }}>
+                          <FieldLabel>Pozadí</FieldLabel>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="color"
+                              aria-label="Barva pozadí – výběr kolečkem"
+                              title="Vybrat barvu pozadí"
+                              value={hexProKolecko(draft.bg, "#dcfce7")}
+                              onChange={(e) => { const bg = e.target.value.toUpperCase(); setDraft((p) => ({ ...p, bg, fg: getContrastText(bg) })); }}
+                              style={{ width: 36, height: 36, padding: 0, border: "2px solid var(--border)", borderRadius: "50%", background: "transparent", cursor: "pointer", flexShrink: 0 }}
+                            />
+                            <TextInput
+                              placeholder="#DCFCE7"
+                              value={draft.bg ?? ""}
+                              onChange={(e: any) => {
+                                const bg = e.target.value;
+                                setDraft((p) => ({ ...p, bg, fg: getContrastText(bg) }));
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <FieldLabel>Text (hex)</FieldLabel>
-                          <TextInput
-                            placeholder="#14532D"
-                            value={draft.fg ?? ""}
-                            onChange={(e: any) => setDraft((p) => ({ ...p, fg: e.target.value }))}
-                          />
+                        <div style={{ flex: 1, minWidth: 160 }}>
+                          <FieldLabel>Text</FieldLabel>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="color"
+                              aria-label="Barva textu – výběr kolečkem"
+                              title="Vybrat barvu textu"
+                              value={hexProKolecko(draft.fg, "#14532d")}
+                              onChange={(e) => { const fg = e.target.value.toUpperCase(); setDraft((p) => ({ ...p, fg })); }}
+                              style={{ width: 36, height: 36, padding: 0, border: "2px solid var(--border)", borderRadius: "50%", background: "transparent", cursor: "pointer", flexShrink: 0 }}
+                            />
+                            <TextInput
+                              placeholder="#14532D"
+                              value={draft.fg ?? ""}
+                              onChange={(e: any) => setDraft((p) => ({ ...p, fg: e.target.value }))}
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1928,7 +1976,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                         místo tažení, ať to jde i na dotykové obrazovce. */}
                     <Button size="sm" iconOnly icon={<span style={{ display: "inline-flex", transform: "rotate(180deg)" }}><ChevronDownIcon size={14} /></span>} aria-label="Posunout výš" title="Posunout výš" disabled={poradi === 0} onClick={() => { void moveStatus(s.key, -1); }} />
                     <Button size="sm" iconOnly icon={<ChevronDownIcon size={14} />} aria-label="Posunout níž" title="Posunout níž" disabled={poradi === statuses.length - 1} onClick={() => { void moveStatus(s.key, 1); }} />
-                    <Button size="sm" onClick={() => setDraft({ ...s })}>
+                    <Button size="sm" onClick={() => upravitStatus(s)}>
                       Upravit
                     </Button>
                     <Button
