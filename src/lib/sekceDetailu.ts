@@ -20,7 +20,8 @@ export type SekceDetailu =
   | "nahradni"
   | "technik"
   | "cas"
-  | "kontrola";
+  | "kontrola"
+  | "presun";
 
 /** Barva sekce – proužek vlevo a ikona v hlavičce. Sytější odstíny, ať jdou vidět i na tmavém motivu. */
 export const BARVA_SEKCE: Record<SekceDetailu, string> = {
@@ -33,6 +34,7 @@ export const BARVA_SEKCE: Record<SekceDetailu, string> = {
   technik: "#db2777",
   cas: "#0d9488",
   kontrola: "#059669",
+  presun: "#c026d3",
 };
 
 /** Které sekce jde v Nastavení skrýt. Technik se řídí přidělováním technika (config.pridelovani_technika). */

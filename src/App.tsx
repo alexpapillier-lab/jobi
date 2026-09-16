@@ -11,6 +11,8 @@ import Statistics from "./pages/Statistics";
 import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
+import Zasilky from "./pages/Zasilky";
+import { useZasilkyZapnuty } from "./hooks/useZasilkyZapnuty";
 
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { useIsRootOwner } from "./hooks/useIsRootOwner";
@@ -304,6 +306,9 @@ export default function App() {
   // Faktury: nárok servisu A zároveň to, že si je uživatel neskryl.
   // Musí být až za uiCfg, ze kterého čte předvolbu.
   const invoicesAvailable = hasModule("invoices") && uiCfg.invoicingEnabled !== false;
+  /* Zásilky mezi pobočkami: zapíná správce v Nastavení, potřebuje modul poboček. */
+  const zasilkyZapnuty = useZasilkyZapnuty(activeServiceId);
+  const zasilkyAvailable = zasilkyZapnuty && hasModule("branches");
 
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
@@ -837,6 +842,12 @@ export default function App() {
     }
   }, [smsEnabled, activePage]);
 
+  useEffect(() => {
+    if (!zasilkyAvailable && activePage === "zasilky") {
+      setActivePage("orders");
+    }
+  }, [zasilkyAvailable, activePage]);
+
   // Člen bez práva na statistiky na nich nesmí zůstat (po přepnutí servisu,
   // po odebrání práva za běhu).
   useEffect(() => {
@@ -920,9 +931,10 @@ export default function App() {
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         if (page === "statistics" && !canViewStatistics) return;
+        if (page === "zasilky" && !zasilkyAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
         const sub = ev.detail?.subsection;
@@ -1113,6 +1125,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         return "Statistiky";
       case "invoices":
         return "Faktury";
+      case "zasilky":
+        return "Zásilky";
       case "settings":
         return "Settings";
       default:
@@ -1367,6 +1381,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsUnreadCount={globalSmsUnreadCount}
           smsEnabled={smsEnabled}
           statisticsEnabled={canViewStatistics}
+          zasilkyEnabled={zasilkyAvailable}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1524,6 +1539,18 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             </div>
           )}
 
+          {zasilkyAvailable && visitedPages.has("zasilky") && (
+            <div style={{ display: activePage === "zasilky" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "zasilky"}>
+              <Zasilky
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "zasilky" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
           {visitedPages.has("settings") && (
             <div style={{ display: activePage === "settings" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "settings"}>
             <Settings
@@ -1545,7 +1572,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
 
           {/* "sms" v seznamu chybělo, takže se pod SMS chaty vykresloval navíc
               prázdný panel "Placeholder page." */}
-          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms"].includes(activePage) && (
+          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms", "zasilky"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

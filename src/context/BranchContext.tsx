@@ -181,7 +181,9 @@ export function useBranches(): BranchContextValue {
 }
 
 /** Filtr seznamu podle aktivní pobočky; řádky bez pobočky zůstávají viditelné všude. */
-export function filterByBranch<T extends { branchId?: string | null }>(rows: T[], activeBranchId: string | null): T[] {
+export function filterByBranch<T extends { branchId?: string | null; locationBranchId?: string | null }>(rows: T[], activeBranchId: string | null): T[] {
   if (!activeBranchId) return rows;
-  return rows.filter((r) => !r.branchId || r.branchId === activeBranchId);
+  // Zakázka, která na pobočce fyzicky leží (zásilky mezi pobočkami), patří
+  // do jejího výpisu stejně jako ty tam přijaté – technik ji tam opravuje.
+  return rows.filter((r) => !r.branchId || r.branchId === activeBranchId || r.locationBranchId === activeBranchId);
 }

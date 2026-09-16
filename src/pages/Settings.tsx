@@ -31,6 +31,7 @@ import { KontrolniSeznamySettingsSection } from "./Settings/KontrolniSeznamySett
 import { NahradniZarizeniSettingsSection } from "./Settings/NahradniZarizeniSettingsSection";
 import { SlevySettingsSection } from "./Settings/SlevySettingsSection";
 import { DetailZakazkySettingsSection } from "./Settings/DetailZakazkySettingsSection";
+import { ZasilkySettingsSection } from "./Settings/ZasilkySettingsSection";
 import { SdilenyPocitacSection } from "./Settings/SdilenyPocitacSection";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { RezervaceSettingsSection } from "./Settings/RezervaceSettingsSection";
@@ -67,7 +68,7 @@ export type SettingsCategory = "company" | "orders" | "documents" | "communicati
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
   | "communication_automations" | "communication_chat" | "communication_report"
-  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail"
+  | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail" | "orders_zasilky"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
   | "about_app" | "about_updates" | "about_help";
@@ -82,7 +83,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
-  orders_slevy: "orders", orders_detail: "orders",
+  orders_slevy: "orders", orders_detail: "orders", orders_zasilky: "orders",
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
   service_team: "people", service_api: "people",
@@ -921,6 +922,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "orders_required_fields", label: "Povinná pole", keywords: ["telefon", "povinné", "povinný", "pole", "validace", "telefon zákazníka"] },
         { key: "orders_detail", label: "Detail zakázky", keywords: ["detail", "sekce", "karty", "skrýt", "portál", "náhradní", "technik", "kontrola", "zobrazit"] },
         { key: "orders_slevy", label: "Slevy", keywords: ["sleva", "slevy", "procenta", "%", "přednastavené", "rychlá sleva", "kč"] },
+        ...(isAdmin && maModul("branches") ? [{ key: "orders_zasilky" as const, label: "Přesuny mezi pobočkami", keywords: ["zásilka", "zásilky", "přesun", "pobočka", "poslat", "odeslat", "převzít", "svoz", "sledovací číslo", "dopravce"] }] : []),
         { key: "orders_device_options", label: "Stavy zařízení a příslušenství", keywords: ["zařízení", "příslušenství", "stav zařízení", "kryt", "nabíječka", "poškození"] },
         { key: "orders_handoff_options", label: "Převzetí a předání", keywords: ["převzetí", "předání", "osobně", "pošta", "kurýr", "způsob"] },
         { key: "orders_reklamace", label: "Reklamace", keywords: ["reklamace", "seznam", "aktivní", "vše"] },
@@ -2304,6 +2306,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
       {section.subsection === "orders_detail" && (
         <DetailZakazkySettingsSection activeServiceId={activeServiceId} />
+      )}
+      {section.subsection === "orders_zasilky" && isAdmin && maModul("branches") && (
+        <ZasilkySettingsSection activeServiceId={activeServiceId} />
       )}
       {section.subsection === "orders_kontrola" && (
         <KontrolniSeznamySettingsSection activeServiceId={activeServiceId} />

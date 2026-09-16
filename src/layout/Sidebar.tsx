@@ -14,7 +14,7 @@ import { isDesktop } from "../lib/platform";
 import { useBranches } from "../context/BranchContext";
 import { getShortcut, formatShortcutForDisplay, SHORTCUTS_CHANGED_EVENT, type ShortcutId } from "../lib/keyboardShortcuts";
 
-export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "statistics" | "settings";
+export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -133,6 +133,8 @@ export type SidebarProps = {
   smsEnabled?: boolean;
   /** Člen bez práva can_view_statistics stránku Statistiky v navigaci nevidí. */
   statisticsEnabled?: boolean;
+  /** Modul „Přesuny mezi pobočkami“ (Nastavení → Zakázky) přidá stránku Zásilky. */
+  zasilkyEnabled?: boolean;
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
   /** Strana obrazovky – určuje hranu, na které leží proužek aktivní položky. */
@@ -202,6 +204,17 @@ function InvoicesIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+function ZasilkyIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 3h15v13H1z" />
+      <path d="M16 8h4l3 3v5h-7V8z" />
+      <circle cx="5.5" cy="18.5" r="2.5" />
+      <circle cx="18.5" cy="18.5" r="2.5" />
+    </svg>
+  );
+}
+
 function SmsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -228,6 +241,7 @@ export function Sidebar({
   smsUnreadCount = 0,
   smsEnabled = false,
   statisticsEnabled = true,
+  zasilkyEnabled = false,
   onJobiDocsFirstConnect,
   horizontal = false,
   side = "left",
@@ -260,6 +274,7 @@ export function Sidebar({
       { key: "customers", label: "Zákazníci", icon: UsersIcon },
       ...(smsEnabled ? [{ key: "sms" as const, label: "SMS chaty", icon: SmsIcon }] : []),
       ...(invoicingEnabled ? [{ key: "invoices" as const, label: "Faktury", icon: InvoicesIcon }] : []),
+      ...(zasilkyEnabled ? [{ key: "zasilky" as const, label: "Zásilky", icon: ZasilkyIcon }] : []),
     ];
     const katalog: NavItem[] = [
       { key: "inventory", label: "Sklad", icon: BoxIcon },
@@ -268,7 +283,7 @@ export function Sidebar({
     /* Bez práva na statistiky skupina zmizí celá – prázdná by nechala jen oddělovač. */
     const ostatni: NavItem[] = statisticsEnabled ? [{ key: "statistics", label: "Statistiky", icon: StatisticsIcon }] : [];
     return ostatni.length > 0 ? [prace, katalog, ostatni] : [prace, katalog];
-  }, [smsEnabled, invoicingEnabled, statisticsEnabled]);
+  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<

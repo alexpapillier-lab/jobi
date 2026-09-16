@@ -45,6 +45,7 @@ export function AppLayout({
   smsUnreadCount = 0,
   smsEnabled = false,
   statisticsEnabled = true,
+  zasilkyEnabled = false,
   sidebarPinned = false,
   onSidebarPinnedChange,
 }: {
@@ -64,6 +65,8 @@ export function AppLayout({
   smsEnabled?: boolean;
   /** Člen bez práva can_view_statistics stránku Statistiky v navigaci nevidí. */
   statisticsEnabled?: boolean;
+  /** Modul „Přesuny mezi pobočkami“ přidá stránku Zásilky. */
+  zasilkyEnabled?: boolean;
   /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
   sidebarPinned?: boolean;
   onSidebarPinnedChange?: (pinned: boolean) => void;
@@ -264,6 +267,7 @@ export function AppLayout({
             smsUnreadCount,
             smsEnabled,
             statisticsEnabled,
+            zasilkyEnabled,
           } satisfies SidebarProps)}
         />
       </aside>
@@ -277,6 +281,7 @@ export function AppLayout({
           smsEnabled={smsEnabled}
           smsUnreadCount={smsUnreadCount}
           statisticsEnabled={statisticsEnabled}
+          zasilkyEnabled={zasilkyEnabled}
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}
