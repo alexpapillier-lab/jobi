@@ -29,6 +29,7 @@ export function SectionHeading({
 }) {
   return (
     <div
+      className="ui-section-heading"
       style={{
         display: "flex",
         alignItems: "center",
