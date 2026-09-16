@@ -64,7 +64,7 @@ import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
-import { jeSlevaAktivni, normalizujSlevy, popisSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
+import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
@@ -93,6 +93,8 @@ import {
   DeviceAutocomplete,
   HandoffMethodSelect,
   DiscountPicker,
+  TlacitkaSlev,
+  SlevaNovaZakazka,
   StatusPicker,
   PrintMenu,
   OverflowMenu,
@@ -296,6 +298,9 @@ type DeviceRow = {
   estimatedPrice?: number;
   /** Opravy vybrané z ceníku už při příjmu – do zakázky jdou jako provedené opravy s cenou z ceníku. */
   plannedRepairs?: PerformedRepair[];
+  /** Sleva zadaná už při příjmu (přednastavená nebo vlastní) – na zakázku jde hned při založení. */
+  discountType?: "percentage" | "amount" | null;
+  discountValue?: number;
   /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
   expectedCompletionAt?: string | null;
 };
@@ -5532,6 +5537,40 @@ export default function Orders({
                                 </div>
                               );
                             })()}
+                            {/* Sleva už při příjmu – přednastavená z Nastavení nebo vlastní.
+                                Dřív se dávala až v detailu, i když ji zákazník dostal
+                                domluvenou u pultu. */}
+                            {(() => {
+                              const typ = dev.discountType ?? null;
+                              const hodnota = dev.discountValue ?? 0;
+                              const zaklad = (dev.plannedRepairs ?? []).reduce((a, r) => a + (r.price || 0), 0) || (dev.estimatedPrice ?? 0);
+                              const sleva = castkaSlevy(zaklad, typ, hodnota);
+                              return (
+                                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
+                                    Sleva
+                                  </div>
+                                  <SlevaNovaZakazka
+                                    slevy={prednastaveneSlevy}
+                                    discountType={typ}
+                                    discountValue={hodnota}
+                                    onChange={(type, value) =>
+                                      setNewDraft((p) => ({
+                                        ...p,
+                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, discountType: type, discountValue: type ? value : undefined } : d)),
+                                      }))
+                                    }
+                                  />
+                                  {typ && hodnota > 0 && (
+                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                                      {zaklad > 0
+                                        ? `Sleva −${formatCurrency(sleva)} · po slevě ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
+                                        : "Sleva se odečte z ceny oprav v zakázce."}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div>
                             <div style={fieldLabel}>Předpokládaný termín dokončení</div>
@@ -7560,44 +7599,20 @@ export default function Orders({
                               {/* Přednastavené slevy (Nastavení → Zakázky → Slevy): jedno
                                   klepnutí místo výběru typu a vypisování hodnoty. Druhé
                                   klepnutí na aktivní slevu ji zase sundá. */}
-                              {prednastaveneSlevy.length > 0 && (
-                                <div role="group" aria-label="Rychlá sleva" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                  {prednastaveneSlevy.map((s) => {
-                                    const aktivni = jeSlevaAktivni(s, discountType, discountValue);
-                                    return (
-                                      <button
-                                        key={s.id}
-                                        type="button"
-                                        aria-pressed={aktivni}
-                                        onClick={() => {
-                                          setCloudTickets((prev) =>
-                                            prev.map((t) =>
-                                              t.id === detailedTicket.id
-                                                ? (aktivni
-                                                    ? { ...t, discountType: null, discountValue: undefined }
-                                                    : { ...t, discountType: s.typ, discountValue: s.hodnota })
-                                                : t
-                                            )
-                                          );
-                                        }}
-                                        style={{
-                                          padding: "4px 10px",
-                                          borderRadius: 999,
-                                          border: aktivni ? "1px solid var(--accent)" : "1px solid var(--border)",
-                                          background: aktivni ? "var(--accent)" : "var(--panel)",
-                                          color: aktivni ? "#fff" : "var(--text)",
-                                          fontSize: 12,
-                                          fontWeight: 700,
-                                          cursor: "pointer",
-                                          fontFamily: "inherit",
-                                        }}
-                                      >
-                                        {popisSlevy(s)}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                              <TlacitkaSlev
+                                slevy={prednastaveneSlevy}
+                                discountType={discountType}
+                                discountValue={discountValue}
+                                onChange={(type, value) => {
+                                  setCloudTickets((prev) =>
+                                    prev.map((t) =>
+                                      t.id === detailedTicket.id
+                                        ? { ...t, discountType: type, discountValue: type ? value : undefined }
+                                        : t
+                                    )
+                                  );
+                                }}
+                              />
 
                               {discountAmount > 0 && (
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
