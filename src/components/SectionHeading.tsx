@@ -14,12 +14,18 @@ export function SectionHeading({
   icon,
   children,
   size = "md",
+  barva,
 }: {
   /** Ikona ze src/components/icons.tsx. Nepovinná. */
   icon?: ReactNode;
   children: ReactNode;
   /** "md" pro sekce v kartách, "sm" pro vnořené bloky. */
   size?: "sm" | "md";
+  /**
+   * Barva sekce (detail zakázky): ikona se posadí do podbarveného čtverečku
+   * v té barvě. Sekce se tak od sebe poznají i při rychlém scrollování.
+   */
+  barva?: string;
 }) {
   return (
     <div
@@ -33,7 +39,26 @@ export function SectionHeading({
         marginBottom: "var(--space-3)",
       }}
     >
-      {icon}
+      {icon && barva ? (
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 26,
+            height: 26,
+            borderRadius: 8,
+            background: `${barva}22`,
+            color: barva,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </span>
+      ) : (
+        icon
+      )}
       <span>{children}</span>
     </div>
   );
