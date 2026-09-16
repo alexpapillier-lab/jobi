@@ -135,7 +135,7 @@ begin
   -- service_role bez uživatele – tam se členství ani právo nekontroluje,
   -- servis si vybírá funkce sama podle nastavení reportu.
   if auth.role() is distinct from 'service_role' then
-    public.overit_pristup_ke_statistikam(p_service_ids);
+    perform public.overit_pristup_ke_statistikam(p_service_ids);
   end if;
 
   -- Člen omezený na pobočku dostane vždy jen svou pobočku, ať si pošle cokoli.
@@ -544,7 +544,7 @@ begin
   -- Členství i právo „vidět statistiky“ na jednom místě; service_role
   -- (e-mailový report) prochází bez uživatele.
   if auth.role() is distinct from 'service_role' then
-    public.overit_pristup_ke_statistikam(p_service_ids);
+    perform public.overit_pristup_ke_statistikam(p_service_ids);
   end if;
   -- Pobočky, na které se smí dívat: omezený člen jen své (i když si řekne
   -- o všechny nebo o cizí), ostatní podle zvolené pobočky. NULL = bez filtru.
