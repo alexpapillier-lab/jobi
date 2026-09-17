@@ -105,7 +105,10 @@ export function naplanujProvize(
       continue;
     }
 
-    if (existujici.cena === 0 && cena > 0) {
+    // Oprava nuly – ale ne, když už má zakázka doplatek: vyúčtovaný řádek
+    // Apps Script nepřepíše a rozdíl přidá jako `-DOPLATEK` jen jednou, takže
+    // po první opravě už nemá co dělat a poslat to znovu je jen šum.
+    if (existujici.cena === 0 && cena > 0 && !tabulka.has(`${id}-DOPLATEK`)) {
       plan.radky.push({ zakazka_id: id, cena_czk: cena, status, correct: true });
       plan.opraveno++;
     }

@@ -75,6 +75,18 @@ describe("naplanujProvize", () => {
     expect(plan.opraveno).toBe(1);
   });
 
+  it("nula v tabulce s už existujícím doplatkem se znovu neopravuje", () => {
+    // Apps Script vyúčtovaný řádek nepřepíše a doplatek vytvoří jen jednou –
+    // provize už v tabulce je, opakovaná oprava by byla jen šum.
+    const vTabulce: RadekTabulky[] = [
+      { id: "IRPAZ2601247", cena: 0, status: "Připraveno k převzetí" },
+      { id: "IRPAZ2601247-DOPLATEK", cena: 4890, status: "Připraveno k převzetí" },
+    ];
+    const plan = naplanujProvize([zakazka("IRPAZ2601247", "Připraveno k převzetí", [4890])], vTabulce);
+    expect(plan.radky).toEqual([]);
+    expect(plan.opraveno).toBe(0);
+  });
+
   it("vlastní názvy statusů v Jobi se do tabulky přeloží na názvy ze ZL", () => {
     const plan = naplanujProvize([zakazka("X1", "Hotovo k vyzvednutí", [100]), zakazka("X2", "Předáno", [200])], [], {
       pripraveno: "Hotovo k vyzvednutí",
