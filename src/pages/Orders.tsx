@@ -4896,6 +4896,10 @@ export default function Orders({
                 justifyContent: "space-between",
                 gap: 16,
                 marginTop: 20,
+                /* Pruh pod stránkováním: plovoucí „+“ a bublina chatu sedí
+                   v pravém dolním rohu přesně přes šipky stránek. Takhle se
+                   stránkování doscrolluje nad ně. */
+                marginBottom: 72,
                 padding: "14px 20px",
                 background: "var(--panel)",
                 border: "1px solid var(--border)",
