@@ -469,6 +469,13 @@ verify_jwt = false
 [functions.alerts-check]
 verify_jwt = false
 
+# Provize do Google Sheets: volá ji pg_cron přes pg_net bez přihlašovací
+# hlavičky (ověřuje se tajemstvím z Vaultu uvnitř funkce), ruční volání si
+# token uživatele ověřuje funkce sama. S ověřováním JWT na bráně se plánovaný
+# běh k funkci vůbec nedostal (401 Missing authorization header).
+[functions.provize-sheets]
+verify_jwt = false
+
 # Report statistik e-mailem: volá ho pg_cron (tajemství z Vaultu) i aplikace
 # (token majitele/správce, ověřuje se uvnitř). Písma pro PDF s českými znaky
 # se přibalují jako statické soubory – vestavěná Helvetica diakritiku neumí.
