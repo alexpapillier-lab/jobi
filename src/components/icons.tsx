@@ -256,6 +256,10 @@ export function HistoryIcon(p: IconProps) {
 export function PlusIcon(p: IconProps) {
   return <Svg {...p}><path d="M12 5v14M5 12h14" /></Svg>;
 }
+/** Zkopírovat do schránky */
+export function CopyIcon(p: IconProps) {
+  return <Svg {...p}><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Svg>;
+}
 /** Zavřít / odebrat */
 export function XIcon(p: IconProps) {
   return <Svg {...p}><path d="M18 6L6 18M6 6l12 12" /></Svg>;

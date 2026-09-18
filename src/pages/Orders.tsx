@@ -116,6 +116,7 @@ import { safeLoadCompanyData, doplnFiremniUdajeZDb } from "../lib/companyData";
 import { trackDocumentAction } from "../lib/documentTelemetry";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
+import { CopyButton } from "../components/CopyButton";
 import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
@@ -4634,7 +4635,38 @@ export default function Orders({
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-          <input ref={searchInputRef} data-tour="orders-search" placeholder="Vyhledávání…" value={query} onChange={(e) => setQuery(e.target.value)} style={inputStyle} />
+          <div style={{ position: "relative", width: 360, maxWidth: "100%", minWidth: 0 }}>
+            <input
+              ref={searchInputRef}
+              data-tour="orders-search"
+              placeholder="Vyhledávání…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Esc v poli s textem jen vymaže hledání – nesmí dojít ke globální zkratce, která zavírá okna.
+                if (e.key === "Escape" && query) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuery("");
+                }
+              }}
+              style={{ ...inputStyle, width: "100%", paddingRight: query ? 38 : 12 }}
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Vymazat hledání"
+                title="Vymazat hledání (Esc)"
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 26, height: 26, display: "grid", placeItems: "center", border: "none", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", cursor: "pointer" }}
+              >
+                <XIcon size={14} />
+              </button>
+            )}
+          </div>
           <Button variant="primary" data-tour="orders-new-btn" onClick={openNewOrder}>
             + Nová zakázka
           </Button>
@@ -5073,9 +5105,11 @@ export default function Orders({
       <div
         style={{
           position: "fixed",
-          left: "50%",
-          top: "50%",
-          transform: isNewOpen ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -48%) scale(0.98)",
+          // Vystředění okraji, ne translate(-50%, -50%) – viz detail zakázky níž (rozmazaný text ve WebKitu).
+          inset: 0,
+          margin: "auto",
+          height: "fit-content",
+          transform: isNewOpen ? "none" : "translateY(2%) scale(0.98)",
           opacity: isNewOpen ? 1 : 0,
           pointerEvents: isNewOpen ? "auto" : "none",
           transition: "transform 180ms ease, opacity 180ms ease",
@@ -6067,9 +6101,15 @@ export default function Orders({
           <div
         style={{
           position: "fixed",
-          left: "50%",
-          top: "50%",
-          transform: (detailId || detailClaimId) ? "translate(-50%, -50%) scale(1) translateZ(0)" : "translate(-50%, -48%) scale(0.99) translateZ(0)",
+          /* Vystředění okraji, ne translate(-50%, -50%): posun o půlku
+             vlastní výšky vychází na půl pixelu a WebKit (desktopová appka,
+             Safari) pak při posouvání obsahu překreslí celou vrstvu jako
+             bitmapu mimo mřížku – hlavička s číslem zakázky se rozmazala.
+             Otevřený panel proto nemá žádný transform ani will-change. */
+          inset: 0,
+          margin: "auto",
+          height: "fit-content",
+          transform: (detailId || detailClaimId) ? "none" : "translateY(2%) scale(0.99)",
           opacity: (detailId || detailClaimId) ? 1 : 0,
           pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
           transition: "transform 160ms ease, opacity 160ms ease",
@@ -6088,7 +6128,6 @@ export default function Orders({
           padding: 0,
           zIndex: 1210,
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-          willChange: (detailId || detailClaimId) ? "transform" : "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -6098,6 +6137,7 @@ export default function Orders({
               {/* Číslo zakázky umí i řádek seznamu, takže v hlavičce nebliká pomlčka,
                   než se dotáhne zbytek sloupců. */}
               {detailedClaim ? detailedClaim.code : (otevrenaZeSeznamu?.code ?? "—")}
+              <CopyButton value={detailedClaim ? detailedClaim.code : otevrenaZeSeznamu?.code} label={detailedClaim ? "číslo reklamace" : "číslo zakázky"} size={14} />
               {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
               {/* Stav přímo v hlavičce – pilulka je zároveň přepínač stavu. */}
               {detailedClaim && !isEditingClaim && (
@@ -6977,6 +7017,7 @@ export default function Orders({
                   <div style={{ ...card, ...stylSekce("zakaznik") }}>
                     <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                       <div
                         onClick={() => {
                           const customerId = detailedTicket.customerId;
@@ -7002,16 +7043,20 @@ export default function Orders({
                       >
                         {detailedTicket.customerName}
                       </div>
+                      <CopyButton value={detailedTicket.customerName} label="jméno" />
+                      </div>
                       {detailedTicket.customerPhone && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
                           <PhoneIcon size={14} />
                           <span>{formatPhoneNumber(detailedTicket.customerPhone)}</span>
+                          <CopyButton value={detailedTicket.customerPhone} label="telefon" />
                         </div>
                       )}
                       {detailedTicket.customerEmail && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
                           <MailIcon size={14} />
                           <span>{detailedTicket.customerEmail}</span>
+                          <CopyButton value={detailedTicket.customerEmail} label="e-mail" />
                         </div>
                       )}
                       {[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip].filter(Boolean).length >
@@ -7023,6 +7068,10 @@ export default function Orders({
                               .filter(Boolean)
                               .join(", ")}
                           </span>
+                          <CopyButton
+                            value={[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip].filter(Boolean).join(", ")}
+                            label="adresu"
+                          />
                         </div>
                       )}
                     </div>
@@ -7055,11 +7104,15 @@ export default function Orders({
                   <div style={{ ...card, ...stylSekce("zarizeni") }}>
                     <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
                     <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{detailedTicket.deviceLabel}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <span>{detailedTicket.deviceLabel}</span>
+                        <CopyButton value={detailedTicket.deviceLabel} label="název zařízení" />
+                      </div>
                       {detailedTicket.serialOrImei && (
                         <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
                           <HashIcon size={14} />
                           <span>SN: {detailedTicket.serialOrImei}</span>
+                          <CopyButton value={detailedTicket.serialOrImei} label="sériové číslo" />
                         </div>
                       )}
                       {(() => {
