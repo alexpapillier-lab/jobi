@@ -117,6 +117,7 @@ import { trackDocumentAction } from "../lib/documentTelemetry";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
 import { CopyButton } from "../components/CopyButton";
+import { StatusFilter, type StatusFilterOption } from "../components/orders/StatusFilter";
 import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
@@ -2588,28 +2589,54 @@ export default function Orders({
   }, [activeStatusKey, statusKeysSet]);
 
   const mojeId = session?.user?.id ?? null;
+
+  /** Patří zakázka do zvolené záložky (Vše / Aktivní / Moje / Přesuny / Dokončené)? */
+  const patriDoSkupiny = useCallback(
+    (t: TicketEx, st: string | null): boolean => {
+      // If statuses are not ready, show all tickets
+      if (st === null) return true;
+      if (activeGroup === "all") return true;
+      if (activeGroup === "final") return isFinal(st);
+      // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
+      if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
+      // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
+      if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
+      return !isFinal(st);
+    },
+    [activeGroup, mojeId, isFinal],
+  );
+
+  /** Nabídka filtru podle stavu: jen stavy, které ve zvolené záložce opravdu jsou, s počtem. */
+  const statusFilterOptions = useMemo((): { options: StatusFilterOption[]; total: number } => {
+    const pocty = new Map<string, number>();
+    let total = 0;
+    for (const t of tickets) {
+      const st = normalizeStatus((t.status as any) ?? statusById[t.id]);
+      if (!patriDoSkupiny(t, st)) continue;
+      total += 1;
+      if (st !== null) pocty.set(st, (pocty.get(st) ?? 0) + 1);
+    }
+    const options = statuses
+      .filter((s) => (pocty.get(s.key) ?? 0) > 0 || s.key === activeStatusKey)
+      .map((s) => ({ key: s.key, label: s.label, bg: s.bg, count: pocty.get(s.key) ?? 0 }));
+    return { options, total };
+  }, [tickets, statusById, normalizeStatus, patriDoSkupiny, statuses, activeStatusKey]);
+
+  // Po přepnutí záložky stav, který v ní není (např. „Vydáno“ v Aktivních), nedává smysl držet.
+  useEffect(() => {
+    if (!activeStatusKey) return;
+    const o = statusFilterOptions.options.find((x) => x.key === activeStatusKey);
+    if (!o || o.count === 0) setActiveStatusKey(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jen při změně záložky, ne při každém přepočtu nabídky
+  }, [activeGroup]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const qDigits = q.replace(/\D/g, "");
 
     const base = tickets
+      .filter((t) => patriDoSkupiny(t, normalizeStatus((t.status as any) ?? statusById[t.id])))
       .filter((t) => {
-        const raw = (t.status as any) ?? statusById[t.id];
-        const st = normalizeStatus(raw);
-        
-        // If statuses are not ready, show all tickets
-        if (st === null) return true;
-
-        if (activeGroup === "all") return true;
-        if (activeGroup === "final") return isFinal(st);
-        // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
-        if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
-        // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
-        if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
-        return !isFinal(st);
-      })
-      .filter((t) => {
-        if (!showSecondaryFiltersRow) return true;
         if (!activeStatusKey) return true;
         const raw = (t.status as any) ?? statusById[t.id];
         const st = normalizeStatus(raw);
@@ -2641,7 +2668,7 @@ export default function Orders({
     return [...base].sort(
       (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     );
-  }, [mojeId, tickets, activeGroup, query, statusById, isFinal, showSecondaryFiltersRow, activeStatusKey, normalizeStatus]);
+  }, [tickets, patriDoSkupiny, query, statusById, activeStatusKey, normalizeStatus]);
 
   /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
   const claimsInBranch = useMemo(
@@ -2715,7 +2742,7 @@ export default function Orders({
     for (const t of tickets) {
       const raw = (t.status as any) ?? statusById[t.id];
       const st = normalizeStatus(raw);
-      if (showSecondaryFiltersRow && activeStatusKey && st !== null && st !== activeStatusKey) continue;
+      if (activeStatusKey && st !== null && st !== activeStatusKey) continue;
       all += 1;
       if (umisteniZakazky(t).druh !== "doma") presun += 1;
       if (st === null || !isFinal(st)) {
@@ -2735,7 +2762,7 @@ export default function Orders({
       }
     }
     return { all, active, final, moje, presun, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, showSecondaryFiltersRow, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
+  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
 
   const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
 
@@ -4728,7 +4755,8 @@ export default function Orders({
         </div>
       </div>
 
-      {/* Group tabs */}
+      {/* Group tabs + filtr podle stavu */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <div data-tour="orders-groups">
         <Segmented<GroupKey>
           dataTour="orders-filters"
@@ -4744,6 +4772,10 @@ export default function Orders({
             { value: "reklamace", label: groupLabel("Reklamace", groupCounts.reklamace) },
           ]}
         />
+      </div>
+      {activeGroup !== "reklamace" && (
+        <StatusFilter value={activeStatusKey} onChange={setActiveStatusKey} options={statusFilterOptions.options} total={statusFilterOptions.total} />
+      )}
       </div>
 
       {/* Reklamace sub-filter: Aktivní / Final */}

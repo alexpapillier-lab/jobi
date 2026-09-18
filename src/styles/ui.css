@@ -541,3 +541,6 @@ label.ui-setting-row { cursor: pointer; }
 /* Tlačítko „zkopírovat“ vedle údaje (CopyButton) */
 .copy-btn { transition: background 120ms ease, color 120ms ease; }
 .copy-btn:hover { background: var(--panel-2) !important; color: var(--text) !important; }
+
+/* Položka rozbalovacího filtru podle stavu (StatusFilter) */
+.status-filter-item:hover { background: var(--panel-2) !important; }
