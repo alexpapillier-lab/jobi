@@ -6,6 +6,8 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { CopyButton } from "../../components/CopyButton";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { radkyZCsv, type RadekImportuProvizi } from "../../lib/provizeImport";
+import { useAuth } from "../../auth/AuthProvider";
+import { ProvizeStatistiky } from "./ProvizeStatistiky";
 
 /**
  * Provize majitele aplikace ze zakázek servisu. Jen pro root ownera – data
@@ -26,6 +28,7 @@ type Nastaveni = {
   statusy: string[];
   od: string | null;
   filtr: string | null;
+  email: string | null;
   posledni_sync_at: string | null;
 };
 
@@ -83,8 +86,12 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [formSazba, setFormSazba] = useState("7,5");
   const [formOd, setFormOd] = useState("");
   const [formFiltr, setFormFiltr] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [posilamMail, setPosilamMail] = useState<number | null>(null);
+  const { session } = useAuth();
   const [formStatusy, setFormStatusy] = useState<string[]>([]);
   const souborRef = useRef<HTMLInputElement>(null);
+  const seznamRef = useRef<HTMLDivElement>(null);
 
   // deno-lint-ignore no-explicit-any
   const db = supabase as any;
@@ -105,6 +112,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         setFormSazba(String(Math.round((p.nastaveni?.sazba ?? 0.075) * 10000) / 100).replace(".", ","));
         setFormOd(p.nastaveni?.od ?? "");
         setFormFiltr(p.nastaveni?.filtr ?? "");
+        setFormEmail(p.nastaveni?.email ?? "");
         setFormStatusy(p.nastaveni?.statusy ?? ["Připraveno k převzetí", "Vydáno"]);
       } catch (e) {
         showToast(`Provize: ${e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e)}`, "error");
@@ -159,7 +167,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     setPracuji(true);
     const { error } = await db
       .from("provize_nastaveni")
-      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
+      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, email: formEmail.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
     setPracuji(false);
     if (error) {
       showToast(`Uložení selhalo: ${error.message}`, "error");
@@ -184,8 +192,23 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     } else {
       setVysledek(`Vyúčtování ${r.oznaceni}\nPočet zakázek: ${r.pocet}\nSoučet cen: ${kc(r.soucet_zaklad)}\nSoučet provizí: ${kc(r.soucet_provize)}`);
       setOznaceni("");
+      if (r.id) void posliMail(r.id);
     }
     await nacti(serviceId, false);
+  };
+
+  const posliMail = async (id: number) => {
+    if (!db) return;
+    setPosilamMail(id);
+    try {
+      const { data: r, error } = await db.functions.invoke("provize-mail", { body: { vyuctovaniId: id } });
+      if (error || r?.error) throw new Error(r?.error ?? error?.message ?? "neznámá chyba");
+      showToast(`Souhrn vyúčtování odeslán na ${r.prijemce}`, "success");
+    } catch (e) {
+      showToast(`E-mail se nepodařilo odeslat: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setPosilamMail(null);
+    }
   };
 
   const zrusVyuctovani = async () => {
@@ -281,6 +304,10 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 Jen zařízení obsahující
                 <input value={formFiltr} onChange={(e) => setFormFiltr(e.target.value)} placeholder="např. dyson" style={{ ...pole, width: 140 }} />
               </label>
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }} title="Kam přijde souhrn po vyúčtování. Prázdné = tvůj přihlašovací e-mail.">
+                E-mail pro vyúčtování
+                <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder={session?.user?.email ?? "e-mail"} style={{ ...pole, width: 220 }} />
+              </label>
               <div style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
                 Sledované statusy
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", maxWidth: 520 }}>
@@ -349,7 +376,19 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 </div>
               )}
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <ProvizeStatistiky
+                polozky={data.polozky}
+                vyuctovani={data.vyuctovani}
+                posilamMail={posilamMail}
+                onMail={(id) => void posliMail(id)}
+                onVyber={(id) => {
+                  setFiltr(id);
+                  setVse(false);
+                  seznamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              />
+
+              <div ref={seznamRef} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
                 <select
                   value={String(filtr)}
                   onChange={(e) => {
