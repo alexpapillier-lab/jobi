@@ -56,6 +56,7 @@ type Vyuctovani = {
   soucet_provize: number;
   importovano: boolean;
   created_at: string;
+  vyplaceno_at: string | null;
 };
 
 type Prehled = { nastaveni: Nastaveni | null; statusy_servisu: string[]; vyuctovani: Vyuctovani[]; polozky: Polozka[] };
@@ -81,6 +82,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [oznaceni, setOznaceni] = useState("");
   const [potvrditVyuctovani, setPotvrditVyuctovani] = useState(false);
   const [zrusit, setZrusit] = useState<Vyuctovani | null>(null);
+  const [potvrditVyplacenoVse, setPotvrditVyplacenoVse] = useState(false);
   const [importRadky, setImportRadky] = useState<RadekImportuProvizi[] | null>(null);
   const [vysledek, setVysledek] = useState<string | null>(null);
   const [formSazba, setFormSazba] = useState("7,5");
@@ -220,6 +222,20 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       return;
     }
     showToast("Vyúčtování zrušeno, řádky jsou zpět mezi nevyúčtovanými", "success");
+    await nacti(serviceId, false);
+  };
+
+  const nastavVyplaceno = async (id: number | null, vyplaceno: boolean) => {
+    if (!db) return;
+    let q = db.from("provize_vyuctovani").update({ vyplaceno_at: vyplaceno ? new Date().toISOString() : null }).eq("service_id", serviceId);
+    // id = jedno vyúčtování; null = všechna, která ještě vyplacená nejsou
+    q = id === null ? q.is("vyplaceno_at", null) : q.eq("id", id);
+    const { error } = await q;
+    setPotvrditVyplacenoVse(false);
+    if (error) {
+      showToast(`Změna selhala: ${error.message}`, "error");
+      return;
+    }
     await nacti(serviceId, false);
   };
 
@@ -381,6 +397,8 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 vyuctovani={data.vyuctovani}
                 posilamMail={posilamMail}
                 onMail={(id) => void posliMail(id)}
+                onVyplaceno={(id, vyplaceno) => void nastavVyplaceno(id, vyplaceno)}
+                onVyplacenoVse={() => setPotvrditVyplacenoVse(true)}
                 onVyber={(id) => {
                   setFiltr(id);
                   setVse(false);
@@ -476,6 +494,14 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         confirmLabel="Vyúčtovat"
         onConfirm={vyuctuj}
         onCancel={() => setPotvrditVyuctovani(false)}
+      />
+      <ConfirmDialog
+        open={potvrditVyplacenoVse}
+        title="Označit jako vyplacené"
+        message={`Všechna vyúčtování, která ještě nejsou vyplacená (${(data?.vyuctovani ?? []).filter((v) => !v.vyplaceno_at).length}), se označí jako vyplacená s dnešním datem. Jednotlivě to jde kdykoli vrátit.`}
+        confirmLabel="Označit vše"
+        onConfirm={() => nastavVyplaceno(null, true)}
+        onCancel={() => setPotvrditVyplacenoVse(false)}
       />
       <ConfirmDialog
         open={!!zrusit}

@@ -10,7 +10,7 @@ import { formatCurrency } from "../../lib/invoiceMath";
  */
 
 export type StatPolozka = { poradi: number; zaklad: number; provize: number; zapsano_at: string; vyrazeno: boolean; vyuctovani_id: number | null };
-export type StatVyuctovani = { id: number; oznaceni: string; pocet: number; soucet_zaklad: number; soucet_provize: number; importovano: boolean; created_at: string };
+export type StatVyuctovani = { id: number; oznaceni: string; pocet: number; soucet_zaklad: number; soucet_provize: number; importovano: boolean; created_at: string; vyplaceno_at: string | null };
 
 const kc = (n: number) => formatCurrency(Number(n) || 0, "CZK");
 const kcCele = (n: number) => `${Math.round(Number(n) || 0).toLocaleString("cs-CZ")} Kč`;
@@ -50,12 +50,16 @@ export function ProvizeStatistiky({
   onVyber,
   onMail,
   posilamMail,
+  onVyplaceno,
+  onVyplacenoVse,
 }: {
   polozky: StatPolozka[];
   vyuctovani: StatVyuctovani[];
   onVyber: (id: number) => void;
   onMail: (id: number) => void;
   posilamMail: number | null;
+  onVyplaceno: (id: number, vyplaceno: boolean) => void;
+  onVyplacenoVse: () => void;
 }) {
   const [najeto, setNajeto] = useState<number | null>(null);
   const [vsechna, setVsechna] = useState(false);
@@ -74,6 +78,8 @@ export function ProvizeStatistiky({
   const celkem = platne.reduce((s, p) => s + Number(p.provize), 0);
   const zakazekCelkem = platne.filter((p) => p.poradi === 0 && Number(p.zaklad) > 0).length;
   const posledni = vyuctovani[0] ?? null;
+  const nevyplacena = vyuctovani.filter((v) => !v.vyplaceno_at);
+  const cekaNaVyplaceni = nevyplacena.reduce((s, v) => s + Number(v.soucet_provize), 0);
 
   const border = "1px solid var(--border)";
   const dlazdice: React.CSSProperties = { flex: "1 1 150px", padding: 12, borderRadius: 12, border, background: "var(--panel-2)", minWidth: 0 };
@@ -88,6 +94,11 @@ export function ProvizeStatistiky({
       <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>Přehled a statistika</summary>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <div style={dlazdice}>
+          <div style={popisek}>Čeká na vyplacení</div>
+          <div style={cislo}>{kcCele(cekaNaVyplaceni)}</div>
+          <div style={popisek}>{nevyplacena.length === 0 ? "vše vyplaceno" : `${nevyplacena.length} z ${vyuctovani.length} vyúčtování`}</div>
+        </div>
         <div style={dlazdice}>
           <div style={popisek}>Provize letos</div>
           <div style={cislo}>{kcCele(provizeLetos)}</div>
@@ -174,7 +185,14 @@ export function ProvizeStatistiky({
         </div>
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Vyúčtování ({vyuctovani.length})</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Vyúčtování ({vyuctovani.length})</div>
+        {nevyplacena.length > 1 && (
+          <button type="button" style={male} onClick={onVyplacenoVse}>
+            Označit všech {nevyplacena.length} jako vyplacené
+          </button>
+        )}
+      </div>
       {vyuctovani.length === 0 ? (
         <div style={{ ...popisek, marginBottom: 8 }}>Zatím žádné vyúčtování.</div>
       ) : (
@@ -182,7 +200,7 @@ export function ProvizeStatistiky({
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Označení", "Datum", "Zakázek", "Základ", "Provize", "Ø na zakázku", ""].map((h) => (
+                {["Označení", "Datum", "Zakázek", "Základ", "Provize", "Ø na zakázku", "Vyplaceno", ""].map((h) => (
                   <th key={h} style={th}>
                     {h}
                   </th>
@@ -201,6 +219,12 @@ export function ProvizeStatistiky({
                   <td style={td}>{kc(v.soucet_zaklad)}</td>
                   <td style={{ ...td, fontWeight: 700 }}>{kc(v.soucet_provize)}</td>
                   <td style={{ ...td, color: "var(--muted)" }}>{kc(v.pocet ? Number(v.soucet_provize) / v.pocet : 0)}</td>
+                  <td style={td}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", color: v.vyplaceno_at ? "var(--text)" : "var(--muted)" }}>
+                      <input type="checkbox" checked={!!v.vyplaceno_at} onChange={(e) => onVyplaceno(v.id, e.target.checked)} aria-label={`Vyúčtování ${v.oznaceni} vyplaceno`} />
+                      {v.vyplaceno_at ? new Date(v.vyplaceno_at).toLocaleDateString("cs-CZ") : "ne"}
+                    </label>
+                  </td>
                   <td style={{ ...td, textAlign: "right" }}>
                     <span style={{ display: "inline-flex", gap: 6 }}>
                       <button type="button" style={male} onClick={() => onVyber(v.id)}>
