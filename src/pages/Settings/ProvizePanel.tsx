@@ -15,8 +15,8 @@ import { ProvizeStatistiky } from "./ProvizeStatistiky";
  * nevidí), a funkce provize_* si totéž ověřují uvnitř.
  *
  * Nahrazuje Google tabulku: zakázka se zapíše, jakmile je „Připraveno
- * k převzetí“ nebo „Vydáno“, tlačítko Vyúčtovat uzavře nevyúčtované řádky pod
- * označením týdne a zdražení po vyúčtování jde do doplatku.
+ * k převzetí“ nebo „Vydáno“, tlačítko Vyúčtovat uzavře vše nevyúčtované (kdykoli,
+ * ne po týdnech) a zdražení po vyúčtování jde do doplatku.
  */
 
 type Service = { service_id: string; service_name: string };
@@ -374,7 +374,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 </div>
                 <div style={{ ...dlazdice, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <input value={oznaceni} onChange={(e) => setOznaceni(e.target.value)} placeholder="označení (výchozí: týden)" style={{ ...pole, flex: 1, minWidth: 0 }} />
+                    <input value={oznaceni} onChange={(e) => setOznaceni(e.target.value)} placeholder="označení (výchozí: dnešní datum)" style={{ ...pole, flex: 1, minWidth: 0 }} />
                     <button type="button" style={primarni} disabled={pracuji || kVyuctovani.length === 0} onClick={() => setPotvrditVyuctovani(true)}>
                       Vyúčtovat
                     </button>
@@ -490,7 +490,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       <ConfirmDialog
         open={potvrditVyuctovani}
         title="Vyúčtovat provize"
-        message={`Uzavřít ${kVyuctovani.length} řádků pod označením „${oznaceni.trim() || "aktuální týden"}“?\nZáklad ${kc(soucetZaklad)}, provize ${kc(soucetProvize)}.\nVyúčtované řádky se už nemění – pozdější zdražení půjde do doplatku.`}
+        message={`Uzavřít ${kVyuctovani.length} řádků pod označením „${oznaceni.trim() || "dnešní datum"}“?\nVyúčtuje se vše, co od minulého vyúčtování přibylo.\nZáklad ${kc(soucetZaklad)}, provize ${kc(soucetProvize)}.\nVyúčtované řádky se už nemění – pozdější zdražení půjde do doplatku.`}
         confirmLabel="Vyúčtovat"
         onConfirm={vyuctuj}
         onCancel={() => setPotvrditVyuctovani(false)}

@@ -16,6 +16,7 @@ const kc = (n: number) => formatCurrency(Number(n) || 0, "CZK");
 const kcCele = (n: number) => `${Math.round(Number(n) || 0).toLocaleString("cs-CZ")} Kč`;
 const MESICE = ["led", "úno", "bře", "dub", "kvě", "čvn", "čvc", "srp", "zář", "říj", "lis", "pro"];
 const VYSKA_GRAFU = 120;
+const kratkeDatum = (iso: string) => new Date(iso).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" });
 
 /** 1 zakázka, 2 zakázky, 5 zakázek. */
 function sklonuj(n: number, jedna: string, dve: string, pet: string): string {
@@ -200,7 +201,7 @@ export function ProvizeStatistiky({
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Označení", "Datum", "Zakázek", "Základ", "Provize", "Ø na zakázku", "Vyplaceno", ""].map((h) => (
+                {["Označení", "Období", "Zakázek", "Základ", "Provize", "Ø na zakázku", "Vyplaceno", ""].map((h) => (
                   <th key={h} style={th}>
                     {h}
                   </th>
@@ -208,13 +209,17 @@ export function ProvizeStatistiky({
               </tr>
             </thead>
             <tbody>
-              {(vsechna ? vyuctovani : vyuctovani.slice(0, 8)).map((v) => (
+              {(vsechna ? vyuctovani : vyuctovani.slice(0, 8)).map((v, i) => (
                 <tr key={v.id}>
                   <td style={{ ...td, fontWeight: 700 }}>
                     {v.oznaceni}
                     {v.importovano && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 500, color: "var(--muted)" }}>z tabulky</span>}
                   </td>
-                  <td style={{ ...td, color: "var(--muted)" }}>{new Date(v.created_at).toLocaleDateString("cs-CZ")}</td>
+                  <td style={{ ...td, color: "var(--muted)" }}>
+                    {/* Seznam je od nejnovějšího: období začíná dnem předchozího (staršího) vyúčtování. */}
+                    {vyuctovani[i + 1] ? `${kratkeDatum(vyuctovani[i + 1].created_at)} – ` : "do "}
+                    {kratkeDatum(v.created_at)}
+                  </td>
                   <td style={td}>{v.pocet}</td>
                   <td style={td}>{kc(v.soucet_zaklad)}</td>
                   <td style={{ ...td, fontWeight: 700 }}>{kc(v.soucet_provize)}</td>
