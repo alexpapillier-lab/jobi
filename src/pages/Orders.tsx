@@ -3134,6 +3134,55 @@ export default function Orders({
   }, []);
 
   /**
+   * Oprava mimo ceník už při příjmu. Jde do stejného seznamu jako opravy
+   * z ceníku, takže se počítá do součtu, do slevy i do předschválené ceny –
+   * dřív se na ni sleva musela dopočítat ručně, protože ji nebylo kam zapsat.
+   */
+  const [dalsiOprava, setDalsiOprava] = useState<Record<number, { name: string; price: string }>>({});
+
+  const addManualPlannedRepair = useCallback((idx: number, nazev: string, cenaText: string): boolean => {
+    const name = nazev.trim();
+    const price = Number(cenaText.replace(/\s/g, "").replace(",", "."));
+    if (!name || !Number.isFinite(price) || price < 0) return false;
+    setNewDraft((p) => ({
+      ...p,
+      devices: p.devices.map((d, i) => {
+        if (i !== idx) return d;
+        const planned = d.plannedRepairs ?? [];
+        const nextPlanned = [...planned, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name, type: "manual" as const, price }];
+        const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
+        return {
+          ...d,
+          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
+          plannedRepairs: nextPlanned,
+          requestedRepair: (parts.includes(name) ? parts : [...parts, name]).join(", "),
+        };
+      }),
+    }));
+    return true;
+  }, []);
+
+  const removePlannedRepair = useCallback((idx: number, id: string) => {
+    setNewDraft((p) => ({
+      ...p,
+      devices: p.devices.map((d, i) => {
+        if (i !== idx) return d;
+        const planned = d.plannedRepairs ?? [];
+        const odebirana = planned.find((r) => r.id === id);
+        if (!odebirana) return d;
+        const nextPlanned = planned.filter((r) => r.id !== id);
+        const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
+        return {
+          ...d,
+          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
+          plannedRepairs: nextPlanned,
+          requestedRepair: parts.filter((x) => x !== odebirana.name).join(", "),
+        };
+      }),
+    }));
+  }, []);
+
+  /**
    * Zákazník schválil nabídku – její položky se stanou provedenými opravami.
    * Nahrazují se, ne přidávají: schválený rozpis je to, na čem se obě strany
    * dohodly, a dvojitý zápis by se objevil na faktuře.
@@ -5541,8 +5590,12 @@ export default function Orders({
                             />
                             {(() => {
                               const catalog = repairsForDeviceLabel(dev.deviceLabel);
-                              if (catalog.length === 0) return null;
                               const planned = dev.plannedRepairs ?? [];
+                              const mimoCenik = planned.filter((r) => r.type !== "selected");
+                              const rozepsana = dalsiOprava[idx] ?? { name: "", price: "" };
+                              const pridejDalsi = () => {
+                                if (addManualPlannedRepair(idx, rozepsana.name, rozepsana.price || "0")) setDalsiOprava((p) => ({ ...p, [idx]: { name: "", price: "" } }));
+                              };
                               const plannedIds = new Set(planned.map((r) => r.repairId));
                               const sorted = [...catalog].sort((a, b) => a.name.localeCompare(b.name, "cs"));
                               const showAll = !!catalogShowAll[idx];
@@ -5550,6 +5603,8 @@ export default function Orders({
                               const sum = planned.reduce((a, r) => a + (r.price || 0), 0);
                               return (
                                 <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                                  {catalog.length > 0 && (
+                                  <>
                                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
                                     Z ceníku
                                   </div>
@@ -5597,10 +5652,63 @@ export default function Orders({
                                       </button>
                                     )}
                                   </div>
+                                  </>
+                                  )}
+                                  {/* Oprava, která v ceníku není: jde do stejného seznamu, takže
+                                      se počítá do součtu i do slevy. Dřív se psala jen do textu
+                                      a sleva se na ni musela dopočítat ručně. */}
+                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)", marginTop: catalog.length > 0 ? 4 : 0 }}>
+                                    Další oprava mimo ceník
+                                  </div>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    <input
+                                      value={rozepsana.name}
+                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, name: e.target.value } }))}
+                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
+                                      placeholder="Název opravy"
+                                      aria-label="Název další opravy"
+                                      style={{ ...baseFieldInput, flex: "1 1 180px", minWidth: 0, width: "auto" }}
+                                    />
+                                    <input
+                                      value={rozepsana.price}
+                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, price: e.target.value } }))}
+                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
+                                      placeholder="Cena Kč"
+                                      aria-label="Cena další opravy"
+                                      inputMode="decimal"
+                                      style={{ ...baseFieldInput, flex: "0 0 110px", width: 110 }}
+                                    />
+                                    <Button onClick={pridejDalsi} disabled={!rozepsana.name.trim()} title="Přidat opravu k zakázce">
+                                      Přidat
+                                    </Button>
+                                  </div>
+                                  {mimoCenik.length > 0 && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {mimoCenik.map((r) => (
+                                        <span
+                                          key={r.id}
+                                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 6px 5px 10px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
+                                        >
+                                          <CheckIcon size={12} />
+                                          <span>{r.name}</span>
+                                          <span style={{ fontWeight: 500 }}>{(r.price || 0).toLocaleString("cs-CZ")} Kč</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => removePlannedRepair(idx, r.id)}
+                                            aria-label={`Odebrat opravu ${r.name}`}
+                                            title="Odebrat"
+                                            style={{ display: "inline-grid", placeItems: "center", width: 18, height: 18, padding: 0, border: "none", borderRadius: 999, background: "transparent", color: "inherit", cursor: "pointer" }}
+                                          >
+                                            <XIcon size={12} />
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                   {planned.length > 0 && (
                                     <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                      {planned.length === 1 ? "1 oprava" : planned.length < 5 ? `${planned.length} opravy` : `${planned.length} oprav`} z ceníku
-                                      {sum > 0 ? ` · ${sum.toLocaleString("cs-CZ")} Kč` : ""} · přidají se do zakázky s cenou z ceníku, v detailu je upravíte.
+                                      {planned.length === 1 ? "1 oprava" : planned.length < 5 ? `${planned.length} opravy` : `${planned.length} oprav`}
+                                      {sum > 0 ? ` · ${sum.toLocaleString("cs-CZ")} Kč` : ""} · přidají se do zakázky s touto cenou, v detailu je upravíte.
                                     </div>
                                   )}
                                 </div>
