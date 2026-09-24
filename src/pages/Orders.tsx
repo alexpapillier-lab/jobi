@@ -6359,6 +6359,20 @@ export default function Orders({
                 "—"
               )}
             </div>
+            {/* Telefon v hlavičce, ať je po ruce i po odscrollování ke komentářům. */}
+            {(() => {
+              const tel = detailedClaim ? detailedClaim.customer_phone : detailedTicket?.customerPhone;
+              if (!tel) return null;
+              return (
+                <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13 }}>
+                  <PhoneIcon size={13} />
+                  <a href={`tel:${tel.replace(/\s/g, "")}`} style={{ color: "var(--text)", fontWeight: 600, textDecoration: "none" }}>
+                    {formatPhoneNumber(tel)}
+                  </a>
+                  <CopyButton value={tel} label="telefon" />
+                </div>
+              );
+            })()}
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", /* Na mobilu se tlačítka nesmí lámat pod sebe – sloupec sežral šířku a název zakázky se zmáčkl na pár znaků. Radši jedna řada, kterou lze posunout. */ flexWrap: isNarrow ? "nowrap" : "wrap", overflowX: isNarrow ? "auto" : "visible", paddingRight: isNarrow ? 0 : 70, paddingBottom: isNarrow ? 2 : 0 }}>
