@@ -15,7 +15,7 @@ export function PerformedRepairAdder({
   onAddToModel,
 }: {
   availableRepairs: DeviceRepair[];
-  onAdd: (repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string }) => void;
+  onAdd: (repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; price?: number; costs?: number; estimatedTime?: number; productIds?: string[]; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string }) => void;
   /** Hodinová sazba servisu (Nastavení → Zakázky → Hodinová práce). */
   vychoziSazba?: number;
   /** Přezdívka přihlášeného – kdo práci nejspíš odvedl. */
@@ -81,8 +81,26 @@ export function PerformedRepairAdder({
         setSelectedRepairId("");
       }
     } else if (mode === "manual" && manualRepairName.trim()) {
-      onAdd({ name: manualRepairName.trim(), type: "manual" });
+      // Cena, náklady, čas i díly patří k opravě – dřív se posílaly jen při
+      // „Přidat k modelu“ a v zakázce pak svítilo „Cena: Neuvedeno“.
+      const cislo = (v: string) => {
+        const n = parseFloat(v.replace(",", "."));
+        return v.trim() !== "" && Number.isFinite(n) ? n : undefined;
+      };
+      onAdd({
+        name: manualRepairName.trim(),
+        type: "manual",
+        price: cislo(manualRepairPrice),
+        costs: cislo(manualRepairCosts),
+        estimatedTime: manualRepairTime.trim() !== "" ? parseInt(manualRepairTime, 10) || undefined : undefined,
+        productIds: manualRepairProductIds.length > 0 ? manualRepairProductIds : undefined,
+      });
       setManualRepairName("");
+      setManualRepairPrice("");
+      setManualRepairCosts("");
+      setManualRepairTime("");
+      setManualRepairProductIds([]);
+      setManualRepairProductSearch("");
     } else if (mode === "hourly" && hodinyCislo > 0 && sazbaCislo > 0) {
       onAdd({
         name: praceNazev.trim() || "Práce technika",

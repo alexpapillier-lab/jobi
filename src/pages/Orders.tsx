@@ -1652,6 +1652,8 @@ export default function Orders({
   const [deleteTicketId, setDeleteTicketId] = useState<string | null>(null);
   const [ticketHistoryModalOpen, setTicketHistoryModalOpen] = useState(false);
   const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
+  /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu); null = výběr hledáním. */
+  const [claimSourceTicket, setClaimSourceTicket] = useState<TicketEx | null>(null);
   const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
   /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
   const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
@@ -2712,15 +2714,19 @@ export default function Orders({
   const aktivniReklamace = useMemo(
     () => activeGroup !== "active" ? [] : filteredClaims.filter((c) => {
       const st = normalizeStatus((c.status as string) ?? "");
+      if (activeStatusKey && st !== activeStatusKey) return false;
       return st === null || !isFinal(st);
     }),
-    [activeGroup, filteredClaims, normalizeStatus, isFinal],
+    [activeGroup, activeStatusKey, filteredClaims, normalizeStatus, isFinal],
   );
   const combinedList = useMemo(() => {
     if (!showClaimsInOrdersList) return [];
     const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
     const claimsForGroup = filteredClaims.filter((c) => {
       const st = normalizeStatus((c.status as string) ?? "");
+      // Filtr podle stavu platí i pro reklamace – dřív se do vyfiltrovaného
+      // seznamu pletly reklamace, které ten stav vůbec neměly.
+      if (activeStatusKey && st !== activeStatusKey) return false;
       if (st === null) return activeGroup !== "final";
       if (activeGroup === "all") return true;
       if (activeGroup === "final") return isFinal(st);
@@ -2730,7 +2736,7 @@ export default function Orders({
     return [...ticketItems, ...claimItems].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, normalizeStatus, isFinal]);
+  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, activeStatusKey, normalizeStatus, isFinal]);
 
   /** Počty do přepínače skupin – stejná pravidla jako seznam, jen bez textového hledání. */
   const groupCounts = useMemo(() => {
@@ -2754,6 +2760,7 @@ export default function Orders({
     // když se tam míchají (nastavení).
     for (const c of claimsInBranch) {
       const st = normalizeStatus((c.status as string) ?? "");
+      if (activeStatusKey && st !== activeStatusKey) continue;
       const aktivni = st === null || !isFinal(st);
       if (aktivni) active += 1;
       if (ordersShowClaimsInList) {
@@ -3365,12 +3372,12 @@ export default function Orders({
   );
 
   const addPerformedRepair = useCallback(
-    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string; zMereni?: boolean }) => {
-      // Oprava z ceníku: cena, náklady, čas a navázané produkty (díly).
-      let repairPrice: number | undefined = undefined;
-      let repairCosts: number | undefined = undefined;
-      let repairTime: number | undefined = undefined;
-      let repairProductIds: string[] | undefined = undefined;
+    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; price?: number; costs?: number; estimatedTime?: number; productIds?: string[]; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string; zMereni?: boolean }) => {
+      // Ruční oprava si cenu, náklady, čas a díly nese sama; oprava z ceníku je má v ceníku.
+      let repairPrice: number | undefined = repair.price;
+      let repairCosts: number | undefined = repair.costs;
+      let repairTime: number | undefined = repair.estimatedTime;
+      let repairProductIds: string[] | undefined = repair.productIds;
       if (repair.repairId) {
         const repairData = devicesData.repairs.find((r) => r.id === repair.repairId);
         if (repairData) {
@@ -4748,7 +4755,7 @@ export default function Orders({
           </Button>
           <Button variant="primary"
             data-tour="orders-new-claim-btn"
-            onClick={() => setCreateClaimModalOpen(true)}
+            onClick={() => { setClaimSourceTicket(null); setCreateClaimModalOpen(true); }}
           >
             + Nová reklamace
           </Button>
@@ -6552,6 +6559,14 @@ export default function Orders({
                     ariaLabel="Další akce"
                     items={[
                       { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setTicketHistoryModalOpen(true) },
+                      {
+                        label: "Založit reklamaci z této zakázky",
+                        icon: <InboxIcon size={14} />,
+                        onSelect: () => {
+                          setClaimSourceTicket(detailedTicket);
+                          setCreateClaimModalOpen(true);
+                        },
+                      },
                       ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
                       // Karta zakázky do chatu místo opisování čísla – nejčastější důvod, proč si lidé v servisu píšou.
                       ...(chatZapnuty ? [{
@@ -8589,13 +8604,15 @@ export default function Orders({
 
       <CreateWarrantyClaimModal
         open={createClaimModalOpen}
-        onClose={() => setCreateClaimModalOpen(false)}
+        onClose={() => { setCreateClaimModalOpen(false); setClaimSourceTicket(null); }}
         activeServiceId={activeServiceId}
         tickets={cloudTickets}
+        initialTicket={claimSourceTicket}
         nactiPlnouZakazku={zajistiPlnouZakazku}
         existingClaimCodes={cloudClaims.map((c) => ({ code: c.code }))}
         onCreated={async (_claimCode, claim) => {
           setCreateClaimModalOpen(false);
+          setClaimSourceTicket(null);
           refetchClaims();
           setActiveGroup("reklamace");
           if (claim) {

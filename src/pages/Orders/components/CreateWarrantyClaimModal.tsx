@@ -17,6 +17,8 @@ type CreateWarrantyClaimModalProps = {
    */
   nactiPlnouZakazku?: (ticketId: string) => Promise<TicketEx | null>;
   existingClaimCodes: { code: string | null }[];
+  /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu) – přeskočí hledání. */
+  initialTicket?: TicketEx | null;
   onCreated?: (claimCode: string, claim?: import("../hooks/useWarrantyClaims").WarrantyClaimRow) => void;
 };
 
@@ -114,6 +116,7 @@ export function CreateWarrantyClaimModal({
   tickets,
   nactiPlnouZakazku,
   existingClaimCodes,
+  initialTicket,
   onCreated,
 }: CreateWarrantyClaimModalProps) {
   const { statuses } = useStatuses();
@@ -127,6 +130,21 @@ export function CreateWarrantyClaimModal({
   const [creating, setCreating] = useState(false);
 
   const statusReceived = useMemo(() => statuses.some((s) => s.key === "received") ? "received" : statuses[0]?.key ?? "received", [statuses]);
+
+  // Otevřeno z detailu zakázky: zakázka je daná, rovnou s plnými sloupci.
+  useEffect(() => {
+    if (!open || !initialTicket) return;
+    let zruseno = false;
+    setSelectedTicket(initialTicket);
+    if (nactiPlnouZakazku) {
+      setNacitamZakazku(true);
+      nactiPlnouZakazku(initialTicket.id)
+        .then((plna) => { if (!zruseno && plna) setSelectedTicket(plna); })
+        .finally(() => { if (!zruseno) setNacitamZakazku(false); });
+    }
+    return () => { zruseno = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jen při otevření
+  }, [open, initialTicket?.id]);
 
   useEffect(() => {
     if (selectedTicket) {
