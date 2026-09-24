@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { CopyButton } from "../../components/CopyButton";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { radkyZCsv, type RadekImportuProvizi } from "../../lib/provizeImport";
+import { seznamVyloucenych, textVyloucenych } from "../../lib/provizeVylouceneOpravy";
 import { useAuth } from "../../auth/AuthProvider";
 import { ProvizeStatistiky } from "./ProvizeStatistiky";
 
@@ -28,6 +29,7 @@ type Nastaveni = {
   statusy: string[];
   od: string | null;
   filtr: string | null;
+  vylouceny_opravy: string[] | null;
   email: string | null;
   posledni_sync_at: string | null;
 };
@@ -88,6 +90,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [formSazba, setFormSazba] = useState("7,5");
   const [formOd, setFormOd] = useState("");
   const [formFiltr, setFormFiltr] = useState("");
+  const [formVylouceno, setFormVylouceno] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [posilamMail, setPosilamMail] = useState<number | null>(null);
   const { session } = useAuth();
@@ -114,6 +117,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         setFormSazba(String(Math.round((p.nastaveni?.sazba ?? 0.075) * 10000) / 100).replace(".", ","));
         setFormOd(p.nastaveni?.od ?? "");
         setFormFiltr(p.nastaveni?.filtr ?? "");
+        setFormVylouceno(textVyloucenych(p.nastaveni?.vylouceny_opravy));
         setFormEmail(p.nastaveni?.email ?? "");
         setFormStatusy(p.nastaveni?.statusy ?? ["Připraveno k převzetí", "Vydáno"]);
       } catch (e) {
@@ -155,6 +159,8 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     });
   }, [data, filtr, hledat]);
 
+  const vylouceneOpravy = useMemo(() => seznamVyloucenych(formVylouceno), [formVylouceno]);
+
   const ulozNastaveni = async (zapnuto: boolean) => {
     if (!db || !serviceId) return;
     const sazba = Number(formSazba.replace(",", ".")) / 100;
@@ -169,7 +175,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     setPracuji(true);
     const { error } = await db
       .from("provize_nastaveni")
-      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, email: formEmail.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
+      .upsert({ service_id: serviceId, zapnuto, sazba, statusy: formStatusy, od: formOd || null, filtr: formFiltr.trim() || null, vylouceny_opravy: vylouceneOpravy.length ? vylouceneOpravy : null, email: formEmail.trim() || null, updated_at: new Date().toISOString() }, { onConflict: "service_id" });
     setPracuji(false);
     if (error) {
       showToast(`Uložení selhalo: ${error.message}`, "error");
@@ -305,7 +311,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         <>
           <details open={!n} style={{ marginBottom: 16 }}>
             <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
-              Nastavení {n ? `· ${String(Math.round(n.sazba * 10000) / 100).replace(".", ",")} % · ${n.filtr ? `jen „${n.filtr}“` : "všechna zařízení"} · ${n.zapnuto ? "zapnuto" : "vypnuto"}` : "· provize pro tento servis zatím nejsou zapnuté"}
+              Nastavení {n ? `· ${String(Math.round(n.sazba * 10000) / 100).replace(".", ",")} % · ${n.filtr ? `jen „${n.filtr}“` : "všechna zařízení"}${n.vylouceny_opravy?.length ? ` · bez oprav „${textVyloucenych(n.vylouceny_opravy)}“` : ""} · ${n.zapnuto ? "zapnuto" : "vypnuto"}` : "· provize pro tento servis zatím nejsou zapnuté"}
             </summary>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
@@ -319,6 +325,13 @@ export function ProvizePanel({ services }: { services: Service[] }) {
               <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }} title="Provize jen ze zakázek, jejichž zařízení tenhle text obsahuje (název zakázky, zařízení, značka, model). Prázdné = všechny zakázky.">
                 Jen zařízení obsahující
                 <input value={formFiltr} onChange={(e) => setFormFiltr(e.target.value)} placeholder="např. dyson" style={{ ...pole, width: 140 }} />
+              </label>
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }} title="Opravy, ze kterých se provize nepočítá – typicky výměny dílů. Oddělují se čárkou. Hledá se část názvu včetně diakritiky, na velikosti písmen nezáleží. Zakázka se počítá dál, jen se jí o tyhle opravy sníží základ; když na ní nic jiného není, do provizí se nedostane. Prázdné = počítají se všechny opravy.">
+                Nepočítat opravy obsahující
+                <input value={formVylouceno} onChange={(e) => setFormVylouceno(e.target.value)} placeholder="např. těl, bater" style={{ ...pole, width: 220 }} />
+                <span style={{ fontSize: 11, maxWidth: 220 }}>
+                  Kmen slova s diakritikou: „těl“ chytí tělo i těla, „tělo“ na „výměna těla“ nesedí.
+                </span>
               </label>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }} title="Kam přijde souhrn po vyúčtování. Prázdné = tvůj přihlašovací e-mail.">
                 E-mail pro vyúčtování
