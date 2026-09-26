@@ -50,6 +50,8 @@ export function AppLayout({
   zasilkyEnabled = false,
   provizeEnabled = false,
   odmenyEnabled = false,
+  onHelp,
+  helpBadge = 0,
   sidebarPinned = false,
   onSidebarPinnedChange,
 }: {
@@ -75,6 +77,10 @@ export function AppLayout({
   provizeEnabled?: boolean;
   /** Servis má pravidla odměn za opravy – stránka Odměny. */
   odmenyEnabled?: boolean;
+  /** Otazník v navigaci: průvodce pro aktuální stránku. */
+  onHelp?: () => void;
+  /** Počet neprošlých novinek – odznak u otazníku. */
+  helpBadge?: number;
   /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
   sidebarPinned?: boolean;
   onSidebarPinnedChange?: (pinned: boolean) => void;
@@ -282,6 +288,8 @@ export function AppLayout({
             provizeEnabled,
             odmenyEnabled,
             zasilkyBadge,
+            onHelp,
+            helpBadge,
           } satisfies SidebarProps)}
         />
       </aside>
@@ -299,6 +307,8 @@ export function AppLayout({
           provizeEnabled={provizeEnabled}
           odmenyEnabled={odmenyEnabled}
           zasilkyBadge={zasilkyBadge}
+          onHelp={onHelp}
+          helpBadge={helpBadge}
           services={services}
           activeServiceId={activeServiceId}
           setActiveServiceId={setActiveServiceId}

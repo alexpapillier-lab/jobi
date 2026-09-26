@@ -6,6 +6,7 @@ import { showToast } from "../../components/Toast";
 import { reportError } from "../../lib/reportError";
 import { detectPlatform } from "../../lib/errorLog";
 import { supabase, supabaseUrl, supabaseFetch } from "../../lib/supabaseClient";
+import { useStavPruvodcu } from "../../lib/pruvodci";
 
 /**
  * Nastavení → Aplikace → Nápověda a podpora.
@@ -52,7 +53,8 @@ async function odeslatHlaseni(zprava: string, serviceId: string | null): Promise
   return { ok: true };
 }
 
-export function HelpSupportSettings({ activeServiceId }: { activeServiceId: string | null }) {
+export function HelpSupportSettings({ activeServiceId, onSpustitPruvodce }: { activeServiceId: string | null; onSpustitPruvodce?: (id: string) => void }) {
+  const pruvodci = useStavPruvodcu();
   const [zprava, setZprava] = useState("");
   const [odesila, setOdesila] = useState(false);
   const [odeslano, setOdeslano] = useState(false);
@@ -90,8 +92,36 @@ export function HelpSupportSettings({ activeServiceId }: { activeServiceId: stri
     }
   };
 
+  const datumCz = (iso: string) => new Date(iso).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" });
+
   return (
     <>
+      <Card>
+        <SectionHeading size="sm">Průvodci a novinky</SectionHeading>
+        <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: "calc(-1 * var(--space-2))" }}>
+          Krátký průvodce ke každé stránce a části nastavení, jen k tomu, co máte zapnuté. Otazník v postranním panelu spustí průvodce k místu, kde právě jste.
+        </div>
+        <div style={{ marginTop: 14, display: "grid", gap: 6 }}>
+          {pruvodci.dostupne.map((p) => {
+            const novinka = pruvodci.novinky.includes(p.id);
+            const proslo = pruvodci.videno[p.id];
+            return (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: novinka ? "var(--accent-soft)" : "var(--panel-2)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--text)" }}>
+                    {p.nazev}
+                    {novinka && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Novinka</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{p.popis}{proslo ? ` · prošli jste ${datumCz(proslo)}` : ""}</div>
+                </div>
+                <Button size="sm" variant={novinka ? "primary" : "soft"} onClick={() => onSpustitPruvodce?.(p.id)} disabled={!onSpustitPruvodce}>Spustit</Button>
+              </div>
+            );
+          })}
+          {pruvodci.dostupne.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Průvodci se načtou po přihlášení do servisu.</div>}
+        </div>
+      </Card>
+
       <Card>
         <SectionHeading size="sm">Nápověda</SectionHeading>
         <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: "calc(-1 * var(--space-2))" }}>

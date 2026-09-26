@@ -103,6 +103,14 @@ function OdmenyIcon({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
+function HelpIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
+    </svg>
+  );
+}
 function StatisticsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -156,6 +164,10 @@ export type SidebarProps = {
   odmenyEnabled?: boolean;
   /** Počet zásilek na cestě k vybrané pobočce – odznak u položky Zásilky. */
   zasilkyBadge?: number;
+  /** Otazník: průvodce pro aktuální stránku (lib/pruvodci). */
+  onHelp?: () => void;
+  /** Neprošlé novinky – odznak u otazníku. */
+  helpBadge?: number;
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
   /** Strana obrazovky – určuje hranu, na které leží proužek aktivní položky. */
@@ -266,6 +278,8 @@ export function Sidebar({
   provizeEnabled = false,
   odmenyEnabled = false,
   zasilkyBadge = 0,
+  onHelp,
+  helpBadge = 0,
   onJobiDocsFirstConnect,
   horizontal = false,
   side = "left",
@@ -1088,6 +1102,50 @@ export function Sidebar({
           gap: "var(--space-1)",
         }}
       >
+        {/* Průvodce a novinky: otazník nad Nastavením, s odznakem neprošlých novinek. */}
+        {onHelp && (
+          <button
+            type="button"
+            data-tour="sidebar-help"
+            onClick={onHelp}
+            aria-label="Průvodce a novinky"
+            title={expanded ? undefined : helpBadge > 0 ? `Průvodce · ${helpBadge} ${helpBadge === 1 ? "novinka" : "novinky"}` : "Průvodce touto stránkou"}
+            style={{
+              position: "relative",
+              width: "100%",
+              border: "none",
+              background: "transparent",
+              color: "var(--text)",
+              padding: expanded ? "10px 12px" : "12px 4px",
+              borderRadius: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: expanded ? "flex-start" : "center",
+              gap: expanded ? 12 : 0,
+              cursor: "pointer",
+              textAlign: "left",
+              outline: "none",
+              minWidth: 0,
+              fontFamily: "inherit",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--panel-2)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+          >
+            <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+              <HelpIcon size={expanded ? 20 : 16} />
+              {helpBadge > 0 && (
+                <span aria-hidden style={{ position: "absolute", top: -4, right: -6, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 999, background: "var(--accent)", color: "#fff", fontSize: 9, fontWeight: 800, display: "grid", placeItems: "center", lineHeight: 1 }}>
+                  {helpBadge > 9 ? "9+" : helpBadge}
+                </span>
+              )}
+            </span>
+            {expanded && (
+              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                Průvodce{helpBadge > 0 ? ` · ${helpBadge} ${helpBadge === 1 ? "novinka" : "novinky"}` : ""}
+              </span>
+            )}
+          </button>
+        )}
         {renderNavButton(SETTINGS_ITEM)}
 
         {/* Účet */}

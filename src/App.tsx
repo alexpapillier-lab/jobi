@@ -42,6 +42,7 @@ import { spustHlidacFronty } from "./lib/frontaZapisu";
    se dopíše hned, jak je spojení. */
 spustHlidacFronty();
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
+import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodceProMisto, ulozStavPruvodcu, useStavPruvodcu, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { startServicePresence } from "./lib/presence";
@@ -415,260 +416,43 @@ export default function App() {
 
   // Nápověda klávesových zkratek (?)
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  const TOUR_STEPS: TourStep[] = useMemo(
-    () => [
-      {
-        page: "orders",
-        title: "Vítejte v Jobi",
-        description:
-          "Tento průvodce vás provede hlavními funkcemi aplikace. Můžete ho kdykoli přeskočit nebo znovu spustit v Nastavení → O aplikaci. Na každé stránce stiskněte ? pro nápovědu klávesových zkratek.",
-        icon: "welcome",
-      },
-      {
-        page: "orders",
-        title: "Navigace v postranním panelu",
-        description:
-          "Vlevo přepínejte mezi Zakázky, Sklad, Zařízení, Zákazníci, Statistiky a Nastavení. Aktuální stránka je zvýrazněná.",
-        selector: "[data-tour=\"sidebar-nav-orders\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "Zakládání nové zakázky",
-        description:
-          "Tlačítko „+ Nová zakázka“ otevře formulář pro vytvoření zakázky. Vyplňte zákazníka (telefon, jméno), zařízení a popis. Pokud zákazník s daným telefonem už existuje, aplikace ho nabídne k přiřazení.",
-        selector: "[data-tour=\"orders-new-btn\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "Zakázky – vyhledávání",
-        description:
-          "Do pole vyhledávání zadejte jméno, telefon, zařízení nebo text z poznámky. Seznam zakázek se filtruje v reálném čase.",
-        selector: "[data-tour=\"orders-search\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "Zakázky – záložky Vše / Aktivní / Final",
-        description:
-          "Přepínejte mezi všemi zakázkami, jen aktivními (rozpracovanými) nebo finalizovanými. Usnadní to orientaci při velkém počtu zakázek.",
-        selector: "[data-tour=\"orders-groups\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "Zakázky – filtry podle stavu",
-        description:
-          "Rychlé filtry podle stavu zakázky (Přijato, V opravě, Hotovo atd.). Stavů můžete mít více a měnit je v Nastavení.",
-        selector: "[data-tour=\"orders-filters\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "Nová reklamace",
-        description:
-          "Tlačítko „+ Nová reklamace“ slouží k založení reklamační zakázky navázané na původní zakázku. Reklamace se evidují odděleně a lze je filtrovat.",
-        selector: "[data-tour=\"orders-new-claim-btn\"]",
-        icon: "reklamace",
-      },
-      {
-        page: "orders",
-        title: "Zakázky – seznam",
-        description:
-          "Kliknutím na řádek otevřete detail zakázky. V detailu měníte stav, údaje o zákazníkovi, zařízení, ceny a provedené opravy.",
-        selector: "[data-tour=\"orders-list\"]",
-        icon: "orders",
-      },
-      {
-        page: "orders",
-        title: "JobiDocs – tisk a PDF",
-        description:
-          "Indikátor „JobiDocs ✓/✗“ v postranním panelu ukazuje, zda je aplikace JobiDocs spuštěná. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, protokoly, záruční listy).",
-        selector: "[data-tour=\"header-jobidocs\"]",
-        icon: "jobidocs",
-      },
-      {
-        page: "orders",
-        title: "Plovoucí tlačítko +",
-        description:
-          "Tlačítko + vpravo dole je dostupné na všech stránkách – rychle otevře formulář nové zakázky. Lze vypnout v Nastavení → Vzhled a chování → Rozhraní.",
-        selector: "[data-tour=\"orders-fab\"]",
-        icon: "orders",
-      },
-      {
-        page: "customers",
-        title: "Zákazníci – vyhledávání",
-        description:
-          "Vyhledávejte zákazníky podle jména, telefonu, e-mailu nebo firmy. Seznam vlevo se okamžitě filtruje.",
-        selector: "[data-tour=\"customers-search\"]",
-        icon: "customers",
-      },
-      {
-        page: "customers",
-        title: "Zákazníci – seznam a detail",
-        description:
-          "Vlevo seznam zákazníků, vpravo detail vybraného. V detailu upravíte údaje, založíte zakázku nebo zobrazíte historii zakázek.",
-        selector: "[data-tour=\"customers-content\"]",
-        icon: "customers",
-      },
-      {
-        page: "inventory",
-        title: "Sklad – přehled",
-        description:
-          "Skladové položky (produkty) a jejich propojení s modely zařízení. Ceny, zásoby a přiřazení k opravám. Návod k importu najdete po kliknutí na „Import“.",
-        selector: "[data-tour=\"inventory-main\"]",
-        icon: "inventory",
-      },
-      {
-        page: "inventory",
-        title: "Sklad – Import a návod",
-        description:
-          "Tlačítko „Import“ otevře nahrání TXT souboru s produkty a návod (struktura PRODUKT:, MODELY:, oddělovač ---). Vzorový soubor si můžete stáhnout v sekci.",
-        selector: "[data-tour=\"inventory-import\"]",
-        icon: "inventory",
-      },
-      {
-        page: "devices",
-        title: "Zařízení – katalog",
-        description:
-          "Značky, kategorie a modely zařízení. U každého modelu můžete definovat opravy a ceny. Při zakázce pak vyberete model a přiřadíte opravy.",
-        selector: "[data-tour=\"devices-main\"]",
-        icon: "devices",
-      },
-      {
-        page: "statistics",
-        title: "Statistiky – období a režimy",
-        description:
-          "Výběr časového období (Vše, Dnes, Týden, Měsíc, Rok, Vlastní) a režim zobrazení: Karty, Tabulka nebo Grafy. Data se načítají z vašich zakázek.",
-        selector: "[data-tour=\"statistics-period\"]",
-        icon: "statistics",
-      },
-      {
-        page: "statistics",
-        title: "Statistiky – grafy",
-        description:
-          "V režimu „Grafy“ uvidíte sloupcové grafy: zakázky podle statusu a příjem podle měsíců. Přepnutí na Karty zobrazí přehledové karty a tabulku.",
-        selector: "[data-tour=\"statistics-view-charts\"]",
-        icon: "statistics",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – záložky",
-        description:
-          "V levém sloupci přepínejte mezi skupinami: Firma, Zakázky, Dokumenty a tisk, Komunikace, Lidé a přístupy, Aplikace, Můj profil. Nahoře je hledání v nastavení.",
-        selector: "[data-tour=\"settings-categories\"]",
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Základní údaje servisu",
-        description:
-          "Název servisu, IČO, adresa, kontaktní údaje a logo. Tyto údaje se zobrazují v hlavičce tiskových dokumentů a v nastavení.",
-        selector: "[data-tour=\"settings-sub-service_basic\"]",
-        settingsSection: { category: "company", subsection: "service_basic" },
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Tým",
-        description:
-          "Pozvánky členů týmu, role a správa přístupů. Admin může přidávat a odebírat členy svého servisu.",
-        selector: "[data-tour=\"settings-sub-service_team\"]",
-        settingsSection: { category: "people", subsection: "service_team" },
-        icon: "team",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Statusy zakázek",
-        description:
-          "Přidávejte a upravujte stavy (Přijato, V opravě, Hotovo…), barvy z palety a označení finálního stavu.",
-        selector: "[data-tour=\"settings-sub-orders_statuses\"]",
-        settingsSection: { category: "orders", subsection: "orders_statuses" },
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Povinná pole u zakázky",
-        description:
-          "Která pole musí být u nové zakázky a při úpravě vyplněna. Zatím lze nastavit povinnost telefonu zákazníka – pokud vypnete, zakázku lze uložit i bez telefonu.",
-        selector: "[data-tour=\"settings-sub-orders_required_fields\"]",
-        settingsSection: { category: "orders", subsection: "orders_required_fields" },
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Dokumenty a tisk",
-        description:
-          "Automatický tisk po změně stavu a výchozí tiskárna. Šablony dokumentů (zakázkový list, protokol, záruční list) se upravují v aplikaci JobiDocs.",
-        selector: "[data-tour=\"settings-sub-orders_tisk_dokumentu\"]",
-        settingsSection: { category: "documents", subsection: "orders_tisk_dokumentu" },
-        icon: "doc",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Reklamace",
-        description:
-          "Pravidla a štítky pro reklamační zakázky, výchozí stavy a chování při vytvoření reklamace z původní zakázky.",
-        selector: "[data-tour=\"settings-sub-orders_reklamace\"]",
-        settingsSection: { category: "orders", subsection: "orders_reklamace" },
-        icon: "reklamace",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Vzhled a rozhraní",
-        description:
-          "Plovoucí tlačítko +, způsob zobrazení zakázek (seznam/mřížka/kompaktní), počet zakázek na stránku, zvuky a měřítko rozhraní. Povinný telefon u zakázky nastavíte v Zakázky → Povinná pole u zakázky.",
-        selector: "[data-tour=\"settings-sub-appearance_ui\"]",
-        settingsSection: { category: "app", subsection: "appearance_ui" },
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Barevné téma",
-        description:
-          "Přepínání mezi světlým a tmavým režimem aplikace. Téma se ukládá a použije při příštím spuštění.",
-        selector: "[data-tour=\"settings-sub-appearance_theme\"]",
-        settingsSection: { category: "app", subsection: "appearance_theme" },
-        icon: "settings",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Klávesové zkratky",
-        description:
-          "Prohlédněte si a upravte klávesové zkratky pro rychlé akce (nová zakázka, vyhledávání, přepínání stránek). Stiskněte ? kdekoli pro nápovědu.",
-        selector: "[data-tour=\"settings-sub-appearance_shortcuts\"]",
-        settingsSection: { category: "app", subsection: "appearance_shortcuts" },
-        icon: "keyboard",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – Můj profil",
-        description:
-          "Vaše jméno, e-mail a avatar. Údaje slouží k zobrazení v aplikaci a při spolupráci v týmu.",
-        selector: "[data-tour=\"settings-sub-profile_me\"]",
-        settingsSection: { category: "profile", subsection: "profile_me" },
-        icon: "profile",
-      },
-      {
-        page: "settings",
-        title: "Nastavení – O aplikaci a průvodce",
-        description:
-          "Verze aplikace, údaje pro podporu a tlačítko „Spustit průvodce“ pro znovu spuštění tohoto průvodce.",
-        selector: "[data-tour=\"settings-sub-about_app\"]",
-        settingsSection: { category: "app", subsection: "about_app" },
-        icon: "settings",
-      },
-    ],
-    []
+  /** Právě běžící průvodce z katalogu (lib/pruvodci); úvodní má id „uvod“. */
+  const [aktivniPruvodce, setAktivniPruvodce] = useState<Pruvodce | null>(null);
+  const TOUR_STEPS: TourStep[] = useMemo(() => aktivniPruvodce?.kroky ?? [], [aktivniPruvodce]);
+  const stavPruvodcu = useStavPruvodcu();
+  /** Co má uživatel k dispozici: podle role, stránek v navigaci a modulů – průvodce k API bez API nikdo neuvidí. */
+  const kontextPruvodcu = useMemo<KontextPruvodcu>(
+    () => ({
+      admin: isAdmin,
+      rootOwner: jeRootOwner,
+      web: isWeb(),
+      stranky: { orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
+      moduly: { api_catalog: hasModule("api_catalog"), api_inventory: hasModule("api_inventory"), branches: hasModule("branches"), invoices: hasModule("invoices"), sms: hasModule("sms") },
+    }),
+    [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, odmenyAvailable, provizeAvailable, hasModule]
   );
-  const startTour = useCallback(() => {
+  const pruvodciDostupni = useMemo(() => dostupniPruvodci(kontextPruvodcu), [kontextPruvodcu]);
+
+  const spustPruvodce = useCallback((p: Pruvodce) => {
+    if (p.kroky.length === 0) return;
+    setAktivniPruvodce(p);
     setIsTourActive(true);
     setTourStep(0);
-    setActivePage(TOUR_STEPS[0].page);
-  }, [TOUR_STEPS]);
+    setActivePage(p.kroky[0].page);
+  }, []);
+  const startTour = useCallback(() => {
+    const uvod = PRUVODCI.find((p) => p.id === "uvod");
+    if (uvod) spustPruvodce(uvod);
+  }, [spustPruvodce]);
 
   const onTourEnded = useCallback(() => {
+    // Prošlý průvodce už není novinka.
+    const uid = session?.user?.id;
+    if (uid && aktivniPruvodce) {
+      const next = oznacProsly(uid, aktivniPruvodce.id);
+      nastavStavPruvodcu({ dostupne: pruvodciDostupni, videno: next.videno, novinky: next.neprosle });
+    }
+    if (aktivniPruvodce?.id !== "uvod") return;
     // Ve webové verzi se tiskne přímo z prohlížeče, takže nabízet instalaci
     // JobiDocs nedává smysl – uživatel by si stahoval něco, co nepotřebuje.
     if (isWeb()) return;
@@ -679,7 +463,52 @@ export default function App() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [session?.user?.id, aktivniPruvodce, pruvodciDostupni]);
+
+  /** Otazník v navigaci: průvodce pro aktuální stránku / podsekci Nastavení, jinak seznam průvodců. */
+  const otevriPruvodce = useCallback(() => {
+    const sub = activePage === "settings" ? document.querySelector<HTMLElement>('[data-tour="settings-content"]')?.dataset.section ?? null : null;
+    const p = pruvodceProMisto(pruvodciDostupni, activePage, sub);
+    if (p) {
+      spustPruvodce(p);
+      return;
+    }
+    setOpenSettingsToSubsection({ category: "app", subsection: "about_help" });
+    setActivePage("settings");
+  }, [activePage, pruvodciDostupni, spustPruvodce]);
+
+  /* Novinky: po přihlášení (s odstupem, ať jsou načtené moduly) porovnat,
+     co má uživatel k dispozici, s tím, co měl minule – nová funkce se
+     oznámí jednou a nabídne průvodce. */
+  const novinkyOznamenoRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || !activeServiceId) return;
+    const klic = `${uid}:${activeServiceId}`;
+    const ulozeno = nactiStavPruvodcu(uid);
+    nastavStavPruvodcu({ dostupne: pruvodciDostupni, videno: ulozeno?.videno ?? {}, novinky: ulozeno?.neprosle ?? [] });
+    if (novinkyOznamenoRef.current === klic) return;
+    const t = window.setTimeout(() => {
+      novinkyOznamenoRef.current = klic;
+      const { novinky, ulozit } = zjistiNovinky(pruvodciDostupni, nactiStavPruvodcu(uid), new Date());
+      ulozStavPruvodcu(uid, ulozit);
+      nastavStavPruvodcu({ dostupne: pruvodciDostupni, videno: ulozit.videno, novinky: ulozit.neprosle });
+      if (novinky.length === 1) {
+        showPersistentToast(`Novinka: ${novinky[0].nazev}`, "info", { actionLabel: "Projít průvodce", onAction: () => spustPruvodce(novinky[0]), subtitle: novinky[0].popis, silent: true });
+      } else if (novinky.length > 1) {
+        showPersistentToast(`${novinky.length} novinky v Jobi`, "info", {
+          actionLabel: "Zobrazit",
+          onAction: () => {
+            setOpenSettingsToSubsection({ category: "app", subsection: "about_help" });
+            setActivePage("settings");
+          },
+          subtitle: novinky.map((n) => n.nazev).join(", "),
+          silent: true,
+        });
+      }
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [session?.user?.id, activeServiceId, pruvodciDostupni, spustPruvodce]);
 
   const tourOnNext = useCallback(() => {
     if (tourStep >= TOUR_STEPS.length - 1) {
@@ -1489,6 +1318,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           zasilkyEnabled={zasilkyAvailable}
           provizeEnabled={provizeAvailable}
           odmenyEnabled={odmenyVNavigaci}
+          onHelp={otevriPruvodce}
+          helpBadge={stavPruvodcu.novinky.length}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1508,7 +1339,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               tahle oprava netýká.
             */}
             {visitedPages.has("orders") && (
-              <div style={{ display: activePage === "orders" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "orders"}>
+              <div data-tour="page-orders" style={{ display: activePage === "orders" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "orders"}>
                 <Orders
                   activeServiceId={activeServiceId}
                   serviceName={services.find((s) => s.service_id === activeServiceId)?.service_name ?? null}
@@ -1546,7 +1377,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
             )}
 
           {visitedPages.has("sms") && (
-            <div style={{ display: activePage === "sms" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "sms"}>
+            <div data-tour="page-sms" style={{ display: activePage === "sms" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "sms"}>
               <SmsChatsPage
                 activeServiceId={activeServiceId}
                 openSmsIntent={openSmsIntent}
@@ -1560,7 +1391,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("calendar") && (
-            <div style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
+            <div data-tour="page-calendar" style={{ display: activePage === "calendar" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "calendar"}>
               <Calendar
                 activeServiceId={activeServiceId}
                 onZalozitZakazku={(rezervace) => {
@@ -1580,7 +1411,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("customers") && (
-              <div style={{ display: activePage === "customers" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "customers"}>
+              <div data-tour="page-customers" style={{ display: activePage === "customers" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "customers"}>
             <Customers
               activeServiceId={activeServiceId}
               openCustomerIntent={openCustomerIntent}
@@ -1607,19 +1438,19 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("inventory") && (
-            <div style={{ display: activePage === "inventory" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "inventory"}>
+            <div data-tour="page-inventory" style={{ display: activePage === "inventory" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "inventory"}>
               <Inventory activeServiceId={activeServiceId} />
             </div>
           )}
 
           {visitedPages.has("devices") && (
-            <div style={{ display: activePage === "devices" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "devices"}>
+            <div data-tour="page-devices" style={{ display: activePage === "devices" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "devices"}>
               <Devices activeServiceId={activeServiceId} />
             </div>
           )}
 
           {canViewStatistics && visitedPages.has("statistics") && (
-            <div style={{ display: activePage === "statistics" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "statistics"}>
+            <div data-tour="page-statistics" style={{ display: activePage === "statistics" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "statistics"}>
               <Statistics
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
@@ -1631,7 +1462,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {odmenyAvailable && visitedPages.has("odmeny") && (
-            <div style={{ display: activePage === "odmeny" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "odmeny"}>
+            <div data-tour="page-odmeny" style={{ display: activePage === "odmeny" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "odmeny"}>
               <Odmeny
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
@@ -1647,7 +1478,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {provizeAvailable && visitedPages.has("provize") && (
-            <div style={{ display: activePage === "provize" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "provize"}>
+            <div data-tour="page-provize" style={{ display: activePage === "provize" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "provize"}>
               <ProvizeSdilene
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
@@ -1659,7 +1490,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {invoicesAvailable && visitedPages.has("invoices") && (
-            <div style={{ display: activePage === "invoices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "invoices"}>
+            <div data-tour="page-invoices" style={{ display: activePage === "invoices" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "invoices"}>
               <Invoices
                 activeServiceId={activeServiceId}
                 prefillFromTicket={invoicePrefill}
@@ -1675,7 +1506,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {zasilkyAvailable && visitedPages.has("zasilky") && (
-            <div style={{ display: activePage === "zasilky" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "zasilky"}>
+            <div data-tour="page-zasilky" style={{ display: activePage === "zasilky" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "zasilky"}>
               <Zasilky
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
@@ -1687,13 +1518,17 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {visitedPages.has("settings") && (
-            <div style={{ display: activePage === "settings" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "settings"}>
+            <div data-tour="page-settings" style={{ display: activePage === "settings" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "settings"}>
             <Settings
               activeServiceId={activeServiceId}
               setActiveServiceId={setActiveServiceId}
               services={services}
               refreshServices={refreshServices}
               onStartTour={startTour}
+              onSpustitPruvodce={(id) => {
+                const p = pruvodciDostupni.find((x) => x.id === id);
+                if (p) spustPruvodce(p);
+              }}
               tourSection={
                 isTourActive && TOUR_STEPS[tourStep]?.page === "settings" && TOUR_STEPS[tourStep].settingsSection
                   ? TOUR_STEPS[tourStep].settingsSection!

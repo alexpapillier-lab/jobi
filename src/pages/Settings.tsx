@@ -316,6 +316,8 @@ type SettingsProps = {
   services: Array<{ service_id: string; service_name: string; role: string; active?: boolean }>;
   refreshServices?: () => Promise<void>;
   onStartTour?: () => void;
+  /** Spustí průvodce z katalogu (lib/pruvodci) podle id – seznam v Nápovědě. */
+  onSpustitPruvodce?: (id: string) => void;
   /** When set (e.g. by app tour), switch to this category/subsection so the highlighted tab is visible. */
   tourSection?: { category: string; subsection: string } | null;
   /** Když uživatel přijde z toastu „Jít do nastavení“ (aktualizace), otevřít tuto subsekci a pak vyvolat callback. */
@@ -323,7 +325,7 @@ type SettingsProps = {
   onOpenToSubsectionConsumed?: () => void;
 };
 
-export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
+export default function Settings({ activeServiceId, setActiveServiceId, services, refreshServices, onStartTour, onSpustitPruvodce, tourSection, openToSubsection, onOpenToSubsectionConsumed }: SettingsProps) {
   const isNarrow = useIsNarrow();
   const { session } = useAuth();
   const { statuses, fallbackKey, moveStatus } = useStatuses();
@@ -1073,7 +1075,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   return (
     <UnsavedGuardProvider register={registerUnsaved}>
-    <div data-tour="settings-content" style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+    <div data-tour="settings-content" data-section={section.subsection} style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
       <div style={{ fontSize: "var(--text-xl)", fontWeight: 950, color: "var(--text)" }}>Nastavení</div>
 
       <div
@@ -2675,7 +2677,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* O APLIKACI */}
-      {section.subsection === "about_help" && <HelpSupportSettings activeServiceId={activeServiceId ?? null} />}
+      {section.subsection === "about_help" && <HelpSupportSettings activeServiceId={activeServiceId ?? null} onSpustitPruvodce={onSpustitPruvodce} />}
 
       {section.subsection === "about_app" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>

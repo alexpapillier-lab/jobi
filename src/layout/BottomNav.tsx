@@ -50,6 +50,8 @@ export type BottomNavProps = {
   provizeEnabled?: boolean;
   odmenyEnabled?: boolean;
   zasilkyBadge?: number;
+  onHelp?: () => void;
+  helpBadge?: number;
   services?: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId?: string | null;
   setActiveServiceId?: (serviceId: string | null) => void;
@@ -69,6 +71,8 @@ export function BottomNav({
   provizeEnabled = false,
   odmenyEnabled = false,
   zasilkyBadge = 0,
+  onHelp,
+  helpBadge = 0,
   services = [],
   activeServiceId = null,
   setActiveServiceId,
@@ -364,6 +368,19 @@ export function BottomNav({
                   );
                 })}
               </div>
+            )}
+
+            {onHelp && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  onHelp();
+                }}
+                style={{ ...rowStyle, fontWeight: 600 }}
+              >
+                Průvodce touto stránkou{helpBadge > 0 ? ` · ${helpBadge} ${helpBadge === 1 ? "novinka" : "novinky"}` : ""}
+              </button>
             )}
 
             {onSignOut && (
