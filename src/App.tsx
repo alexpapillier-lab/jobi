@@ -465,6 +465,29 @@ export default function App() {
     }
   }, [session?.user?.id, aktivniPruvodce, pruvodciDostupni]);
 
+  /* Krok průvodce s akcí: otevřít ukázkovou zakázku (z config.demo_data), jinak
+     poslední zakázku servisu – detail je dialog a průvodce ho potřebuje vidět. */
+  useEffect(() => {
+    if (!isTourActive || !supabase || !activeServiceId) return;
+    const krok = TOUR_STEPS[tourStep];
+    if (krok?.akce !== "otevrit-ukazkovou-zakazku") return;
+    let zruseno = false;
+    void (async () => {
+      const config = await nactiServiceConfig(activeServiceId);
+      const demo = config.stav === "ok" ? (config.config.demo_data as { ticketIds?: string[] } | undefined) : undefined;
+      let ticketId = demo?.ticketIds?.[0] ?? null;
+      if (!ticketId) {
+        // deno-lint-ignore no-explicit-any
+        const { data } = await (supabase as any).from("tickets").select("id").eq("service_id", activeServiceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(1);
+        ticketId = Array.isArray(data) && data[0]?.id ? String(data[0].id) : null;
+      }
+      if (zruseno || !ticketId) return;
+      setActivePage("orders");
+      setOpenTicketIntent({ ticketId, mode: "detail" });
+    })();
+    return () => { zruseno = true; };
+  }, [isTourActive, tourStep, TOUR_STEPS, activeServiceId]);
+
   /** Otazník v navigaci: průvodce pro aktuální stránku / podsekci Nastavení, jinak seznam průvodců. */
   const otevriPruvodce = useCallback(() => {
     const sub = activePage === "settings" ? document.querySelector<HTMLElement>('[data-tour="settings-content"]')?.dataset.section ?? null : null;

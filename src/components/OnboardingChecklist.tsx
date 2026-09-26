@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { loadServiceConfig, mergeServiceConfig, subscribeServiceConfig, type ServiceConfig } from "../lib/serviceSettingsSync";
 import { CheckIcon, XIcon } from "./icons";
@@ -63,6 +63,29 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
     void demoStopa(activeServiceId).then((st) => { if (!cancelled) setMaDemo(!!st); });
     return () => { cancelled = true; };
   }, [activeServiceId, config]);
+
+  /* Nový servis dostane ukázková data sám: prázdná aplikace nemá co ukázat
+     a průvodci by neměli na co ukazovat. Jen jednou (příznak demo_auto),
+     jen když servis ještě nemá žádnou zakázku ani ukázku. Smazání je
+     tlačítkem níž; po něm se ukázka znovu nezakládá. */
+  const autoDemoRef = useRef(false);
+  useEffect(() => {
+    if (!config || autoDemoRef.current) return;
+    if (config.demo_auto === true || config.demo_data || ticketCount > 0 || config.onboarding_hidden === true) return;
+    autoDemoRef.current = true;
+    void (async () => {
+      await mergeServiceConfig(activeServiceId, { demo_auto: true });
+      setDemoBezi(true);
+      const res = await vytvoritDemoData(activeServiceId);
+      setDemoBezi(false);
+      if (res.error) {
+        showToast(`Ukázková data se nepodařilo založit: ${res.error}`, "error");
+        return;
+      }
+      setMaDemo(true);
+      showToast("Připravili jsme ukázkové zakázky, ceník a díly, ať máte na čem zkoušet. Smažete je jedním tlačítkem v Prvních krocích.", "info");
+    })();
+  }, [config, ticketCount, activeServiceId]);
 
   const prepnoutDemo = useCallback(async () => {
     setDemoBezi(true);

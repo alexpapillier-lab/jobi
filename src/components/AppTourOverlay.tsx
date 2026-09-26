@@ -24,6 +24,8 @@ export type TourStep = {
   settingsSection?: { category: string; subsection: string };
   /** Icon key for card (welcome, orders, customers, inventory, devices, statistics, settings, jobidocs, doc, team, profile, keyboard). */
   icon?: string;
+  /** Co má aplikace udělat při vstupu na krok (App.tsx): otevřít ukázkovou (nebo poslední) zakázku. */
+  akce?: "otevrit-ukazkovou-zakazku";
 };
 
 type AppTourOverlayProps = {
@@ -68,25 +70,46 @@ function useTourTarget(active: boolean, page: NavKey, selector: string | undefin
       setRect(null);
       return;
     }
-    const el = document.querySelector(selector);
-    if (!el) {
-      setRect(null);
-      return;
-    }
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Prvek nemusí existovat hned – detail zakázky nebo podsekce Nastavení se
+    // teprve otevírá. Chvíli se čeká; bez prvku zůstane karta bez spotlightu.
+    let el: Element | null = document.querySelector(selector);
+    let ro: ResizeObserver | null = null;
+    let raf = 0;
+    let pokusy = 0;
+    let cekani = 0;
     const update = () => {
+      if (!el) return;
       const r = el.getBoundingClientRect();
       setRect(new DOMRect(r.x, r.y, r.width, r.height));
     };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(document.documentElement);
-    window.addEventListener("scroll", update, true);
-    const t = requestAnimationFrame(update);
+    const pripoj = () => {
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      update();
+      ro = new ResizeObserver(update);
+      ro.observe(document.documentElement);
+      window.addEventListener("scroll", update, true);
+      raf = requestAnimationFrame(update);
+    };
+    if (el) {
+      pripoj();
+    } else {
+      setRect(null);
+      const zkus = () => {
+        el = document.querySelector(selector);
+        if (el) {
+          pripoj();
+          return;
+        }
+        if (++pokusy < 25) cekani = window.setTimeout(zkus, 200);
+      };
+      cekani = window.setTimeout(zkus, 200);
+    }
     return () => {
-      ro.disconnect();
+      ro?.disconnect();
       window.removeEventListener("scroll", update, true);
-      cancelAnimationFrame(t);
+      cancelAnimationFrame(raf);
+      window.clearTimeout(cekani);
       setRect(null);
     };
   }, [active, page, selector]);

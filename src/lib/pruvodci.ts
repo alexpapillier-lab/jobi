@@ -52,249 +52,16 @@ const nast = (category: string, subsection: string) => ({ category, subsection }
 
 /** Kroky úvodního průvodce (po prvním přihlášení, „Spustit průvodce“ v O aplikaci). */
 export const KROKY_UVOD: TourStep[] = [
-  {
-    page: "orders",
-    title: "Vítejte v Jobi",
-    description:
-      "Tento průvodce vás provede hlavními funkcemi aplikace. Můžete ho kdykoli přeskočit nebo znovu spustit v Nastavení → O aplikaci. Na každé stránce stiskněte ? pro nápovědu klávesových zkratek.",
-    icon: "welcome",
-  },
-  {
-    page: "orders",
-    title: "Navigace v postranním panelu",
-    description:
-      "Vlevo přepínejte mezi Zakázky, Sklad, Zařízení, Zákazníci, Statistiky a Nastavení. Aktuální stránka je zvýrazněná.",
-    selector: "[data-tour=\"sidebar-nav-orders\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "Zakládání nové zakázky",
-    description:
-      "Tlačítko „+ Nová zakázka“ otevře formulář pro vytvoření zakázky. Vyplňte zákazníka (telefon, jméno), zařízení a popis. Pokud zákazník s daným telefonem už existuje, aplikace ho nabídne k přiřazení.",
-    selector: "[data-tour=\"orders-new-btn\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "Zakázky – vyhledávání",
-    description:
-      "Do pole vyhledávání zadejte jméno, telefon, zařízení nebo text z poznámky. Seznam zakázek se filtruje v reálném čase.",
-    selector: "[data-tour=\"orders-search\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "Zakázky – záložky Vše / Aktivní / Final",
-    description:
-      "Přepínejte mezi všemi zakázkami, jen aktivními (rozpracovanými) nebo finalizovanými. Usnadní to orientaci při velkém počtu zakázek.",
-    selector: "[data-tour=\"orders-groups\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "Zakázky – filtry podle stavu",
-    description:
-      "Rychlé filtry podle stavu zakázky (Přijato, V opravě, Hotovo atd.). Stavů můžete mít více a měnit je v Nastavení.",
-    selector: "[data-tour=\"orders-status-filter\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "Nová reklamace",
-    description:
-      "Tlačítko „+ Nová reklamace“ slouží k založení reklamační zakázky navázané na původní zakázku. Reklamace se evidují odděleně a lze je filtrovat.",
-    selector: "[data-tour=\"orders-new-claim-btn\"]",
-    icon: "reklamace",
-  },
-  {
-    page: "orders",
-    title: "Zakázky – seznam",
-    description:
-      "Kliknutím na řádek otevřete detail zakázky. V detailu měníte stav, údaje o zákazníkovi, zařízení, ceny a provedené opravy.",
-    selector: "[data-tour=\"orders-list\"]",
-    icon: "orders",
-  },
-  {
-    page: "orders",
-    title: "JobiDocs – tisk a PDF",
-    description:
-      "Indikátor „JobiDocs ✓/✗“ v postranním panelu ukazuje, zda je aplikace JobiDocs spuštěná. JobiDocs slouží k tisku a exportu PDF (zakázkové listy, protokoly, záruční listy).",
-    selector: "[data-tour=\"header-jobidocs\"]",
-    icon: "jobidocs",
-  },
-  {
-    page: "orders",
-    title: "Plovoucí tlačítko +",
-    description:
-      "Tlačítko + vpravo dole je dostupné na všech stránkách – rychle otevře formulář nové zakázky. Lze vypnout v Nastavení → Vzhled a chování → Rozhraní.",
-    selector: "[data-tour=\"orders-fab\"]",
-    icon: "orders",
-  },
-  {
-    page: "customers",
-    title: "Zákazníci – vyhledávání",
-    description:
-      "Vyhledávejte zákazníky podle jména, telefonu, e-mailu nebo firmy. Seznam vlevo se okamžitě filtruje.",
-    selector: "[data-tour=\"customers-search\"]",
-    icon: "customers",
-  },
-  {
-    page: "customers",
-    title: "Zákazníci – seznam a detail",
-    description:
-      "Vlevo seznam zákazníků, vpravo detail vybraného. V detailu upravíte údaje, založíte zakázku nebo zobrazíte historii zakázek.",
-    selector: "[data-tour=\"customers-content\"]",
-    icon: "customers",
-  },
-  {
-    page: "inventory",
-    title: "Sklad – přehled",
-    description:
-      "Skladové položky (produkty) a jejich propojení s modely zařízení. Ceny, zásoby a přiřazení k opravám. Návod k importu najdete po kliknutí na „Import“.",
-    selector: "[data-tour=\"inventory-main\"]",
-    icon: "inventory",
-  },
-  {
-    page: "inventory",
-    title: "Sklad – Import a návod",
-    description:
-      "Tlačítko „Import“ otevře nahrání TXT souboru s produkty a návod (struktura PRODUKT:, MODELY:, oddělovač ---). Vzorový soubor si můžete stáhnout v sekci.",
-    selector: "[data-tour=\"inventory-import\"]",
-    icon: "inventory",
-  },
-  {
-    page: "devices",
-    title: "Zařízení – katalog",
-    description:
-      "Značky, kategorie a modely zařízení. U každého modelu můžete definovat opravy a ceny. Při zakázce pak vyberete model a přiřadíte opravy.",
-    selector: "[data-tour=\"devices-main\"]",
-    icon: "devices",
-  },
-  {
-    page: "statistics",
-    title: "Statistiky – období a režimy",
-    description:
-      "Výběr časového období (Vše, Dnes, Týden, Měsíc, Rok, Vlastní) a režim zobrazení: Karty, Tabulka nebo Grafy. Data se načítají z vašich zakázek.",
-    selector: "[data-tour=\"statistics-period\"]",
-    icon: "statistics",
-  },
-  {
-    page: "statistics",
-    title: "Statistiky – grafy",
-    description:
-      "V režimu „Grafy“ uvidíte sloupcové grafy: zakázky podle statusu a příjem podle měsíců. Přepnutí na Karty zobrazí přehledové karty a tabulku.",
-    selector: "[data-tour=\"statistics-view-charts\"]",
-    icon: "statistics",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – záložky",
-    description:
-      "V levém sloupci přepínejte mezi skupinami: Firma, Zakázky, Dokumenty a tisk, Komunikace, Lidé a přístupy, Aplikace, Můj profil. Nahoře je hledání v nastavení.",
-    selector: "[data-tour=\"settings-categories\"]",
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Základní údaje servisu",
-    description:
-      "Název servisu, IČO, adresa, kontaktní údaje a logo. Tyto údaje se zobrazují v hlavičce tiskových dokumentů a v nastavení.",
-    selector: "[data-tour=\"settings-sub-service_basic\"]",
-    settingsSection: { category: "company", subsection: "service_basic" },
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Tým",
-    description:
-      "Pozvánky členů týmu, role a správa přístupů. Admin může přidávat a odebírat členy svého servisu.",
-    selector: "[data-tour=\"settings-sub-service_team\"]",
-    settingsSection: { category: "people", subsection: "service_team" },
-    icon: "team",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Statusy zakázek",
-    description:
-      "Přidávejte a upravujte stavy (Přijato, V opravě, Hotovo…), barvy z palety a označení finálního stavu.",
-    selector: "[data-tour=\"settings-sub-orders_statuses\"]",
-    settingsSection: { category: "orders", subsection: "orders_statuses" },
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Povinná pole u zakázky",
-    description:
-      "Která pole musí být u nové zakázky a při úpravě vyplněna. Zatím lze nastavit povinnost telefonu zákazníka – pokud vypnete, zakázku lze uložit i bez telefonu.",
-    selector: "[data-tour=\"settings-sub-orders_required_fields\"]",
-    settingsSection: { category: "orders", subsection: "orders_required_fields" },
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Dokumenty a tisk",
-    description:
-      "Automatický tisk po změně stavu a výchozí tiskárna. Šablony dokumentů (zakázkový list, protokol, záruční list) se upravují v aplikaci JobiDocs.",
-    selector: "[data-tour=\"settings-sub-orders_tisk_dokumentu\"]",
-    settingsSection: { category: "documents", subsection: "orders_tisk_dokumentu" },
-    icon: "doc",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Reklamace",
-    description:
-      "Pravidla a štítky pro reklamační zakázky, výchozí stavy a chování při vytvoření reklamace z původní zakázky.",
-    selector: "[data-tour=\"settings-sub-orders_reklamace\"]",
-    settingsSection: { category: "orders", subsection: "orders_reklamace" },
-    icon: "reklamace",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Vzhled a rozhraní",
-    description:
-      "Plovoucí tlačítko +, způsob zobrazení zakázek (seznam/mřížka/kompaktní), počet zakázek na stránku, zvuky a měřítko rozhraní. Povinný telefon u zakázky nastavíte v Zakázky → Povinná pole u zakázky.",
-    selector: "[data-tour=\"settings-sub-appearance_ui\"]",
-    settingsSection: { category: "app", subsection: "appearance_ui" },
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Barevné téma",
-    description:
-      "Přepínání mezi světlým a tmavým režimem aplikace. Téma se ukládá a použije při příštím spuštění.",
-    selector: "[data-tour=\"settings-sub-appearance_theme\"]",
-    settingsSection: { category: "app", subsection: "appearance_theme" },
-    icon: "settings",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Klávesové zkratky",
-    description:
-      "Prohlédněte si a upravte klávesové zkratky pro rychlé akce (nová zakázka, vyhledávání, přepínání stránek). Stiskněte ? kdekoli pro nápovědu.",
-    selector: "[data-tour=\"settings-sub-appearance_shortcuts\"]",
-    settingsSection: { category: "app", subsection: "appearance_shortcuts" },
-    icon: "keyboard",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – Můj profil",
-    description:
-      "Vaše jméno, e-mail a avatar. Údaje slouží k zobrazení v aplikaci a při spolupráci v týmu.",
-    selector: "[data-tour=\"settings-sub-profile_me\"]",
-    settingsSection: { category: "profile", subsection: "profile_me" },
-    icon: "profile",
-  },
-  {
-    page: "settings",
-    title: "Nastavení – O aplikaci a průvodce",
-    description:
-      "Verze aplikace, údaje pro podporu a tlačítko „Spustit průvodce“ pro znovu spuštění tohoto průvodce.",
-    selector: "[data-tour=\"settings-sub-about_app\"]",
-    settingsSection: { category: "app", subsection: "about_app" },
-    icon: "settings",
-  },
-
+  { page: "orders", title: "Vítejte v Jobi", description: "Krátká prohlídka hlavních stránek. Kdykoli ji přeskočíte; ke každé stránce a části nastavení je pak vlastní průvodce pod otazníkem v postranním panelu.", icon: "welcome" },
+  { page: "orders", title: "Postranní panel", description: "Zakázky, Kalendář, Zákazníci, Sklad, Zařízení, Statistiky a Nastavení. Co servis nemá zapnuté (SMS, faktury, pobočky), v panelu není.", selector: sel("sidebar-nav-orders"), icon: "orders" },
+  { page: "orders", title: "Zakázky", description: "Srdce aplikace: příjem, stav, opravy s cenami, tisk dokumentů, SMS a historie. Nová zakázka je jedno tlačítko; zákazník se podle telefonu najde sám.", selector: sel("orders-new-btn"), icon: "orders" },
+  { page: "orders", title: "Hledání a filtry", description: "Hledejte podle čehokoli, přepínejte skupiny Vše / Aktivní / Dokončené a filtrujte podle stavu.", selector: sel("orders-search"), icon: "orders" },
+  { page: "customers", title: "Zákazníci", description: "Vznikají sami z první zakázky. Karta drží kontakty, adresu pro doklady a všechny zakázky zákazníka.", selector: sel("customers-content"), icon: "customers" },
+  { page: "devices", title: "Zařízení a ceník", description: "Modely a opravy s cenou, náklady a časem. Při příjmu se nabídnou jedním klikem, z nákladů se počítá marže.", selector: sel("devices-main"), icon: "devices" },
+  { page: "inventory", title: "Sklad", description: "Díly s nákupní cenou navázané na opravy: přidání opravy na zakázku díl rezervuje, vydání ho odepíše.", selector: sel("inventory-main"), icon: "inventory" },
+  { page: "statistics", title: "Statistiky", description: "Obrat, náklady a zisk podle data vydání, počty podle přijetí, marže podle oprav a zařízení, technici.", selector: sel("statistics-main"), icon: "statistics" },
+  { page: "settings", title: "Nastavení", description: "Firma, statusy zakázek, dokumenty a tisk, komunikace, tým. Každá část má vlastního průvodce pod otazníkem.", selector: sel("settings-categories"), settingsSection: nast("company", "service_basic"), icon: "settings" },
+  { page: "settings", title: "Průvodci a novinky", description: "Seznam všech průvodců a novinek je v Nastavení → Nápověda. Když se vám zpřístupní nová funkce, aplikace vám to po přihlášení sama řekne.", selector: sel("settings-content"), settingsSection: nast("app", "about_help"), icon: "settings" },
 ];
 
 const ODMENY: Pruvodce = {
@@ -331,6 +98,20 @@ export const PRUVODCI: Pruvodce[] = [
       { page: "orders", title: "Nová zakázka", description: "Zákazník podle telefonu (existující se nabídne sám), zařízení, požadovaná oprava, opravy z ceníku i mimo něj a sleva už při příjmu.", selector: sel("orders-new-btn"), icon: "orders" },
       { page: "orders", title: "Nová reklamace", description: "Reklamaci založíte i z detailu hotové zakázky přes nabídku „…“ – převezme zákazníka i zařízení.", selector: sel("orders-new-claim-btn"), icon: "orders" },
       { page: "orders", title: "Seznam a stav", description: "Stav zakázky přepnete přímo v řádku. Kliknutím otevřete detail: opravy, ceny, diagnostiku, fotky, dokumenty, SMS a historii.", selector: sel("orders-list"), icon: "orders" },
+    ],
+  },
+  {
+    id: "detail-zakazky",
+    nazev: "Detail zakázky",
+    popis: "Opravy s cenami, diagnostika, dokumenty, SMS a historie – na ukázkové zakázce.",
+    page: "orders",
+    novinkaOd: "2026-09-26",
+    kroky: [
+      { page: "orders", title: "Detail zakázky", description: "Otevíráme ukázkovou (nebo poslední) zakázku. Nahoře je číslo, zákazník s telefonem, stav a tlačítka: Upravit, Tisk, SMS, faktura a nabídka „…“ s dalšími akcemi.", selector: sel("detail-upravit"), akce: "otevrit-ukazkovou-zakazku", icon: "orders" },
+      { page: "orders", title: "Provedené opravy", description: "Opravy z ceníku nebo ručně, každá s cenou, náklady a díly. Sleva se uplatní na celek. Součet je konečná cena pro zákazníka i pro doklad.", selector: sel("detail-opravy"), icon: "orders" },
+      { page: "orders", title: "Diagnostika a fotky", description: "Text pro zákazníka a fotky před a po opravě (z počítače nebo z telefonu přes QR kód). Jde na protokol a do portálu zákazníka.", selector: sel("detail-diagnostika"), icon: "orders" },
+      { page: "orders", title: "SMS zákazníkovi", description: "Zpráva odchází z aplikace a odpověď se vrátí sem. Automatické SMS při změně stavu nastavíte v Komunikaci.", selector: sel("detail-sms"), icon: "orders" },
+      { page: "orders", title: "Tisk a vydání", description: "Zakázkový list při příjmu, záruční list a protokol při vydání. Přepnutím do koncového stavu se zakázka vydá: odepíší se díly a zapíše datum vydání pro Statistiky.", selector: sel("detail-upravit"), icon: "doc" },
     ],
   },
   {
@@ -449,7 +230,7 @@ export const PRUVODCI: Pruvodce[] = [
   },
   {
     id: "nastaveni-detail",
-    nazev: "Detail zakázky",
+    nazev: "Nastavení detailu zakázky",
     popis: "Které sekce v detailu vidíte a jestli se přiděluje technik.",
     page: "settings",
     settingsSubsection: "orders_detail",

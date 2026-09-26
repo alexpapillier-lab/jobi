@@ -6489,7 +6489,7 @@ export default function Orders({
               </>
             ) : (
               <>
-                <Button variant="primary" onClick={startEditing} title="Upravit zakázku" icon={<EditIcon size={16} />}>
+                <Button variant="primary" onClick={startEditing} title="Upravit zakázku" data-tour="detail-upravit" icon={<EditIcon size={16} />}>
                   Upravit
                 </Button>
 
@@ -6536,6 +6536,7 @@ export default function Orders({
                   <Button variant="soft"
                     onClick={() => { setSmsPanelOpen(true); }} style={{ position: "relative" }}
                     title="SMS chat se zákazníkem"
+                    data-tour="detail-sms"
                     icon={<ChatIcon size={16} />}
                   >
                     SMS
@@ -7838,7 +7839,7 @@ export default function Orders({
                   </div>
                 </div>
 
-                <div id="detail-opravy" style={{ ...card, ...stylSekce("opravy"), marginTop: 16 }}>
+                <div id="detail-opravy" data-tour="detail-opravy" style={{ ...card, ...stylSekce("opravy"), marginTop: 16 }}>
                   <SectionHeading icon={<WrenchIcon size={16} />} barva={BARVA_SEKCE.opravy}>Provedené opravy</SectionHeading>
 
                   <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
@@ -8005,7 +8006,7 @@ export default function Orders({
                 </div>
 
                 {activeServiceId && !skryteSekce.has("portal") && (
-                  <div id="detail-portal">
+                  <div id="detail-portal" data-tour="detail-portal">
                   <PortalCard
                     key={detailedTicket.id}
                     ticket={detailedTicket}
@@ -8024,7 +8025,7 @@ export default function Orders({
                   </div>
                 )}
 
-                <div id="detail-diagnostika" style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
+                <div id="detail-diagnostika" data-tour="detail-diagnostika" style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
                   <SbalitelnaHlavicka
                     icon={<SearchIcon size={16} />}
                     barva={BARVA_SEKCE.diagnostika}
@@ -8459,7 +8460,7 @@ export default function Orders({
                 )}
 
                 {pridelovaniTechnika && (
-                  <div id="detail-technik" style={{ ...card, ...stylSekce("technik"), marginTop: 16 }}>
+                  <div id="detail-technik" data-tour="detail-technik" style={{ ...card, ...stylSekce("technik"), marginTop: 16 }}>
                     <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.technik}>Technik</SectionHeading>
                     <TechnikZakazky
                       clenove={clenove.clenove}
@@ -8471,7 +8472,7 @@ export default function Orders({
                 )}
 
                 {casNaOpraveZapnuto && activeServiceId && (
-                  <div id="detail-cas" style={{ ...card, ...stylSekce("cas"), marginTop: 16 }}>
+                  <div id="detail-cas" data-tour="detail-cas" style={{ ...card, ...stylSekce("cas"), marginTop: 16 }}>
                     <SectionHeading icon={<HistoryIcon size={16} />} barva={BARVA_SEKCE.cas}>Čas na opravě</SectionHeading>
                     <CasNaOprave
                       serviceId={activeServiceId}
@@ -8487,7 +8488,7 @@ export default function Orders({
                 )}
 
                 {!skryteSekce.has("kontrola") && (
-                <div id="detail-kontrola" style={{ ...card, ...stylSekce("kontrola"), marginTop: 16 }}>
+                <div id="detail-kontrola" data-tour="detail-kontrola" style={{ ...card, ...stylSekce("kontrola"), marginTop: 16 }}>
                   <SectionHeading icon={<CheckIcon size={16} />} barva={BARVA_SEKCE.kontrola}>Kontrola po opravě</SectionHeading>
                   <KontrolaPoOprave
                     kontrola={detailedTicket.testChecklist}

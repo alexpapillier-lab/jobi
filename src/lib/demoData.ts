@@ -17,8 +17,30 @@ export type DemoStopa = {
   modelIds: string[];
   repairIds: string[];
   ticketIds: string[];
+  /** Ukázkové díly ve skladu (starší stopa je nemá). */
+  productIds?: string[];
   createdAt: string;
 };
+
+/**
+ * Stavy pro ukázkové zakázky podle stavů servisu: nový servis má výchozí
+ * sadu, ale i servis s vlastními názvy dostane smysluplný rozklad – jedna
+ * přijatá, jedna rozpracovaná, jedna připravená a jedna vydaná.
+ */
+async function ukazkoveStavy(serviceId: string): Promise<{ prijato: string; rozpracovano: string; pripraveno: string; vydano: string }> {
+  const { data } = await (supabase!.from("service_statuses") as any).select("key,label,is_final").eq("service_id", serviceId);
+  const stavy = (Array.isArray(data) ? data : []) as Array<{ key: string; label: string; is_final: boolean }>;
+  const nekoncove = stavy.filter((s) => !s.is_final).map((s) => s.key);
+  const koncove = stavy.filter((s) => s.is_final && !/(cancel|storno)/i.test(s.key) && !/(storn|zruš|nerealiz|neopraven|odmítn)/i.test(s.label)).map((s) => s.key);
+  const vyber = (preferovane: string[], seznam: string[], zaloha: string) => preferovane.find((k) => seznam.includes(k)) ?? seznam[0] ?? zaloha;
+  const prijato = vyber(["received"], nekoncove, "received");
+  const rozpracovano = vyber(["repair", "diagnosis", "in_progress", "waiting_part"], nekoncove.filter((k) => k !== prijato), prijato);
+  const pripraveno = vyber(["ready", "ready_for_pickup"], nekoncove.filter((k) => k !== prijato && k !== rozpracovano), rozpracovano);
+  const vydano = vyber(["completed", "issued", "done"], koncove, "completed");
+  return { prijato, rozpracovano, pripraveno, vydano };
+}
+
+const DNY = 24 * 3600_000;
 
 const ZNACKA = "Ukázka (Apple)";
 
@@ -125,26 +147,72 @@ export async function vytvoritDemoData(serviceId: string): Promise<{ error?: str
       }
     }
 
-    // Vzorová zakázka: ať je na čem vyzkoušet příjem, stav i tisk.
-    // Číslo se odvozuje stejně jako u běžné zakázky, jinak by v seznamu
+    // Dva ukázkové díly ve skladu – navázané na model, ať je vidět rezervace a odpis.
+    stopa.productIds = [];
+    const dily = [
+      { name: "Displej iPhone 13 (OLED, náhradní)", sku: "UK-DISP-13", price: 3200, purchase_price: 2200, model_ids: [stopa.modelIds[0]] },
+      { name: "Baterie iPhone 13", sku: "UK-BAT-13", price: 900, purchase_price: 550, model_ids: [stopa.modelIds[0]] },
+    ];
+    for (const d of dily) {
+      const { data: produkt, error: prodErr } = await (supabase.from("inventory_products") as any)
+        .insert({ service_id: serviceId, ...d, description: "Ukázkový díl – smažete v Prvních krocích." })
+        .select("id")
+        .single();
+      // Sklad je doplněk ukázky: bez něj se nemá přerušit zbytek.
+      if (!prodErr && produkt?.id) stopa.productIds.push(produkt.id);
+    }
+
+    // Ukázkové zakázky ve čtyřech stavech: přijatá, rozpracovaná, připravená
+    // k převzetí a vydaná před pár dny (ta jediná jde do Statistik).
+    // Čísla se odvozují stejně jako u běžné zakázky, jinak by v seznamu
     // svítila pomlčka a vypadala by rozbitě.
-    const kod = await dalsiKodZakazky(serviceId);
-    const { data: ticket, error: ticketErr } = await (supabase.from("tickets") as any)
-      .insert({
-        service_id: serviceId,
-        title: "iPhone 13",
-        notes: "Rozbitý displej po pádu (ukázková zakázka)",
-        code: kod,
-        customer_name: "Ukázkový zákazník",
-        customer_phone: "+420 777 123 456",
-        device_label: "iPhone 13",
-        device_condition: "Prasklý displej, jinak bez poškození",
-        estimated_price: 3990,
-      })
-      .select("id")
-      .single();
-    if (ticketErr) throw new Error(ticketErr.message);
-    stopa.ticketIds.push(ticket.id);
+    const stavy = await ukazkoveStavy(serviceId);
+    const ted = Date.now();
+    const oprava = (nazev: string, cena: number, naklady: number, extra: Record<string, unknown> = {}) => ({ id: `ukazka_${Math.random().toString(36).slice(2, 10)}`, name: nazev, type: "manual", price: cena, costs: naklady, ...extra });
+    const zakazky: Array<Record<string, unknown>> = [
+      {
+        title: "iPhone 13", device_label: "iPhone 13", status: stavy.prijato,
+        notes: "Rozbitý displej po pádu (ukázková zakázka)", customer_name: "Ukázka – Jana Nováková", customer_phone: "+420 777 123 456",
+        device_condition: "Prasklý displej, jinak bez poškození", estimated_price: 3990,
+        performed_repairs: [oprava("Výměna displeje", 3990, 2200)],
+        created_at: new Date(ted - 1 * DNY).toISOString(),
+      },
+      {
+        title: "iPhone 14 Pro", device_label: "iPhone 14 Pro", status: stavy.rozpracovano,
+        notes: "Rozbité zadní sklo (ukázková zakázka)", customer_name: "Ukázka – Petr Dvořák", customer_phone: "+420 777 234 567",
+        device_condition: "Zadní sklo prasklé v rohu", estimated_price: 2990,
+        performed_repairs: [oprava("Výměna zadního skla", 2990, 900)],
+        diagnostic_text: "Zadní sklo rozbité, rám bez deformace. Kamera v pořádku.",
+        created_at: new Date(ted - 3 * DNY).toISOString(),
+      },
+      {
+        title: "iPhone 13", device_label: "iPhone 13", status: stavy.pripraveno,
+        notes: "Rychle se vybíjí (ukázková zakázka)", customer_name: "Ukázka – Lucie Malá", customer_phone: "+420 777 345 678",
+        device_condition: "Bez viditelného poškození, baterie 78 %", estimated_price: 1490,
+        performed_repairs: [oprava("Výměna baterie", 1490, 550), oprava("Čištění nabíjecího konektoru", 390, 0, { nabidnuto: true })],
+        diagnostic_text: "Kapacita baterie 78 %, vyměněna za novou. Nabíjecí konektor zanesený – vyčištěn.",
+        created_at: new Date(ted - 5 * DNY).toISOString(),
+      },
+      {
+        title: "iPhone 13", device_label: "iPhone 13", status: stavy.vydano,
+        notes: "Prasklý displej (ukázková zakázka)", customer_name: "Ukázka – Tomáš Král", customer_phone: "+420 777 456 789",
+        device_condition: "Prasklý displej, dotyk funguje", estimated_price: 3990,
+        performed_repairs: [oprava("Výměna displeje", 3990, 2200)],
+        discount_type: "percentage", discount_value: 10,
+        diagnostic_text: "Displej vyměněn, dotyk i jas otestovány.",
+        created_at: new Date(ted - 9 * DNY).toISOString(),
+        completed_at: new Date(ted - 6 * DNY).toISOString(),
+      },
+    ];
+    for (const z of zakazky) {
+      const kod = await dalsiKodZakazky(serviceId);
+      const { data: ticket, error: ticketErr } = await (supabase.from("tickets") as any)
+        .insert({ service_id: serviceId, code: kod, ...z })
+        .select("id")
+        .single();
+      if (ticketErr) throw new Error(ticketErr.message);
+      stopa.ticketIds.push(ticket.id);
+    }
 
     await mergeServiceConfig(serviceId, { demo_data: stopa });
     return {};
@@ -172,6 +240,7 @@ export async function smazatDemoData(serviceId: string): Promise<{ error?: strin
       const { error } = await (supabase as any).rpc("soft_delete_ticket", { p_ticket_id: id });
       if (error) throw new Error(`zakázka: ${error.message}`);
     }
+    await smaz("inventory_products", stopa.productIds ?? []);
     await smaz("repairs", stopa.repairIds);
     await smaz("device_models", stopa.modelIds);
     await smaz("device_categories", stopa.categoryIds);
