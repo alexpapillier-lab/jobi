@@ -5199,6 +5199,8 @@ export default function Orders({
         }}
       />
       <div
+        // Rozdělaná práce: tichá obnova webu (lib/aktualizaceWebu) čeká, dokud je panel otevřený.
+        data-jobi-rozdelano={isNewOpen ? "" : undefined}
         style={{
           position: "fixed",
           // Vystředění okraji, ne translate(-50%, -50%) – viz detail zakázky níž (rozmazaný text ve WebKitu).
@@ -6254,6 +6256,8 @@ export default function Orders({
           />
 
           <div
+        // Rozdělaná práce: tichá obnova webu (lib/aktualizaceWebu) čeká, dokud je detail otevřený.
+        data-jobi-rozdelano={(detailId || detailClaimId) ? "" : undefined}
         style={{
           position: "fixed",
           /* Vystředění okraji, ne translate(-50%, -50%): posun o půlku

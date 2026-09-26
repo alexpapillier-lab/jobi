@@ -256,19 +256,9 @@ export function PerformedRepairAdder({
             }
           }}
         />
-          {matchingModel && onAddToModel && (
+          {/* Cena, čas, náklady a díly patří ke každé ruční opravě – i bez rozpoznaného modelu. */}
+          {(
             <>
-              <div style={{ 
-                padding: 12, 
-                borderRadius: 10, 
-                background: "var(--accent-soft)", 
-                border: "1px solid var(--accent)",
-                fontSize: 12,
-                color: "var(--accent)",
-                fontWeight: 600,
-              }}>
-                Přidat opravu k modelu "{matchingModel.name}"
-              </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 8 }}>
                   <input
@@ -426,39 +416,6 @@ export function PerformedRepairAdder({
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => {
-                    if (manualRepairName.trim() && matchingModel) {
-                      onAddToModel({
-                        name: manualRepairName.trim(),
-                        modelId: matchingModel.id,
-                        price: manualRepairPrice ? parseFloat(manualRepairPrice) : undefined,
-                        costs: manualRepairCosts ? parseFloat(manualRepairCosts) : undefined,
-                        estimatedTime: manualRepairTime ? parseInt(manualRepairTime) : undefined,
-                        productIds: manualRepairProductIds.length > 0 ? manualRepairProductIds : undefined,
-                      });
-                      setManualRepairName("");
-                      setManualRepairPrice("");
-                      setManualRepairCosts("");
-                      setManualRepairTime("");
-                      setManualRepairProductIds([]);
-                      setManualRepairProductSearch("");
-                    }
-                  }}
-                  disabled={!manualRepairName.trim()}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid var(--accent)",
-                    background: manualRepairName.trim() ? "var(--accent)" : "var(--panel-2)",
-                    color: manualRepairName.trim() ? "white" : "var(--muted)",
-                    fontWeight: 700,
-                    fontSize: 12,
-                    cursor: manualRepairName.trim() ? "pointer" : "not-allowed",
-                  }}
-                >
-                  Přidat opravu k modelu "{matchingModel.name}"
-                </button>
               </div>
             </>
           )}
@@ -466,6 +423,7 @@ export function PerformedRepairAdder({
       )}
 
       {mode !== "hourly" && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <button
         onClick={handleAdd}
         disabled={(mode === "select" && !selectedRepairId) || (mode === "manual" && !manualRepairName.trim())}
@@ -491,6 +449,45 @@ export function PerformedRepairAdder({
       >
         Přidat opravu
       </button>
+      {/* Zřídka: opravu rovnou uložit i do ceníku modelu – proto malé, vedle hlavního tlačítka. */}
+      {mode === "manual" && matchingModel && onAddToModel && (
+        <button
+          type="button"
+          onClick={() => {
+            if (!manualRepairName.trim()) return;
+            onAddToModel({
+              name: manualRepairName.trim(),
+              modelId: matchingModel.id,
+              price: manualRepairPrice ? parseFloat(manualRepairPrice) : undefined,
+              costs: manualRepairCosts ? parseFloat(manualRepairCosts) : undefined,
+              estimatedTime: manualRepairTime ? parseInt(manualRepairTime) : undefined,
+              productIds: manualRepairProductIds.length > 0 ? manualRepairProductIds : undefined,
+            });
+            setManualRepairName("");
+            setManualRepairPrice("");
+            setManualRepairCosts("");
+            setManualRepairTime("");
+            setManualRepairProductIds([]);
+            setManualRepairProductSearch("");
+          }}
+          disabled={!manualRepairName.trim()}
+          title={`Uloží opravu do ceníku modelu „${matchingModel.name}“ a přidá ji na zakázku`}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "transparent",
+            color: manualRepairName.trim() ? "var(--accent)" : "var(--muted)",
+            fontWeight: 600,
+            fontSize: 12,
+            cursor: manualRepairName.trim() ? "pointer" : "not-allowed",
+            fontFamily: "inherit",
+          }}
+        >
+          + také do ceníku modelu „{matchingModel.name}“
+        </button>
+      )}
+      </div>
       )}
     </div>
   );

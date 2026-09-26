@@ -103,10 +103,14 @@ export function strankaPoObnove(): string | null {
   }
 }
 
-/** Je na stránce otevřený dialog (detail zakázky, nová zakázka, potvrzení)? */
+/**
+ * Je na stránce rozdělaná práce? Dialogy (potvrzení, tisk…) a panely
+ * označené `data-jobi-rozdelano` – detail zakázky a nová zakázka nejsou
+ * dialogy v ARIA smyslu, ale reload nad nimi je stejně nepřípustný.
+ */
 export function jeOtevrenyDialog(): boolean {
   if (typeof document === "undefined") return false;
-  return !!document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open]');
+  return !!document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open], [data-jobi-rozdelano]');
 }
 
 /**
