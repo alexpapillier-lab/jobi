@@ -749,7 +749,8 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
   return (
     <>
-      <Card>
+      {/* Kotvy data-tour patří průvodci „Tým a oprávnění“ (lib/pruvodci). */}
+      <Card data-tour="settings-team-pridelovani">
         <SettingRows>
           <SettingRow
             clickable
@@ -759,7 +760,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
           />
         </SettingRows>
       </Card>
-      <Card>
+      <Card data-tour="settings-team-clenove">
         {isRootOwner && services.length > 1 && (
           <div ref={serviceDropdownRef} style={{ marginBottom: 16, position: "relative" }}>
             <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}>Servis</label>
@@ -1083,6 +1084,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
             setInviteDialogOpen(true);
           }}
           aria-disabled={limitClenu != null && obsazenoMist != null && obsazenoMist >= limitClenu}
+          data-tour="settings-team-pozvat"
           style={{
             padding: "10px 14px",
             borderRadius: 12,

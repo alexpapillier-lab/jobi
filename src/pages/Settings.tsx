@@ -2573,7 +2573,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* DOKUMENTY A TISK - JOBIDOCS + AUTOMATICKÝ TISK */}
       {section.subsection === "orders_tisk_dokumentu" && (
         <>
-          <Card>
+          {/* Kotvy data-tour patří průvodci „JobiDocs a tisk“ (lib/pruvodci). */}
+          <Card data-tour="settings-tisk-jobidocs">
             <CardHeader
               title="Šablony dokumentů"
               description={
@@ -2618,7 +2619,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               </div>
             )}
           </Card>
-          <Card>
+          <Card data-tour="settings-tisk-automaticky">
             <CardHeader
               title="Automatický tisk"
               description="Kdy se má automaticky otevřít dialog tisku – při vytvoření zakázky/reklamace nebo při přepnutí do stavu."
@@ -2655,15 +2656,18 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                     <SettingRow clickable label="Tisknout při vytvoření zakázky" control={<input type="checkbox" checked={autoPrintForm.warrantyOnCreate} onChange={(e) => ulozAutoPrint({ warrantyOnCreate: e.target.checked })} />} />
                     <SettingRow label="Tisknout při přepnutí do stavu" control={statusSelect(autoPrintForm.warrantyOnStatusKey, (v) => ulozAutoPrint({ warrantyOnStatusKey: v }), "Záruční list – tisknout při přepnutí do stavu")} />
                   </SettingRows>
-                  {skupina("Přijetí reklamace")}
-                  <SettingRows>
-                    <SettingRow clickable label="Tisknout při vytvoření reklamace" control={<input type="checkbox" checked={autoPrintForm.prijetiReklamaceOnCreate} onChange={(e) => ulozAutoPrint({ prijetiReklamaceOnCreate: e.target.checked })} />} />
-                    <SettingRow label="Tisknout při přepnutí do stavu" control={statusSelect(autoPrintForm.prijetiReklamaceOnStatusKey, (v) => ulozAutoPrint({ prijetiReklamaceOnStatusKey: v }), "Přijetí reklamace – tisknout při přepnutí do stavu")} />
-                  </SettingRows>
-                  {skupina("Vydání reklamace")}
-                  <SettingRows>
-                    <SettingRow label="Tisknout při přepnutí do stavu" control={statusSelect(autoPrintForm.vydaniReklamaceOnStatusKey, (v) => ulozAutoPrint({ vydaniReklamaceOnStatusKey: v }), "Vydání reklamace – tisknout při přepnutí do stavu")} />
-                  </SettingRows>
+                  {/* Obal kvůli kotvě průvodce – zvýrazní obě skupiny reklamací naráz. */}
+                  <div data-tour="settings-tisk-reklamace">
+                    {skupina("Přijetí reklamace")}
+                    <SettingRows>
+                      <SettingRow clickable label="Tisknout při vytvoření reklamace" control={<input type="checkbox" checked={autoPrintForm.prijetiReklamaceOnCreate} onChange={(e) => ulozAutoPrint({ prijetiReklamaceOnCreate: e.target.checked })} />} />
+                      <SettingRow label="Tisknout při přepnutí do stavu" control={statusSelect(autoPrintForm.prijetiReklamaceOnStatusKey, (v) => ulozAutoPrint({ prijetiReklamaceOnStatusKey: v }), "Přijetí reklamace – tisknout při přepnutí do stavu")} />
+                    </SettingRows>
+                    {skupina("Vydání reklamace")}
+                    <SettingRows>
+                      <SettingRow label="Tisknout při přepnutí do stavu" control={statusSelect(autoPrintForm.vydaniReklamaceOnStatusKey, (v) => ulozAutoPrint({ vydaniReklamaceOnStatusKey: v }), "Vydání reklamace – tisknout při přepnutí do stavu")} />
+                    </SettingRows>
+                  </div>
                 </div>
               );
             })()}

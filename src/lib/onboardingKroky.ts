@@ -23,13 +23,24 @@ export type OnboardingKrok = {
   akce?: string;
   /** Nepovinný krok nedrží seznam otevřený – bez něj se dá dojít do konce. */
   volitelny?: boolean;
+  /**
+   * „Ukázat, jak“: průvodce z katalogu (lib/pruvodci) a krok, na kterém
+   * začít. Spouští se událostí jobsheet:pruvodce, kterou poslouchá App.
+   */
+  pruvodce: { id: string; krok?: number };
 };
 
 export type OnboardingStav = {
   /** Nastavení servisu; `null`, dokud se nenačte nebo když se načíst nepodařilo. */
   config: (ConfigSeZkratkou & { companyData?: Record<string, unknown> | null }) | null;
-  /** Kolik zakázek servis má (i ukázkových). */
+  /** Kolik zakázek servis má – včetně ukázkových. */
   zakazek: number;
+  /**
+   * Kolik z nich jsou ukázkové (id z `config.demo_data.ticketIds`). Ukázka
+   * se založí sama při prvním otevření, takže by krok „první zakázka“ byl
+   * hotový dřív, než zákazník cokoli udělal. Nepovinné kvůli starším volajícím.
+   */
+  ukazkovych?: number;
   /** Kolik lidí je na servisu, mimo skryté členství majitele aplikace. */
   clenu: number;
   /** Běží na tomhle počítači JobiDocs? Ve webové verzi vždy `false`. */
@@ -61,6 +72,8 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
     ? zkratkaZConfigu(stav.config) !== "SRV"
     : false;
 
+  const ostrychZakazek = Math.max(0, stav.zakazek - (stav.ukazkovych ?? 0));
+
   return [
     {
       id: "firma",
@@ -69,6 +82,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       hotovo: jeVyplneno(cd.name) && jeVyplneno(cd.ico) && jeVyplneno(cd.addressStreet) && jeVyplneno(cd.addressCity),
       cil: "service_basic",
       akce: "Doplnit údaje",
+      pruvodce: { id: "nastaveni-firma", krok: 0 },
     },
     {
       id: "zkratka",
@@ -77,6 +91,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       hotovo: zkratka,
       cil: "service_basic",
       akce: "Nastavit zkratku",
+      pruvodce: { id: "nastaveni-firma", krok: 0 },
     },
     {
       id: "kontakt",
@@ -85,6 +100,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       hotovo: jeVyplneno(cd.phone) || jeVyplneno(cd.email),
       cil: "service_contact",
       akce: "Doplnit kontakt",
+      pruvodce: { id: "nastaveni-firma", krok: 1 },
     },
     {
       id: "jobidocs",
@@ -98,12 +114,16 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       akce: stav.desktop ? "Nastavit tisk" : "Stáhnout aplikaci",
       // V prohlížeči se splnit nedá; kdyby byl povinný, seznam by se nikdy nezavřel sám.
       volitelny: !stav.desktop,
+      pruvodce: { id: "nastaveni-tisk", krok: 0 },
     },
     {
       id: "zakazka",
       label: "Založte první zakázku",
       popis: "Vyzkoušejte si příjem i tisk, než přijde první zákazník.",
-      hotovo: stav.zakazek > 0,
+      // Ukázková zakázka se nepočítá – tu nezaložil zákazník, ale aplikace.
+      hotovo: ostrychZakazek > 0,
+      // Krok „Nová zakázka“ v průvodci přehledem zakázek.
+      pruvodce: { id: "zakazky", krok: 3 },
     },
     {
       id: "tym",
@@ -113,6 +133,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       cil: "service_team",
       akce: "Pozvat",
       volitelny: true,
+      pruvodce: { id: "nastaveni-tym", krok: 2 },
     },
   ];
 }

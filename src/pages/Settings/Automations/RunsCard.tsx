@@ -47,7 +47,7 @@ export function RunsCard({ serviceId, rules }: { serviceId: string; rules: Autom
   const ruleName = (id: string) => rules.find((r) => r.id === id)?.name ?? "Smazané pravidlo";
 
   return (
-    <Card>
+    <Card data-tour="settings-automations-historie">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>
         <div>
           <SectionHeading icon={<HistoryIcon size={18} />}>Historie spuštění</SectionHeading>

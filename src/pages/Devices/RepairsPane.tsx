@@ -25,6 +25,9 @@ export type RepairsPaneProps = {
   onToggleRepairPublic: (id: string) => void;
   onBulkPublic: (visible: boolean) => void;
 
+  /** Import ceníku ze souboru – nabízí se v prázdném ceníku. */
+  onOpenImport: () => void;
+
   /** Přidat opravu jde jen s vybraným modelem nebo kategorií. */
   canAdd: boolean;
   adding: boolean;
@@ -85,7 +88,7 @@ export function RepairsPane(p: RepairsPaneProps) {
     // Nový servis nemá v ceníku vůbec nic. „Vyberte značku“ ho posílalo vybrat
     // značku, která neexistuje – místo aby mu někdo řekl, že se první značka
     // zakládá vlevo ve stromu (a že jde ceník i naimportovat).
-    if (data.brands.length === 0) return "Ceník je zatím prázdný. Přidejte vlevo první značku, nebo použijte Import.";
+    if (data.brands.length === 0) return "Ceník je zatím prázdný. Přidejte vlevo první značku a k jejím modelům opravy s cenou – při příjmu se pak nabídnou jedním klikem. Hotový ceník jde nahrát ze souboru.";
     if (!selection) return data.repairs.length === 0 ? "Vyberte značku nebo hledejte." : "Žádné opravy.";
     if (selection.kind === "model") return "Tento model zatím nemá opravy.";
     if (selection.kind === "category") return "Tato kategorie zatím nemá opravy.";
@@ -272,6 +275,17 @@ export function RepairsPane(p: RepairsPaneProps) {
         {p.repairs.length === 0 && (
           <Card style={{ padding: "var(--space-8) var(--space-4)", textAlign: "center", color: "var(--muted)", fontSize: "var(--text-base)", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-3)" }}>
             <span>{emptyText}</span>
+            {/* Prázdný ceník: hromadný import, nebo průvodce (spouští App.tsx přes jobsheet:pruvodce). */}
+            {data.brands.length === 0 && !p.search.trim() && (
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", justifyContent: "center" }}>
+                <Button variant="primary" size="sm" onClick={p.onOpenImport}>
+                  Import ceníku
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:pruvodce", { detail: { id: "zarizeni" } }))}>
+                  Ukázat, jak
+                </Button>
+              </div>
+            )}
             {p.canAdd && !p.adding && !p.search.trim() && (
               <Button variant="soft" size="sm" icon={<PlusIcon size={14} />} onClick={p.onOpenAdd}>
                 Přidat opravu

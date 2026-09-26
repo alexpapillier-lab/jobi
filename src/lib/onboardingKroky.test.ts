@@ -69,6 +69,15 @@ describe("první kroky nového servisu", () => {
     expect(krok(stav({ zakazek: 1 }), "zakazka").hotovo).toBe(true);
   });
 
+  it("ukázkové zakázky první zakázku neodškrtnou – založila je aplikace, ne zákazník", () => {
+    // Nový servis dostane čtyři ukázkové zakázky sám; krok se splní až tou pátou, ostrou.
+    expect(krok(stav({ zakazek: 4, ukazkovych: 4 }), "zakazka").hotovo).toBe(false);
+    expect(krok(stav({ zakazek: 5, ukazkovych: 4 }), "zakazka").hotovo).toBe(true);
+    // Smazané ukázky už v seznamu nejsou, ale stopa v configu může zůstat – nesmí jít do záporu.
+    expect(krok(stav({ zakazek: 0, ukazkovych: 4 }), "zakazka").hotovo).toBe(false);
+    expect(krok(stav({ zakazek: 1, ukazkovych: 4 }), "zakazka").hotovo).toBe(false);
+  });
+
   it("kolega se počítá až od druhého člena – majitel sám tým není", () => {
     expect(krok(stav({ clenu: 1 }), "tym").hotovo).toBe(false);
     expect(krok(stav({ clenu: 2 }), "tym").hotovo).toBe(true);
@@ -115,6 +124,14 @@ describe("kam krok odkazuje", () => {
       if (k.id === "zakazka") continue;
       expect(k.cil || k.odkaz, `Krok ${k.id} nemá kam poslat.`).toBeTruthy();
     }
+  });
+
+  it("každý krok umí ukázat, jak na to – průvodce z katalogu na správném kroku", () => {
+    for (const k of onboardingKroky(stav())) {
+      expect(k.pruvodce.id, `Krok ${k.id} nemá průvodce.`).toBeTruthy();
+    }
+    // Přesně na krok, ne na začátek: kontakt je druhý krok průvodce firmou.
+    expect(krok(stav(), "kontakt").pruvodce).toEqual({ id: "nastaveni-firma", krok: 1 });
   });
 
   it("ve webové verzi vede krok o tisku na stažení aplikace, ne do Nastavení", () => {

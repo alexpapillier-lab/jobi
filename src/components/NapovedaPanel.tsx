@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { nactiServiceConfig } from "../lib/serviceSettingsSync";
 import { normalizujOdmeny } from "../lib/odmeny";
-import { XIcon } from "./icons";
-import type { Pruvodce, StavPruvodcu } from "../lib/pruvodci";
+import { SearchIcon, XIcon } from "./icons";
+import { MIN_DELKA_DOTAZU, hledejVPruvodcich, type Pruvodce, type StavPruvodcu } from "../lib/pruvodci";
 
 /**
  * Panel nápovědy (otazník v postranním panelu).
  *
- * Nahoře průvodce k místu, kde uživatel právě je, a neprošlé novinky; dole
- * agent: otázka česky, odpověď z katalogu průvodců a popisu funkcí (edge
- * funkce napoveda-agent). Agent umí rovnou spustit průvodce nebo otevřít
- * nastavení – panel akci provede a zavře se. Do modelu jde jen stránka,
- * role, moduly a hrubá nastavení servisu, nikdy zakázky ani zákazníci.
+ * Nahoře hledání v průvodcích (názvy, popisy i jednotlivé kroky – výsledek
+ * spustí průvodce rovnou na nalezeném kroku), pod ním průvodce k místu, kde
+ * uživatel právě je, a neprošlé novinky; dole agent: otázka česky, odpověď
+ * z katalogu průvodců a popisu funkcí (edge funkce napoveda-agent). Agent
+ * umí rovnou spustit průvodce nebo otevřít nastavení – panel akci provede
+ * a zavře se. Do modelu jde jen stránka, role, moduly a hrubá nastavení
+ * servisu, nikdy zakázky ani zákazníci.
  *
- * Když agent není zapnutý (bez klíče na serveru), panel ukáže jen průvodce.
+ * Když agent není zapnutý (bez klíče na serveru), panel ukáže jen hledání
+ * a průvodce.
  */
 
 export type KontextAgenta = {
@@ -58,7 +61,8 @@ export function NapovedaPanel({
   pruvodceMisto: Pruvodce | null;
   stav: StavPruvodcu;
   kontext: KontextAgenta;
-  onSpustitPruvodce: (id: string) => void;
+  /** `krok` = index kroku, od kterého průvodce spustit (výsledek hledání). */
+  onSpustitPruvodce: (id: string, krok?: number) => void;
   onOtevritNastaveni: (subsection: string) => void;
   onOtevritStranku: (page: string) => void;
   onVsichniPruvodci: () => void;
@@ -77,11 +81,21 @@ export function NapovedaPanel({
   });
   const seznamRef = useRef<HTMLDivElement>(null);
   const vstupRef = useRef<HTMLTextAreaElement>(null);
+  const hledaniRef = useRef<HTMLInputElement>(null);
+  const [dotaz, setDotaz] = useState("");
+  const hleda = dotaz.trim().length >= MIN_DELKA_DOTAZU;
+  const vysledky = useMemo(() => (hleda ? hledejVPruvodcich(stav.dostupne, dotaz) : []), [hleda, stav.dostupne, dotaz]);
 
+  // Bez agenta je hledání jediné pole v panelu – kurzor rovnou do něj.
   useEffect(() => {
     if (!open) return;
-    const t = window.setTimeout(() => vstupRef.current?.focus(), 50);
+    const t = window.setTimeout(() => (agentVypnuty ? hledaniRef : vstupRef).current?.focus(), 50);
     return () => window.clearTimeout(t);
+  }, [open, agentVypnuty]);
+
+  // Zavřený panel zapomene dotaz; při dalším otevření uživatel hledá něco jiného.
+  useEffect(() => {
+    if (!open) setDotaz("");
   }, [open]);
 
   useEffect(() => {
@@ -201,8 +215,54 @@ export function NapovedaPanel({
         </button>
       </div>
 
+      <div style={{ position: "relative", padding: "10px 12px 0" }}>
+        <span aria-hidden="true" style={{ position: "absolute", left: 24, top: "50%", transform: "translateY(calc(-50% + 5px))", color: "var(--muted)", display: "inline-flex" }}>
+          <SearchIcon size={14} />
+        </span>
+        <input
+          ref={hledaniRef}
+          type="search"
+          value={dotaz}
+          onChange={(e) => setDotaz(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && dotaz) {
+              e.preventDefault();
+              setDotaz("");
+            }
+          }}
+          placeholder="Hledat v nápovědě…"
+          aria-label="Hledat v nápovědě"
+          style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px 9px 34px", borderRadius: 12, border, background: "var(--panel-2)", color: "var(--text)", font: "inherit", fontSize: 13, outline: "none" }}
+        />
+      </div>
+
       <div ref={seznamRef} style={{ overflowY: "auto", padding: 12, display: "grid", gap: 8, flex: 1, minHeight: 0 }}>
-        {pruvodceMisto && (
+        {hleda && vysledky.length === 0 && (
+          <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 2px" }}>
+            Nic nenalezeno. Zkuste jiné slovo – třeba „tisk“, „sleva“ nebo „pozvat“.
+          </div>
+        )}
+        {hleda && vysledky.map((v) => {
+          const krok = v.pruvodce.kroky[v.krok];
+          return (
+            <button
+              key={`${v.pruvodce.id}:${v.krok}`}
+              type="button"
+              style={tlacitko}
+              onClick={() => { onClose(); onSpustitPruvodce(v.pruvodce.id, v.krok); }}
+              title={krok.description}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{v.pruvodce.nazev}</span>
+                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ color: "var(--muted)", fontWeight: 500 }}>Průvodce › </span>{krok.title}
+                </span>
+              </span>
+              <span style={{ color: "var(--accent)", flex: "0 0 auto" }}>Spustit ›</span>
+            </button>
+          );
+        })}
+        {!hleda && pruvodceMisto && (
           <button type="button" style={tlacitko} onClick={() => { onClose(); onSpustitPruvodce(pruvodceMisto.id); }}>
             <span>
               <span style={{ display: "block", fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Průvodce touto stránkou</span>
@@ -211,7 +271,7 @@ export function NapovedaPanel({
             <span style={{ color: "var(--accent)" }}>Spustit ›</span>
           </button>
         )}
-        {novinky.slice(0, 3).map((p) => (
+        {!hleda && novinky.slice(0, 3).map((p) => (
           <button key={p.id} type="button" style={{ ...tlacitko, background: "var(--accent-soft)", borderColor: "var(--accent)" }} onClick={() => { onClose(); onSpustitPruvodce(p.id); }}>
             <span>
               <span style={{ display: "block", fontSize: 11, color: "var(--accent)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>Novinka</span>
@@ -221,10 +281,12 @@ export function NapovedaPanel({
             <span style={{ color: "var(--accent)" }}>Projít ›</span>
           </button>
         ))}
-        <button type="button" style={{ ...tlacitko, background: "transparent" }} onClick={() => { onClose(); onVsichniPruvodci(); }}>
-          <span>Všichni průvodci a novinky</span>
-          <span style={{ color: "var(--muted)" }}>{stav.dostupne.length}</span>
-        </button>
+        {!hleda && (
+          <button type="button" style={{ ...tlacitko, background: "transparent" }} onClick={() => { onClose(); onVsichniPruvodci(); }}>
+            <span>Všichni průvodci a novinky</span>
+            <span style={{ color: "var(--muted)" }}>{stav.dostupne.length}</span>
+          </button>
+        )}
 
         {zpravy.length > 0 && <div style={{ borderTop: border, marginTop: 4 }} />}
         {zpravy.map((z, i) => (

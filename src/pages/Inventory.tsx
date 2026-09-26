@@ -2486,14 +2486,18 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         {data.products.length === 0 ? (
           <PrazdnyStav
             nadpis="Zatím žádné produkty"
-            text="Přidejte první produkt ručně, nebo naimportujte ceník ze souboru."
+            text="Přidejte první díl s nákupní cenou, nebo naimportujte celý sklad z CSV. Díl navázaný na opravu se pak při přidání na zakázku sám rezervuje."
             akce={
               <>
                 <Button variant="primary" icon={<PlusIcon size={14} />} onClick={() => setNewProductOpen(true)}>
-                  Nový produkt
+                  Přidat první díl
                 </Button>
                 <Button variant="soft" icon={<DownloadIcon size={14} />} onClick={() => setShowImport(true)}>
-                  Import
+                  Import z CSV
+                </Button>
+                {/* Průvodce skladem spouští App.tsx (posluchač jobsheet:pruvodce). */}
+                <Button variant="ghost" onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:pruvodce", { detail: { id: "sklad" } }))}>
+                  Ukázat, jak
                 </Button>
               </>
             }

@@ -211,6 +211,17 @@ export const PRUVODCI: Pruvodce[] = [
 
   // ---- Nastavení --------------------------------------------------------------
   {
+    id: "nastaveni-firma",
+    nazev: "Údaje firmy a kontakty",
+    popis: "Název, IČO, adresa a zkratka pro čísla zakázek; telefon a e-mail na dokumenty.",
+    page: "settings",
+    settingsSubsection: "service_basic",
+    kroky: [
+      { page: "settings", title: "Údaje firmy", description: "Název, IČO a adresa se tisknou v hlavičce zakázkového listu a faktury. Zkratka je základ čísla zakázky (např. SRV26000001) – nastavte ji dřív, než vytisknete první doklad.", selector: sel("settings-content"), settingsSection: nast("company", "service_basic"), icon: "settings" },
+      { page: "settings", title: "Kontakty", description: "Telefon a e-mail vidí zákazník na dokumentech a v odkazu na stav zakázky. Bankovní údaje jdou na fakturu.", selector: sel("settings-content"), settingsSection: nast("company", "service_contact"), icon: "settings" },
+    ],
+  },
+  {
     id: "nastaveni-statusy",
     nazev: "Statusy zakázek",
     popis: "Vlastní stavy, barvy, pořadí a koncové stavy.",
@@ -282,7 +293,11 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Dokumenty, šablony a automatický tisk.",
     page: "settings",
     settingsSubsection: "orders_tisk_dokumentu",
-    kroky: [{ page: "settings", title: "JobiDocs a tisk", description: "Zakázkový list, záruční list, protokoly a faktury se tisknou přes JobiDocs. Tady zapnete automatický tisk při příjmu a vydání a vyberete šablony.", selector: sel("settings-content"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "jobidocs" }],
+    kroky: [
+      { page: "settings", title: "Šablony v JobiDocs", description: "Vzhled dokumentů (rozvržení, sekce, logo, razítko, vlastní texty) se upravuje v aplikaci JobiDocs. Na desktopu ji odsud spustíte nebo otevřete; tečka vedle tlačítka říká, jestli je připojená.", selector: sel("settings-tisk-jobidocs"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "jobidocs" },
+      { page: "settings", title: "Automatický tisk", description: "Kdy se má sám otevřít dialog tisku: zakázkový list při vytvoření zakázky nebo při přepnutí do vybraného stavu, záruční list stejně. Každá změna se ukládá hned.", selector: sel("settings-tisk-automaticky"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "jobidocs" },
+      { page: "settings", title: "Reklamace", description: "Protokol o přijetí reklamace se tiskne při jejím vytvoření nebo při přepnutí do stavu; protokol o vydání reklamace při přepnutí do stavu, který vyberete.", selector: sel("settings-tisk-reklamace"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "doc" },
+    ],
   },
   {
     id: "nastaveni-automatizace",
@@ -291,7 +306,11 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "communication_automations",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Automatizace", description: "Při přepnutí do stavu poslat SMS, přepnout další stav po čase nebo upozornit tým. Každé pravidlo má podmínku a akci.", selector: sel("settings-content"), settingsSection: nast("communication", "communication_automations"), icon: "settings" }],
+    kroky: [
+      { page: "settings", title: "Pravidla", description: "Když se něco stane se zakázkou, Jobi za vás pošle SMS nebo e-mail, přepne stav, připíše poplatek (třeba skladné za den) nebo zapíše poznámku technikovi. Pravidla se vyhodnocují v pořadí, ve kterém tu jsou; šipkami je přeskládáte, zaškrtávátkem vypnete.", selector: sel("settings-automations-pravidla"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
+      { page: "settings", title: "Nové pravidlo", description: "Spouštěč: přepnutí do stavu, zakázka ve stavu déle než N hodin či dní (i opakovaně), založení zakázky nebo událost z portálu (schválená či zamítnutá nabídka, podpis, otevření portálu). Prázdný seznam nabídne šablony – připomínku vyzvednutí, žádost o recenzi, nabídku bez odpovědi.", selector: sel("settings-automations-nove"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
+      { page: "settings", title: "Historie spuštění", description: "Posledních 50 spuštění s výsledkem a detailem – tady zjistíte, proč SMS neodešla nebo proč se stav nepřepnul. Obnovuje se sama každou minutu.", selector: sel("settings-automations-historie"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-chat",
@@ -318,7 +337,11 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "service_team",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Tým a oprávnění", description: "Pozvěte kolegy e-mailem, nastavte roli a jednotlivá práva (měnit stav, vidět statistiky, spravovat dokumenty). Člena jde omezit na pobočky.", selector: sel("settings-content"), settingsSection: nast("people", "service_team"), icon: "team" }],
+    kroky: [
+      { page: "settings", title: "Přidělování technikům", description: "Přepínač zapne kartu Technik v detailu zakázky („Přidělit mně“), skupinu Moje v přehledu a jméno technika na kartě zakázky. Servis s jedním technikem to nepotřebuje.", selector: sel("settings-team-pridelovani"), settingsSection: nast("people", "service_team"), icon: "team" },
+      { page: "settings", title: "Členové týmu", description: "U každého člena role (člen nebo správce) a tlačítko Oprávnění: úpravy a mazání zakázek, změna stavu, zákazníci, statusy, dokumenty, tisk, nastavení servisu, statistiky. S pobočkami tu nastavíte domovskou pobočku a na které pobočky člen vidí.", selector: sel("settings-team-clenove"), settingsSection: nast("people", "service_team"), icon: "team" },
+      { page: "settings", title: "Pozvat člena", description: "Pozvánka odejde e-mailem s vybranou rolí; dokud ji kolega nepřijme, je v seznamu Čekající pozvánky. Kolik míst tarif dovoluje, hlídá tlačítko samo.", selector: sel("settings-team-pozvat"), settingsSection: nast("people", "service_team"), icon: "team" },
+    ],
   },
   {
     id: "nastaveni-odmeny",
@@ -377,6 +400,62 @@ export function pruvodceProMisto(dostupne: Pruvodce[], page: NavKey, settingsSub
     return dostupne.find((p) => p.settingsSubsection === settingsSubsection) ?? null;
   }
   return dostupne.find((p) => p.page === page && p.id !== "uvod" && !p.settingsSubsection) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Hledání v průvodcích (pole v panelu nápovědy)
+// ---------------------------------------------------------------------------
+
+export type VysledekHledani = {
+  pruvodce: Pruvodce;
+  /** Index kroku, na kterém průvodce spustit. */
+  krok: number;
+};
+
+/** Malá písmena bez diakritiky, ať „Zakázka“ najde i „zakazka“. */
+export function bezDiakritiky(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** Nejméně znaků, od kterých se hledá – jedno písmeno najde skoro všechno. */
+export const MIN_DELKA_DOTAZU = 2;
+
+/**
+ * Prohledá názvy, popisy a kroky dostupných průvodců.
+ *
+ * Každé slovo dotazu se musí najít někde v průvodci (název + popis + kroky).
+ * Výsledkem jsou kroky, ve kterých se aspoň jedno slovo vyskytuje přímo
+ * – tak „tisk“ vede na krok „Tisk a vydání“, ne na začátek Detailu zakázky.
+ * Kroky s více nalezenými slovy jsou dřív („nová reklamace“ ukáže krok
+ * Nová reklamace před Skupinami zakázek, kde je jen „reklamace“); při
+ * stejném počtu platí pořadí katalogu, takže hlavní stránky jsou před
+ * Nastavením. Když sedí jen název nebo popis průvodce, vrátí se jeho
+ * první krok.
+ */
+export function hledejVPruvodcich(dostupne: Pruvodce[], dotaz: string, limit = 20): VysledekHledani[] {
+  const slova = bezDiakritiky(dotaz).split(/\s+/).filter((s) => s.length > 0);
+  if (slova.length === 0 || bezDiakritiky(dotaz).trim().length < MIN_DELKA_DOTAZU) return [];
+  const vysledky: Array<VysledekHledani & { skore: number }> = [];
+  for (const p of dostupne) {
+    const hlavicka = bezDiakritiky(`${p.nazev} ${p.popis}`);
+    const kroky = p.kroky.map((k) => bezDiakritiky(`${k.title} ${k.description}`));
+    const cely = `${hlavicka} ${kroky.join(" ")}`;
+    if (!slova.every((s) => cely.includes(s))) continue;
+    let nalezeno = false;
+    kroky.forEach((text, i) => {
+      const skore = slova.filter((s) => text.includes(s)).length;
+      if (skore > 0) {
+        vysledky.push({ pruvodce: p, krok: i, skore });
+        nalezeno = true;
+      }
+    });
+    if (!nalezeno) vysledky.push({ pruvodce: p, krok: 0, skore: 0 });
+  }
+  // Řazení je stabilní, takže při shodném skóre zůstane pořadí katalogu.
+  return vysledky
+    .sort((a, b) => b.skore - a.skore)
+    .slice(0, limit)
+    .map(({ pruvodce, krok }) => ({ pruvodce, krok }));
 }
 
 // ---------------------------------------------------------------------------

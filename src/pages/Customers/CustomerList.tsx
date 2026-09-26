@@ -1,3 +1,5 @@
+import { Button } from "../../components/ui";
+
 export type CustomerRecord = {
   id: string;
   name: string;
@@ -30,6 +32,10 @@ type CustomerListProps = {
    * nehledal nic. Rozlišuje se proto prázdný adresář od prázdného výsledku.
    */
   celkem?: number;
+  /** Prázdný adresář: založit první zakázku (zákazník z ní vznikne sám). */
+  onNovaZakazka?: () => void;
+  /** Prázdný adresář: import z CSV; bez oprávnění se tlačítko neukáže. */
+  onImport?: () => void;
 };
 
 /** 1 zákazník, 2–4 zákazníci, 0 a 5+ zákazníků – „1 zákazníků“ vypadalo jako překlep. */
@@ -39,7 +45,7 @@ function pocetZakazniku(n: number): string {
   return `${n} zákazníků`;
 }
 
-export function CustomerList({ customers, selectedCustomerId, onSelect, loading, error, celkem }: CustomerListProps) {
+export function CustomerList({ customers, selectedCustomerId, onSelect, loading, error, celkem, onNovaZakazka, onImport }: CustomerListProps) {
   const border = "1px solid var(--border)";
 
   return (
@@ -105,8 +111,22 @@ export function CustomerList({ customers, selectedCustomerId, onSelect, loading,
               {(celkem ?? customers.length) === 0 ? (
                 <>
                   <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>Zatím žádní zákazníci</div>
-                  Zákazník se do adresáře přidá sám, jakmile na něj založíte zakázku. Hotový seznam odjinud nahrajete
-                  tlačítkem <strong>Import z CSV</strong> nahoře.
+                  Zákazník se do adresáře přidá sám, jakmile na něj založíte zakázku – jméno a telefon stačí zadat jednou.
+                  Hotový seznam odjinud nahrajete z CSV.
+                  {(onNovaZakazka || onImport) && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      {onNovaZakazka && (
+                        <Button variant="primary" size="sm" onClick={onNovaZakazka}>
+                          Založit zakázku
+                        </Button>
+                      )}
+                      {onImport && (
+                        <Button variant="soft" size="sm" onClick={onImport}>
+                          Import z CSV
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 "Hledání nic nenašlo. Zkuste jiné jméno, telefon nebo e-mail."

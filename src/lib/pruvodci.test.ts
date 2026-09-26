@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { PRUVODCI, dostupniPruvodci, pruvodceProMisto, zjistiNovinky, type KontextPruvodcu } from "./pruvodci";
+import { onboardingKroky } from "./onboardingKroky";
+import { PRUVODCI, bezDiakritiky, dostupniPruvodci, hledejVPruvodcich, pruvodceProMisto, zjistiNovinky, type KontextPruvodcu } from "./pruvodci";
 
 /** Všechny kotvy data-tour v kódu: literály a předpony dynamických (`sidebar-nav-${…}`). */
 function kotvyVKodu(): { literaly: Set<string>; predpony: string[] } {
@@ -49,6 +50,14 @@ describe("kotvy průvodců existují v kódu", () => {
       }
     });
   }
+
+  it("„Ukázat, jak“ v Prvních krocích vede na existující průvodce a krok", () => {
+    for (const k of onboardingKroky({ config: {}, zakazek: 0, clenu: 1, jobiDocsBezi: false, desktop: true, odkazJobiDocs: "" })) {
+      const p = PRUVODCI.find((x) => x.id === k.pruvodce.id);
+      expect(p, `krok „${k.id}“ odkazuje na neznámého průvodce ${k.pruvodce.id}`).toBeTruthy();
+      expect(k.pruvodce.krok ?? 0).toBeLessThan(p!.kroky.length);
+    }
+  });
 
   it("id průvodců jsou jedinečná", () => {
     const ids = PRUVODCI.map((p) => p.id);
@@ -109,5 +118,52 @@ describe("novinky", () => {
     expect(ids).toContain("statistiky");
     expect(ids).not.toContain("uvod");
     expect(ids).not.toContain("zakazky");
+  });
+});
+
+describe("hledání v průvodcích", () => {
+  const d = dostupniPruvodci(kontext({ admin: true }));
+
+  it("bez diakritiky a velikosti písmen", () => {
+    expect(bezDiakritiky("Zakázkový LIST")).toBe("zakazkovy list");
+    const a = hledejVPruvodcich(d, "REKLAMACE");
+    const b = hledejVPruvodcich(d, "reklamace");
+    expect(a.length).toBeGreaterThan(0);
+    expect(a.map((v) => `${v.pruvodce.id}:${v.krok}`)).toEqual(b.map((v) => `${v.pruvodce.id}:${v.krok}`));
+  });
+
+  it("dotaz kratší než dva znaky nic nevrací", () => {
+    expect(hledejVPruvodcich(d, "")).toEqual([]);
+    expect(hledejVPruvodcich(d, "t")).toEqual([]);
+    expect(hledejVPruvodcich(d, "  t ")).toEqual([]);
+  });
+
+  it("vede na konkrétní krok, ne jen na začátek průvodce", () => {
+    const v = hledejVPruvodcich(d, "nová reklamace");
+    const zakazky = v.find((x) => x.pruvodce.id === "zakazky");
+    expect(zakazky).toBeTruthy();
+    expect(zakazky!.pruvodce.kroky[zakazky!.krok].title).toBe("Nová reklamace");
+  });
+
+  it("shoda jen v názvu nebo popisu průvodce vrátí jeho první krok", () => {
+    // „prémie“ je v popisu průvodce Odměny za opravy i v jeho kroku;
+    // „pravidla prémií“ jako celek je jen v popisu.
+    const v = hledejVPruvodcich(d, "pravidla prémií");
+    const odmeny = v.find((x) => x.pruvodce.id === "nastaveni-odmeny");
+    expect(odmeny).toBeTruthy();
+    expect(odmeny!.krok).toBe(0);
+  });
+
+  it("každé slovo dotazu musí v průvodci být", () => {
+    const ids = hledejVPruvodcich(d, "sklad rezervace").map((v) => v.pruvodce.id);
+    expect(ids).toContain("sklad");
+    expect(ids).not.toContain("zakaznici");
+    expect(hledejVPruvodcich(d, "xyzneexistuje")).toEqual([]);
+  });
+
+  it("prohledává jen předané (dostupné) průvodce", () => {
+    const bezAdmina = dostupniPruvodci(kontext());
+    expect(hledejVPruvodcich(bezAdmina, "pozvat člena").map((v) => v.pruvodce.id)).not.toContain("nastaveni-tym");
+    expect(hledejVPruvodcich(d, "pozvat člena").map((v) => v.pruvodce.id)).toContain("nastaveni-tym");
   });
 });

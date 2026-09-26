@@ -633,6 +633,9 @@ export default function Customers({
           onSelect={(id) => setOpenId(id)}
           loading={customersLoading}
           error={customersError}
+          // Nová zakázka je na stránce Zakázky – App na událost přepne stránku a otevře příjem.
+          onNovaZakazka={() => window.dispatchEvent(new CustomEvent("jobsheet:request-new-order", { detail: {} }))}
+          onImport={smiImportovat ? () => setImportOpen(true) : undefined}
         />
         )}
 

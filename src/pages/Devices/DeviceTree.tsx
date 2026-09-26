@@ -403,9 +403,13 @@ export function DeviceTree({
         onKeyDown={onKeyDown}
         style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, paddingBottom: "var(--space-2)" }}
       >
-        {isEmpty && (
-          <div style={{ padding: "var(--space-4) var(--space-2)", color: "var(--muted)", fontSize: "var(--text-base)", textAlign: "center" }}>
-            Zatím žádné značky. Přidejte první, nebo použijte Import.
+        {isEmpty && !searching && (
+          <div style={{ padding: "var(--space-4) var(--space-2) var(--space-2)", color: "var(--muted)", fontSize: "var(--text-base)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)" }}>
+            <span>Zatím žádné značky. Ceník začíná značkou, pod ní jsou kategorie a modely.</span>
+            {/* Otevře pole „Přidat značku“ hned pod textem – stejné, jako kliknout na řádek. */}
+            <Button variant="primary" size="sm" icon={<PlusIcon size={14} />} onClick={() => startAdd("brand", null)}>
+              Přidat značku
+            </Button>
           </div>
         )}
         {searching && nodeRows.length === 0 && !isEmpty && (
