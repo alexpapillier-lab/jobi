@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { computeKpis, computeKpisObdobi, datumVydani, rozdelPodleObdobi, spocitejRozpracovano, type JeKoncovy } from "./kpi";
 import type { DateRange } from "./obdobi";
-import { EMPTY_COST_SOURCES, type JeStorno } from "./margin";
+import { EMPTY_COST_SOURCES, type CostSources, type JeStorno } from "./margin";
 import { jeStornoStav } from "../../lib/stornoStav";
 import type { TicketEx } from "../Orders";
 
@@ -100,6 +100,49 @@ describe("klíčová čísla se shodují s databázovou funkcí", () => {
   it("opravy bez nákladů se počítají jen u nestornovaných", () => {
     expect(kpi.entriesWithoutCost).toBe(2);
     expect(kpi.entriesMissingPurchasePrice).toBe(0);
+  });
+});
+
+/**
+ * Náklady dílů: poslední přijatá cena z objednávky u dodavatele má přednost
+ * před ruční cenou na produktu. Zrcadlí CTE `nakupni_ceny` v
+ * `statistiky_prehled` (migrace 20260926300000) – server na stejných datech
+ * vrací totalCosts 1 320 (100 + 520 + 700).
+ */
+describe("náklady dílů z přijatých objednávek se shodují se serverem", () => {
+  const zdroje: CostSources = {
+    repairs: new Map([["r-displej", { costs: 100, productIds: ["p-displej", "p-lepidlo"] }]]),
+    purchasePrices: new Map<string, number | null>([["p-displej", 400], ["p-lepidlo", null], ["p-baterie", 700]]),
+    // Displej přišel naposledy za 520, lepidlo za 0 (přibaleno zdarma); baterie žádnou přijatou objednávku nemá.
+    orderPrices: new Map([["p-displej", 520], ["p-lepidlo", 0]]),
+  };
+  const zakazky: TicketEx[] = [
+    {
+      id: "z1", status: "completed", createdAt: "2026-01-06T10:00:00+01:00", completed_at: "2026-01-08T10:00:00+01:00",
+      performedRepairs: [{ name: "Displej", price: 2000, repairId: "r-displej" }],
+    } as unknown as TicketEx,
+    {
+      id: "z2", status: "completed", createdAt: "2026-01-10T10:00:00+01:00", completed_at: "2026-01-11T10:00:00+01:00",
+      performedRepairs: [{ name: "Baterie", price: 1500, productIds: ["p-baterie"] }],
+    } as unknown as TicketEx,
+  ];
+  const kpi = computeKpis(zakazky, zdroje, jeStorno);
+
+  it("díl s přijatou objednávkou stojí to, co naposledy stál u dodavatele, ostatní ruční cenu", () => {
+    expect(kpi.totalRevenue).toBe(3500);
+    expect(kpi.totalCosts).toBe(1320);
+    expect(kpi.profit).toBe(2180);
+  });
+
+  it("díl bez ruční ceny, ale s přijatou objednávkou, už nechybí", () => {
+    expect(kpi.entriesMissingPurchasePrice).toBe(0);
+    expect(kpi.entriesWithoutCost).toBe(0);
+  });
+
+  it("bez objednávek na serveru se počítá jen z ručních cen – stejně jako dosud", () => {
+    const bezObjednavek = computeKpis(zakazky, { ...zdroje, orderPrices: new Map() }, jeStorno);
+    expect(bezObjednavek.totalCosts).toBe(1200);
+    expect(bezObjednavek.entriesMissingPurchasePrice).toBe(1);
   });
 });
 

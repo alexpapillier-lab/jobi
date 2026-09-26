@@ -15,6 +15,7 @@ import {
 } from "../components/icons";
 import { supabase } from "../lib/supabaseClient";
 import { fetchAllPages } from "../lib/fetchAllPages";
+import { loadLastReceivedPrices } from "../lib/purchaseOrders";
 import { nactiStatistiky, type StatistikyPrehled, nactiTechnici, type ServerTechnik } from "../lib/statistikyServer";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
@@ -327,16 +328,20 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     (async () => {
       type ProductRow = { id: string; purchase_price: number | string | null };
       type RepairRow = { id: string; costs: number | string | null; product_ids: string[] | null };
-      const [productsRes, repairsRes] = await Promise.all([
+      const [productsRes, repairsRes, orderPricesRes] = await Promise.all([
         fetchAllPages<ProductRow>((from, to) =>
           client.from("inventory_products").select("id, purchase_price").eq("service_id", activeServiceId).order("id").range(from, to)
         ),
         fetchAllPages<RepairRow>((from, to) =>
           client.from("repairs").select("id, costs, product_ids").eq("service_id", activeServiceId).order("id").range(from, to)
         ),
+        // Poslední přijaté ceny z objednávek u dodavatele mají přednost před
+        // ruční cenou na produktu. Server bez objednávek (`nedostupne`) není
+        // chyba – prostě se počítá jen z ručních cen.
+        loadLastReceivedPrices(activeServiceId),
       ]);
       if (cancelled) return;
-      const err = productsRes.error || repairsRes.error;
+      const err = productsRes.error || repairsRes.error || (orderPricesRes.error && !orderPricesRes.nedostupne ? orderPricesRes.error : null);
       if (err) {
         console.warn("[Statistics] Ceník/sklad se nenačetl, marže jen z nákladů oprav:", err);
         setCostSources(EMPTY_COST_SOURCES);
@@ -356,7 +361,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           productIds: Array.isArray(r.product_ids) && r.product_ids.length > 0 ? r.product_ids : undefined,
         });
       }
-      setCostSources({ repairs, purchasePrices });
+      setCostSources({ repairs, purchasePrices, orderPrices: orderPricesRes.data });
       setCostSourcesError(null);
     })().catch((err: unknown) => {
       if (cancelled) return;
@@ -865,7 +870,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     if (costSourcesError) {
       parts.push("Ceník a sklad se nepodařilo načíst – náklady jsou jen z nákladů uložených u oprav, bez nákupních cen dílů.");
     } else {
-      parts.push("Náklady = náklady oprav + nákupní ceny dílů z ceníku.");
+      parts.push("Náklady = náklady oprav + nákupní ceny dílů. Nákupní cena dílu je poslední cena z přijaté objednávky u dodavatele (Sklad → Objednávky); díl bez přijaté objednávky má ruční nákupní cenu z produktu.");
     }
     if (kpis.entriesWithoutCost > 0) {
       const n = kpis.entriesWithoutCost;

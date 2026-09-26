@@ -14,7 +14,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("./supabaseClient", () => ({ getSupabaseClient: () => null }));
 vi.mock("./reportError", () => ({ reportSilent: () => {} }));
 
-const { onOrderQty, textObjednavky, jenUuid } = await import("./purchaseOrders");
+const { onOrderQty, textObjednavky, jenUuid, posledniNakupniCeny } = await import("./purchaseOrders");
 type PurchaseOrder = Awaited<ReturnType<typeof import("./purchaseOrders").loadOrders>>["data"][number];
 type Supplier = NonNullable<Awaited<ReturnType<typeof import("./purchaseOrders").saveSupplier>>["data"]>;
 
@@ -190,5 +190,85 @@ describe("filtr identifikátorů dílů pro server", () => {
     expect(jenUuid([UUID.slice(0, -1)])).toEqual([]);
     expect(jenUuid([`${UUID}x`])).toEqual([]);
     expect(jenUuid([` ${UUID} `])).toEqual([]);
+  });
+});
+
+/**
+ * Poslední přijatá nákupní cena jde do marže ve Statistikách místo ruční
+ * ceny na produktu. Pravidlo musí být stejné jako v databázi
+ * (CTE `nakupni_ceny` v statistiky_prehled) – jinak by se marže lišila
+ * podle toho, jestli odpověděl server nebo se počítalo v prohlížeči.
+ */
+describe("poslední přijatá nákupní cena dílu", () => {
+  const objednavky = [
+    { id: "o-stara", receivedAt: "2026-02-01T10:00:00Z", updatedAt: "2026-02-01T10:00:00Z" },
+    { id: "o-nova", receivedAt: "2026-03-01T10:00:00Z", updatedAt: "2026-03-01T10:00:00Z" },
+    { id: "o-bez-data", receivedAt: null, updatedAt: "2026-04-01T10:00:00Z" },
+  ];
+  const pol = (o: { orderId: string; productId: string; unitPrice: number | null; receivedQty?: number; createdAt?: string }) => ({
+    orderId: o.orderId,
+    productId: o.productId,
+    unitPrice: o.unitPrice,
+    receivedQty: o.receivedQty ?? 1,
+    createdAt: o.createdAt ?? "2026-01-01T00:00:00Z",
+  });
+
+  it("platí cena z naposledy přijaté objednávky, ne z první", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-stara", productId: "p1", unitPrice: 400 }),
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 520 }),
+    ]);
+    expect(ceny.get("p1")).toBe(520);
+  });
+
+  it("položka bez ceny se přeskočí – radši starší skutečná cena než žádná", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-stara", productId: "p1", unitPrice: 400 }),
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: null }),
+    ]);
+    expect(ceny.get("p1")).toBe(400);
+  });
+
+  it("nepřijatá položka (objednáno, ale nedodáno) cenu neurčuje", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-stara", productId: "p1", unitPrice: 400 }),
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 999, receivedQty: 0 }),
+    ]);
+    expect(ceny.get("p1")).toBe(400);
+  });
+
+  it("položka objednávky, která není přijatá, se nepočítá vůbec", () => {
+    const ceny = posledniNakupniCeny(objednavky, [pol({ orderId: "o-neznama", productId: "p1", unitPrice: 300 })]);
+    expect(ceny.has("p1")).toBe(false);
+  });
+
+  it("objednávka bez data přijetí se řadí podle poslední změny", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 520 }),
+      pol({ orderId: "o-bez-data", productId: "p1", unitPrice: 610 }),
+    ]);
+    expect(ceny.get("p1")).toBe(610);
+  });
+
+  it("v jedné objednávce rozhoduje později vložená položka", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 500, createdAt: "2026-03-01T09:00:00Z" }),
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 530, createdAt: "2026-03-01T09:05:00Z" }),
+    ]);
+    expect(ceny.get("p1")).toBe(530);
+  });
+
+  it("nulová cena je platná – díl přibalený zdarma nestojí ruční cenu", () => {
+    const ceny = posledniNakupniCeny(objednavky, [pol({ orderId: "o-nova", productId: "p1", unitPrice: 0 })]);
+    expect(ceny.get("p1")).toBe(0);
+  });
+
+  it("každý produkt má svou cenu, díly se nemíchají", () => {
+    const ceny = posledniNakupniCeny(objednavky, [
+      pol({ orderId: "o-nova", productId: "p1", unitPrice: 520 }),
+      pol({ orderId: "o-nova", productId: "p2", unitPrice: 60 }),
+    ]);
+    expect(ceny.get("p1")).toBe(520);
+    expect(ceny.get("p2")).toBe(60);
   });
 });

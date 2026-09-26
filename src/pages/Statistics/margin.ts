@@ -11,9 +11,11 @@ import { castkaSlevy } from "../../lib/slevaZakazky";
  *   náklady = `costs`, pokud jsou u záznamu vyplněné; jinak (záložně z ceníku)
  *             `costs` ceníkové opravy podle `repairId`
  *           + nákupní ceny navázaných dílů (`entry.productIds`, když chybí,
- *             tak `repair.productIds` z ceníku) podle `purchase_price`.
- *             Díl bez nákupní ceny se počítá jako 0 a záznam se eviduje jako
- *             „bez nákupní ceny“.
+ *             tak `repair.productIds` z ceníku). Cena dílu = poslední skutečná
+ *             nákupní cena z přijaté objednávky u dodavatele (`orderPrices`),
+ *             a teprve když díl žádnou přijatou objednávku s cenou nemá, ruční
+ *             `purchase_price` na produktu. Díl bez obou se počítá jako 0 a
+ *             záznam se eviduje jako „bez nákupní ceny“.
  *   Záznam „bez nákladů“ = nemá vlastní `costs`, ceník nezná jeho opravu
  *   (nebo ta nemá `costs`) a žádný navázaný díl nemá nákupní cenu.
  *
@@ -31,11 +33,18 @@ import { castkaSlevy } from "../../lib/slevaZakazky";
 export type CostSources = {
   /** id ceníkové opravy → { costs, productIds } */
   repairs: ReadonlyMap<string, { costs?: number; productIds?: string[] }>;
-  /** id produktu → nákupní cena (null = produkt existuje, ale cenu nemá) */
+  /** id produktu → ruční nákupní cena z produktu (null = produkt existuje, ale cenu nemá) */
   purchasePrices: ReadonlyMap<string, number | null>;
+  /**
+   * id produktu → poslední skutečná nákupní cena z přijaté objednávky
+   * u dodavatele. Má přednost před `purchasePrices`: ruční cena na produktu
+   * stárne, cena z poslední dodávky je to, co servis za díl opravdu zaplatil.
+   * Chybí-li (starší server bez objednávek), zůstává prázdná mapa.
+   */
+  orderPrices: ReadonlyMap<string, number>;
 };
 
-export const EMPTY_COST_SOURCES: CostSources = { repairs: new Map(), purchasePrices: new Map() };
+export const EMPTY_COST_SOURCES: CostSources = { repairs: new Map(), purchasePrices: new Map(), orderPrices: new Map() };
 
 /** Řekne, jestli je zakázka stornovaná. Bez ní se nestornuje nic. */
 export type JeStorno = (t: TicketEx) => boolean;
@@ -70,7 +79,9 @@ export function entryMargin(entry: PerformedEntry, sources: CostSources): EntryM
 
   const productIds = entry.productIds ?? catalog?.productIds ?? [];
   for (const id of productIds) {
-    const pp = sources.purchasePrices.get(id);
+    // Poslední přijatá objednávka má přednost před ruční cenou – stejně jako
+    // CTE `nakupni_ceny` v RPC statistiky_prehled.
+    const pp = sources.orderPrices.get(id) ?? sources.purchasePrices.get(id);
     if (typeof pp === "number") {
       cost += pp;
       hasCostSource = true;

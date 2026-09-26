@@ -47,7 +47,7 @@ import { popisDoOdkazu } from "../lib/diagnosticPhotoWatermark";
 import { SectionHeading } from "../components/SectionHeading";
 import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
-import { loadInventoryFromDb } from "../lib/inventoryDb";
+import { loadInventoryFromDb, type Product as SkladProdukt } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
 import { CasNaOprave } from "../components/orders/CasNaOprave";
 import { TechnikZakazky } from "../components/orders/TechnikZakazky";
@@ -87,10 +87,14 @@ import {
   releaseReservations,
   consumeTicketReservations,
   loadTicketReservations,
+  loadReservations,
+  loadTicketOrderItems,
   jenUuid,
   type TicketReservation,
+  type TicketOrderItem,
   type ReserveShortage,
 } from "../lib/purchaseOrders";
+import { DilyOpravy } from "../components/orders/DilyOpravy";
 import {
   PerformedRepairItem,
   PerformedRepairAdder,
@@ -2048,11 +2052,34 @@ export default function Orders({
    * otevření detailu, aby stav skladu odpovídal.
    */
   const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
+  /**
+   * Sklad z databáze v plné podobě (stav, dodavatel, nákupní cena) plus živé
+   * rezervace přes všechny zakázky – z toho řádek „Díly“ pozná, že díl není
+   * skladem, a nabídne objednání u dodavatele (components/orders/DilyOpravy).
+   */
+  const [skladProdukty, setSkladProdukty] = useState<ReadonlyMap<string, SkladProdukt>>(new Map());
+  const [rezervovanoCelkem, setRezervovanoCelkem] = useState<ReadonlyMap<string, number>>(new Map());
+  /** Položky objednávek u dodavatele založené kvůli otevřené zakázce; klíčované id, ať pozdní odpověď nepřepíše jinou. */
+  const [objednanoProZakazku, setObjednanoProZakazku] = useState<{ ticketId: string | null; rows: TicketOrderItem[] }>({ ticketId: null, rows: [] });
+  const refreshObjednanoProZakazku = useCallback(async (ticketId: string) => {
+    const res = await loadTicketOrderItems(ticketId);
+    if (res.error) return;
+    setObjednanoProZakazku({ ticketId, rows: res.data });
+  }, []);
   useEffect(() => {
     if (!activeServiceId || !detailId) return;
     let zruseno = false;
+    void loadReservations(activeServiceId).then((res) => {
+      if (zruseno || res.error) return;
+      setRezervovanoCelkem(res.data);
+    });
+    void loadTicketOrderItems(detailId).then((res) => {
+      if (zruseno || res.error) return;
+      setObjednanoProZakazku({ ticketId: detailId, rows: res.data });
+    });
     void loadInventoryFromDb(activeServiceId).then((res) => {
       if (zruseno || res.error) return;
+      setSkladProdukty(new Map(res.data.products.map((p) => [p.id, p])));
       setInventoryData({
         brands: [],
         categories: [],
@@ -7862,14 +7889,16 @@ export default function Orders({
                             inventoryData={inventoryData}
                             odmenaMozna={najdiPravidlo(pravidlaOdmen, repair.name) !== null}
                           />
-                          {dily.length > 0 && (
-                            <div style={{ color: "var(--muted)", fontSize: 12, paddingLeft: 12 }}>
-                              Díly:{" "}
-                              {dily
-                                .map((r) => `${r.productName} ×${r.qty} (${r.status === "consumed" ? "odečteno" : "rezervováno"})`)
-                                .join(", ")}
-                            </div>
-                          )}
+                          <DilyOpravy
+                            ticketId={detailedTicket.id}
+                            serviceId={activeServiceId}
+                            rows={dily}
+                            produkty={skladProdukty}
+                            rezervovanoCelkem={rezervovanoCelkem}
+                            objednano={objednanoProZakazku.ticketId === detailedTicket.id ? objednanoProZakazku.rows : []}
+                            muzeObjednat={hasCapability("can_edit_inventory")}
+                            onObjednano={() => void refreshObjednanoProZakazku(detailedTicket.id)}
+                          />
                         </div>
                       );
                     })}

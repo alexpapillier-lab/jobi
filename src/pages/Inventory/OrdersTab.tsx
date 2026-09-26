@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Segmented } from "../../components/ui";
 import { InboxIcon, WarningIcon } from "../../components/icons";
 import { SectionHeading } from "../../components/SectionHeading";
@@ -31,6 +31,8 @@ export function OrdersTab({
   onNavrhnout,
   onReloadOrders,
   onReloadInventory,
+  otevritId = null,
+  onOtevreno,
 }: {
   orders: PurchaseOrder[];
   suppliers: Supplier[];
@@ -43,9 +45,18 @@ export function OrdersTab({
   onNavrhnout: () => Promise<void>;
   onReloadOrders: () => Promise<void>;
   onReloadInventory: () => Promise<void>;
+  /** Objednávka, kterou má záložka otevřít (odkaz z detailu zakázky). */
+  otevritId?: string | null;
+  /** Rodič si po otevření zruší požadavek, ať se stejná objednávka neotvírá znovu. */
+  onOtevreno?: () => void;
 }) {
   const [otevrenaId, setOtevrenaId] = useState<string | null>(null);
   const [filtr, setFiltr] = useState<Filtr>("active");
+  useEffect(() => {
+    if (!otevritId) return;
+    setOtevrenaId(otevritId);
+    onOtevreno?.();
+  }, [otevritId, onOtevreno]);
 
   const navrhy = orders.filter((o) => o.status === "draft").length;
   const objednane = orders.filter((o) => o.status === "ordered");

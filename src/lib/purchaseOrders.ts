@@ -11,6 +11,7 @@
 
 import { getSupabaseClient } from "./supabaseClient";
 import { reportSilent } from "./reportError";
+import { fetchAllPages } from "./fetchAllPages";
 
 export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled";
 
@@ -731,4 +732,203 @@ export async function loadTicketReservations(ticketId: string): Promise<TicketRe
     tichaChyba("inventory.reservations_load_failed", "purchaseOrders.loadTicketReservations", { message: (e as Error)?.message });
     return null;
   }
+}
+
+
+/* ---------- nákupní ceny z přijatých objednávek (Statistiky) ---------- */
+
+export type PrijataObjednavka = { id: string; receivedAt: string | null; updatedAt: string };
+export type PrijataPolozka = { orderId: string; productId: string; unitPrice: number | null; receivedQty: number; createdAt: string };
+
+/**
+ * Poslední skutečná nákupní cena po produktech.
+ *
+ * Pravidlo (drží se přesně, stejně počítá CTE `nakupni_ceny` v RPC
+ * statistiky_prehled – Statistiky v prohlížeči a na serveru musí dát totéž):
+ * počítá se položka PŘIJATÉ objednávky (`received_qty > 0`) s vyplněnou
+ * cenou za kus; nejnovější podle data přijetí objednávky (bez něj podle
+ * poslední změny) a při shodě podle vložení položky. Položka bez ceny se
+ * přeskočí – radši starší skutečná cena než žádná.
+ */
+export function posledniNakupniCeny(orders: PrijataObjednavka[], items: PrijataPolozka[]): Map<string, number> {
+  const prijato = new Map(orders.map((o) => [o.id, o.receivedAt ?? o.updatedAt]));
+  const serazene = items
+    .filter((it) => it.receivedQty > 0 && it.unitPrice !== null && Number.isFinite(it.unitPrice) && prijato.has(it.orderId))
+    .sort((a, b) => {
+      const da = prijato.get(a.orderId) ?? "";
+      const db = prijato.get(b.orderId) ?? "";
+      if (da !== db) return da < db ? 1 : -1;
+      return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+    });
+  const out = new Map<string, number>();
+  for (const it of serazene) {
+    if (!out.has(it.productId)) out.set(it.productId, it.unitPrice as number);
+  }
+  return out;
+}
+
+/** Načte poslední přijaté nákupní ceny servisu (viz `posledniNakupniCeny`). Bez objednávek na serveru prázdná mapa a `nedostupne`. */
+export async function loadLastReceivedPrices(serviceId: string | null): Promise<PoVysledek<Map<string, number>>> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !serviceId) return bezKlienta(new Map());
+  try {
+    type ORow = { id: string; received_at: string | null; updated_at: string | null; created_at: string };
+    const ordersRes = await fetchAllPages<ORow>((od, doo) =>
+      (supabase.from("inventory_purchase_orders") as any)
+        .select("id, received_at, updated_at, created_at")
+        .eq("service_id", serviceId)
+        .eq("status", "received")
+        .order("id")
+        .range(od, doo),
+    );
+    if (ordersRes.error) return selhani(new Map(), ordersRes.error as DbChyba);
+    const orders: PrijataObjednavka[] = ordersRes.data.map((o) => ({ id: o.id, receivedAt: o.received_at, updatedAt: o.updated_at ?? o.created_at }));
+    if (orders.length === 0) return { data: new Map() };
+
+    type IRow = { order_id: string; product_id: string; unit_price: number | string | null; received_qty: number | string; created_at: string };
+    const ids = orders.map((o) => o.id);
+    const itemsRes = await fetchAllPages<IRow>((od, doo) =>
+      (supabase.from("inventory_purchase_order_items") as any)
+        .select("order_id, product_id, unit_price, received_qty, created_at")
+        .in("order_id", ids)
+        .gt("received_qty", 0)
+        .not("unit_price", "is", null)
+        .order("id")
+        .range(od, doo),
+    );
+    if (itemsRes.error) return selhani(new Map(), itemsRes.error as DbChyba);
+    const items: PrijataPolozka[] = itemsRes.data.map((r) => ({
+      orderId: r.order_id,
+      productId: r.product_id,
+      unitPrice: r.unit_price === null ? null : cislo(r.unit_price, NaN),
+      receivedQty: cislo(r.received_qty, 0),
+      createdAt: r.created_at,
+    }));
+    return { data: posledniNakupniCeny(orders, items) };
+  } catch (e) {
+    return selhani(new Map(), { message: (e as Error)?.message });
+  }
+}
+
+/* ---------- objednání dílu ze zakázky ---------- */
+
+export type TicketOrderItem = {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: PurchaseOrderStatus;
+  productId: string;
+  qty: number;
+  receivedQty: number;
+};
+
+/**
+ * Položky objednávek, které vznikly kvůli zakázce (`ticket_id`), včetně
+ * čísla a stavu objednávky. Detail zakázky z nich ukáže „v objednávce
+ * OBJ-…“ místo tlačítka, ať se díl neobjedná dvakrát. Selhává měkce.
+ */
+export async function loadTicketOrderItems(ticketId: string): Promise<PoVysledek<TicketOrderItem[]>> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !ticketId) return bezKlienta([]);
+  try {
+    type IRow = { order_id: string; product_id: string; qty: number | string; received_qty: number | string };
+    const itemsRes = await (supabase.from("inventory_purchase_order_items") as any)
+      .select("order_id, product_id, qty, received_qty")
+      .eq("ticket_id", ticketId);
+    if (itemsRes.error) return selhani([], itemsRes.error);
+    const items = (itemsRes.data ?? []) as IRow[];
+    if (items.length === 0) return { data: [] };
+    const ids = Array.from(new Set(items.map((i) => i.order_id)));
+    const ordersRes = await (supabase.from("inventory_purchase_orders") as any)
+      .select("id, number, status")
+      .in("id", ids);
+    if (ordersRes.error) return selhani([], ordersRes.error);
+    const objednavky = new Map<string, { number: string; status: PurchaseOrderStatus }>();
+    for (const o of (ordersRes.data ?? []) as { id: string; number: string; status: PurchaseOrderStatus }[]) {
+      objednavky.set(o.id, { number: o.number, status: o.status });
+    }
+    return {
+      data: items.flatMap((i) => {
+        const o = objednavky.get(i.order_id);
+        if (!o) return [];
+        return [{ orderId: i.order_id, orderNumber: o.number, orderStatus: o.status, productId: i.product_id, qty: cislo(i.qty, 0), receivedQty: cislo(i.received_qty, 0) }];
+      }),
+    };
+  } catch (e) {
+    return selhani([], { message: (e as Error)?.message });
+  }
+}
+
+/**
+ * Přidá díl pro zakázku do rozpracovaného návrhu objednávky u dodavatele
+ * (`supplierId` null = návrh „Bez dodavatele“). Návrh založí, když chybí.
+ *
+ * Položka nese `ticket_id`, aby sklad věděl, komu díl patří. Proto se
+ * stejný díl pro jinou zakázku nepřičítá k cizímu řádku, ale jde jako
+ * další řádek; jen opakované kliknutí u téže zakázky navýší množství.
+ * Vrací návrh i s položkami.
+ */
+export async function objednatDilProZakazku(
+  serviceId: string | null,
+  supplierId: string | null,
+  item: NewOrderItem & { ticketId: string },
+): Promise<PoVysledek<PurchaseOrder | null>> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !serviceId) return bezKlienta(null);
+  if (!item.productId || !(item.qty > 0)) return { data: null, error: "Chybí díl nebo množství" };
+  try {
+    let dotaz = (supabase.from("inventory_purchase_orders") as any)
+      .select(ORDER_COLS)
+      .eq("service_id", serviceId)
+      .eq("status", "draft");
+    dotaz = supplierId ? dotaz.eq("supplier_id", supplierId) : dotaz.is("supplier_id", null);
+    const navrhRes = await dotaz.order("created_at").limit(1);
+    if (navrhRes.error) return selhani(null, navrhRes.error);
+    const navrh = ((navrhRes.data ?? []) as OrderRow[])[0];
+    if (!navrh) return createOrder(serviceId, supplierId, [item]);
+
+    const stejna = await (supabase.from("inventory_purchase_order_items") as any)
+      .select("id, qty")
+      .eq("order_id", navrh.id)
+      .eq("product_id", item.productId)
+      .eq("ticket_id", item.ticketId)
+      .limit(1);
+    if (stejna.error) return selhani(null, stejna.error);
+    const existujici = ((stejna.data ?? []) as { id: string; qty: number | string }[])[0];
+    const zapis = existujici
+      ? await (supabase.from("inventory_purchase_order_items") as any)
+          .update({ qty: cislo(existujici.qty, 0) + Math.max(1, Math.round(item.qty)) })
+          .eq("id", existujici.id)
+      : await (supabase.from("inventory_purchase_order_items") as any).insert(radekPolozky(navrh.id, item));
+    if (zapis.error) return selhani(null, zapis.error);
+
+    const itemsRes = await (supabase.from("inventory_purchase_order_items") as any)
+      .select(ITEM_COLS)
+      .eq("order_id", navrh.id)
+      .order("created_at");
+    if (itemsRes.error) return selhani(null, itemsRes.error);
+    return { data: mapOrder(navrh, ((itemsRes.data ?? []) as ItemRow[]).map(mapItem)) };
+  } catch (e) {
+    return selhani(null, { message: (e as Error)?.message });
+  }
+}
+
+/** Kódy zakázek (SN26000012) podle id – pro popisek „pro zakázku …“ u položky objednávky. Selhává měkce prázdnou mapou. */
+export async function loadTicketCodes(ticketIds: readonly string[]): Promise<Map<string, string>> {
+  const supabase = getSupabaseClient();
+  const ids = jenUuid(ticketIds);
+  const out = new Map<string, string>();
+  if (!supabase || ids.length === 0) return out;
+  try {
+    const res = await (supabase.from("tickets") as any).select("id, code").in("id", ids);
+    if (res.error) {
+      tichaChyba("inventory.ticket_codes_failed", "purchaseOrders.loadTicketCodes", res.error);
+      return out;
+    }
+    for (const r of (res.data ?? []) as { id: string; code: string | null }[]) {
+      if (r.code) out.set(r.id, r.code);
+    }
+  } catch (e) {
+    tichaChyba("inventory.ticket_codes_failed", "purchaseOrders.loadTicketCodes", { message: (e as Error)?.message });
+  }
+  return out;
 }
