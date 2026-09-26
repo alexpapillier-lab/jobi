@@ -337,8 +337,9 @@ export function ChatPsani({ serviceId, clenove, predvyplneni, onPredvyplneniPouz
           disabled={(!text.trim() && prilohy.length === 0) || nahravam > 0}
           style={{
             border: "none",
-            background: "var(--accent)",
-            color: "var(--accent-fg, #fff)",
+            // Bílá ikona na modré vždy; bez textu jen světlejší modrá (poloprůhlednost dělala z ikony šedou).
+            background: (!text.trim() && prilohy.length === 0) || nahravam > 0 ? "color-mix(in srgb, var(--accent) 45%, var(--panel))" : "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+            color: "#fff",
             borderRadius: 10,
             width: 36,
             height: 36,
@@ -347,7 +348,6 @@ export function ChatPsani({ serviceId, clenove, predvyplneni, onPredvyplneniPouz
             justifyContent: "center",
             cursor: "pointer",
             flex: "0 0 auto",
-            opacity: (!text.trim() && prilohy.length === 0) || nahravam > 0 ? 0.5 : 1,
           }}
         >
           <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

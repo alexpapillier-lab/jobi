@@ -275,8 +275,9 @@ export function ChatPlovouci({ serviceId, userId, profil, zapnuto, bublinaSkryta
         height: 44,
         borderRadius: "50%",
         border: "none",
-        background: "var(--accent)",
-        color: "var(--accent-fg, #fff)",
+        // Stejně jako plovoucí „+“ v Zakázkách: modrý přechod a bílá ikona.
+        background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
+        color: "#fff",
         boxShadow: "var(--shadow-soft)",
         display: "inline-flex",
         alignItems: "center",

@@ -380,8 +380,9 @@ export function SmsChat({
               height: 40,
               borderRadius: "50%",
               border: "none",
-              background: input.trim() && !sending ? "var(--accent)" : "var(--panel-2)",
-              color: input.trim() && !sending ? "var(--accent-fg)" : "var(--muted)",
+              // Bílá ikona na modré i bez textu (jen světlejší modrá), stejně jako „+“ v Zakázkách.
+              background: input.trim() && !sending ? "linear-gradient(135deg, var(--accent), var(--accent-hover))" : "color-mix(in srgb, var(--accent) 45%, var(--panel))",
+              color: "#fff",
               cursor: input.trim() && !sending ? "pointer" : "not-allowed",
               display: "flex",
               alignItems: "center",
