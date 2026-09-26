@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { castkaOdmeny, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, posunKlicMesice, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { castkaOdmeny, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -57,6 +57,25 @@ describe("výběr pravidla a částka", () => {
     expect(castkaOdmeny(pravidla[2], 390)).toBe(39);
     expect(castkaOdmeny(pravidla[2], 333.33)).toBe(33.33);
     expect(castkaOdmeny(pravidla[0], 9999)).toBe(100);
+  });
+});
+
+describe("nabídnuto navíc", () => {
+  const pravidla = [pravidlo({ id: "1", hledat: "servisní čištění", hodnota: 100 })];
+
+  it("oprava mimo pravidla nemá příznak vůbec", () => {
+    expect(vychoziNabidnuto("Výměna displeje", "Výměna displeje", pravidla)).toBeUndefined();
+  });
+
+  it("oprava podle pravidla, se kterou zákazník nepřišel, je nabídnutá", () => {
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Nefunguje, nejde zapnout", pravidla)).toBe(true);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "", pravidla)).toBe(true);
+  });
+
+  it("oprava, kterou zákazník požadoval (název nebo text pravidla), nabídnutá není", () => {
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Servisní čištění + výměna filtru", pravidla)).toBe(false);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "chce servisní čištění", pravidla)).toBe(false);
+    expect(opravaVPozadavku("Servisní čištění", "Servisní čištění + výměna filtru", null)).toBe(false);
   });
 });
 

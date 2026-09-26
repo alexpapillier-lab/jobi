@@ -101,6 +101,28 @@ export function najdiPravidlo(pravidla: PravidloOdmeny[], nazevOpravy: string): 
   return pravidla.find((p) => p.aktivni && pravidloSedi(p, nazevOpravy)) ?? null;
 }
 
+/** Je oprava zmíněná v textu požadované opravy z příjmu (podle názvu nebo hledaného textu pravidla)? */
+export function opravaVPozadavku(pozadovana: string | null | undefined, nazevOpravy: string, pravidlo?: PravidloOdmeny | null): boolean {
+  const text = (pozadovana ?? "").toLowerCase();
+  if (!text.trim()) return false;
+  const n = nazevOpravy.trim().toLowerCase();
+  if (n && text.includes(n)) return true;
+  const h = pravidlo?.hledat.trim().toLowerCase() ?? "";
+  return h.length > 0 && text.includes(h);
+}
+
+/**
+ * Výchozí příznak „nabídnuto navíc“ pro opravu přidávanou na zakázku:
+ * undefined = žádné pravidlo odměn na ni nesedí (příznak se neukazuje),
+ * true = sedí a zákazník s ní nepřišel (není v požadované opravě),
+ * false = sedí, ale je v požadované opravě – přišel s ní.
+ */
+export function vychoziNabidnuto(nazevOpravy: string, pozadovana: string | null | undefined, pravidla: PravidloOdmeny[]): boolean | undefined {
+  const p = najdiPravidlo(pravidla, nazevOpravy);
+  if (!p) return undefined;
+  return !opravaVPozadavku(pozadovana, nazevOpravy, p);
+}
+
 // ---------------------------------------------------------------------------
 // Měsíce
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ export function PerformedRepairItem({
   onUpdateFields,
   devicesData,
   inventoryData,
+  odmenaMozna = false,
 }: {
   repair: PerformedRepair;
   onRemove: (repairId: string) => void;
@@ -26,6 +27,8 @@ export function PerformedRepairItem({
   onUpdateFields?: (repairId: string, fields: Partial<PerformedRepair>) => void;
   devicesData?: DevicesData;
   inventoryData?: InventoryData;
+  /** Na opravu sedí pravidlo odměn – ukázat přepínač „nabídnuto navíc“. */
+  odmenaMozna?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [priceValue, setPriceValue] = useState(String(repair.price || 0));
@@ -76,6 +79,18 @@ export function PerformedRepairItem({
               Hodinová práce · {(repair.hodiny ?? 0).toLocaleString("cs-CZ")} h × {(repair.sazba ?? 0).toLocaleString("cs-CZ")} Kč/h
               {repair.technik ? ` · ${repair.technik}` : ""}
             </div>
+          )}
+          {/* Odměny týmu: prémie je jen za opravu nabídnutou navíc, ne za tu, se kterou zákazník přišel. */}
+          {odmenaMozna && onUpdateFields && (
+            <button
+              type="button"
+              onClick={() => onUpdateFields(repair.id, { nabidnuto: !repair.nabidnuto })}
+              title={repair.nabidnuto ? "Oprava nabídnutá zákazníkovi navíc – počítá se do odměn. Kliknutím zrušíte." : "Zákazník s touto opravou přišel – odměna se nepočítá. Kliknutím označíte jako nabídnutou navíc."}
+              aria-pressed={!!repair.nabidnuto}
+              style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, border: `1px solid ${repair.nabidnuto ? "var(--accent)" : "var(--border)"}`, background: repair.nabidnuto ? "var(--accent-soft)" : "transparent", color: repair.nabidnuto ? "var(--accent)" : "var(--muted)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              {repair.nabidnuto ? "✓ Nabídnuto navíc" : "Nabídnuto navíc?"}
+            </button>
           )}
         </div>
         <div style={{ display: "flex", gap: 6 }}>

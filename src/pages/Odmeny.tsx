@@ -36,6 +36,9 @@ type Radek = {
   vyrazeno: boolean;
   prepsano: boolean;
   poznamka: string | null;
+  /** Nabídnuto zákazníkovi navíc – jen s tím se odměna počítá. */
+  nabidnuto: boolean;
+  nabidnutoPrepsano: boolean;
 };
 
 type Mesic = { mesic: string; userId: string | null; jmeno: string; pocet: number; castka: number };
@@ -82,6 +85,8 @@ function prevedPrehled(raw: unknown): Prehled {
       vyrazeno: r.vyrazeno === true,
       prepsano: r.prepsano === true,
       poznamka: typeof r.poznamka === "string" ? r.poznamka : null,
+      nabidnuto: r.nabidnuto === true,
+      nabidnutoPrepsano: r.nabidnutoPrepsano === true,
     })),
     lide: pole(o.lide).map((l) => ({ userId: typeof l.userId === "string" ? l.userId : null, jmeno: String(l.jmeno ?? "Kolega"), pocet: cislo(l.pocet), castka: cislo(l.castka) })),
     mesice: pole(o.mesice).map((m) => ({ mesic: String(m.mesic ?? ""), userId: typeof m.userId === "string" ? m.userId : null, jmeno: String(m.jmeno ?? "Kolega"), pocet: cislo(m.pocet), castka: cislo(m.castka) })),
@@ -95,6 +100,8 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   const [chyba, setChyba] = useState<string | null>(null);
   const [nacitam, setNacitam] = useState(false);
   const [filtrClovek, setFiltrClovek] = useState<string | "vse">("vse");
+  /** Správce: ukázat i opravy podle pravidla, které nebyly nabídnuté navíc (kandidáti k označení). */
+  const [ukazatNenabidnute, setUkazatNenabidnute] = useState(false);
   const { clenove } = useClenoveServisu(activeServiceId, !!data?.admin);
 
   const nacti = useCallback(async () => {
@@ -129,7 +136,11 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   const celkem = useMemo(() => (data?.lide ?? []).reduce((s, l) => s + l.castka, 0), [data]);
   const moje = useMemo(() => (data?.lide ?? []).find((l) => l.userId && l.userId === data?.ja) ?? null, [data]);
   const vyplaceno = useMemo(() => new Map((data?.vyplaty ?? []).filter((v) => v.obdobi === mesic).map((v) => [v.userId, v])), [data, mesic]);
-  const zobrazene = useMemo(() => (data?.radky ?? []).filter((r) => filtrClovek === "vse" || (r.userId ?? "") === filtrClovek), [data, filtrClovek]);
+  const zobrazene = useMemo(
+    () => (data?.radky ?? []).filter((r) => (r.nabidnuto || ukazatNenabidnute) && (filtrClovek === "vse" || (r.userId ?? "") === filtrClovek)),
+    [data, filtrClovek, ukazatNenabidnute]
+  );
+  const pocetNenabidnutych = useMemo(() => (data?.radky ?? []).filter((r) => !r.nabidnuto).length, [data]);
 
   /** Síň slávy: vítěz každého měsíce z posledních 12 (podle dat, která volající smí vidět). */
   const sinSlavy = useMemo(() => {
@@ -145,15 +156,16 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   }, [data]);
 
   // --- akce správce ---------------------------------------------------------
-  const ulozUpravu = useCallback(async (r: Radek, zmena: { userId?: string | null; vyrazeno?: boolean }) => {
+  const ulozUpravu = useCallback(async (r: Radek, zmena: { userId?: string | null; vyrazeno?: boolean; nabidnuto?: boolean | null }) => {
     if (!supabase || !activeServiceId || !data?.admin) return;
     const userId = zmena.userId === undefined ? (r.prepsano ? r.userId : null) : zmena.userId;
     const vyrazeno = zmena.vyrazeno ?? r.vyrazeno;
+    const nabidnuto = zmena.nabidnuto === undefined ? (r.nabidnutoPrepsano ? r.nabidnuto : null) : zmena.nabidnuto;
     // deno-lint-ignore no-explicit-any
     const tab = (supabase as any).from("odmeny_upravy");
-    const { error } = userId === null && !vyrazeno
+    const { error } = userId === null && !vyrazeno && nabidnuto === null
       ? await tab.delete().eq("ticket_id", r.ticketId).eq("polozka_id", r.polozkaId)
-      : await tab.upsert({ service_id: activeServiceId, ticket_id: r.ticketId, polozka_id: r.polozkaId, user_id: userId, vyrazeno, updated_by: data.ja, updated_at: new Date().toISOString() }, { onConflict: "ticket_id,polozka_id" });
+      : await tab.upsert({ service_id: activeServiceId, ticket_id: r.ticketId, polozka_id: r.polozkaId, user_id: userId, vyrazeno, nabidnuto, updated_by: data.ja, updated_at: new Date().toISOString() }, { onConflict: "ticket_id,polozka_id" });
     if (error) { showToast(`Uložení selhalo: ${error.message}`, "error"); return; }
     void nacti();
   }, [activeServiceId, data, nacti]);
@@ -186,7 +198,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             <GiftIcon size={22} /> Odměny
           </div>
-          <div style={{ ...popisek, marginTop: 4 }}>Prémie za nabídnuté opravy. Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.</div>
+          <div style={{ ...popisek, marginTop: 4 }}>Prémie za opravy nabídnuté zákazníkovi navíc (ne za ty, se kterými přišel). Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, -1))} aria-label="Předchozí měsíc">‹</Button>
@@ -217,7 +229,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             <div style={dlazdice}>
               <div style={popisek}>Celkem odměn za měsíc</div>
               <div style={velke}>{kc(celkem)}</div>
-              <div style={popisek}>{(data.lide.filter((l) => l.userId).length)} lidí · {data.radky.filter((r) => !r.vyrazeno).length} oprav</div>
+              <div style={popisek}>{(data.lide.filter((l) => l.userId).length)} lidí · {data.radky.filter((r) => !r.vyrazeno && r.nabidnuto).length} oprav</div>
             </div>
             <div style={dlazdice}>
               <div style={popisek}>Moje odměny</div>
@@ -279,6 +291,12 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             </select>
             <Button size="sm" variant="soft" onClick={() => void nacti()} disabled={nacitam}>{nacitam ? "Načítám…" : "Obnovit"}</Button>
             {data.admin && onOtevritNastaveni && <Button size="sm" variant="ghost" onClick={onOtevritNastaveni}>Pravidla</Button>}
+            {data.admin && pocetNenabidnutych > 0 && (
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }} title="Opravy podle pravidla, které nebyly nabídnuté navíc (zákazník s nimi přišel, nebo jde o starší zakázku bez příznaku). Jdou označit ručně.">
+                <input type="checkbox" checked={ukazatNenabidnute} onChange={(e) => setUkazatNenabidnute(e.target.checked)} />
+                <span>Ukázat i nenabídnuté ({pocetNenabidnutych})</span>
+              </label>
+            )}
           </div>
 
           <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
@@ -292,7 +310,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
               </thead>
               <tbody>
                 {zobrazene.map((r) => (
-                  <tr key={`${r.ticketId}-${r.polozkaId}`} style={{ opacity: r.vyrazeno ? 0.5 : 1 }}>
+                  <tr key={`${r.ticketId}-${r.polozkaId}`} style={{ opacity: r.vyrazeno || !r.nabidnuto ? 0.5 : 1 }}>
                     <td style={{ ...td, fontWeight: 700 }}>
                       {onOpenTicket ? (
                         <button type="button" onClick={() => onOpenTicket(r.ticketId)} style={{ background: "transparent", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>{r.kod ?? "—"}</button>
@@ -317,9 +335,13 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
                       )}
                       {r.prepsano && <span style={{ ...popisek, marginLeft: 6 }} title="Příjemce ručně změněn">✎</span>}
                     </td>
-                    <td style={{ ...td, fontWeight: 700, textDecoration: r.vyrazeno ? "line-through" : undefined }}>{kc(r.castka)}</td>
+                    <td style={{ ...td, fontWeight: 700, textDecoration: r.vyrazeno || !r.nabidnuto ? "line-through" : undefined }}>
+                      {kc(r.castka)}
+                      {!r.nabidnuto && <span style={{ ...popisek, marginLeft: 6, fontWeight: 500 }}>nenabídnuto</span>}
+                    </td>
                     {data.admin && (
-                      <td style={td}>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { nabidnuto: !r.nabidnuto })} title={r.nabidnuto ? "Zákazník s opravou přišel – odměna nenáleží" : "Oprava byla nabídnutá navíc – počítat odměnu"}>{r.nabidnuto ? "Nenabídnuto" : "Nabídnuto navíc"}</Button>
                         <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { vyrazeno: !r.vyrazeno })}>{r.vyrazeno ? "Vrátit" : "Vyřadit"}</Button>
                       </td>
                     )}

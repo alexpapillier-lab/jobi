@@ -65,6 +65,7 @@ import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
+import { najdiPravidlo, normalizujOdmeny, vychoziNabidnuto, type PravidloOdmeny } from "../lib/odmeny";
 import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { dniBezZmenyJinde, krokyPresunu, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
@@ -1028,6 +1029,7 @@ export default function Orders({
     setPridelovaniTechnika(config?.pridelovani_technika !== false);
     setChatZapnuty(config?.chat !== false);
     setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
+    setPravidlaOdmen(normalizujOdmeny(config?.odmeny).pravidla.filter((p) => p.aktivni));
     setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
     setZasilkyZapnuty(config?.zasilky === true);
     setNastaveniZasilek(normalizujNastaveniZasilek(config ?? undefined));
@@ -1669,6 +1671,8 @@ export default function Orders({
   const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
   /** Přednastavené slevy (config.prednastavene_slevy) – tlačítka u ceny oprav v detailu. */
   const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
+  /** Aktivní pravidla odměn (config.odmeny) – u opravy, na kterou sedí, se nabízí příznak „nabídnuto navíc“. */
+  const [pravidlaOdmen, setPravidlaOdmen] = useState<PravidloOdmeny[]>([]);
   /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
   const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
   /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
@@ -3198,6 +3202,14 @@ export default function Orders({
     return true;
   }, []);
 
+  /** Příznak „nabídnuto navíc“ u opravy vybrané při příjmu (odměny týmu). */
+  const nastavPlannedNabidnuto = useCallback((idx: number, id: string, nabidnuto: boolean) => {
+    setNewDraft((p) => ({
+      ...p,
+      devices: p.devices.map((d, i) => (i !== idx ? d : { ...d, plannedRepairs: (d.plannedRepairs ?? []).map((r) => (r.id === id ? { ...r, nabidnuto } : r)) })),
+    }));
+  }, []);
+
   const removePlannedRepair = useCallback((idx: number, id: string) => {
     setNewDraft((p) => ({
       ...p,
@@ -3228,7 +3240,15 @@ export default function Orders({
    * je hotovo – to musí platit i když hned zavře okno.
    */
   const applyQuoteRepairs = useCallback(
-    async (ticketId: string, repairs: PerformedRepair[]) => {
+    async (ticketId: string, repairsVstup: PerformedRepair[]) => {
+      // Schválená položka z cenové nabídky = nabídnuto a přijato; příznak se
+      // doplní jen tam, kde chybí a kde sedí pravidlo odměn.
+      const pozadovana = cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair;
+      const repairs = repairsVstup.map((r) => {
+        if (r.nabidnuto !== undefined) return r;
+        const n = vychoziNabidnuto(r.name, pozadovana, pravidlaOdmen);
+        return n === undefined ? r : { ...r, nabidnuto: n };
+      });
       setCloudTickets((prev) =>
         prev.map((t) => (t.id === ticketId ? { ...t, performedRepairs: repairs } : t))
       );
@@ -3418,11 +3438,16 @@ export default function Orders({
         productIds: repairProductIds,
         // Odměny týmu (lib/odmeny): kdo opravu na zakázku přidal – nabídl ji zákazníkovi.
         ...(mojeId ? { pridalUserId: mojeId } : {}),
+        // …a jestli ji nabídl navíc (není v požadované opravě z příjmu). Kdo přidává, může to v řádku otočit.
+        ...(() => {
+          const n = vychoziNabidnuto(repair.name, cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair, pravidlaOdmen);
+          return n === undefined ? {} : { nabidnuto: n };
+        })(),
         ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId, ...(repair.zMereni ? { zMereni: true } : {}) } : {}),
       };
       upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
-    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy, mojeId]
+    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy, mojeId, pravidlaOdmen]
   );
 
   const updatePerformedRepairPrice = useCallback((ticketId: string, repairId: string, price: number) => {
@@ -5750,6 +5775,17 @@ export default function Orders({
                                       ))}
                                     </div>
                                   )}
+                                  {/* Odměny týmu: co se na příjmu nabídlo navíc (ne to, s čím zákazník přišel). */}
+                                  {planned.some((r) => najdiPravidlo(pravidlaOdmen, r.name)) && (
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", fontSize: 12, color: "var(--muted)" }}>
+                                      {planned.filter((r) => najdiPravidlo(pravidlaOdmen, r.name)).map((r) => (
+                                        <label key={`nab-${r.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }} title="Prémie za nabídnutou opravu vzniká jen tehdy, když ji zákazník neměl v požadavku a přijal ji.">
+                                          <input type="checkbox" checked={!!r.nabidnuto} onChange={(e) => nastavPlannedNabidnuto(idx, r.id, e.target.checked)} />
+                                          <span>Nabídnuto navíc: <b>{r.name}</b></span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
                                   {planned.length > 0 && (
                                     <div style={{ fontSize: 12, color: "var(--muted)" }}>
                                       {planned.length === 1 ? "1 oprava" : planned.length < 5 ? `${planned.length} opravy` : `${planned.length} oprav`}
@@ -7823,6 +7859,7 @@ export default function Orders({
                             onUpdateFields={(repairId, fields) => updatePerformedRepairFields(detailedTicket.id, repairId, fields)}
                             devicesData={devicesData}
                             inventoryData={inventoryData}
+                            odmenaMozna={najdiPravidlo(pravidlaOdmen, repair.name) !== null}
                           />
                           {dily.length > 0 && (
                             <div style={{ color: "var(--muted)", fontSize: 12, paddingLeft: 12 }}>

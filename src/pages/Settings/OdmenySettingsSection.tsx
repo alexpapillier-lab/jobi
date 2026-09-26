@@ -114,7 +114,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
     <Card>
       <CardHeader
         title="Odměny za opravy"
-        description="Prémie pro tým za nabídnuté opravy: kdo zákazníkovi prodá servisní čištění, dostane třeba 100 Kč. Pravidlo se hledá v názvu opravy, takže „servisní čištění“ platí pro všechny modely v ceníku. Odměna vzniká vydáním zakázky (storno nic nedostane) a přehled i zaměstnanec měsíce jsou na stránce Odměny."
+        description="Prémie pro tým za opravy nabídnuté zákazníkovi navíc: kdo mu prodá servisní čištění, dostane třeba 100 Kč. Když zákazník s čištěním rovnou přijde, odměna není. U opravy, na kterou sedí pravidlo, Jobi předvyplní příznak „Nabídnuto navíc“ (není v požadované opravě z příjmu) a kdo ji přidává, může ho jedním klikem otočit. Odměna vzniká vydáním zakázky (storno nic nedostane); přehled i zaměstnanec měsíce jsou na stránce Odměny. Starší zakázky bez příznaku se nepočítají."
         right={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {hint.node}
