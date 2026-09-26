@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, autoUpdat
 import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs/promises";
+import { readFileSync } from "fs";
 import os from "os";
 import { startApiServer } from "../api/server";
 
@@ -397,7 +398,7 @@ function channelPath(): string {
 }
 function readUpdateChannel(): UpdateChannel {
   try {
-    const raw = JSON.parse(require("fs").readFileSync(channelPath(), "utf-8")) as { channel?: string };
+    const raw = JSON.parse(readFileSync(channelPath(), "utf-8")) as { channel?: string };
     return raw.channel === "beta" ? "beta" : "stable";
   } catch {
     return "stable";

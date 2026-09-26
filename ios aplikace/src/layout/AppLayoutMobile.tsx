@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { BottomNav } from "./BottomNav";
 import type { NavKey } from "./Sidebar";
 import { supabase } from "../lib/supabaseClient";
@@ -9,8 +9,6 @@ export function AppLayoutMobile({
   children,
   activePage,
   onNavigate,
-  userEmail,
-  userProfile,
   onSignOut,
   services,
   activeServiceId,
@@ -45,7 +43,6 @@ export function AppLayoutMobile({
   const activeService = services.find((s) => s.service_id === activeServiceId);
   const serviceName = activeService?.service_name || "Servis";
   const hasMultipleServices = services.length > 1;
-  const displayName = (userProfile?.nickname?.trim() || userEmail?.split("@")[0] || "Uživatel").trim() || "Uživatel";
 
   return (
     <div

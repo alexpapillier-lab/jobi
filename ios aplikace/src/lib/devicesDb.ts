@@ -169,7 +169,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_brands") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert brands error:", error);
-      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání značek" };
+      return { error: (error as { message?: string }).message ?? String(error) || "Chyba ukládání značek" };
     }
   }
 
@@ -186,7 +186,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_categories") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert categories error:", error);
-      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání kategorií" };
+      return { error: (error as { message?: string }).message ?? String(error) || "Chyba ukládání kategorií" };
     }
   }
 
@@ -203,7 +203,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("device_models") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert models error:", error);
-      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání modelů" };
+      return { error: (error as { message?: string }).message ?? String(error) || "Chyba ukládání modelů" };
     }
   }
 
@@ -225,7 +225,7 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
     const { error } = await (supabase.from("repairs") as any).upsert(rows, { onConflict: "id" });
     if (error) {
       console.error("[devicesDb] Upsert repairs error:", error);
-      return { error: (error as { message?: string }).message ?? String(error) ?? "Chyba ukládání oprav" };
+      return { error: (error as { message?: string }).message ?? String(error) || "Chyba ukládání oprav" };
     }
   }
 

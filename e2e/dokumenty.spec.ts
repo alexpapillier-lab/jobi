@@ -102,7 +102,7 @@ test("částky na dokladech jsou české, ne strojové", async ({ page }) => {
   for (const typ of ["zakazkovy_list", "faktura"] as const) {
     const ramec = await otevriDokument(page, typ, "short");
     const text = await ramec.locator("body").innerText();
-    const castky = text.match(/\d[\d\s  ]*[,.]\d\d\s*Kč/g) ?? [];
+    const castky = text.match(/\d[\d\s\u00a0\u202f]*[,.]\d\d\s*Kč/g) ?? [];
     expect(castky.length, `${typ}: na dokladu nejsou žádné částky`).toBeGreaterThan(0);
     for (const c of castky) {
       // Desetinná tečka na českém dokladu nemá co dělat.

@@ -97,7 +97,7 @@ function bezDiakritiky(s: string): string {
     .replace(/▲/g, "+")
     .replace(/▼/g, "-")
     .replace(/≥/g, ">=")
-    .replace(/[^\x00-\xff]/g, "?");
+    .replace(/[\u0100-\uffff]/g, "?");
 }
 
 class Platno {
