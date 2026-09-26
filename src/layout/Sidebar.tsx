@@ -14,7 +14,7 @@ import { isDesktop } from "../lib/platform";
 import { useBranches } from "../context/BranchContext";
 import { getShortcut, formatShortcutForDisplay, SHORTCUTS_CHANGED_EVENT, type ShortcutId } from "../lib/keyboardShortcuts";
 
-export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "provize" | "settings";
+export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "provize" | "odmeny" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -96,6 +96,13 @@ function ProvizeIcon({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
+function OdmenyIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a2 2 0 0 0 0 4h3M17 6h3a2 2 0 0 1 0 4h-3" />
+    </svg>
+  );
+}
 function StatisticsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -145,6 +152,8 @@ export type SidebarProps = {
   zasilkyEnabled?: boolean;
   /** Majitel aplikace s tímhle účtem sdílí své provize (provize_sdileni). */
   provizeEnabled?: boolean;
+  /** Servis má pravidla odměn za opravy (Nastavení → Tým → Odměny za opravy). */
+  odmenyEnabled?: boolean;
   /** Počet zásilek na cestě k vybrané pobočce – odznak u položky Zásilky. */
   zasilkyBadge?: number;
   onJobiDocsFirstConnect?: () => void;
@@ -255,6 +264,7 @@ export function Sidebar({
   statisticsEnabled = true,
   zasilkyEnabled = false,
   provizeEnabled = false,
+  odmenyEnabled = false,
   zasilkyBadge = 0,
   onJobiDocsFirstConnect,
   horizontal = false,
@@ -298,9 +308,10 @@ export function Sidebar({
     const ostatni: NavItem[] = [
       ...(statisticsEnabled ? [{ key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon }] : []),
       ...(provizeEnabled ? [{ key: "provize" as const, label: "Provize", icon: ProvizeIcon }] : []),
+      ...(odmenyEnabled ? [{ key: "odmeny" as const, label: "Odměny", icon: OdmenyIcon }] : []),
     ];
     return ostatni.length > 0 ? [prace, katalog, ostatni] : [prace, katalog];
-  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled, provizeEnabled]);
+  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled, provizeEnabled, odmenyEnabled]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<

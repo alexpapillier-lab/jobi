@@ -15,6 +15,7 @@ import { safeLoadCompanyData, defaultCompanyData, companyCacheBelongsTo, setComp
 import { useActiveRole } from "../hooks/useActiveRole";
 import { useSettingsActions } from "./Settings/hooks/useSettingsActions";
 import { TeamSettings } from "./Settings/TeamSettings";
+import { OdmenySettingsSection } from "./Settings/OdmenySettingsSection";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
@@ -66,7 +67,7 @@ import { useAuth } from "../auth/AuthProvider";
  */
 export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 export type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_owner" | "service_api"
+  | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_odmeny" | "service_owner" | "service_api"
   | "communication_automations" | "communication_chat" | "communication_report"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail" | "orders_zasilky"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
@@ -86,7 +87,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_slevy: "orders", orders_detail: "orders", orders_zasilky: "orders",
   orders_tisk_dokumentu: "documents",
   service_sms: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
-  service_team: "people", service_api: "people",
+  service_team: "people", service_odmeny: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
   profile_me: "profile",
 };
@@ -1007,6 +1008,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       ),
       subsections: [
         ...(isAdmin ? [{ key: "service_team" as const, label: "Tým a oprávnění", keywords: ["tým", "přístupy", "oprávnění", "povolení", "pozvánka", "pozvat", "člen", "admin", "role", "odebrat"] }] : []),
+        ...(isAdmin ? [{ key: "service_odmeny" as const, label: "Odměny za opravy", keywords: ["odměny", "odměna", "prémie", "bonus", "provize", "zaměstnanec měsíce", "čištění", "sklo", "těsnění", "motivace", "žebříček"] }] : []),
         ...(maApi ? [{ key: "service_api" as const, label: "API", keywords: ["api", "token", "webhook", "ceník", "sklad", "veřejné", "dokumentace", "openapi"] }] : []),
       ],
     },
@@ -1048,7 +1050,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "communication_report" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_odmeny" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "communication_report" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -1471,6 +1473,14 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* SERVIS - TÝM / PŘÍSTUPY */}
       {section.subsection === "service_team" && (
         <TeamSettings activeServiceId={activeServiceId} setActiveServiceId={setActiveServiceId} services={services} />
+      )}
+
+      {/* TÝM – ODMĚNY ZA OPRAVY: pravidla prémií (stránka Odměny je počítá ze zakázek) */}
+      {section.subsection === "service_odmeny" && (
+        <OdmenySettingsSection
+          activeServiceId={activeServiceId}
+          onOtevritOdmeny={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "odmeny" } }))}
+        />
       )}
 
       {/* Owner – pouze pro root ownera; správa servisů (vytvoření, mazání, deaktivace). Admin vidí vše kromě této záložky a nemůže přidávat/mazat servisy. */}

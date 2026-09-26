@@ -32,6 +32,7 @@ const SMS: Tab = { key: "sms", label: "SMS", icon: icon("M21 15a2 2 0 0 1-2 2H7l
 const INVOICES: Tab = { key: "invoices", label: "Faktury", icon: icon("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5") };
 const STATS: Tab = { key: "statistics", label: "Statistiky", icon: icon("M18 20V10M12 20V4M6 20v-6") };
 const PROVIZE: Tab = { key: "provize", label: "Provize", icon: icon("M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4") };
+const ODMENY: Tab = { key: "odmeny", label: "Odměny", icon: icon("M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 6H4a2 2 0 0 0 0 4h3M17 6h3a2 2 0 0 1 0 4h-3") };
 const ZASILKY: Tab = { key: "zasilky", label: "Zásilky", icon: icon("M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM8 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z") };
 const SETTINGS: Tab = { key: "settings", label: "Nastavení", icon: icon("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z") };
 
@@ -47,6 +48,7 @@ export type BottomNavProps = {
   statisticsEnabled?: boolean;
   zasilkyEnabled?: boolean;
   provizeEnabled?: boolean;
+  odmenyEnabled?: boolean;
   zasilkyBadge?: number;
   services?: Array<{ service_id: string; service_name: string; role: string }>;
   activeServiceId?: string | null;
@@ -65,6 +67,7 @@ export function BottomNav({
   statisticsEnabled = true,
   zasilkyEnabled = false,
   provizeEnabled = false,
+  odmenyEnabled = false,
   zasilkyBadge = 0,
   services = [],
   activeServiceId = null,
@@ -94,6 +97,7 @@ export function BottomNav({
     ...(zasilkyEnabled ? [ZASILKY] : []),
     ...(statisticsEnabled ? [STATS] : []),
     ...(provizeEnabled ? [PROVIZE] : []),
+    ...(odmenyEnabled ? [ODMENY] : []),
     SETTINGS,
   ];
 

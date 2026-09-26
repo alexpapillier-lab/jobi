@@ -2148,7 +2148,7 @@ export default function Orders({
             const vybrane = ids
               .map((id) => devicesData.repairs.find((x) => x.id === id))
               .filter((x): x is NonNullable<typeof x> => !!x)
-              .map((cen) => ({ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds }));
+              .map((cen) => ({ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds, pridalUserId: session?.user?.id ?? undefined }));
             return vybrane.length > 0 ? vybrane : undefined;
           })(),
         }],
@@ -3151,6 +3151,8 @@ export default function Orders({
                 costs: repair.costs,
                 estimatedTime: repair.estimatedTime,
                 productIds: repair.productIds,
+                // Odměny týmu: kdo opravu nabídl už při příjmu.
+                pridalUserId: mojeId ?? undefined,
               },
             ];
         // Text požadované opravy: jména z ceníku oddělená čárkou, ruční text zůstává.
@@ -3183,7 +3185,7 @@ export default function Orders({
       devices: p.devices.map((d, i) => {
         if (i !== idx) return d;
         const planned = d.plannedRepairs ?? [];
-        const nextPlanned = [...planned, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name, type: "manual" as const, price }];
+        const nextPlanned = [...planned, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name, type: "manual" as const, price, pridalUserId: mojeId ?? undefined }];
         const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
         return {
           ...d,
@@ -3414,11 +3416,13 @@ export default function Orders({
         costs: repairCosts,
         estimatedTime: repairTime,
         productIds: repairProductIds,
+        // Odměny týmu (lib/odmeny): kdo opravu na zakázku přidal – nabídl ji zákazníkovi.
+        ...(mojeId ? { pridalUserId: mojeId } : {}),
         ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId, ...(repair.zMereni ? { zMereni: true } : {}) } : {}),
       };
       upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
     },
-    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy]
+    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy, mojeId]
   );
 
   const updatePerformedRepairPrice = useCallback((ticketId: string, repairId: string, price: number) => {

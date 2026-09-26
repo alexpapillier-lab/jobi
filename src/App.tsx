@@ -9,6 +9,9 @@ import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
 import { ProvizeSdilene } from "./pages/ProvizeSdilene";
+import { Odmeny } from "./pages/Odmeny";
+import { nactiServiceConfig, subscribeServiceConfig } from "./lib/serviceSettingsSync";
+import { normalizujOdmeny } from "./lib/odmeny";
 import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
@@ -253,6 +256,23 @@ export default function App() {
     };
   }, [session?.user?.id, activeServiceId]);
   const provizeAvailable = !!activeServiceId && provizeSdileneServisy.includes(activeServiceId);
+  /* Odměny týmu: stránka je v navigaci, jen když má servis aspoň jedno
+     aktivní pravidlo (Nastavení → Tým → Odměny za opravy). Config se
+     poslouchá v reálném čase, ať se záložka objeví hned po prvním pravidle. */
+  const [odmenyAvailable, setOdmenyAvailable] = useState(false);
+  useEffect(() => {
+    if (!activeServiceId || !supabase) {
+      setOdmenyAvailable(false);
+      return;
+    }
+    let zruseno = false;
+    const vyhodnot = (raw: unknown) => setOdmenyAvailable(normalizujOdmeny(raw).pravidla.some((p) => p.aktivni));
+    void nactiServiceConfig(activeServiceId).then((r) => {
+      if (!zruseno) vyhodnot(r.stav === "ok" ? r.config.odmeny : undefined);
+    });
+    const odhlasit = subscribeServiceConfig(activeServiceId, (config) => vyhodnot(config.odmeny), "odmeny");
+    return () => { zruseno = true; odhlasit(); };
+  }, [activeServiceId]);
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
   /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
   const [servicesLoaded, setServicesLoaded] = useState(false);
@@ -881,6 +901,9 @@ export default function App() {
   useEffect(() => {
     if (!provizeAvailable && activePage === "provize") setActivePage("orders");
   }, [provizeAvailable, activePage]);
+  useEffect(() => {
+    if (!odmenyAvailable && activePage === "odmeny") setActivePage("orders");
+  }, [odmenyAvailable, activePage]);
 
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
   useEffect(() => {
@@ -957,10 +980,11 @@ export default function App() {
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize", "odmeny"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         if (page === "statistics" && !canViewStatistics) return;
         if (page === "provize" && !provizeAvailable) return;
+        if (page === "odmeny" && !odmenyAvailable) return;
         if (page === "zasilky" && !zasilkyAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
@@ -976,7 +1000,10 @@ export default function App() {
 window.removeEventListener("jobsheet:navigate" as any, onNav);
     document.removeEventListener("jobsheet:navigate" as any, onNav);
     };
-  }, [invoicesAvailable, canViewStatistics]);
+    // Dostupnost stránek se mění po načtení (sdílené provize, modul zásilek,
+    // pravidla odměn) – bez nich tu zůstal starý handler, který novou
+    // stránku odmítl, i když už byla v navigaci.
+  }, [invoicesAvailable, canViewStatistics, provizeAvailable, zasilkyAvailable, odmenyAvailable]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -1152,6 +1179,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         return "Statistiky";
       case "provize":
         return "Provize";
+      case "odmeny":
+        return "Odměny";
       case "invoices":
         return "Faktury";
       case "zasilky":
@@ -1412,6 +1441,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
           provizeEnabled={provizeAvailable}
+          odmenyEnabled={odmenyAvailable}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1548,6 +1578,22 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                 onOpenTicket={(ticketId) => {
                   setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
                   setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
+          {odmenyAvailable && visitedPages.has("odmeny") && (
+            <div style={{ display: activePage === "odmeny" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "odmeny"}>
+              <Odmeny
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "odmeny" });
+                  setActivePage("orders");
+                }}
+                onOtevritNastaveni={() => {
+                  setOpenSettingsToSubsection({ category: "people", subsection: "service_odmeny" });
+                  setActivePage("settings");
                 }}
               />
             </div>

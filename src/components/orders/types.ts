@@ -16,4 +16,6 @@ export type PerformedRepair = {
   costs?: number; // náklady (lze upravit)
   estimatedTime?: number; // čas (lze upravit)
   productIds?: string[]; // produkty (lze upravit)
+  /** Kdo opravu na zakázku přidal (nabídl ji) – pro odměny týmu (lib/odmeny). */
+  pridalUserId?: string;
 };
