@@ -10,8 +10,9 @@ import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
 import { ProvizeSdilene } from "./pages/ProvizeSdilene";
 import { Odmeny } from "./pages/Odmeny";
-import { nactiServiceConfig, subscribeServiceConfig } from "./lib/serviceSettingsSync";
+import { UDALOST_ZMENY_CONFIGU, nactiServiceConfig, subscribeServiceConfig } from "./lib/serviceSettingsSync";
 import { normalizujOdmeny } from "./lib/odmeny";
+import { AKTUALNI_BUILD, strankaPoObnove, useAktualizaceWebu } from "./lib/aktualizaceWebu";
 import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
@@ -198,7 +199,14 @@ export default function App() {
   const { session, initializing: authInitializing } = useAuth();
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
-  const [activePage, setActivePage] = useState<NavKey>("orders");
+  const [activePage, setActivePage] = useState<NavKey>(() => {
+    // Po tiché obnově webu (nová verze) se vrátit tam, kde uživatel byl.
+    const s = strankaPoObnove();
+    const zname: NavKey[] = ["orders", "sms", "calendar", "inventory", "devices", "customers", "invoices", "zasilky", "statistics", "provize", "odmeny", "settings"];
+    return s && (zname as string[]).includes(s) ? (s as NavKey) : "orders";
+  });
+  /* Nová verze webu: v klidné chvíli se záložka obnoví sama, jinak lišta dole. */
+  const aktualizaceWebu = useAktualizaceWebu(() => activePage);
   // Stránky jednou navštívené zůstávají namountované (jen skryté) – instant přepnutí bez reload
   const [visitedPages, setVisitedPages] = useState<Set<NavKey>>(() => new Set(["orders"]));
   useEffect(() => {
@@ -256,22 +264,34 @@ export default function App() {
     };
   }, [session?.user?.id, activeServiceId]);
   const provizeAvailable = !!activeServiceId && provizeSdileneServisy.includes(activeServiceId);
-  /* Odměny týmu: stránka je v navigaci, jen když má servis aspoň jedno
-     aktivní pravidlo (Nastavení → Tým → Odměny za opravy). Config se
-     poslouchá v reálném čase, ať se záložka objeví hned po prvním pravidle. */
-  const [odmenyAvailable, setOdmenyAvailable] = useState(false);
+  /* Odměny týmu: v navigaci podle přepínače v Nastavení → Tým → Odměny za
+     opravy (bez přepínače = když existuje aktivní pravidlo). Majitel a
+     správce se na stránku dostanou vždy (tlačítko v nastavení), ať si ji
+     můžou prohlédnout dřív, než ji ukážou týmu. Config se poslouchá
+     v reálném čase, ať se záložka objeví hned. */
+  const [odmenyVNavigaci, setOdmenyVNavigaci] = useState(false);
+  const odmenyAvailable = odmenyVNavigaci || isAdmin;
   useEffect(() => {
     if (!activeServiceId || !supabase) {
-      setOdmenyAvailable(false);
+      setOdmenyVNavigaci(false);
       return;
     }
     let zruseno = false;
-    const vyhodnot = (raw: unknown) => setOdmenyAvailable(normalizujOdmeny(raw).pravidla.some((p) => p.aktivni));
-    void nactiServiceConfig(activeServiceId).then((r) => {
-      if (!zruseno) vyhodnot(r.stav === "ok" ? r.config.odmeny : undefined);
-    });
+    const vyhodnot = (raw: unknown) => setOdmenyVNavigaci(normalizujOdmeny(raw).zobrazit_v_navigaci);
+    const nacti = () => {
+      void nactiServiceConfig(activeServiceId).then((r) => {
+        if (!zruseno) vyhodnot(r.stav === "ok" ? r.config.odmeny : undefined);
+      });
+    };
+    nacti();
     const odhlasit = subscribeServiceConfig(activeServiceId, (config) => vyhodnot(config.odmeny), "odmeny");
-    return () => { zruseno = true; odhlasit(); };
+    // Uložení v Nastavení téhle záložky: znovu načíst hned, bez čekání na realtime.
+    const naZmenu = (e: Event) => {
+      const d = (e as CustomEvent<{ serviceId?: string; patch?: Record<string, unknown> }>).detail;
+      if (d?.serviceId === activeServiceId && d.patch && "odmeny" in d.patch) nacti();
+    };
+    window.addEventListener(UDALOST_ZMENY_CONFIGU, naZmenu);
+    return () => { zruseno = true; odhlasit(); window.removeEventListener(UDALOST_ZMENY_CONFIGU, naZmenu); };
   }, [activeServiceId]);
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
   /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
@@ -1441,7 +1461,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
           provizeEnabled={provizeAvailable}
-          odmenyEnabled={odmenyAvailable}
+          odmenyEnabled={odmenyVNavigaci}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1845,6 +1865,22 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               document.body
             )}
           </AppLayout>
+        {aktualizaceWebu.novaVerze && (
+          <div
+            role="status"
+            style={{ position: "fixed", left: "50%", bottom: 76, transform: "translateX(-50%)", zIndex: 1200, display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 14, border: "1px solid var(--border)", background: "var(--panel)", boxShadow: "var(--shadow)", fontSize: 13, color: "var(--text)", maxWidth: "calc(100vw - 32px)" }}
+          >
+            <span>Je připravená nová verze Jobi.</span>
+            <button
+              type="button"
+              onClick={aktualizaceWebu.obnovit}
+              title={`Běží build ${AKTUALNI_BUILD}`}
+              style={{ padding: "6px 12px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}
+            >
+              Obnovit
+            </button>
+          </div>
+        )}
           <ToastContainer />
         </BranchProvider>
         </StatusesProvider>

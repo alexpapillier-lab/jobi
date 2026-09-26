@@ -22,8 +22,17 @@ describe("čtení nastavení z configu", () => {
   });
 
   it("chybějící config = žádná pravidla, ne pád", () => {
-    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true });
+    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
     expect(normalizujOdmeny({ verejny_zebricek: false }).verejny_zebricek).toBe(false);
+  });
+
+  it("zobrazení v navigaci: výslovně z configu, jinak podle aktivního pravidla", () => {
+    const aktivni = { pravidla: [{ hledat: "čištění", hodnota: 100 }] };
+    const vypnute = { pravidla: [{ hledat: "čištění", hodnota: 100, aktivni: false }] };
+    expect(normalizujOdmeny(aktivni).zobrazit_v_navigaci).toBe(true);
+    expect(normalizujOdmeny(vypnute).zobrazit_v_navigaci).toBe(false);
+    expect(normalizujOdmeny({ ...vypnute, zobrazit_v_navigaci: true }).zobrazit_v_navigaci).toBe(true);
+    expect(normalizujOdmeny({ ...aktivni, zobrazit_v_navigaci: false }).zobrazit_v_navigaci).toBe(false);
   });
 });
 

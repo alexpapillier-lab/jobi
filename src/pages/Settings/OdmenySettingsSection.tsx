@@ -39,7 +39,7 @@ const pole: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, borde
  * zakázek vydaných v měsíci, výsledek je na stránce Odměny.
  */
 export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { activeServiceId: string | null; onOtevritOdmeny?: () => void }) {
-  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>({ pravidla: [], verejny_zebricek: true });
+  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
   const [chybaNacteni, setChybaNacteni] = useState(false);
   const hint = useSavedHint();
@@ -118,7 +118,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
         right={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {hint.node}
-            {onOtevritOdmeny && nastaveni.pravidla.length > 0 && (
+            {onOtevritOdmeny && (
               <Button size="sm" variant="soft" onClick={onOtevritOdmeny}>Otevřít Odměny</Button>
             )}
           </span>
@@ -132,7 +132,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
       )}
 
       {nastaveni.pravidla.length === 0 ? (
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>Zatím žádné pravidlo. Přidejte první níže – stránka Odměny se v navigaci objeví, jakmile existuje aspoň jedno.</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>Zatím žádné pravidlo. Přidejte první níže; majitel a správce se na stránku Odměny dostanou vždy tlačítkem nahoře, tým ji uvidí podle přepínače níže.</div>
       ) : (
         <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12, marginBottom: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -213,6 +213,14 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
         <Input value={zkouska} onChange={(e) => setZkouska(e.target.value)} placeholder="Vyzkoušet název opravy, např. Servisní čištění + výměna filtru" style={{ width: 360, maxWidth: "100%" }} />
         {zkouskaVysledek && <span style={{ fontSize: 13, color: "var(--muted)" }}>{zkouskaVysledek}</span>}
       </div>
+
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>
+        <input type="checkbox" checked={nastaveni.zobrazit_v_navigaci} onChange={(e) => void ulozit({ ...nastaveni, zobrazit_v_navigaci: e.target.checked })} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />
+        <span>
+          <b>Zobrazit Odměny v navigaci</b>
+          <div style={{ color: "var(--muted)", fontSize: 12 }}>Stránka Odměny v postranním panelu pro celý tým. Majitel a správce se na ni dostanou vždy tlačítkem „Otevřít Odměny“.</div>
+        </span>
+      </label>
 
       <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer" }}>
         <input type="checkbox" checked={nastaveni.verejny_zebricek} onChange={(e) => void ulozit({ ...nastaveni, verejny_zebricek: e.target.checked })} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import baseConfig from "./vite.config";
+import { buildId } from "./vite.buildId";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const stub = (name: string) => path.resolve(__dirname, "web-stubs", name);
@@ -50,6 +51,11 @@ const cloudflareHeaders = () => ({
       `${prefix}/index.html`,
       "  Cache-Control: public, max-age=0, must-revalidate",
       "",
+      // Otisk buildu se musí číst vždy čerstvý, jinak by běžící aplikace
+      // novou verzi nepoznala (src/lib/aktualizaceWebu.ts).
+      `${prefix}/version.json`,
+      "  Cache-Control: no-store",
+      "",
       `${prefix}/*`,
       "  X-Frame-Options: SAMEORIGIN",
       "  X-Content-Type-Options: nosniff",
@@ -61,6 +67,9 @@ const cloudflareHeaders = () => ({
     ].join("\n");
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, "_headers"), content, "utf-8");
+    // Otisk nasazené verze – běžící aplikace ho porovnává se svým a po
+    // vydání se v klidné chvíli sama obnoví.
+    fs.writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ build: buildId(), at: new Date().toISOString() }), "utf-8");
 
     // robots.txt platí JEN v kořeni domény – v podsložce by ho roboti
     // ignorovali. Při nasazení vedle marketingového webu ho proto skládá

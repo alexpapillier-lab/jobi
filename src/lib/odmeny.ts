@@ -34,9 +34,15 @@ export type NastaveniOdmen = {
   pravidla: PravidloOdmeny[];
   /** Kolegové vidí i cizí odměny a žebříček (zaměstnanec měsíce). */
   verejny_zebricek: boolean;
+  /**
+   * Stránka Odměny v navigaci celého týmu. Chybí-li v configu, řídí se tím,
+   * jestli existuje aktivní pravidlo – majitel ji tak může ukázat i dřív
+   * (třeba na zkoušku) nebo naopak schovat, i když pravidla platí.
+   */
+  zobrazit_v_navigaci: boolean;
 };
 
-export const VYCHOZI_NASTAVENI_ODMEN: NastaveniOdmen = { pravidla: [], verejny_zebricek: true };
+export const VYCHOZI_NASTAVENI_ODMEN: NastaveniOdmen = { pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false };
 
 export const MAX_PRAVIDEL_ODMEN = 50;
 
@@ -70,7 +76,12 @@ export function normalizujOdmeny(raw: unknown): NastaveniOdmen {
     });
     if (pravidla.length >= MAX_PRAVIDEL_ODMEN) break;
   }
-  return { pravidla, verejny_zebricek: o.verejny_zebricek !== false };
+  const maAktivni = pravidla.some((p) => p.aktivni);
+  return {
+    pravidla,
+    verejny_zebricek: o.verejny_zebricek !== false,
+    zobrazit_v_navigaci: typeof o.zobrazit_v_navigaci === "boolean" ? o.zobrazit_v_navigaci : maAktivni,
+  };
 }
 
 /** Sedí pravidlo na opravu? Stejné pravidlo jako v SQL: `lower(name) like '%hledat%'`. */

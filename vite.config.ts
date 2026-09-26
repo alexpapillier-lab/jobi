@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { buildId } from "./vite.buildId";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logosDir = path.join(__dirname, "logos");
@@ -14,6 +15,8 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Otisk buildu pro kontrolu nové verze webu (src/lib/aktualizaceWebu.ts).
+  define: { __JOBI_BUILD__: JSON.stringify(buildId()) },
   plugins: [
     react(),
     {

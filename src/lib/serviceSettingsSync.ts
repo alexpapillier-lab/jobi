@@ -79,8 +79,17 @@ export async function mergeServiceConfig(
     p_service_id: serviceId,
     p_patch: { config: patch },
   });
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+  // Stejná záložka se o změně dozví hned, i kdyby realtime zrovna mlčel
+  // (App podle configu rozhoduje třeba o stránce Odměny v navigaci).
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(UDALOST_ZMENY_CONFIGU, { detail: { serviceId, patch } }));
+  }
+  return {};
 }
+
+/** Událost po úspěšném uložení configu v této záložce (detail: { serviceId, patch }). */
+export const UDALOST_ZMENY_CONFIGU = "jobsheet:service-config-changed";
 
 /**
  * Realtime odběr změn configu daného servisu. Vrací funkci na odhlášení.
