@@ -28,6 +28,14 @@ type Zprava = { role: "user" | "assistant"; content: string; akce?: Array<{ typ:
 
 const KLIC_NENASTAVENO = "jobsheet_napoveda_agent_vypnuty";
 
+/**
+ * Agent je vypnutý natvrdo: každý dotaz stojí peníze za Claude API a majitel
+ * aplikace se rozhodl neplatit. Panel je tak jen rozcestník průvodců
+ * a novinek. Zapnutí = VITE_NAPOVEDA_AGENT=1 při buildu a klíč
+ * ANTHROPIC_API_KEY v secrets edge funkce napoveda-agent.
+ */
+const AGENT_ZAPNUTY = import.meta.env.VITE_NAPOVEDA_AGENT === "1";
+
 export function NapovedaPanel({
   open,
   onClose,
@@ -59,6 +67,7 @@ export function NapovedaPanel({
   const [text, setText] = useState("");
   const [posilam, setPosilam] = useState(false);
   const [agentVypnuty, setAgentVypnuty] = useState(() => {
+    if (!AGENT_ZAPNUTY) return true;
     try {
       const t = Number(localStorage.getItem(KLIC_NENASTAVENO) ?? 0);
       return Date.now() - t < 24 * 3600_000;
@@ -268,7 +277,7 @@ export function NapovedaPanel({
         </div>
       )}
       <div style={{ padding: "0 12px 8px", fontSize: 11, color: "var(--muted)" }}>
-        {agentVypnuty ? "Agent nápovědy není zapnutý. Chybu nahlásíte v Nastavení → Nápověda a podpora." : "Odpovídá z nápovědy Jobi; nevidí vaše zakázky ani zákazníky."}
+        {agentVypnuty ? "Nenašli jste odpověď? Napište nám v Nastavení → Nápověda a podpora." : "Odpovídá z nápovědy Jobi; nevidí vaše zakázky ani zákazníky."}
       </div>
     </div>
   );
