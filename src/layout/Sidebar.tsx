@@ -14,7 +14,7 @@ import { isDesktop } from "../lib/platform";
 import { useBranches } from "../context/BranchContext";
 import { getShortcut, formatShortcutForDisplay, SHORTCUTS_CHANGED_EVENT, type ShortcutId } from "../lib/keyboardShortcuts";
 
-export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "settings";
+export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "provize" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -88,6 +88,14 @@ function DevicesIcon({ size = 20 }: { size?: number }) {
   );
 }
 
+function ProvizeIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4M16.71 13.88l.7.71-2.82 2.82" />
+    </svg>
+  );
+}
 function StatisticsIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -135,6 +143,8 @@ export type SidebarProps = {
   statisticsEnabled?: boolean;
   /** Modul „Přesuny mezi pobočkami“ (Nastavení → Zakázky) přidá stránku Zásilky. */
   zasilkyEnabled?: boolean;
+  /** Majitel aplikace s tímhle účtem sdílí své provize (provize_sdileni). */
+  provizeEnabled?: boolean;
   /** Počet zásilek na cestě k vybrané pobočce – odznak u položky Zásilky. */
   zasilkyBadge?: number;
   onJobiDocsFirstConnect?: () => void;
@@ -244,6 +254,7 @@ export function Sidebar({
   smsEnabled = false,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  provizeEnabled = false,
   zasilkyBadge = 0,
   onJobiDocsFirstConnect,
   horizontal = false,
@@ -284,9 +295,12 @@ export function Sidebar({
       { key: "devices", label: "Zařízení", icon: DevicesIcon },
     ];
     /* Bez práva na statistiky skupina zmizí celá – prázdná by nechala jen oddělovač. */
-    const ostatni: NavItem[] = statisticsEnabled ? [{ key: "statistics", label: "Statistiky", icon: StatisticsIcon }] : [];
+    const ostatni: NavItem[] = [
+      ...(statisticsEnabled ? [{ key: "statistics" as const, label: "Statistiky", icon: StatisticsIcon }] : []),
+      ...(provizeEnabled ? [{ key: "provize" as const, label: "Provize", icon: ProvizeIcon }] : []),
+    ];
     return ostatni.length > 0 ? [prace, katalog, ostatni] : [prace, katalog];
-  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled]);
+  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled, provizeEnabled]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<

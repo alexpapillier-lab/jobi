@@ -63,6 +63,8 @@ type Vyuctovani = {
   vyplaceno_at: string | null;
 };
 
+type Clen = { user_id: string; nickname: string | null; email: string | null; role: string; sdileno: boolean };
+
 type Prehled = { nastaveni: Nastaveni | null; statusy_servisu: string[]; vyuctovani: Vyuctovani[]; polozky: Polozka[] };
 
 const KLIC_SERVISU = "jobsheet_owner_provize_service";
@@ -97,6 +99,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [posilamMail, setPosilamMail] = useState<number | null>(null);
   const { session } = useAuth();
   const [formStatusy, setFormStatusy] = useState<string[]>([]);
+  const [clenove, setClenove] = useState<Clen[]>([]);
   const souborRef = useRef<HTMLInputElement>(null);
   const seznamRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +119,8 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         if (error) throw error;
         const p = d as Prehled;
         setData(p);
+        const { data: cl } = await db.rpc("provize_clenove", { p_service_id: sid });
+        setClenove(Array.isArray(cl) ? (cl as Clen[]) : []);
         setFormSazba(String(Math.round((p.nastaveni?.sazba ?? 0.075) * 10000) / 100).replace(".", ","));
         setFormOd(p.nastaveni?.od ?? "");
         setFormFiltr(p.nastaveni?.filtr ?? "");
@@ -251,6 +256,19 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     await nacti(serviceId, false);
   };
 
+  const prepniSdileni = async (c: Clen) => {
+    if (!db || !serviceId) return;
+    const { error } = c.sdileno
+      ? await db.from("provize_sdileni").delete().eq("service_id", serviceId).eq("user_id", c.user_id)
+      : await db.from("provize_sdileni").insert({ service_id: serviceId, user_id: c.user_id });
+    if (error) {
+      showToast(`Sdílení se nepodařilo změnit: ${error.message}`, "error");
+      return;
+    }
+    setClenove((prev) => prev.map((x) => (x.user_id === c.user_id ? { ...x, sdileno: !c.sdileno } : x)));
+    showToast(c.sdileno ? `${c.nickname || c.email} už provize nevidí` : `${c.nickname || c.email} teď vidí provize (jen pro čtení)`, "success");
+  };
+
   const pocitatVse = async (p: Polozka, zapnout: boolean) => {
     if (!db) return;
     const { error } = await db.rpc("provize_pocitat_vse", { p_id: p.id, p_zapnout: zapnout });
@@ -384,6 +402,24 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                 Import z Google tabulky (CSV)
               </button>
               <input ref={souborRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => void vyberSoubor(e.target.files?.[0])} />
+            </div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: border }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+                Sdílet s kolegou (jen pro čtení) – uvidí záložku Provize se zakázkami spočítanými v Jobi a s vyúčtováními z nich. Historii z tabulky, nastavení ani sazbu nevidí a nic nemění.
+              </div>
+              {clenove.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>V servisu nejsou žádní další členové.</div>
+              ) : (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {clenove.map((c) => (
+                    <label key={c.user_id} style={{ ...tlacitko, display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 10px", fontSize: 12, fontWeight: c.sdileno ? 800 : 500, background: c.sdileno ? "var(--accent-soft)" : "var(--panel)", borderColor: c.sdileno ? "var(--accent)" : "var(--border)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={c.sdileno} onChange={() => void prepniSdileni(c)} style={{ margin: 0 }} />
+                      <span>{c.nickname || c.email || c.user_id.slice(0, 8)}</span>
+                      {c.nickname && c.email && <span style={{ color: "var(--muted)", fontWeight: 500 }}>{c.email}</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </details>
 

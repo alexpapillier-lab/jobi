@@ -48,6 +48,7 @@ export function AppLayout({
   smsEnabled = false,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  provizeEnabled = false,
   sidebarPinned = false,
   onSidebarPinnedChange,
 }: {
@@ -69,6 +70,8 @@ export function AppLayout({
   statisticsEnabled?: boolean;
   /** Modul „Přesuny mezi pobočkami“ přidá stránku Zásilky. */
   zasilkyEnabled?: boolean;
+  /** Majitel aplikace s tímhle účtem sdílí své provize. */
+  provizeEnabled?: boolean;
   /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
   sidebarPinned?: boolean;
   onSidebarPinnedChange?: (pinned: boolean) => void;
@@ -273,6 +276,7 @@ export function AppLayout({
             smsEnabled,
             statisticsEnabled,
             zasilkyEnabled,
+            provizeEnabled,
             zasilkyBadge,
           } satisfies SidebarProps)}
         />
@@ -288,6 +292,7 @@ export function AppLayout({
           smsUnreadCount={smsUnreadCount}
           statisticsEnabled={statisticsEnabled}
           zasilkyEnabled={zasilkyEnabled}
+          provizeEnabled={provizeEnabled}
           zasilkyBadge={zasilkyBadge}
           services={services}
           activeServiceId={activeServiceId}

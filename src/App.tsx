@@ -8,6 +8,7 @@ import Customers from "./pages/Customers";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
+import { ProvizeSdilene } from "./pages/ProvizeSdilene";
 import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
@@ -233,6 +234,25 @@ export default function App() {
      nesmí stránka ztratit. Server to čte stejně; tady jde o to, aby po
      odebrání stránka zmizela z navigace a nešla otevřít zkratkou. */
   const canViewStatistics = isAdmin || capabilities.can_view_statistics !== false;
+  /* Servisy, ve kterých majitel aplikace sdílí s tímhle účtem své provize
+     (provize_sdileni). Záložka Provize je jen tam – sdílí se jménem účtu,
+     ne rolí, takže vlastník servisu ji bez sdílení nevidí. */
+  const [provizeSdileneServisy, setProvizeSdileneServisy] = useState<string[]>([]);
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) {
+      setProvizeSdileneServisy([]);
+      return;
+    }
+    let zruseno = false;
+    // deno-lint-ignore no-explicit-any
+    void (supabase as any).rpc("provize_sdilene_servisy").then(({ data }: { data: string[] | null }) => {
+      if (!zruseno) setProvizeSdileneServisy(Array.isArray(data) ? data : []);
+    });
+    return () => {
+      zruseno = true;
+    };
+  }, [session?.user?.id, activeServiceId]);
+  const provizeAvailable = !!activeServiceId && provizeSdileneServisy.includes(activeServiceId);
   const [services, setServices] = useState<Array<{ service_id: string; service_name: string; role: string }>>([]);
   /** Seznam servisů už doběhl – teprve pak má smysl nabízet založení prvního. */
   const [servicesLoaded, setServicesLoaded] = useState(false);
@@ -858,6 +878,9 @@ export default function App() {
       setActivePage("orders");
     }
   }, [canViewStatistics, activePage]);
+  useEffect(() => {
+    if (!provizeAvailable && activePage === "provize") setActivePage("orders");
+  }, [provizeAvailable, activePage]);
 
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
   useEffect(() => {
@@ -934,9 +957,10 @@ export default function App() {
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky"].includes(page)) {
+      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         if (page === "statistics" && !canViewStatistics) return;
+        if (page === "provize" && !provizeAvailable) return;
         if (page === "zasilky" && !zasilkyAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
@@ -1126,6 +1150,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
         return "Customers";
       case "statistics":
         return "Statistiky";
+      case "provize":
+        return "Provize";
       case "invoices":
         return "Faktury";
       case "zasilky":
@@ -1385,6 +1411,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsEnabled={smsEnabled}
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
+          provizeEnabled={provizeAvailable}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1520,6 +1547,18 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
                 activeServiceId={activeServiceId}
                 onOpenTicket={(ticketId) => {
                   setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "statistics" });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
+          {provizeAvailable && visitedPages.has("provize") && (
+            <div style={{ display: activePage === "provize" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "provize"}>
+              <ProvizeSdilene
+                activeServiceId={activeServiceId}
+                onOpenTicket={(ticketId) => {
+                  setOpenTicketIntent({ ticketId, mode: "detail", returnToPage: "provize" });
                   setActivePage("orders");
                 }}
               />
