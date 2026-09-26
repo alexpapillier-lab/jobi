@@ -42,6 +42,7 @@ import { spustHlidacFronty } from "./lib/frontaZapisu";
    se dopíše hned, jak je spojení. */
 spustHlidacFronty();
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
+import { NapovedaPanel } from "./components/NapovedaPanel";
 import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodceProMisto, ulozStavPruvodcu, useStavPruvodcu, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
@@ -488,17 +489,30 @@ export default function App() {
     return () => { zruseno = true; };
   }, [isTourActive, tourStep, TOUR_STEPS, activeServiceId]);
 
-  /** Otazník v navigaci: průvodce pro aktuální stránku / podsekci Nastavení, jinak seznam průvodců. */
+  /* Otazník v navigaci: panel nápovědy – průvodce pro aktuální stránku /
+     podsekci Nastavení, novinky a agent. Podsekce se čte z DOM při otevření
+     (Nastavení si ji drží uvnitř). */
+  const [napovedaOtevrena, setNapovedaOtevrena] = useState(false);
+  const [napovedaPodsekce, setNapovedaPodsekce] = useState<string | null>(null);
   const otevriPruvodce = useCallback(() => {
     const sub = activePage === "settings" ? document.querySelector<HTMLElement>('[data-tour="settings-content"]')?.dataset.section ?? null : null;
-    const p = pruvodceProMisto(pruvodciDostupni, activePage, sub);
-    if (p) {
-      spustPruvodce(p);
-      return;
-    }
-    setOpenSettingsToSubsection({ category: "app", subsection: "about_help" });
-    setActivePage("settings");
-  }, [activePage, pruvodciDostupni, spustPruvodce]);
+    setNapovedaPodsekce(sub);
+    setNapovedaOtevrena((o) => !o);
+  }, [activePage]);
+  const pruvodceMisto = useMemo(() => pruvodceProMisto(pruvodciDostupni, activePage, napovedaPodsekce), [pruvodciDostupni, activePage, napovedaPodsekce]);
+  const spustPruvodceId = useCallback((id: string) => {
+    const p = pruvodciDostupni.find((x) => x.id === id);
+    if (p) spustPruvodce(p);
+  }, [pruvodciDostupni, spustPruvodce]);
+  const kontextAgenta = useMemo(
+    () => ({
+      role: jeRootOwner ? "majitel aplikace" : isAdmin ? "majitel/správce servisu" : "člen týmu",
+      web: isWeb(),
+      moduly: (Object.entries(kontextPruvodcu.moduly) as Array<[string, boolean | undefined]>).filter(([, v]) => v).map(([k]) => k),
+      stranky: (Object.entries(kontextPruvodcu.stranky) as Array<[string, boolean | undefined]>).filter(([, v]) => v).map(([k]) => k),
+    }),
+    [jeRootOwner, isAdmin, kontextPruvodcu]
+  );
 
   /* Novinky: po přihlášení (s odstupem, ať jsou načtené moduly) porovnat,
      co má uživatel k dispozici, s tím, co měl minule – nová funkce se
@@ -1750,6 +1764,28 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               document.body
             )}
           </AppLayout>
+        <NapovedaPanel
+          open={napovedaOtevrena}
+          onClose={() => setNapovedaOtevrena(false)}
+          activeServiceId={activeServiceId}
+          page={activePage}
+          subsection={napovedaPodsekce}
+          pruvodceMisto={pruvodceMisto}
+          stav={stavPruvodcu}
+          kontext={kontextAgenta}
+          onSpustitPruvodce={spustPruvodceId}
+          onOtevritNastaveni={(sub) => {
+            setOpenSettingsToSubsection({ category: "company", subsection: sub as SettingsSubsection });
+            setActivePage("settings");
+          }}
+          onOtevritStranku={(page) => {
+            if ((kontextAgenta.stranky as string[]).includes(page)) setActivePage(page as NavKey);
+          }}
+          onVsichniPruvodci={() => {
+            setOpenSettingsToSubsection({ category: "app", subsection: "about_help" });
+            setActivePage("settings");
+          }}
+        />
         {aktualizaceWebu.novaVerze && (
           <div
             role="status"
