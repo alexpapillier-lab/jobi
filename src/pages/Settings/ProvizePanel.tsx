@@ -44,6 +44,8 @@ type Polozka = {
   stav_ted: string | null;
   zarizeni: string | null;
   poznamka: string | null;
+  zaklad_plny: number | null;
+  pocitat_vse: boolean;
   zapsano_at: string;
   vyuctovani_id: number | null;
   vyrazeno: boolean;
@@ -78,7 +80,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [data, setData] = useState<Prehled | null>(null);
   const [nacitam, setNacitam] = useState(false);
   const [pracuji, setPracuji] = useState(false);
-  const [filtr, setFiltr] = useState<"nevyuctovane" | "vse" | number>("nevyuctovane");
+  const [filtr, setFiltr] = useState<"nevyuctovane" | "vse" | "vyloucene" | number>("nevyuctovane");
   const [hledat, setHledat] = useState("");
   const [vse, setVse] = useState(false);
   const [oznaceni, setOznaceni] = useState("");
@@ -145,6 +147,9 @@ export function ProvizePanel({ services }: { services: Service[] }) {
 
   const nevyuctovane = useMemo(() => (data?.polozky ?? []).filter((p) => p.vyuctovani_id === null), [data]);
   const kVyuctovani = useMemo(() => nevyuctovane.filter((p) => !p.vyrazeno), [nevyuctovane]);
+  /** Zakázky, kde vyloučené opravy sebraly celý základ – a ty, kde majitel vyloučení přebil. */
+  const jeVyloucena = (p: Polozka) => p.poradi === 0 && (p.poznamka === "jen vyloučené opravy" || p.pocitat_vse);
+  const vyloucene = useMemo(() => (data?.polozky ?? []).filter(jeVyloucena), [data]);
   const soucetZaklad = kVyuctovani.reduce((s, p) => s + Number(p.zaklad), 0);
   const soucetProvize = kVyuctovani.reduce((s, p) => s + Number(p.provize), 0);
   const vyuctovanoCelkem = (data?.vyuctovani ?? []).reduce((s, v) => s + Number(v.soucet_provize), 0);
@@ -154,6 +159,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     const q = hledat.trim().toLowerCase();
     return (data?.polozky ?? []).filter((p) => {
       if (filtr === "nevyuctovane" && p.vyuctovani_id !== null) return false;
+      if (filtr === "vyloucene" && !jeVyloucena(p)) return false;
       if (typeof filtr === "number" && p.vyuctovani_id !== filtr) return false;
       return !q || p.kod.toLowerCase().includes(q);
     });
@@ -242,6 +248,17 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       showToast(`Změna selhala: ${error.message}`, "error");
       return;
     }
+    await nacti(serviceId, false);
+  };
+
+  const pocitatVse = async (p: Polozka, zapnout: boolean) => {
+    if (!db) return;
+    const { error } = await db.rpc("provize_pocitat_vse", { p_id: p.id, p_zapnout: zapnout });
+    if (error) {
+      showToast(`Změna selhala: ${error.message}`, "error");
+      return;
+    }
+    showToast(zapnout ? `${p.kod}: počítá se plná cena ${kc(p.zaklad_plny ?? 0)}` : `${p.kod}: vyloučené opravy se zase nepočítají`, "success");
     await nacti(serviceId, false);
   };
 
@@ -424,13 +441,14 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                   value={String(filtr)}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setFiltr(v === "nevyuctovane" || v === "vse" ? v : Number(v));
+                    setFiltr(v === "nevyuctovane" || v === "vse" || v === "vyloucene" ? v : Number(v));
                     setVse(false);
                   }}
                   style={pole}
                 >
                   <option value="nevyuctovane">Nevyúčtované ({nevyuctovane.length})</option>
                   <option value="vse">Vše ({data.polozky.length})</option>
+                  {(vyloucene.length > 0 || n.filtr) && <option value="vyloucene">Vyloučené opravami ({vyloucene.length})</option>}
                   {data.vyuctovani.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.oznaceni} · {v.pocet} ř. · {kc(v.soucet_provize)}
@@ -465,7 +483,12 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                         </td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.zarizeni ?? undefined}>{p.zarizeni ?? "—"}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)" }}>{p.stav_ted ?? p.status ?? "—"}</td>
-                        <td style={{ padding: "7px 10px", borderBottom: border, whiteSpace: "nowrap" }}>{kc(p.zaklad)}</td>
+                        <td style={{ padding: "7px 10px", borderBottom: border, whiteSpace: "nowrap" }}>
+                          {kc(p.zaklad)}
+                          {p.poradi === 0 && p.zaklad_plny != null && Number(p.zaklad_plny) !== Number(p.zaklad) && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: "var(--muted)" }} title="Cena zakázky včetně vyloučených oprav">plná {kc(p.zaklad_plny)}</span>
+                          )}
+                        </td>
                         <td style={{ padding: "7px 10px", borderBottom: border, whiteSpace: "nowrap", fontWeight: 700 }}>{kc(p.provize)}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", whiteSpace: "nowrap" }}>{datum(p.zapsano_at)}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", whiteSpace: "nowrap" }}>
@@ -473,9 +496,23 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                         </td>
                         <td style={{ padding: "7px 10px", borderBottom: border, textAlign: "right" }}>
                           {p.vyuctovani_id === null && (
-                            <button type="button" style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }} onClick={() => prepniVyrazeni(p)}>
-                              {p.vyrazeno ? "Vrátit" : "Vyřadit"}
-                            </button>
+                            <span style={{ display: "inline-flex", gap: 6 }}>
+                              {jeVyloucena(p) && (
+                                <button
+                                  type="button"
+                                  style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }}
+                                  title={p.pocitat_vse ? "Vrátit se k základu bez vyloučených oprav" : `Započítat plnou cenu ${kc(p.zaklad_plny ?? 0)} včetně vyloučených oprav`}
+                                  onClick={() => pocitatVse(p, !p.pocitat_vse)}
+                                >
+                                  {p.pocitat_vse ? "Zase vyloučit" : "Započítat plně"}
+                                </button>
+                              )}
+                              {!jeVyloucena(p) && (
+                                <button type="button" style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }} onClick={() => prepniVyrazeni(p)}>
+                                  {p.vyrazeno ? "Vrátit" : "Vyřadit"}
+                                </button>
+                              )}
+                            </span>
                           )}
                         </td>
                       </tr>
