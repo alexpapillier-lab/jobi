@@ -286,7 +286,8 @@ export function ChatPlovouci({ serviceId, userId, profil, zapnuto, bublinaSkryta
         zIndex: 1050,
       }}
     >
-      <MailIcon size={20} />
+      {/* Globální pravidlo `svg { color: var(--icon) }` by udělalo ikonu šedou – barva natvrdo. */}
+      <MailIcon size={20} color="#fff" />
       {chat.celkemNeprectenych > 0 && (
         <span style={{ position: "absolute", top: -4, right: -4 }}>
           <Odznak pocet={chat.celkemNeprectenych} />
