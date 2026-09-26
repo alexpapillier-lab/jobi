@@ -13,6 +13,7 @@ import { Odmeny } from "./pages/Odmeny";
 import { UDALOST_ZMENY_CONFIGU, nactiServiceConfig, subscribeServiceConfig } from "./lib/serviceSettingsSync";
 import { normalizujOdmeny } from "./lib/odmeny";
 import { AKTUALNI_BUILD, strankaPoObnove, useAktualizaceWebu } from "./lib/aktualizaceWebu";
+import { kPripomenuti, prevedPlatbu } from "./lib/platbyServisu";
 import Calendar from "./pages/Calendar";
 import Invoices from "./pages/Invoices";
 import SmsChatsPage from "./pages/SmsChatsPage";
@@ -207,6 +208,32 @@ export default function App() {
   });
   /* Nová verze webu: v klidné chvíli se záložka obnoví sama, jinak lišta dole. */
   const aktualizaceWebu = useAktualizaceWebu(() => activePage);
+  /* Majitel aplikace: po přihlášení jednou denně připomenout servisy, které
+     mají zaplatit (Owner → Platby servisů). E-mail chodí zvlášť z cronu. */
+  const jeRootOwner = useIsRootOwner();
+  useEffect(() => {
+    if (!jeRootOwner || !supabase) return;
+    const klic = `jobi:platby-pripomenuto:${new Date().toISOString().slice(0, 10)}`;
+    try { if (localStorage.getItem(klic)) return; } catch { /* bez úložiště připomenout vždy */ }
+    let zruseno = false;
+    // deno-lint-ignore no-explicit-any
+    void (supabase as any).rpc("platby_prehled").then(({ data }: { data: unknown }) => {
+      if (zruseno || !Array.isArray(data)) return;
+      const dluzi = kPripomenuti(data.map(prevedPlatbu), new Date());
+      if (dluzi.length === 0) return;
+      try { localStorage.setItem(klic, "1"); } catch { /* ignorovat */ }
+      const text = dluzi.map((d) => `${d.nazev} ${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 0 }).format(d.cenaMesicne)} Kč${d.dni > 0 ? ` (${d.dni} dní po splatnosti)` : ""}`).join(", ");
+      showPersistentToast(`Platby servisů: ${text}`, "info", {
+        actionLabel: "Otevřít Owner",
+        onAction: () => {
+          setOpenSettingsToSubsection({ category: "company", subsection: "service_owner" });
+          setActivePage("settings");
+        },
+        subtitle: "Zaplacení zapište v Owner → Platby servisů.",
+      });
+    });
+    return () => { zruseno = true; };
+  }, [jeRootOwner]);
   // Stránky jednou navštívené zůstávají namountované (jen skryté) – instant přepnutí bez reload
   const [visitedPages, setVisitedPages] = useState<Set<NavKey>>(() => new Set(["orders"]));
   useEffect(() => {

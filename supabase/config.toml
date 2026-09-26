@@ -475,3 +475,7 @@ verify_jwt = false
 [functions.statistics-report-send]
 verify_jwt = false
 static_files = ["functions/statistics-report-send/LiberationSans-Regular.ttf", "functions/statistics-report-send/LiberationSans-Bold.ttf"]
+
+# Připomínka plateb servisů: volá ji pg_cron bez uživatelského JWT (tajemství v těle).
+[functions.platby-pripominka]
+verify_jwt = false
