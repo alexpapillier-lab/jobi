@@ -9,7 +9,7 @@
  * Šablonu, vzhled i formátování drží JobiDocs; Jobi jen dodá čísla a texty.
  */
 import type { DocumentData } from "./documentData";
-import { isWeb } from "./platform";
+import { isWeb, otevriVProhlizeci } from "./platform";
 
 const JOBIDOCS_API = "http://127.0.0.1:3847";
 
@@ -18,14 +18,9 @@ export const JOBIDOCS_DOWNLOAD_URL = "https://appjobi.com/#stazeni";
 
 export type DocTypeForPrint = "zakazkovy_list" | "zarucni_list" | "diagnosticky_protokol" | "prijemka_reklamace" | "vydejka_reklamace" | "faktura" | "smlouva_zapujcka";
 
-/** Otevře URL v prohlížeči (v Tauri přes plugin-opener, jinak window.open). */
+/** Otevře stránku se stažením JobiDocs v prohlížeči (viz otevriVProhlizeci). */
 export async function openJobiDocsDownload(): Promise<void> {
-  try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(JOBIDOCS_DOWNLOAD_URL);
-  } catch {
-    window.open(JOBIDOCS_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
-  }
+  await otevriVProhlizeci(JOBIDOCS_DOWNLOAD_URL);
 }
 
 /** Spustí aplikaci JobiDocs (na macOS volá open -a JobiDocs). Vrací true pokud se příkaz provedl. */

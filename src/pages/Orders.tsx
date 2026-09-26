@@ -40,7 +40,7 @@ import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClai
 import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
-import { isWeb } from "../lib/platform";
+import { isWeb, otevriVProhlizeci } from "../lib/platform";
 import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { VyberFotek } from "../components/orders/VyberFotek";
 import { popisDoOdkazu } from "../lib/diagnosticPhotoWatermark";
@@ -55,7 +55,8 @@ import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
-import { najdiStejneZarizeni, platnyImei, vypadaJakoImei } from "../lib/zarizeniHistorie";
+import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../lib/zarizeniHistorie";
+import { formatCZDate } from "../components/tickets/types";
 import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU, jePlnyRadekZakazky } from "../lib/sloupceZakazky";
 import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
@@ -254,6 +255,13 @@ export type TicketEx = Ticket & {
   devicePasscode?: string;
   deviceCondition?: string;
   deviceAccessories?: string;
+  /** Záruční (true) / pozáruční (false) oprava; null = neuvedeno (tickets.warranty_claim). */
+  warrantyClaim?: boolean | null;
+  /** Datum nákupu (ISO datum) a doklad o koupi – podklad záruky. */
+  purchaseDate?: string;
+  purchaseProof?: string;
+  /** Apple: Find My vypnuto při příjmu; null = neuvedeno / netýká se (tickets.find_my_off). */
+  findMyOff?: boolean | null;
 
   discountType?: "percentage" | "amount" | null; // typ slevy: procenta, částka, nebo žádná
   discountValue?: number; // hodnota slevy (% nebo Kč)
@@ -302,6 +310,12 @@ type DeviceRow = {
   devicePasscode: string;
   deviceCondition: string;
   deviceAccessories: string;
+  /** Záruční oprava + její podklad (datum nákupu ISO, doklad); viz chybiPodkladZaruky. */
+  warrantyClaim: boolean;
+  purchaseDate: string;
+  purchaseProof: string;
+  /** Find My vypnuto – ptá se jen u zařízení Apple, do databáze jde jinak null. */
+  findMyOff: boolean;
   requestedRepair: string;
   handoffMethod: string;
   handbackMethod: string;
@@ -435,6 +449,11 @@ function safeLoadDraft(): NewOrderDraft | null {
         devices: draft.devices.map((d: DeviceRow) => ({
           ...d,
           expectedCompletionAt: d.expectedCompletionAt ?? firstExpected ?? undefined,
+          // Rozepsaný příjem z doby před zárukou a Find My – pole musí být, jinak by inputy byly neřízené.
+          warrantyClaim: d.warrantyClaim ?? false,
+          purchaseDate: d.purchaseDate ?? "",
+          purchaseProof: d.purchaseProof ?? "",
+          findMyOff: d.findMyOff ?? false,
         })),
       };
       delete (migrated as any).expectedCompletionAt;
@@ -460,6 +479,10 @@ function safeLoadDraft(): NewOrderDraft | null {
         devicePasscode: parsed.devicePasscode ?? def.devicePasscode,
         deviceCondition: parsed.deviceCondition ?? def.deviceCondition,
         deviceAccessories: parsed.deviceAccessories ?? def.deviceAccessories,
+        warrantyClaim: def.warrantyClaim,
+        purchaseDate: def.purchaseDate,
+        purchaseProof: def.purchaseProof,
+        findMyOff: def.findMyOff,
         requestedRepair: parsed.requestedRepair ?? def.requestedRepair,
         handoffMethod: parsed.handoffMethod ?? def.handoffMethod,
         handbackMethod: parsed.handbackMethod ?? def.handbackMethod,
@@ -527,6 +550,10 @@ function defaultDeviceRow(): DeviceRow {
     devicePasscode: "",
     deviceCondition: "",
     deviceAccessories: "",
+    warrantyClaim: false,
+    purchaseDate: "",
+    purchaseProof: "",
+    findMyOff: false,
     requestedRepair: "",
     handoffMethod: defaultReceive,
     handbackMethod: defaultReturn,
@@ -677,6 +704,11 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     devicePasscode: supabaseTicket.device_passcode || undefined,
     deviceCondition: supabaseTicket.device_condition || undefined,
     deviceAccessories: (supabaseTicket as any).device_accessories || undefined,
+    // Záruka a Find My z příjmu: null zůstává null („neuvedeno“), ne false.
+    warrantyClaim: typeof supabaseTicket.warranty_claim === "boolean" ? supabaseTicket.warranty_claim : null,
+    purchaseDate: supabaseTicket.purchase_date || undefined,
+    purchaseProof: supabaseTicket.purchase_proof || undefined,
+    findMyOff: typeof supabaseTicket.find_my_off === "boolean" ? supabaseTicket.find_my_off : null,
     requestedRepair: supabaseTicket.notes || undefined,
     handoffMethod: supabaseTicket.handoff_method || undefined,
     handbackMethod: (supabaseTicket as any).handback_method || undefined,
@@ -3529,6 +3561,35 @@ export default function Orders({
     showToast("Spojení vypadlo – technik se uloží, jakmile bude připojení.", "info");
   }, [activeServiceId, sOkamzitymZapisem]);
 
+  /**
+   * Štítek Find My v detailu – přepíná se jedním klikem, hned do databáze.
+   * Stejný postup jako u technika: optimisticky do paměti, při trvalé chybě
+   * zpět, při výpadku do fronty.
+   */
+  const ulozFindMy = useCallback(async (ticketId: string, vypnuto: boolean) => {
+    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.findMyOff ?? null;
+    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: vypnuto } : t)));
+    if (!supabase) return;
+    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ find_my_off: vypnuto }).eq("id", ticketId));
+    if (!error) return;
+    devLog("[find my] zápis selhal", error);
+    if (jeTrvalaChyba(error)) {
+      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: puvodni } : t)));
+      showToast("Stav Find My se nepodařilo uložit", "error");
+      return;
+    }
+    ulozNaPozdeji({
+      klic: `tickets:${ticketId}:find_my_off`,
+      tabulka: "tickets",
+      id: ticketId,
+      data: { find_my_off: vypnuto },
+      popis: "Zakázka · Find My",
+      serviceId: activeServiceId,
+      chyba: error,
+    });
+    showToast("Spojení vypadlo – stav Find My se uloží, jakmile bude připojení.", "info");
+  }, [activeServiceId, sOkamzitymZapisem]);
+
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
     setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
@@ -4188,6 +4249,9 @@ export default function Orders({
       devicePasscode: detailedTicket.devicePasscode || "",
       deviceCondition: detailedTicket.deviceCondition || "",
       deviceAccessories: detailedTicket.deviceAccessories || "",
+      warrantyClaim: detailedTicket.warrantyClaim ?? null,
+      purchaseDate: detailedTicket.purchaseDate || "",
+      purchaseProof: detailedTicket.purchaseProof || "",
       requestedRepair: detailedTicket.requestedRepair || detailedTicket.issueShort || "",
       handoffMethod: detailedTicket.handoffMethod || "",
       handbackMethod: detailedTicket.handbackMethod || "",
@@ -4236,6 +4300,8 @@ export default function Orders({
     const e: Record<string, string> = {};
     newDraft.devices.forEach((dev, i) => {
       if (!dev.deviceLabel.trim()) e[`deviceLabel_${i}`] = "Vyplňte zařízení.";
+      // Záruční oprava bez data nákupu ani dokladu se u dodavatele neuplatní.
+      if (chybiPodkladZaruky(dev)) e[`zaruka_${i}`] = "U záruční opravy vyplňte datum nákupu nebo doklad o koupi.";
     });
     const phoneRequired = uiCfg.orders.customerPhoneRequired;
     if (phoneRequired && !newDraft.customerPhone.trim()) e.customerPhone = "Telefon je povinný.";
@@ -4255,6 +4321,7 @@ export default function Orders({
     const keys = Object.keys(errors);
     if (keys.length === 0) return null;
     if (keys.some((k) => k.startsWith("deviceLabel_"))) return "Chybí zařízení";
+    if (keys.some((k) => k.startsWith("zaruka_"))) return "Chybí podklad záruky";
     if (errors.customerPhone) return errors.customerPhone === "Telefon je povinný." ? "Chybí telefon" : "Neplatný telefon";
     if (errors.customerEmail) return "Neplatný e-mail";
     if (errors.addressZip) return "Neplatné PSČ";
@@ -5852,6 +5919,88 @@ export default function Orders({
                           </div>
                         </div>
 
+                        {/* Záruka a Find My schválně mimo sbalené „Další údaje“: bez podkladu
+                            záruky se oprava u dodavatele neuplatní a se zapnutým Find My se
+                            Apple u autorizovaných dílů neopraví – obojí se musí vyřešit se
+                            zákazníkem u pultu, ne až u stolu. Find My se ptá jen u Apple. */}
+                        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={dev.warrantyClaim}
+                              onChange={(e) =>
+                                setNewDraft((p) => ({
+                                  ...p,
+                                  devices: p.devices.map((d, i) => (i === idx ? { ...d, warrantyClaim: e.target.checked } : d)),
+                                }))
+                              }
+                            />
+                            <span>Záruční oprava</span>
+                            <span style={{ color: "var(--muted)", fontSize: 12 }}>(nezaškrtnuto = pozáruční)</span>
+                          </label>
+                          {dev.warrantyClaim && (
+                            <div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
+                                <div>
+                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Datum nákupu</div>
+                                  <input
+                                    type="date"
+                                    value={dev.purchaseDate}
+                                    max={new Date().toISOString().slice(0, 10)}
+                                    onChange={(e) =>
+                                      setNewDraft((p) => ({
+                                        ...p,
+                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseDate: e.target.value } : d)),
+                                      }))
+                                    }
+                                    aria-invalid={showError(`zaruka_${idx}`) || undefined}
+                                    style={baseFieldInput}
+                                  />
+                                </div>
+                                <div>
+                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Doklad o koupi</div>
+                                  <input
+                                    value={dev.purchaseProof}
+                                    onChange={(e) =>
+                                      setNewDraft((p) => ({
+                                        ...p,
+                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseProof: e.target.value } : d)),
+                                      }))
+                                    }
+                                    style={baseFieldInput}
+                                    placeholder="Číslo účtenky, faktura, „má v e-mailu“"
+                                  />
+                                </div>
+                              </div>
+                              {chybiPodkladZaruky(dev) && (
+                                <div style={showError(`zaruka_${idx}`) ? fieldHint : fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>
+                              )}
+                            </div>
+                          )}
+                          {jeAppleZarizeni(dev.deviceLabel) && (
+                            <>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={dev.findMyOff}
+                                  onChange={(e) =>
+                                    setNewDraft((p) => ({
+                                      ...p,
+                                      devices: p.devices.map((d, i) => (i === idx ? { ...d, findMyOff: e.target.checked } : d)),
+                                    }))
+                                  }
+                                />
+                                <span>Find My vypnuto</span>
+                              </label>
+                              {!dev.findMyOff && (
+                                <div role="note" style={{ fontSize: 12, color: "#b45309", background: "rgba(245,158,11,0.12)", borderRadius: 8, padding: "6px 8px" }}>
+                                  Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů; požádejte zákazníka o vypnutí.
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
                         {/* Další údaje zařízení (IMEI, heslo, stav, příslušenství, převzetí,
                             cena, poznámka). Dřív bydlely až dole v samostatné sekci „Další
                             údaje“ – při příjmu se pak přeskakovalo mezi zařízením nahoře
@@ -5878,27 +6027,39 @@ export default function Orders({
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
                       <div>
                         <div style={{ ...fieldLabel, marginTop: 0 }}>IMEI / SN</div>
-                        <input
-                          value={dev.serialOrImei}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="35-123456-789012-3"
-                        />
-                        {/* Překlep v IMEI a „tenhle telefon už tu byl“ – obojí chce servis vědět hned při příjmu. */}
+                        {/* Překlep v IMEI, tvar Apple sériového čísla a „tenhle telefon už tu byl“ –
+                            všechno chce servis vědět hned při příjmu, ne až u stolu. */}
                         {(() => {
                           const sn = dev.serialOrImei;
-                          const spatnyImei = vypadaJakoImei(sn) && !platnyImei(sn);
+                          const stav = stavSerioveho(sn);
+                          const odkaz = odkazKontrolaImei(sn);
+                          const barva = !stav.platne ? "#dc2626" : stav.hlaska ? "#16a34a" : undefined;
                           const drive = najdiStejneZarizeni(cloudTickets, sn);
-                          if (!spatnyImei && drive.length === 0) return null;
                           return (
+                            <>
+                              <input
+                                value={sn}
+                                onChange={(e) =>
+                                  setNewDraft((p) => ({
+                                    ...p,
+                                    devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
+                                  }))
+                                }
+                                aria-invalid={!stav.platne || undefined}
+                                style={barva ? { ...baseFieldInput, borderColor: barva } : baseFieldInput}
+                                placeholder="35-123456-789012-3"
+                              />
+                              {(stav.hlaska || drive.length > 0) && (
                             <div style={{ marginTop: 6, display: "grid", gap: 4, fontSize: 12 }}>
-                              {spatnyImei && (
-                                <div role="alert" style={{ color: "#dc2626" }}>IMEI nevypadá platně – nesedí kontrolní číslice, zkontrolujte překlep.</div>
+                              {stav.hlaska && (
+                                <div role={stav.platne ? undefined : "alert"} style={{ color: barva, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <span>{stav.hlaska}</span>
+                                  {odkaz && (
+                                    <Button variant="soft" size="sm" onClick={() => void otevriVProhlizeci(odkaz)} title="Otevře imei.info v prohlížeči (model, blacklist)">
+                                      Zkontrolovat IMEI
+                                    </Button>
+                                  )}
+                                </div>
                               )}
                               {drive.length > 0 && (
                                 <div role="note" style={{ color: "var(--accent)", background: "var(--accent-soft)", borderRadius: 8, padding: "6px 8px" }}>
@@ -5911,6 +6072,8 @@ export default function Orders({
                                 </div>
                               )}
                             </div>
+                              )}
+                            </>
                           );
                         })()}
                       </div>
@@ -7333,6 +7496,45 @@ export default function Orders({
                           <CopyButton value={detailedTicket.serialOrImei} label="sériové číslo" />
                         </div>
                       )}
+                      {/* Záruka z příjmu; u starších zakázek (null) se řádek nevykreslí. */}
+                      {detailedTicket.warrantyClaim != null && (
+                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 600 }}>{detailedTicket.warrantyClaim ? "Záruční oprava" : "Pozáruční oprava"}</span>
+                          {detailedTicket.warrantyClaim && detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
+                          {detailedTicket.warrantyClaim && detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
+                        </div>
+                      )}
+                      {/* Štítek Find My s přepnutím na klik – zákazník ho často vypne až po
+                          telefonátu, tak ať to technik nemusí řešit přes úpravu zakázky. */}
+                      {(detailedTicket.findMyOff != null || jeAppleZarizeni(detailedTicket.deviceLabel)) && (() => {
+                        const vypnuto = detailedTicket.findMyOff === true;
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                            <button
+                              type="button"
+                              aria-pressed={vypnuto}
+                              title={vypnuto ? "Označit Find My jako nevypnuté" : "Označit Find My jako vypnuté"}
+                              onClick={() => void ulozFindMy(detailedTicket.id, !vypnuto)}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                padding: "3px 10px",
+                                borderRadius: 999,
+                                border: `1px solid ${vypnuto ? "rgba(22,163,74,0.45)" : "rgba(220,38,38,0.45)"}`,
+                                background: vypnuto ? "rgba(22,163,74,0.12)" : "rgba(220,38,38,0.12)",
+                                color: vypnuto ? "#15803d" : "#b91c1c",
+                                fontWeight: 700,
+                                fontSize: 12,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Find My {vypnuto ? "vypnuto" : "NEVYPNUTO"}
+                            </button>
+                            {!vypnuto && <span style={{ color: "var(--muted)" }}>Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů.</span>}
+                          </div>
+                        );
+                      })()}
                       {(() => {
                         const drive = najdiStejneZarizeni(cloudTickets, detailedTicket.serialOrImei, detailedTicket.id);
                         if (drive.length === 0) return null;
@@ -7639,6 +7841,42 @@ export default function Orders({
                           placeholder="SN123456789"
                         />
                       </div>
+                      <div>
+                        <div style={fieldLabel}>Záruka</div>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", minHeight: 36 }}>
+                          <input
+                            type="checkbox"
+                            checked={editedTicket.warrantyClaim === true}
+                            onChange={(e) => setEditedTicket((p) => ({ ...p, warrantyClaim: e.target.checked }))}
+                          />
+                          Záruční oprava
+                        </label>
+                      </div>
+                      {editedTicket.warrantyClaim === true && (
+                        <>
+                          <div>
+                            <div style={fieldLabel}>Datum nákupu</div>
+                            <input
+                              type="date"
+                              value={editedTicket.purchaseDate || ""}
+                              max={new Date().toISOString().slice(0, 10)}
+                              onChange={(e) => setEditedTicket((p) => ({ ...p, purchaseDate: e.target.value }))}
+                              style={baseFieldInput}
+                            />
+                          </div>
+                          <div>
+                            <div style={fieldLabel}>Doklad o koupi</div>
+                            <input
+                              type="text"
+                              value={editedTicket.purchaseProof || ""}
+                              onChange={(e) => setEditedTicket((p) => ({ ...p, purchaseProof: e.target.value }))}
+                              style={baseFieldInput}
+                              placeholder="Číslo účtenky, faktura"
+                            />
+                            {chybiPodkladZaruky(editedTicket) && <div style={fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>}
+                          </div>
+                        </>
+                      )}
                       <div>
                         <div style={fieldLabel}>Požadovaná oprava *</div>
                         <input

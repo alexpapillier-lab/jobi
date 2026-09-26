@@ -9,6 +9,7 @@ import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
 import { zkratkaZConfigu } from "../../../lib/servisy";
 import { SLOUPCE_DETAILU } from "../../../lib/sloupceZakazky";
+import { jeAppleZarizeni } from "../../../lib/zarizeniHistorie";
 
 // Helper: load service settings for code generation
 async function loadServiceSettingsForCode(
@@ -389,6 +390,12 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           device_condition: (dev.deviceCondition || "").trim() || null,
           device_accessories: (dev.deviceAccessories || "").trim() || null,
           device_note: (dev.deviceNote || "").trim() || null,
+          // Záruka a Find My z příjmu. Podklad záruky se ukládá jen u záruční
+          // opravy; Find My jen u Apple (jinde null = netýká se).
+          warranty_claim: !!dev.warrantyClaim,
+          purchase_date: dev.warrantyClaim ? (dev.purchaseDate || null) : null,
+          purchase_proof: dev.warrantyClaim ? ((dev.purchaseProof || "").trim() || null) : null,
+          find_my_off: jeAppleZarizeni(dev.deviceLabel) ? !!dev.findMyOff : null,
           external_id: (dev.externalId || "").trim() || null,
           handoff_method: dev.handoffMethod || null,
           handback_method: (dev.handbackMethod || "").trim() || null,
@@ -581,6 +588,9 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         devicePasscode: editedTicket.devicePasscode !== undefined ? (editedTicket.devicePasscode.trim() || undefined) : detailedTicket.devicePasscode,
         deviceCondition: editedTicket.deviceCondition !== undefined ? (editedTicket.deviceCondition.trim() || undefined) : detailedTicket.deviceCondition,
         deviceAccessories: editedTicket.deviceAccessories !== undefined ? (editedTicket.deviceAccessories.trim() || undefined) : detailedTicket.deviceAccessories,
+        warrantyClaim: editedTicket.warrantyClaim !== undefined ? editedTicket.warrantyClaim : detailedTicket.warrantyClaim,
+        purchaseDate: editedTicket.purchaseDate !== undefined ? (editedTicket.purchaseDate.trim() || undefined) : detailedTicket.purchaseDate,
+        purchaseProof: editedTicket.purchaseProof !== undefined ? (editedTicket.purchaseProof.trim() || undefined) : detailedTicket.purchaseProof,
         requestedRepair: editedTicket.requestedRepair !== undefined ? (editedTicket.requestedRepair.trim() || undefined) : detailedTicket.requestedRepair,
         handoffMethod: editedTicket.handoffMethod !== undefined ? (editedTicket.handoffMethod.trim() || undefined) : detailedTicket.handoffMethod,
         handbackMethod: editedTicket.handbackMethod !== undefined ? (editedTicket.handbackMethod.trim() || undefined) : detailedTicket.handbackMethod,
@@ -650,6 +660,10 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         device_condition: updated.deviceCondition || null,
         device_accessories: updated.deviceAccessories?.trim() || null,
         device_note: updated.deviceNote || null,
+        warranty_claim: updated.warrantyClaim ?? null,
+        purchase_date: updated.warrantyClaim ? (updated.purchaseDate || null) : null,
+        purchase_proof: updated.warrantyClaim ? (updated.purchaseProof || null) : null,
+        find_my_off: updated.findMyOff ?? null,
         external_id: updated.externalId || null,
         handoff_method: updated.handoffMethod || null,
         handback_method: updated.handbackMethod || null,

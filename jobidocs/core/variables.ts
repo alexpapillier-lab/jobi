@@ -56,6 +56,10 @@ export const VARIABLES: VariableDef[] = [
   { key: "device.accessories", label: "Příslušenství", group: G.device, sample: "Kryt, nabíjecí kabel" },
   { key: "device.issue", label: "Požadovaná oprava / závada", group: G.device, sample: "Nefunguje dotyk v rohu displeje" },
   { key: "device.note", label: "Poznámka k zařízení", group: G.device, sample: "" },
+  { key: "device.warranty", label: "Záruční / pozáruční oprava", group: G.device, sample: "Záruční oprava" },
+  { key: "device.purchaseDate", label: "Datum nákupu zařízení", group: G.device, sample: "12. 3. 2025" },
+  { key: "device.purchaseProof", label: "Doklad o koupi", group: G.device, sample: "Účtenka Alza č. 2025-0312" },
+  { key: "device.findMy", label: "Find My (Apple) při příjmu", group: G.device, sample: "vypnuto" },
 
   { key: "dates.received", label: "Přijetí zařízení do opravy", group: G.dates, sample: "1. 9. 2026" },
   { key: "dates.eta", label: "Předpokládané dokončení", group: G.dates, sample: "5. 9. 2026" },
@@ -367,6 +371,12 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "today": return formatDate(new Date().toISOString());
     case "customer.contact": return joinParts([data.customer?.name, data.customer?.phone ? `Tel.: ${data.customer.phone}` : undefined], ", ");
     case "device.serialOrImei": return data.device?.serial || data.device?.imei || "";
+    // Booleovské údaje se na papír píší slovy; neuvedené (undefined) zůstane
+    // prázdné, aby řádek v šabloně zmizel jako u každé jiné chybějící hodnoty.
+    case "device.warranty": return data.device?.warrantyClaim == null ? "" : data.device.warrantyClaim ? "Záruční oprava" : "Pozáruční oprava";
+    case "device.purchaseDate": return formatDate(data.device?.purchaseDate);
+    case "device.purchaseProof": return data.device?.purchaseProof ?? "";
+    case "device.findMy": return data.device?.findMyOff == null ? "" : data.device.findMyOff ? "vypnuto" : "NEVYPNUTO";
     case "totals.total": return formatMoney(itemsTotal(data), currency);
     case "totals.subtotal": return formatMoney(data.totals?.subtotal, currency);
     case "totals.vat": return formatMoney(data.totals?.vat, currency);

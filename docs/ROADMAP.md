@@ -75,8 +75,15 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    Hotovo 6. 9.: **historie zařízení** – při příjmu i v detailu Jobi ukáže, že
    zařízení se stejným sériovým číslem / IMEI už v servisu bylo (kód, datum,
    závada; v detailu proklik), a **kontrola IMEI** podle kontrolní číslice
-   (překlep je vidět hned). `src/lib/zarizeniHistorie.ts`. Zbývá: záruka a
-   aktivační zámek u Apple (bez oficiálního API; jen odkaz na checkcoverage),
+   (překlep je vidět hned). `src/lib/zarizeniHistorie.ts`. Hotovo 26. 9.:
+   IMEI při příjmu červeně/zeleně (Luhn, u Apple SN jen tvar) s tlačítkem
+   „Zkontrolovat IMEI“ (imei.info v prohlížeči); **záruční / pozáruční**
+   s datem nákupu nebo dokladem (`tickets.warranty_claim`, `purchase_date`,
+   `purchase_proof`), v detailu i na tisku (`{{device.warranty}}`,
+   `{{device.purchaseDate}}`, `{{device.purchaseProof}}`); u Apple zaškrtávátko
+   **Find My vypnuto** s varováním, v detailu štítek s přepnutím
+   (`tickets.find_my_off`, `{{device.findMy}}`). Zbývá: oficiální kontrola
+   záruky/aktivačního zámku u Apple (bez API; jen odkaz na checkcoverage),
    IMEI databáze blacklistu (placené API).
 9. ~~**AI, kde šetří minuty**~~ – **vyřazeno 6. 9.** po dohodě s majitelem: pro
    malý servis komplikace navíc a platba za API u každé zakázky, přínos

@@ -98,6 +98,14 @@ export type DocumentData = {
     /** Požadovaná oprava / popis závady. */
     issue?: string;
     note?: string;
+    /** Záruční (true) / pozáruční (false) oprava; undefined = neuvedeno. */
+    warrantyClaim?: boolean;
+    /** Datum nákupu zařízení (ISO) – podklad záruky. */
+    purchaseDate?: string;
+    /** Doklad o koupi (číslo účtenky, faktura). */
+    purchaseProof?: string;
+    /** Apple: Find My vypnuto při příjmu (true) / nevypnuto (false); undefined = netýká se. */
+    findMyOff?: boolean;
   };
   /** Data jako ISO řetězce nebo už naformátovaná (renderer pozná). */
   dates?: {

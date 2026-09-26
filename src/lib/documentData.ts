@@ -122,6 +122,11 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
       accessories: s(ticket.deviceAccessories),
       issue: s(ticket.requestedRepair) ?? s(ticket.issueShort),
       note: s(ticket.deviceNote),
+      // Záruka a Find My z příjmu; null z databáze = neuvedeno, na doklad nejde nic.
+      warrantyClaim: ticket.warrantyClaim ?? undefined,
+      purchaseDate: s(ticket.purchaseDate),
+      purchaseProof: s(ticket.purchaseProof),
+      findMyOff: ticket.findMyOff ?? undefined,
     },
     dates: {
       received: ticket.createdAt,

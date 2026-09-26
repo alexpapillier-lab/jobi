@@ -20,6 +20,22 @@ export function isWeb(): boolean {
 }
 
 /**
+ * Otevře URL v systémovém prohlížeči.
+ *
+ * V Tauri webview by `window.open` otevřel jen další webview bez adresního
+ * řádku, proto jde odkaz přes plugin-opener; když plugin není (web, testy),
+ * stačí nové okno prohlížeče.
+ */
+export async function otevriVProhlizeci(url: string): Promise<void> {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/**
  * Platforma pro telemetrii a chybové logy.
  * Na desktopu se rozlišuje podle user agenta, protože Tauri webview ho dědí
  * od systému. Neznámý systém se nehádá – vrací se "unknown".

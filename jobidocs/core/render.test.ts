@@ -98,6 +98,14 @@ describe("proměnné", () => {
     expect(isEmptyAfterSubstitution("Tel.: {{customer.phone}}", data)).toBe(false);
     expect(isEmptyAfterSubstitution("Pevný text", { service: {} })).toBe(false);
   });
+  it("záruka a Find My z příjmu se píší slovy; neuvedené zůstane prázdné", () => {
+    const dlouha = sampleData("zakazkovy_list", "long");
+    expect(substitute("{{device.warranty}} · {{device.purchaseDate}} · {{device.purchaseProof}} · {{device.findMy}}", dlouha)).toBe("Záruční oprava · 12. 3. 2025 · Účtenka Alza č. 2025-0312 · vypnuto");
+    expect(substitute("{{device.warranty}}|{{device.purchaseDate}}|{{device.findMy}}", data)).toBe("Pozáruční oprava||vypnuto");
+    const nevypnuto = { ...data, device: { ...data.device, findMyOff: false, warrantyClaim: undefined } };
+    expect(substitute("{{device.findMy}}|{{device.warranty}}", nevypnuto)).toBe("NEVYPNUTO|");
+    expect(isEmptyAfterSubstitution("Záruka: {{device.warranty}}", { service: {} })).toBe(true);
+  });
   it("formátuje", () => {
     expect(formatDate("2026-09-01")).toBe("1. 9. 2026");
     expect(formatDate("1.9.2026")).toBe("1.9.2026");

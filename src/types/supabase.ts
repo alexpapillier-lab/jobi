@@ -137,6 +137,10 @@ export type Database = {
           deleted_at: string | null
           expected_completion_at: string | null
           completed_at: string | null
+          warranty_claim: boolean | null
+          purchase_date: string | null
+          purchase_proof: string | null
+          find_my_off: boolean | null
         }
         Insert: {
           id?: string
@@ -180,6 +184,10 @@ export type Database = {
           deleted_at?: string | null
           expected_completion_at?: string | null
           completed_at?: string | null
+          warranty_claim?: boolean | null
+          purchase_date?: string | null
+          purchase_proof?: string | null
+          find_my_off?: boolean | null
         }
         Update: {
           id?: string
@@ -222,6 +230,10 @@ export type Database = {
           deleted_at?: string | null
           expected_completion_at?: string | null
           completed_at?: string | null
+          warranty_claim?: boolean | null
+          purchase_date?: string | null
+          purchase_proof?: string | null
+          find_my_off?: boolean | null
         }
         Relationships: []
       }
