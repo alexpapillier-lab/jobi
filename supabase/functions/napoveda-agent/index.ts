@@ -199,7 +199,10 @@ serve(async (req) => {
     return json({ odpoved, akce, model: response.model });
   } catch (e) {
     console.error("[napoveda-agent]", e);
-    const status = e instanceof Anthropic.RateLimitError ? 429 : e instanceof Anthropic.AuthenticationError ? 503 : 500;
-    return json({ error: e instanceof Error ? e.message : String(e) }, status);
+    // Uživateli srozumitelná hláška; surové JSON z API do panelu nepatří.
+    if (e instanceof Anthropic.AuthenticationError) return json({ error: "klic", detail: "Klíč k agentu nápovědy je neplatný – majitel aplikace ho musí nastavit znovu." }, 503);
+    if (e instanceof Anthropic.RateLimitError) return json({ error: "limit", detail: "Agent je právě přetížený, zkuste to za chvíli." }, 429);
+    if (e instanceof Anthropic.APIError) return json({ error: "api", detail: `Agent neodpověděl (${e.status}). Zkuste to znovu.` }, 502);
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
