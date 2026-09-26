@@ -154,8 +154,31 @@ První tři měsíce: body 1, 2, 4.
   do té doby workflow jen napíše, co chybí. Viz `docs/ZALOHY_DATABAZE.md`.
 - `[~]` Monitoring a alerting – hotový hlídač `alerts-check` (pg_cron každou
   hodinu, e-mail přes Resend, tlumení 6 hodin, chyby z dev serveru se
-  přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Zbývá stavová stránka a hlídání
-  zvenčí, že aplikace vůbec běží.
+  přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Stavová stránka a hlídání
+  zvenčí hotové 26. 9., viz odstavec níž.
+- `[~]` **Hlídání zvenčí** (26. 9., `.github/workflows/uptime.yml`): oba
+  dosavadní hlídači posílají e-mail přes Supabase, takže výpadek Supabase
+  nebo Cloudflare nenahlásí. GitHub Actions proto každých 10 minut (cron je
+  nepřesný, běhy chodí se zpožděním) sáhne z GitHubu na veřejné adresy bez
+  přihlášení: web appjobi.com (200 + text „Jobi“), `/servis/version.json`
+  (JSON s polem `build` – Pages vrací pro neznámou cestu index.html s 200),
+  kořen Supabase REST s anon klíčem, edge funkce (`public-webhook-ping`
+  vrací na GET 405, `public-catalog` s cizím slugem 404 – obojí znamená, že
+  funkce běží) a `/rest/v1/services` přes anon klíč (200 nebo 401/403, ne
+  5xx). Každá kontrola 3× s pauzou 20 s (`scripts/uptime/kontrola.sh`),
+  teprve pak porucha. Při poruše workflow selže – GitHub sám pošle e-mail
+  tomu, kdo soubor workflow naposledy upravil – a navíc jde e-mail s výpisem
+  přes Resend, nejvýš jeden za 2 hodiny (čas posledního e-mailu v cache
+  Actions, klíč `uptime-email-<run_id>` + prefix v restore-keys). Stavová
+  stránka `appjobi.com/status` (`web/status.html`, odkaz v patičce) dělá
+  tytéž kontroly z prohlížeče návštěvníka a nic nezapisuje. **Majitel
+  nastaví secrets** v GitHubu (Settings → Secrets and variables → Actions):
+  `SUPABASE_ANON_KEY` (veřejný, = `VITE_SUPABASE_ANON_KEY`; bez něj se
+  kontroly REST a databáze přeskočí s varováním), `RESEND_API_KEY` a
+  `ALERT_EMAIL` (bez nich e-mail nechodí, zůstává jen selhání workflow),
+  volitelně `RESEND_FROM_EMAIL`; a v GitHub Settings → Notifications mít
+  zapnuté e-maily pro Actions. Pozor: GitHub plánované workflow vypne po 60
+  dnech bez commitu v repozitáři.
 - `[~]` Audit RLS – druhé kolo 5. 9. večer (správce, člen bez práv, anon): 120
   probe, 6 děr opraveno migrací 20260907130000, mezi nimi mazání libovolného
   servisu anon klíčem a posouvání cizí číselné řady faktur. Detail v

@@ -1,0 +1,255 @@
+name: Dostupnost zvenčí
+
+# Hlídá, že Jobi vůbec BĚŽÍ – z místa, které nemá s naší infrastrukturou nic
+# společného. Hlídač chyb (alerts-check) i syntetický hlídač (hlidac.yml)
+# posílají e-mail přes Supabase: když spadne Supabase nebo Cloudflare, mlčí
+# oba, protože nemají čím poslat poplach. Tenhle workflow běží na GitHubu,
+# nic nepotřebuje k životu než curl, a e-mail posílá rovnou přes Resend.
+#
+# Není to duplicita hlidac.yml: ten se přihlašuje, zakládá zakázku a ověřuje,
+# že hlavní cesta FUNGUJE (a k tomu potřebuje heslo testovacího účtu a
+# alerts-check). Tenhle jen sahá na veřejné adresy bez přihlášení a ptá se,
+# jestli služby ODPOVÍDAJÍ. Kontroly jsou stejné, jaké si dělá prohlížeč na
+# appjobi.com/status.
+#
+# Co kontroluje (scripts/uptime/kontrola.sh, každá kontrola 3 pokusy po 20 s):
+#   a) https://appjobi.com/               200 a v těle „Jobi“
+#   b) /servis/version.json               200 a JSON s polem build – Cloudflare
+#                                         Pages vrací pro neznámou cestu
+#                                         index.html s 200, proto nestačí kód
+#   c) Supabase REST kořen s anon klíčem  200 nebo 401 s JSON tělem: kořen
+#                                         /rest/v1/ pouští Supabase jen se
+#                                         service_role, anon dostane 401 od
+#                                         živé brány – i to je „žije“
+#   d) edge funkce public-webhook-ping    405 (GET nepodporuje – odpověď z kódu
+#      a public-catalog s cizím slugem    funkce) a 404 (funkce se dostala až
+#                                         do databáze a nenašla servis)
+#   e) /rest/v1/services přes anon klíč   200 (RLS vrátí prázdno) nebo 401/403,
+#                                         hlavně NE 5xx ani timeout
+# Bez secretu SUPABASE_ANON_KEY se c) a e) přeskočí s varováním; ostatní
+# kontroly klíč nepotřebují.
+#
+# Když něco selže i na třetí pokus, workflow SELŽE. GitHub pak sám pošle
+# e-mail o selhání naplánovaného workflow – tomu, kdo tenhle soubor naposledy
+# upravil (a má v Settings → Notifications zapnuté Actions). Navíc, jsou-li
+# nastavené secrets RESEND_API_KEY a ALERT_EMAIL, pošle se e-mail s výpisem,
+# co přesně selhalo, přes Resend API (odesílatel RESEND_FROM_EMAIL, jinak
+# „Jobi <onboarding@resend.dev>“). Bez těch secrets se e-mail přeskočí,
+# selhání workflow zůstane.
+#
+# Tlumení e-mailů: při hodinovém výpadku by přišel e-mail každých 10 minut.
+# Čas posledního odeslání se drží v cache GitHub Actions (actions/cache):
+# klíč je pokaždé nový (uptime-email-<run_id>), čte se přes restore-keys
+# prefix, který vrátí NEJNOVĚJŠÍ uložený záznam. Cache je jediné úložiště,
+# které Actions mají bez další služby; artefakty by šly taky, ale musely by
+# se hledat přes API. Když cache vyprší (7 dní bez použití), pošle se e-mail
+# prostě znovu – horší varianta by byla mlčet. Max jeden e-mail za 2 hodiny.
+#
+# Pasti GitHub cronu: běhy chodí se zpožděním (klidně 5–15 minut) a při
+# zatížení GitHubu některé vůbec nepřijdou; plánované workflow se navíc
+# samy vypnou po 60 dnech bez commitu v repozitáři. Tohle je hlídač
+# „zadarmo a bez správy“, ne SLA.
+#
+# Potřebné secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ANON_KEY   veřejný anon klíč (= VITE_SUPABASE_ANON_KEY z .env);
+#                       bez něj se kontroly c) a e) přeskočí
+#   RESEND_API_KEY      klíč Resend pro e-mail s výpisem (volitelné)
+#   ALERT_EMAIL         kam e-mail poslat (volitelné, bez něj se neposílá)
+#   RESEND_FROM_EMAIL   odesílatel z ověřené domény (volitelné)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Opožděný běh se nemá potkat s dalším – nemíchaly by se záznamy tlumení.
+  group: uptime
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  WEB: https://appjobi.com
+  SUPABASE: https://ijtvcgolsdsrquqbvjrz.supabase.co
+
+jobs:
+  kontrola:
+    name: Odpovídají služby?
+    runs-on: ubuntu-latest
+    # 6 kontrol × 3 pokusy × (15 s curl + 20 s pauza) je v nejhorším ~10 minut;
+    # co se nestihne do 15, je stejně porucha.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Chybí anon klíč?
+        id: klic
+        env:
+          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$ANON" ]; then
+            echo "::warning::Secret SUPABASE_ANON_KEY není nastavený – kontroly Supabase REST a databáze se přeskočí. Hodnota je veřejný klíč VITE_SUPABASE_ANON_KEY z .env."
+            echo "mame=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "mame=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Každá kontrola má continue-on-error, aby se vždycky projely všechny a
+      # e-mail říkal, co všechno leží. Selhání workflow zařídí až poslední krok.
+      - name: a) Web appjobi.com
+        id: web
+        continue-on-error: true
+        timeout-minutes: 3
+        run: scripts/uptime/kontrola.sh "Web appjobi.com" 200 "$WEB/" --obsahuje Jobi
+
+      - name: b) Aplikace /servis/version.json
+        id: aplikace
+        continue-on-error: true
+        timeout-minutes: 3
+        run: scripts/uptime/kontrola.sh "Aplikace /servis/" 200 "$WEB/servis/version.json" --json-pole build
+
+      - name: c) Supabase REST
+        id: rest
+        if: steps.klic.outputs.mame == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          scripts/uptime/kontrola.sh "Supabase REST" 200,401 "$SUPABASE/rest/v1/" \
+            --hlavicka "apikey: $ANON" --obsahuje message
+
+      - name: d) Edge funkce
+        id: funkce
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          scripts/uptime/kontrola.sh "Edge funkce (public-webhook-ping)" 405 \
+            "$SUPABASE/functions/v1/public-webhook-ping" --obsahuje POST
+
+      - name: d) Edge funkce až do databáze
+        id: funkce_db
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          scripts/uptime/kontrola.sh "Edge funkce + databáze (public-catalog)" 404 \
+            "$SUPABASE/functions/v1/public-catalog?service=uptime-neexistuje"
+
+      - name: e) Databáze přes REST
+        id: databaze
+        if: steps.klic.outputs.mame == 'true'
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          scripts/uptime/kontrola.sh "Databáze přes REST (services)" 200,401,403 \
+            "$SUPABASE/rest/v1/services?select=id&limit=1" --hlavicka "apikey: $ANON"
+
+      - name: Vyhodnocení
+        id: vysledek
+        env:
+          # outcome je success/failure/skipped; detail píše kontrola.sh.
+          RADKY: |
+            ${{ steps.web.outcome }}|Web appjobi.com|${{ steps.web.outputs.detail }}
+            ${{ steps.aplikace.outcome }}|Aplikace /servis/|${{ steps.aplikace.outputs.detail }}
+            ${{ steps.rest.outcome }}|Supabase REST|${{ steps.rest.outputs.detail }}
+            ${{ steps.funkce.outcome }}|Edge funkce|${{ steps.funkce.outputs.detail }}
+            ${{ steps.funkce_db.outcome }}|Edge funkce + databáze|${{ steps.funkce_db.outputs.detail }}
+            ${{ steps.databaze.outcome }}|Databáze přes REST|${{ steps.databaze.outputs.detail }}
+        run: |
+          selhalo=""
+          {
+            echo "## Dostupnost zvenčí – $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo
+            echo "| Kontrola | Stav | Detail |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS='|' read -r stav nazev detail; do
+            [ -z "$nazev" ] && continue
+            case "$stav" in
+              success) ikona="OK" ;;
+              skipped) ikona="přeskočeno (chybí anon klíč)" ;;
+              *) ikona="SELHALO"; selhalo="$selhalo- $nazev: ${detail:-bez detailu (krok neodpověděl včas)}"$'\n' ;;
+            esac
+            echo "| $nazev | $ikona | ${detail:-} |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$RADKY"
+          {
+            echo "selhalo<<KONEC"
+            printf '%s' "$selhalo"
+            echo "KONEC"
+          } >> "$GITHUB_OUTPUT"
+          if [ -n "$selhalo" ]; then
+            echo "Selhalo:"; printf '%s' "$selhalo"
+          else
+            echo "Všechno odpovídá."
+          fi
+
+      # --- Poplach e-mailem (jen při selhání) -------------------------------
+
+      - name: Kdy šel poslední e-mail?
+        if: steps.vysledek.outputs.selhalo != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .uptime-tlumeni
+          key: uptime-email-${{ github.run_id }}
+          restore-keys: uptime-email-
+
+      - name: E-mail přes Resend
+        id: email
+        if: steps.vysledek.outputs.selhalo != ''
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          SELHALO: ${{ steps.vysledek.outputs.selhalo }}
+          BEH: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TLUMENI_S: "7200"
+        run: |
+          if [ -z "$RESEND_API_KEY" ] || [ -z "$ALERT_EMAIL" ]; then
+            echo "::warning::E-mail se neposílá – chybí secret RESEND_API_KEY nebo ALERT_EMAIL. O selhání dá vědět aspoň GitHub (e-mail o neúspěšném plánovaném workflow)."
+            echo "odeslano=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ted=$(date +%s)
+          posledni=$(cat .uptime-tlumeni/posledni-email 2>/dev/null || echo 0)
+          if [ $((ted - posledni)) -lt "$TLUMENI_S" ]; then
+            echo "::notice::E-mail šel před $(( (ted - posledni) / 60 )) minutami, další nejdřív za 2 hodiny od něj. Selhání workflow zůstává."
+            echo "odeslano=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          od="${RESEND_FROM_EMAIL:-Jobi <onboarding@resend.dev>}"
+          telo=$(printf 'Kontrola zvenčí (GitHub Actions) nedostala odpověď:\n\n%s\nKaždá kontrola se zkoušela 3× s pauzou 20 s.\n\nBěh: %s\nStav služeb: https://appjobi.com/status\n\nDalší e-mail nepřijde dřív než za 2 hodiny, i kdyby výpadek trval.\n' "$SELHALO" "$BEH")
+          data=$(jq -n --arg from "$od" --arg to "$ALERT_EMAIL" --arg text "$telo" \
+            '{from: $from, to: [$to], subject: "Jobi: služby neodpovídají zvenčí", text: $text}')
+          kod=$(curl -sS -o odpoved.json -w '%{http_code}' -m 20 \
+            -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" \
+            -d "$data" https://api.resend.com/emails) || kod=000
+          if [ "$kod" != "200" ]; then
+            echo "::error::Resend odpověděl $kod: $(head -c 300 odpoved.json 2>/dev/null)"
+            echo "odeslano=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "E-mail odeslán na $ALERT_EMAIL."
+          mkdir -p .uptime-tlumeni
+          echo "$ted" > .uptime-tlumeni/posledni-email
+          echo "odeslano=true" >> "$GITHUB_OUTPUT"
+
+      - name: Zapamatovat čas e-mailu
+        if: steps.email.outputs.odeslano == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .uptime-tlumeni
+          key: uptime-email-${{ github.run_id }}
+
+      - name: Výsledek
+        if: steps.vysledek.outputs.selhalo != ''
+        env:
+          SELHALO: ${{ steps.vysledek.outputs.selhalo }}
+        run: |
+          echo "::error::Služby neodpovídají zvenčí:"
+          printf '%s' "$SELHALO"
+          exit 1
