@@ -904,6 +904,9 @@ export default function Orders({
    */
   const cloudTicketsRef = useRef<TicketEx[]>([]);
   cloudTicketsRef.current = cloudTickets;
+  /* Pro První kroky: id všech zakázek – karta si z nich podle stopy v configu
+     odečte ukázkové, aby „první zakázku“ neodškrtla ukázka. */
+  const ticketIds = useMemo(() => cloudTickets.map((t) => t.id), [cloudTickets]);
   /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
   const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
   const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
@@ -4737,7 +4740,7 @@ export default function Orders({
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* První kroky nového servisu – jen pro majitele a správce, sám zmizí. */}
       {activeServiceId && isAdmin && (
-        <OnboardingChecklist activeServiceId={activeServiceId} ticketCount={cloudTickets.length} />
+        <OnboardingChecklist activeServiceId={activeServiceId} ticketIds={ticketIds} />
       )}
       {/* Header */}
       <div>

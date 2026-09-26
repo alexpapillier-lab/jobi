@@ -183,7 +183,8 @@ export function AutomationsSection({ activeServiceId }: { activeServiceId: strin
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
-      <Card>
+      {/* Kotvy data-tour patří průvodci „Automatizace“ (lib/pruvodci). */}
+      <Card data-tour="settings-automations-pravidla">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <div style={{ minWidth: 0 }}>
             <SectionHeading icon={<BoltIcon size={18} />}>Pravidla {hint.node}</SectionHeading>
@@ -192,7 +193,7 @@ export function AutomationsSection({ activeServiceId }: { activeServiceId: strin
             </div>
           </div>
           {!unavailable && (
-            <Button variant="primary" size="sm" icon={<PlusIcon size={14} />} onClick={openNew}>Nové pravidlo</Button>
+            <Button variant="primary" size="sm" icon={<PlusIcon size={14} />} data-tour="settings-automations-nove" onClick={openNew}>Nové pravidlo</Button>
           )}
         </div>
 

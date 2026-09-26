@@ -18,8 +18,16 @@ import { onboardingKroky, pocetHotovych, vsePovinneHotovo as vsePovinneHotovoZ }
  * Příznak leží v nastavení servisu, ne v prohlížeči, takže se kolegům
  * neukazuje znovu na každém počítači.
  */
-export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeServiceId: string; ticketCount: number }) {
+export function OnboardingChecklist({ activeServiceId, ticketIds }: { activeServiceId: string; ticketIds: string[] }) {
   const [config, setConfig] = useState<ServiceConfig | null>(null);
+  const ticketCount = ticketIds.length;
+  /* Ukázkové zakázky podle stopy v configu (demo_data.ticketIds) – krok
+     „první zakázka“ se má splnit až tou, kterou zákazník založil sám. */
+  const ukazkovych = useMemo(() => {
+    const demo = config?.demo_data as { ticketIds?: unknown } | null | undefined;
+    const ids = new Set(Array.isArray(demo?.ticketIds) ? demo.ticketIds.filter((x): x is string => typeof x === "string") : []);
+    return ids.size === 0 ? 0 : ticketIds.filter((id) => ids.has(id)).length;
+  }, [config, ticketIds]);
   const [clenu, setClenu] = useState(1);
   const [skryto, setSkryto] = useState(false);
   const [maDemo, setMaDemo] = useState(false);
@@ -105,12 +113,13 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
       onboardingKroky({
         config,
         zakazek: ticketCount,
+        ukazkovych,
         clenu,
         jobiDocsBezi,
         desktop: isDesktop(),
         odkazJobiDocs: JOBIDOCS_DOWNLOAD_URL,
       }),
-    [config, ticketCount, clenu, jobiDocsBezi],
+    [config, ticketCount, ukazkovych, clenu, jobiDocsBezi],
   );
 
   const hotovych = pocetHotovych(kroky);
@@ -133,6 +142,11 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
   const jdi = (subsection?: string) => {
     if (!subsection) return;
     window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "settings", subsection } }));
+  };
+  /* „Ukázat, jak“: místo odskoku do nastavení spustí průvodce na kroku,
+     který se týká právě téhle věci (posluchač je v App.tsx). */
+  const ukazJak = (pruvodce: { id: string; krok?: number }) => {
+    window.dispatchEvent(new CustomEvent("jobsheet:pruvodce", { detail: pruvodce }));
   };
 
   return (
@@ -191,14 +205,26 @@ export function OnboardingChecklist({ activeServiceId, ticketCount }: { activeSe
               </span>
               <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>{k.popis}</span>
             </span>
-            {!k.hotovo && (k.cil || k.odkaz) && (
-              <button
-                type="button"
-                onClick={() => (k.odkaz ? window.open(k.odkaz, "_blank", "noopener") : jdi(k.cil))}
-                style={{ flex: "0 0 auto", padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--panel)", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
-                {k.akce ?? "Otevřít"}
-              </button>
+            {!k.hotovo && (
+              <span style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => ukazJak(k.pruvodce)}
+                  title="Spustit průvodce k tomuto kroku"
+                  style={{ border: "none", background: "transparent", color: "var(--muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "5px 2px", textDecoration: "underline", textUnderlineOffset: 3, fontFamily: "inherit" }}
+                >
+                  Ukázat, jak
+                </button>
+                {(k.cil || k.odkaz) && (
+                  <button
+                    type="button"
+                    onClick={() => (k.odkaz ? window.open(k.odkaz, "_blank", "noopener") : jdi(k.cil))}
+                    style={{ padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--panel)", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    {k.akce ?? "Otevřít"}
+                  </button>
+                )}
+              </span>
             )}
           </div>
         ))}

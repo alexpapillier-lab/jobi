@@ -434,12 +434,14 @@ export default function App() {
   );
   const pruvodciDostupni = useMemo(() => dostupniPruvodci(kontextPruvodcu), [kontextPruvodcu]);
 
-  const spustPruvodce = useCallback((p: Pruvodce) => {
+  /** Spustí průvodce; `odKroku` = index kroku (hledání v nápovědě vede rovnou na nalezený krok). */
+  const spustPruvodce = useCallback((p: Pruvodce, odKroku = 0) => {
     if (p.kroky.length === 0) return;
+    const krok = Math.min(Math.max(0, Math.floor(odKroku)), p.kroky.length - 1);
     setAktivniPruvodce(p);
     setIsTourActive(true);
-    setTourStep(0);
-    setActivePage(p.kroky[0].page);
+    setTourStep(krok);
+    setActivePage(p.kroky[krok].page);
   }, []);
   const startTour = useCallback(() => {
     const uvod = PRUVODCI.find((p) => p.id === "uvod");
@@ -500,10 +502,24 @@ export default function App() {
     setNapovedaOtevrena((o) => !o);
   }, [activePage]);
   const pruvodceMisto = useMemo(() => pruvodceProMisto(pruvodciDostupni, activePage, napovedaPodsekce), [pruvodciDostupni, activePage, napovedaPodsekce]);
-  const spustPruvodceId = useCallback((id: string) => {
+  const spustPruvodceId = useCallback((id: string, odKroku = 0) => {
     const p = pruvodciDostupni.find((x) => x.id === id);
-    if (p) spustPruvodce(p);
+    if (p) spustPruvodce(p, odKroku);
   }, [pruvodciDostupni, spustPruvodce]);
+
+  /* Průvodce odjinud než z panelu nápovědy: „Ukázat, jak“ v Prvních krocích
+     a v prázdných stavech stránek posílá jobsheet:pruvodce s id (a případně
+     krokem). Nedostupný průvodce (bez modulu, bez role) se tiše přeskočí. */
+  useEffect(() => {
+    const onPruvodce = (e: Event) => {
+      const d = (e as CustomEvent<{ id?: string; krok?: number }>).detail;
+      if (!d || typeof d.id !== "string") return;
+      setNapovedaOtevrena(false);
+      spustPruvodceId(d.id, typeof d.krok === "number" ? d.krok : 0);
+    };
+    window.addEventListener("jobsheet:pruvodce", onPruvodce);
+    return () => window.removeEventListener("jobsheet:pruvodce", onPruvodce);
+  }, [spustPruvodceId]);
   const kontextAgenta = useMemo(
     () => ({
       role: jeRootOwner ? "majitel aplikace" : isAdmin ? "majitel/správce servisu" : "člen týmu",

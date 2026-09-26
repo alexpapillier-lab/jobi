@@ -1197,8 +1197,18 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                 lineHeight: 1.6,
               }}
             >
-              Za vybrané období tu zatím nic není. Čísla se naplní sama, jakmile projdou první zakázky – nic se
-              nemusí nastavovat.
+              <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>Za vybrané období tu zatím nic není.</div>
+              Čísla se naplní sama, jakmile projdou první zakázky – nic se nemusí nastavovat. Příjem a zisk se počítají
+              ze zakázek vydaných v období, počty podle přijetí; zkuste i delší období.
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
+                {/* Nová zakázka je na stránce Zakázky – App na událost přepne stránku a otevře příjem. */}
+                <Button variant="primary" size="sm" onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:request-new-order", { detail: {} }))}>
+                  Založit zakázku
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => window.dispatchEvent(new CustomEvent("jobsheet:pruvodce", { detail: { id: "statistiky" } }))}>
+                  Ukázat, jak statistiky fungují
+                </Button>
+              </div>
             </div>
           )}
 

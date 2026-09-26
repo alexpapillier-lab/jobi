@@ -1376,6 +1376,7 @@ DETALY: Výměna opotřebované baterie
       onSearch={setRepairSearchQuery}
       onToggleRepairPublic={(id) => prepnoutViditelnost("repairs", id)}
       onBulkPublic={hromadnaViditelnost}
+      onOpenImport={() => setShowImport(true)}
       canAdd={canAddRepair}
       adding={addingRepair}
       onOpenAdd={openAddRepair}
