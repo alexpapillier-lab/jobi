@@ -304,8 +304,10 @@ export type ZakazkaProZebricek = {
   customerName: string | null;
   /** Konečná cena (po slevě); u storna 0. */
   prijem: number;
-  /** Spadá do reportovaného období (jinak jen do posledních 12 měsíců). */
+  /** Vydaná v reportovaném období – počítá se do obratu zákazníka. */
   vObdobi: boolean;
+  /** Přijatá v posledních 12 měsících (pro „pravidelnost“). Chybí = ano. */
+  v12Mesicich?: boolean;
 };
 
 export type HodnotnyZakaznik = { jmeno: string; pocet: number; obrat: number; podil: number };
@@ -348,7 +350,7 @@ export function pravidelniZakaznici(zakazky: ZakazkaProZebricek[], limit = 5): P
     const k = klicZakaznika(z);
     if (!k) continue;
     const r = podle.get(k) ?? { jmeno: (z.customerName ?? "").trim() || "Bez jména", pocetVObdobi: 0, pocet12m: 0, obrat: 0 };
-    r.pocet12m += 1;
+    if (z.v12Mesicich !== false) r.pocet12m += 1;
     if (z.vObdobi) {
       r.pocetVObdobi += 1;
       r.obrat += z.prijem;

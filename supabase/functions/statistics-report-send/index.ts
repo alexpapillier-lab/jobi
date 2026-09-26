@@ -267,6 +267,7 @@ function kpiZ(raw: unknown, reklamace: number, dokonceno: number): KpiReportu {
   const o = (raw ?? {}) as Record<string, unknown>;
   return {
     obrat: cislo(o.totalRevenue),
+    vydano: cislo(o.issuedTickets),
     zisk: cislo(o.profit),
     naklady: cislo(o.totalCosts),
     slevy: cislo(o.totalDiscounts),
@@ -303,6 +304,7 @@ async function sestavReport(svc: Svc, serviceId: string, obdobi: ObdobiReportu, 
 
   const stavy = ((stavyServisu.data ?? []) as Array<{ key: string; label: string; bg: string | null; is_final: boolean }>);
   const stavPodleKlice = new Map(stavy.map((s) => [s.key, s]));
+  const jeKoncovy = (klic: string | null) => stavPodleKlice.get(klic ?? "")?.is_final === true;
   const stavyVReportu = pole(prehled.stavy).map((r) => {
     const key = String(r.key ?? "");
     const s = stavPodleKlice.get(key);
@@ -310,12 +312,22 @@ async function sestavReport(svc: Svc, serviceId: string, obdobi: ObdobiReportu, 
   });
   const dokonceno = stavyVReportu.filter((s) => s.konecny).reduce((a, s) => a + s.pocet, 0);
 
-  const zebricek: ZakazkaProZebricek[] = zakazky.map((z) => ({
-    customerId: z.customer_id,
-    customerName: z.customer_name,
-    prijem: jeStornoStav(z.status, stavPodleKlice.get(z.status ?? "")?.label) ? 0 : cenaZakazky(Array.isArray(z.performed_repairs) ? z.performed_repairs : [], z.discount_type, z.discount_value),
-    vObdobi: z.created_at >= obdobi.od.toISOString() && z.created_at < obdobi.do.toISOString(),
-  }));
+  // Obrat zákazníka v období podle data vydání (koncový stav) – stejně jako
+  // KPI nahoře; „pravidelnost“ (počet za 12 měsíců) zůstává podle přijetí.
+  const odIso = obdobi.od.toISOString();
+  const doIso = obdobi.do.toISOString();
+  const zebricek: ZakazkaProZebricek[] = zakazky.map((z) => {
+    const storno = jeStornoStav(z.status, stavPodleKlice.get(z.status ?? "")?.label);
+    const vydano = jeKoncovy(z.status) ? z.completed_at ?? z.updated_at : null;
+    const vObdobi = !storno && !!vydano && vydano >= odIso && vydano < doIso;
+    return {
+      customerId: z.customer_id,
+      customerName: z.customer_name,
+      prijem: vObdobi ? cenaZakazky(Array.isArray(z.performed_repairs) ? z.performed_repairs : [], z.discount_type, z.discount_value) : 0,
+      vObdobi,
+      v12Mesicich: z.created_at >= od12Iso(obdobi) && z.created_at < doIso,
+    };
+  });
 
   const nazvyPobocek = new Map(((pobocky.data ?? []) as Array<{ id: string; name: string }>).map((b) => [b.id, b.name]));
   const pobockyVReportu = pole(prehled.marzePobocky).map((r) => ({
@@ -332,6 +344,7 @@ async function sestavReport(svc: Svc, serviceId: string, obdobi: ObdobiReportu, 
     .slice(-6)
     .map((m) => ({ popisek: `${MESICE_KRATCE[m.mesic] ?? m.mesic + 1} ${String(m.rok).slice(2)}`, obrat: m.obrat, zisk: m.zisk, pocet: m.pocet }));
 
+  const rozpr = (prehled.rozpracovano ?? {}) as Record<string, unknown>;
   const c = castiVPasmu(ted);
   const data: ReportData = {
     frekvence: obdobi.frekvence,
@@ -347,6 +360,7 @@ async function sestavReport(svc: Svc, serviceId: string, obdobi: ObdobiReportu, 
     vygenerovano: `${c.den}. ${c.mesic}. ${c.rok} ${String(c.hodina).padStart(2, "0")}:${String(c.minuta).padStart(2, "0")}`,
     kpi: kpiZ(prehled.kpi, reklamace, dokonceno),
     kpiPredchozi: kpiZ(prehled.kpiPredchozi, reklamacePred, 0),
+    rozpracovano: { pocet: cislo(rozpr.pocet), nacenenych: cislo(rozpr.nacenenych), prijem: cislo(rozpr.prijem) },
     mesice,
     stavy: stavyVReportu,
     topOpravy: pole(prehled.topOpravy).map((r) => ({ nazev: String(r.name ?? ""), pocet: cislo(r.count) })),
@@ -415,30 +429,42 @@ type ZakazkaRadek = {
   discount_type: "percentage" | "amount" | null;
   discount_value: number | null;
   created_at: string;
+  completed_at: string | null;
+  updated_at: string | null;
 };
 
-/** Zakázky za období + 12 měsíců zpět (pro „pravidelné“ zákazníky), po stránkách. */
-async function nactiZakazkyProZebricky(svc: Svc, serviceId: string, obdobi: ObdobiReportu): Promise<ZakazkaRadek[]> {
+/** Začátek okna „posledních 12 měsíců“ pro pravidelné zákazníky. */
+function od12Iso(obdobi: ObdobiReportu): string {
   const od12 = new Date(obdobi.do.getTime());
   od12.setUTCMonth(od12.getUTCMonth() - 12);
-  const out: ZakazkaRadek[] = [];
+  return od12.toISOString();
+}
+
+/**
+ * Zakázky pro žebříčky zákazníků, po stránkách: přijaté za posledních
+ * 12 měsíců (pravidelnost) a k tomu vydané v období, i když byly přijaté
+ * dřív (obrat v období jde podle vydání). Obrat pro storno vyjde nulový.
+ */
+async function nactiZakazkyProZebricky(svc: Svc, serviceId: string, obdobi: ObdobiReportu): Promise<ZakazkaRadek[]> {
+  const sloupce = "id,customer_id,customer_name,status,performed_repairs,discount_type,discount_value,created_at,completed_at,updated_at";
   const strana = 1000;
-  for (let i = 0; i < 50; i++) {
-    const { data, error } = await svc
-      .from("tickets")
-      .select("customer_id,customer_name,status,performed_repairs,discount_type,discount_value,created_at")
-      .eq("service_id", serviceId)
-      .is("deleted_at", null)
-      .gte("created_at", od12.toISOString())
-      .lt("created_at", obdobi.do.toISOString())
-      .order("created_at", { ascending: true })
-      .range(i * strana, (i + 1) * strana - 1);
-    if (error) throw new Error(`tickets: ${error.message}`);
-    const radky = (data ?? []) as ZakazkaRadek[];
-    out.push(...radky);
-    if (radky.length < strana) break;
+  const odIso = obdobi.od.toISOString();
+  const doIso = obdobi.do.toISOString();
+  const podleId = new Map<string, ZakazkaRadek>();
+  for (const rezim of ["prijate", "vydane"] as const) {
+    for (let i = 0; i < 50; i++) {
+      let q = svc.from("tickets").select(sloupce).eq("service_id", serviceId).is("deleted_at", null);
+      q = rezim === "prijate"
+        ? q.gte("created_at", od12Iso(obdobi)).lt("created_at", doIso)
+        : q.gte("completed_at", odIso).lt("completed_at", doIso);
+      const { data, error } = await q.order("created_at", { ascending: true }).range(i * strana, (i + 1) * strana - 1);
+      if (error) throw new Error(`tickets: ${error.message}`);
+      const radky = (data ?? []) as unknown as Array<ZakazkaRadek & { id: string }>;
+      for (const r of radky) podleId.set(r.id, r);
+      if (radky.length < strana) break;
+    }
   }
-  return out;
+  return [...podleId.values()];
 }
 
 let pismaCache: Pisma | null = null;
@@ -500,10 +526,12 @@ async function odeslatEmail(prijemci: string[], report: SestavenyReport, zkusebn
     '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">',
     radek("Obrat", korunyCele(k.obrat), zmenaText(k.obrat, kp.obrat)),
     radek("Zisk", `${korunyCele(k.zisk)} (marže ${procenta(k.marzePct)})`, zmenaText(k.zisk, kp.zisk)),
-    radek("Zakázky", `${k.pocet} · dokončeno ${k.dokonceno}`, zmenaText(k.pocet, kp.pocet)),
+    radek("Zakázky", `přijato ${k.pocet} · vydáno ${k.vydano}`, zmenaText(k.pocet, kp.pocet)),
     radek("Náklady", korunyCele(k.naklady), zmenaText(k.naklady, kp.naklady)),
     radek("Reklamace", String(k.reklamace), zmenaText(k.reklamace, kp.reklamace)),
+    radek("Rozpracováno", `${d.rozpracovano.pocet} · naceněno ${korunyCele(d.rozpracovano.prijem)}`, ""),
     "</table>",
+    '<p style="margin:12px 0 0;font-size:11px;color:#94a3b8">Obrat, zisk a náklady jsou ze zakázek vydaných v období; počet zakázek podle data přijetí. Rozpracované zakázky do obratu nepatří, dokud se nevydají.</p>',
     `<p style="margin:16px 0 0;font-size:12px;color:#64748b">Srovnání je s obdobím ${escapeHtml(d.predchoziNazev)}. Celý report – opravy, zařízení, zákazníci, technici a pobočky – je v PDF v příloze.</p>`,
     "</td></tr></table>",
     '<p style="text-align:center;margin-top:16px;font-size:11px;color:#94a3b8">Odesláno z Jobi · nastavení reportu najdete v Nastavení → Komunikace → Report statistik</p>',
@@ -514,7 +542,8 @@ async function odeslatEmail(prijemci: string[], report: SestavenyReport, zkusebn
     `${druh} report ${d.nazevObdobi} – ${d.servis.nazev}`,
     `Obrat: ${korunyCele(k.obrat)}`,
     `Zisk: ${korunyCele(k.zisk)} (marže ${procenta(k.marzePct)})`,
-    `Zakázky: ${k.pocet}, dokončeno ${k.dokonceno}, reklamace ${k.reklamace}`,
+    `Zakázky: přijato ${k.pocet}, vydáno ${k.vydano}, reklamace ${k.reklamace}`,
+    `Rozpracováno: ${d.rozpracovano.pocet} (naceněno ${korunyCele(d.rozpracovano.prijem)})`,
     "",
     "Celý report je v PDF v příloze.",
   ].join("\n");

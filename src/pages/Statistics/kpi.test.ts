@@ -14,7 +14,8 @@
  *   averageTicketDurationDays 1,2, entriesWithoutCost 2.
  */
 import { describe, it, expect } from "vitest";
-import { computeKpis } from "./kpi";
+import { computeKpis, computeKpisObdobi, datumVydani, rozdelPodleObdobi, spocitejRozpracovano, type JeKoncovy } from "./kpi";
+import type { DateRange } from "./obdobi";
 import { EMPTY_COST_SOURCES, type JeStorno } from "./margin";
 import { jeStornoStav } from "../../lib/stornoStav";
 import type { TicketEx } from "../Orders";
@@ -131,5 +132,68 @@ describe("mezní servisy", () => {
     expect(kpi.totalCosts).toBe(0);
     expect(kpi.profit).toBe(0);
     expect(kpi.marginPct).toBe(0);
+  });
+});
+
+/**
+ * Pravidlo období: peníze z vydaných, počty z přijatých, rozpracované zvlášť.
+ * Zrcadlí `statistiky_prehled` po migraci 20260926170000.
+ */
+describe("peníze podle vydání, počty podle přijetí", () => {
+  const jeKoncovy: JeKoncovy = (t) => t.status === "completed" || t.status === "cancelled" || t.status === "nerealizovano";
+  const zari: DateRange = { start: new Date("2026-09-01T00:00:00+02:00"), end: new Date("2026-09-30T23:59:59+02:00") };
+  const zakazky: TicketEx[] = [
+    // Přijatá v září, vydaná v září: počet i peníze.
+    zakazka({ status: "completed", label: "Dokončeno", price: 1000, costs: 100, createdAt: "2026-09-05T10:00:00+02:00", completedAt: "2026-09-10T10:00:00+02:00" }),
+    // Přijatá v srpnu, vydaná v září: jen peníze září.
+    zakazka({ status: "completed", label: "Dokončeno", price: 2000, costs: 500, createdAt: "2026-08-20T10:00:00+02:00", completedAt: "2026-09-02T10:00:00+02:00" }),
+    // Přijatá v září, vydaná v říjnu: jen počet září – peníze až v říjnu.
+    zakazka({ status: "completed", label: "Dokončeno", price: 4000, costs: 900, createdAt: "2026-09-25T10:00:00+02:00", completedAt: "2026-10-03T10:00:00+02:00" }),
+    // Přijatá v září, ještě otevřená a naceněná: počet září + rozpracováno, do peněz ne.
+    zakazka({ status: "received", label: "Přijato", price: 3000, costs: 700, createdAt: "2026-09-12T10:00:00+02:00" }),
+    // Otevřená z července bez ceny: jen rozpracováno.
+    zakazka({ status: "received", label: "Přijato", price: 0, createdAt: "2026-07-01T10:00:00+02:00" }),
+    // Storno uzavřené v září: do počtu přijatých i do doby, do peněz ne.
+    zakazka({ status: "cancelled", label: "Zrušeno", price: 5000, costs: 1000, createdAt: "2026-09-03T10:00:00+02:00", completedAt: "2026-09-04T10:00:00+02:00" }),
+  ];
+  const skupiny = rozdelPodleObdobi(zakazky, zari, jeKoncovy, jeStorno);
+  const kpi = computeKpisObdobi(skupiny, EMPTY_COST_SOURCES, jeKoncovy, jeStorno);
+
+  it("přijaté v období jsou čtyři (včetně storna a otevřené)", () => {
+    expect(kpi.totalTickets).toBe(4);
+  });
+
+  it("vydané v období jsou dvě – i ta přijatá v srpnu, ne ta vydaná v říjnu", () => {
+    expect(kpi.issuedTickets).toBe(2);
+    expect(kpi.totalRevenue).toBe(3000);
+    expect(kpi.totalCosts).toBe(600);
+    expect(kpi.profit).toBe(2400);
+  });
+
+  it("naceněná otevřená zakázka do obratu nepatří, je v rozpracovaném", () => {
+    const r = spocitejRozpracovano(skupiny.rozpracovane, EMPTY_COST_SOURCES);
+    expect(r.pocet).toBe(2);
+    expect(r.nacenenych).toBe(1);
+    expect(r.prijem).toBe(3000);
+    expect(r.naklad).toBe(700);
+  });
+
+  it("průměrná doba je z uzavřených v období včetně storna", () => {
+    // 5 dní + 13 dní + 1 den = 19 / 3
+    expect(kpi.averageTicketDurationDays).toBeCloseTo(19 / 3, 4);
+  });
+
+  it("bez období („Vše“) je vydané všechno koncové mimo storno", () => {
+    const vse = rozdelPodleObdobi(zakazky, null, jeKoncovy, jeStorno);
+    expect(vse.prijate).toHaveLength(6);
+    expect(vse.vydane).toHaveLength(3);
+    expect(vse.uzavrene).toHaveLength(4);
+    expect(vse.rozpracovane).toHaveLength(2);
+  });
+
+  it("koncová zakázka bez completed_at má datum vydání z poslední změny, ať z peněz nevypadne", () => {
+    const bezData = { ...zakazka({ status: "completed", label: "Dokončeno", price: 100, createdAt: "2026-09-01T10:00:00+02:00" }), updatedAt: "2026-09-15T10:00:00+02:00" } as TicketEx;
+    expect(datumVydani(bezData, jeKoncovy)).toBe("2026-09-15T10:00:00+02:00");
+    expect(datumVydani(zakazky[3], jeKoncovy)).toBeNull();
   });
 });

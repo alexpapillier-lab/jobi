@@ -14,7 +14,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ServerKpis = {
+  /** Zakázky přijaté v období. */
   totalTickets: number;
+  /** Zakázky vydané v období – z těch jsou peníze. */
+  issuedTickets: number;
   totalRevenue: number;
   totalCosts: number;
   totalDiscounts: number;
@@ -42,14 +45,24 @@ export type ServerMarzeRadek = {
   noCostData: boolean;
 };
 
+/** Měsíc řady: počet podle měsíce přijetí, obrat a marže podle měsíce vydání. */
 export type ServerMesic = { year: number; monthIndex: number; count: number; revenue: number; margin: number };
+
+/** Rozpracované zakázky (nekoncový stav) bez ohledu na období. */
+export type ServerRozpracovano = { pocet: number; nacenenych: number; prijem: number; naklad: number };
 
 export type StatistikyPrehled = {
   kpi: ServerKpis;
   kpiPredchozi: ServerKpis;
+  /** Přijaté v období / ve výběru / v předchozím období. */
   pocetVObdobi: number;
   pocetVeVyberu: number;
   pocetPredchozi: number;
+  /** Vydané v období / ve výběru / v předchozím období. */
+  vydanoVObdobi: number;
+  vydanoVeVyberu: number;
+  vydanoPredchozi: number;
+  rozpracovano: ServerRozpracovano;
   stavy: ServerStav[];
   topOpravy: ServerPocet[];
   topZarizeni: ServerPocet[];
@@ -97,6 +110,7 @@ function kpis(raw: unknown): ServerKpis {
   const o = (raw ?? {}) as Record<string, unknown>;
   return {
     totalTickets: cislo(o.totalTickets),
+    issuedTickets: cislo(o.issuedTickets),
     totalRevenue: cislo(o.totalRevenue),
     totalCosts: cislo(o.totalCosts),
     totalDiscounts: cislo(o.totalDiscounts),
@@ -111,6 +125,11 @@ function kpis(raw: unknown): ServerKpis {
 
 function pole(raw: unknown): Record<string, unknown>[] {
   return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+}
+
+function rozpracovano(raw: unknown): ServerRozpracovano {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  return { pocet: cislo(o.pocet), nacenenych: cislo(o.nacenenych), prijem: cislo(o.prijem), naklad: cislo(o.naklad) };
 }
 
 function marzeRadky(raw: unknown): ServerMarzeRadek[] {
@@ -157,6 +176,10 @@ export async function nactiStatistiky(client: SupabaseClient, dotaz: StatistikyD
     pocetVObdobi: cislo(o.pocetVObdobi),
     pocetVeVyberu: cislo(o.pocetVeVyberu),
     pocetPredchozi: cislo(o.pocetPredchozi),
+    vydanoVObdobi: cislo(o.vydanoVObdobi),
+    vydanoVeVyberu: cislo(o.vydanoVeVyberu),
+    vydanoPredchozi: cislo(o.vydanoPredchozi),
+    rozpracovano: rozpracovano(o.rozpracovano),
     stavy: pole(o.stavy).map((r) => ({ key: String(r.key ?? "unknown"), count: cislo(r.count) })),
     topOpravy: pole(o.topOpravy).map((r) => ({ name: String(r.name ?? ""), count: cislo(r.count) })),
     topZarizeni: pole(o.topZarizeni).map((r) => ({ name: String(r.name ?? ""), count: cislo(r.count) })),

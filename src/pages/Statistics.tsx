@@ -36,13 +36,12 @@ import {
   type CostSources,
   type JeStorno,
 } from "./Statistics/margin";
-import { computeKpis } from "./Statistics/kpi";
+import { PRAZDNE_KPI, computeKpisObdobi, datumVydani, rozdelPodleObdobi, spocitejRozpracovano, type JeKoncovy } from "./Statistics/kpi";
 import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
 import {
   COMPARABLE_PERIODS,
   periodRange,
   previousPeriodRange,
-  vObdobi,
   type DateRange,
   type PeriodType,
 } from "./Statistics/obdobi";
@@ -70,11 +69,6 @@ const PERIOD_OPTIONS: Array<{ value: PeriodType; label: string }> = [
   { value: "all", label: "Vše" },
   { value: "custom", label: "Vlastní" },
 ];
-
-function inRange(t: TicketEx, range: DateRange): boolean {
-  return vObdobi(t.createdAt, range);
-}
-
 
 // ========================
 // Výpočty
@@ -128,12 +122,18 @@ function doplnPrazdneMesice(
   return result;
 }
 
-function matchesDrill(t: TicketEx, d: Exclude<DrillDown, null>): boolean {
+/**
+ * Sedí zakázka na zúžení výběru? Měsíc se posuzuje podle `datum` – u počtů
+ * je to přijetí, u peněz vydání (stejně jako na serveru); stav, zařízení a
+ * oprava jsou pro obojí stejné.
+ */
+function matchesDrill(t: TicketEx, d: Exclude<DrillDown, null>, datum: string | null): boolean {
   switch (d.type) {
     case "status":
       return (t.status || "unknown") === d.value;
     case "month": {
-      const date = new Date(t.createdAt);
+      if (!datum) return false;
+      const date = new Date(datum);
       return date.getFullYear() === d.year && date.getMonth() === d.month;
     }
     case "repair":
@@ -160,7 +160,7 @@ type StatisticsProps = {
 };
 
 export default function Statistics({ activeServiceId, onOpenTicket }: StatisticsProps) {
-  const { getByKey, statuses } = useStatuses();
+  const { getByKey, statuses, isFinal } = useStatuses();
   /**
    * Stav v databázi je anglický klíč ("received", "ready"). Zbytek aplikace
    * ho překládá přes getByKey; tady taky, aby uživatel neviděl "received"
@@ -178,6 +178,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
    */
   const jeStornoStatus = useMemo(() => stornoPodleStavu(statuses), [statuses]);
   const jeStornoZakazky = useCallback<JeStorno>((t: TicketEx) => jeStornoStatus(t.status), [jeStornoStatus]);
+  /**
+   * Koncový stav = zakázka je vydaná. Peníze se počítají podle data přepnutí
+   * do něj, ne podle přijetí – jako v `statistiky_prehled`.
+   */
+  const jeKoncovyZakazky = useCallback<JeKoncovy>((t: TicketEx) => isFinal(t.status ?? ""), [isFinal]);
 
   const [allTickets, setAllTickets] = useState<TicketEx[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
@@ -437,40 +442,81 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   }, [idsServisu, obdobi, activeBranchId, reloadToken]);
 
   const branchTickets = useMemo(() => filterByBranch(allTickets, activeBranchId), [allTickets, activeBranchId]);
-  const tickets = useMemo(() => {
-    if (!obdobi) return branchTickets;
-    return branchTickets.filter((t) => inRange(t, obdobi));
-  }, [branchTickets, obdobi]);
 
-  // Zakázky v předchozím období (jen pro porovnání)
-  const previousPeriodTickets = useMemo(() => {
-    if (!predchoziObdobi) return [];
-    return branchTickets.filter((t) => inRange(t, predchoziObdobi));
-  }, [branchTickets, predchoziObdobi]);
+  /**
+   * Zakázky období ve čtyřech skupinách (záložní výpočet, jen když RPC
+   * selže): přijaté = počty, vydané = peníze, uzavřené = doba, rozpracované
+   * = otevřené bez ohledu na období. Stejné pravidlo jako na serveru.
+   */
+  const skupiny = useMemo(
+    () => rozdelPodleObdobi(branchTickets, obdobi, jeKoncovyZakazky, jeStornoZakazky),
+    [branchTickets, obdobi, jeKoncovyZakazky, jeStornoZakazky]
+  );
+  // Předchozí období (jen pro porovnání)
+  const skupinyPredchozi = useMemo(
+    () => (predchoziObdobi ? rozdelPodleObdobi(branchTickets, predchoziObdobi, jeKoncovyZakazky, jeStornoZakazky) : null),
+    [branchTickets, predchoziObdobi, jeKoncovyZakazky, jeStornoZakazky]
+  );
 
-  // Drill-down: kliknutím na stav / měsíc / opravu / zařízení
-  const filteredTickets = useMemo(
-    () => (drillDown ? tickets.filter((t) => matchesDrill(t, drillDown)) : tickets),
-    [tickets, drillDown]
+  // Drill-down: kliknutím na stav / měsíc / opravu / zařízení. Měsíc se u
+  // přijatých bere podle přijetí, u vydaných podle vydání.
+  const filtrPrijetim = useCallback(
+    (list: TicketEx[]) => (drillDown ? list.filter((t) => matchesDrill(t, drillDown, t.createdAt)) : list),
+    [drillDown]
+  );
+  const filtrVydanim = useCallback(
+    (list: TicketEx[]) => (drillDown ? list.filter((t) => matchesDrill(t, drillDown, datumVydani(t, jeKoncovyZakazky))) : list),
+    [drillDown, jeKoncovyZakazky]
+  );
+  const filteredSkupiny = useMemo(
+    () => ({
+      prijate: filtrPrijetim(skupiny.prijate),
+      vydane: filtrVydanim(skupiny.vydane),
+      uzavrene: filtrVydanim(skupiny.uzavrene),
+      rozpracovane: filtrPrijetim(skupiny.rozpracovane),
+    }),
+    [skupiny, filtrPrijetim, filtrVydanim]
   );
 
   /**
    * Podklad pro jednotlivé „fasety“. Když je aktivní filtr podle stavu,
    * pruhy stavů se počítají ze všech zakázek období – jinak by v grafu zůstal
    * jediný pruh a nebylo by kam klikat dál. Ostatní sekce filtr respektují.
+   * Stavy a zařízení jdou z přijatých, opravy a marže z vydaných.
    */
   const facetTickets = useCallback(
-    (facet: DrillFacet) => (drillDown && drillDown.type === facet ? tickets : filteredTickets),
-    [drillDown, tickets, filteredTickets]
+    (facet: DrillFacet, skupina: "prijate" | "vydane") =>
+      drillDown && drillDown.type === facet ? skupiny[skupina] : filteredSkupiny[skupina],
+    [drillDown, skupiny, filteredSkupiny]
   );
 
+  /**
+   * Zakázky pro tabulku a export: přijaté nebo vydané v období. Do peněz
+   * se počítají jen vydané – tabulka to u každého řádku rozliší.
+   */
+  const vydaneIds = useMemo(() => new Set(filteredSkupiny.vydane.map((t) => t.id)), [filteredSkupiny]);
+  const filteredTickets = useMemo(() => {
+    const videno = new Set<string>();
+    const out: TicketEx[] = [];
+    for (const t of [...filteredSkupiny.prijate, ...filteredSkupiny.vydane]) {
+      if (videno.has(t.id)) continue;
+      videno.add(t.id);
+      out.push(t);
+    }
+    return out.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [filteredSkupiny]);
+
   const kpis = useMemo(
-    () => serverStats?.kpi ?? computeKpis(filteredTickets, costSources, jeStornoZakazky),
-    [serverStats, filteredTickets, costSources, jeStornoZakazky]
+    () => serverStats?.kpi ?? computeKpisObdobi(filteredSkupiny, costSources, jeKoncovyZakazky, jeStornoZakazky),
+    [serverStats, filteredSkupiny, costSources, jeKoncovyZakazky, jeStornoZakazky]
   );
   const prevKpis = useMemo(
-    () => serverStats?.kpiPredchozi ?? computeKpis(previousPeriodTickets, costSources, jeStornoZakazky),
-    [serverStats, previousPeriodTickets, costSources, jeStornoZakazky]
+    () => serverStats?.kpiPredchozi ?? (skupinyPredchozi ? computeKpisObdobi(skupinyPredchozi, costSources, jeKoncovyZakazky, jeStornoZakazky) : PRAZDNE_KPI),
+    [serverStats, skupinyPredchozi, costSources, jeKoncovyZakazky, jeStornoZakazky]
+  );
+  const rozpracovano = useMemo(
+    () => serverStats?.rozpracovano ?? spocitejRozpracovano(filteredSkupiny.rozpracovane, costSources),
+    [serverStats, filteredSkupiny, costSources]
   );
 
   /**
@@ -482,16 +528,18 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const chybaNacteni = potrebujeZakazky ? ticketsError : null;
 
   // Počty zakázek do popisků – ze serveru, jinak z toho, co je v paměti.
-  const pocetVObdobi = serverStats ? serverStats.pocetVObdobi : tickets.length;
-  const pocetVeVyberu = serverStats ? serverStats.pocetVeVyberu : filteredTickets.length;
-  const pocetPredchozi = serverStats ? serverStats.pocetPredchozi : previousPeriodTickets.length;
+  const pocetVObdobi = serverStats ? serverStats.pocetVObdobi : skupiny.prijate.length;
+  const pocetVeVyberu = serverStats ? serverStats.pocetVeVyberu : filteredSkupiny.prijate.length;
+  const pocetPredchozi = serverStats ? serverStats.pocetPredchozi : skupinyPredchozi?.prijate.length ?? 0;
+  const vydanoVObdobi = serverStats ? serverStats.vydanoVObdobi : skupiny.vydane.length;
+  const vydanoVeVyberu = serverStats ? serverStats.vydanoVeVyberu : filteredSkupiny.vydane.length;
 
   const statusItems = useMemo(() => {
     const zdroj =
       serverStats?.stavy ??
       (() => {
         const counts: Record<string, number> = {};
-        for (const t of facetTickets("status")) {
+        for (const t of facetTickets("status", "prijate")) {
           const key = t.status || "unknown";
           counts[key] = (counts[key] || 0) + 1;
         }
@@ -505,7 +553,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const topRepairs = useMemo(() => {
     if (serverStats) return serverStats.topOpravy;
     const counts: Record<string, number> = {};
-    for (const t of facetTickets("repair")) {
+    for (const t of facetTickets("repair", "vydane")) {
       for (const r of t.performedRepairs || []) counts[r.name] = (counts[r.name] || 0) + 1;
     }
     return topCounts(counts, 5);
@@ -514,18 +562,18 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const topDevices = useMemo(() => {
     if (serverStats) return serverStats.topZarizeni;
     const counts: Record<string, number> = {};
-    for (const t of facetTickets("device")) {
+    for (const t of facetTickets("device", "prijate")) {
       if (t.deviceLabel) counts[t.deviceLabel] = (counts[t.deviceLabel] || 0) + 1;
     }
     return topCounts(counts, 5);
   }, [serverStats, facetTickets]);
 
   const marginRepairRows = useMemo<MarginRow[]>(
-    () => serverStats?.marzeOpravy.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByRepair(facetTickets("repair"), costSources, jeStornoZakazky),
+    () => serverStats?.marzeOpravy.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByRepair(facetTickets("repair", "vydane"), costSources, jeStornoZakazky),
     [serverStats, facetTickets, costSources, jeStornoZakazky]
   );
   const marginDeviceRows = useMemo<MarginRow[]>(
-    () => serverStats?.marzeZarizeni.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByDevice(facetTickets("device"), costSources, jeStornoZakazky),
+    () => serverStats?.marzeZarizeni.map((r) => ({ ...r, name: r.name ?? "" })) ?? marginByDevice(facetTickets("device", "vydane"), costSources, jeStornoZakazky),
     [serverStats, facetTickets, costSources, jeStornoZakazky]
   );
   const branchNames = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
@@ -534,15 +582,15 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     if (!konsolidovane) return [];
     // Server vrací jen id servisu; jméno zná stránka ze seznamu členství.
     if (serverStats) return serverStats.marzeServisy.map((r) => ({ ...r, name: jmenaServisu.get(r.key) ?? "Servis" }));
-    return marginByService(filteredTickets, costSources, (id) => jmenaServisu.get(id) ?? "Servis", jeStornoZakazky);
-  }, [konsolidovane, serverStats, filteredTickets, costSources, jmenaServisu, jeStornoZakazky]);
+    return marginByService(filteredSkupiny.vydane, costSources, (id) => jmenaServisu.get(id) ?? "Servis", jeStornoZakazky);
+  }, [konsolidovane, serverStats, filteredSkupiny, costSources, jmenaServisu, jeStornoZakazky]);
   const marginBranchRows = useMemo<MarginRow[]>(() => {
     if (!hasBranches || activeBranchId) return [];
     if (serverStats) {
       return serverStats.marzePobocky.map((r) => ({ ...r, name: r.key ? branchNames.get(r.key) ?? "Bez pobočky" : "Bez pobočky" }));
     }
-    return marginByBranch(filteredTickets, costSources, (id) => branchNames.get(id) ?? "Bez pobočky", jeStornoZakazky);
-  }, [hasBranches, activeBranchId, serverStats, filteredTickets, costSources, branchNames, jeStornoZakazky]);
+    return marginByBranch(filteredSkupiny.vydane, costSources, (id) => branchNames.get(id) ?? "Bez pobočky", jeStornoZakazky);
+  }, [hasBranches, activeBranchId, serverStats, filteredSkupiny, costSources, branchNames, jeStornoZakazky]);
 
   const monthlyStats = useMemo<MonthStat[]>(() => {
     const now = new Date();
@@ -552,28 +600,40 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       return doplnPrazdneMesice(serverStats.mesice, serverStats.mesicOd, serverStats.mesicDo, obdobi, now);
     }
 
-    const list = facetTickets("month");
-    if (list.length === 0) return [];
+    // Počet podle měsíce přijetí, obrat a marže podle měsíce vydání – jako server.
+    const prijate = facetTickets("month", "prijate");
+    const vydane = facetTickets("month", "vydane");
+    if (prijate.length === 0 && vydane.length === 0) return [];
 
     let minTime = Infinity;
     let maxTime = -Infinity;
     const byMonth = new Map<string, MonthStat>();
-    for (const t of list) {
-      const d = new Date(t.createdAt);
+    const zaznam = (datum: string | null) => {
+      if (!datum) return null;
+      const d = new Date(datum);
       const time = d.getTime();
-      if (Number.isNaN(time)) continue;
+      if (Number.isNaN(time)) return null;
       minTime = Math.min(minTime, time);
       maxTime = Math.max(maxTime, time);
       const key = `${d.getFullYear()}-${d.getMonth()}`;
       const entry = byMonth.get(key) ?? { year: d.getFullYear(), monthIndex: d.getMonth(), count: 0, revenue: 0, margin: 0 };
+      byMonth.set(key, entry);
+      return entry;
+    };
+    for (const t of prijate) {
+      const entry = zaznam(t.createdAt);
+      if (entry) entry.count += 1;
+    }
+    for (const t of vydane) {
+      const entry = zaznam(datumVydani(t, jeKoncovyZakazky));
+      if (!entry) continue;
       const m = ticketMargin(t, costSources, jeStornoZakazky(t));
-      entry.count += 1;
       entry.revenue += m.revenue;
       entry.margin += m.margin;
-      byMonth.set(key, entry);
     }
+    if (byMonth.size === 0) return [];
     return doplnPrazdneMesice([...byMonth.values()], minTime, maxTime, obdobi, now);
-  }, [serverStats, facetTickets, obdobi, costSources, jeStornoZakazky]);
+  }, [serverStats, facetTickets, obdobi, costSources, jeKoncovyZakazky, jeStornoZakazky]);
 
   const toggleStatus = useCallback((key: string) => {
     setDrillDown((prev) => (prev?.type === "status" && prev.value === key ? null : { type: "status", value: key }));
@@ -607,19 +667,24 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   }, [drillDown, nazevStavu]);
 
   const exportCsv = useCallback(() => {
-    const header = ["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)", "Náklady (Kč)", "Marže (Kč)"];
+    // „V obratu“: jen zakázky vydané v období – součet sloupce Příjem přes
+    // řádky s „ano“ sedí s kartou Celkový příjem.
+    const header = ["Kód", "Přijato", "Vydáno", "Zákazník", "Zařízení", "Stav", "Příjem (Kč)", "Náklady (Kč)", "Marže (Kč)", "V obratu období"];
     const castka = (n: number) => n.toFixed(2).replace(".", ",");
     const rows = filteredTickets.map((t) => {
       const m = ticketMargin(t, costSources, jeStornoZakazky(t));
+      const vydano = datumVydani(t, jeKoncovyZakazky);
       return [
         t.code ?? "",
         t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "",
+        vydano ? new Date(vydano).toLocaleDateString("cs-CZ") : "",
         t.customerName || "",
         t.deviceLabel || "",
         t.status ? nazevStavu(t.status) : "",
         castka(m.revenue),
         castka(m.cost),
         castka(m.margin),
+        vydaneIds.has(t.id) ? "ano" : "ne",
       ];
     });
     // BOM, aby Excel poznal UTF-8 a nerozbil diakritiku.
@@ -634,7 +699,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [filteredTickets, nazevStavu, costSources, jeStornoZakazky]);
+  }, [filteredTickets, nazevStavu, costSources, jeStornoZakazky, jeKoncovyZakazky, vydaneIds]);
 
   if (!activeServiceId) {
     return (
@@ -794,6 +859,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
    */
   const costsFootnote = (() => {
     const parts: string[] = [];
+    // Bez téhle věty si majitel porovná obrat s počtem přijatých zakázek a
+    // bude hledat chybu. Peníze jdou podle vydání, počty podle přijetí.
+    parts.push("Příjem, náklady a zisk jsou ze zakázek vydaných v období (podle data vydání), počet zakázek podle data přijetí; rozpracované zakázky do příjmu nepatří, dokud se nevydají.");
     if (costSourcesError) {
       parts.push("Ceník a sklad se nepodařilo načíst – náklady jsou jen z nákladů uložených u oprav, bez nákupních cen dílů.");
     } else {
@@ -980,7 +1048,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
             Načítání zakázek…
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
-            {Array.from({ length: 8 }, (_, i) => (
+            {Array.from({ length: 9 }, (_, i) => (
               <KpiTileSkeleton key={i} />
             ))}
           </div>
@@ -1022,14 +1090,22 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {viewMode !== "charts" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
               <KpiTile
-                title="Celkem zakázek"
+                title="Přijato zakázek"
                 value={celeCislo(kpis.totalTickets)}
+                subtitle={`vydáno v období ${celeCislo(kpis.issuedTickets)}`}
                 icon={<DocumentIcon size={16} />}
                 delta={compareActive ? { current: kpis.totalTickets, previous: prevKpis.totalTickets, formatAbsolute: celeCislo } : undefined}
               />
               <KpiTile
+                title="Rozpracováno"
+                value={celeCislo(rozpracovano.pocet)}
+                subtitle={rozpracovano.nacenenych > 0 ? `naceněno ${formatCurrencyRounded(rozpracovano.prijem)} u ${celeCislo(rozpracovano.nacenenych)} z nich` : "zatím bez ceny"}
+                icon={<ClockIcon size={16} />}
+              />
+              <KpiTile
                 title="Celkový příjem"
                 value={formatCurrencyRounded(kpis.totalRevenue)}
+                subtitle={`z ${zakazky(kpis.issuedTickets)} vydaných v období`}
                 icon={<CoinsIcon size={16} />}
                 delta={compareActive ? { current: kpis.totalRevenue, previous: prevKpis.totalRevenue, formatAbsolute: formatCurrencyRounded } : undefined}
               />
@@ -1156,7 +1232,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <SectionHeading icon={<DocumentIcon size={18} />}>Zakázky v období</SectionHeading>
                   <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginTop: "calc(-1 * var(--space-2))" }}>
-                    {zakazky(filteredTickets.length)}
+                    {zakazky(filteredTickets.length)} přijatých nebo vydaných v období · do příjmu se počítají jen vydané
                     {filteredTickets.length > 100 && " · v tabulce je prvních 100, export obsahuje všechny"}
                     {onOpenTicket && " · kliknutím na řádek otevřete zakázku"}
                   </div>
@@ -1182,7 +1258,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "var(--text-base)" }}>
                     <thead>
                       <tr>
-                        {(["Kód", "Datum", "Zákazník", "Zařízení", "Stav", "Příjem", "Náklady", "Marže"] as const).map((label, i) => (
+                        {(["Kód", "Přijato", "Vydáno", "Zákazník", "Zařízení", "Stav", "Příjem", "Náklady", "Marže"] as const).map((label, i) => (
                           <th
                             key={label}
                             scope="col"
@@ -1195,7 +1271,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                               WebkitBackdropFilter: "var(--blur)",
                               borderBottom: "1px solid var(--border)",
                               padding: "var(--space-2) var(--space-3)",
-                              textAlign: i >= 5 ? "right" : "left",
+                              textAlign: i >= 6 ? "right" : "left",
                               color: "var(--muted)",
                               fontWeight: 600,
                               fontSize: "var(--text-sm)",
@@ -1214,7 +1290,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                         // nezapočítaly, a součet sloupce nesedl s KPI.
                         const m = ticketMargin(t, costSources, jeStornoZakazky(t));
                         const finalPrice = m.revenue;
+                        const vydano = datumVydani(t, jeKoncovyZakazky);
+                        // Přijatá, ale nevydaná zakázka: peníze jen naceněné, do
+                        // karet nahoře nejdou – v tabulce potlačeně, ať to sedí.
+                        const vObratu = vydaneIds.has(t.id);
+                        const penizeTitle = vObratu ? undefined : "Zakázka není vydaná v období – do příjmu se nepočítá.";
                         const cell = { padding: "var(--space-2) var(--space-3)", borderBottom: "1px solid var(--border)", color: "var(--text)" } as const;
+                        const penize = { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", opacity: vObratu ? 1 : 0.55 } as const;
                         return (
                           <tr
                             key={t.id}
@@ -1240,6 +1322,9 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                             <td style={{ ...cell, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                               {t.createdAt ? new Date(t.createdAt).toLocaleDateString("cs-CZ") : "—"}
                             </td>
+                            <td style={{ ...cell, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: vydano ? "var(--text)" : "var(--muted)" }}>
+                              {vydano ? new Date(vydano).toLocaleDateString("cs-CZ") : "—"}
+                            </td>
                             <td style={cell}>{t.customerName || "—"}</td>
                             <td style={cell}>{t.deviceLabel || "—"}</td>
                             <td style={{ ...cell, whiteSpace: "nowrap" }}>
@@ -1252,21 +1337,19 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                                 "—"
                               )}
                             </td>
-                            <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                            <td style={{ ...penize, fontWeight: 600 }} title={penizeTitle}>
                               {finalPrice > 0 ? formatCurrencyRounded(finalPrice) : "—"}
                             </td>
-                            <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "var(--muted)" }}>
+                            <td style={{ ...penize, color: "var(--muted)" }} title={penizeTitle}>
                               {m.cost > 0 ? formatCurrencyRounded(m.cost) : "—"}
                             </td>
                             <td
                               style={{
-                                ...cell,
-                                textAlign: "right",
+                                ...penize,
                                 fontWeight: 600,
-                                fontVariantNumeric: "tabular-nums",
-                                whiteSpace: "nowrap",
                                 color: m.margin < 0 ? "var(--danger-text)" : "var(--text)",
                               }}
+                              title={penizeTitle}
                             >
                               {finalPrice > 0 || m.cost > 0 ? formatCurrencyRounded(m.margin) : "—"}
                             </td>
@@ -1284,11 +1367,11 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {viewMode !== "table" && (
             <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
               {drillDown
-                ? `Ve výběru je ${zakazky(pocetVeVyberu)} z ${celeCislo(pocetVObdobi)} v období.`
-                : `V období je ${zakazky(pocetVObdobi)}.`}
-              {compareActive && ` Předchozí období: ${zakazky(pocetPredchozi)}.`}
+                ? `Ve výběru je ${zakazky(pocetVeVyberu)} z ${celeCislo(pocetVObdobi)} přijatých v období a ${celeCislo(vydanoVeVyberu)} z ${celeCislo(vydanoVObdobi)} vydaných.`
+                : `V období bylo přijato ${zakazky(pocetVObdobi)} a vydáno ${celeCislo(vydanoVObdobi)}.`}
+              {compareActive && ` Předchozí období: přijato ${zakazky(pocetPredchozi)}, vydáno ${celeCislo(prevKpis.issuedTickets)}.`}
               {kpis.averageTicketDurationDays > 0 &&
-                ` Průměrná doba zakázky vychází z dokončených zakázek (${cislo(kpis.averageTicketDurationDays)} dne).`}
+                ` Průměrná doba zakázky vychází ze zakázek uzavřených v období (${cislo(kpis.averageTicketDurationDays)} dne).`}
             </div>
           )}
         </>

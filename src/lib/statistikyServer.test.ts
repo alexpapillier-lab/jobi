@@ -53,6 +53,17 @@ describe("převod čísel z agregace", () => {
     expect(p.kpi.totalTickets).toBe(0);
   });
 
+  it("počet vydaných a rozpracované zakázky se převedou na čísla", async () => {
+    const r = await nactiStatistiky(
+      klient({ data: { kpi: { totalTickets: "12", issuedTickets: "9" }, vydanoVObdobi: "9", vydanoVeVyberu: "4", rozpracovano: { pocet: "3", nacenenych: "2", prijem: "4500.50", naklad: "x" } }, error: null }),
+      dotaz(),
+    );
+    expect(r.kpi.issuedTickets).toBe(9);
+    expect(r.vydanoVObdobi).toBe(9);
+    expect(r.vydanoVeVyberu).toBe(4);
+    expect(r.rozpracovano).toEqual({ pocet: 3, nacenenych: 2, prijem: 4500.5, naklad: 0 });
+  });
+
   it("úplně prázdná odpověď dá nulová KPI, ne chybějící pole", async () => {
     const p = await nactiStatistiky(klient({ data: {}, error: null }), dotaz());
     expect(p.kpi.totalRevenue).toBe(0);

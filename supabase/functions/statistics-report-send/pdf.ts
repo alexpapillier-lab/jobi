@@ -14,7 +14,7 @@
  */
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb, type RGB } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
-import { korunyCele, procenta, procentniZmena, type HodnotnyZakaznik, type PravidelnyZakaznik } from "../_shared/statistikyReport.ts";
+import { korunyCele, procenta, procentniZmena, zakazkySlovy, type HodnotnyZakaznik, type PravidelnyZakaznik } from "../_shared/statistikyReport.ts";
 
 export type KpiReportu = {
   obrat: number;
@@ -29,6 +29,8 @@ export type KpiReportu = {
   prumernaDobaDny: number;
   /** Položky bez nákladů – marže je pak nadhodnocená; report to napíše. */
   bezNakladu: number;
+  /** Zakázky vydané v období – z těch je obrat. */
+  vydano: number;
 };
 
 export type ReportData = {
@@ -40,6 +42,8 @@ export type ReportData = {
   vygenerovano: string;
   kpi: KpiReportu;
   kpiPredchozi: KpiReportu;
+  /** Otevřené zakázky bez ohledu na období – co je naceněné, ale nevydané. */
+  rozpracovano: { pocet: number; nacenenych: number; prijem: number };
   mesice: { popisek: string; obrat: number; zisk: number; pocet: number }[];
   stavy: { nazev: string; pocet: number; barva: string | null; konecny: boolean }[];
   topOpravy: { nazev: string; pocet: number }[];
@@ -224,9 +228,9 @@ function velkeDlazdice(p: Platno, d: ReportData) {
   const kp = d.kpiPredchozi;
   const bezNakladu = k.bezNakladu > 0;
   const dlazdice = [
-    { nadpis: "OBRAT", hodnota: korunyCele(k.obrat), zmena: sipkaZmeny(k.obrat, kp.obrat), pod: `Průměrná cena zakázky ${korunyCele(k.prumernaCena)}` },
+    { nadpis: "OBRAT", hodnota: korunyCele(k.obrat), zmena: sipkaZmeny(k.obrat, kp.obrat), pod: `Z ${zakazkySlovy(k.vydano)} vydaných · průměr ${korunyCele(k.prumernaCena)}` },
     { nadpis: "ZISK", hodnota: korunyCele(k.zisk), zmena: sipkaZmeny(k.zisk, kp.zisk), pod: `Marže ${procenta(k.marzePct)}${bezNakladu ? " · část položek bez nákladů" : ""}` },
-    { nadpis: "ZAKÁZKY", hodnota: `${new Intl.NumberFormat("cs-CZ").format(k.pocet)}`, zmena: sipkaZmeny(k.pocet, kp.pocet), pod: `Dokončeno ${k.dokonceno} · Reklamace ${k.reklamace}` },
+    { nadpis: "PŘIJATO ZAKÁZEK", hodnota: `${new Intl.NumberFormat("cs-CZ").format(k.pocet)}`, zmena: sipkaZmeny(k.pocet, kp.pocet), pod: `Vydáno ${k.vydano} · Reklamace ${k.reklamace}` },
   ];
   dlazdice.forEach((t, i) => {
     const x = OKRAJ + i * (w + mezera);
@@ -256,20 +260,26 @@ function maleDlazdice(p: Platno, d: ReportData) {
     { n: "DOKONČENOST", v: procenta(dokoncenost, 0), z: null },
     { n: "PODÍL REKLAMACÍ", v: procenta(podilReklamaci), z: null },
     { n: "PRŮMĚRNÁ DOBA", v: k.prumernaDobaDny > 0 ? `${new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 }).format(k.prumernaDobaDny)} dne` : "—", z: sipkaZmeny(k.prumernaDobaDny, kp.prumernaDobaDny, true) },
+    // Rozpracováno: otevřené zakázky k dnešku, ne za období – proto bez srovnání.
+    { n: "ROZPRACOVÁNO", v: `${zakazkySlovy(d.rozpracovano.pocet)} · ${korunyCele(d.rozpracovano.prijem)}`, z: null },
   ];
+  // Po třech v řadě: šest dlaždic vedle sebe je na A4 tak úzkých, že se
+  // ořezávají i částky („90 374…“).
+  const naRadek = 3;
   const mezera = 8;
-  const w = (SIRKA - (polozky.length - 1) * mezera) / polozky.length;
+  const w = (SIRKA - (naRadek - 1) * mezera) / naRadek;
   const h = 54;
-  p.zajisti(h + 10, d.nazevObdobi);
+  const radku = Math.ceil(polozky.length / naRadek);
+  p.zajisti(radku * (h + mezera) + 10, d.nazevObdobi);
   polozky.forEach((t, i) => {
-    const x = OKRAJ + i * (w + mezera);
-    const y = p.y - h;
+    const x = OKRAJ + (i % naRadek) * (w + mezera);
+    const y = p.y - h - Math.floor(i / naRadek) * (h + mezera);
     p.obdelnik(x, y, w, h, B.bila, { ramecek: B.ramecek });
     p.text(t.n, x + 10, y + h - 16, 7, { tucne: true, barva: B.tlumena, max: w - 20 });
     p.text(t.v, x + 10, y + h - 36, 13, { tucne: true, max: w - 20 });
     if (t.z) p.text(t.z.text, x + 10, y + 7, 7, { tucne: true, barva: t.z.barva });
   });
-  p.y -= h + 18;
+  p.y -= radku * (h + mezera) - mezera + 18;
 }
 
 function grafMesicu(p: Platno, d: ReportData) {
@@ -492,15 +502,16 @@ export async function vykresliReportPdf(d: ReportData, pisma: Pisma): Promise<Ui
   }
 
   // Poznámka k metodice – ať čísla nikdo nečte jinak, než jak vznikla.
-  p.zajisti(48, d.nazevObdobi);
+  p.zajisti(58, d.nazevObdobi);
   p.text("Jak se počítá", OKRAJ, p.y - 8, 7.5, { tucne: true, barva: B.tlumena });
   const pozn = [
-    "Obrat = konečné ceny provedených oprav po slevě; stornované zakázky se do peněz nepočítají, do počtů ano.",
+    "Obrat = konečné ceny provedených oprav po slevě u zakázek VYDANÝCH v období (koncový stav, podle data vydání); stornované zakázky se do peněz nepočítají.",
     "Zisk = obrat − náklady (náklady z ceníku oprav a nákupní ceny dílů ze skladu). Položky bez nákladů zisk nadhodnocují.",
-    "Období se počítá podle data přijetí zakázky v čase Europe/Prague. Srovnání je s bezprostředně předchozím obdobím.",
+    "Počet zakázek, stavy a zařízení jsou zakázky PŘIJATÉ v období (Europe/Prague). Rozpracované = otevřené k datu reportu, do obratu nepatří, dokud se nevydají.",
+    "Srovnání je s bezprostředně předchozím obdobím.",
   ];
   pozn.forEach((t, i) => p.text(t, OKRAJ, p.y - 20 - i * 10, 7, { barva: B.jemna, max: SIRKA }));
-  p.y -= 50;
+  p.y -= 60;
 
   p.paticky(`Jobi · ${d.servis.nazev} · vygenerováno ${d.vygenerovano}`);
   return doc.save();
