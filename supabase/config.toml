@@ -479,3 +479,8 @@ static_files = ["functions/statistics-report-send/LiberationSans-Regular.ttf", "
 # Připomínka plateb servisů: volá ji pg_cron bez uživatelského JWT (tajemství v těle).
 [functions.platby-pripominka]
 verify_jwt = false
+
+# GDPR anonymizace starých zákazníků: volá ji pg_cron (tajemství z Vaultu
+# v těle) i aplikace s tokenem správce – identitu ověřuje sama uvnitř.
+[functions.gdpr-anonymizace]
+verify_jwt = false

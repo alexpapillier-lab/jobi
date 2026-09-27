@@ -392,6 +392,19 @@ export const PRUVODCI: Pruvodce[] = [
     kroky: [{ page: "settings", title: "Pobočky", description: "Každá zakázka patří pobočce; lišta nahoře přepíná pohled. Členy jde omezit na své pobočky, přesuny řeší Zásilky.", selector: sel("settings-content"), settingsSection: nast("company", "service_branches"), icon: "settings" }],
   },
   {
+    id: "nastaveni-gdpr",
+    nazev: "Ochrana údajů (GDPR)",
+    popis: "Automatická anonymizace zákazníků, kteří roky nepřišli.",
+    page: "settings",
+    settingsSubsection: "service_gdpr",
+    novinkaOd: "2026-09-27",
+    dostupny: (k) => k.admin,
+    kroky: [
+      { page: "settings", title: "Anonymizace starých zákazníků", description: "Zákazník bez zakázky za posledních 5 let (nastavíte 3–10) přijde o jméno, kontakty, adresu, fotky, podpisy a SMS. Zakázky zůstanou a faktury se nemění – účetní doklady se archivují 10 let. Rozpracovaná zakázka nebo nezaplacená faktura zákazníka chrání.", selector: sel("settings-gdpr-anonymizace"), settingsSection: nast("company", "service_gdpr"), icon: "customers" },
+      { page: "settings", title: "Náhled a potvrzení", description: "„Zobrazit náhled“ ukáže, koho se to dotkne, a nic nemění. Spustí se až po napsání slova ANONYMIZOVAT; je to nevratné. Pak pravidlo běží samo každou noc – a když ho zpřísníte, čeká na nové potvrzení.", selector: sel("settings-gdpr-anonymizace"), settingsSection: nast("company", "service_gdpr"), icon: "customers" },
+    ],
+  },
+  {
     id: "nastaveni-predplatne",
     nazev: "Předplatné",
     popis: "Tarif, moduly a platby.",

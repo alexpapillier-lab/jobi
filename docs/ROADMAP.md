@@ -209,6 +209,16 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Export a výmaz dat servisu na žádost (GDPR) – v Owner panelu tlačítko
   „Exportovat data (JSON)“ (akce `export` ve `service-manage`, kompletní obsah
   servisu včetně seznamu souborů) a mazání, které nově uklidí i úložiště.
+- `[~]` Automatická anonymizace starých zákazníků (27. 9., GDPR – omezení
+  uložení): Nastavení → Firma → Ochrana údajů, pravidlo „bez zakázky mladší
+  než N let“ (výchozí 5, 3–10), náhled, potvrzení napsáním ANONYMIZOVAT,
+  pak denní pg_cron. Faktury se nemění, zakázky zůstávají bez osobních
+  údajů, fotky a podpisy se mažou z úložiště. Migrace
+  `20260927120000_anonymizace_zakazniku.sql`, edge funkce `gdpr-anonymizace`,
+  logika `src/lib/anonymizace.ts`. **Zbývá nasadit** (migrace, funkce,
+  kontrola tajemství ve Vaultu) a vyzkoušet na TEST2 – viz
+  `docs/GDPR_ANONYMIZACE.md`. Detail zakázky zatím neukazuje popisek
+  „anonymizováno“ (Orders.tsx se v tomhle kroku neměnil).
 - `[~]` Právní texty na dokumentech (6. 9., `jobidocs/core/defaults.ts` LEGAL_TEXTS):
   záruční list už neomezuje díly na 12 měsíců (spotřebitel má ze zákona 24
   měsíců z vadného plnění, § 2615 → § 2165 OZ) a nevylučuje pozdější reklamaci
