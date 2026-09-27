@@ -328,7 +328,22 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (909, '22222222-3333-4444-8555-666666666666', 'chat: DM je jen pro dva',                       'nic',       'do $blok$ declare n int; begin insert into chat_messages (service_id, sender_id, recipient_id, text) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''22222222-3333-4444-8555-666666666666'', ''33333333-4444-4555-8666-777777777777'', ''sonda 909''); perform set_config(''request.jwt.claims'', ''{"sub":"11111111-2222-4333-8444-555555555555","role":"authenticated"}'', true); select count(*) into n from chat_messages where text = ''sonda 909''; if n <> 0 then raise exception ''technik vidi cizi soukromou zpravu''; end if; end $blok$'),
   (910, '33333333-4444-4555-8666-777777777777', 'chat: clen oznaci kanal za precteny',           'projde',    'select public.chat_precteno(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''servis'')'),
   (911, null,                                   'chat: anon vypis priloh',                       'nic',       'select * from storage.objects where bucket_id = ''chat-prilohy'''),
-  (912, '11111111-2222-4333-8444-555555555555', 'chat: priloha do slozky ciziho servisu',        'odmitnuto', 'insert into storage.objects (bucket_id, name, owner) values (''chat-prilohy'', ''d9762a27-6c8d-43c4-9207-5c837e2713a0/sonda.txt'', ''11111111-2222-4333-8444-555555555555'')')
+  (912, '11111111-2222-4333-8444-555555555555', 'chat: priloha do slozky ciziho servisu',        'odmitnuto', 'insert into storage.objects (bucket_id, name, owner) values (''chat-prilohy'', ''d9762a27-6c8d-43c4-9207-5c837e2713a0/sonda.txt'', ''11111111-2222-4333-8444-555555555555'')'),
+
+  -- ══ GDPR anonymizace (27. 9., migrace 20260927120000) ═══════════════════
+  -- Nevratná operace: spuštění se SPRÁVNÝM slovem tu schválně není – ani
+  -- s vrácením transakce se na ostrá data nesahá. Zkouší se jen odmítnutí.
+  (950, '11111111-2222-4333-8444-555555555555', 'gdpr: technik spusti anonymizaci',              'odmitnuto', 'select public.anonymizace_spustit(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''ANONYMIZOVAT'')'),
+  (951, '11111111-2222-4333-8444-555555555555', 'gdpr: technik vidi nahled',                     'odmitnuto', 'select public.anonymizace_nahled(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'')'),
+  (952, '11111111-2222-4333-8444-555555555555', 'gdpr: technik zapne pravidlo',                  'odmitnuto', 'select public.anonymizace_nastavit(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', 3)'),
+  (953, '11111111-2222-4333-8444-555555555555', 'gdpr: technik cte protokol',                    'nic',       'select * from gdpr_anonymizace_log where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d'''),
+  (954, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce zapise protokol mimo funkci',     'odmitnuto', 'insert into gdpr_anonymizace_log (service_id, zdroj, po_letech, hranice) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''rucne'', 3, now())'),
+  (955, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce spusti bez potvrzovaciho slova', 'odmitnuto', 'select public.anonymizace_spustit(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''ano'')'),
+  (956, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce se vyda za cron',                 'odmitnuto', 'select public.anonymizace_spustit(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''cron'')'),
+  (957, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce vola vnitrni provedeni',          'odmitnuto', 'select public.anonymizace_provest(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''rucne'', null)'),
+  (958, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce vidi nahled sveho servisu',       'projde',    'select public.anonymizace_nahled(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'')'),
+  (959, '22222222-3333-4444-8555-666666666666', 'gdpr: spravce nahled ciziho servisu',           'odmitnuto', 'select public.anonymizace_nahled(''d9762a27-6c8d-43c4-9207-5c837e2713a0'')'),
+  (960, null,                                   'gdpr: anon nahled',                             'odmitnuto', 'select public.anonymizace_nahled(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'')')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p
