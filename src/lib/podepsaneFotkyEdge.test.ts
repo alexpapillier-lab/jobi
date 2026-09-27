@@ -247,7 +247,10 @@ describe("pojistky ve zdrojácích", () => {
 
   it("aplikace nikde nevykresluje fotku syrovou URL z databáze", () => {
     // Náhledy jdou přes FotkaZakazky (podepíše a obnovuje), lightbox přes hook.
-    const s = zdrojBezKomentaru("src/pages/Orders.tsx");
+    // Stránka Zakázky je rozdělená do src/pages/Orders/*.tsx – hlídá se celá složka.
+    const s = ["src/pages/Orders.tsx", ...readdirSync(join(KOREN, "src/pages/Orders")).filter((f) => f.endsWith(".tsx")).map((f) => `src/pages/Orders/${f}`)]
+      .map(zdrojBezKomentaru)
+      .join("\n");
     expect(s).not.toMatch(/<img\s+src=\{photoUrl\}/);
     expect(s).toContain("<FotkaZakazky");
     expect(s).toContain("usePodepsaneFotky(supabase, photoLightbox?.urls");

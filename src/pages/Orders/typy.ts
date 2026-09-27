@@ -193,3 +193,32 @@ export type ShodaZakaznika = {
   email?: string;
   company?: string;
 };
+
+/** Rozepsané změny v detailu, které se ukládají až při zavření (diagnostika, fotky, opravy). */
+export type DirtyFlags = {
+  diagnosticText: boolean;
+  diagnosticPhotos: boolean;
+  performedRepairs: boolean;
+};
+
+/** Otevřený lightbox diagnostických fotek. */
+export type FotoLightboxStav = { urls: string[]; index: number; ticketCode?: string };
+
+/** Jeden QR odkaz v okně „Vyfotit z telefonu“. */
+export type PolozkaQrFoceni = { deviceLabel: string; url: string };
+
+/** Vstup pro přidání provedené opravy (z ceníku, ručně nebo hodinová práce). */
+export type NovaProvedenaOprava = {
+  name: string;
+  type: "selected" | "manual" | "hourly";
+  repairId?: string;
+  price?: number;
+  costs?: number;
+  estimatedTime?: number;
+  productIds?: string[];
+  hodiny?: number;
+  sazba?: number;
+  technik?: string;
+  technikUserId?: string;
+  zMereni?: boolean;
+};
