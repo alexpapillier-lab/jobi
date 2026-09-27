@@ -76,7 +76,7 @@ test("náhradní zařízení z nastavení je vidět v zakázce bez restartu apli
   await smazTestovaciZarizeni(page);
   await nove.fill(nahradni);
   await page.getByLabel("Nové sériové číslo").fill("SN-E2E-1");
-  await page.getByRole("button", { name: "Přidat", exact: true }).click();
+  await page.locator('[data-tour="settings-content"]').getByRole("button", { name: "Přidat", exact: true }).click();
   await expect
     .poll(() => pocetTestovacichZarizeni(page), { timeout: 20_000, message: "Zařízení se v seznamu neobjevilo." })
     .toBe(1);

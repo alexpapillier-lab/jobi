@@ -21,10 +21,10 @@ test("na zakázce jde sestavit cenová nabídka z položek", async ({ page }) =>
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna baterie");
   await page.getByPlaceholder("Kč", { exact: true }).fill("1490");
-  await page.getByRole("button", { name: "Přidat", exact: true }).click();
+  await page.locator("#detail-portal").getByRole("button", { name: "Přidat", exact: true }).click();
   await page.getByPlaceholder("Vlastní položka").fill("Práce technika");
   await page.getByPlaceholder("Kč", { exact: true }).fill("300");
-  await page.getByRole("button", { name: "Přidat", exact: true }).click();
+  await page.locator("#detail-portal").getByRole("button", { name: "Přidat", exact: true }).click();
 
   // Součet se dopočítá z položek – to je celý smysl rozpisu.
   // Formát je stejný jako na dokladu a v portálu – „1 790,00 Kč“, ne „1 790 Kč“.

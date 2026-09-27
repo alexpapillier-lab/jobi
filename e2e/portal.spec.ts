@@ -25,7 +25,7 @@ test("servis sestaví nabídku a pošle ji zákazníkovi", async ({ page }) => {
   await expect(page.getByText("Cenová nabídka").first()).toBeVisible({ timeout: 20_000 });
   await page.getByPlaceholder("Vlastní položka").fill("Výměna displeje");
   await page.getByPlaceholder("Kč", { exact: true }).fill("3500");
-  await page.getByRole("button", { name: "Přidat", exact: true }).click();
+  await page.locator("#detail-portal").getByRole("button", { name: "Přidat", exact: true }).click();
   await page.getByRole("button", { name: "Poslat ke schválení" }).click();
   await expect(page.getByText(/Čeká na schválení/).first()).toBeVisible({ timeout: 20_000 });
 

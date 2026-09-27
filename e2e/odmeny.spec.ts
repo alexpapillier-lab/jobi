@@ -83,7 +83,7 @@ test("pravidlo odměn se uloží, zapne stránku Odměny a po úklidu zmizí", a
     // je v CI nenašel, i když na snímku byly (přístupový strom je slévá
     // do jednoho textu), toContainText čte textContent kontejneru.
     const stranka = page.locator('[data-tour="page-odmeny"]');
-    await expect(stranka).toContainText(/Zaměstnanc[ei] měsíce/, { timeout: 30_000 });
+    await expect(stranka).toContainText(/Zaměstnan(ec|ci) měsíce/, { timeout: 30_000 });
     await expect(stranka).toContainText("Celkem odměn za měsíc");
   } finally {
     // Úklid: pravidlo pryč, přepínač jak byl. Smazání se potvrzuje oknem prohlížeče.

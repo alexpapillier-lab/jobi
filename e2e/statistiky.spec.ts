@@ -9,7 +9,7 @@ import { prihlasSe, testovaciJmeno, zalozZakazku } from "./pomocnici";
 test.describe.configure({ mode: "serial" });
 
 async function naStatistiky(page: Page) {
-  const nadpis = page.getByText("Celkem zakázek").first();
+  const nadpis = page.getByText("Přijato zakázek").first();
   await expect
     .poll(async () => {
       await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "statistics" } })));
