@@ -187,8 +187,22 @@ První tři měsíce: body 1, 2, 4.
 - `[~]` Zálohy DB – hotová automatická denní záloha mimo Supabase
   (`.github/workflows/backup-db.yml`): dump, zkouška obnovy do prázdného
   Postgresu s porovnáním počtů řádků, šifrování AES-256 a artefakt na 90 dní.
-  Zbývá uživateli doplnit secrets `SUPABASE_DB_URL` a `BACKUP_PASSPHRASE`,
-  do té doby workflow jen napíše, co chybí. Viz `docs/ZALOHY_DATABAZE.md`.
+  Secrets `SUPABASE_DB_URL` a `BACKUP_PASSPHRASE` jsou od 5. 9. nastavené,
+  běží denně. Viz `docs/ZALOHY_DATABAZE.md`.
+- `[~]` **Záloha souborů ze Storage** (27. 9., `.github/workflows/backup-storage.yml`,
+  `scripts/backup-storage.sh`): fotky z příjmu, podpisy, obrázky produktů
+  a přílohy chatu (dnes 545 souborů, 101 MB) v dumpu databáze nejsou.
+  Denně `rclone sync` přes S3 protokol Storage do Cloudflare R2
+  (`jobi-zaloha-storage`), jen změny; smazané a přepsané se přesunou do
+  `smazane/<datum>/` a drží 30 dní (lifecycle R2). Po synchronizaci ověření
+  proti `storage.objects`, při nesouladu workflow spadne. Náhradní cesta přes
+  REST API se service role klíčem. Obnova `scripts/obnov-storage.sh`
+  (poslední stav, stav k datu, jen koš daného dne). Stará týdenní záloha
+  souborů v `backup-db.yml` od neveřejného bucketu `chat-prilohy` každou
+  neděli padá – po prvním zeleném běhu R2 odebrat. **Zbývá:** účet R2
+  s bucketem a lifecycle pravidly, S3 klíč Supabase a secrets (seznam
+  v `docs/ZALOHY_DATABAZE.md` kap. 7), první běh nanečisto a zkouška obnovy
+  do testovacího projektu.
 - `[~]` Monitoring a alerting – hotový hlídač `alerts-check` (pg_cron každou
   hodinu, e-mail přes Resend, tlumení 6 hodin, chyby z dev serveru se
   přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Stavová stránka a hlídání

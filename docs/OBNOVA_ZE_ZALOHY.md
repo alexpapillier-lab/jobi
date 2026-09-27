@@ -10,6 +10,11 @@ Kde se zálohy berou: `.github/workflows/backup-db.yml` (denně 02:30 UTC),
 Heslo k rozšifrování je secret `BACKUP_PASSPHRASE` – **bez něj je záloha
 k ničemu, měj ho i mimo GitHub** (správce hesel, papír v šuplíku).
 
+Soubory ze Storage (fotky, podpisy, obrázky produktů, přílohy chatu) jsou
+jinde: `.github/workflows/backup-storage.yml` je denně zrcadlí do Cloudflare
+R2, bucket `jobi-zaloha-storage` (kapitola 5, krok 2). Přístup k R2 (API
+token) měj taky mimo GitHub – po havárii se bude hodit na tvém počítači.
+
 ---
 
 ## 1. Co v záloze je a co ne
@@ -28,9 +33,13 @@ k ničemu, měj ho i mimo GitHub** (správce hesel, papír v šuplíku).
 
 **V záloze NENÍ a po havárii se to musí udělat ručně** (kapitola 5):
 
-* **soubory ve Storage** – fotky z diagnostiky, podpisy, obrázky produktů.
-  Zálohují se zvlášť, jednou týdně (v neděli), do artefaktu
-  `zaloha-storage-RRRRMMDD.tar.gz.gpg`. Mezi nedělemi můžeš přijít o týden fotek.
+* **soubory ve Storage** – fotky z diagnostiky, podpisy, obrázky produktů,
+  přílohy chatu. Zálohují se zvlášť, denně, do Cloudflare R2
+  (`backup-storage.yml`, obnova `scripts/obnov-storage.sh`, kapitola 5).
+  Smazané a přepsané soubory se tam drží ještě 30 dní.
+  (Týdenní artefakt `zaloha-storage-*` z `backup-db.yml` od zavedení
+  neveřejného bucketu `chat-prilohy` nevzniká – krok padá, viz
+  docs/ZALOHY_DATABAZE.md kap. 6.)
 * **hodnoty tajemství ve Vaultu** (`alerts_cron_secret`, `automations_cron_secret`)
 * **tajemství edge funkcí** – `RESEND_API_KEY`, `TWILIO_*`,
   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWKS`, … (`supabase secrets list`)
@@ -112,8 +121,8 @@ Chceš-li se do obnovené databáze podívat, spusť to s `KEEP_CLUSTER=1`.
 Projde i nad zálohou, ze které servis po havárii nerozjedeš. Chybí v ní totiž
 věci, které v databázi vůbec nejsou (kapitola 1 a 5):
 
-* **soubory ve Storage** – dnes 184 souborů, 73 MB; v `data.sql` je jen jejich
-  evidence (`storage.objects`), obsah je v jiném artefaktu a jen z neděle,
+* **soubory ve Storage** – 27. 9. 2026 545 souborů, 101 MB; v `data.sql` je
+  jen jejich evidence (`storage.objects`), obsah je v R2 (kapitola 5),
 * **hodnoty tajemství** – Vault (dnes 2) i tajemství edge funkcí,
 * **naplánované úlohy** – `cron.job` (dnes 4) je v `cron-ulohy.sql`, ale spustit
   se musí ručně, po obnově se samo nerozjede nic,
@@ -196,20 +205,71 @@ Názvy tajemství, která tam byla, jsou v `zaloha/vault-nazvy.txt`.
 Pořadí je záměrné – bez klíčů se aplikace nepřihlásí, bez souborů jsou zakázky
 bez fotek.
 
-1. **Rozšíření a bucket(y) Storage.** V novém projektu vytvoř buckety
-   `diagnostic-photos` a `product-images` (viz `docs/JOBIDOCS_STORAGE_BUCKET.md`)
-   se stejným nastavením veřejnosti a limitem velikosti.
-2. **Soubory ve Storage.** Rozbal poslední artefakt `zaloha-storage-*` a nahraj
-   soubory zpět, cesty musí sedět na `storage-soubory.csv`:
+1. **Buckety Storage.** Obnova `data.sql` (kapitola 3) vrátí i řádky
+   `storage.buckets` a `storage.objects` – buckety tedy v novém projektu už
+   jsou, i s nastavením veřejnosti a limity. Kdyby ne, založí je skript
+   z kroku 2 podle `metadata/buckety.json` v záloze (proměnná `CIL_DB_URL`).
+   **Obsah souborů ale v databázi není** – aplikace ukáže u zakázek rozbité
+   fotky, dokud neproběhne krok 2.
+2. **Soubory ve Storage** – z Cloudflare R2 skriptem `scripts/obnov-storage.sh`
+   (potřebuje `rclone`: `brew install rclone`; podrobnosti o záloze
+   v docs/ZALOHY_DATABAZE.md kap. 7).
+
+   V novém projektu nejdřív vygeneruj S3 klíč: Dashboard → Storage → Settings
+   → *Enable connection via S3 protocol* → Access keys → New access key.
+   Proměnné cíle mají schválně jiné názvy než u zálohy (`CIL_…`), ať se
+   obnova nepustí omylem proti produkci.
+
    ```bash
-   gpg --decrypt --output soubory.tar.gz zaloha-storage-RRRRMMDD.tar.gz.gpg
-   tar -xzf soubory.tar.gz
-   # nahrání (potřebuje service role klíč nového projektu)
-   supabase storage cp -r soubory/diagnostic-photos ss://diagnostic-photos
-   supabase storage cp -r soubory/product-images ss://product-images
+   export R2_ACCOUNT_ID=… R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=…
+   export CIL_SUPABASE_URL="https://[NOVY_REF].supabase.co"
+   export CIL_S3_ACCESS_KEY=… CIL_S3_SECRET_KEY=…
+   export CIL_DB_URL="$NOVA_DB_URL"        # volitelně: doplní chybějící buckety
+
+   bash scripts/obnov-storage.sh --nanecisto    # co by se nahrálo
+   bash scripts/obnov-storage.sh                # nahraje poslední stav, zeptá se na ref projektu
    ```
-   Řádky ve `storage-soubory.csv`, ke kterým soubor nemáš, jsou fotky pořízené
-   po poslední nedělní záloze – ty jsou pryč.
+
+   Skript nahraje obsah `aktualni/` ze zálohy do stejnojmenných bucketů
+   a pak ho **porovná stažením** z obou stran (`rclone check --download`).
+   Porovnání jen velikostí by nestačilo: po obnově `data.sql` S3 výpis
+   nového projektu vrací soubory z evidence v databázi, i když jejich obsah
+   chybí. Ze stejného důvodu se ve výchozím stavu **přepisuje** všechno –
+   `--jen-chybejici` by tu nenahrálo nic.
+
+   Region nového projektu, pokud není `eu-west-1`: `export CIL_S3_REGION=…`.
+
+   **Obnova k určitému dni** (třeba když se zjistí, že před týdnem někdo
+   přepsal nebo smazal soubory a denní záloha to mezitím zrcadlila):
+
+   ```bash
+   bash scripts/obnov-storage.sh --stav 2026-09-20
+   ```
+
+   Složí stav ke konci toho dne (UTC): zrcadlo bez souborů nahraných
+   později, doplněné o verze, které se ve dnech po něm smazaly nebo
+   přepsaly (`smazane/<den>/`). Jde nejvýš 30 dní zpátky – starší koš
+   R2 samo maže. Skládá se v dočasné složce na tvém disku, pak se nahraje.
+
+   Řádky ve `storage.objects`, ke kterým soubor v záloze není, jsou fotky
+   pořízené po poslední záloze souborů (nejvýš den) – ty jsou pryč.
+
+**Bez havárie – někdo smazal fotky v ostrém projektu.** Smazané soubory
+jsou v koši zálohy pod dnem, kdy je noční záloha přestala vidět (den po
+smazání, pokud se mazalo po záloze):
+
+```bash
+rclone lsf -R "r2:jobi-zaloha-storage/smazane/2026-09-27/diagnostic-photos"   # co v koši je
+export CIL_SUPABASE_URL="https://ijtvcgolsdsrquqbvjrz.supabase.co" CIL_S3_ACCESS_KEY=… CIL_S3_SECRET_KEY=…
+bash scripts/obnov-storage.sh --kos 2026-09-27 --bucket diagnostic-photos --nanecisto
+bash scripts/obnov-storage.sh --kos 2026-09-27 --bucket diagnostic-photos
+```
+
+U `--kos` se existující soubory nepřepisují (výchozí `--jen-chybejici`),
+takže se vrátí jen to, co v produkci chybí. Soubor se nahraje na původní
+cestu, takže odkaz uložený v zakázce zase funguje. (`rclone lsf` potřebuje
+remote `r2` – buď proměnné `RCLONE_CONFIG_R2_*` jako v
+`scripts/zaloha-storage-spolecne.sh`, nebo `rclone config`.)
 3. **Edge funkce.** `supabase functions deploy` (kód je v gitu) a znovu nastavit
    všechna tajemství: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
    `RESEND_FROM_EMAIL_PASSWORD_RESET`, `ROOT_OWNER_ID`, `SUPABASE_ANON_KEY`,
@@ -227,7 +287,12 @@ bez fotek.
    desktopové aplikace – URL projektu se do nich zapéká při buildu.
 6. **Zálohování samo.** Nastav `SUPABASE_DB_URL` na nový projekt v secrets
    repozitáře, spusť `Actions → Záloha databáze → Run workflow` a přesvědč se,
-   že proběhla i zkouška obnovy.
+   že proběhla i zkouška obnovy. Pro zálohu souborů přepiš i
+   `SUPABASE_S3_ACCESS_KEY`, `SUPABASE_S3_SECRET_KEY` (klíč nového projektu)
+   a případně `SUPABASE_S3_ENDPOINT`, pak `Actions → Záloha souborů (Storage)`
+   nejdřív s *nanecisto*. Starý obsah `aktualni/` v R2 se tím neztratí: co
+   v novém projektu chybí, odejde do `smazane/<datum>/` a drží se 30 dní –
+   proto záloha souborů smí běžet až **po** kroku 2 z kapitoly 5.
 
 ---
 
@@ -240,7 +305,9 @@ bez fotek.
 - [ ] fotky u zakázek se zobrazují (Storage)
 - [ ] `select jobname, active from cron.job` vrací čtyři úlohy
 - [ ] přijde e-mail (pozvánka do servisu) a SMS
+- [ ] `scripts/obnov-storage.sh` doběhl bez chyby včetně porovnání (`rclone check`)
 - [ ] denní záloha nového projektu proběhla a zkouška obnovy v ní prošla
+- [ ] záloha souborů (`backup-storage.yml`) proběhla proti novému projektu a ověření sedí
 
 ---
 
@@ -249,6 +316,8 @@ bez fotek.
 Buď na to připravený a řekni to majiteli dřív, než se zeptá:
 
 * **Data od poslední noční zálohy** – až 24 hodin práce (bez PITR).
-* **Fotky od poslední nedělní zálohy souborů** – až 7 dní.
+* **Fotky od poslední zálohy souborů** – až 24 hodin (záloha do R2 běží
+  denně). Dokud nejsou nastavené její secrets (docs/ZALOHY_DATABAZE.md
+  kap. 7), **žádná použitelná záloha souborů není**.
 * **Relace přihlášených uživatelů** – všichni se budou muset přihlásit znovu.
 * **Hodnoty tajemství** – Vault i edge funkce, nastavují se nová.

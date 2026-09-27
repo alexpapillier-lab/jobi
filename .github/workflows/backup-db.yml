@@ -8,6 +8,10 @@ name: Záloha databáze
 # Zkoušku obnovy dělá scripts/zkouska-obnovy.sh – ten samý skript, který si
 # člověk pustí lokálně (docs/OBNOVA_ZE_ZALOHY.md). Co ověří CI, ověří i on.
 #
+# Soubory ze Storage (fotky, podpisy, obrázky) zálohuje zvlášť a denně
+# backup-storage.yml do Cloudflare R2 (docs/ZALOHY_DATABAZE.md, kapitola 7).
+# Tenhle workflow z nich bere jen seznam (storage-soubory.csv).
+#
 # Potřebné secrets v repozitáři (Settings → Secrets → Actions):
 #   SUPABASE_DB_URL     connection string i s heslem (session pooler, port 5432)
 #   BACKUP_PASSPHRASE   heslo, kterým se záloha symetricky zašifruje
@@ -190,6 +194,8 @@ jobs:
       # zakázky zůstaly bez příloh. Stahují se jednou týdně (v neděli), aby
       # artefakty nezabraly zbytečně moc místa – denní kopie by byla skoro
       # totožná. Ručně se dá vynutit vstupem „soubory".
+      # Nahrazuje ho backup-storage.yml (R2); tenhle krok padá na neveřejném
+      # bucketu chat-prilohy – viz docs/ZALOHY_DATABAZE.md, kapitola 6.
       - name: Je čas na soubory?
         id: kdy
         run: |

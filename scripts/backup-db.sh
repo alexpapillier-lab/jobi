@@ -10,6 +10,9 @@
 #   3. Vyzkoušej obnovu: bash scripts/zkouska-obnovy.sh backup/<datum>
 #      (bez tohohle kroku nevíš, jestli je záloha k něčemu)
 # Zálohy se uloží do backup/ (ta složka je v .gitignore).
+#
+# Soubory ze Storage tu nejsou (jen jejich seznam) – ty zálohuje
+# scripts/backup-storage.sh do Cloudflare R2 (docs/ZALOHY_DATABAZE.md, kap. 7).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
