@@ -103,7 +103,11 @@ jobs:
           fi
 
       - name: Záznam z neúspěšných testů
-        if: failure() && steps.secrets.outputs.mame == 'ano'
+        # `cancelled()` navíc: když se sada nevejde do timeout-minutes, GitHub
+        # krok označí jako zrušený, ne jako neúspěšný, a `failure()` je pak
+        # false – bez týhle podmínky by timeout nenechal žádnou stopu, co se
+        # vlastně počítalo (ověřeno na běhu 36294588193, 27. 9., 45 min bez artefaktu).
+        if: (failure() || cancelled()) && steps.secrets.outputs.mame == 'ano'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-vysledky
