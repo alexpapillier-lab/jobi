@@ -43,7 +43,7 @@ export function UnsavedBar({
   if (!dirty) return null;
 
   return (
-    <div className="ui-unsaved-bar" role="status" aria-live="polite">
+    <div className="ui-unsaved-bar" role="status" aria-live="polite" data-tour="settings-ulozit">
       <span className="ui-unsaved-bar__label">
         <span className="ui-unsaved-bar__dot" aria-hidden="true" />
         {label}

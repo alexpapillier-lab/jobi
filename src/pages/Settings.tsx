@@ -1180,7 +1180,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             <CardHeader title="Údaje firmy" description="Základní informace o vašem servisu nebo firmě. Tisknou se v hlavičce dokumentů." />
 
             <div style={{ display: "grid", gap: 16 }}>
-              <div>
+              <div data-tour="settings-firma-zkratka">
                 <FieldLabel>Zkratka *</FieldLabel>
                 <TextInput
                   type="text"
@@ -1190,7 +1190,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
-              <div>
+              <div data-tour="settings-firma-nazev">
                 <FieldLabel>Název *</FieldLabel>
                 <TextInput
                   type="text"
@@ -1200,7 +1200,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
+              <div data-tour="settings-firma-ico" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
                 <div>
                   <FieldLabel>IČO *</FieldLabel>
                   <TextInput
@@ -1242,7 +1242,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 </div>
               </div>
 
-              <div>
+              <div data-tour="settings-firma-adresa">
                 <div style={{ fontWeight: 700, fontSize: "var(--text-base)", color: "var(--text)", marginTop: 8, marginBottom: 8 }}>Adresa</div>
                 
                 <div style={{ marginBottom: 16 }}>
@@ -1288,7 +1288,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* SERVIS - KONTAKTNÍ ÚDAJE */}
       {section.subsection === "service_contact" && (
         <>
-          <Card>
+          <Card data-tour="settings-kontakty">
             <CardHeader title="Kontakty" description="Kontaktní a bankovní údaje pro komunikaci se zákazníky a pro dokumenty." />
 
             <div style={{ display: "grid", gap: 16 }}>
@@ -1823,7 +1823,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
-              <div>
+              <div data-tour="settings-status-nazev">
                 <FieldLabel>Název (zobrazovaný text)</FieldLabel>
                 <TextInput
                   ref={statusNazevRef}
@@ -1853,7 +1853,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 />
               </div>
 
-              <div>
+              <div data-tour="settings-status-barva">
                 <FieldLabel>Barva statusu</FieldLabel>
                 <div style={{ display: "grid", gap: 12 }}>
                   {/* Paleta předvybraných barev */}
@@ -1993,7 +1993,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 </div>
               </div>
 
-              <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+              <label data-tour="settings-status-finalni" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
                 <input
                   type="checkbox"
                   checked={!!draft.isFinal}
@@ -2020,6 +2020,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 </div>
 
                   <Button
+                    data-tour="settings-status-pridat"
                     variant="primary"
                     disabled={!canSave}
                     onClick={async () => {
@@ -2041,7 +2042,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             </div>
           </Card>
 
-          <Card>
+          <Card data-tour="settings-statusy-seznam">
             <div style={{ fontWeight: 900, fontSize: "var(--text-base)", marginBottom: "var(--space-2)", color: "var(--text)" }}>Existující statusy</div>
             <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", marginBottom: 12 }}>
               Fallback status (nelze smazat): <b>{fallbackKey}</b>
@@ -2223,6 +2224,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               />
               {uiCfg.app.dnesVNavigaci !== false && (
               <SettingRow
+                dataTour="settings-po-prihlaseni"
                 label="Po přihlášení otevřít"
                 description="Dnes je přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy."
                 control={
@@ -2575,6 +2577,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           />
           <SettingRows>
             <SettingRow
+              dataTour="settings-zaruka-spotrebitel"
               label="Výchozí záruka na opravu – spotřebitel"
               description="Zákazník bez IČO na zakázce. Zákonná lhůta pro spotřebitele je 24 měsíců."
               control={
@@ -2595,6 +2598,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               }
             />
             <SettingRow
+              dataTour="settings-zaruka-firma"
               label="Výchozí záruka na opravu – firma"
               description="Zákazník s IČO na zakázce. 0 = bez záruky."
               control={
@@ -2623,6 +2627,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <SettingRows>
             <SettingRow
               clickable
+              dataTour="settings-reklamace-v-seznamu"
               label="Zobrazit reklamace i v záložkách Vše a Dokončené"
               control={
                 <input
@@ -2646,11 +2651,13 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <SettingRows>
             <SettingRow
               clickable
+              dataTour="settings-chat-zapnuty"
               label="Chat zapnutý"
               description="Vpravo dole vedle tlačítka nové zakázky se ukáže bublina s obálkou a počtem nepřečtených zpráv. Vypnutí chat schová všem, zprávy zůstanou uložené."
               control={<input type="checkbox" checked={chatZapnuty} onChange={(e) => { void saveChatZapnuty(e.target.checked); }} />}
             />
             <SettingRow
+              dataTour="settings-chat-upozorneni"
               label="Zvuk a upozornění"
               description="Zvuk a systémová upozornění si každý zapíná sám v panelu chatu (ikona zvonku); platí pro jeho zařízení."
               control={<span style={{ fontSize: 12, color: "var(--muted)" }}>v panelu chatu</span>}
@@ -2668,6 +2675,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           />
           <SettingRows>
             <SettingRow
+              dataTour="settings-prace-sazba"
               label="Výchozí hodinová sazba"
               description="Předvyplní se u každé nové hodinové práce; u konkrétní zakázky ji lze přepsat. Prázdné = sazbu zadává technik pokaždé."
               control={
@@ -2689,6 +2697,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             />
             <SettingRow
               clickable
+              dataTour="settings-prace-stopky"
               label="Stopky na zakázce"
               description="V detailu zakázky karta „Čas na opravě“: technik spustí a zastaví práci, vidí se, kdo právě pracuje a kolik času zakázka stála. Odpracovaný čas jde do KPI techniků ve Statistikách."
               control={
@@ -2701,6 +2710,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
             />
             {casNaOprave && (
               <SettingRow
+                dataTour="settings-prace-zaokrouhleni"
                 label="Zaokrouhlení naměřeného času"
                 description="Když se čas ze stopek přidá do zakázky jako hodinová práce, zaokrouhlí se nahoru na započatý krok. Bez zaokrouhlení se účtují minuty (na setiny hodiny)."
                 control={
@@ -2725,6 +2735,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
           <SettingRows>
             <SettingRow
               clickable
+              dataTour="settings-povinny-telefon"
               label="Telefon zákazníka povinný"
               description="Po vypnutí lze zakázku uložit i bez telefonu (pole zůstane volitelné)."
               control={

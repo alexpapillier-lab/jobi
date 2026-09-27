@@ -91,7 +91,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       hotovo: zkratka,
       cil: "service_basic",
       akce: "Nastavit zkratku",
-      pruvodce: { id: "nastaveni-firma", krok: 0 },
+      pruvodce: { id: "nastaveni-firma", krok: 1 },
     },
     {
       id: "kontakt",
@@ -100,7 +100,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       hotovo: jeVyplneno(cd.phone) || jeVyplneno(cd.email),
       cil: "service_contact",
       akce: "Doplnit kontakt",
-      pruvodce: { id: "nastaveni-firma", krok: 1 },
+      pruvodce: { id: "nastaveni-firma", krok: 6 },
     },
     {
       id: "jobidocs",
@@ -114,7 +114,7 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       akce: stav.desktop ? "Nastavit tisk" : "Stáhnout aplikaci",
       // V prohlížeči se splnit nedá; kdyby byl povinný, seznam by se nikdy nezavřel sám.
       volitelny: !stav.desktop,
-      pruvodce: { id: "nastaveni-tisk", krok: 0 },
+      pruvodce: { id: "nastaveni-tisk", krok: 1 },
     },
     {
       id: "zakazka",
@@ -122,8 +122,8 @@ export function onboardingKroky(stav: OnboardingStav): OnboardingKrok[] {
       popis: "Vyzkoušejte si příjem i tisk, než přijde první zákazník.",
       // Ukázková zakázka se nepočítá – tu nezaložil zákazník, ale aplikace.
       hotovo: ostrychZakazek > 0,
-      // Krok „Nová zakázka“ v průvodci přehledem zakázek.
-      pruvodce: { id: "zakazky", krok: 3 },
+      // Průvodce příjmem zakázky, krok „Klikněte na + Nová zakázka“.
+      pruvodce: { id: "nova-zakazka", krok: 1 },
     },
     {
       id: "tym",

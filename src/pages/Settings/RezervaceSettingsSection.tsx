@@ -118,14 +118,14 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
         nebo z ní jedním kliknutím založíte zakázku. Na e-mail firmy přijde upozornění, zákazník dostane potvrzení.
       </p>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12, cursor: "pointer" }}>
+      <label data-tour="settings-rezervace-zapnout" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 12, cursor: "pointer" }}>
         <input type="checkbox" checked={nastaveni.zapnuto} onChange={(e) => void uloz({ ...nastaveni, zapnuto: e.target.checked })} />
         Přijímat rezervace z webu
       </label>
 
       {nastaveni.zapnuto && (
         <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+          <label data-tour="settings-rezervace-adresa" style={{ display: "grid", gap: 4, fontSize: 13 }}>
             <span style={{ color: "var(--muted)" }}>Adresa servisu ve formuláři (stejná jako u veřejného API)</span>
             <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="nazev-servisu" style={{ ...input, minWidth: 220 }} />
@@ -134,7 +134,7 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
           </label>
           {!slugUlozeny && <div role="alert" style={{ fontSize: 13, color: "#dc2626" }}>Bez adresy formulář nebude fungovat – vyplňte ji a uložte.</div>}
 
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+          <div data-tour="settings-rezervace-dny" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
             <span style={{ color: "var(--muted)" }}>Otevřeno:</span>
             {DNY.map((d, i) => {
               const den = i + 1;
@@ -153,7 +153,7 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
             })}
           </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+          <div data-tour="settings-rezervace-hodiny" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
               {/* Ukládá se až po opuštění pole: při psaní času odchází několik
                   zápisů za sebou a vyhrát může starší mezistav (např. „0:30“). */}
@@ -181,7 +181,7 @@ export function RezervaceSettingsSection({ activeServiceId }: { activeServiceId:
             />
           </label>
 
-          <div>
+          <div data-tour="settings-rezervace-kod">
             <div style={{ ...popis, marginBottom: 6 }}>Tohle vložte na svůj web tam, kde má formulář být:</div>
             <code style={{ display: "block", padding: 10, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{kod}</code>
             <div style={{ marginTop: 8 }}>

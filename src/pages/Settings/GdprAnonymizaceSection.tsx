@@ -217,6 +217,7 @@ export function GdprAnonymizaceSection({ activeServiceId }: { activeServiceId: s
         <SettingRows>
           <SettingRow
             clickable
+            dataTour="gdpr-zapnout"
             label="Anonymizovat zákazníky bez nedávné zakázky"
             description={popisStavu}
             control={
@@ -230,6 +231,7 @@ export function GdprAnonymizaceSection({ activeServiceId }: { activeServiceId: s
             }
           />
           <SettingRow
+            dataTour="gdpr-roky"
             label="Po kolika letech"
             description="Počítá se od poslední zakázky (přijetí i vydání), reklamace nebo faktury – ne od úpravy karty. Zákazník s rozpracovanou zakázkou nebo nezaplacenou fakturou se neanonymizuje nikdy."
             control={
@@ -252,13 +254,13 @@ export function GdprAnonymizaceSection({ activeServiceId }: { activeServiceId: s
         </SettingRows>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: "var(--space-4)" }}>
-          <Button size="sm" variant="soft" onClick={() => void otevritNahled()} disabled={nacitamNahled || !activeServiceId}>
+          <Button data-tour="gdpr-nahled" size="sm" variant="soft" onClick={() => void otevritNahled()} disabled={nacitamNahled || !activeServiceId}>
             {nacitamNahled ? "Počítám…" : "Zobrazit náhled"}
           </Button>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>Náhled nic nemění – ukáže, koho by se anonymizace dotkla.</span>
         </div>
 
-        <details style={{ marginTop: "var(--space-4)", fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
+        <details data-tour="gdpr-co-se-smaze" style={{ marginTop: "var(--space-4)", fontSize: 13, color: "var(--muted)", lineHeight: 1.55 }}>
           <summary style={{ cursor: "pointer", color: "var(--text)", fontWeight: 600 }}>Co přesně se smaže a co zůstane</summary>
           <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
             <div><b>Smaže se:</b> jméno (nahradí ho „Anonymizovaný zákazník #…“), telefon, e-mail, adresa, poznámka a historie změn karty; na zakázkách a reklamacích totéž plus kód k zařízení, podpis převzetí, fotky, odkaz do portálu a otisk schválení nabídky (IP adresa); z historie zakázky osobní údaje; SMS konverzace, ve kterých se od hranice nic nedělo; telefon a e-mail z logu automatizací.</div>
@@ -267,7 +269,7 @@ export function GdprAnonymizaceSection({ activeServiceId }: { activeServiceId: s
         </details>
       </Card>
 
-      <Card style={{ marginTop: "var(--space-4)" }}>
+      <Card data-tour="gdpr-protokol" style={{ marginTop: "var(--space-4)" }}>
         <CardHeader
           title="Protokol anonymizace"
           description="Posledních 10 běhů. Denní úloha se zapisuje, jen když někoho anonymizovala."

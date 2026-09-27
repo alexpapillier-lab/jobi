@@ -160,7 +160,7 @@ export function DetailHlavicka({
             const detailStatus = normalizeStatus((detailedTicket.status as any) ?? statusById[detailedTicket.id]);
             if (detailStatus === null) return null;
             return (
-              <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span data-tour="detail-stav" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <StatusPicker value={detailStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(detailedTicket.id, next)} size="sm" actionsByStatus={statusActionsMap} />
                 {isFinal(detailStatus) && <span title="Dokončená zakázka" style={{ display: "inline-flex", color: "var(--accent)" }}><CheckIcon size={14} /></span>}
               </span>
@@ -343,6 +343,7 @@ export function DetailHlavicka({
 
             {detailedTicket && canPrintExport && (
               <PrintMenu
+                dataTour="detail-tisk"
                 rows={[
                   {
                     key: "ticket",

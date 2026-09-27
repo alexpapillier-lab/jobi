@@ -88,7 +88,9 @@ function useKlikyKroku(active: boolean, step: TourStep | null) {
         }
         if (zruseno || !el) return;
         if (!klikUzHotovy(el, vysledek)) {
-          el.click();
+          // <details> se klikem na sebe sama nerozbalí (jen klikem na summary).
+          if (el instanceof HTMLDetailsElement) el.open = true;
+          else el.click();
           // React potřebuje chvíli na vykreslení dialogu nebo záložky.
           await cekej(250);
         }
@@ -451,49 +453,60 @@ export function AppTourOverlay({
   const vyskaOkna = typeof window !== "undefined" ? window.innerHeight / meritkoDokumentu() : 800;
   const kartaNahore = !!r && r.y + r.height / 2 > vyskaOkna * 0.55;
 
-  return createPortal(
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        // Nad rozbalovacími okny stránek (9998 pozadí, 9999 okno – termín
-        // v Kalendáři, filtr statusů): jejich pozadí by jinak spolklo klik
-        // na Další. Okno samo je v DOM později, takže zůstane nad průvodcem.
-        zIndex: 9999,
-        pointerEvents: "none",
-        display: "flex",
-        alignItems: kartaNahore ? "flex-start" : "flex-end",
-        justifyContent: "center",
-        padding: 24,
-        paddingBottom: kartaNahore ? 24 : 48,
-        paddingTop: kartaNahore ? 48 : 24,
-      }}
-    >
-      {dira && [
-        blok({ left: 0, top: 0, right: 0, height: Math.max(0, dira.y) }, "n"),
-        blok({ left: 0, top: dira.y + dira.h, right: 0, bottom: 0 }, "s"),
-        blok({ left: 0, top: dira.y, width: Math.max(0, dira.x), height: dira.h }, "w"),
-        blok({ left: dira.x + dira.w, top: dira.y, right: 0, height: dira.h }, "e"),
-      ]}
-      {dira && (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: dira.x,
-            top: dira.y,
-            width: dira.w,
-            height: dira.h,
-            borderRadius: 16,
-            boxShadow: `0 0 0 9999px ${BACKDROP_COLOR}`,
-            pointerEvents: "none",
-            border: "3px solid var(--accent)",
-            boxSizing: "border-box",
-          }}
-        />
+  const vrstva: CSSProperties = { position: "fixed", inset: 0, pointerEvents: "none" };
+  return (
+    <>
+      {createPortal(
+        // Ztmavení a zvýraznění: nad rozbalovacími okny stránek (9998 pozadí,
+        // 9999 okno – termín v Kalendáři, filtr statusů), jejichž pozadí by
+        // jinak spolklo klik; okno samo je v DOM později, takže zůstane nad ním.
+        <div style={{ ...vrstva, zIndex: 9999 }}>
+          {dira && [
+            blok({ left: 0, top: 0, right: 0, height: Math.max(0, dira.y) }, "n"),
+            blok({ left: 0, top: dira.y + dira.h, right: 0, bottom: 0 }, "s"),
+            blok({ left: 0, top: dira.y, width: Math.max(0, dira.x), height: dira.h }, "w"),
+            blok({ left: dira.x + dira.w, top: dira.y, right: 0, height: dira.h }, "e"),
+          ]}
+          {dira && (
+            <div
+              aria-hidden
+              style={{
+                position: "fixed",
+                left: dira.x,
+                top: dira.y,
+                width: dira.w,
+                height: dira.h,
+                borderRadius: 16,
+                boxShadow: `0 0 0 9999px ${BACKDROP_COLOR}`,
+                pointerEvents: "none",
+                border: "3px solid var(--accent)",
+                boxSizing: "border-box",
+              }}
+            />
+          )}
+        </div>,
+        document.body
       )}
-      {card}
-    </div>,
-    document.body
+      {createPortal(
+        // Karta zvlášť a výš (nad dialogy 10000 – pozvánka, potvrzení): ať ji
+        // dialog, který si uživatel podle kroku otevřel, nepřekryje a Další
+        // jde vždycky kliknout.
+        <div
+          style={{
+            ...vrstva,
+            zIndex: 10500,
+            display: "flex",
+            alignItems: kartaNahore ? "flex-start" : "flex-end",
+            justifyContent: "center",
+            padding: 24,
+            paddingBottom: kartaNahore ? 24 : 48,
+            paddingTop: kartaNahore ? 48 : 24,
+          }}
+        >
+          {card}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

@@ -1103,7 +1103,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
       {pendingInvites.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <Card>
+          <Card data-tour="settings-team-cekajici">
           <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 12, color: "var(--text)" }}>Čekající pozvánky</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {pendingInvites.map((invite: any) => (

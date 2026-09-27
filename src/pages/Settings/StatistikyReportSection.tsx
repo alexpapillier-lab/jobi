@@ -187,11 +187,13 @@ export function StatistikyReportSection({ activeServiceId }: { activeServiceId: 
         <SettingRows>
           <SettingRow
             clickable
+            dataTour="report-zapnout"
             label="Posílat report e-mailem"
             description={nastaveni.zapnuto ? `Odejde ${kdy} v ${nastaveni.hodina}:00 za právě skončené období.` : "Vypnuto – nic se neposílá."}
             control={<input type="checkbox" checked={nastaveni.zapnuto} onChange={(e) => void uloz({ ...nastaveni, zapnuto: e.target.checked })} />}
           />
           <SettingRow
+            dataTour="report-frekvence"
             label="Jak často"
             description={nastaveni.frekvence === "tydne" ? "Každé pondělí za minulý týden (pondělí–neděle)." : "Prvního v měsíci za minulý měsíc."}
             control={
@@ -221,7 +223,7 @@ export function StatistikyReportSection({ activeServiceId }: { activeServiceId: 
           />
         </SettingRows>
 
-        <div style={{ marginTop: "var(--space-4)" }}>
+        <div data-tour="report-prijemci" style={{ marginTop: "var(--space-4)" }}>
           <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", marginBottom: 6 }}>Příjemci</div>
           {bezPrijemcu && (
             <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--danger, #dc2626)", marginBottom: 8 }}>
@@ -267,7 +269,7 @@ export function StatistikyReportSection({ activeServiceId }: { activeServiceId: 
           title="Vyzkoušet"
           description="Ukázku PDF si stáhnete hned, zkušební e-mail přijde jen vám. „Poslat teď“ odešle report všem příjemcům mimo plán."
         />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <div data-tour="report-vyzkouset" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <Segmented<"predchozi" | "aktualni">
             size="sm"
             ariaLabel="Období pro zkušební report"

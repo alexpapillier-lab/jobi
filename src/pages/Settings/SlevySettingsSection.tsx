@@ -105,8 +105,8 @@ export function SlevySettingsSection({ activeServiceId }: { activeServiceId: str
             <span>Typ</span><span>Hodnota</span><span>Popisek (nepovinný)</span><span />
           </div>
         )}
-        {slevy.map((s) => (
-          <div key={s.id} style={mrizka} data-testid="prednastavena-sleva">
+        {slevy.map((s, i) => (
+          <div key={s.id} style={mrizka} data-testid="prednastavena-sleva" data-tour={i === 0 ? "settings-slevy-prvni" : undefined}>
             <select
               value={s.typ}
               aria-label={`Typ slevy ${hodnotaSlevy(s)}`}
@@ -150,7 +150,7 @@ export function SlevySettingsSection({ activeServiceId }: { activeServiceId: str
         {slevy.length === 0 && !chybaNacteni && (
           <div style={{ color: "var(--muted)", fontSize: 13 }}>Zatím žádná. Přidejte třeba 10 % pro stálé zákazníky nebo 200 Kč za dlouhé čekání.</div>
         )}
-        <div style={{ ...mrizka, paddingTop: 8, borderTop: slevy.length > 0 ? "1px solid var(--border)" : "none" }}>
+        <div data-tour="settings-slevy-nova" style={{ ...mrizka, paddingTop: 8, borderTop: slevy.length > 0 ? "1px solid var(--border)" : "none" }}>
           <select value={novaTyp} onChange={(e) => setNovaTyp(e.target.value as "percentage" | "amount")} aria-label="Typ nové slevy" style={input}>
             <option value="percentage">Procenta</option>
             <option value="amount">Kč</option>
@@ -175,7 +175,7 @@ export function SlevySettingsSection({ activeServiceId }: { activeServiceId: str
             style={input}
             onKeyDown={(e) => { if (e.key === "Enter") pridat(); }}
           />
-          <Button size="sm" variant="soft" onClick={pridat} disabled={!novaPlatna || !nacteno || plno} title={plno ? `Nejvýš ${MAX_PREDNASTAVENYCH_SLEV} slev` : undefined}>Přidat</Button>
+          <Button data-tour="settings-slevy-pridat" size="sm" variant="soft" onClick={pridat} disabled={!novaPlatna || !nacteno || plno} title={plno ? `Nejvýš ${MAX_PREDNASTAVENYCH_SLEV} slev` : undefined}>Přidat</Button>
         </div>
       </div>
     </Card>

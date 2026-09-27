@@ -79,16 +79,17 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
             Co technik ověří před předáním. Šablona se v zakázce vybere podle názvu zařízení (klíčová slova); šablona bez klíčových slov je obecná záloha. Výsledek jde do protokolu.
           </div>
         </div>
-        <Button size="sm" variant="soft" onClick={pridat}>+ Šablona</Button>
+        <Button data-tour="settings-kontrola-nova" size="sm" variant="soft" onClick={pridat}>+ Šablona</Button>
       </div>
       <div style={{ display: "grid", gap: 10 }}>
-        {sablony.map((s) => {
+        {sablony.map((s, i) => {
           const otevrena = rozbalena === s.id;
           return (
             <div key={s.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, display: "grid", gap: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
+                  data-tour={i === 0 ? "settings-kontrola-prvni" : undefined}
                   onClick={() => setRozbalena(otevrena ? null : s.id)}
                   aria-expanded={otevrena}
                   style={{ background: "transparent", border: "none", color: "var(--text)", fontWeight: 700, fontSize: 14, cursor: "pointer", padding: 0, textAlign: "left" }}
@@ -100,7 +101,7 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
                 </Button>
               </div>
               {otevrena && (
-                <div style={{ display: "grid", gap: 8 }}>
+                <div data-tour="settings-kontrola-editor" style={{ display: "grid", gap: 8 }}>
                   <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
                     Název
                     <input type="text" value={s.nazev} onChange={(e) => uprav(s.id, { nazev: e.target.value })} style={input} />
@@ -133,7 +134,7 @@ export function KontrolniSeznamySettingsSection({ activeServiceId }: { activeSer
           );
         })}
         <div>
-          <Button size="sm" variant="ghost" onClick={() => void ulozit(VYCHOZI_SABLONY)}>Obnovit výchozí šablony</Button>
+          <Button data-tour="settings-kontrola-obnovit" size="sm" variant="ghost" onClick={() => void ulozit(VYCHOZI_SABLONY)}>Obnovit výchozí šablony</Button>
         </div>
       </div>
     </Card>

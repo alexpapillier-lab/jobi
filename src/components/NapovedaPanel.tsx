@@ -45,7 +45,7 @@ export function NapovedaPanel({
   activeServiceId,
   page,
   subsection,
-  pruvodceMisto,
+  pruvodciMista,
   stav,
   kontext,
   onSpustitPruvodce,
@@ -58,7 +58,8 @@ export function NapovedaPanel({
   activeServiceId: string | null;
   page: string;
   subsection: string | null;
-  pruvodceMisto: Pruvodce | null;
+  /** Průvodci k místu, kde uživatel je (první je hlavní). */
+  pruvodciMista: Pruvodce[];
   stav: StavPruvodcu;
   kontext: KontextAgenta;
   /** `krok` = index kroku, od kterého průvodce spustit (výsledek hledání). */
@@ -262,15 +263,15 @@ export function NapovedaPanel({
             </button>
           );
         })}
-        {!hleda && pruvodceMisto && (
-          <button type="button" style={tlacitko} onClick={() => { onClose(); onSpustitPruvodce(pruvodceMisto.id); }}>
+        {!hleda && pruvodciMista.map((p, i) => (
+          <button key={p.id} type="button" style={tlacitko} onClick={() => { onClose(); onSpustitPruvodce(p.id); }} title={p.popis}>
             <span>
-              <span style={{ display: "block", fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Průvodce touto stránkou</span>
-              {pruvodceMisto.nazev}
+              {i === 0 && <span style={{ display: "block", fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{pruvodciMista.length > 1 ? "Návody k této stránce" : "Průvodce touto stránkou"}</span>}
+              {p.nazev}
             </span>
             <span style={{ color: "var(--accent)" }}>Spustit ›</span>
           </button>
-        )}
+        ))}
         {!hleda && novinky.slice(0, 3).map((p) => (
           <button key={p.id} type="button" style={{ ...tlacitko, background: "var(--accent-soft)", borderColor: "var(--accent)" }} onClick={() => { onClose(); onSpustitPruvodce(p.id); }}>
             <span>

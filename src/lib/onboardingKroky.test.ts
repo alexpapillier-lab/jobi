@@ -130,8 +130,8 @@ describe("kam krok odkazuje", () => {
     for (const k of onboardingKroky(stav())) {
       expect(k.pruvodce.id, `Krok ${k.id} nemá průvodce.`).toBeTruthy();
     }
-    // Přesně na krok, ne na začátek: kontakt je druhý krok průvodce firmou.
-    expect(krok(stav(), "kontakt").pruvodce).toEqual({ id: "nastaveni-firma", krok: 1 });
+    // Přesně na krok, ne na začátek: kontakty jsou sedmý krok průvodce firmou („Doplňte kontakty a účet“).
+    expect(krok(stav(), "kontakt").pruvodce).toEqual({ id: "nastaveni-firma", krok: 6 });
   });
 
   it("ve webové verzi vede krok o tisku na stažení aplikace, ne do Nastavení", () => {

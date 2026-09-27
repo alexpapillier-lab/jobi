@@ -278,7 +278,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   return (
     <div>
       <div style={{ fontWeight: 950, fontSize: 14, marginBottom: 4 }}>Stav</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+      <div data-tour="api-stav" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <Znacka aktivni={maCenik} popisek="Ceník" />
         <Znacka aktivni={maSklad} popisek="Sklad" />
         <Znacka aktivni={!!slug} popisek={slug ? `Adresa: ${slug}` : "Adresa nevyplněná"} />
@@ -296,7 +296,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           <div style={nadpis}>Ceník – kam se ptát</div>
           <p style={popis}>Volá se GET, bez přihlášení a bez tokenu. Odpověď je JSON.</p>
           <pre style={kod}>{adresaCenik}</pre>
-          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <div data-tour="api-cenik" style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <Tlacitko onClick={() => zkopiruj(adresaCenik)}>Kopírovat adresu</Tlacitko>
             <Tlacitko onClick={() => vyzkousej(adresaCenik, "cenik")} disabled={testuji !== null}>
               {testuji === "cenik" ? "Zkouším…" : "Vyzkoušet"}
@@ -439,7 +439,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         Tohle pošlete tomu, kdo vám bude API napojovat. Je tam popsaná každá adresa,
         co v odpovědi přijde a co znamená.
       </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+      <div data-tour="api-dokumentace" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <a
           href={`${VEREJNE_API}/docs`}
           target="_blank"
@@ -488,7 +488,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         z Cloudflare Pages nebo Vercelu, který spustí přegenerování stránek.
         Nepovinné.
       </p>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <div data-tour="api-webhook" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <input
           placeholder="https://…"
           value={webhook}
@@ -548,7 +548,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+      <div data-tour="api-token" style={{ display: "grid", gap: 8, marginBottom: 12 }}>
         <input
           placeholder="K čemu token je (např. web, pokladna)…"
           value={novyNazev}

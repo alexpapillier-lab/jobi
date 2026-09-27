@@ -93,8 +93,8 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
             <span>Zařízení</span><span>Sériové číslo / IMEI</span><span>Příslušenství</span><span>Kauce Kč</span>{pobocky && <span>Pobočka</span>}<span />
           </div>
         )}
-        {seznam.map((z) => (
-          <div key={z.id} style={mrizka}>
+        {seznam.map((z, i) => (
+          <div key={z.id} style={mrizka} data-tour={i === 0 ? "settings-nahradni-prvni" : undefined}>
             <input type="text" defaultValue={z.nazev} aria-label="Zařízení" onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== z.nazev) void ulozit(seznam.map((x) => (x.id === z.id ? { ...x, nazev: v } : x))); }} style={input} />
             <input type="text" defaultValue={z.seriove ?? ""} aria-label="Sériové číslo" onBlur={(e) => void ulozit(seznam.map((x) => (x.id === z.id ? { ...x, seriove: e.target.value.trim() || undefined } : x)))} style={input} />
             <input type="text" defaultValue={z.prislusenstvi ?? ""} aria-label="Příslušenství" onBlur={(e) => void ulozit(seznam.map((x) => (x.id === z.id ? { ...x, prislusenstvi: e.target.value.trim() || undefined } : x)))} style={input} />
@@ -103,13 +103,13 @@ export function NahradniZarizeniSettingsSection({ activeServiceId }: { activeSer
             <Button size="sm" variant="ghost" onClick={() => void ulozit(seznam.filter((x) => x.id !== z.id))}>Smazat</Button>
           </div>
         ))}
-        <div style={{ ...mrizka, paddingTop: 8, borderTop: seznam.length > 0 ? "1px solid var(--border)" : "none" }}>
+        <div data-tour="settings-nahradni-nove" style={{ ...mrizka, paddingTop: 8, borderTop: seznam.length > 0 ? "1px solid var(--border)" : "none" }}>
           <input type="text" value={novy.nazev} onChange={(e) => setNovy({ ...novy, nazev: e.target.value })} placeholder="např. iPhone SE 2020, černý" aria-label="Nové zařízení" style={input} onKeyDown={(e) => { if (e.key === "Enter") pridat(); }} />
           <input type="text" value={novy.seriove ?? ""} onChange={(e) => setNovy({ ...novy, seriove: e.target.value })} placeholder="SN / IMEI" aria-label="Nové sériové číslo" style={input} />
           <input type="text" value={novy.prislusenstvi ?? ""} onChange={(e) => setNovy({ ...novy, prislusenstvi: e.target.value })} placeholder="nabíječka, kryt" aria-label="Nové příslušenství" style={input} />
           <input type="number" min={0} step={100} value={novy.kauce ?? ""} onChange={(e) => setNovy({ ...novy, kauce: e.target.value === "" ? undefined : Number(e.target.value) })} placeholder="kauce" aria-label="Nová kauce" style={input} />
           {pobocky && vyberPobocky(novy.branchId, "Pobočka nového zařízení", (id) => setNovy({ ...novy, branchId: id }))}
-          <Button size="sm" variant="soft" onClick={pridat} disabled={!novy.nazev.trim() || !nacteno}>Přidat</Button>
+          <Button data-tour="settings-nahradni-pridat" size="sm" variant="soft" onClick={pridat} disabled={!novy.nazev.trim() || !nacteno}>Přidat</Button>
         </div>
       </div>
     </Card>

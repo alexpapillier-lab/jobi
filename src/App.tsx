@@ -44,7 +44,7 @@ import { spustHlidacFronty } from "./lib/frontaZapisu";
 spustHlidacFronty();
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { NapovedaPanel } from "./components/NapovedaPanel";
-import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodceProMisto, ulozStavPruvodcu, useStavPruvodcu, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
+import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodciProMisto, ulozStavPruvodcu, useStavPruvodcu, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { startServicePresence } from "./lib/presence";
@@ -513,7 +513,7 @@ export default function App() {
     setNapovedaPodsekce(sub);
     setNapovedaOtevrena((o) => !o);
   }, [activePage]);
-  const pruvodceMisto = useMemo(() => pruvodceProMisto(pruvodciDostupni, activePage, napovedaPodsekce), [pruvodciDostupni, activePage, napovedaPodsekce]);
+  const pruvodciMista = useMemo(() => pruvodciProMisto(pruvodciDostupni, activePage, napovedaPodsekce), [pruvodciDostupni, activePage, napovedaPodsekce]);
   const spustPruvodceId = useCallback((id: string, odKroku = 0) => {
     const p = pruvodciDostupni.find((x) => x.id === id);
     if (p) spustPruvodce(p, odKroku);
@@ -1852,7 +1852,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           activeServiceId={activeServiceId}
           page={activePage}
           subsection={napovedaPodsekce}
-          pruvodceMisto={pruvodceMisto}
+          pruvodciMista={pruvodciMista}
           stav={stavPruvodcu}
           kontext={kontextAgenta}
           onSpustitPruvodce={spustPruvodceId}

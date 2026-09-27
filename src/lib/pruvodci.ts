@@ -49,6 +49,8 @@ export type Pruvodce = {
 
 const sel = (kotva: string) => `[data-tour="${kotva}"]`;
 const nast = (category: string, subsection: string) => ({ category, subsection });
+/** Krok v podsekci Nastavení: stránka a podsekce, kterou má průvodce otevřít. */
+const ns = (category: string, subsection: string) => ({ page: "settings" as const, settingsSection: nast(category, subsection) });
 
 /** Kroky úvodního průvodce (po prvním přihlášení, „Spustit průvodce“ v O aplikaci). */
 export const KROKY_UVOD: TourStep[] = [
@@ -61,7 +63,7 @@ export const KROKY_UVOD: TourStep[] = [
   { page: "inventory", title: "Sklad", description: "Díly s nákupní cenou navázané na opravy: přidání opravy na zakázku díl rezervuje, vydání ho odepíše.", selector: sel("inventory-main"), icon: "inventory" },
   { page: "statistics", title: "Statistiky", description: "Obrat, náklady a zisk podle data vydání, počty podle přijetí, marže podle oprav a zařízení, technici.", selector: sel("statistics-main"), icon: "statistics" },
   { page: "settings", title: "Nastavení", description: "Firma, statusy zakázek, dokumenty a tisk, komunikace, tým. Každá část má vlastního průvodce pod otazníkem.", selector: sel("settings-categories"), settingsSection: nast("company", "service_basic"), icon: "settings" },
-  { page: "settings", title: "Průvodci a novinky", description: "Seznam všech průvodců a novinek je v Nastavení → Nápověda. Když se vám zpřístupní nová funkce, aplikace vám to po přihlášení sama řekne.", selector: sel("settings-content"), settingsSection: nast("app", "about_help"), icon: "settings" },
+  { page: "settings", title: "Průvodci a novinky", description: "Seznam všech průvodců a novinek je v Nastavení → Nápověda a podpora; otazník v postranním panelu nabídne průvodce k místu, kde právě jste. Když se vám zpřístupní nová funkce, aplikace vám to po přihlášení sama řekne.", selector: sel("settings-sub-about_help"), settingsSection: nast("app", "about_help"), icon: "settings" },
 ];
 
 const ODMENY: Pruvodce = {
@@ -96,13 +98,13 @@ export const PRUVODCI: Pruvodce[] = [
     page: "dnes",
     novinkaOd: "2026-09-27",
     kroky: [
-      { page: "dnes", title: "Dnes", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce a kliknutím na řádek se otevře detail zakázky; po zavření jste zpátky tady. Respektuje vybranou pobočku.", selector: sel("sidebar-nav-dnes"), icon: "orders" },
-      { page: "dnes", title: "Jen moje / Celý tým", description: "Jen moje zúží všechny karty na zakázky přidělené vám; Celý tým ukáže všechno a u zakázky i jméno technika. Volba se pamatuje a platí i na telefonu. Když servis techniky nepřiděluje, přepínač tu není.", selector: sel("dnes-rozsah"), icon: "team" },
-      { page: "dnes", title: "Po termínu a Dnes dokončit", description: "Podle pole Předpokládaný termín dokončení v detailu zakázky. Nejdéle po termínu je nahoře. Hotové zakázky (k převzetí) se do termínů nepočítají.", selector: sel("dnes-po-terminu"), icon: "orders" },
-      { page: "dnes", title: "Připraveno k převzetí", description: "Zakázky ve stavu pro hotové (Připraveno, K vyzvednutí…) – kdo si pro zařízení může přijít. Nahoře ty, které leží nejdéle.", selector: sel("dnes-k-prevzeti"), icon: "orders" },
-      { page: "dnes", title: "Čeká na díl a na zákazníka", description: "Na díl čeká zakázka s objednaným dílem, který ještě nedorazil (Objednat u dodavatele), nebo ve stavu typu Čeká na díl. Na zákazníka čeká odeslaná cenová nabídka bez odpovědi.", selector: sel("dnes-dil"), icon: "inventory" },
-      { page: "dnes", title: "Rezervace na dnes", description: "Zákazníci objednaní přes formulář na webu. Kliknutím rovnou založíte zakázku s údaji z rezervace.", selector: sel("dnes-rezervace"), icon: "customers" },
-      { page: "settings", title: "Začínat na Dnes", description: "V Nastavení → Rozhraní → Po přihlášení otevřít si vyberte Dnes a aplikace se bude otevírat tady. Výchozí klávesová zkratka je T (změníte v Klávesových zkratkách).", selector: sel("settings-content"), settingsSection: nast("app", "appearance_ui"), icon: "settings" },
+      { page: "dnes", title: "K čemu to je", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce; kliknutím na řádek otevřete detail zakázky a po zavření jste zpátky tady.", selector: sel("sidebar-nav-dnes"), icon: "orders" },
+      { page: "dnes", title: "Vyberte Jen moje, nebo Celý tým", description: "Jen moje zúží všechny karty na zakázky přidělené vám; Celý tým ukáže všechno i se jménem technika. Když servis techniky nepřiděluje, přepínač tu není.", selector: sel("dnes-rozsah"), icon: "team" },
+      { page: "dnes", title: "Začněte zakázkami po termínu", description: "Podle pole Předpokládaný termín dokončení; nejdéle po termínu je nahoře. Klikněte na zakázku a posuňte termín, nebo ji dodělejte.", selector: sel("dnes-po-terminu"), icon: "orders" },
+      { page: "dnes", title: "Vyřiďte rezervace na dnes", description: "Zákazníci objednaní přes formulář na webu. Kliknutím rovnou založíte zakázku s údaji z rezervace.", selector: sel("dnes-rezervace"), icon: "customers" },
+      { page: "dnes", title: "Připraveno k převzetí", description: "Hotové zakázky, pro které si zákazník může přijít; nahoře ty, které leží nejdéle. Zavolejte nebo pošlete SMS z detailu.", selector: sel("dnes-k-prevzeti"), icon: "orders" },
+      { page: "dnes", title: "Čeká na díl a na zákazníka", description: "Na díl čeká zakázka s objednaným dílem, který ještě nedorazil. Na zákazníka čeká odeslaná cenová nabídka bez odpovědi.", selector: sel("dnes-dil"), icon: "inventory" },
+      { page: "settings", title: "Hotovo – začínejte na Dnes", description: "Tady vyberte Dnes a aplikace se po přihlášení bude otevírat na přehledu dne. Výchozí klávesová zkratka je T.", selector: sel("settings-po-prihlaseni"), settingsSection: nast("app", "appearance_ui"), icon: "settings" },
     ],
   },
   {
@@ -111,27 +113,47 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Hledání, skupiny, filtr podle stavu, nová zakázka a reklamace.",
     page: "orders",
     kroky: [
-      { page: "orders", title: "Hledání", description: "Jméno, telefon, zařízení, číslo zakázky nebo text z poznámky – seznam se filtruje hned při psaní. Křížkem hledání zrušíte.", selector: sel("orders-search"), icon: "orders" },
-      { page: "orders", title: "Skupiny zakázek", description: "Vše, Aktivní (rozpracované), Přesuny mezi pobočkami, Dokončené a Reklamace. Skupina Moje ukáže jen zakázky přidělené vám.", selector: sel("orders-groups"), icon: "orders" },
-      { page: "orders", title: "Filtr podle stavu", description: "Rozbalovací filtr nabídne jen stavy, které se ve vybrané skupině vyskytují, s počtem zakázek.", selector: sel("orders-status-filter"), icon: "orders" },
-      { page: "orders", title: "Nová zakázka", description: "Zákazník podle telefonu (existující se nabídne sám), zařízení, požadovaná oprava, opravy z ceníku i mimo něj a sleva už při příjmu.", selector: sel("orders-new-btn"), icon: "orders" },
-      { page: "orders", title: "Nová reklamace", description: "Reklamaci založíte i z detailu hotové zakázky přes nabídku „…“ – převezme zákazníka i zařízení.", selector: sel("orders-new-claim-btn"), icon: "orders" },
-      { page: "orders", title: "Seznam a stav", description: "Stav zakázky přepnete přímo v řádku. Kliknutím otevřete detail: opravy, ceny, diagnostiku, fotky, dokumenty, SMS a historii.", selector: sel("orders-list"), icon: "orders" },
+      { page: "orders", title: "K čemu to je", description: "Seznam všech zakázek servisu. Odsud zakládáte nové, hledáte staré a přepínáte stav; podrobnosti jsou v detailu zakázky.", selector: sel("sidebar-nav-orders"), icon: "orders" },
+      { page: "orders", title: "Hledání", description: "Napište jméno, telefon, zařízení, číslo zakázky nebo text z poznámky – seznam se filtruje hned při psaní. Křížkem nebo Esc hledání zrušíte.", selector: sel("orders-search"), icon: "orders" },
+      { page: "orders", title: "Skupiny zakázek", description: "Klikněte na Vše, Aktivní (rozpracované), Dokončené nebo Reklamace. S přidělováním je tu i Moje, s pobočkami Přesuny.", selector: sel("orders-groups"), icon: "orders" },
+      { page: "orders", title: "Filtr podle stavu", description: "Rozbalte a vyberte stav – nabízí jen stavy, které ve skupině jsou, i s počtem zakázek.", selector: sel("orders-status-filter"), icon: "orders" },
+      { page: "orders", title: "Nová zakázka", description: "Klikněte na + Nová zakázka a vyplňte zákazníka, zařízení a požadovanou opravu. Krok za krokem to ukáže průvodce Přijmout zakázku.", selector: sel("orders-new-btn"), icon: "orders" },
+      { page: "orders", title: "Nová reklamace", description: "Vyberte původní zakázku a Jobi převezme zákazníka i zařízení a ukáže, jestli je v záruce. Reklamaci založíte i z detailu hotové zakázky přes nabídku „…“.", selector: sel("orders-new-claim-btn"), icon: "reklamace" },
+      { page: "orders", title: "Hotovo – pracujte v seznamu", description: "Stav zakázky přepnete přímo v řádku, kliknutím otevřete detail s opravami, cenami, fotkami, tiskem a SMS (průvodce Detail zakázky).", selector: sel("orders-list"), icon: "orders" },
+    ],
+  },
+  {
+    id: "nova-zakazka",
+    nazev: "Přijmout zakázku",
+    popis: "Zákazník podle telefonu, zařízení, požadovaná oprava, opravy z ceníku a vytvoření zakázky.",
+    page: "orders",
+    novinkaOd: "2026-09-27",
+    kroky: [
+      { page: "orders", title: "K čemu to je", description: "Příjem zařízení od zákazníka: kdo ho přinesl, co to je a co je potřeba opravit. Zabere minutu a rozpracované údaje se ukládají samy.", selector: sel("sidebar-nav-orders"), icon: "orders" },
+      { page: "orders", title: "Klikněte na + Nová zakázka", description: "Otevře se formulář příjmu. Stejně funguje plovoucí tlačítko + vpravo dole.", selector: sel("orders-new-btn"), icon: "orders" },
+      { page: "orders", title: "Napište telefon zákazníka", description: "Když zákazník už u vás byl, Jobi ho podle čísla najde a nabídne – potvrďte ho a údaje se doplní. Nový zákazník vznikne sám s touto zakázkou.", selector: sel("nova-telefon"), klik: ["orders-new-btn"], icon: "customers" },
+      { page: "orders", title: "Doplňte jméno a kontakty", description: "Jméno, e-mail a případně firmu a adresu pro doklady. Co nevíte, nechte prázdné.", selector: sel("nova-zakaznik"), klik: ["orders-new-btn"], icon: "customers" },
+      { page: "orders", title: "Vyberte zařízení", description: "Začněte psát model a vyberte ho z nabídky ceníku, nebo napište vlastní název. Pod ním vyplňte IMEI nebo sériové číslo a kód k odemčení.", selector: sel("nova-zarizeni"), klik: ["orders-new-btn"], icon: "devices" },
+      { page: "orders", title: "Napište požadovanou opravu", description: "Co zákazník chce opravit. Opravy z ceníku pod polem zaškrtnete kliknutím a cena se sečte; jinou opravu přidáte s vlastní cenou a sleva jde vybrat hned tady.", selector: sel("nova-pozadovana-oprava"), klik: ["orders-new-btn"], icon: "orders" },
+      { page: "orders", title: "Klikněte na Vytvořit zakázku", description: "Zakázka dostane číslo a první stav; se zapnutým automatickým tiskem se nabídne zakázkový list. ⌘/Ctrl+Enter udělá totéž, Zrušit rozpracovaný příjem zahodí.", selector: sel("nova-vytvorit"), klik: ["orders-new-btn"], icon: "orders" },
+      { page: "orders", title: "Hotovo", description: "Nová zakázka je nahoře v seznamu. Kliknutím otevřete detail – přidáte opravy s cenou, fotky a diagnostiku (průvodce Detail zakázky).", selector: sel("orders-list"), icon: "orders" },
     ],
   },
   {
     id: "detail-zakazky",
     nazev: "Detail zakázky",
-    popis: "Opravy s cenami, diagnostika, dokumenty, SMS a historie – na ukázkové zakázce.",
+    popis: "Stav, opravy s cenami, diagnostika, SMS a tisk – na ukázkové zakázce.",
     page: "orders",
     novinkaOd: "2026-09-27",
     kroky: [
-      { page: "orders", title: "Detail zakázky", description: "Otevíráme ukázkovou (nebo poslední) zakázku. Nahoře je číslo, zákazník s telefonem, stav a tlačítka: Upravit, Tisk, SMS, faktura a nabídka „…“ s dalšími akcemi.", selector: sel("detail-upravit"), akce: "otevrit-ukazkovou-zakazku", icon: "orders" },
-      { page: "orders", title: "Kolega v zakázce", description: "Má-li zakázku otevřenou i kolega, ukáže se tu jeho jméno; oranžově, když ji právě upravuje (i od kdy). Upravovat můžete i tak – kdo uloží druhý, uvidí, co kolega mezitím změnil, a vybere, jestli jeho změny přepíše, nebo načte jeho verzi.", selector: sel("detail-kolega"), icon: "orders" },
-      { page: "orders", title: "Provedené opravy", description: "Opravy z ceníku nebo ručně, každá s cenou, náklady a díly. Sleva se uplatní na celek. Součet je konečná cena pro zákazníka i pro doklad.", selector: sel("detail-opravy"), icon: "orders" },
-      { page: "orders", title: "Diagnostika a fotky", description: "Text pro zákazníka a fotky před a po opravě (z počítače nebo z telefonu přes QR kód). Jde na protokol a do portálu zákazníka.", selector: sel("detail-diagnostika"), icon: "orders" },
-      { page: "orders", title: "SMS zákazníkovi", description: "Zpráva odchází z aplikace a odpověď se vrátí sem. Automatické SMS při změně stavu nastavíte v Komunikaci.", selector: sel("detail-sms"), icon: "orders" },
-      { page: "orders", title: "Tisk a vydání", description: "Zakázkový list při příjmu, záruční list a protokol při vydání. Přepnutím do koncového stavu se zakázka vydá: odepíší se díly a zapíše datum vydání pro Statistiky.", selector: sel("detail-upravit"), icon: "doc" },
+      { page: "orders", title: "K čemu to je", description: "V detailu se s opravou pracuje: stav, opravy s cenou, diagnostika, fotky, tisk a zprávy zákazníkovi. Otevíráme ukázkovou (nebo poslední) zakázku.", selector: sel("detail-stav"), akce: "otevrit-ukazkovou-zakazku", icon: "orders" },
+      { page: "orders", title: "Přepněte stav", description: "Klikněte na stav a vyberte nový, třeba V opravě. Koncový stav zakázku vydá: odepíší se díly a zapíše datum vydání pro Statistiky.", selector: sel("detail-stav"), icon: "orders" },
+      { page: "orders", title: "Klikněte na Upravit", description: "Změníte zákazníka, zařízení i požadovanou opravu. Má-li zakázku otevřenou i kolega, ukáže se vedle jeho jméno; kdo uloží druhý, vybere, čí změny platí.", selector: sel("detail-upravit"), icon: "orders" },
+      { page: "orders", title: "Zapište provedené opravy", description: "Opravy z ceníku nebo ručně, každá s cenou, náklady a díly ze skladu; sleva se uplatní na celek. Součet je konečná cena pro zákazníka i pro doklad.", selector: sel("detail-opravy"), icon: "orders" },
+      { page: "orders", title: "Diagnostika a fotky", description: "Napište, co jste zjistili, a přidejte fotky před a po opravě (z počítače, nebo z telefonu přes QR kód). Jde to na protokol a do portálu zákazníka.", selector: sel("detail-diagnostika"), icon: "orders" },
+      { page: "orders", title: "Napište zákazníkovi SMS", description: "Klikněte na SMS – zpráva odejde z aplikace a odpověď se vrátí sem. Automatické SMS při změně stavu nastavíte v Automatizaci.", selector: sel("detail-sms"), icon: "orders" },
+      { page: "orders", title: "Vytiskněte dokument", description: "Klikněte na Tisk a vyberte zakázkový list (při příjmu), záruční list nebo protokol (při vydání).", selector: sel("detail-tisk"), icon: "doc" },
+      { page: "orders", title: "Hotovo – vydejte zakázku", description: "Až si zákazník přijde, přepněte stav do koncového (Vydáno) a vytiskněte záruční list. Zakázka se přesune mezi Dokončené.", selector: sel("detail-stav"), icon: "orders" },
     ],
   },
   {
@@ -364,12 +386,18 @@ export const PRUVODCI: Pruvodce[] = [
   {
     id: "nastaveni-firma",
     nazev: "Údaje firmy a kontakty",
-    popis: "Název, IČO, adresa a zkratka pro čísla zakázek; telefon a e-mail na dokumenty.",
+    popis: "Název, IČO, adresa a zkratka pro čísla zakázek; telefon, e-mail a účet na dokumenty.",
     page: "settings",
     settingsSubsection: "service_basic",
     kroky: [
-      { page: "settings", title: "Údaje firmy", description: "Název, IČO a adresa se tisknou v hlavičce zakázkového listu a faktury. Zkratka je základ čísla zakázky (např. SRV26000001) – nastavte ji dřív, než vytisknete první doklad.", selector: sel("settings-content"), settingsSection: nast("company", "service_basic"), icon: "settings" },
-      { page: "settings", title: "Kontakty", description: "Telefon a e-mail vidí zákazník na dokumentech a v odkazu na stav zakázky. Bankovní údaje jdou na fakturu.", selector: sel("settings-content"), settingsSection: nast("company", "service_contact"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "K čemu to je", description: "Údaje servisu se tisknou v hlavičce zakázkového listu a faktury a ze zkratky se skládá číslo zakázky. Vyplňte je před prvním tiskem.", selector: sel("settings-sub-service_basic"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "Napište zkratku servisu", description: "Dvě až čtyři písmena, třeba SRV – čísla zakázek pak budou SRV26000001. Nastavte ji dřív, než vytisknete první doklad.", selector: sel("settings-firma-zkratka"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "Napište název firmy", description: "Tak, jak má být na dokladech – obchodní firma nebo jméno živnostníka.", selector: sel("settings-firma-nazev"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "Doplňte IČO a DIČ", description: "IČO je na dokladech povinné; DIČ vyplňte, jen když jste plátce DPH.", selector: sel("settings-firma-ico"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "Vyplňte adresu", description: "Ulice, město a PSČ sídla nebo provozovny. Tiskne se v hlavičce dokladů.", selector: sel("settings-firma-adresa"), icon: "settings" },
+      { ...ns("company", "service_basic"), title: "Klikněte na Uložit", description: "Jakmile něco změníte, dole se objeví lišta Neuložené změny – klikněte na Uložit (nebo ⌘/Ctrl+S). Zahodit vrátí původní údaje.", selector: sel("settings-ulozit"), icon: "settings" },
+      { ...ns("company", "service_contact"), title: "Doplňte kontakty a účet", description: "Telefon a e-mail uvidí zákazník na dokladech i v odkazu na stav zakázky; číslo účtu a IBAN jdou na fakturu. Uložte stejně lištou dole.", selector: sel("settings-kontakty"), icon: "settings" },
+      { ...ns("company", "service_contact"), title: "Hotovo", description: "Nové doklady už ponesou vaše údaje a nové zakázky vaši zkratku. Vzhled dokladů (logo, razítko) upravíte v JobiDocs – průvodce JobiDocs a tisk.", selector: sel("settings-sub-service_contact"), icon: "settings" },
     ],
   },
   {
@@ -379,7 +407,13 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "orders_statuses",
     kroky: [
-      { page: "settings", title: "Statusy zakázek", description: "Stavy si pojmenujte po svém a nastavte barvy. Koncový stav (Vydáno, Vráceno bez opravy…) uzavírá zakázku: odepíše díly, zapíše datum vydání pro Statistiky a odměny.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_statuses"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "K čemu to je", description: "Stav říká, kde zakázka je (Přijato, V opravě, Čeká na díl, Vydáno). Pojmenujte si stavy po svém; koncový stav zakázku uzavírá.", selector: sel("settings-sub-orders_statuses"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Napište název stavu", description: "Tak, jak ho uvidí tým v zakázce i zákazník v odkazu na stav – třeba „Čeká na díl“.", selector: sel("settings-status-nazev"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Vyberte barvu", description: "Klikněte na barvu v paletě, nebo zadejte vlastní pozadí a text. Náhled je vedle tlačítka Přidat.", selector: sel("settings-status-barva"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Zaškrtněte, jestli je finální", description: "U stavů, které zakázku uzavírají (Vydáno, Vráceno bez opravy). Přepnutím do nich se odepíšou díly a zapíše datum vydání pro Statistiky a odměny.", selector: sel("settings-status-finalni"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Klikněte na Přidat", description: "Stav se uloží a objeví v seznamu pod formulářem. U existujícího stavu tu je Aktualizovat.", selector: sel("settings-status-pridat"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Seřaďte a upravte stavy", description: "Šipkami posunete stav výš nebo níž – v tomhle pořadí se nabízí v zakázce. Upravit ho načte nahoru do formuláře; výchozí stav smazat nejde.", selector: sel("settings-statusy-seznam"), icon: "settings" },
+      { ...ns("orders", "orders_statuses"), title: "Hotovo", description: "Nový stav se hned nabízí v přepínači stavu u každé zakázky. Automatickou SMS nebo tisk při přepnutí do stavu nastavíte v Automatizaci a v JobiDocs a tisk.", selector: sel("sidebar-nav-orders"), icon: "settings" },
     ],
   },
   {
@@ -388,7 +422,11 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Co musí být vyplněné při příjmu.",
     page: "settings",
     settingsSubsection: "orders_required_fields",
-    kroky: [{ page: "settings", title: "Povinná pole", description: "Určete, bez čeho nejde zakázku založit – třeba telefon zákazníka. Ostatní pole zůstanou nepovinná.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_required_fields"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_required_fields"), title: "K čemu to je", description: "Určíte, bez čeho nejde zakázku uložit – aby se k zákazníkovi dalo dovolat.", selector: sel("settings-sub-orders_required_fields"), icon: "settings" },
+      { ...ns("orders", "orders_required_fields"), title: "Zaškrtněte Telefon zákazníka povinný", description: "Zapnuté: příjem bez telefonu neuloží. Vypnuté: telefon zůstane nepovinný. Ukládá se hned po kliknutí.", selector: sel("settings-povinny-telefon"), icon: "settings" },
+      { ...ns("orders", "orders_required_fields"), title: "Hotovo", description: "Platí pro novou zakázku i úpravu. Vyzkoušejte to tlačítkem Nová zakázka v Zakázkách.", selector: sel("sidebar-nav-orders"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-detail",
@@ -396,7 +434,12 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Které sekce v detailu vidíte a jestli se přiděluje technik.",
     page: "settings",
     settingsSubsection: "orders_detail",
-    kroky: [{ page: "settings", title: "Detail zakázky", description: "Sekce, které nepoužíváte, schovejte. Přidělování technika zapne kartu Technik a skupinu Moje v přehledu.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_detail"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_detail"), title: "K čemu to je", description: "Detail zakázky bude kratší, když schováte sekce, které nepoužíváte. Platí pro všechny v servisu.", selector: sel("settings-sub-orders_detail"), icon: "settings" },
+      { ...ns("orders", "orders_detail"), title: "Odškrtněte sekce, které nepotřebujete", description: "Každé zaškrtávátko je jedna karta v detailu zakázky (portál zákazníka, náhradní zařízení, kontrola po opravě…). Ukládá se hned.", selector: sel("settings-detail-sekce"), icon: "settings" },
+      { ...ns("orders", "orders_detail"), title: "Zapněte přidělování technika", description: "Zaškrtnutím Technik se v detailu objeví karta Technik („Přidělit mně“), v přehledu skupina Moje a na kartě zakázky jméno technika.", selector: sel("settings-detail-technik"), icon: "team" },
+      { ...ns("orders", "orders_detail"), title: "Hotovo", description: "Otevřete libovolnou zakázku – vypnuté sekce v detailu nejsou. Zapnout je jde kdykoli zpátky, data v nich zůstávají.", selector: sel("sidebar-nav-orders"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-slevy",
@@ -404,7 +447,12 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Přednastavené slevy na jedno kliknutí.",
     page: "settings",
     settingsSubsection: "orders_slevy",
-    kroky: [{ page: "settings", title: "Slevy", description: "Sleva v procentech nebo v korunách se pak v zakázce vybírá tlačítkem místo psaní. Uplatní se už při příjmu i v detailu.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_slevy"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_slevy"), title: "K čemu to je", description: "Slevy, které dáváte často (stálý zákazník, dlouhé čekání), se v zakázce dají jedním klepnutím místo vypisování.", selector: sel("settings-sub-orders_slevy"), icon: "settings" },
+      { ...ns("orders", "orders_slevy"), title: "Vyplňte novou slevu", description: "Vyberte Procenta nebo Kč, napište hodnotu a popisek, třeba „Stálý zákazník“.", selector: sel("settings-slevy-nova"), icon: "settings" },
+      { ...ns("orders", "orders_slevy"), title: "Klikněte na Přidat", description: "Sleva se uloží a objeví nad řádkem. Hodnotu nebo popisek u ní přepíšete přímo v řádku, Smazat ji odebere.", selector: sel("settings-slevy-pridat"), icon: "settings" },
+      { ...ns("orders", "orders_slevy"), title: "Hotovo", description: "V detailu zakázky se u ceny oprav ukáže jako tlačítko. Ruční zadání slevy zůstává.", selector: sel("settings-slevy-prvni"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-prace",
@@ -412,7 +460,13 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Sazba a stopky na zakázce.",
     page: "settings",
     settingsSubsection: "orders_prace",
-    kroky: [{ page: "settings", title: "Hodinová práce", description: "Výchozí sazba Kč/h; v zakázce pak přidáte položku hodiny × sazba. Stopky na zakázce měří čas technika a promítají se do KPI ve Statistikách.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_prace"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_prace"), title: "K čemu to je", description: "Opravu, která nemá pevnou cenu, účtujete jako hodiny × sazba. Stopky na zakázce změří, kolik času technik strávil.", selector: sel("settings-sub-orders_prace"), icon: "settings" },
+      { ...ns("orders", "orders_prace"), title: "Napište výchozí sazbu", description: "Kč za hodinu; uloží se po opuštění pole. V zakázce se předvyplní u každé hodinové práce a jde přepsat.", selector: sel("settings-prace-sazba"), icon: "settings" },
+      { ...ns("orders", "orders_prace"), title: "Zapněte stopky", description: "V detailu zakázky přibude karta Čas na opravě: technik spustí a zastaví práci. Odpracovaný čas jde do KPI techniků ve Statistikách.", selector: sel("settings-prace-stopky"), icon: "settings" },
+      { ...ns("orders", "orders_prace"), title: "Vyberte zaokrouhlení", description: "Když se naměřený čas přidá do zakázky jako práce, zaokrouhlí se nahoru na započatý krok (třeba 15 min). Volba je vidět se zapnutými stopkami.", selector: sel("settings-prace-zaokrouhleni"), icon: "settings" },
+      { ...ns("orders", "orders_prace"), title: "Hotovo", description: "V detailu zakázky u oprav přidáte Hodinovou práci; na fakturu jde jako hodiny × Kč/h.", selector: sel("sidebar-nav-orders"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-reklamace",
@@ -422,7 +476,11 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "orders_reklamace",
     novinkaOd: "2026-09-27",
     kroky: [
-      { page: "settings", title: "Záruka na opravu", description: "Výchozí délka záruky v měsících – zvlášť pro spotřebitele (24) a pro firmu s IČO (12). Při vydání zakázky se na ni zapíše „Záruka na opravu do …“ podle nejdelší záruky z provedených oprav; oprava v ceníku může mít vlastní délku. Při zakládání reklamace pak Jobi ukáže, jestli je zakázka v záruce, a po záruce nabídne založit placenou opravu.", selector: sel("settings-zaruka-opravy"), settingsSection: nast("orders", "orders_reklamace"), icon: "settings" },
+      { ...ns("orders", "orders_reklamace"), title: "K čemu to je", description: "Při vydání se na zakázku zapíše „Záruka na opravu do …“. Při reklamaci pak Jobi hned ukáže, jestli je v záruce, a po záruce nabídne placenou opravu.", selector: sel("settings-zaruka-opravy"), icon: "settings" },
+      { ...ns("orders", "orders_reklamace"), title: "Záruka pro spotřebitele", description: "Počet měsíců pro zákazníka bez IČO – zákonná lhůta je 24. Uloží se po opuštění pole.", selector: sel("settings-zaruka-spotrebitel"), icon: "settings" },
+      { ...ns("orders", "orders_reklamace"), title: "Záruka pro firmu", description: "Počet měsíců pro zákazníka s IČO, obvykle 12; 0 = bez záruky. Oprava v ceníku může mít vlastní délku (Zařízení → oprava → Záruka).", selector: sel("settings-zaruka-firma"), icon: "settings" },
+      { ...ns("orders", "orders_reklamace"), title: "Reklamace v seznamu", description: "Aktivní reklamace jsou v Zakázkách vždy pod zakázkami. Zaškrtnutím je uvidíte i ve skupinách Vše a Dokončené.", selector: sel("settings-reklamace-v-seznamu"), icon: "reklamace" },
+      { ...ns("orders", "orders_reklamace"), title: "Hotovo", description: "Záruka se zapisuje při vydání zakázky podle nejdelší záruky z provedených oprav. Reklamaci založíte tlačítkem Nová reklamace v Zakázkách.", selector: sel("sidebar-nav-orders"), icon: "settings" },
     ],
   },
   {
@@ -431,7 +489,12 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Kontrolní seznamy před vydáním.",
     page: "settings",
     settingsSubsection: "orders_kontrola",
-    kroky: [{ page: "settings", title: "Kontrola po opravě", description: "Šablona kontrolního seznamu podle typu zařízení. Technik odškrtá položky v detailu, výsledek jde do protokolu.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_kontrola"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_kontrola"), title: "K čemu to je", description: "Seznam toho, co technik ověří před předáním (displej, nabíjení, kamera…). Šablona se v zakázce vybere sama podle názvu zařízení a výsledek jde do protokolu.", selector: sel("settings-sub-orders_kontrola"), icon: "settings" },
+      { ...ns("orders", "orders_kontrola"), title: "Klikněte na + Šablona", description: "Přidá novou šablonu a rovnou ji rozbalí. Stávající šablonu rozbalíte kliknutím na její název.", selector: sel("settings-kontrola-nova"), icon: "settings" },
+      { ...ns("orders", "orders_kontrola"), title: "Vyplňte šablonu", description: "Název, klíčová slova z názvu zařízení (iphone, samsung…) a položky, každou na vlastní řádek. Šablona bez klíčových slov je obecná záloha; ukládá se po opuštění pole.", selector: sel("settings-kontrola-editor"), klik: ["settings-kontrola-prvni"], icon: "settings" },
+      { ...ns("orders", "orders_kontrola"), title: "Hotovo", description: "V detailu zakázky technik odškrtá položky v kartě Kontrola po opravě. Obnovit výchozí šablony vrátí původní sadu.", selector: sel("settings-kontrola-obnovit"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-nahradni",
@@ -439,7 +502,12 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Zápůjčky zákazníkům po dobu opravy.",
     page: "settings",
     settingsSubsection: "orders_nahradni",
-    kroky: [{ page: "settings", title: "Náhradní zařízení", description: "Seznam zařízení k zapůjčení a kauce. V detailu zakázky se zápůjčka zapíše a vytiskne smlouva.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_nahradni"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_nahradni"), title: "K čemu to je", description: "Seznam telefonů a zařízení, které půjčujete zákazníkům na dobu opravy. V zakázce se vybere ze seznamu a je vidět, u koho právě je.", selector: sel("settings-sub-orders_nahradni"), icon: "settings" },
+      { ...ns("orders", "orders_nahradni"), title: "Vyplňte zařízení", description: "Název (třeba „iPhone SE, černý“), sériové číslo nebo IMEI, příslušenství a kauci. S pobočkami vyberte, kde zařízení fyzicky je.", selector: sel("settings-nahradni-nove"), icon: "settings" },
+      { ...ns("orders", "orders_nahradni"), title: "Klikněte na Přidat", description: "Zařízení se uloží do seznamu; údaje v řádku přepíšete přímo, Smazat ho odebere.", selector: sel("settings-nahradni-pridat"), icon: "settings" },
+      { ...ns("orders", "orders_nahradni"), title: "Hotovo", description: "V detailu zakázky v kartě Náhradní zařízení vyberete zařízení ze seznamu a vyplní se formulář zápůjčky.", selector: sel("settings-nahradni-prvni"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-rezervace",
@@ -447,7 +515,15 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Formulář na webu, ze kterého vznikne zakázka.",
     page: "settings",
     settingsSubsection: "orders_rezervace",
-    kroky: [{ page: "settings", title: "Online rezervace", description: "Zákazník si na webu vybere termín a opravu z ceníku; rezervace se objeví v kalendáři a jedním klikem se z ní založí zakázka.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_rezervace"), icon: "settings" }],
+    kroky: [
+      { ...ns("orders", "orders_rezervace"), title: "K čemu to je", description: "Formulář na váš web: zákazník vybere termín a napíše, co potřebuje opravit. Rezervace přistane v Kalendáři a jedním kliknutím z ní založíte zakázku.", selector: sel("settings-sub-orders_rezervace"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Zaškrtněte Přijímat rezervace z webu", description: "Rozbalí se další nastavení. Vypnutím formulář přestane rezervace přijímat.", selector: sel("settings-rezervace-zapnout"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Nastavte adresu servisu", description: "Krátký název bez mezer (třeba „servis-brno“) a klikněte na Uložit adresu. Bez ní formulář nefunguje.", selector: sel("settings-rezervace-adresa"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Vyberte otevírací dny", description: "Kliknutím zapnete nebo vypnete den, kdy se dá objednat.", selector: sel("settings-rezervace-dny"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Nastavte hodiny a krok", description: "Od–do a po kolika minutách se termíny nabízejí (15, 30, 60). Čas se uloží po opuštění pole.", selector: sel("settings-rezervace-hodiny"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Vložte kód na web", description: "Klikněte na Kopírovat kód a pošlete ho webaři, nebo ho vložte do stránky sami tam, kde má formulář být.", selector: sel("settings-rezervace-kod"), icon: "settings" },
+      { ...ns("orders", "orders_rezervace"), title: "Hotovo", description: "Nová rezervace se ukáže nahoře v Kalendáři; na e-mail firmy přijde upozornění a zákazník dostane potvrzení.", selector: sel("sidebar-nav-calendar"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-tisk",
@@ -456,9 +532,11 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "orders_tisk_dokumentu",
     kroky: [
-      { page: "settings", title: "Šablony v JobiDocs", description: "Vzhled dokumentů (rozvržení, sekce, logo, razítko, vlastní texty) se upravuje v aplikaci JobiDocs. Na desktopu ji odsud spustíte nebo otevřete; tečka vedle tlačítka říká, jestli je připojená.", selector: sel("settings-tisk-jobidocs"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "jobidocs" },
-      { page: "settings", title: "Automatický tisk", description: "Kdy se má sám otevřít dialog tisku: zakázkový list při vytvoření zakázky nebo při přepnutí do vybraného stavu, záruční list stejně. Každá změna se ukládá hned.", selector: sel("settings-tisk-automaticky"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "jobidocs" },
-      { page: "settings", title: "Reklamace", description: "Protokol o přijetí reklamace se tiskne při jejím vytvoření nebo při přepnutí do stavu; protokol o vydání reklamace při přepnutí do stavu, který vyberete.", selector: sel("settings-tisk-reklamace"), settingsSection: nast("documents", "orders_tisk_dokumentu"), icon: "doc" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "K čemu to je", description: "Zakázkový list, záruční list a protokoly se tisknou jedním kliknutím. Tady určíte, kdy se tisk nabídne sám; vzhled dokumentů je v JobiDocs.", selector: sel("settings-sub-orders_tisk_dokumentu"), icon: "jobidocs" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Otevřete JobiDocs", description: "Na desktopu klikněte na tlačítko JobiDocs – upravíte v něm rozvržení, logo, razítko a vlastní texty. Tečka vedle ukazuje, jestli je připojené; na webu se tiskne z prohlížeče.", selector: sel("settings-tisk-jobidocs"), icon: "jobidocs" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Zapněte automatický tisk", description: "Zaškrtněte Tisknout při vytvoření zakázky, nebo vyberte stav, při jehož přepnutí se dialog tisku otevře sám. Zvlášť pro zakázkový a záruční list; ukládá se hned.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Tisk u reklamací", description: "Protokol o přijetí reklamace se může tisknout při jejím vytvoření nebo přepnutí do stavu, protokol o vydání při přepnutí do stavu, který vyberete.", selector: sel("settings-tisk-reklamace"), icon: "doc" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Hotovo", description: "Při dalším příjmu nebo přepnutí stavu se tisk nabídne sám. Ručně tisknete v detailu zakázky tlačítkem Tisk.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
     ],
   },
   {
@@ -469,10 +547,11 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "communication_automations",
     dostupny: (k) => k.admin,
     kroky: [
-      { page: "settings", title: "Pravidla", description: "Když se něco stane se zakázkou, Jobi za vás pošle SMS nebo e-mail, přepne stav, připíše poplatek (třeba skladné za den) nebo zapíše poznámku technikovi. Pravidla se vyhodnocují v pořadí, ve kterém tu jsou; šipkami je přeskládáte, zaškrtávátkem vypnete.", selector: sel("settings-automations-pravidla"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
-      { page: "settings", title: "Nové pravidlo", description: "Spouštěč: přepnutí do stavu, zakázka ve stavu déle než N hodin či dní (i opakovaně), založení zakázky nebo událost z portálu (schválená či zamítnutá nabídka, podpis, otevření portálu). Prázdný seznam nabídne šablony – připomínku vyzvednutí a nabídku bez odpovědi.", selector: sel("settings-automations-nove"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
-      { page: "settings", title: "Žádost o recenzi", description: "Vložte odkaz na své recenze (Google, Firmy.cz, Heureka) a zapněte: den po vydání zakázky dostane zákazník SMS s poděkováním a odkazem, bez telefonu e-mail. Posílá se jen v denní době (výchozí 9–19) a stejnému zákazníkovi nejvýš jednou za 90 dní. Kdo žádosti nechce, tomu to vypnete v Zákaznících.", selector: sel("automatizace-recenze"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
-      { page: "settings", title: "Historie spuštění", description: "Posledních 50 spuštění s výsledkem a detailem – tady zjistíte, proč SMS neodešla nebo proč se stav nepřepnul. Obnovuje se sama každou minutu.", selector: sel("settings-automations-historie"), settingsSection: nast("communication", "communication_automations"), icon: "settings" },
+      { ...ns("communication", "communication_automations"), title: "K čemu to je", description: "Jobi za vás pošle SMS nebo e-mail, přepne stav, připíše poplatek (třeba skladné za den) nebo zapíše poznámku – když se něco stane se zakázkou.", selector: sel("settings-sub-communication_automations"), icon: "settings" },
+      { ...ns("communication", "communication_automations"), title: "Klikněte na Nové pravidlo", description: "V okně vyberte spouštěč (přepnutí do stavu, zakázka ve stavu déle než N dní, založení, událost z portálu), podmínky a akci a klikněte na Uložit.", selector: sel("settings-automations-nove"), icon: "settings" },
+      { ...ns("communication", "communication_automations"), title: "Zkontrolujte pořadí pravidel", description: "Pravidla se vyhodnocují shora dolů; šipkami je přeskládáte, zaškrtávátkem dočasně vypnete, Upravit otevře okno znovu. Prázdný seznam nabídne hotové šablony.", selector: sel("settings-automations-pravidla"), icon: "settings" },
+      { ...ns("communication", "communication_automations"), title: "Zapněte žádost o recenzi", description: "Vložte odkaz na své recenze (Google, Firmy.cz) a zapněte: den po vydání dostane zákazník SMS s poděkováním a odkazem, stejný zákazník nejvýš jednou za 90 dní.", selector: sel("automatizace-recenze"), icon: "settings" },
+      { ...ns("communication", "communication_automations"), title: "Hotovo – sledujte historii", description: "Posledních 50 spuštění s výsledkem: tady zjistíte, proč SMS neodešla nebo se stav nepřepnul. Obnovuje se sama každou minutu.", selector: sel("settings-automations-historie"), icon: "settings" },
     ],
   },
   {
@@ -482,7 +561,11 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "communication_chat",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Chat týmu", description: "Zprávy v týmu bez opuštění aplikace: kanál servisu, pobočky a soukromé zprávy. Zmínka #číslo zakázky otevře detail.", selector: sel("settings-content"), settingsSection: nast("communication", "communication_chat"), icon: "team" }],
+    kroky: [
+      { ...ns("communication", "communication_chat"), title: "K čemu to je", description: "Zprávy v týmu bez opuštění aplikace: kanál servisu, kanál pobočky a soukromé zprávy. Zmínka #číslo zakázky otevře její detail.", selector: sel("settings-sub-communication_chat"), icon: "team" },
+      { ...ns("communication", "communication_chat"), title: "Zaškrtněte Chat zapnutý", description: "Vpravo dole se všem ukáže bublina s počtem nepřečtených zpráv. Vypnutím chat schováte, zprávy zůstanou uložené.", selector: sel("settings-chat-zapnuty"), icon: "team" },
+      { ...ns("communication", "communication_chat"), title: "Hotovo", description: "Zvuk a upozornění si každý zapne sám ikonou zvonku v panelu chatu – platí pro jeho zařízení.", selector: sel("settings-chat-upozorneni"), icon: "team" },
+    ],
   },
   {
     id: "nastaveni-report",
@@ -491,7 +574,14 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "communication_report",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Report statistik", description: "Zapněte, komu a kdy má chodit. Náhled PDF a zkušební odeslání jsou hned tady.", selector: sel("settings-content"), settingsSection: nast("communication", "communication_report"), icon: "statistics" }],
+    kroky: [
+      { ...ns("communication", "communication_report"), title: "K čemu to je", description: "Jednou za měsíc nebo týden přijde e-mailem PDF se statistikami servisu – obrat, zisk, počty zakázek, nejčastější opravy. Nemusíte je chodit hledat.", selector: sel("settings-sub-communication_report"), icon: "statistics" },
+      { ...ns("communication", "communication_report"), title: "Zaškrtněte Posílat report e-mailem", description: "Pod přepínačem se hned ukáže, kdy odejde první report.", selector: sel("report-zapnout"), icon: "statistics" },
+      { ...ns("communication", "communication_report"), title: "Vyberte, jak často", description: "Měsíčně chodí prvního za minulý měsíc, týdně v pondělí za minulý týden. Pod tím je hodina odeslání.", selector: sel("report-frekvence"), icon: "statistics" },
+      { ...ns("communication", "communication_report"), title: "Přidejte příjemce", description: "Napište e-mail a klikněte na Přidat příjemce. Křížkem u adresy ji odeberete.", selector: sel("report-prijemci"), icon: "statistics" },
+      { ...ns("communication", "communication_report"), title: "Vyzkoušejte", description: "Stáhnout ukázku PDF ukáže, jak report vypadá; Poslat zkušební ho pošle jen vám.", selector: sel("report-vyzkouset"), icon: "statistics" },
+      { ...ns("communication", "communication_report"), title: "Hotovo", description: "Report odejde sám podle plánu; Poslední odeslání dole ukazuje, kdy a za jaké období šel.", selector: sel("settings-sub-communication_report"), icon: "statistics" },
+    ],
   },
   {
     id: "nastaveni-tym",
@@ -501,9 +591,12 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "service_team",
     dostupny: (k) => k.admin,
     kroky: [
-      { page: "settings", title: "Přidělování technikům", description: "Přepínač zapne kartu Technik v detailu zakázky („Přidělit mně“), skupinu Moje v přehledu a jméno technika na kartě zakázky. Servis s jedním technikem to nepotřebuje.", selector: sel("settings-team-pridelovani"), settingsSection: nast("people", "service_team"), icon: "team" },
-      { page: "settings", title: "Členové týmu", description: "U každého člena role (člen nebo správce) a tlačítko Oprávnění: úpravy a mazání zakázek, změna stavu, zákazníci, statusy, dokumenty, tisk, nastavení servisu, statistiky. S pobočkami tu nastavíte domovskou pobočku a na které pobočky člen vidí.", selector: sel("settings-team-clenove"), settingsSection: nast("people", "service_team"), icon: "team" },
-      { page: "settings", title: "Pozvat člena", description: "Pozvánka odejde e-mailem s vybranou rolí; dokud ji kolega nepřijme, je v seznamu Čekající pozvánky. Kolik míst tarif dovoluje, hlídá tlačítko samo.", selector: sel("settings-team-pozvat"), settingsSection: nast("people", "service_team"), icon: "team" },
+      { ...ns("people", "service_team"), title: "K čemu to je", description: "Každý kolega má vlastní účet: vidí stejné zakázky a v historii je poznat, kdo co udělal. Tady zvete členy a určujete, co smí.", selector: sel("settings-sub-service_team"), icon: "team" },
+      { ...ns("people", "service_team"), title: "Rozhodněte o přidělování", description: "Zaškrtnutím zapnete kartu Technik v detailu zakázky („Přidělit mně“), skupinu Moje v přehledu a jméno technika na kartě. Servis s jedním technikem to nepotřebuje.", selector: sel("settings-team-pridelovani"), icon: "team" },
+      { ...ns("people", "service_team"), title: "Klikněte na Pozvat člena", description: "V okně napište e-mail kolegy, vyberte roli (člen nebo správce) a klikněte na Pozvat. Kolik míst tarif dovoluje, je napsané nad tlačítkem.", selector: sel("settings-team-pozvat"), icon: "team" },
+      { ...ns("people", "service_team"), title: "Počkejte na přijetí", description: "Kolegovi přijde e-mail s pozvánkou. Dokud ji nepřijme, je v Čekajících pozvánkách.", selector: sel("settings-team-cekajici"), icon: "team" },
+      { ...ns("people", "service_team"), title: "Nastavte oprávnění", description: "U člena klikněte na Oprávnění a zaškrtněte, co smí: mazat zakázky, měnit stav, zákazníky, statistiky, nastavení… S pobočkami tu vyberete domovskou pobočku a na které pobočky vidí.", selector: sel("settings-team-clenove"), icon: "team" },
+      { ...ns("people", "service_team"), title: "Hotovo", description: "Přijatý kolega je v seznamu členů a po přihlášení smí jen to, co mu povolíte. Role správce se oprávnění netýkají.", selector: sel("settings-team-clenove"), icon: "team" },
     ],
   },
   {
@@ -514,7 +607,14 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "service_odmeny",
     novinkaOd: "2026-09-26",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Odměny za opravy", description: "Pravidlo = text v názvu opravy, částka nebo procento a komu. Odměna vzniká jen u opravy nabídnuté zákazníkovi navíc a po vydání zakázky. Stránku Odměny ukážete týmu přepínačem.", selector: sel("settings-content"), settingsSection: nast("people", "service_odmeny"), icon: "team" }],
+    kroky: [
+      { ...ns("people", "service_odmeny"), title: "K čemu to je", description: "Pravidla určí, kolik tým dostane za opravy nabídnuté zákazníkovi navíc – třeba 100 Kč za servisní čištění. Když s ním zákazník přišel sám, odměna nevzniká.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Vyplňte nové pravidlo", description: "Text, který je v názvu opravy (třeba „servisní čištění“), částka v Kč nebo procento z ceny a komu: kdo opravu přidal, nebo přidělený technik.", selector: sel("odmeny-nove-pravidlo"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Klikněte na Přidat pravidlo", description: "Objeví se v tabulce nahoře; tam ho upravíte, vypnete zaškrtávátkem Aktivní nebo šipkami změníte pořadí.", selector: sel("odmeny-pridat-pravidlo"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Vyzkoušejte název opravy", description: "Napište název opravy z ceníku a hned uvidíte, jestli na ni některé pravidlo sedí a kolik dává.", selector: sel("odmeny-vyzkouset"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Ukažte Odměny týmu", description: "Zaškrtnutím Zobrazit Odměny v navigaci dostane stránku Odměny celý tým. Pod tím určíte, jestli kolegové vidí celý žebříček.", selector: sel("odmeny-v-navigaci"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Hotovo", description: "Odměna se počítá u zakázek vydaných v měsíci, jen u opravy s příznakem Nabídnuto navíc. Přehled je na stránce Odměny.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
+    ],
   },
   {
     id: "nastaveni-api",
@@ -523,7 +623,15 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "service_api",
     dostupny: (k) => !!(k.moduly.api_catalog || k.moduly.api_inventory),
-    kroky: [{ page: "settings", title: "API", description: "Tokeny pro čtení ceníku a skladu, webhooky při změně zakázky a dokumentace. Limity volání jsou uvedené u každého tokenu.", selector: sel("settings-content"), settingsSection: nast("people", "service_api"), icon: "settings" }],
+    kroky: [
+      { ...ns("people", "service_api"), title: "K čemu to je", description: "Váš web nebo e-shop si načte ceník a sklad přímo z Jobi, takže změna ceny se na webu projeví sama. Zápis (pokladna, e-shop) jde přes token.", selector: sel("settings-sub-service_api"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Zkontrolujte stav", description: "Zelené štítky ukazují, co je zapnuté. Bez adresy servisu se ven nedostane nic – vyplníte ji v Nastavení → Firma → Fakturace a DPH.", selector: sel("api-stav"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Zkopírujte adresu ceníku", description: "Kopírovat adresu ji dá do schránky pro webaře, Vyzkoušet ukáže odpověď. Co se posílá ven, přepnete štítkem API u značek, modelů a oprav v Zařízení.", selector: sel("api-cenik"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Pošlete webaři dokumentaci", description: "Otevřít dokumentaci ukáže popis každé adresy; Kopírovat odkaz ho dá do schránky.", selector: sel("api-dokumentace"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Nastavte upozornění na změnu", description: "Vložte deploy hook webu a klikněte na Uložit – po úpravě ceníku nebo skladu na něj pošleme POST. Poslat zkušební ověří, že adresa funguje.", selector: sel("api-webhook"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Vytvořte token pro zápis", description: "Napište, k čemu token je, zaškrtněte rozsah a klikněte na Vytvořit token. Ukáže se jen jednou – hned ho zkopírujte.", selector: sel("api-token"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Hotovo", description: "Web čte data z Jobi. Kdyby token unikl, klikněte u něj na Odvolat a vydejte nový.", selector: sel("settings-sub-service_api"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-pobocky",
@@ -532,7 +640,15 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "service_branches",
     dostupny: (k) => k.admin && !!k.moduly.branches,
-    kroky: [{ page: "settings", title: "Pobočky", description: "Každá zakázka patří pobočce; lišta nahoře přepíná pohled. Členy jde omezit na své pobočky, přesuny řeší Zásilky.", selector: sel("settings-content"), settingsSection: nast("company", "service_branches"), icon: "settings" }],
+    kroky: [
+      { ...ns("company", "service_branches"), title: "K čemu to je", description: "Každá zakázka patří pobočce: na doklady jde adresa pobočky, zkratka do čísla zakázky a v Zakázkách, Skladu i Statistikách funguje jako filtr.", selector: sel("settings-sub-service_branches"), icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Klikněte na Přidat pobočku", description: "Pod seznamem se otevře formulář. Kolik poboček tarif dovoluje, je vedle tlačítka.", selector: sel("pobocky-pridat"), icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Napište název a zkratku", description: "Název (třeba „Praha 6 – Dejvice“) a až tři písmena do čísla zakázky – příklad čísla je hned pod polem.", selector: sel("pobocky-nazev"), klik: ["pobocky-pridat"], icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Doplňte adresu a kontakt", description: "Adresa, telefon, e-mail a otevírací doba jdou na doklady a do portálu zákazníka. Je-li pobočka jiná firma, vyplňte její IČO a účet; prázdná pole se berou z údajů firmy.", selector: sel("pobocky-formular"), klik: ["pobocky-pridat"], icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Klikněte na Uložit pobočku", description: "Pobočka přibude do seznamu. Tužkou ji upravíte, fajfkou nastavíte jako výchozí pro nové zakázky.", selector: sel("pobocky-ulozit"), klik: ["pobocky-pridat"], icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Přepínejte pobočky v liště", description: "Nahoře nad každou stránkou vyberete, kterou pobočku vidíte, nebo Všechny pobočky. Na kterou pobočku kdo vidí, nastavíte v Tým a oprávnění.", selector: sel("pobocka-lista"), icon: "settings" },
+      { ...ns("company", "service_branches"), title: "Hotovo", description: "Nové zakázky se zakládají na vybranou pobočku. Přesun zařízení mezi pobočkami řeší Zásilky – průvodce Poslat zakázky na jinou pobočku.", selector: sel("pobocky-seznam"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-gdpr",
@@ -543,8 +659,12 @@ export const PRUVODCI: Pruvodce[] = [
     novinkaOd: "2026-09-27",
     dostupny: (k) => k.admin,
     kroky: [
-      { page: "settings", title: "Anonymizace starých zákazníků", description: "Zákazník bez zakázky za posledních 5 let (nastavíte 3–10) přijde o jméno, kontakty, adresu, fotky, podpisy a SMS. Zakázky zůstanou a faktury se nemění – účetní doklady se archivují 10 let. Rozpracovaná zakázka nebo nezaplacená faktura zákazníka chrání.", selector: sel("settings-gdpr-anonymizace"), settingsSection: nast("company", "service_gdpr"), icon: "customers" },
-      { page: "settings", title: "Náhled a potvrzení", description: "„Zobrazit náhled“ ukáže, koho se to dotkne, a nic nemění. Spustí se až po napsání slova ANONYMIZOVAT; je to nevratné. Pak pravidlo běží samo každou noc – a když ho zpřísníte, čeká na nové potvrzení.", selector: sel("settings-gdpr-anonymizace"), settingsSection: nast("company", "service_gdpr"), icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "K čemu to je", description: "Osobní údaje se nesmí držet napořád. Zákazník bez zakázky za zvolený počet let přijde o jméno, kontakty, adresu, fotky a SMS; zakázky i faktury zůstanou.", selector: sel("settings-sub-service_gdpr"), icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "Vyberte, po kolika letech", description: "Doporučeno je 5 let. Počítá se od poslední zakázky, reklamace nebo faktury; rozpracovaná zakázka či nezaplacená faktura zákazníka chrání.", selector: sel("gdpr-roky"), icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "Zaškrtněte Anonymizovat zákazníky", description: "Uloží pravidlo. Samo ale neběží, dokud ho poprvé ručně nepotvrdíte v náhledu.", selector: sel("gdpr-zapnout"), icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "Klikněte na Zobrazit náhled", description: "Ukáže, koho by se to dotklo, a nic nemění. Pro spuštění napište do okna slovo ANONYMIZOVAT a klikněte na Anonymizovat – je to nevratné.", selector: sel("gdpr-nahled"), icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "Co přesně se smaže", description: "Tady je rozepsané, co zmizí a co zůstane: faktury beze změny, zakázka jako záznam pro statistiky.", selector: sel("gdpr-co-se-smaze"), klik: ["gdpr-co-se-smaze"], icon: "customers" },
+      { ...ns("company", "service_gdpr"), title: "Hotovo", description: "Po potvrzení běží pravidlo samo každou noc a každý běh se zapíše do protokolu. Když ho zpřísníte (méně let), čeká znovu na ruční potvrzení.", selector: sel("gdpr-protokol"), icon: "customers" },
     ],
   },
   {
@@ -554,7 +674,13 @@ export const PRUVODCI: Pruvodce[] = [
     page: "settings",
     settingsSubsection: "service_subscription",
     dostupny: (k) => k.admin,
-    kroky: [{ page: "settings", title: "Předplatné", description: "Co máte zapnuté, do kdy platí zkušební období a jak se platí.", selector: sel("settings-content"), settingsSection: nast("company", "service_subscription"), icon: "settings" }],
+    kroky: [
+      { ...ns("company", "service_subscription"), title: "K čemu to je", description: "Tady vidíte, jaký tarif a moduly máte, do kdy běží zkušební období a kdy je další platba.", selector: sel("settings-sub-service_subscription"), icon: "settings" },
+      { ...ns("company", "service_subscription"), title: "Zkontrolujte, co máte", description: "Nahoře je stav předplatného a datum, pod ním pobočky, SMS a moduly s fajfkou u zapnutých. S předplatným tu je tlačítko Karta, faktury a zrušení.", selector: sel("predplatne-stav"), icon: "settings" },
+      { ...ns("company", "service_subscription"), title: "Vyberte tarif", description: "Zvolte Platit měsíčně nebo ročně a klikněte na tarif; pod ním případně přidejte pobočky navíc.", selector: sel("predplatne-tarif"), icon: "settings" },
+      { ...ns("company", "service_subscription"), title: "Klikněte na Pokračovat s tarifem", description: "Otevře se platební brána, kde kartu zadáte sami – aplikace ji nevidí.", selector: sel("predplatne-pokracovat"), icon: "settings" },
+      { ...ns("company", "service_subscription"), title: "Hotovo", description: "Po zaplacení se tarif a moduly zapnou samy a nové funkce vám aplikace oznámí po přihlášení.", selector: sel("predplatne-moduly"), icon: "settings" },
+    ],
   },
   {
     id: "nastaveni-profil",
@@ -562,7 +688,14 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Přezdívka, fotka, PIN a osobní nastavení.",
     page: "settings",
     settingsSubsection: "profile_me",
-    kroky: [{ page: "settings", title: "Můj účet", description: "Přezdívka a fotka se ukazují kolegům v historii, chatu a u přiděleného technika. PIN umožní rychlé přepínání účtů na sdíleném počítači.", selector: sel("settings-content"), settingsSection: nast("profile", "profile_me"), icon: "profile" }],
+    kroky: [
+      { ...ns("profile", "profile_me"), title: "K čemu to je", description: "Jak vás vidí kolegové a jak se u sdíleného počítače rychle přepnout. Platí jen pro váš účet.", selector: sel("settings-sub-profile_me"), icon: "profile" },
+      { ...ns("profile", "profile_me"), title: "Napište přezdívku", description: "Ukáže se kolegům u komentářů a aktivit v zakázkách. Uložte lištou dole.", selector: sel("settings-profil-prezdivka"), icon: "profile" },
+      { ...ns("profile", "profile_me"), title: "Vložte fotku", description: "Adresa obrázku (https://…); náhled je hned pod polem.", selector: sel("settings-profil-fotka"), icon: "profile" },
+      { ...ns("profile", "profile_me"), title: "Nastavte si PIN", description: "Čtyři číslice dvakrát a Nastavit. U sdíleného počítače se pak mezi účty přepínáte PINem místo hesla.", selector: sel("settings-profil-pin"), icon: "profile" },
+      { ...ns("profile", "profile_me"), title: "Zamykání po nečinnosti", description: "Po zvolené době se ukáže obrazovka s účty a odemkne ji PIN. Platí jen pro tento počítač.", selector: sel("settings-profil-zamek"), icon: "profile" },
+      { ...ns("profile", "profile_me"), title: "Hotovo", description: "Přepnout účet nebo zamknout jde kdykoli tady, nebo v nabídce pod vaším jménem v postranním panelu.", selector: sel("settings-profil-prepnout"), icon: "profile" },
+    ],
   },
 ];
 
@@ -570,12 +703,21 @@ export function dostupniPruvodci(k: KontextPruvodcu): Pruvodce[] {
   return PRUVODCI.filter((p) => (p.dostupny ? p.dostupny(k) : true) && p.kroky.length > 0);
 }
 
-/** Průvodce pro aktuální místo: podsekce Nastavení, nebo stránka (úvod se pro Zakázky nebere – má vlastní průvodce). */
-export function pruvodceProMisto(dostupne: Pruvodce[], page: NavKey, settingsSubsection?: string | null): Pruvodce | null {
+/**
+ * Všichni průvodci k aktuálnímu místu v pořadí katalogu: podsekce Nastavení,
+ * nebo stránka (úvod se pro Zakázky nebere – má vlastní průvodce). Stránka
+ * jich může mít víc – Zásilky mají Poslat i Převzít, Sklad i inventuru.
+ */
+export function pruvodciProMisto(dostupne: Pruvodce[], page: NavKey, settingsSubsection?: string | null): Pruvodce[] {
   if (page === "settings" && settingsSubsection) {
-    return dostupne.find((p) => p.settingsSubsection === settingsSubsection) ?? null;
+    return dostupne.filter((p) => p.settingsSubsection === settingsSubsection);
   }
-  return dostupne.find((p) => p.page === page && p.id !== "uvod" && !p.settingsSubsection) ?? null;
+  return dostupne.filter((p) => p.page === page && p.id !== "uvod" && !p.settingsSubsection);
+}
+
+/** Hlavní průvodce k místu (první z `pruvodciProMisto`). */
+export function pruvodceProMisto(dostupne: Pruvodce[], page: NavKey, settingsSubsection?: string | null): Pruvodce | null {
+  return pruvodciProMisto(dostupne, page, settingsSubsection)[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------
