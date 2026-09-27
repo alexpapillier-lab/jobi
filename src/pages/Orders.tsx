@@ -28,7 +28,8 @@ import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
-import { sloucZakazkuZDb } from "../lib/slouceniZakazky";
+import { sloucZakazkuZDb, zapisZakazkyBezi } from "../lib/slouceniZakazky";
+import { drzeneKlice, poleZFormulare, sloucSRozepsanym, type PoleZakazky } from "../lib/editaceZamek";
 import { sjetNaKartu } from "../components/orders/PostupZakazky";
 import { useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { dniBezZmenyJinde, stitekUmisteni, umisteniZakazky, type Zasilka } from "../lib/zasilky";
@@ -92,6 +93,8 @@ import { useSmsNeprecteneSeznamu } from "./Orders/hooks/useSmsNeprecteneSeznamu"
 import { useEvidenceZapisu } from "./Orders/hooks/useEvidenceZapisu";
 import { useKomentare } from "./Orders/hooks/useKomentare";
 import { useZapisyZakazky } from "./Orders/hooks/useZapisyZakazky";
+import { useEditaceZakazky, nactiAutoraZmen, type AutorKonfliktu } from "./Orders/hooks/useEditaceZakazky";
+import { KonfliktUpravyDialog, KolegaUpravujeDialog } from "./Orders/KonfliktUpravyDialog";
 import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
 import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
 import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
@@ -253,6 +256,14 @@ export default function Orders({
     [refreshTicketReservations]
   );
   const [isEditing, setIsEditing] = useState(false);
+  /* „Upravuje kolega“: kdo má tenhle detail otevřený a kdo ho upravuje
+     (vlastní presence kanál na zakázku, viz useEditaceZakazky). */
+  const { ostatni: kolegoveVDetailu } = useEditaceZakazky({
+    ticketId: detailId,
+    userId: mojeId,
+    jmeno: userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Kolega",
+    upravuje: isEditing,
+  });
   const [diagnosticPhotosUploading, setDiagnosticPhotosUploading] = useState(false);
   const [captureQRItems, setCaptureQRItems] = useState<Array<{ deviceLabel: string; url: string }> | null>(null);
   const [captureQRLoading, setCaptureQRLoading] = useState(false);
@@ -293,6 +304,8 @@ export default function Orders({
       setQuickPrintDropdownRect(null);
       setCaptureQRItems(null);
       setPhotoLightbox(null);
+      setKonfliktUpravy(null);
+      setDotazKolegaUpravuje(null);
     }
   }, [closeDetailWhen]);
 
@@ -348,6 +361,26 @@ export default function Orders({
     diagnosticPhotos: false,
     performedRepairs: false,
   });
+  /** Pro sloučení zakázky načtené po konfliktu (čte se mimo render). */
+  const dirtyFlagsRef = useRef(dirtyFlags);
+  dirtyFlagsRef.current = dirtyFlags;
+
+  /**
+   * Souběžná úprava (src/lib/editaceZamek.ts): zakázka, jak byla při
+   * kliknutí na Upravit – s ní se před uložením porovná řádek z databáze.
+   */
+  const zakladUpravyRef = useRef<TicketEx | null>(null);
+  /** updated_at z odpovědí na naše uložení – takový řádek není cizí změna. */
+  const naseZapisyRef = useRef<Set<string>>(new Set());
+  /** Uložení narazilo na změnu od kolegy – čeká na volbu v dialogu. */
+  const [konfliktUpravy, setKonfliktUpravy] = useState<{
+    zDb: TicketEx;
+    zmeny: PoleZakazky[];
+    prepise: PoleZakazky[];
+    autor: AutorKonfliktu | null;
+  } | null>(null);
+  /** Kliknutí na Upravit, když už upravuje kolega – čeká na potvrzení (id zakázky). */
+  const [dotazKolegaUpravuje, setDotazKolegaUpravuje] = useState<{ ticketId: string; jmeno: string; od: string } | null>(null);
 
   /** Otázky při stornu: na kterou zakázku a do jakého stavu se čeká na odpověď. */
   const [stornoDotaz, setStornoDotaz] = useState<{ ticketId: string; next: string } | null>(null);
@@ -800,6 +833,12 @@ export default function Orders({
     return plna;
   }, [refetchTicketById, evidenceZapisu]);
 
+  /** Zakázka znovu načtená po konfliktu verzí nesmí shodit neuložené opravy ani rozepsanou diagnostiku. */
+  const sloucitZDb = useCallback(
+    (mistni: TicketEx, zDb: TicketEx) => sloucSRozepsanym(mistni, zDb, evidenceZapisu(), zDb.id, dirtyFlagsRef.current),
+    [evidenceZapisu]
+  );
+
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
     serviceName,
@@ -812,6 +851,7 @@ export default function Orders({
     statusKeysSet,
     normalizeStatus,
     refetchTicketById,
+    sloucitZDb,
   });
 
   const { smsUnreadByTicketId, setSmsUnreadListBump } = useSmsNeprecteneSeznamu({ smsAvailable, activeServiceId, ticketsForSmsUnread });
@@ -1283,46 +1323,108 @@ export default function Orders({
   /** Skončil poslední zápis ve frontě? Pak se nesmí hlásit „Změny uloženy“. */
   const zapisSkoncilVeFronteRef = useRef(false);
 
-  const saveTicketChanges = useCallback(async (): Promise<boolean> => {
-    zapisSkoncilVeFronteRef.current = false;
-    if (!detailedTicket) {
-      return false;
-    }
-    if (uiCfg.orders.customerPhoneRequired && !(editedTicket.customerPhone ?? detailedTicket.customerPhone ?? "").trim()) {
-      showToast("Telefon zákazníka je povinný. Vyplňte ho před uložením.", "error");
-      return false;
-    }
+  /** Čerstvá zakázka z databáze sloučená s tím, co v detailu ještě není uložené. */
+  const cerstvaSRozepsanym = useCallback((zDb: TicketEx): TicketEx => {
+    const mistni = cloudTicketsRef.current.find((t) => t.id === zDb.id);
+    const sloucena = sloucSRozepsanym(mistni, zDb, evidenceZapisu(), zDb.id, dirtyFlagsRef.current);
+    setCloudTickets((prev) => prev.map((t) => (t.id === zDb.id ? sloucena : t)));
+    return sloucena;
+  }, [evidenceZapisu, cloudTicketsRef, setCloudTickets]);
 
-    return saveTicketChangesAction({
-      detailedTicket,
-      editedTicket,
-      onSuccess: (updatedTicket) => {
-        setIsEditing(false);
-        setEditedTicket({});
-        // Aktualizovat původní hodnotu po úspěšném uložení
-        originalTicketRef.current = JSON.parse(JSON.stringify(updatedTicket));
-        // Reset dirty flags after successful save
-        setDirtyFlags({
-          diagnosticText: false,
-          diagnosticPhotos: false,
-          performedRepairs: false,
-        });
-        // Opravy po neúspěšném okamžitém zápisu jsou teď v databázi.
-        neulozeneOpravyRef.current.delete(updatedTicket.id);
-      },
-      /* Souběžná úprava: zakázka se načte znovu (kvůli `version`, jinak by
-         každé další uložení narazilo na stejný konflikt), ale režim úprav
-         zůstává a rozepsané změny s ním. Dřív se tu volal `onSuccess`, který
-         je zahodil – uživatel dostal hlášku „zkontrolujte a uložte znovu“
-         nad formulářem, kde už jeho práce nebyla. */
-      onConflict: (refreshedTicket) => {
-        originalTicketRef.current = JSON.parse(JSON.stringify(refreshedTicket));
-      },
-      onQueued: () => {
-        zapisSkoncilVeFronteRef.current = true;
-      },
-    });
-  }, [detailedTicket, editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired]);
+  /**
+   * Uložení zakázky. `zaklad` = zakázka při kliknutí na Upravit: s ní se
+   * porovná řádek v databázi, a když by uložení přepsalo změnu kolegy,
+   * ukáže se dialog místo tichého přepsání (src/lib/editaceZamek.ts).
+   * Bez základu (zavření detailu s rozepsanou diagnostikou) se ukládá jako dřív.
+   *
+   * Kolegova změna jen mimo formulář (stav, opravy) se nepřepisuje – do
+   * paměti ji nedonesl realtime, formulář se jí netýká. Pak se uloží znovu
+   * nad čerstvou verzí, bez ptaní (nejvýš dvakrát, pak už dialog).
+   */
+  const ulozZakazku = useCallback(async (zakazka: TicketEx | undefined, zakladVstup: TicketEx | null): Promise<boolean> => {
+    let detailedTicket = zakazka;
+    let zaklad = zakladVstup;
+    for (let pokus = 0; ; pokus++) {
+      zapisSkoncilVeFronteRef.current = false;
+      if (!detailedTicket) {
+        return false;
+      }
+      if (uiCfg.orders.customerPhoneRequired && !(editedTicket.customerPhone ?? detailedTicket.customerPhone ?? "").trim()) {
+        showToast("Telefon zákazníka je povinný. Vyplňte ho před uložením.", "error");
+        return false;
+      }
+
+      const zakladPokusu = zaklad;
+      const znovu: { zDb: TicketEx | null } = { zDb: null };
+      const ok = await saveTicketChangesAction({
+        detailedTicket,
+        editedTicket,
+        soubeh: zakladPokusu && zakladPokusu.id === detailedTicket.id
+          ? {
+              zaklad: zakladPokusu,
+              vynechat: drzeneKlice(dirtyFlagsRef.current, zapisZakazkyBezi(detailedTicket.id, evidenceZapisu())),
+              naseZapisy: naseZapisyRef.current,
+              onKonflikt: ({ zDb, zmeny, konflikty }) => {
+                const prepise = poleZFormulare(konflikty, editedTicket);
+                if (prepise.length === 0 && pokus < 2) {
+                  znovu.zDb = zDb;
+                  return;
+                }
+                // Detail ukáže, jak zakázka teď vypadá (stav, opravy od kolegy); formulář zůstává.
+                cerstvaSRozepsanym(zDb);
+                setKonfliktUpravy({ zDb, zmeny: zmeny.length > 0 ? zmeny : konflikty, prepise, autor: null });
+                if (!activeServiceId) return;
+                void nactiAutoraZmen({
+                  serviceId: activeServiceId,
+                  ticketId: zDb.id,
+                  mojeId,
+                  od: zakladPokusu.updatedAt ?? null,
+                  sloupce: (zmeny.length > 0 ? zmeny : konflikty).flatMap((p) => p.sloupce),
+                  znamaJmena: new Map(kolegoveVDetailu.map((k) => [k.userId, k.jmeno])),
+                }).then((autor) => {
+                  setKonfliktUpravy((k) => (k && k.zDb === zDb ? { ...k, autor } : k));
+                });
+              },
+            }
+          : undefined,
+        onSuccess: (updatedTicket) => {
+          setIsEditing(false);
+          setEditedTicket({});
+          zakladUpravyRef.current = null;
+          if (updatedTicket.updatedAt) naseZapisyRef.current.add(updatedTicket.updatedAt);
+          // Aktualizovat původní hodnotu po úspěšném uložení
+          originalTicketRef.current = JSON.parse(JSON.stringify(updatedTicket));
+          // Reset dirty flags after successful save
+          setDirtyFlags({
+            diagnosticText: false,
+            diagnosticPhotos: false,
+            performedRepairs: false,
+          });
+          // Opravy po neúspěšném okamžitém zápisu jsou teď v databázi.
+          neulozeneOpravyRef.current.delete(updatedTicket.id);
+        },
+        /* Souběžná úprava: zakázka se načte znovu (kvůli `version`, jinak by
+           každé další uložení narazilo na stejný konflikt), ale režim úprav
+           zůstává a rozepsané změny s ním. Dřív se tu volal `onSuccess`, který
+           je zahodil – uživatel dostal hlášku „zkontrolujte a uložte znovu“
+           nad formulářem, kde už jeho práce nebyla. */
+        onConflict: (refreshedTicket) => {
+          originalTicketRef.current = JSON.parse(JSON.stringify(refreshedTicket));
+        },
+        onQueued: () => {
+          zapisSkoncilVeFronteRef.current = true;
+        },
+      });
+      if (!znovu.zDb) return ok;
+      detailedTicket = cerstvaSRozepsanym(znovu.zDb);
+      zaklad = znovu.zDb;
+    }
+  }, [editedTicket, saveTicketChangesAction, activeServiceId, uiCfg.orders.customerPhoneRequired, evidenceZapisu, kolegoveVDetailu, mojeId, cerstvaSRozepsanym, neulozeneOpravyRef]);
+
+  const saveTicketChanges = useCallback(
+    (): Promise<boolean> => ulozZakazku(detailedTicket, isEditing ? zakladUpravyRef.current : null),
+    [ulozZakazku, detailedTicket, isEditing]
+  );
 
   const handleCloseDetail = useCallback(async () => {
     devLog("[Close] clicked - about to save?");
@@ -1458,8 +1560,10 @@ export default function Orders({
     return () => window.removeEventListener("keydown", onKey);
   }, [detailId, isEditing, saveTicketChanges, returnToPage, onReturnToPage]);
 
-  const startEditing = useCallback(() => {
-    if (!detailedTicket) return;
+  /** Vyplní formulář Upravit ze zakázky a zapamatuje si ji jako základ pro kontrolu souběhu. */
+  const naplnFormular = useCallback((detailedTicket: TicketEx) => {
+    zakladUpravyRef.current = detailedTicket;
+    setKonfliktUpravy(null);
     setEditedTicket({
       customerName: detailedTicket.customerName,
       customerPhone: detailedTicket.customerPhone || "",
@@ -1486,7 +1590,53 @@ export default function Orders({
       expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
     } as any);
     setIsEditing(true);
-  }, [detailedTicket]);
+  }, []);
+
+  /** Upravit: když už upravuje kolega, nejdřív se zeptat (nezakazovat – presence může lhát). */
+  const startEditing = useCallback(() => {
+    if (!detailedTicket) return;
+    const upravujici = kolegoveVDetailu.find((k) => k.upravuje);
+    if (upravujici) {
+      setDotazKolegaUpravuje({ ticketId: detailedTicket.id, jmeno: upravujici.jmeno, od: upravujici.od });
+      return;
+    }
+    naplnFormular(detailedTicket);
+  }, [detailedTicket, kolegoveVDetailu, naplnFormular]);
+
+  /**
+   * Konflikt → Přepsat: uloží formulář nad čerstvou verzí. Pole mimo
+   * formulář (stav, opravy) se vezmou z databáze, takže se přepíše jen to,
+   * co dialog vyjmenoval. Základem je řádek, který dialog ukázal – kdyby
+   * mezitím přišla další změna, dialog se ukáže znovu.
+   */
+  const prepsatKonflikt = useCallback(async () => {
+    const k = konfliktUpravy;
+    if (!k) return;
+    /* V paměti je řádek z dialogu sloučený s rozdělaným (viz onKonflikt),
+       případně novější z realtime – o ten se uložení opře. */
+    const vPameti = cloudTicketsRef.current.find((t) => t.id === k.zDb.id);
+    const cerstva = vPameti?.uplna && (vPameti.version ?? 0) >= (k.zDb.version ?? 0) ? vPameti : cerstvaSRozepsanym(k.zDb);
+    setKonfliktUpravy(null);
+    const ok = await ulozZakazku(cerstva, k.zDb);
+    if (ok && !zapisSkoncilVeFronteRef.current) showToast("Změny uloženy", "success");
+  }, [konfliktUpravy, cerstvaSRozepsanym, ulozZakazku, cloudTicketsRef]);
+
+  /** Konflikt → Načíst jeho verzi: zahodit rozepsaný formulář a vyplnit ho znovu z databáze. */
+  const nacistKonflikt = useCallback(async () => {
+    const k = konfliktUpravy;
+    if (!k) return;
+    const zDb = (await refetchTicketById(k.zDb.id)) ?? k.zDb;
+    const cerstva = cerstvaSRozepsanym(zDb);
+    originalTicketRef.current = JSON.parse(JSON.stringify(cerstva));
+    naplnFormular(cerstva);
+    setKonfliktUpravy(null);
+    showToast("Načtena aktuální verze zakázky, rozepsané úpravy formuláře jsou zahozené.", "info");
+  }, [konfliktUpravy, refetchTicketById, cerstvaSRozepsanym, naplnFormular]);
+
+  // Konec úprav (Uložit, Zrušit) – základ patří jen k probíhajícím úpravám.
+  useEffect(() => {
+    if (!isEditing) zakladUpravyRef.current = null;
+  }, [isEditing]);
 
   useEffect(() => {
     openNewOrderRef.current = openNewOrder;
@@ -1805,6 +1955,7 @@ export default function Orders({
             setTicketStatus={setTicketStatus}
             setClaimStatus={setClaimStatus}
             ticketViewers={ticketViewers}
+            kolegoveVDetailu={kolegoveVDetailu}
             hasBranches={hasBranches}
             branchById={branchById}
             setMoveBranchOpen={setMoveBranchOpen}
@@ -2196,6 +2347,30 @@ export default function Orders({
       {/* Photo lightbox – rozkliknutí diagnostických fotek */}
       {photoLightbox && (
         <FotoLightbox photoLightbox={photoLightbox} fotkyLightboxu={fotkyLightboxu} onClose={() => setPhotoLightbox(null)} />
+      )}
+
+      {/* Souběžná úprava: kolega zakázku mezitím změnil (viz src/lib/editaceZamek.ts).
+          Oba dialogy patří k zakázce, u které vznikly – po přepnutí jinam se neukážou. */}
+      {konfliktUpravy && detailId === konfliktUpravy.zDb.id && (
+        <KonfliktUpravyDialog
+          zmeny={konfliktUpravy.zmeny}
+          prepise={konfliktUpravy.prepise}
+          autor={konfliktUpravy.autor}
+          onPrepsat={prepsatKonflikt}
+          onNacist={nacistKonflikt}
+          onZpet={() => setKonfliktUpravy(null)}
+        />
+      )}
+      {dotazKolegaUpravuje && dotazKolegaUpravuje.ticketId === detailId && detailedTicket && !isEditing && (
+        <KolegaUpravujeDialog
+          jmeno={dotazKolegaUpravuje.jmeno}
+          od={dotazKolegaUpravuje.od}
+          onPokracovat={() => {
+            setDotazKolegaUpravuje(null);
+            naplnFormular(detailedTicket);
+          }}
+          onZrusit={() => setDotazKolegaUpravuje(null)}
+        />
       )}
 
       {canPrintExport && openQuickPrintTicket && quickPrintDropdownRect && (

@@ -121,9 +121,10 @@ export const PRUVODCI: Pruvodce[] = [
     nazev: "Detail zakázky",
     popis: "Opravy s cenami, diagnostika, dokumenty, SMS a historie – na ukázkové zakázce.",
     page: "orders",
-    novinkaOd: "2026-09-26",
+    novinkaOd: "2026-09-27",
     kroky: [
       { page: "orders", title: "Detail zakázky", description: "Otevíráme ukázkovou (nebo poslední) zakázku. Nahoře je číslo, zákazník s telefonem, stav a tlačítka: Upravit, Tisk, SMS, faktura a nabídka „…“ s dalšími akcemi.", selector: sel("detail-upravit"), akce: "otevrit-ukazkovou-zakazku", icon: "orders" },
+      { page: "orders", title: "Kolega v zakázce", description: "Má-li zakázku otevřenou i kolega, ukáže se tu jeho jméno; oranžově, když ji právě upravuje (i od kdy). Upravovat můžete i tak – kdo uloží druhý, uvidí, co kolega mezitím změnil, a vybere, jestli jeho změny přepíše, nebo načte jeho verzi.", selector: sel("detail-kolega"), icon: "orders" },
       { page: "orders", title: "Provedené opravy", description: "Opravy z ceníku nebo ručně, každá s cenou, náklady a díly. Sleva se uplatní na celek. Součet je konečná cena pro zákazníka i pro doklad.", selector: sel("detail-opravy"), icon: "orders" },
       { page: "orders", title: "Diagnostika a fotky", description: "Text pro zákazníka a fotky před a po opravě (z počítače nebo z telefonu přes QR kód). Jde na protokol a do portálu zákazníka.", selector: sel("detail-diagnostika"), icon: "orders" },
       { page: "orders", title: "SMS zákazníkovi", description: "Zpráva odchází z aplikace a odpověď se vrátí sem. Automatické SMS při změně stavu nastavíte v Komunikaci.", selector: sel("detail-sms"), icon: "orders" },
