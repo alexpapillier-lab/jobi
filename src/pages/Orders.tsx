@@ -265,12 +265,8 @@ export default function Orders({
      v okamžiku kliknutí, takže by se v něm jinak podpis nikdy neobnovil. */
   const fotkyLightboxu = usePodepsaneFotky(supabase, photoLightbox?.urls ?? null);
 
-  useEffect(() => {
-    if (!photoLightbox) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPhotoLightbox(null); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [photoLightbox]);
+  /* Escape nad zvětšenou fotkou zavírá jen ji – obstarává to hlavní
+     Escape handler níž (capture), který ji má jako první v pořadí. */
 
   /**
    * Při odchodu na jinou stránku zavřít všechno, co Orders vykresluje portálem.
@@ -1370,8 +1366,17 @@ export default function Orders({
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      const hasSomethingToClose = smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
+      const hasSomethingToClose = !!photoLightbox || smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
       if (!hasSomethingToClose) return;
+      /* Zvětšená fotka leží nade vším (portál, z-index 10002). Dřív ji tenhle
+         handler neznal: v capture fázi zastavil událost dřív, než k ní došla,
+         a místo fotky zavřel celý detail. */
+      if (photoLightbox) {
+        e.preventDefault();
+        e.stopPropagation();
+        setPhotoLightbox(null);
+        return;
+      }
       // Otevřená nabídka (našeptávač, stavy, Tisk, ⋯) si Escape zpracuje sama – nezavírat kvůli ní celé okno.
       if (document.querySelector('[role="listbox"], [role="menu"], [data-escape-vlastni]')) return;
       e.preventDefault();
@@ -1407,7 +1412,7 @@ export default function Orders({
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [smsPanelOpen, detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
+  }, [photoLightbox, smsPanelOpen, detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
   useEffect(() => {
@@ -1437,7 +1442,10 @@ export default function Orders({
 
   // Enter v náhledu zakázky při úpravách = Uložit a zavřít (kromě textarea, kde Enter = nový řádek)
   useEffect(() => {
-    if (!detailId || !isEditing) return;
+    /* Otevřený příjem leží nad detailem a Enter (i ⌘/Ctrl+Enter = Vytvořit
+       zakázku) patří jemu. Dřív se spustilo obojí: vznikla zakázka a zároveň
+       se uložil a zavřel detail pod ní. */
+    if (!detailId || !isEditing || isNewOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
       const target = e.target as Node | null;
@@ -1456,7 +1464,7 @@ export default function Orders({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detailId, isEditing, saveTicketChanges, returnToPage, onReturnToPage]);
+  }, [detailId, isEditing, isNewOpen, saveTicketChanges, returnToPage, onReturnToPage]);
 
   const startEditing = useCallback(() => {
     if (!detailedTicket) return;
@@ -1849,7 +1857,6 @@ export default function Orders({
             isEditingClaim={isEditingClaim}
             cloudTickets={cloudTickets}
             setCloudTickets={setCloudTickets}
-            detailedTicket={detailedTicket}
             claimResolutionDraft={claimResolutionDraft}
             setClaimResolutionDraft={setClaimResolutionDraft}
             saveClaimResolutionItems={saveClaimResolutionItems}

@@ -33,8 +33,6 @@ type Props = {
   isEditingClaim: boolean;
   cloudTickets: TicketEx[];
   setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
-  /** Otevřená zakázka (při reklamaci není) – jen pro popisek QR focení. */
-  detailedTicket: TicketEx | undefined;
   claimResolutionDraft: ClaimResolutionItem[] | null;
   setClaimResolutionDraft: React.Dispatch<React.SetStateAction<ClaimResolutionItem[] | null>>;
   saveClaimResolutionItems: (claimId: string, items: ClaimResolutionItem[]) => Promise<boolean>;
@@ -68,7 +66,6 @@ export function DetailReklamace({
   isEditingClaim,
   cloudTickets,
   setCloudTickets,
-  detailedTicket,
   claimResolutionDraft,
   setClaimResolutionDraft,
   saveClaimResolutionItems,
@@ -466,7 +463,7 @@ export function DetailReklamace({
                       }
                       if (data?.error) throw new Error(data.error);
                       if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                      setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: popisDoOdkazu(data.url, { cislo: sourceTicket.code, servis: serviceName }) }]);
+                      setCaptureQRItems([{ deviceLabel: sourceTicket.deviceLabel || c.device_label || "Zakázka", url: popisDoOdkazu(data.url, { cislo: sourceTicket.code, servis: serviceName }) }]);
                       return;
                     } catch (err) {
                       lastErr = err;
