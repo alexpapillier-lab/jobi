@@ -8,8 +8,9 @@ import { reportError } from "../../../lib/reportError";
 import { supabase } from "../../../lib/supabaseClient";
 import { useStatuses } from "../../../state/StatusesStore";
 import { useIsNarrow } from "../../../hooks/useIsNarrow";
-import { ACTION_LABELS, describeRule, type AutomationRule } from "../../../lib/automations";
+import { ACTION_LABELS, describeRule, findReviewRule, isReviewRule, type AutomationRule } from "../../../lib/automations";
 import { RuleEditor } from "./RuleEditor";
+import { ReviewRequestCard } from "./ReviewRequestCard";
 import { RunsCard } from "./RunsCard";
 import {
   PRESETS,
@@ -83,7 +84,13 @@ export function AutomationsSection({ activeServiceId }: { activeServiceId: strin
     return () => document.removeEventListener("mousedown", onDown);
   }, [menuFor]);
 
-  const sorted = useMemo(() => [...rules].sort((a, b) => a.sort_order - b.sort_order), [rules]);
+  // Žádost o recenzi má vlastní kartu; obecný seznam a editor ji neukazují.
+  const sorted = useMemo(() => rules.filter((r) => !isReviewRule(r)).sort((a, b) => a.sort_order - b.sort_order), [rules]);
+  const reviewRule = useMemo(() => findReviewRule(rules), [rules]);
+  const nextSortOrder = rules.length ? Math.max(...rules.map((r) => r.sort_order)) + 1 : 0;
+  const onReviewSaved = useCallback((saved: AutomationRule) => {
+    setRules((prev) => (prev.some((r) => r.id === saved.id) ? prev.map((r) => (r.id === saved.id ? saved : r)) : [...prev, saved]));
+  }, []);
 
   const fail = (code: string, error: unknown, userMessage: string) =>
     reportError({ code, error, userMessage, source: "Settings.Automations", serviceId: activeServiceId });
@@ -173,7 +180,8 @@ export function AutomationsSection({ activeServiceId }: { activeServiceId: strin
     const next = [...sorted];
     next[index] = b; next[other] = a;
     const renumbered = next.map((r, i) => ({ ...r, sort_order: i }));
-    setRules(renumbered);
+    // Pravidlo žádosti o recenzi v `sorted` není – nesmí ze stavu zmizet.
+    setRules([...renumbered, ...rules.filter(isReviewRule)]);
     const changed = renumbered.filter((r) => rules.find((x) => x.id === r.id)?.sort_order !== r.sort_order);
     const results = await Promise.all(changed.map((r) => table.update({ sort_order: r.sort_order }).eq("id", r.id)));
     const err = results.find((r: { error: unknown }) => r.error)?.error;
@@ -281,6 +289,10 @@ export function AutomationsSection({ activeServiceId }: { activeServiceId: strin
           </div>
         )}
       </Card>
+
+      {!unavailable && !loading && (
+        <ReviewRequestCard serviceId={activeServiceId} rule={reviewRule} statuses={statuses} nextSortOrder={nextSortOrder} onSaved={onReviewSaved} />
+      )}
 
       {!unavailable && <RunsCard serviceId={activeServiceId} rules={rules} />}
 

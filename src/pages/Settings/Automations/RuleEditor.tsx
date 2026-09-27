@@ -8,6 +8,7 @@ import type { StatusMeta } from "../../../state/StatusesStore";
 import {
   ACTION_LABELS,
   EVENT_LABELS,
+  SPECIAL_TRIGGERS,
   TEMPLATE_VARIABLES,
   TRIGGER_LABELS,
   describeRule,
@@ -95,11 +96,22 @@ function HoursInput({
 
 /**
  * Textové pole se šablonou: čipy proměnných vloží `{{klíč}}` na pozici
- * kurzoru a pod polem je náhled se vzorovými hodnotami.
+ * kurzoru a pod polem je náhled se vzorovými hodnotami. Proměnné a vzorové
+ * hodnoty jdou vyměnit (karta Žádost o recenzi má vlastní sadu s odkazem).
  */
-function TemplateArea({
-  value, onChange, rows = 4, counter, placeholder,
-}: { value: string; onChange: (v: string) => void; rows?: number; counter?: boolean; placeholder?: string }) {
+export function TemplateArea({
+  value, onChange, rows = 4, counter, placeholder, variables = TEMPLATE_VARIABLES, samples = SAMPLE_VARS, preview: previewText,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  rows?: number;
+  counter?: boolean;
+  placeholder?: string;
+  variables?: Array<{ key: string; label: string; sample: string }>;
+  samples?: Record<string, string>;
+  /** Vlastní náhled místo prostého dosazení vzorových hodnot. */
+  preview?: string;
+}) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const insert = (key: string) => {
     const el = ref.current;
@@ -115,13 +127,14 @@ function TemplateArea({
       el.setSelectionRange(pos, pos);
     });
   };
-  const seg = smsSegments(value);
-  const preview = substituteTemplate(value, SAMPLE_VARS);
+  const preview = previewText ?? substituteTemplate(value, samples);
+  // SMS se počítá z toho, co opravdu odejde (s dosazenými hodnotami), ne ze šablony.
+  const seg = smsSegments(previewText ?? value);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
       <textarea ref={ref} value={value} rows={rows} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={textareaStyle} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {TEMPLATE_VARIABLES.map((v) => (
+        {variables.map((v) => (
           <button
             key={v.key}
             type="button"
@@ -257,7 +270,7 @@ export function RuleEditor({
           <section style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
             <div style={{ fontWeight: 800, fontSize: "var(--text-base)", color: "var(--text)" }}>Kdy</div>
             <select value={draft.triggerType} onChange={(e) => set("triggerType", e.target.value as TriggerType)} style={selectStyle}>
-              {(Object.keys(TRIGGER_LABELS) as TriggerType[]).map((k) => (
+              {(Object.keys(TRIGGER_LABELS) as TriggerType[]).filter((k) => !SPECIAL_TRIGGERS.has(k) || k === draft.triggerType).map((k) => (
                 <option key={k} value={k}>{TRIGGER_LABELS[k]}</option>
               ))}
             </select>

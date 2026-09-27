@@ -328,7 +328,18 @@ with p(poradi, kdo, oblast, ocekavano, dotaz) as (values
   (909, '22222222-3333-4444-8555-666666666666', 'chat: DM je jen pro dva',                       'nic',       'do $blok$ declare n int; begin insert into chat_messages (service_id, sender_id, recipient_id, text) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''22222222-3333-4444-8555-666666666666'', ''33333333-4444-4555-8666-777777777777'', ''sonda 909''); perform set_config(''request.jwt.claims'', ''{"sub":"11111111-2222-4333-8444-555555555555","role":"authenticated"}'', true); select count(*) into n from chat_messages where text = ''sonda 909''; if n <> 0 then raise exception ''technik vidi cizi soukromou zpravu''; end if; end $blok$'),
   (910, '33333333-4444-4555-8666-777777777777', 'chat: clen oznaci kanal za precteny',           'projde',    'select public.chat_precteno(''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''servis'')'),
   (911, null,                                   'chat: anon vypis priloh',                       'nic',       'select * from storage.objects where bucket_id = ''chat-prilohy'''),
-  (912, '11111111-2222-4333-8444-555555555555', 'chat: priloha do slozky ciziho servisu',        'odmitnuto', 'insert into storage.objects (bucket_id, name, owner) values (''chat-prilohy'', ''d9762a27-6c8d-43c4-9207-5c837e2713a0/sonda.txt'', ''11111111-2222-4333-8444-555555555555'')')
+  (912, '11111111-2222-4333-8444-555555555555', 'chat: priloha do slozky ciziho servisu',        'odmitnuto', 'insert into storage.objects (bucket_id, name, owner) values (''chat-prilohy'', ''d9762a27-6c8d-43c4-9207-5c837e2713a0/sonda.txt'', ''11111111-2222-4333-8444-555555555555'')'),
+  -- ══ Žádost o recenzi (20260927140000) ═══════════════════════════════════════
+  -- Frontu i záznam odeslaných píše jen server; člen čte jen svůj servis a jen
+  -- viditelné zakázky (omezený na pobočku nevidí cizí pobočku).
+  (1000, '33333333-4444-4555-8666-777777777777', 'recenze: cizi pobocka ve fronte',        'nic',       'select s.* from automation_schedule s join tickets t on t.id = s.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (1001, '33333333-4444-4555-8666-777777777777', 'recenze: cizi pobocka v odeslanych',     'nic',       'select z.* from zadosti_o_recenzi z join tickets t on t.id = z.ticket_id where t.branch_id = ''ea9faf76-26eb-4be9-922c-3705477d423c'''),
+  (1002, '11111111-2222-4333-8444-555555555555', 'recenze: cizi servis fronta',            'nic',       'select * from automation_schedule where service_id = ''d9762a27-6c8d-43c4-9207-5c837e2713a0'''),
+  (1003, '11111111-2222-4333-8444-555555555555', 'recenze: cizi servis odeslane',          'nic',       'select * from zadosti_o_recenzi where service_id = ''d9762a27-6c8d-43c4-9207-5c837e2713a0'''),
+  (1004, '22222222-3333-4444-8555-666666666666', 'recenze: spravce zapise do fronty',      'odmitnuto', 'insert into automation_schedule (service_id, run_at) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', now())'),
+  (1005, '22222222-3333-4444-8555-666666666666', 'recenze: spravce zapise odeslanou',      'odmitnuto', 'insert into zadosti_o_recenzi (service_id, kanal) values (''bbc926bd-25ba-4da1-b528-92b6f1dee24d'', ''sms'')'),
+  (1006, null,                                   'recenze: anon cte frontu',               'nic',       'select * from automation_schedule'),
+  (1007, '721ef873-75c3-4ec1-bf71-13281051ce99', 'recenze: clen bez prav prepne zakaznika','nic',       'update customers set neposilat_zadost_o_recenzi = true where service_id = ''bbc926bd-25ba-4da1-b528-92b6f1dee24d''')
 )
 select p.poradi, p.oblast, p.ocekavano, public.__rls_probe(p.kdo::uuid, p.dotaz) as vysledek
   from p
