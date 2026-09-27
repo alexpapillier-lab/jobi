@@ -2,16 +2,13 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { Button, Segmented } from "../components/ui";
 import { createPortal } from "react-dom";
-import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
 import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
-import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
 import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
-import { showToast, showPersistentToast } from "../components/Toast";
+import { showToast } from "../components/Toast";
 import { reportSilent, reportError } from "../lib/reportError";
-import { isJobiDocsRunning, printDocument, exportDocument, type DocTypeForPrint } from "../lib/jobidocs";
-import { ticketDocumentData, claimDocumentData, type DocumentData } from "../lib/documentData";
+import { claimDocumentData } from "../lib/documentData";
 import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -29,7 +26,7 @@ import {
   isDiagnosticPhotoStorageUrl,
 } from "../lib/diagnosticPhotosStorage";
 import { FotkaZakazky } from "../components/FotkaZakazky";
-import { fotkyDoDokumentu, podepsFotku } from "../lib/podepsaneFotky";
+import { podepsFotku } from "../lib/podepsaneFotky";
 import { usePodepsaneFotky } from "../hooks/usePodepsaneFotky";
 import { normalizePhone } from "../lib/phone";
 import { STORAGE_KEYS } from "../constants/storageKeys";
@@ -57,8 +54,8 @@ import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
 import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../lib/zarizeniHistorie";
 import { formatCZDate } from "../components/tickets/types";
-import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU, jePlnyRadekZakazky } from "../lib/sloupceZakazky";
-import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
+import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
+import { nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
@@ -72,16 +69,15 @@ import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { dniBezZmenyJinde, krokyPresunu, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
 import { KdeJeZakazka } from "../components/orders/KdeJeZakazka";
-import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
+import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
+import { getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
 import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
 import { loadDevicesFromDb } from "../lib/devicesDb";
 import {
   type DevicesData,
   type InventoryData,
   type DeviceRepair,
-  type DeviceModel,
   safeLoadDevicesData,
 } from "../lib/catalogStorage";
 import {
@@ -111,16 +107,13 @@ import {
   CustomerAutocomplete,
   type CustomerMatch,
 } from "../components/orders";
-import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
 import { qrDataUrl } from "../../jobidocs/src/qr";
-import { spustDesktopovyDokument, spustWebovyDokument, type ZavislostiDokumentu } from "../lib/tiskDokumentu";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
 import { getDeviceOptions } from "../lib/deviceOptions";
 import { getHandoffOptions } from "../lib/handoffOptions";
 import { safeLoadCompanyData, doplnFiremniUdajeZDb } from "../lib/companyData";
-import { trackDocumentAction } from "../lib/documentTelemetry";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
 import { CopyButton } from "../components/CopyButton";
@@ -129,17 +122,54 @@ import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
   safeLoadDocumentsConfig,
-  zarucniDobaProTisk,
 } from "../lib/documentHelpers";
+
+import {
+  type GroupKey,
+  type ClaimsSubGroup,
+  type UIConfig,
+  type OrdersProps,
+  type TicketEx,
+  type NewOrderDraft,
+  type ModelWithHierarchy,
+} from "./Orders/typy";
+import { safeLoadUIConfig, skrytPostupZakazky } from "./Orders/uiConfig";
+import {
+  NEW_ORDER_MORE_OPEN_KEY,
+  NEW_ORDER_DEVICE_MORE_OPEN_KEY,
+  NEW_ORDER_CUSTOMER_MORE_OPEN_KEY,
+  safeLoadDraft,
+  safeSaveDraft,
+  defaultDeviceRow,
+  defaultDraft,
+  isDraftDirty,
+} from "./Orders/koncept";
+import { isEmailValid, isPhoneValid, formatPhoneNumber, formatZipCode, formatIco, isZipValid, isIcoValid } from "./Orders/formatovani";
+import { type SupabaseTicketCommentRow, mapSupabaseCommentRow, mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
+import { type ClaimResolutionItem, parseClaimResolutionItems, serializeClaimResolutionItems } from "./Orders/reklamaceZakroky";
+import {
+  type DocMode,
+  runWebDocument,
+  runDesktopDocument,
+  exportTicketToPDF,
+  printTicket,
+  exportDiagnosticProtocolToPDF,
+  printDiagnosticProtocol,
+  printZapujcku,
+  exportZapujckuToPDF,
+  exportWarrantyToPDF,
+  printWarranty,
+  quickPrintFromList,
+} from "./Orders/tiskZakazky";
+import { border, borderError, inputStyle, fieldLabel, fieldHint, fieldMuted, subHeading, baseFieldInput, baseFieldTextArea, card } from "./Orders/styly";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
+// Veřejné exporty, které používá App.tsx, Calendar, Statistics, lib/documentData a testy – zůstávají tady.
+export type { TicketEx } from "./Orders/typy";
+export { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
 
 
-type GroupKey = "all" | "active" | "final" | "reklamace" | "moje" | "presun";
-type ClaimsSubGroup = "all" | "active" | "final";
-
-const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
 
 /**
  * Kolik zakázek se natáhne v prvním kole.
@@ -150,761 +180,9 @@ const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
  * zakázku shora.
  */
 const PRVNI_DAVKA_ZAKAZEK = 200;
-type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
-type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number; postupZakazky?: boolean };
-  sidebar: { position: "left" | "right" | "bottom" };
-  home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: DisplayMode; pageSize: number; customerPhoneRequired: boolean; statusGroupedOrder?: string[]; zvyrazneniStavu?: ZvyrazneniStavu };
-};
-
-type OpenTicketIntent = {
-  ticketId: string;
-  mode?: "panel" | "detail";
-  returnToPage?: NavKey;
-  returnToCustomerId?: string;
-  openSmsPanel?: boolean;
-};
-
-type OrdersProps = {
-  activeServiceId: string | null;
-  /** Název aktivního servisu – jde do vodoznaku fotek. */
-  serviceName?: string | null;
-  smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
-  newOrderPrefill: { customerId?: string; rezervace?: Rezervace } | null;
-  onNewOrderPrefillConsumed: () => void;
-
-  openTicketIntent: OpenTicketIntent | null;
-  onOpenTicketIntentConsumed: () => void;
-
-  openClaimIntent?: { claimId: string } | null;
-  onOpenClaimIntentConsumed?: () => void;
-
-  onOpenCustomer?: (customerId: string) => void;
-  onReturnToPage?: (page: NavKey, customerId?: string) => void;
-  onCreateInvoice?: (prefill: {
-    ticketId: string;
-    customerId?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-    customerIco?: string;
-    customerDic?: string;
-    customerAddress?: string;
-    branchId?: string | null;
-    items?: { name: string; qty: number; unit: string; unit_price: number; vat_rate: number }[];
-  }) => void;
-  /** When ticket already has an invoice, open that invoice (navigate to Faktury and open editor). */
-  onOpenInvoice?: (invoiceId: string) => void;
-
-  /** When true, detail panel (ticket/claim) is closed. Used when navigating to e.g. Faktury so the preview does not stay on top. */
-  closeDetailWhen?: boolean;
-  /**
-   * SMS jsou pro servis dostupné: má aktivní číslo A ZÁROVEŇ zaplacený modul.
-   * App to počítá jako smsProvisioned && hasModule("sms"); Orders si dřív
-   * ověřovaly jen to číslo, takže se SMS tlačítko ukazovalo i servisům
-   * s vypnutým modulem. Bez propu radši skryté – modul je placený.
-   */
-  smsEnabled?: boolean;
-};
-
-const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
-/** Zda je v okně Nová zakázka rozbalená sekce „Další údaje“. */
-const NEW_ORDER_MORE_OPEN_KEY = "jobsheet_new_order_more_open_v1";
-/** Zda jsou u zařízení v nové zakázce rozbalené „Další údaje zařízení“. */
-const NEW_ORDER_DEVICE_MORE_OPEN_KEY = "jobsheet_new_order_device_more_open_v1";
-const NEW_ORDER_CUSTOMER_MORE_OPEN_KEY = "jobsheet_new_order_customer_more_open_v1";
 /** Sbalené sekce v detailu zakázky – stav se pamatuje na zařízení. */
 const DETAIL_PORTAL_OPEN_KEY = "jobsheet_detail_portal_open_v1";
 const DETAIL_DIAGNOSTIKA_OPEN_KEY = "jobsheet_detail_diagnostika_open_v1";
-
-/** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
-type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
-
-function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
-  if (!raw || !raw.trim()) return [];
-  const t = raw.trim();
-  if (t.startsWith("[")) {
-    try {
-      const arr = JSON.parse(t) as unknown;
-      if (!Array.isArray(arr)) return [];
-      return arr.filter((x): x is ClaimResolutionItem => x && typeof x === "object" && typeof (x as any).id === "string" && typeof (x as any).name === "string").map((x) => ({
-        id: (x as any).id,
-        name: (x as any).name ?? "",
-        description: (x as any).description ?? undefined,
-        price: typeof (x as any).price === "number" ? (x as any).price : undefined,
-      }));
-    } catch {
-      return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
-    }
-  }
-  return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
-}
-
-function serializeClaimResolutionItems(items: ClaimResolutionItem[]): string {
-  if (items.length === 0) return "";
-  return JSON.stringify(items);
-}
-
-
-export type TicketEx = Ticket & {
-  customerId?: string;
-  customerEmail?: string;
-  customerAddressStreet?: string;
-  customerAddressCity?: string;
-  customerAddressZip?: string;
-  customerCompany?: string;
-  customerIco?: string;
-  customerInfo?: string;
-
-  devicePasscode?: string;
-  deviceCondition?: string;
-  deviceAccessories?: string;
-  /** Záruční (true) / pozáruční (false) oprava; null = neuvedeno (tickets.warranty_claim). */
-  warrantyClaim?: boolean | null;
-  /** Datum nákupu (ISO datum) a doklad o koupi – podklad záruky. */
-  purchaseDate?: string;
-  purchaseProof?: string;
-  /** Apple: Find My vypnuto při příjmu; null = neuvedeno / netýká se (tickets.find_my_off). */
-  findMyOff?: boolean | null;
-
-  discountType?: "percentage" | "amount" | null; // typ slevy: procenta, částka, nebo žádná
-  discountValue?: number; // hodnota slevy (% nebo Kč)
-  requestedRepair?: string;
-  handoffMethod?: string;
-  handbackMethod?: string;
-  deviceNote?: string;
-  externalId?: string;
-  /** Přidělený technik (auth.users.id), null = nepřiděleno. */
-  assignedTo?: string | null;
-  /** Kde zařízení fyzicky je (zásilky mezi pobočkami); null = na své pobočce. */
-  locationBranchId?: string | null;
-  /** Zásilka, ve které právě cestuje; null = necestuje. */
-  transitShipmentId?: string | null;
-  /** Poslední uložení (updated_at) – upozornění „leží jinde X dní bez změny“. */
-  updatedAt?: string | null;
-  estimatedPrice?: number;
-  performedRepairs?: PerformedRepair[];
-  /** Kontrola po opravě (tickets.test_checklist). */
-  testChecklist?: KontrolaPoOpraveData;
-  /** Náhradní zařízení půjčené zákazníkovi (tickets.loaner). */
-  loaner?: ZapujckaData;
-  
-  diagnosticText?: string; // text diagnostiky
-  diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
-  diagnosticPhotosBefore?: string[]; // URL fotek při příjmu / před vytvořením
-  
-  expectedDoneAt?: string; // předpokládané dokončení (ISO)
-  version?: number; // optimistic locking version
-  /** Pobočka, kde zakázka leží (null = bez pobočky / starší záznam). */
-  branchId?: string | null;
-  /**
-   * Má řádek všechny sloupce (detail), nebo jen ty pro seznam?
-   *
-   * Seznam zakázek čte úzkou sadu sloupců (src/lib/sloupceZakazky.ts), takže
-   * `undefined` u diagnostiky nebo zápůjčky nemusí znamenat „prázdné“, ale
-   * „nenačtené“. Detail se proto nad neúplným řádkem vůbec nevykreslí –
-   * jinak by ho uložení přepsalo prázdnem.
-   */
-  uplna?: boolean;
-} & PortalTicketFields; // zákaznický portál: portalToken, quoteAmount, quoteNote, quoteStatus, quoteSentAt, quoteDecidedAt, quoteDecisionMeta, intakeSignatureUrl, intakeSignedAt, portalLastOpenedAt
-
-type DeviceRow = {
-  deviceLabel: string;
-  serialOrImei: string;
-  devicePasscode: string;
-  deviceCondition: string;
-  deviceAccessories: string;
-  /** Záruční oprava + její podklad (datum nákupu ISO, doklad); viz chybiPodkladZaruky. */
-  warrantyClaim: boolean;
-  purchaseDate: string;
-  purchaseProof: string;
-  /** Find My vypnuto – ptá se jen u zařízení Apple, do databáze jde jinak null. */
-  findMyOff: boolean;
-  requestedRepair: string;
-  handoffMethod: string;
-  handbackMethod: string;
-  deviceNote: string;
-  externalId: string;
-  estimatedPrice?: number;
-  /** Opravy vybrané z ceníku už při příjmu – do zakázky jdou jako provedené opravy s cenou z ceníku. */
-  plannedRepairs?: PerformedRepair[];
-  /** Sleva zadaná už při příjmu (přednastavená nebo vlastní) – na zakázku jde hned při založení. */
-  discountType?: "percentage" | "amount" | null;
-  discountValue?: number;
-  /** Ručně napsaná předschválená cena před slevou (viz lib/cenaPriPrijmu). */
-  cenaPredSlevou?: number;
-  /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
-  expectedCompletionAt?: string | null;
-};
-
-type NewOrderDraft = {
-  customerId?: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail: string;
-  addressStreet: string;
-  addressCity: string;
-  addressZip: string;
-  company: string;
-  ico: string;
-  customerInfo: string;
-
-  devices: DeviceRow[];
-
-  diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
-  /** Pobočka nové zakázky; bez hodnoty se použije aktivní / domovská / výchozí. */
-  branchId?: string | null;
-  /** Rezervace z webu, ze které zakázka vzniká – po založení se označí jako převedená. */
-  rezervaceId?: string;
-};
-
-// ========================
-// Utils: storage
-// ========================
-const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
-
-function defaultUIConfig(): UIConfig {
-  return {
-    app: { fabNewOrderEnabled: true, uiScale: 1, postupZakazky: true },
-    sidebar: { position: "left" },
-    home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true, zvyrazneniStavu: VYCHOZI_ZVYRAZNENI },
-  };
-}
-
-function safeLoadUIConfig(): UIConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
-    if (!raw) return defaultUIConfig();
-    const parsed = JSON.parse(raw);
-
-    const d = defaultUIConfig();
-    const quick = parsed?.home?.orderFilters?.selectedQuickStatusFilters;
-    const fab = parsed?.app?.fabNewOrderEnabled;
-    const scale = parsed?.app?.uiScale;
-    const displayMode = parsed?.orders?.displayMode;
-    const pageSize = parsed?.orders?.pageSize;
-    const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
-    const validPageSize = typeof pageSize === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(pageSize)
-      ? pageSize
-      : d.orders.pageSize;
-
-    const sidebarPos = parsed?.sidebar?.position;
-    return {
-      app: {
-        fabNewOrderEnabled: typeof fab === "boolean" ? !!fab : d.app.fabNewOrderEnabled,
-        uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
-        postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
-      },
-      sidebar: {
-        position: (["left", "right", "bottom"] as const).includes(sidebarPos) ? sidebarPos : d.sidebar.position,
-      },
-      home: {
-        orderFilters: {
-          selectedQuickStatusFilters: Array.isArray(quick)
-            ? quick.filter((x: any) => typeof x === "string")
-            : d.home.orderFilters.selectedQuickStatusFilters,
-        },
-      },
-      orders: {
-        displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
-        pageSize: validPageSize,
-        customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
-        statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
-        // Bez tohohle řádku se volba z Nastavení sem nikdy nedostala a karty
-        // dostaly vždy výchozí „jemné“ – „Výrazné“ i „Plné“ nedělaly nic.
-        zvyrazneniStavu: jeZvyrazneni(parsed?.orders?.zvyrazneniStavu) ? parsed.orders.zvyrazneniStavu : VYCHOZI_ZVYRAZNENI,
-      },
-    };
-  } catch {
-    return defaultUIConfig();
-  }
-}
-
-/**
- * Křížek na asistentovi postupu: vypne ho v osobních předvolbách, stejně jako
- * přepínač v Nastavení → Rozhraní. Zapisuje se přímo do uloženého JSON, aby se
- * nepřepsaly předvolby, které tahle stránka nečte (např. reducedEffects).
- */
-function skrytPostupZakazky(): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
-    const parsed = raw ? JSON.parse(raw) : {};
-    const next = { ...parsed, app: { ...(parsed?.app ?? {}), postupZakazky: false } };
-    localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(next));
-    window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
-  } catch {
-    /* předvolby se neuložily – asistent zůstane, nic horšího se nestane */
-  }
-}
-
-
-function safeLoadDraft(): NewOrderDraft | null {
-  try {
-    const raw = localStorage.getItem(NEW_ORDER_DRAFT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    if (Array.isArray(parsed.devices)) {
-      const draft = parsed as NewOrderDraft;
-      const firstExpected = draft.devices[0]?.expectedCompletionAt ?? (draft as any).expectedCompletionAt;
-      const migrated = {
-        ...draft,
-        devices: draft.devices.map((d: DeviceRow) => ({
-          ...d,
-          expectedCompletionAt: d.expectedCompletionAt ?? firstExpected ?? undefined,
-          // Rozepsaný příjem z doby před zárukou a Find My – pole musí být, jinak by inputy byly neřízené.
-          warrantyClaim: d.warrantyClaim ?? false,
-          purchaseDate: d.purchaseDate ?? "",
-          purchaseProof: d.purchaseProof ?? "",
-          findMyOff: d.findMyOff ?? false,
-        })),
-      };
-      delete (migrated as any).expectedCompletionAt;
-      return migrated;
-    }
-    const d = defaultDraft();
-    const def = defaultDeviceRow();
-    const migrated: NewOrderDraft = {
-      ...d,
-      customerId: parsed.customerId,
-      customerName: parsed.customerName ?? "",
-      customerPhone: parsed.customerPhone ?? "",
-      customerEmail: parsed.customerEmail ?? "",
-      addressStreet: parsed.addressStreet ?? "",
-      addressCity: parsed.addressCity ?? "",
-      addressZip: parsed.addressZip ?? "",
-      company: parsed.company ?? "",
-      ico: parsed.ico ?? "",
-      customerInfo: parsed.customerInfo ?? "",
-      devices: [{
-        deviceLabel: parsed.deviceLabel ?? def.deviceLabel,
-        serialOrImei: parsed.serialOrImei ?? def.serialOrImei,
-        devicePasscode: parsed.devicePasscode ?? def.devicePasscode,
-        deviceCondition: parsed.deviceCondition ?? def.deviceCondition,
-        deviceAccessories: parsed.deviceAccessories ?? def.deviceAccessories,
-        warrantyClaim: def.warrantyClaim,
-        purchaseDate: def.purchaseDate,
-        purchaseProof: def.purchaseProof,
-        findMyOff: def.findMyOff,
-        requestedRepair: parsed.requestedRepair ?? def.requestedRepair,
-        handoffMethod: parsed.handoffMethod ?? def.handoffMethod,
-        handbackMethod: parsed.handbackMethod ?? def.handbackMethod,
-        deviceNote: parsed.deviceNote ?? def.deviceNote,
-        externalId: parsed.externalId ?? def.externalId,
-        estimatedPrice: parsed.estimatedPrice ?? def.estimatedPrice,
-        expectedCompletionAt: (parsed as any).expectedCompletionAt ?? undefined,
-      }],
-      diagnosticPhotosBefore: parsed.diagnosticPhotosBefore,
-    };
-    return migrated;
-  } catch {
-    return null;
-  }
-}
-
-function safeSaveDraft(draft: NewOrderDraft | null) {
-  try {
-    if (!draft) localStorage.removeItem(NEW_ORDER_DRAFT_KEY);
-    else localStorage.setItem(NEW_ORDER_DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // ignore
-  }
-}
-
-// Removed: safeLoadCustomers and safeSaveCustomers - no longer used in cloud-first mode
-
-type SupabaseTicketCommentRow = {
-  id: string;
-  ticket_id: string;
-  author: string;
-  author_id: string | null;
-  author_nickname: string | null;
-  author_avatar_url: string | null;
-  content: string;
-  pinned: boolean;
-  created_at: string;
-};
-
-function mapSupabaseCommentRow(row: SupabaseTicketCommentRow): TicketComment {
-  return {
-    id: row.id,
-    ticketId: row.ticket_id,
-    author: row.author,
-    text: row.content,
-    createdAt: row.created_at,
-    pinned: row.pinned,
-    author_id: row.author_id,
-    author_nickname: row.author_nickname,
-    author_avatar_url: row.author_avatar_url,
-  };
-}
-
-// ========================
-// Utils: formatting
-// ========================
-
-function defaultDeviceRow(): DeviceRow {
-  const handoffOpts = getHandoffOptions();
-  const defaultReceive = handoffOpts.receiveMethods.includes("Osobně") ? "Osobně" : "";
-  const defaultReturn = handoffOpts.returnMethods.includes("Osobně") ? "Osobně" : "";
-  return {
-    deviceLabel: "",
-    serialOrImei: "",
-    devicePasscode: "",
-    deviceCondition: "",
-    deviceAccessories: "",
-    warrantyClaim: false,
-    purchaseDate: "",
-    purchaseProof: "",
-    findMyOff: false,
-    requestedRepair: "",
-    handoffMethod: defaultReceive,
-    handbackMethod: defaultReturn,
-    deviceNote: "",
-    externalId: "",
-    estimatedPrice: undefined,
-    expectedCompletionAt: undefined,
-  };
-}
-
-function defaultDraft(): NewOrderDraft {
-  return {
-    customerId: undefined,
-    customerName: "",
-    customerPhone: "",
-    customerEmail: "",
-    addressStreet: "",
-    addressCity: "",
-    addressZip: "",
-    company: "",
-    ico: "",
-    customerInfo: "",
-
-    devices: [defaultDeviceRow()],
-
-    diagnosticPhotosBefore: undefined,
-  };
-}
-
-function isDraftDirty(d: NewOrderDraft) {
-  const def = defaultDraft();
-  const norm = (v: any) => (typeof v === "string" ? v.trim() : v);
-  for (const k of ["customerId", "customerName", "customerPhone", "customerEmail", "addressStreet", "addressCity", "addressZip", "company", "ico", "customerInfo"]) {
-    if (norm((d as any)[k]) !== norm((def as any)[k])) return true;
-  }
-  if ((d.diagnosticPhotosBefore?.length ?? 0) !== (def.diagnosticPhotosBefore?.length ?? 0)) return true;
-  if (d.devices.length !== def.devices.length) return true;
-  for (let i = 0; i < d.devices.length; i++) {
-    const dev = d.devices[i];
-    const devDef = def.devices[i] ?? defaultDeviceRow();
-    for (const k of Object.keys(devDef) as (keyof DeviceRow)[]) {
-      if (norm((dev as any)[k]) !== norm((devDef as any)[k])) return true;
-    }
-  }
-  return false;
-}
-
-function isEmailValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-}
-
-function isPhoneValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length >= 9 && digits.length <= 15;
-}
-
-function formatPhoneNumber(value: string): string {
-  const cleaned = value.replace(/[^\d+]/g, "");
-  if (cleaned.length === 0) return "";
-
-  if (cleaned.startsWith("+")) {
-    const digits = cleaned.slice(1);
-    if (digits.length === 0) return "+";
-
-    if (cleaned.startsWith("+420")) {
-      const rest = digits.slice(3);
-      if (rest.length === 0) return "+420";
-      if (rest.length <= 3) return `+420 ${rest}`;
-      if (rest.length <= 6) return `+420 ${rest.slice(0, 3)} ${rest.slice(3)}`;
-      return `+420 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 9)}`;
-    }
-
-    const countryCodeMatch = cleaned.match(/^\+(\d{1,3})(\d*)$/);
-    if (countryCodeMatch) {
-      const [, countryCode, rest] = countryCodeMatch;
-      if (rest.length === 0) return `+${countryCode}`;
-      if (rest.length <= 3) return `+${countryCode} ${rest}`;
-      if (rest.length <= 6) return `+${countryCode} ${rest.slice(0, 3)} ${rest.slice(3)}`;
-      return `+${countryCode} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 9)}`;
-    }
-
-    return cleaned;
-  }
-
-  const digitsOnly = cleaned.replace(/[^\d]/g, "");
-  if (digitsOnly.length === 0) return "";
-  if (digitsOnly.length <= 3) return digitsOnly;
-  if (digitsOnly.length <= 6) return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3)}`;
-  if (digitsOnly.length <= 9) return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3, 6)} ${digitsOnly.slice(6)}`;
-  return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3, 6)} ${digitsOnly.slice(6, 9)} ${digitsOnly.slice(9)}`;
-}
-
-function formatZipCode(value: string): string {
-  const digits = value.replace(/[^\d]/g, "");
-  if (digits.length === 0) return "";
-  if (digits.length <= 3) return digits;
-  return `${digits.slice(0, 3)} ${digits.slice(3, 5)}`;
-}
-
-function formatIco(value: string): string {
-  const digits = value.replace(/[^\d]/g, "");
-  if (digits.length === 0) return "";
-  if (digits.length <= 4) return digits;
-  return `${digits.slice(0, 4)} ${digits.slice(4, 8)}`;
-}
-
-function isZipValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length === 5;
-}
-
-function isIcoValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length === 8;
-}
-
-
-
-export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
-  const ticket: TicketEx = {
-    id: supabaseTicket.id || "",
-    code: (typeof supabaseTicket.code === "string" ? supabaseTicket.code : null),
-    customerId: supabaseTicket.customer_id || undefined,
-    customerName: supabaseTicket.customer_name || "Cloud Customer",
-    customerPhone: supabaseTicket.customer_phone || undefined,
-    deviceLabel: supabaseTicket.title || "Nová zakázka",
-    // Jedno pole "Sériové číslo / IMEI": importované zakázky (zakazkovylist)
-    // mají u telefonů jen device_imei, bez fallbacku by pole zůstalo prázdné.
-    serialOrImei: supabaseTicket.device_serial || supabaseTicket.device_imei || undefined,
-    issueShort: supabaseTicket.notes || "—",
-    status: (supabaseTicket.status || "received") as any,
-    createdAt: supabaseTicket.created_at, // DB guarantees NOT NULL with default now()
-    customerEmail: supabaseTicket.customer_email || undefined,
-    customerAddressStreet: supabaseTicket.customer_address_street || undefined,
-    customerAddressCity: supabaseTicket.customer_address_city || undefined,
-    customerAddressZip: supabaseTicket.customer_address_zip || undefined,
-    customerCompany: supabaseTicket.customer_company || undefined,
-    customerIco: supabaseTicket.customer_ico || undefined,
-    customerInfo: supabaseTicket.customer_info || undefined,
-    devicePasscode: supabaseTicket.device_passcode || undefined,
-    deviceCondition: supabaseTicket.device_condition || undefined,
-    deviceAccessories: (supabaseTicket as any).device_accessories || undefined,
-    // Záruka a Find My z příjmu: null zůstává null („neuvedeno“), ne false.
-    warrantyClaim: typeof supabaseTicket.warranty_claim === "boolean" ? supabaseTicket.warranty_claim : null,
-    purchaseDate: supabaseTicket.purchase_date || undefined,
-    purchaseProof: supabaseTicket.purchase_proof || undefined,
-    findMyOff: typeof supabaseTicket.find_my_off === "boolean" ? supabaseTicket.find_my_off : null,
-    requestedRepair: supabaseTicket.notes || undefined,
-    handoffMethod: supabaseTicket.handoff_method || undefined,
-    handbackMethod: (supabaseTicket as any).handback_method || undefined,
-    deviceNote: supabaseTicket.device_note || undefined,
-    externalId: supabaseTicket.external_id || undefined,
-    estimatedPrice: supabaseTicket.estimated_price || undefined,
-    performedRepairs: supabaseTicket.performed_repairs || [],
-    testChecklist: supabaseTicket.test_checklist || undefined,
-    loaner: supabaseTicket.loaner || undefined,
-    diagnosticText: supabaseTicket.diagnostic_text || undefined,
-    diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
-    diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
-    discountType: supabaseTicket.discount_type ?? null,
-    discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
-    version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
-    branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
-    assignedTo: typeof supabaseTicket.assigned_to === "string" ? supabaseTicket.assigned_to : null,
-    locationBranchId: typeof supabaseTicket.location_branch_id === "string" ? supabaseTicket.location_branch_id : null,
-    transitShipmentId: typeof supabaseTicket.transit_shipment_id === "string" ? supabaseTicket.transit_shipment_id : null,
-    updatedAt: typeof supabaseTicket.updated_at === "string" ? supabaseTicket.updated_at : null,
-    // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
-    // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
-    uplna: jePlnyRadekZakazky(supabaseTicket),
-    // Portálové sloupce: v hlavních selectech nejsou (migrace může chybět), přijdou z realtime nebo z PortalCard.
-    ...mapPortalTicketFields(supabaseTicket),
-  };
-  (ticket as any).service_id = supabaseTicket.service_id;
-  (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
-  (ticket as any).completed_at = supabaseTicket.completed_at ?? null;
-  return ticket;
-}
-
-// Tisk a export PDF probíhají přes JobiDocs (localhost:3847); ve webové verzi přes tiskový dialog prohlížeče.
-// Jobi posílá typovaná data dokumentu, šablonu i formátování drží JobiDocs.
-
-type DocMode = "print" | "export";
-
-function ticketDocData(ticket: TicketEx, docType: DocTypeForPrint): DocumentData {
-  const t = ticket as TicketEx & { completed_at?: string | null };
-  const completedAt = t.completed_at ?? (docType === "zarucni_list" ? new Date().toISOString() : undefined);
-  const serviceId = (ticket as any).service_id as string | null | undefined;
-  // Adresa, telefon a e-mail pobočky mají na dokumentu přednost před firemními.
-  const branch = getCachedBranch(serviceId, ticket.branchId);
-  // Délku záruky si servis nastavuje v dokumentech, ne u zakázky. Bez ní
-  // zůstávala na záručním listu ve větě „poskytuje servis záruku … měsíců“
-  // díra místo čísla.
-  const zaruka = zarucniDobaProTisk(serviceId);
-  return ticketDocumentData(ticket, companyDataForBranch(safeLoadCompanyData(), branch), {
-    completedAt,
-    warrantyMonths: zaruka?.months,
-    warrantyDays: zaruka?.days,
-  });
-}
-
-/**
- * Skutečné napojení na okolí (JobiDocs, nativní dialog, hlášky).
- * Vlastní logika je v src/lib/tiskDokumentu.ts, aby šla otestovat – tady
- * zůstává jen to, co se v testu stejně nahradit nedá.
- */
-const zavislostiDokumentu: ZavislostiDokumentu = {
-  jobiDocsBezi: isJobiDocsRunning,
-  tisk: printDocument,
-  exportPdf: exportDocument,
-  vyberCilovySoubor: async (vychoziNazev) => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    return save({
-      defaultPath: vychoziNazev,
-      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
-    });
-  },
-  tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
-  pripravFotky: async (data) => {
-    if (!data.photos || data.photos.length === 0) return data;
-    return { ...data, photos: await fotkyDoDokumentu(supabase, data.photos) };
-  },
-  hlaska: showToast,
-  hotovyExport: showExportSuccessToast,
-  telemetrie: trackDocumentAction,
-  ted: () => performance.now(),
-};
-
-async function runWebDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData) {
-  return spustWebovyDokument(mode, docType, sid, data, zavislostiDokumentu);
-}
-
-async function runDesktopDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData, defaultFileName: string) {
-  return spustDesktopovyDokument(mode, docType, sid, data, defaultFileName, zavislostiDokumentu);
-}
-
-const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = {
-  zakazkovy_list: "zakazka",
-  zarucni_list: "zarucni-list",
-  diagnosticky_protokol: "diagnostika",
-  smlouva_zapujcka: "zapujcka",
-};
-
-async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null) {
-  const sid = serviceId ?? undefined;
-  if (!sid) {
-    showToast(mode === "print" ? "Vyberte servis pro tisk." : "Vyberte servis pro export.", "error");
-    return;
-  }
-  // Odkaz na zákaznický portál do dokumentu (QR „Stav zakázky online“ v JobiDocs).
-  // Token vzniká při prvním tisku; když RPC selže (starší server), tiskne se bez něj.
-  let withToken = ticket;
-  if (!ticket.portalToken) {
-    try {
-      const token = await ensurePortalToken(ticket.id);
-      withToken = { ...ticket, portalToken: token };
-    } catch {
-      /* bez portálu */
-    }
-  }
-  const data = ticketDocData(withToken, docType);
-  if (isWeb()) return runWebDocument(mode, docType, sid, data);
-  return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${ticket.code}.pdf`);
-}
-
-async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "zakazkovy_list", ticket, serviceId);
-}
-
-async function printTicket(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "zakazkovy_list", ticket, serviceId);
-}
-
-async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "diagnosticky_protokol", ticket, serviceId);
-}
-
-async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId);
-}
-
-async function printZapujcku(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "smlouva_zapujcka", ticket, serviceId);
-}
-
-async function exportZapujckuToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "smlouva_zapujcka", ticket, serviceId);
-}
-
-async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "zarucni_list", ticket, serviceId);
-}
-
-async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "zarucni_list", ticket, serviceId);
-}
-
-function showExportSuccessToast(filePath: string) {
-  const shortPath = filePath.replace(/^.*[/\\]/, "");
-  // Ve webu soubor jen spadne do složky Stažené – není co otevírat ve Finderu.
-  if (isWeb()) {
-    showToast(`PDF uložen: ${shortPath}`, "success");
-    return;
-  }
-  showPersistentToast(`PDF uložen: ${shortPath}`, "success", {
-    actionLabel: "Otevřít složku",
-    onAction: async () => {
-      try {
-        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-        await revealItemInDir(filePath);
-      } catch (err) {
-        showToast("Nelze otevřít složku: " + (err instanceof Error ? err.message : String(err)), "error");
-      }
-    },
-  });
-}
-
-async function quickPrintFromList(
-  ticket: TicketEx,
-  docType: "ticket" | "diagnostic" | "warranty",
-  serviceId: string | null
-) {
-  if (docType === "ticket") await printTicket(ticket, serviceId);
-  else if (docType === "diagnostic") await printDiagnosticProtocol(ticket, serviceId);
-  else await printWarranty(ticket, serviceId);
-}
-
-
-// Document Action Picker Component (for each document type) – pořadí: Tisk, Export
-// ========================
-// Page
-// ========================
-type ModelWithHierarchy = DeviceModel & {
-  fullName: string;
-  brandName: string;
-  categoryName: string;
-};
-
 export default function Orders({
   activeServiceId,
   serviceName = null,
@@ -3736,83 +3014,6 @@ export default function Orders({
       if (released) void refreshTicketReservations(ticketId);
     });
   }, [refreshTicketReservations, upravProvedeneOpravy]);
-
-  const border = "1px solid var(--border)";
-  const borderError = "1px solid rgba(239,68,68,0.9)";
-
-  const inputStyle: React.CSSProperties = useMemo(
-    () => ({
-      // 360 px byla pevná šířka – na 375px displeji přetékala ven.
-      // Takhle zůstává na desktopu stejná a na mobilu se smrští.
-      width: 360,
-      maxWidth: "100%",
-      minWidth: 0,
-      padding: "10px 12px",
-      borderRadius: 12,
-      border,
-      outline: "none",
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-      color: "var(--text)",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      transition: "var(--transition-smooth)",
-      boxShadow: "var(--shadow-soft)",
-    }),
-    [border]
-  );
-
-
-
-
-
-  const fieldLabel: React.CSSProperties = useMemo(() => ({ fontSize: 12, color: "var(--muted)", marginTop: 10 }), []);
-  const fieldHint: React.CSSProperties = useMemo(() => ({ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }), []);
-  /** Vysvětlivka pod polem (12 px, tlumená) – místo dlouhých popisků nad polem. */
-  const fieldMuted: React.CSSProperties = useMemo(() => ({ fontSize: 12, marginTop: 6, color: "var(--muted)" }), []);
-  /** Drobný podnadpis skupiny polí v sekci „Další údaje“. */
-  const subHeading: React.CSSProperties = useMemo(
-    () => ({ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }),
-    []
-  );
-
-  const baseFieldInput: React.CSSProperties = useMemo(
-    () => ({
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: 12,
-      border,
-      outline: "none",
-      background: "var(--panel)",
-      color: "var(--text)",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    }),
-    [border]
-  );
-
-  const baseFieldTextArea: React.CSSProperties = useMemo(
-    () => ({
-      ...baseFieldInput,
-      resize: "vertical",
-      minHeight: 88,
-      lineHeight: 1.35,
-    }),
-    [baseFieldInput]
-  );
-
-  const card: React.CSSProperties = useMemo(
-    () => ({
-      border,
-      borderRadius: "var(--radius-lg)",
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-      padding: 12,
-      boxShadow: "var(--shadow-soft)",
-      color: "var(--text)",
-    }),
-    [border]
-  );
 
   const openNewOrder = () => {
     setSubmitAttempted(false);

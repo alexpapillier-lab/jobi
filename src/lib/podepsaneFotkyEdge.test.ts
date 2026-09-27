@@ -255,7 +255,7 @@ describe("pojistky ve zdrojácích", () => {
 
   it("do dokumentu se fotky vkládají, ne odkazují", () => {
     // Uložené PDF si obsah odkazu nedotáhne a JobiDocs nemá naši relaci.
-    const s = zdrojBezKomentaru("src/pages/Orders.tsx");
+    const s = zdrojBezKomentaru("src/pages/Orders/tiskZakazky.ts");
     expect(s).toContain("fotkyDoDokumentu(supabase, data.photos)");
     const t = zdrojBezKomentaru("src/lib/tiskDokumentu.ts");
     expect(t).toContain("pripravFotky");
