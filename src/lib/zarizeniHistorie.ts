@@ -49,3 +49,63 @@ export function najdiStejneZarizeni<T extends ZaznamZarizeni>(zakazky: T[], seri
       return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
     });
 }
+
+/**
+ * Sériové číslo Apple: 12 znaků (do roku 2021) nebo 10 znaků (nová
+ * náhodná čísla), jen písmena a číslice, aspoň jedno písmeno – jinak by
+ * sem spadl i kus IMEI. Kontrolní číslici Apple nemá, hlídá se jen tvar.
+ */
+export function vypadaJakoAppleSeriove(s: string | null | undefined): boolean {
+  const n = normalizujSeriove(s);
+  return (n.length === 10 || n.length === 12) && /[A-Z]/.test(n) && /^[A-Z0-9]+$/.test(n);
+}
+
+export type StavSerioveho = {
+  druh: "prazdne" | "imei" | "apple" | "jine";
+  /** false jen tam, kde se dá chyba poznat (IMEI); jiný text je vždy „v pořádku“. */
+  platne: boolean;
+  /** Krátký text k poli; u „jine“ a prázdna nic. */
+  hlaska?: string;
+};
+
+/**
+ * Co uživatel do pole IMEI / SN napsal a jestli to sedí.
+ *
+ * Samé číslice o délce 13–17 bere jako pokus o IMEI (15 číslic je norma,
+ * o jednu víc nebo míň je překlep) – jiné číselné identifikátory tak
+ * dlouhé v servisu nebývají. Kratší nebo delší čísla i cokoliv s písmeny,
+ * co není Apple, se nehodnotí.
+ */
+export function stavSerioveho(s: string | null | undefined): StavSerioveho {
+  const n = normalizujSeriove(s);
+  if (!n) return { druh: "prazdne", platne: true };
+  if (/^\d{13,17}$/.test(n)) {
+    if (n.length !== 15) return { druh: "imei", platne: false, hlaska: `IMEI má 15 číslic, zadáno ${n.length}.` };
+    if (!platnyImei(n)) return { druh: "imei", platne: false, hlaska: "IMEI nevypadá platně – nesedí kontrolní číslice, zkontrolujte překlep." };
+    return { druh: "imei", platne: true, hlaska: "IMEI je platné." };
+  }
+  if (vypadaJakoAppleSeriove(n)) return { druh: "apple", platne: true, hlaska: "Sériové číslo Apple ve správném tvaru." };
+  return { druh: "jine", platne: true };
+}
+
+/** Odkaz na veřejnou kontrolu IMEI (model, blacklist); jen pro platné IMEI, jinak null. */
+export function odkazKontrolaImei(s: string | null | undefined): string | null {
+  const n = normalizujSeriove(s);
+  return vypadaJakoImei(n) && platnyImei(n) ? `https://www.imei.info/?imei=${n}` : null;
+}
+
+/**
+ * Zařízení Apple podle názvu – u něj má smysl ptát se na Find My
+ * (aktivační zámek). „Watch“ samo o sobě nestačí: Galaxy Watch Find My nemá.
+ */
+export function jeAppleZarizeni(nazev: string | null | undefined): boolean {
+  return /iphone|ipad|ipod|imac|macbook|\bmac\b|apple\s*watch|watch\s*(series|ultra|se)\b|airpods|\bapple\b/i.test(nazev ?? "");
+}
+
+/**
+ * Záruční oprava bez podkladu se nedá uplatnit – servis potřebuje datum
+ * nákupu, nebo aspoň doklad (číslo účtenky, faktura, „má v e-mailu“).
+ */
+export function chybiPodkladZaruky(z: { warrantyClaim?: boolean | null; purchaseDate?: string | null; purchaseProof?: string | null }): boolean {
+  return !!z.warrantyClaim && !(z.purchaseDate ?? "").trim() && !(z.purchaseProof ?? "").trim();
+}

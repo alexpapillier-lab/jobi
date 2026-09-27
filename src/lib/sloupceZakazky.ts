@@ -83,6 +83,11 @@ export const SLOUPCE_DETAILU = [
   "device_condition",
   "device_accessories",
   "device_note",
+  // Záruka a Find My z příjmu – detail je ukazuje a tisk je bere z řádku.
+  "warranty_claim",
+  "purchase_date",
+  "purchase_proof",
+  "find_my_off",
   "external_id",
   "handoff_method",
   "handback_method",

@@ -54,6 +54,11 @@ export function sampleData(docType: DocType, kind: SampleKind = "short", service
       issue: long
         ? "Nefunguje dotyk v pravém horním rohu displeje, občas se objeví zelené pruhy. Zákazník uvádí pád na dlažbu; problém se zhoršuje. Prosí o kontrolu baterie."
         : "Nefunguje dotyk v pravém horním rohu displeje",
+      // Záruka a Find My z příjmu; krátká ukázka je pozáruční bez dokladu.
+      warrantyClaim: long,
+      purchaseDate: long ? "2025-03-12" : undefined,
+      purchaseProof: long ? "Účtenka Alza č. 2025-0312" : undefined,
+      findMyOff: true,
     },
     dates: {
       received: "2026-09-01",

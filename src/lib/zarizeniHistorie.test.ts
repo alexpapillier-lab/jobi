@@ -1,5 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { najdiStejneZarizeni, normalizujSeriove, platnyImei, vypadaJakoImei } from "./zarizeniHistorie";
+import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, normalizujSeriove, odkazKontrolaImei, platnyImei, stavSerioveho, vypadaJakoAppleSeriove, vypadaJakoImei } from "./zarizeniHistorie";
+
+describe("kontrola IMEI a sériového čísla při příjmu", () => {
+  it("rozezná platné a neplatné IMEI včetně špatné délky", () => {
+    expect(stavSerioveho("35-693803-564380-9")).toEqual({ druh: "imei", platne: true, hlaska: "IMEI je platné." });
+    const spatne = stavSerioveho("356938035643800");
+    expect(spatne.druh).toBe("imei");
+    expect(spatne.platne).toBe(false);
+    expect(spatne.hlaska).toMatch(/kontrolní číslice/);
+    // 14 číslic je nejspíš IMEI bez jedné číslice – hlásí se délka, ne Luhn.
+    expect(stavSerioveho("35693803564380")).toEqual({ druh: "imei", platne: false, hlaska: "IMEI má 15 číslic, zadáno 14." });
+    expect(stavSerioveho("3569380356438090").platne).toBe(false);
+  });
+
+  it("Apple sériové číslo hlídá jen tvar; ostatní text a prázdno nehodnotí", () => {
+    expect(vypadaJakoAppleSeriove("F2LXK1ABCD9X")).toBe(true);
+    expect(vypadaJakoAppleSeriove("f2lx k1ab cd9x")).toBe(true);
+    // Nová náhodná čísla mají 10 znaků.
+    expect(vypadaJakoAppleSeriove("H4TJ9K2LMN")).toBe(true);
+    expect(vypadaJakoAppleSeriove("F2LXK1ABCD9")).toBe(false);
+    expect(vypadaJakoAppleSeriove("123456789012")).toBe(false);
+    expect(stavSerioveho("F2LXK1ABCD9X")).toEqual({ druh: "apple", platne: true, hlaska: "Sériové číslo Apple ve správném tvaru." });
+    expect(stavSerioveho("RF8N123ABC456")).toEqual({ druh: "jine", platne: true });
+    expect(stavSerioveho("12345")).toEqual({ druh: "jine", platne: true });
+    expect(stavSerioveho("")).toEqual({ druh: "prazdne", platne: true });
+    expect(stavSerioveho(null)).toEqual({ druh: "prazdne", platne: true });
+  });
+
+  it("odkaz na kontrolu IMEI jen pro platné IMEI, bez mezer a pomlček", () => {
+    expect(odkazKontrolaImei("35 693803 564380 9")).toBe("https://www.imei.info/?imei=356938035643809");
+    expect(odkazKontrolaImei("356938035643800")).toBeNull();
+    expect(odkazKontrolaImei("F2LXK1ABCD9X")).toBeNull();
+    expect(odkazKontrolaImei("")).toBeNull();
+  });
+
+  it("pozná zařízení Apple podle názvu, ale ne Galaxy Watch", () => {
+    for (const n of ["iPhone 13 Pro", "Apple iPad Air", "MacBook Pro 14", "iMac 24", "Mac mini M2", "Apple Watch Series 9", "Watch Ultra 2", "AirPods Pro"]) {
+      expect(jeAppleZarizeni(n), n).toBe(true);
+    }
+    for (const n of ["Samsung Galaxy Watch 6", "Samsung Galaxy S23", "Xiaomi Redmi Note 12", "Macron TV", "", null]) {
+      expect(jeAppleZarizeni(n), String(n)).toBe(false);
+    }
+  });
+
+  it("záruční oprava vyžaduje datum nákupu nebo doklad", () => {
+    expect(chybiPodkladZaruky({ warrantyClaim: true })).toBe(true);
+    expect(chybiPodkladZaruky({ warrantyClaim: true, purchaseDate: "  ", purchaseProof: "" })).toBe(true);
+    expect(chybiPodkladZaruky({ warrantyClaim: true, purchaseDate: "2025-03-12" })).toBe(false);
+    expect(chybiPodkladZaruky({ warrantyClaim: true, purchaseProof: "účtenka Alza 123" })).toBe(false);
+    expect(chybiPodkladZaruky({ warrantyClaim: false })).toBe(false);
+    expect(chybiPodkladZaruky({})).toBe(false);
+  });
+});
 
 describe("historie zařízení", () => {
   it("IMEI podle Luhna", () => {
