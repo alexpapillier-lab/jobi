@@ -1,0 +1,98 @@
+name: Migrace na staging
+
+# Druhý krok postupu „migrace → staging → kouřová zkouška → produkce“
+# (docs/STAGING.md). Pustí nové migrace z vybrané větve na STAGING, nikdy na
+# produkci: celé to dělá scripts/staging/migrace-na-staging.sh, ten samý
+# skript, který se pouští lokálně, i s pojistkami proti refu produkce.
+#
+# Bez interaktivního přihlášení to jde, protože:
+#   * migrace jdou přes `supabase db push --db-url` – přímé spojení
+#     s databází, CLI nepotřebuje ani login, ani `supabase link`,
+#   * edge funkce přes `supabase functions deploy --project-ref … --use-api`
+#     s tokenem v proměnné SUPABASE_ACCESS_TOKEN (CLI ji čte samo) a bez Dockeru.
+#
+# Potřebné secrets (Settings → Secrets and variables → Actions):
+#   STAGING_DB_URL          connection string stagingu i s heslem (session pooler, 5432)
+#   STAGING_REF             ref projektu stagingu
+#   SUPABASE_ACCESS_TOKEN   osobní token (Dashboard → Account → Access Tokens);
+#                           jen když se nasazují funkce
+#
+# Obnova stagingu z produkční zálohy tady záměrně není: potřebuje heslo
+# k zálohám a mění celý staging – pouští se ručně (npm run staging:obnov).
+
+on:
+  workflow_dispatch:
+    inputs:
+      nanecisto:
+        description: "Jen ukázat, co by se pustilo (db push --dry-run)"
+        type: boolean
+        default: true
+      funkce:
+        description: "Edge funkce: zadne | zmenene (proti origin/main) | vse | jmeno1,jmeno2"
+        type: string
+        default: "zadne"
+      sonda:
+        description: "Po migraci pustit sondu oprávnění (scripts/rls-probe.sql)"
+        type: boolean
+        default: false
+
+# Dva běhy proti jednomu stagingu naráz by si lezly do historie migrací.
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrace:
+    name: db push na staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # --funkce zmenene porovnává s origin/main – potřebuje historii.
+          fetch-depth: 0
+
+      - name: Kontrola secrets
+        env:
+          DB_URL: ${{ secrets.STAGING_DB_URL }}
+          REF: ${{ secrets.STAGING_REF }}
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FUNKCE: ${{ github.event.inputs.funkce }}
+        run: |
+          chybi=""
+          [ -z "$DB_URL" ] && chybi="$chybi STAGING_DB_URL"
+          [ -z "$REF" ] && chybi="$chybi STAGING_REF"
+          if [ "$FUNKCE" != "zadne" ] && [ -n "$FUNKCE" ] && [ -z "$TOKEN" ]; then
+            chybi="$chybi SUPABASE_ACCESS_TOKEN"
+          fi
+          if [ -n "$chybi" ]; then
+            echo "::error::Chybí secrets:$chybi. Postup je v docs/STAGING.md."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Klient postgresql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 || sudo apt-get install -y -qq postgresql-client
+
+      - name: Migrace na staging
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+          STAGING_REF: ${{ secrets.STAGING_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          NANECISTO: ${{ github.event.inputs.nanecisto }}
+          FUNKCE: ${{ github.event.inputs.funkce }}
+          SONDA: ${{ github.event.inputs.sonda }}
+        run: |
+          set -euo pipefail
+          args=(--ano --funkce "${FUNKCE:-zadne}" --zaklad origin/main)
+          [ "$NANECISTO" = "true" ] && args+=(--nanecisto)
+          [ "$SONDA" = "true" ] && args+=(--sonda)
+          bash scripts/staging/migrace-na-staging.sh "${args[@]}"

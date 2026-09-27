@@ -199,6 +199,11 @@ bez fotek.
 1. **Rozšíření a bucket(y) Storage.** V novém projektu vytvoř buckety
    `diagnostic-photos` a `product-images` (viz `docs/JOBIDOCS_STORAGE_BUCKET.md`)
    se stejným nastavením veřejnosti a limitem velikosti.
+   **Politiky nad `storage.objects` v záloze nejsou** (`schema.sql` bere jen
+   schéma `public`) – bez nich nejde nahrát ani zobrazit fotku. Vrátí je
+   příkazy `create policy … on storage.objects` z migrací
+   (`grep -li 'policy.*on storage.objects' supabase/migrations/*.sql`),
+   poslední verze každé politiky. Viz i docs/STAGING.md, kapitola Politiky Storage.
 2. **Soubory ve Storage.** Rozbal poslední artefakt `zaloha-storage-*` a nahraj
    soubory zpět, cesty musí sedět na `storage-soubory.csv`:
    ```bash

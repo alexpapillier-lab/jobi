@@ -28,6 +28,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!.env.staging.example
 
 # OTA signing secrets (local only)
 docs/OTA_SIGNING_SECRETS.md

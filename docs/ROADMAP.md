@@ -169,6 +169,23 @@ První tři měsíce: body 1, 2, 4.
   Postgresu s porovnáním počtů řádků, šifrování AES-256 a artefakt na 90 dní.
   Zbývá uživateli doplnit secrets `SUPABASE_DB_URL` a `BACKUP_PASSPHRASE`,
   do té doby workflow jen napíše, co chybí. Viz `docs/ZALOHY_DATABAZE.md`.
+- `[~]` **Staging** (27. 9., `docs/STAGING.md`): dřív šla každá migrace po
+  `db push --dry-run` rovnou do produkce. Nově druhý projekt Supabase jako
+  kopie produkce bez osobních údajů – `npm run staging:obnov` vezme poslední
+  noční zálohu, staging vyprázdní, nahraje ji a v jedné transakci s nahráním
+  anonymizuje zákazníky (jména, telefony, e-maily, adresy, podpisy, fotky,
+  IP; zakázky, ceník a sklad zůstávají) a všem uživatelům nastaví testovací
+  heslo; `npm run staging:migrace` pustí nové migrace a změněné edge funkce
+  přes `--db-url`/`--project-ref`, takže link CLI zůstává na produkci.
+  Aplikace proti stagingu: `dev:staging`, `dev:web:staging`,
+  `tauri:dev:staging` (jiné porty = oddělené localStorage, štítek STAGING).
+  Pravidlo „migrace → staging → kouřová zkouška → produkce“ je v
+  `docs/MIGRATIONS_SAFETY.md`. Ověřeno nad lokálním Postgresem, **proti
+  skutečnému Supabase ještě ne**. **Majitel založí projekt** (EU West,
+  Micro, bez SMTP), vyplní `.env.staging` podle `.env.staging.example`
+  a pro workflow *Migrace na staging* nastaví secrets `STAGING_DB_URL`,
+  `STAGING_REF`, `SUPABASE_ACCESS_TOKEN`. Dál: pouštět e2e testy proti
+  stagingu místo produkce (dnes zakládají data v ostré databázi).
 - `[~]` Monitoring a alerting – hotový hlídač `alerts-check` (pg_cron každou
   hodinu, e-mail přes Resend, tlumení 6 hodin, chyby z dev serveru se
   přeskakují). Viz `docs/HLIDAC_PROVOZU.md`. Stavová stránka a hlídání
