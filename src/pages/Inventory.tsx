@@ -913,6 +913,23 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
     void prenacistObjednavky();
   }, [activeServiceId, prenacistObjednavky]);
 
+  /* Odkaz z detailu zakázky („Objednat u dodavatele“ → toast → Sklad →
+     Objednávky): App přepne stránku, tady se přepne záložka a otevře
+     objednávka. Návrh vznikl na jiné stránce, proto se objednávky
+     přenačtou – jinak by v seznamu ještě nebyl. */
+  const [otevritObjednavkuId, setOtevritObjednavkuId] = useState<string | null>(null);
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const d = (e as CustomEvent<{ page?: string; subsection?: string; openOrderId?: string }>).detail;
+      if (d?.page !== "inventory" || d.subsection !== "orders") return;
+      setZalozka("orders");
+      setOtevritObjednavkuId(typeof d.openOrderId === "string" ? d.openOrderId : null);
+      void prenacistObjednavky();
+    };
+    window.addEventListener("jobsheet:navigate", onNav);
+    return () => window.removeEventListener("jobsheet:navigate", onNav);
+  }, [prenacistObjednavky]);
+
   /* Přenačtení zásoby z databáze – po přijetí objednávky kusy přičetl
      server. Snímek se posune s daty, ať debounce nemá co ukládat. */
   const prenacistSklad = useCallback(async () => {
@@ -2444,6 +2461,8 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
           onNavrhnout={navrhnoutObjednavku}
           onReloadOrders={prenacistObjednavky}
           onReloadInventory={prenacistSklad}
+          otevritId={otevritObjednavkuId}
+          onOtevreno={() => setOtevritObjednavkuId(null)}
         />
       )}
 

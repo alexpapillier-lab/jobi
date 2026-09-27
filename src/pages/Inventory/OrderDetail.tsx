@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Label, Pill } from "../../components/ui";
 import { MailIcon, PlusIcon, TrashIcon } from "../../components/icons";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -8,7 +8,7 @@ import { reportError } from "../../lib/reportError";
 import type { Product, Warehouse } from "../../lib/inventoryDb";
 import { vychoziSklad } from "../../lib/inventoryDb";
 import {
-  deleteOrder, receiveOrder, textObjednavky, updateItems, updateOrder,
+  deleteOrder, loadTicketCodes, receiveOrder, textObjednavky, updateItems, updateOrder,
   type OrderItemInput, type PurchaseOrder, type PurchaseOrderStatus, type Supplier,
 } from "../../lib/purchaseOrders";
 
@@ -37,7 +37,9 @@ export function formatDatum(iso: string | null): string {
   return d.toLocaleDateString("cs-CZ");
 }
 
-type LokalniPolozka = { id: string; productId: string; qty: string; unitPrice: string; receivedQty: number };
+/* `ticketId` se musí nést s sebou: položky se ukládají jako celý seznam a
+   bez něj by úprava množství smazala, pro kterou zakázku díl je. */
+type LokalniPolozka = { id: string; productId: string; qty: string; unitPrice: string; receivedQty: number; ticketId: string | null };
 
 function zPolozek(order: PurchaseOrder): LokalniPolozka[] {
   return order.items.map((it) => ({
@@ -46,6 +48,7 @@ function zPolozek(order: PurchaseOrder): LokalniPolozka[] {
     qty: String(it.qty),
     unitPrice: it.unitPrice === null ? "" : String(it.unitPrice),
     receivedQty: it.receivedQty,
+    ticketId: it.ticketId,
   }));
 }
 
@@ -58,8 +61,14 @@ function naVstup(items: LokalniPolozka[]): OrderItemInput[] {
       qty: parseInt(it.qty, 10) || 0,
       unitPrice: cena === null || !Number.isFinite(cena) ? null : cena,
       receivedQty: it.receivedQty,
+      ticketId: it.ticketId,
     };
   });
+}
+
+/** Otevře zakázku v Zakázkách (App poslouchá `openTicketId`). */
+function otevritZakazku(ticketId: string) {
+  window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders", openTicketId: ticketId } }));
 }
 
 function uuid() {
@@ -103,6 +112,21 @@ export function OrderDetail({
 
   const supplier = suppliers.find((s) => s.id === order.supplierId) ?? null;
   const produktPodleId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /* Kódy zakázek k položkám objednaným ze zakázky – sklad má vidět, komu
+     díl patří. Klíč z id, ať se nenačítá znovu při každém přenačtení položek. */
+  const zakazkyIds = useMemo(() => Array.from(new Set(order.items.map((it) => it.ticketId).filter((x): x is string => !!x))).sort().join(","), [order.items]);
+  const [kodyZakazek, setKodyZakazek] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!zakazkyIds) return;
+    let zruseno = false;
+    void loadTicketCodes(zakazkyIds.split(",")).then((m) => {
+      if (!zruseno) setKodyZakazek(m);
+    });
+    return () => {
+      zruseno = true;
+    };
+  }, [zakazkyIds]);
   const navrh = order.status === "draft";
   const objednano = order.status === "ordered";
   const jenCteni = !navrh && !objednano;
@@ -149,7 +173,7 @@ export function OrderDetail({
     const existujici = items.find((it) => it.productId === p.id);
     const nove = existujici
       ? items.map((it) => (it.id === existujici.id ? { ...it, qty: String((parseInt(it.qty, 10) || 0) + 1) } : it))
-      : [...items, { id: uuid(), productId: p.id, qty: "1", unitPrice: p.purchasePrice == null ? "" : String(p.purchasePrice), receivedQty: 0 }];
+      : [...items, { id: uuid(), productId: p.id, qty: "1", unitPrice: p.purchasePrice == null ? "" : String(p.purchasePrice), receivedQty: 0, ticketId: null }];
     setItems(nove);
     setHledani("");
     await ulozitPolozky(nove);
@@ -333,6 +357,19 @@ export function OrderDetail({
                         {p?.supplierSku ? `Kód u dodavatele: ${p.supplierSku}` : p?.sku ? `SKU: ${p.sku}` : "Bez kódu"}
                         {p ? ` · skladem ${p.stock} ks` : ""}
                       </div>
+                      {it.ticketId && (
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+                          Pro zakázku{" "}
+                          <button
+                            type="button"
+                            onClick={() => otevritZakazku(it.ticketId as string)}
+                            title="Otevřít zakázku"
+                            style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit" }}
+                          >
+                            {kodyZakazek.get(it.ticketId) ?? "…"}
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...bunka, textAlign: "right", whiteSpace: "nowrap" }}>
                       {navrh ? (

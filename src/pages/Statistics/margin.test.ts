@@ -30,9 +30,10 @@ import type { TicketEx } from "../Orders";
 const zakazka = (o: Record<string, unknown>) => o as unknown as TicketEx;
 const oprava = (o: Record<string, unknown>) => o as never;
 
-const zdroje = (o: Partial<{ repairs: CostSources["repairs"]; purchasePrices: CostSources["purchasePrices"] }> = {}): CostSources => ({
+const zdroje = (o: Partial<{ repairs: CostSources["repairs"]; purchasePrices: CostSources["purchasePrices"]; orderPrices: CostSources["orderPrices"] }> = {}): CostSources => ({
   repairs: o.repairs ?? new Map(),
   purchasePrices: o.purchasePrices ?? new Map(),
+  orderPrices: o.orderPrices ?? new Map(),
 });
 
 describe("náklady jedné provedené opravy", () => {
@@ -87,6 +88,46 @@ describe("náklady jedné provedené opravy", () => {
     });
     const m = entryMargin(oprava({ name: "Displej", price: 1200, repairId: "r1", productIds: ["skutecny"] }), s);
     expect(m.cost).toBe(100);
+  });
+});
+
+describe("nákupní cena dílu z objednávek u dodavatele", () => {
+  it("poslední přijatá cena z objednávky má přednost před ruční cenou na produktu – ta stárne", () => {
+    const s = zdroje({
+      purchasePrices: new Map([["p1", 400]]),
+      orderPrices: new Map([["p1", 520]]),
+    });
+    const m = entryMargin(oprava({ name: "Displej", price: 1200, productIds: ["p1"] }), s);
+    expect(m.cost).toBe(520);
+    expect(m.hasCostSource).toBe(true);
+    expect(m.missingPurchasePrice).toBe(false);
+  });
+
+  it("díl bez přijaté objednávky má ruční cenu z produktu", () => {
+    const s = zdroje({
+      purchasePrices: new Map([["p1", 400], ["p2", 50]]),
+      orderPrices: new Map([["p2", 60]]),
+    });
+    const m = entryMargin(oprava({ name: "Displej", price: 1200, productIds: ["p1", "p2"] }), s);
+    expect(m.cost).toBe(460);
+  });
+
+  it("cena z objednávky doplní i díl, který ruční cenu nemá vůbec – pak už není „bez nákupní ceny“", () => {
+    const s = zdroje({
+      purchasePrices: new Map<string, number | null>([["p1", null]]),
+      orderPrices: new Map([["p1", 250]]),
+    });
+    const m = entryMargin(oprava({ name: "Displej", price: 1200, productIds: ["p1"] }), s);
+    expect(m.cost).toBe(250);
+    expect(m.missingPurchasePrice).toBe(false);
+  });
+
+  it("nulová cena z objednávky (díl zdarma z reklamace) je platný údaj, ne pokyn sáhnout po ruční ceně", () => {
+    const s = zdroje({
+      purchasePrices: new Map([["p1", 400]]),
+      orderPrices: new Map([["p1", 0]]),
+    });
+    expect(entryMargin(oprava({ name: "Displej", price: 1200, productIds: ["p1"] }), s).cost).toBe(0);
   });
 });
 
