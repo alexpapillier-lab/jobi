@@ -79,25 +79,12 @@ test("pravidlo odměn se uloží, zapne stránku Odměny a po úklidu zmizí", a
 
     // Stránka Odměny s dlaždicí zaměstnance měsíce (i když zatím nikdo odměnu nemá).
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "odmeny" } })));
-    // Snímek před kontrolou: při pádu se jinak fotí až po úklidu ve `finally`
-    // a není poznat, co stránka Odměny ukázala.
-    await page.waitForTimeout(3_000);
-    await page.screenshot({ path: test.info().outputPath("odmeny-stranka.png"), fullPage: true });
-    try {
-      await expect(page.getByText(/^Zaměstnanc[ei] měsíce$/).first()).toBeVisible({ timeout: 30_000 });
-    } catch (e) {
-      // Diagnostika: co je na stránce ve chvíli selhání (před úklidem ve finally).
-      await page.screenshot({ path: test.info().outputPath("odmeny-selhani.png"), fullPage: true });
-      const stav = await page.evaluate(() => ({
-        url: location.href,
-        stranky: [...document.querySelectorAll('[data-tour^="page-"]')].map((el) => `${(el as HTMLElement).dataset.tour}:${(el as HTMLElement).style.display || "block"}`),
-        odmeny: document.querySelector('[data-tour="page-odmeny"]')?.textContent?.slice(0, 300) ?? null,
-        vyskyt: document.body.innerText.includes("měsíce"),
-      }));
-      await test.info().attach("odmeny-stav.json", { body: JSON.stringify(stav, null, 2), contentType: "application/json" });
-      throw e;
-    }
-    await expect(page.getByText("Celkem odměn za měsíc", { exact: true })).toBeVisible();
+    // Texty dlaždic se kontrolují přes obsah stránky: getByText s regexem
+    // je v CI nenašel, i když na snímku byly (přístupový strom je slévá
+    // do jednoho textu), toContainText čte textContent kontejneru.
+    const stranka = page.locator('[data-tour="page-odmeny"]');
+    await expect(stranka).toContainText(/Zaměstnanc[ei] měsíce/, { timeout: 30_000 });
+    await expect(stranka).toContainText("Celkem odměn za měsíc");
   } finally {
     // Úklid: pravidlo pryč, přepínač jak byl. Smazání se potvrzuje oknem prohlížeče.
     await otevriOdmenyVNastaveni(page);
