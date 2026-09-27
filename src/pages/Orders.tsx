@@ -1,35 +1,19 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
-import { Button, Segmented } from "../components/ui";
-import { createPortal } from "react-dom";
-import type { Ticket } from "../mock/tickets";
 import { useStatuses } from "../state/StatusesStore";
-import { useServiceVat, sazbaProNovouPolozku } from "../hooks/useServiceVat";
-import { jeZvyrazneni, VYCHOZI_ZVYRAZNENI, type ZvyrazneniStavu } from "../lib/zvyrazneniStavu";
-import { TicketCardList, TicketCardGrid, TicketCardCompact, TicketCardCompactExtra, TicketCardStripe, TicketTimeline, TicketStatusGrouped, ClaimStatusGrouped, CombinedStatusGrouped, ClaimCard, TicketComments, formatCZ, type TicketCardData, type TicketComment } from "../components/tickets";
+import { useServiceVat } from "../hooks/useServiceVat";
+import { TicketComments, type TicketCardData } from "../components/tickets";
 import { computeFinalPrice } from "../components/tickets/types";
-import { showToast, showPersistentToast } from "../components/Toast";
-import { reportSilent, reportError } from "../lib/reportError";
-import { isJobiDocsRunning, printDocument, exportDocument, type DocTypeForPrint } from "../lib/jobidocs";
-import { ticketDocumentData, claimDocumentData, type DocumentData } from "../lib/documentData";
-import { normalizeError } from "../utils/errorNormalizer";
+import { showToast } from "../components/Toast";
+import { reportError } from "../lib/reportError";
+import { claimDocumentData } from "../lib/documentData";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StornoDialog } from "../components/orders/StornoDialog";
-import { DateTimePicker } from "../components/DateTimePicker";
-import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../lib/supabaseClient";
-import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
+import { supabase } from "../lib/supabaseClient";
+import { typedSupabase } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
-import { subscribeServiceConfig } from "../lib/serviceSettingsSync";
-import { fetchAllPages } from "../lib/fetchAllPages";
-import {
-  uploadDiagnosticPhotoWithWatermark,
-  deleteDiagnosticPhotoFromStorage,
-  isDiagnosticPhotoStorageUrl,
-} from "../lib/diagnosticPhotosStorage";
-import { FotkaZakazky } from "../components/FotkaZakazky";
-import { fotkyDoDokumentu, podepsFotku } from "../lib/podepsaneFotky";
 import { usePodepsaneFotky } from "../hooks/usePodepsaneFotky";
 import { normalizePhone } from "../lib/phone";
 import { STORAGE_KEYS } from "../constants/storageKeys";
@@ -37,874 +21,101 @@ import { useOrderActions } from "./Orders/hooks/useOrderActions";
 import { useStatusActionsMap, runStatusChangeAutomations, runTicketCreatedAutomations } from "./Orders/hooks/useAutomations";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
-import { SmsChat } from "../components/SmsChat";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
-import { isWeb, otevriVProhlizeci } from "../lib/platform";
+import { isWeb } from "../lib/platform";
 import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
-import { VyberFotek } from "../components/orders/VyberFotek";
-import { popisDoOdkazu } from "../lib/diagnosticPhotoWatermark";
-import { SectionHeading } from "../components/SectionHeading";
-import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, PrintIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
-import { type PerformedRepair } from "../components/orders/types";
-import { loadInventoryFromDb, type Product as SkladProdukt } from "../lib/inventoryDb";
-import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
-import { CasNaOprave } from "../components/orders/CasNaOprave";
-import { TechnikZakazky } from "../components/orders/TechnikZakazky";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
-import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
-import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
-import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
-import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../lib/zarizeniHistorie";
-import { formatCZDate } from "../components/tickets/types";
-import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU, jePlnyRadekZakazky } from "../lib/sloupceZakazky";
-import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
-import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
-import { formatCurrency } from "../lib/invoiceMath";
-import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
-import { sloucZakazkuZDb, zacniZapis, ukonciZapis, type EvidenceZapisu } from "../lib/slouceniZakazky";
-import { PortalCard } from "../components/orders/PortalCard";
-import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
-import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
-import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
-import { najdiPravidlo, normalizujOdmeny, vychoziNabidnuto, type PravidloOdmeny } from "../lib/odmeny";
-import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
-import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
-import { dniBezZmenyJinde, krokyPresunu, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
-import { KdeJeZakazka } from "../components/orders/KdeJeZakazka";
-import { ensurePortalToken, mapPortalTicketFields, portalUrl, type PortalTicketFields } from "../lib/portal";
+import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
+import { nastavStavRezervace } from "../lib/rezervace";
+import { sloucZakazkuZDb } from "../lib/slouceniZakazky";
+import { sjetNaKartu } from "../components/orders/PostupZakazky";
+import { useSbaleno } from "../components/orders/SbalitelnaSekce";
+import { dniBezZmenyJinde, stitekUmisteni, umisteniZakazky, type Zasilka } from "../lib/zasilky";
+import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
+import { setTicketBranch, type Branch } from "../lib/branches";
 import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
-import { loadDevicesFromDb } from "../lib/devicesDb";
-import {
-  type DevicesData,
-  type InventoryData,
-  type DeviceRepair,
-  type DeviceModel,
-  safeLoadDevicesData,
-} from "../lib/catalogStorage";
 import {
   reserveForRepair,
   releaseReservations,
   consumeTicketReservations,
   loadTicketReservations,
-  loadReservations,
-  loadTicketOrderItems,
   jenUuid,
   type TicketReservation,
-  type TicketOrderItem,
   type ReserveShortage,
 } from "../lib/purchaseOrders";
-import { DilyOpravy } from "../components/orders/DilyOpravy";
-import {
-  PerformedRepairItem,
-  PerformedRepairAdder,
-  DeviceAutocomplete,
-  HandoffMethodSelect,
-  DiscountPicker,
-  TlacitkaSlev,
-  SlevaNovaZakazka,
-  StatusPicker,
-  PrintMenu,
-  OverflowMenu,
-  CustomerAutocomplete,
-  type CustomerMatch,
-} from "../components/orders";
-import { printDocumentInBrowser, type WebPrintDocType } from "../lib/webPrint";
-import { qrDataUrl } from "../../jobidocs/src/qr";
-import { spustDesktopovyDokument, spustWebovyDokument, type ZavislostiDokumentu } from "../lib/tiskDokumentu";
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
-import { getDeviceOptions } from "../lib/deviceOptions";
-import { getHandoffOptions } from "../lib/handoffOptions";
-import { safeLoadCompanyData, doplnFiremniUdajeZDb } from "../lib/companyData";
-import { trackDocumentAction } from "../lib/documentTelemetry";
+import { safeLoadCompanyData } from "../lib/companyData";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
-import { PresenceAvatars } from "../components/PresenceAvatars";
-import { CopyButton } from "../components/CopyButton";
-import { StatusFilter, type StatusFilterOption } from "../components/orders/StatusFilter";
-import { OnboardingChecklist } from "../components/OnboardingChecklist";
 import {
   loadDocumentsConfigFromDB,
-  safeLoadDocumentsConfig,
-  zarucniDobaProTisk,
 } from "../lib/documentHelpers";
+
+import {
+  type UIConfig,
+  type OrdersProps,
+  type TicketEx,
+} from "./Orders/typy";
+import { safeLoadUIConfig } from "./Orders/uiConfig";
+import {
+  safeSaveDraft,
+  defaultDraft,
+} from "./Orders/koncept";
+import { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
+import { type ClaimResolutionItem, parseClaimResolutionItems, serializeClaimResolutionItems } from "./Orders/reklamaceZakroky";
+import {
+  type DocMode,
+  runWebDocument,
+  runDesktopDocument,
+  printTicket,
+  printWarranty,
+} from "./Orders/tiskZakazky";
+import { baseFieldTextArea, card } from "./Orders/styly";
+import { SmsPanel } from "./Orders/SmsPanel";
+import { HistorieZakazkyModal } from "./Orders/HistorieZakazkyModal";
+import { HistorieReklamaceModal } from "./Orders/HistorieReklamaceModal";
+import { CaptureQrModal } from "./Orders/CaptureQrModal";
+import { FotoLightbox } from "./Orders/FotoLightbox";
+import { RychlyTiskNabidka } from "./Orders/RychlyTiskNabidka";
+import { useHistorieZakazky } from "./Orders/hooks/useHistorieZakazky";
+import { useHistorieReklamace } from "./Orders/hooks/useHistorieReklamace";
+import { useKonfiguraceDokumentu } from "./Orders/hooks/useKonfiguraceDokumentu";
+import { useNastaveniServisu } from "./Orders/hooks/useNastaveniServisu";
+import { useNacitaniZakazek } from "./Orders/hooks/useNacitaniZakazek";
+import { useRealtimeZakazek } from "./Orders/hooks/useRealtimeZakazek";
+import { useSmsDostupnost } from "./Orders/hooks/useSmsDostupnost";
+import { useSmsNeprecteneDetailu } from "./Orders/hooks/useSmsNeprecteneDetailu";
+import { useSmsNeprecteneSeznamu } from "./Orders/hooks/useSmsNeprecteneSeznamu";
+import { useEvidenceZapisu } from "./Orders/hooks/useEvidenceZapisu";
+import { useKomentare } from "./Orders/hooks/useKomentare";
+import { useZapisyZakazky } from "./Orders/hooks/useZapisyZakazky";
+import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
+import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
+import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
+import { SeznamZakazek } from "./Orders/SeznamZakazek";
+import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
+import { DetailZakazky } from "./Orders/DetailZakazky";
+import { DetailHlavicka } from "./Orders/DetailHlavicka";
+import { DetailReklamace } from "./Orders/DetailReklamace";
+import { DetailPrehled } from "./Orders/DetailPrehled";
+import { UpravaZakazky } from "./Orders/UpravaZakazky";
+import { DetailDalsiKarty } from "./Orders/DetailDalsiKarty";
+import { DetailOpravy } from "./Orders/DetailOpravy";
+import { DetailDiagnostika } from "./Orders/DetailDiagnostika";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
+// Veřejné exporty, které používá App.tsx, Calendar, Statistics, lib/documentData a testy – zůstávají tady.
+export type { TicketEx } from "./Orders/typy";
+export { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
 
 
-type GroupKey = "all" | "active" | "final" | "reklamace" | "moje" | "presun";
-type ClaimsSubGroup = "all" | "active" | "final";
-
-const VALID_PAGE_SIZES = [0, 25, 50, 100, 200] as const;
-
-/**
- * Kolik zakázek se natáhne v prvním kole.
- *
- * Odpovídá největší nastavitelné velikosti stránky, takže se z první odpovědi
- * dá vykreslit celá první stránka seznamu, ať má uživatel nastavené cokoli.
- * Zbytek dojede na pozadí – bez toho čeká i ten, kdo chce jen otevřít první
- * zakázku shora.
- */
-const PRVNI_DAVKA_ZAKAZEK = 200;
-type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
-type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number; postupZakazky?: boolean };
-  sidebar: { position: "left" | "right" | "bottom" };
-  home: { orderFilters: { selectedQuickStatusFilters: string[] } };
-  orders: { displayMode: DisplayMode; pageSize: number; customerPhoneRequired: boolean; statusGroupedOrder?: string[]; zvyrazneniStavu?: ZvyrazneniStavu };
-};
-
-type OpenTicketIntent = {
-  ticketId: string;
-  mode?: "panel" | "detail";
-  returnToPage?: NavKey;
-  returnToCustomerId?: string;
-  openSmsPanel?: boolean;
-};
-
-type OrdersProps = {
-  activeServiceId: string | null;
-  /** Název aktivního servisu – jde do vodoznaku fotek. */
-  serviceName?: string | null;
-  smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
-  newOrderPrefill: { customerId?: string; rezervace?: Rezervace } | null;
-  onNewOrderPrefillConsumed: () => void;
-
-  openTicketIntent: OpenTicketIntent | null;
-  onOpenTicketIntentConsumed: () => void;
-
-  openClaimIntent?: { claimId: string } | null;
-  onOpenClaimIntentConsumed?: () => void;
-
-  onOpenCustomer?: (customerId: string) => void;
-  onReturnToPage?: (page: NavKey, customerId?: string) => void;
-  onCreateInvoice?: (prefill: {
-    ticketId: string;
-    customerId?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-    customerIco?: string;
-    customerDic?: string;
-    customerAddress?: string;
-    branchId?: string | null;
-    items?: { name: string; qty: number; unit: string; unit_price: number; vat_rate: number }[];
-  }) => void;
-  /** When ticket already has an invoice, open that invoice (navigate to Faktury and open editor). */
-  onOpenInvoice?: (invoiceId: string) => void;
-
-  /** When true, detail panel (ticket/claim) is closed. Used when navigating to e.g. Faktury so the preview does not stay on top. */
-  closeDetailWhen?: boolean;
-  /**
-   * SMS jsou pro servis dostupné: má aktivní číslo A ZÁROVEŇ zaplacený modul.
-   * App to počítá jako smsProvisioned && hasModule("sms"); Orders si dřív
-   * ověřovaly jen to číslo, takže se SMS tlačítko ukazovalo i servisům
-   * s vypnutým modulem. Bez propu radši skryté – modul je placený.
-   */
-  smsEnabled?: boolean;
-};
-
-const NEW_ORDER_DRAFT_KEY = "jobsheet_new_order_draft_v1";
-/** Zda je v okně Nová zakázka rozbalená sekce „Další údaje“. */
-const NEW_ORDER_MORE_OPEN_KEY = "jobsheet_new_order_more_open_v1";
-/** Zda jsou u zařízení v nové zakázce rozbalené „Další údaje zařízení“. */
-const NEW_ORDER_DEVICE_MORE_OPEN_KEY = "jobsheet_new_order_device_more_open_v1";
-const NEW_ORDER_CUSTOMER_MORE_OPEN_KEY = "jobsheet_new_order_customer_more_open_v1";
 /** Sbalené sekce v detailu zakázky – stav se pamatuje na zařízení. */
 const DETAIL_PORTAL_OPEN_KEY = "jobsheet_detail_portal_open_v1";
 const DETAIL_DIAGNOSTIKA_OPEN_KEY = "jobsheet_detail_diagnostika_open_v1";
-
-/** Položka provedeného zákroku u reklamace (ukládá se do resolution_summary jako JSON). */
-type ClaimResolutionItem = { id: string; name: string; description?: string; price?: number };
-
-function parseClaimResolutionItems(raw: string | null): ClaimResolutionItem[] {
-  if (!raw || !raw.trim()) return [];
-  const t = raw.trim();
-  if (t.startsWith("[")) {
-    try {
-      const arr = JSON.parse(t) as unknown;
-      if (!Array.isArray(arr)) return [];
-      return arr.filter((x): x is ClaimResolutionItem => x && typeof x === "object" && typeof (x as any).id === "string" && typeof (x as any).name === "string").map((x) => ({
-        id: (x as any).id,
-        name: (x as any).name ?? "",
-        description: (x as any).description ?? undefined,
-        price: typeof (x as any).price === "number" ? (x as any).price : undefined,
-      }));
-    } catch {
-      return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
-    }
-  }
-  return [{ id: (crypto as any).randomUUID?.() ?? `legacy-${Date.now()}`, name: t }];
-}
-
-function serializeClaimResolutionItems(items: ClaimResolutionItem[]): string {
-  if (items.length === 0) return "";
-  return JSON.stringify(items);
-}
-
-
-export type TicketEx = Ticket & {
-  customerId?: string;
-  customerEmail?: string;
-  customerAddressStreet?: string;
-  customerAddressCity?: string;
-  customerAddressZip?: string;
-  customerCompany?: string;
-  customerIco?: string;
-  customerInfo?: string;
-
-  devicePasscode?: string;
-  deviceCondition?: string;
-  deviceAccessories?: string;
-  /** Záruční (true) / pozáruční (false) oprava; null = neuvedeno (tickets.warranty_claim). */
-  warrantyClaim?: boolean | null;
-  /** Datum nákupu (ISO datum) a doklad o koupi – podklad záruky. */
-  purchaseDate?: string;
-  purchaseProof?: string;
-  /** Apple: Find My vypnuto při příjmu; null = neuvedeno / netýká se (tickets.find_my_off). */
-  findMyOff?: boolean | null;
-
-  discountType?: "percentage" | "amount" | null; // typ slevy: procenta, částka, nebo žádná
-  discountValue?: number; // hodnota slevy (% nebo Kč)
-  requestedRepair?: string;
-  handoffMethod?: string;
-  handbackMethod?: string;
-  deviceNote?: string;
-  externalId?: string;
-  /** Přidělený technik (auth.users.id), null = nepřiděleno. */
-  assignedTo?: string | null;
-  /** Kde zařízení fyzicky je (zásilky mezi pobočkami); null = na své pobočce. */
-  locationBranchId?: string | null;
-  /** Zásilka, ve které právě cestuje; null = necestuje. */
-  transitShipmentId?: string | null;
-  /** Poslední uložení (updated_at) – upozornění „leží jinde X dní bez změny“. */
-  updatedAt?: string | null;
-  estimatedPrice?: number;
-  performedRepairs?: PerformedRepair[];
-  /** Kontrola po opravě (tickets.test_checklist). */
-  testChecklist?: KontrolaPoOpraveData;
-  /** Náhradní zařízení půjčené zákazníkovi (tickets.loaner). */
-  loaner?: ZapujckaData;
-  
-  diagnosticText?: string; // text diagnostiky
-  diagnosticPhotos?: string[]; // URL diagnostických fotek (po vytvoření)
-  diagnosticPhotosBefore?: string[]; // URL fotek při příjmu / před vytvořením
-  
-  expectedDoneAt?: string; // předpokládané dokončení (ISO)
-  version?: number; // optimistic locking version
-  /** Pobočka, kde zakázka leží (null = bez pobočky / starší záznam). */
-  branchId?: string | null;
-  /**
-   * Má řádek všechny sloupce (detail), nebo jen ty pro seznam?
-   *
-   * Seznam zakázek čte úzkou sadu sloupců (src/lib/sloupceZakazky.ts), takže
-   * `undefined` u diagnostiky nebo zápůjčky nemusí znamenat „prázdné“, ale
-   * „nenačtené“. Detail se proto nad neúplným řádkem vůbec nevykreslí –
-   * jinak by ho uložení přepsalo prázdnem.
-   */
-  uplna?: boolean;
-} & PortalTicketFields; // zákaznický portál: portalToken, quoteAmount, quoteNote, quoteStatus, quoteSentAt, quoteDecidedAt, quoteDecisionMeta, intakeSignatureUrl, intakeSignedAt, portalLastOpenedAt
-
-type DeviceRow = {
-  deviceLabel: string;
-  serialOrImei: string;
-  devicePasscode: string;
-  deviceCondition: string;
-  deviceAccessories: string;
-  /** Záruční oprava + její podklad (datum nákupu ISO, doklad); viz chybiPodkladZaruky. */
-  warrantyClaim: boolean;
-  purchaseDate: string;
-  purchaseProof: string;
-  /** Find My vypnuto – ptá se jen u zařízení Apple, do databáze jde jinak null. */
-  findMyOff: boolean;
-  requestedRepair: string;
-  handoffMethod: string;
-  handbackMethod: string;
-  deviceNote: string;
-  externalId: string;
-  estimatedPrice?: number;
-  /** Opravy vybrané z ceníku už při příjmu – do zakázky jdou jako provedené opravy s cenou z ceníku. */
-  plannedRepairs?: PerformedRepair[];
-  /** Sleva zadaná už při příjmu (přednastavená nebo vlastní) – na zakázku jde hned při založení. */
-  discountType?: "percentage" | "amount" | null;
-  discountValue?: number;
-  /** Ručně napsaná předschválená cena před slevou (viz lib/cenaPriPrijmu). */
-  cenaPredSlevou?: number;
-  /** Předpokládané datum/čas dokončení – primárně kopírováno z prvního zařízení */
-  expectedCompletionAt?: string | null;
-};
-
-type NewOrderDraft = {
-  customerId?: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail: string;
-  addressStreet: string;
-  addressCity: string;
-  addressZip: string;
-  company: string;
-  ico: string;
-  customerInfo: string;
-
-  devices: DeviceRow[];
-
-  diagnosticPhotosBefore?: string[]; // data URLs – fotky při příjmu (před vytvořením zakázky)
-  /** Pobočka nové zakázky; bez hodnoty se použije aktivní / domovská / výchozí. */
-  branchId?: string | null;
-  /** Rezervace z webu, ze které zakázka vzniká – po založení se označí jako převedená. */
-  rezervaceId?: string;
-};
-
-// ========================
-// Utils: storage
-// ========================
-const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
-
-function defaultUIConfig(): UIConfig {
-  return {
-    app: { fabNewOrderEnabled: true, uiScale: 1, postupZakazky: true },
-    sidebar: { position: "left" },
-    home: { orderFilters: { selectedQuickStatusFilters: [] } },
-    orders: { displayMode: "list", pageSize: 50, customerPhoneRequired: true, zvyrazneniStavu: VYCHOZI_ZVYRAZNENI },
-  };
-}
-
-function safeLoadUIConfig(): UIConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
-    if (!raw) return defaultUIConfig();
-    const parsed = JSON.parse(raw);
-
-    const d = defaultUIConfig();
-    const quick = parsed?.home?.orderFilters?.selectedQuickStatusFilters;
-    const fab = parsed?.app?.fabNewOrderEnabled;
-    const scale = parsed?.app?.uiScale;
-    const displayMode = parsed?.orders?.displayMode;
-    const pageSize = parsed?.orders?.pageSize;
-    const customerPhoneRequired = parsed?.orders?.customerPhoneRequired;
-    const validPageSize = typeof pageSize === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(pageSize)
-      ? pageSize
-      : d.orders.pageSize;
-
-    const sidebarPos = parsed?.sidebar?.position;
-    return {
-      app: {
-        fabNewOrderEnabled: typeof fab === "boolean" ? !!fab : d.app.fabNewOrderEnabled,
-        uiScale: typeof scale === "number" && scale >= 0.85 && scale <= 1.35 ? scale : d.app.uiScale,
-        postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
-      },
-      sidebar: {
-        position: (["left", "right", "bottom"] as const).includes(sidebarPos) ? sidebarPos : d.sidebar.position,
-      },
-      home: {
-        orderFilters: {
-          selectedQuickStatusFilters: Array.isArray(quick)
-            ? quick.filter((x: any) => typeof x === "string")
-            : d.home.orderFilters.selectedQuickStatusFilters,
-        },
-      },
-      orders: {
-        displayMode: VALID_DISPLAY_MODES.includes(displayMode) ? displayMode : d.orders.displayMode,
-        pageSize: validPageSize,
-        customerPhoneRequired: typeof customerPhoneRequired === "boolean" ? customerPhoneRequired : d.orders.customerPhoneRequired,
-        statusGroupedOrder: Array.isArray(parsed?.orders?.statusGroupedOrder) ? parsed.orders.statusGroupedOrder.filter((x: any) => typeof x === "string") : undefined,
-        // Bez tohohle řádku se volba z Nastavení sem nikdy nedostala a karty
-        // dostaly vždy výchozí „jemné“ – „Výrazné“ i „Plné“ nedělaly nic.
-        zvyrazneniStavu: jeZvyrazneni(parsed?.orders?.zvyrazneniStavu) ? parsed.orders.zvyrazneniStavu : VYCHOZI_ZVYRAZNENI,
-      },
-    };
-  } catch {
-    return defaultUIConfig();
-  }
-}
-
-/**
- * Křížek na asistentovi postupu: vypne ho v osobních předvolbách, stejně jako
- * přepínač v Nastavení → Rozhraní. Zapisuje se přímo do uloženého JSON, aby se
- * nepřepsaly předvolby, které tahle stránka nečte (např. reducedEffects).
- */
-function skrytPostupZakazky(): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
-    const parsed = raw ? JSON.parse(raw) : {};
-    const next = { ...parsed, app: { ...(parsed?.app ?? {}), postupZakazky: false } };
-    localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(next));
-    window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
-  } catch {
-    /* předvolby se neuložily – asistent zůstane, nic horšího se nestane */
-  }
-}
-
-
-function safeLoadDraft(): NewOrderDraft | null {
-  try {
-    const raw = localStorage.getItem(NEW_ORDER_DRAFT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    if (Array.isArray(parsed.devices)) {
-      const draft = parsed as NewOrderDraft;
-      const firstExpected = draft.devices[0]?.expectedCompletionAt ?? (draft as any).expectedCompletionAt;
-      const migrated = {
-        ...draft,
-        devices: draft.devices.map((d: DeviceRow) => ({
-          ...d,
-          expectedCompletionAt: d.expectedCompletionAt ?? firstExpected ?? undefined,
-          // Rozepsaný příjem z doby před zárukou a Find My – pole musí být, jinak by inputy byly neřízené.
-          warrantyClaim: d.warrantyClaim ?? false,
-          purchaseDate: d.purchaseDate ?? "",
-          purchaseProof: d.purchaseProof ?? "",
-          findMyOff: d.findMyOff ?? false,
-        })),
-      };
-      delete (migrated as any).expectedCompletionAt;
-      return migrated;
-    }
-    const d = defaultDraft();
-    const def = defaultDeviceRow();
-    const migrated: NewOrderDraft = {
-      ...d,
-      customerId: parsed.customerId,
-      customerName: parsed.customerName ?? "",
-      customerPhone: parsed.customerPhone ?? "",
-      customerEmail: parsed.customerEmail ?? "",
-      addressStreet: parsed.addressStreet ?? "",
-      addressCity: parsed.addressCity ?? "",
-      addressZip: parsed.addressZip ?? "",
-      company: parsed.company ?? "",
-      ico: parsed.ico ?? "",
-      customerInfo: parsed.customerInfo ?? "",
-      devices: [{
-        deviceLabel: parsed.deviceLabel ?? def.deviceLabel,
-        serialOrImei: parsed.serialOrImei ?? def.serialOrImei,
-        devicePasscode: parsed.devicePasscode ?? def.devicePasscode,
-        deviceCondition: parsed.deviceCondition ?? def.deviceCondition,
-        deviceAccessories: parsed.deviceAccessories ?? def.deviceAccessories,
-        warrantyClaim: def.warrantyClaim,
-        purchaseDate: def.purchaseDate,
-        purchaseProof: def.purchaseProof,
-        findMyOff: def.findMyOff,
-        requestedRepair: parsed.requestedRepair ?? def.requestedRepair,
-        handoffMethod: parsed.handoffMethod ?? def.handoffMethod,
-        handbackMethod: parsed.handbackMethod ?? def.handbackMethod,
-        deviceNote: parsed.deviceNote ?? def.deviceNote,
-        externalId: parsed.externalId ?? def.externalId,
-        estimatedPrice: parsed.estimatedPrice ?? def.estimatedPrice,
-        expectedCompletionAt: (parsed as any).expectedCompletionAt ?? undefined,
-      }],
-      diagnosticPhotosBefore: parsed.diagnosticPhotosBefore,
-    };
-    return migrated;
-  } catch {
-    return null;
-  }
-}
-
-function safeSaveDraft(draft: NewOrderDraft | null) {
-  try {
-    if (!draft) localStorage.removeItem(NEW_ORDER_DRAFT_KEY);
-    else localStorage.setItem(NEW_ORDER_DRAFT_KEY, JSON.stringify(draft));
-  } catch {
-    // ignore
-  }
-}
-
-// Removed: safeLoadCustomers and safeSaveCustomers - no longer used in cloud-first mode
-
-type SupabaseTicketCommentRow = {
-  id: string;
-  ticket_id: string;
-  author: string;
-  author_id: string | null;
-  author_nickname: string | null;
-  author_avatar_url: string | null;
-  content: string;
-  pinned: boolean;
-  created_at: string;
-};
-
-function mapSupabaseCommentRow(row: SupabaseTicketCommentRow): TicketComment {
-  return {
-    id: row.id,
-    ticketId: row.ticket_id,
-    author: row.author,
-    text: row.content,
-    createdAt: row.created_at,
-    pinned: row.pinned,
-    author_id: row.author_id,
-    author_nickname: row.author_nickname,
-    author_avatar_url: row.author_avatar_url,
-  };
-}
-
-// ========================
-// Utils: formatting
-// ========================
-
-function defaultDeviceRow(): DeviceRow {
-  const handoffOpts = getHandoffOptions();
-  const defaultReceive = handoffOpts.receiveMethods.includes("Osobně") ? "Osobně" : "";
-  const defaultReturn = handoffOpts.returnMethods.includes("Osobně") ? "Osobně" : "";
-  return {
-    deviceLabel: "",
-    serialOrImei: "",
-    devicePasscode: "",
-    deviceCondition: "",
-    deviceAccessories: "",
-    warrantyClaim: false,
-    purchaseDate: "",
-    purchaseProof: "",
-    findMyOff: false,
-    requestedRepair: "",
-    handoffMethod: defaultReceive,
-    handbackMethod: defaultReturn,
-    deviceNote: "",
-    externalId: "",
-    estimatedPrice: undefined,
-    expectedCompletionAt: undefined,
-  };
-}
-
-function defaultDraft(): NewOrderDraft {
-  return {
-    customerId: undefined,
-    customerName: "",
-    customerPhone: "",
-    customerEmail: "",
-    addressStreet: "",
-    addressCity: "",
-    addressZip: "",
-    company: "",
-    ico: "",
-    customerInfo: "",
-
-    devices: [defaultDeviceRow()],
-
-    diagnosticPhotosBefore: undefined,
-  };
-}
-
-function isDraftDirty(d: NewOrderDraft) {
-  const def = defaultDraft();
-  const norm = (v: any) => (typeof v === "string" ? v.trim() : v);
-  for (const k of ["customerId", "customerName", "customerPhone", "customerEmail", "addressStreet", "addressCity", "addressZip", "company", "ico", "customerInfo"]) {
-    if (norm((d as any)[k]) !== norm((def as any)[k])) return true;
-  }
-  if ((d.diagnosticPhotosBefore?.length ?? 0) !== (def.diagnosticPhotosBefore?.length ?? 0)) return true;
-  if (d.devices.length !== def.devices.length) return true;
-  for (let i = 0; i < d.devices.length; i++) {
-    const dev = d.devices[i];
-    const devDef = def.devices[i] ?? defaultDeviceRow();
-    for (const k of Object.keys(devDef) as (keyof DeviceRow)[]) {
-      if (norm((dev as any)[k]) !== norm((devDef as any)[k])) return true;
-    }
-  }
-  return false;
-}
-
-function isEmailValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-}
-
-function isPhoneValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length >= 9 && digits.length <= 15;
-}
-
-function formatPhoneNumber(value: string): string {
-  const cleaned = value.replace(/[^\d+]/g, "");
-  if (cleaned.length === 0) return "";
-
-  if (cleaned.startsWith("+")) {
-    const digits = cleaned.slice(1);
-    if (digits.length === 0) return "+";
-
-    if (cleaned.startsWith("+420")) {
-      const rest = digits.slice(3);
-      if (rest.length === 0) return "+420";
-      if (rest.length <= 3) return `+420 ${rest}`;
-      if (rest.length <= 6) return `+420 ${rest.slice(0, 3)} ${rest.slice(3)}`;
-      return `+420 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 9)}`;
-    }
-
-    const countryCodeMatch = cleaned.match(/^\+(\d{1,3})(\d*)$/);
-    if (countryCodeMatch) {
-      const [, countryCode, rest] = countryCodeMatch;
-      if (rest.length === 0) return `+${countryCode}`;
-      if (rest.length <= 3) return `+${countryCode} ${rest}`;
-      if (rest.length <= 6) return `+${countryCode} ${rest.slice(0, 3)} ${rest.slice(3)}`;
-      return `+${countryCode} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 9)}`;
-    }
-
-    return cleaned;
-  }
-
-  const digitsOnly = cleaned.replace(/[^\d]/g, "");
-  if (digitsOnly.length === 0) return "";
-  if (digitsOnly.length <= 3) return digitsOnly;
-  if (digitsOnly.length <= 6) return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3)}`;
-  if (digitsOnly.length <= 9) return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3, 6)} ${digitsOnly.slice(6)}`;
-  return `${digitsOnly.slice(0, 3)} ${digitsOnly.slice(3, 6)} ${digitsOnly.slice(6, 9)} ${digitsOnly.slice(9)}`;
-}
-
-function formatZipCode(value: string): string {
-  const digits = value.replace(/[^\d]/g, "");
-  if (digits.length === 0) return "";
-  if (digits.length <= 3) return digits;
-  return `${digits.slice(0, 3)} ${digits.slice(3, 5)}`;
-}
-
-function formatIco(value: string): string {
-  const digits = value.replace(/[^\d]/g, "");
-  if (digits.length === 0) return "";
-  if (digits.length <= 4) return digits;
-  return `${digits.slice(0, 4)} ${digits.slice(4, 8)}`;
-}
-
-function isZipValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length === 5;
-}
-
-function isIcoValid(v: string) {
-  const s = v.trim();
-  if (!s) return true;
-  const digits = s.replace(/[^\d]/g, "");
-  return digits.length === 8;
-}
-
-
-
-export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
-  const ticket: TicketEx = {
-    id: supabaseTicket.id || "",
-    code: (typeof supabaseTicket.code === "string" ? supabaseTicket.code : null),
-    customerId: supabaseTicket.customer_id || undefined,
-    customerName: supabaseTicket.customer_name || "Cloud Customer",
-    customerPhone: supabaseTicket.customer_phone || undefined,
-    deviceLabel: supabaseTicket.title || "Nová zakázka",
-    // Jedno pole "Sériové číslo / IMEI": importované zakázky (zakazkovylist)
-    // mají u telefonů jen device_imei, bez fallbacku by pole zůstalo prázdné.
-    serialOrImei: supabaseTicket.device_serial || supabaseTicket.device_imei || undefined,
-    issueShort: supabaseTicket.notes || "—",
-    status: (supabaseTicket.status || "received") as any,
-    createdAt: supabaseTicket.created_at, // DB guarantees NOT NULL with default now()
-    customerEmail: supabaseTicket.customer_email || undefined,
-    customerAddressStreet: supabaseTicket.customer_address_street || undefined,
-    customerAddressCity: supabaseTicket.customer_address_city || undefined,
-    customerAddressZip: supabaseTicket.customer_address_zip || undefined,
-    customerCompany: supabaseTicket.customer_company || undefined,
-    customerIco: supabaseTicket.customer_ico || undefined,
-    customerInfo: supabaseTicket.customer_info || undefined,
-    devicePasscode: supabaseTicket.device_passcode || undefined,
-    deviceCondition: supabaseTicket.device_condition || undefined,
-    deviceAccessories: (supabaseTicket as any).device_accessories || undefined,
-    // Záruka a Find My z příjmu: null zůstává null („neuvedeno“), ne false.
-    warrantyClaim: typeof supabaseTicket.warranty_claim === "boolean" ? supabaseTicket.warranty_claim : null,
-    purchaseDate: supabaseTicket.purchase_date || undefined,
-    purchaseProof: supabaseTicket.purchase_proof || undefined,
-    findMyOff: typeof supabaseTicket.find_my_off === "boolean" ? supabaseTicket.find_my_off : null,
-    requestedRepair: supabaseTicket.notes || undefined,
-    handoffMethod: supabaseTicket.handoff_method || undefined,
-    handbackMethod: (supabaseTicket as any).handback_method || undefined,
-    deviceNote: supabaseTicket.device_note || undefined,
-    externalId: supabaseTicket.external_id || undefined,
-    estimatedPrice: supabaseTicket.estimated_price || undefined,
-    performedRepairs: supabaseTicket.performed_repairs || [],
-    testChecklist: supabaseTicket.test_checklist || undefined,
-    loaner: supabaseTicket.loaner || undefined,
-    diagnosticText: supabaseTicket.diagnostic_text || undefined,
-    diagnosticPhotos: supabaseTicket.diagnostic_photos || undefined,
-    diagnosticPhotosBefore: supabaseTicket.diagnostic_photos_before || undefined,
-    discountType: supabaseTicket.discount_type ?? null,
-    discountValue: supabaseTicket.discount_value == null ? undefined : Number(supabaseTicket.discount_value),
-    version: typeof supabaseTicket.version === "number" ? supabaseTicket.version : undefined,
-    branchId: typeof supabaseTicket.branch_id === "string" ? supabaseTicket.branch_id : null,
-    assignedTo: typeof supabaseTicket.assigned_to === "string" ? supabaseTicket.assigned_to : null,
-    locationBranchId: typeof supabaseTicket.location_branch_id === "string" ? supabaseTicket.location_branch_id : null,
-    transitShipmentId: typeof supabaseTicket.transit_shipment_id === "string" ? supabaseTicket.transit_shipment_id : null,
-    updatedAt: typeof supabaseTicket.updated_at === "string" ? supabaseTicket.updated_at : null,
-    // Pozná se to z řádku samotného, ne z volajícího: realtime, insert i
-    // uložení vracejí celý řádek, seznam jen svoji úzkou sadu sloupců.
-    uplna: jePlnyRadekZakazky(supabaseTicket),
-    // Portálové sloupce: v hlavních selectech nejsou (migrace může chybět), přijdou z realtime nebo z PortalCard.
-    ...mapPortalTicketFields(supabaseTicket),
-  };
-  (ticket as any).service_id = supabaseTicket.service_id;
-  (ticket as any).expected_completion_at = supabaseTicket.expected_completion_at ?? null;
-  (ticket as any).completed_at = supabaseTicket.completed_at ?? null;
-  return ticket;
-}
-
-// Tisk a export PDF probíhají přes JobiDocs (localhost:3847); ve webové verzi přes tiskový dialog prohlížeče.
-// Jobi posílá typovaná data dokumentu, šablonu i formátování drží JobiDocs.
-
-type DocMode = "print" | "export";
-
-function ticketDocData(ticket: TicketEx, docType: DocTypeForPrint): DocumentData {
-  const t = ticket as TicketEx & { completed_at?: string | null };
-  const completedAt = t.completed_at ?? (docType === "zarucni_list" ? new Date().toISOString() : undefined);
-  const serviceId = (ticket as any).service_id as string | null | undefined;
-  // Adresa, telefon a e-mail pobočky mají na dokumentu přednost před firemními.
-  const branch = getCachedBranch(serviceId, ticket.branchId);
-  // Délku záruky si servis nastavuje v dokumentech, ne u zakázky. Bez ní
-  // zůstávala na záručním listu ve větě „poskytuje servis záruku … měsíců“
-  // díra místo čísla.
-  const zaruka = zarucniDobaProTisk(serviceId);
-  return ticketDocumentData(ticket, companyDataForBranch(safeLoadCompanyData(), branch), {
-    completedAt,
-    warrantyMonths: zaruka?.months,
-    warrantyDays: zaruka?.days,
-  });
-}
-
-/**
- * Skutečné napojení na okolí (JobiDocs, nativní dialog, hlášky).
- * Vlastní logika je v src/lib/tiskDokumentu.ts, aby šla otestovat – tady
- * zůstává jen to, co se v testu stejně nahradit nedá.
- */
-const zavislostiDokumentu: ZavislostiDokumentu = {
-  jobiDocsBezi: isJobiDocsRunning,
-  tisk: printDocument,
-  exportPdf: exportDocument,
-  vyberCilovySoubor: async (vychoziNazev) => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    return save({
-      defaultPath: vychoziNazev,
-      filters: [{ name: "PDF", extensions: ["pdf"] }, { name: "All Files", extensions: ["*"] }],
-    });
-  },
-  tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
-  pripravFotky: async (data) => {
-    if (!data.photos || data.photos.length === 0) return data;
-    return { ...data, photos: await fotkyDoDokumentu(supabase, data.photos) };
-  },
-  hlaska: showToast,
-  hotovyExport: showExportSuccessToast,
-  telemetrie: trackDocumentAction,
-  ted: () => performance.now(),
-};
-
-async function runWebDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData) {
-  return spustWebovyDokument(mode, docType, sid, data, zavislostiDokumentu);
-}
-
-async function runDesktopDocument(mode: DocMode, docType: DocTypeForPrint, sid: string, data: DocumentData, defaultFileName: string) {
-  return spustDesktopovyDokument(mode, docType, sid, data, defaultFileName, zavislostiDokumentu);
-}
-
-const TICKET_DOC_FILE_PREFIX: Partial<Record<DocTypeForPrint, string>> = {
-  zakazkovy_list: "zakazka",
-  zarucni_list: "zarucni-list",
-  diagnosticky_protokol: "diagnostika",
-  smlouva_zapujcka: "zapujcka",
-};
-
-async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint, ticket: TicketEx, serviceId?: string | null) {
-  const sid = serviceId ?? undefined;
-  if (!sid) {
-    showToast(mode === "print" ? "Vyberte servis pro tisk." : "Vyberte servis pro export.", "error");
-    return;
-  }
-  // Odkaz na zákaznický portál do dokumentu (QR „Stav zakázky online“ v JobiDocs).
-  // Token vzniká při prvním tisku; když RPC selže (starší server), tiskne se bez něj.
-  let withToken = ticket;
-  if (!ticket.portalToken) {
-    try {
-      const token = await ensurePortalToken(ticket.id);
-      withToken = { ...ticket, portalToken: token };
-    } catch {
-      /* bez portálu */
-    }
-  }
-  const data = ticketDocData(withToken, docType);
-  if (isWeb()) return runWebDocument(mode, docType, sid, data);
-  return runDesktopDocument(mode, docType, sid, data, `${TICKET_DOC_FILE_PREFIX[docType] ?? docType}-${ticket.code}.pdf`);
-}
-
-async function exportTicketToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "zakazkovy_list", ticket, serviceId);
-}
-
-async function printTicket(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "zakazkovy_list", ticket, serviceId);
-}
-
-async function exportDiagnosticProtocolToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "diagnosticky_protokol", ticket, serviceId);
-}
-
-async function printDiagnosticProtocol(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "diagnosticky_protokol", ticket, serviceId);
-}
-
-async function printZapujcku(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "smlouva_zapujcka", ticket, serviceId);
-}
-
-async function exportZapujckuToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "smlouva_zapujcka", ticket, serviceId);
-}
-
-async function exportWarrantyToPDF(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("export", "zarucni_list", ticket, serviceId);
-}
-
-async function printWarranty(ticket: TicketEx, serviceId?: string | null) {
-  return runTicketDocument("print", "zarucni_list", ticket, serviceId);
-}
-
-function showExportSuccessToast(filePath: string) {
-  const shortPath = filePath.replace(/^.*[/\\]/, "");
-  // Ve webu soubor jen spadne do složky Stažené – není co otevírat ve Finderu.
-  if (isWeb()) {
-    showToast(`PDF uložen: ${shortPath}`, "success");
-    return;
-  }
-  showPersistentToast(`PDF uložen: ${shortPath}`, "success", {
-    actionLabel: "Otevřít složku",
-    onAction: async () => {
-      try {
-        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-        await revealItemInDir(filePath);
-      } catch (err) {
-        showToast("Nelze otevřít složku: " + (err instanceof Error ? err.message : String(err)), "error");
-      }
-    },
-  });
-}
-
-async function quickPrintFromList(
-  ticket: TicketEx,
-  docType: "ticket" | "diagnostic" | "warranty",
-  serviceId: string | null
-) {
-  if (docType === "ticket") await printTicket(ticket, serviceId);
-  else if (docType === "diagnostic") await printDiagnosticProtocol(ticket, serviceId);
-  else await printWarranty(ticket, serviceId);
-}
-
-
-// Document Action Picker Component (for each document type) – pořadí: Tisk, Export
-// ========================
-// Page
-// ========================
-type ModelWithHierarchy = DeviceModel & {
-  fullName: string;
-  brandName: string;
-  categoryName: string;
-};
-
 export default function Orders({
   activeServiceId,
   serviceName = null,
@@ -927,61 +138,15 @@ export default function Orders({
   const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
+  const mojeId = session?.user?.id ?? null;
   const { profile: userProfile } = useUserProfile();
   const { hasCapability, isAdmin } = useActiveRole(activeServiceId);
   const canPrintExport = hasCapability("can_print_export");
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
-  const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
-  /**
-   * Aktuální zakázky mimo React – pro úpravy provedených oprav, které se
-   * ukládají hned do databáze. Několik změn za sebou v jednom kliknutí
-   * (cena, náklady, čas, díly) musí vidět výsledek té předchozí, a ne stav
-   * z posledního vykreslení.
-   */
-  const cloudTicketsRef = useRef<TicketEx[]>([]);
-  cloudTicketsRef.current = cloudTickets;
-  /* Pro První kroky: id všech zakázek – karta si z nich podle stopy v configu
-     odečte ukázkové, aby „první zakázku“ neodškrtla ukázka. */
-  const ticketIds = useMemo(() => cloudTickets.map((t) => t.id), [cloudTickets]);
-  /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
-  const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
-  const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
-  /**
-   * Zakázky, kterým okamžitý zápis oprav selhal – opravy jsou jen v paměti
-   * a uloží se při zavření detailu. Do té doby je realtime nesmí přepsat,
-   * jinak by po nich zůstala jen rezervace dílů ve skladu.
-   */
-  const neulozeneOpravyRef = useRef<Set<string>>(new Set());
-  /** Evidence pro sloučení řádku z databáze s pamětí – viz src/lib/slouceniZakazky.ts. */
-  const evidenceZapisu = useCallback(
-    (): EvidenceZapisu => ({
-      bezici: rozpracovaneZapisyOpravRef.current,
-      odlozene: odlozeneZapisyOpravRef.current,
-      neulozene: neulozeneOpravyRef.current,
-    }),
-    []
-  );
-  /** Odložené zápisy kontroly po opravě – psaní poznámky jinak posílá zápis na každou klávesu. */
-  const odlozenaKontrolaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
-  const [ticketsLoading, setTicketsLoading] = useState(false);
-  /** Seznam už jde používat, ale ještě není celý – dotahuje se zbytek stránek. */
-  const [ticketsPartial, setTicketsPartial] = useState(false);
-  const [ticketsError, setTicketsError] = useState<string | null>(null);
-  const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
-  const [claimsLoading, setClaimsLoading] = useState(false);
-  const [claimsError, setClaimsError] = useState<string | null>(null);
-  const [commentsByTicket, setCommentsByTicket] = useState<Record<string, TicketComment[]>>({});
-  /** Živé profily autorů komentářů (fotka a přezdívka) – viz TicketComments. */
-  const [commentAuthorProfiles, setCommentAuthorProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
-
-  const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
+  const { rozpracovaneZapisyOpravRef, odlozeneZapisyOpravRef, neulozeneOpravyRef, evidenceZapisu, odlozenaKontrolaRef, odlozenaDiagnostikaRef } = useEvidenceZapisu();
 
   // Refs for race condition protection
-  const ticketsReqIdRef = useRef(0);
-  const claimsReqIdRef = useRef(0);
-  const commentsReqIdRef = useRef(0);
-  const docsReqIdRef = useRef(0);
   const activeServiceIdRef = useRef<string | null>(activeServiceId);
   
   // Keep activeServiceIdRef in sync
@@ -989,376 +154,51 @@ export default function Orders({
     activeServiceIdRef.current = activeServiceId;
   }, [activeServiceId]);
   
-  // Load documents config from DB when activeServiceId changes
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      return;
-    }
-    
-    const myReqId = ++docsReqIdRef.current;
-    
-    const loadConfig = async () => {
-      const dbConfig = await loadDocumentsConfigFromDB(activeServiceId);
-      
-      // Check if this request is still valid
-      if (myReqId !== docsReqIdRef.current) {
-        return; // This request is stale, ignore it
-      }
-      
-      if (dbConfig) {
-        setDocumentsConfig(dbConfig);
-      }
-    };
-    
-    loadConfig().catch((err) => {
-      console.error("[Orders] Error loading documents config:", err);
-    });
+  useKonfiguraceDokumentu(activeServiceId, activeServiceIdRef);
 
-    /* Firemní údaje pro tisk se berou z kopie v prohlížeči, a tu zapisuje
-       jen obrazovka Nastavení. Kdo ji nikdy neotevřel (nový zákazník, druhý
-       počítač), tiskl zakázkový list bez názvu servisu. Doplní se z databáze,
-       kde je od založení servisu. */
-    void doplnFiremniUdajeZDb(activeServiceId).catch((err) => {
-      console.error("[Orders] Firemní údaje se nedoplnily:", err);
-    });
+  const {
+    ordersShowClaimsInList,
+    hodinovaSazba,
+    zaokrouhleniPrace,
+    kontrolniSeznamy,
+    nahradniZarizeni,
+    casNaOpraveZapnuto,
+    pridelovaniTechnika,
+    prednastaveneSlevy,
+    pravidlaOdmen,
+    skryteSekce,
+    zasilkyZapnuty,
+    nastaveniZasilek,
+    chatZapnuty,
+  } = useNastaveniServisu(activeServiceId);
 
-    return () => {
-      docsReqIdRef.current++;
-    };
-  }, [activeServiceId]);
+  const {
+    cloudTickets,
+    setCloudTickets,
+    cloudTicketsRef,
+    ticketIds,
+    ticketsLoading,
+    ticketsPartial,
+    ticketsError,
+    cloudClaims,
+    setCloudClaims,
+    claimsLoading,
+    claimsError,
+    refetchClaims,
+  } = useNacitaniZakazek(activeServiceId);
 
-  // Realtime subscription for service_document_settings
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-
-    const topic = `service_document_settings:${activeServiceId}`;
-    devLog("[RT] subscribe", topic, new Date().toISOString());
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "service_document_settings",
-          filter: `service_id=eq.${activeServiceId}`,
-        },
-        async (payload) => {
-          devLog("[Orders] service_document_settings changed", payload);
-          // Use ref to get current activeServiceId (not closure value)
-          const sid = activeServiceIdRef.current;
-          if (!sid) return;
-          
-          // Reload config from DB
-          const dbConfig = await loadDocumentsConfigFromDB(sid);
-          if (dbConfig) {
-            setDocumentsConfig(dbConfig);
-            // Sync to localStorage as fallback
-            localStorage.setItem(STORAGE_KEYS.DOCUMENTS_CONFIG, JSON.stringify(dbConfig));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      devLog("[RT] unsubscribe", topic, new Date().toISOString());
-      if (supabase) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, [activeServiceId]);
-
-  /* Nastavení servisu do stavu stránky. Jedno místo pro první načtení,
-     ruční událost i realtime – dřív to byly dvě skoro stejné kopie a na
-     realtime se zapomnělo. Kvůli tomu se nově přidané náhradní zařízení
-     v otevřené aplikaci v detailu zakázky vůbec neobjevilo: stránka
-     Zakázky zůstává připojená a config si nikdy znovu nenačetla. */
-  const pouzijConfigServisu = useCallback((config: any) => {
-    setOrdersShowClaimsInList(!!config?.orders_show_claims_in_list);
-    setHodinovaSazba(typeof config?.hodinova_sazba === "number" ? config.hodinova_sazba : null);
-    setZaokrouhleniPrace(normalizujZaokrouhleni(config?.zaokrouhleni_prace));
-    setKontrolniSeznamy(normalizujSablony(config?.kontrolniSeznamy));
-    setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
-    setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
-    setPridelovaniTechnika(config?.pridelovani_technika !== false);
-    setChatZapnuty(config?.chat !== false);
-    setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
-    setPravidlaOdmen(normalizujOdmeny(config?.odmeny).pravidla.filter((p) => p.aktivni));
-    setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
-    setZasilkyZapnuty(config?.zasilky === true);
-    setNastaveniZasilek(normalizujNastaveniZasilek(config ?? undefined));
-  }, []);
-
-  const nactiConfigServisu = useCallback(() => {
-    if (!activeServiceId || !supabase) return;
-    (supabase.from("service_settings") as any)
-      .select("config")
-      .eq("service_id", activeServiceId)
-      .maybeSingle()
-      .then(({ data }: any) => pouzijConfigServisu(data?.config))
-      .catch(() => {});
-  }, [activeServiceId, pouzijConfigServisu]);
-
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setOrdersShowClaimsInList(false);
-      return;
-    }
-    nactiConfigServisu();
-  }, [activeServiceId, nactiConfigServisu]);
-
-  useEffect(() => {
-    window.addEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
-    return () => window.removeEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
-  }, [nactiConfigServisu]);
-
-  // Změna nastavení odjinud (jiný počítač, druhá záložka, kolega) se projeví hned.
-  useEffect(() => {
-    if (!activeServiceId) return;
-    return subscribeServiceConfig(activeServiceId, (config) => pouzijConfigServisu(config), "orders");
-  }, [activeServiceId, pouzijConfigServisu]);
-
-  // Load tickets from cloud when activeServiceId changes
-  //
-  // Čtou se jen sloupce, ze kterých se skládá seznam (SLOUPCE_SEZNAMU).
-  // Zbytek – diagnostika, fotky, kontrola po opravě, zápůjčka, adresa –
-  // se dotáhne až při otevření konkrétní zakázky. U servisu s 2 100
-  // zakázkami tím ze seznamu zmizely přes dva megabajty (docs/ZATEZ.md).
-  //
-  // Načítá se ve dvou kolech. První dotaz vezme jen PRVNI_DAVKA_ZAKAZEK
-  // nejnovějších zakázek – tolik, že první stránka seznamu je z čeho vykreslit –
-  // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím první
-  // řádek seznamu objevil za 520 ms místo 2 505 ms (medián ze tří běhů,
-  // 6. 9. 2026, viz docs/ZATEZ.md oddíl 5).
-  // Servis pod dvě stě zakázek pošle pořád jen jeden dotaz.
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-        setCloudTickets([]);
-      setTicketsLoading(false);
-      setTicketsPartial(false);
-        setTicketsError(null);
-      return;
-    }
-
-    const myReqId = ++ticketsReqIdRef.current;
-
-    setTicketsLoading(true);
-    setTicketsPartial(false);
-    setTicketsError(null);
-
-    const stranka = (from: number, to: number) =>
-      (supabase!
-        .from("tickets") as any)
-        .select(SLOUPCE_SEZNAMU)
-        .eq("service_id", activeServiceId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to);
-
-    // `service_id` se nečte – pro celý seznam je stejné a v každém řádku by to
-    // bylo jen uuid navíc po drátě. Doplní se z aktivního servisu, protože
-    // podle něj se pak tisknou dokumenty a otevírá SMS.
-    const doZakazky = (r: any): TicketEx => mapSupabaseTicketToTicketEx({ ...r, service_id: activeServiceId });
-
-    /* Zakázka, kterou si detail mezitím dotáhl celou, se nesmí vrátit na
-       sloupce seznamu – druhé kolo dojíždí vteřiny po prvním a uživatel už
-       může mít detail otevřený. */
-    const zachovejDotazene = (nove: TicketEx[], prev: TicketEx[]): TicketEx[] => {
-      const plne = new Map(prev.filter((t) => t.uplna).map((t) => [t.id, t] as const));
-      return plne.size === 0 ? nove : nove.map((t) => plne.get(t.id) ?? t);
-    };
-
-    const loadTickets = async () => {
-      try {
-        const { data: prvni, error: chybaPrvni } = await stranka(0, PRVNI_DAVKA_ZAKAZEK - 1);
-
-        // Check if this request is still valid
-        if (myReqId !== ticketsReqIdRef.current) {
-          return; // This request is stale, ignore it
-        }
-        if (chybaPrvni) throw chybaPrvni;
-
-        const prvniRadky: any[] = prvni ?? [];
-        setCloudTickets((prev) => zachovejDotazene(prvniRadky.map(doZakazky), prev));
-        setTicketsLoading(false);
-
-        // Kratší odpověď = servis nemá víc zakázek, druhé kolo nemá co dotáhnout.
-        if (prvniRadky.length < PRVNI_DAVKA_ZAKAZEK) {
-          setTicketsPartial(false);
-          return;
-        }
-
-        // Seznam je od téhle chvíle použitelný, ale ještě není celý – hledání
-        // a počty by na neúplných datech lhaly, proto se to dá poznat zvenčí.
-        setTicketsPartial(true);
-        const { data, error } = await fetchAllPages((from, to) =>
-          stranka(PRVNI_DAVKA_ZAKAZEK + from, PRVNI_DAVKA_ZAKAZEK + to)
-        );
-
-        if (myReqId !== ticketsReqIdRef.current) return;
-        if (error) throw error;
-
-        const zbytek: any[] = data ?? [];
-        setCloudTickets((prev) => zachovejDotazene([...prvniRadky, ...zbytek].map(doZakazky), prev));
-        setTicketsPartial(false);
-      } catch (err) {
-        // Check if this request is still valid before setting error
-        if (myReqId !== ticketsReqIdRef.current) {
-          return; // This request is stale, ignore it
-        }
-        console.error("[Orders] Error loading tickets:", err);
-        setTicketsError(normalizeError(err) || "Neznámá chyba při načítání zakázek");
-        setCloudTickets([]);
-        setTicketsLoading(false);
-        setTicketsPartial(false);
-      }
-    };
-
-    loadTickets();
-
-    return () => {
-      ticketsReqIdRef.current++;
-    };
-  }, [activeServiceId, supabase]);
-
-  // Load warranty claims when activeServiceId changes
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setCloudClaims([]);
-      setClaimsLoading(false);
-      setClaimsError(null);
-      return;
-    }
-    const myReqId = ++claimsReqIdRef.current;
-    const client = supabase;
-    setClaimsLoading(true);
-    setClaimsError(null);
-    const loadClaims = async () => {
-      if (!client) return;
-      try {
-        const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
-          (client
-            .from("warranty_claims") as any)
-            .select("*")
-            .eq("service_id", activeServiceId)
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: false })
-            .range(from, to)
-        );
-        if (myReqId !== claimsReqIdRef.current) return;
-        if (error) throw error;
-        setCloudClaims(data ?? []);
-      } catch (err) {
-        if (myReqId !== claimsReqIdRef.current) return;
-        setClaimsError(normalizeError(err) || "Chyba při načítání reklamací");
-        setCloudClaims([]);
-      } finally {
-        if (myReqId === claimsReqIdRef.current) setClaimsLoading(false);
-      }
-    };
-    loadClaims();
-    return () => { claimsReqIdRef.current++; };
-  }, [activeServiceId, supabase]);
-
-  // Interní komentáře (chat) k zakázkám – dřív jen v localStorage, teď sdílená
-  // tabulka ticket_comments.
-  //
-  // Dřív se natáhly komentáře **celého servisu** a seskupily podle ticket_id.
-  // Vidět je přitom vždycky jen ten jeden otevřený detail: u zátěžového servisu
-  // to bylo 6 664 řádků v sedmi kolech po síti kvůli pár řádkům, které si někdo
-  // přečte. Načítají se proto ke konkrétní zakázce – ze čtyřiceti osmi dotazů
-  // při otevření seznamu zakázek tím ubylo sedm (6. 9. 2026, docs/ZATEZ.md).
-  const nactiKomentare = useCallback(async (ticketIds: string[]) => {
-    if (!activeServiceId || !supabase || ticketIds.length === 0) return;
-    const myReqId = ++commentsReqIdRef.current;
-    const { data, error } = await fetchAllPages<SupabaseTicketCommentRow>((from, to) =>
-      (supabase!.from("ticket_comments") as any)
-        .select("id,ticket_id,author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
-        .eq("service_id", activeServiceId)
-        .in("ticket_id", ticketIds)
-        .order("created_at", { ascending: true })
-        .range(from, to)
-    );
-    if (myReqId !== commentsReqIdRef.current) return;
-    if (error) {
-      console.error("[Orders] Error loading ticket comments:", error);
-      return;
-    }
-    // Prázdné pole pro každou dotázanou zakázku: bez něj by se u zakázky, ze
-    // které někdo poslední komentář smazal, ukazoval starý obsah z paměti.
-    const grouped: Record<string, TicketComment[]> = {};
-    for (const id of ticketIds) grouped[id] = [];
-    for (const row of data) {
-      const c = mapSupabaseCommentRow(row);
-      (grouped[c.ticketId] ??= []).push(c);
-    }
-    setCommentsByTicket((prev) => ({ ...prev, ...grouped }));
-  }, [activeServiceId, supabase]);
-
-  /** Zakázky, jejichž komentáře jsou zrovna na obrazovce – kvůli realtime obnově. */
-  const otevreneKomentareRef = useRef<string[]>([]);
-
-  // Přepnutí servisu musí komentáře zahodit, jinak by v novém servisu chvíli
-  // svítily cizí. (Dřív to zařizovalo hromadné načtení celého servisu.)
-  useEffect(() => {
-    setCommentsByTicket({});
-    otevreneKomentareRef.current = [];
-    return () => { commentsReqIdRef.current++; };
-  }, [activeServiceId]);
-
-  // Realtime subscription for ticket_comments – ať se nové/připnuté komentáře
-  // objeví u všech kolegů na všech zařízeních, ne jen tam, kde vznikly.
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-    const topic = `ticket_comments:${activeServiceId}`;
-    const client = supabase;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ticket_comments", filter: `service_id=eq.${activeServiceId}` },
-        () => void nactiKomentare(otevreneKomentareRef.current)
-      )
-      .subscribe();
-    return () => {
-      if (client) client.removeChannel(channel);
-    };
-  }, [activeServiceId, supabase, nactiKomentare]);
-
-  const refetchClaims = useCallback(async () => {
-    if (!activeServiceId || !supabase) return;
-    const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
-      (supabase!.from("warranty_claims") as any)
-        .select("*")
-        .eq("service_id", activeServiceId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to)
-    );
-    if (!error && data) setCloudClaims(data);
-  }, [activeServiceId, supabase]);
-
+  const {
+    commentAuthorProfiles,
+    nactiKomentare,
+    otevreneKomentareRef,
+    commentDraftByTicket,
+    commentsFor,
+    addComment,
+    editComment,
+    togglePin,
+    handleCommentDraftChange,
+  } = useKomentare({ activeServiceId, session, userProfile });
   const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
-
-  // Realtime subscription for warranty_claims
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-    const topic = `warranty_claims:${activeServiceId}`;
-    const client = supabase;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
-        () => refetchClaims()
-      )
-      .subscribe();
-    return () => {
-      if (client) client.removeChannel(channel);
-    };
-  }, [activeServiceId, supabase, refetchClaims]);
 
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -1456,188 +296,13 @@ export default function Orders({
     }
   }, [closeDetailWhen]);
 
-  // Realtime subscription for tickets
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-
-    const topic = `tickets:${activeServiceId}`;
-    devLog("[RT] subscribe", topic, new Date().toISOString());
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "tickets",
-          filter: `service_id=eq.${activeServiceId}`,
-        },
-        async (payload) => {
-          devLog("[Orders] tickets changed", payload);
-          
-          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            devLog("[RT tickets] event", payload.eventType, {
-              id: (payload.new as any)?.id,
-              service_id: (payload.new as any)?.service_id,
-              status: (payload.new as any)?.status,
-              updated_at: (payload.new as any)?.updated_at,
-            });
-
-            const newTicket = mapSupabaseTicketToTicketEx(payload.new as any);
-            const wasDeleted = (payload.old as any)?.deleted_at != null;
-            const isDeleted = (payload.new as any)?.deleted_at != null;
-            
-            // Handle restore: deleted_at changed from not null to null
-            if (wasDeleted && !isDeleted) {
-              // Ticket was restored - add it back
-            setCloudTickets((prev) => {
-                const existing = prev.find((t) => t.id === newTicket.id);
-                devLog("[RT tickets] setCloudTickets (restore)", {
-                  id: newTicket.id,
-                  hadExisting: !!existing,
-                  prevLen: prev.length,
-                  newStatus: newTicket.status,
-                });
-                if (existing) {
-                  // Update existing – stejné sloučení jako u běžné změny níže.
-                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
-                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
-                } else {
-                  // Add new - insert in correct position based on created_at
-                  const sorted = [...prev, newTicket].sort((a, b) => {
-                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return bTime - aTime; // Descending order (newest first)
-                  });
-                  return sorted;
-                }
-              });
-            } else if (!isDeleted) {
-              // Ticket is not deleted - upsert
-              setCloudTickets((prev) => {
-                const existing = prev.find((t) => t.id === newTicket.id);
-                devLog("[RT tickets] setCloudTickets (upsert)", {
-                  id: newTicket.id,
-                  hadExisting: !!existing,
-                  prevLen: prev.length,
-                  newStatus: newTicket.status,
-                  oldStatus: existing?.status,
-                });
-                
-                // Check if this is the currently edited ticket and if version conflict occurred
-                if (existing && isEditing && detailId === newTicket.id) {
-                  const existingVersion = existing.version ?? 0;
-                  const newVersion = newTicket.version ?? 0;
-                  if (newVersion > existingVersion) {
-                    // Remote update detected during editing - show banner/toast
-                    devLog("[RT tickets] Remote update detected for edited ticket", {
-                      ticketId: newTicket.id,
-                      existingVersion,
-                      newVersion,
-                    });
-                    showToast("Zakázka se změnila na pozadí", "info");
-                  }
-                }
-                
-                if (existing) {
-                  // Provedené opravy se ukládají hned; dokud zápis běží, čeká na
-                  // odklad, nebo selhal a čeká na zavření detailu, drží se místní
-                  // verze. Jinak by změna stavu od kolegy vrátila opravy z databáze,
-                  // které jsou o krok pozadu, a ve skladu by zůstala rezervace na
-                  // opravu, kterou nikdo nevidí. Stejně se hned ukládá kontrola po
-                  // opravě a náhradní zařízení – ozvěna staršího zápisu by přepsala
-                  // kliknutí, které přišlo mezitím. Pravidlo: src/lib/slouceniZakazky.ts.
-                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
-                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
-                } else {
-                  // Add new - insert in correct position based on created_at
-                  const sorted = [...prev, newTicket].sort((a, b) => {
-                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return bTime - aTime; // Descending order (newest first)
-                  });
-                  return sorted;
-                }
-              });
-            } else {
-              // Ticket was soft-deleted (deleted_at changed from null to not null)
-              setCloudTickets((prev) => prev.filter((t) => t.id !== newTicket.id));
-            }
-          } else if (payload.eventType === "DELETE") {
-            // Hard delete - remove from list
-            const deletedId = (payload.old as any)?.id || (payload.new as any)?.id;
-            if (deletedId) {
-            setCloudTickets((prev) => prev.filter((t) => t.id !== deletedId));
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      devLog("[RT] unsubscribe", topic, new Date().toISOString());
-      if (supabase) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, [activeServiceId, isEditing, detailId]);
+  useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu });
 
   // Cloud mode only: show only cloud tickets
   const { activeBranchId, isMulti: hasBranches, branches, branchById, branchForNew } = useBranches();
   const [moveBranchOpen, setMoveBranchOpen] = useState(false);
   const tickets = useMemo(() => filterByBranch(cloudTickets, activeBranchId), [cloudTickets, activeBranchId]);
 
-  const [activeGroup, setActiveGroup] = useState<GroupKey>("active");
-  const [activeStatusKey, setActiveStatusKey] = useState<string | null>(null);
-  const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
-
-  const [query, setQuery] = useState("");
-  const [statusById, setStatusById] = useState<Record<string, string>>({});
-
-  const [isNewOpen, setIsNewOpen] = useState(false);
-  const [newDraft, setNewDraft] = useState<NewOrderDraft>(() => safeLoadDraft() ?? defaultDraft());
-  const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [shouldOpenNew, setShouldOpenNew] = useState(false);
-  const [matchedCustomer, setMatchedCustomer] = useState<{
-    id: string;
-    name: string;
-    phone?: string;
-    email?: string;
-    company?: string;
-  } | null>(null);
-  const [customerMatchDecision, setCustomerMatchDecision] = useState<"undecided" | "accepted" | "rejected">("undecided");
-  const lastLookupPhoneNormRef = useRef<string | null>(null);
-  const phoneLookupDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  /** Sekce „Další údaje“ v nové zakázce – stav se pamatuje v localStorage. */
-  const [newOrderMoreOpen, setNewOrderMoreOpen] = useState<boolean>(() => {
-    try {
-      // Výchozí otevřené – servis při příjmu většinou vyplňuje i IMEI, heslo
-      // a stav zařízení; sbalení si pamatujeme, jen když ho uživatel zavře.
-      const v = localStorage.getItem(NEW_ORDER_MORE_OPEN_KEY);
-      return v === null ? true : v === "1";
-    } catch {
-      return false;
-    }
-  });
-  /** „Další údaje zařízení“ u každého zařízení v nové zakázce – výchozí otevřené, sbalení se pamatuje. */
-  const [newOrderDeviceMoreOpen, setNewOrderDeviceMoreOpen] = useState<boolean>(() => {
-    try {
-      const v = localStorage.getItem(NEW_ORDER_DEVICE_MORE_OPEN_KEY);
-      return v === null ? true : v === "1";
-    } catch {
-      return true;
-    }
-  });
-  /** „Další údaje zákazníka“ (e-mail, firma, adresa, poznámka) v kartě Zákazník – výchozí otevřené, sbalení se pamatuje. */
-  const [newOrderCustomerMoreOpen, setNewOrderCustomerMoreOpen] = useState<boolean>(() => {
-    try {
-      const v = localStorage.getItem(NEW_ORDER_CUSTOMER_MORE_OPEN_KEY);
-      return v === null ? true : v === "1";
-    } catch {
-      return true;
-    }
-  });
   /* Zákaznický portál a Diagnostika v detailu jsou výchozím stavem sbalené –
      při běžné práci se nečtou a odsouvaly opravy a stav o obrazovku níž. */
   const [detailPortalOpen, prepnoutDetailPortal, setDetailPortalOpen] = useSbaleno(DETAIL_PORTAL_OPEN_KEY, false);
@@ -1648,12 +313,6 @@ export default function Orders({
     else setDetailDiagnostikaOpen(true);
     window.setTimeout(() => sjetNaKartu(id), 0);
   };
-  /** Které zařízení v nové zakázce je rozbalené (ostatní jsou sbalené karty). */
-  const [expandedDeviceIdx, setExpandedDeviceIdx] = useState<number>(0);
-  /** Rozbalený úplný seznam oprav z ceníku u zařízení (index → true). */
-  const [catalogShowAll, setCatalogShowAll] = useState<Record<number, boolean>>({});
-  const createTicketRef = useRef<() => void>(() => {});
-  const newOrderBodyRef = useRef<HTMLDivElement | null>(null);
   /**
    * Co se při přepnutí stavu stane automaticky (tisk podle nastavení
    * dokumentů, pravidla automatizací) – ukazuje se v nabídce stavů.
@@ -1692,14 +351,11 @@ export default function Orders({
 
   /** Otázky při stornu: na kterou zakázku a do jakého stavu se čeká na odpověď. */
   const [stornoDotaz, setStornoDotaz] = useState<{ ticketId: string; next: string } | null>(null);
-  const [commentDraftByTicket, setCommentDraftByTicket] = useState<Record<string, string>>({});
   const [openQuickPrintTicket, setOpenQuickPrintTicket] = useState<TicketEx | null>(null);
   /** Jen pro přepínání tlačítka na kartě – ať se kvůli němu nepřekresluje celý seznam. */
   const openQuickPrintTicketRef = useRef<TicketEx | null>(null);
   openQuickPrintTicketRef.current = openQuickPrintTicket;
   const [quickPrintDropdownRect, setQuickPrintDropdownRect] = useState<{ top: number; left: number; right: number; height: number } | null>(null);
-
-  const [ordersPage, setOrdersPage] = useState(0);
 
   // Delete ticket dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -1708,68 +364,21 @@ export default function Orders({
   const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
   /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu); null = výběr hledáním. */
   const [claimSourceTicket, setClaimSourceTicket] = useState<TicketEx | null>(null);
-  const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
-  /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
-  const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
-  /** Krok zaokrouhlení naměřeného času na hodinovou práci (service_settings.config.zaokrouhleni_prace). */
-  const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
-  /** Šablony kontroly po opravě (service_settings.config.kontrolniSeznamy, jinak výchozí). */
-  const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
-  /** Stálý seznam náhradních zařízení servisu (service_settings.config.nahradniZarizeni). */
-  const [nahradniZarizeni, setNahradniZarizeni] = useState<NahradniZarizeni[]>([]);
-  /** Stopky na zakázce – volitelné (service_settings.config.cas_na_oprave). */
-  const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
-  /** Přidělování technika (config.pridelovani_technika, výchozí zapnuto). Servis s jedním technikem si ho vypne. */
-  const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
-  /** Přednastavené slevy (config.prednastavene_slevy) – tlačítka u ceny oprav v detailu. */
-  const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
-  /** Aktivní pravidla odměn (config.odmeny) – u opravy, na kterou sedí, se nabízí příznak „nabídnuto navíc“. */
-  const [pravidlaOdmen, setPravidlaOdmen] = useState<PravidloOdmeny[]>([]);
-  /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
-  const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
-  /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
-  const [zasilkyZapnuty, setZasilkyZapnuty] = useState(false);
-  const [nastaveniZasilek, setNastaveniZasilek] = useState<NastaveniZasilek>(() => normalizujNastaveniZasilek(undefined));
   /** Zásilky otevřené zakázky (dodá karta Kde je zakázka) – pro kroky v Postupu zakázky. */
   const [historieZasilek, setHistorieZasilek] = useState<{ ticketId: string; zasilky: Zasilka[] } | null>(null);
-  /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
-  const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
-  const [ticketHistoryEntries, setTicketHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
-  const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
-  const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
-  const [ticketHistoryExpandedId, setTicketHistoryExpandedId] = useState<string | null>(null);
   const [isEditingClaim, setIsEditingClaim] = useState(false);
   const [editedClaim, setEditedClaim] = useState<Partial<WarrantyClaimRow>>({});
   /** Draft zákroků v náhledu reklamace – při změně reklamace se resetuje */
   const [claimResolutionDraft, setClaimResolutionDraft] = useState<ClaimResolutionItem[] | null>(null);
   const [claimHistoryModalOpen, setClaimHistoryModalOpen] = useState(false);
-  const [claimHistoryEntries, setClaimHistoryEntries] = useState<Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null }>>([]);
-  const [claimHistoryLoading, setClaimHistoryLoading] = useState(false);
-  const [claimHistoryError, setClaimHistoryError] = useState<string | null>(null);
   const [deleteClaimDialogOpen, setDeleteClaimDialogOpen] = useState(false);
   const [deleteClaimId, setDeleteClaimId] = useState<string | null>(null);
   const [smsPanelOpen, setSmsPanelOpen] = useState(false);
-  const [smsUnreadCount, setSmsUnreadCount] = useState(0);
-  const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
-  const [smsUnreadListBump, setSmsUnreadListBump] = useState(0);
-  const [smsActivatedForService, setSmsActivatedForService] = useState(false);
+
+  const smsActivatedForService = useSmsDostupnost(activeServiceId);
   /** Číslo i modul zároveň – jen tak se SMS smí kdekoli objevit. */
   const smsAvailable = smsActivatedForService && smsEnabled;
-
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setSmsActivatedForService(false);
-      return;
-    }
-    supabase
-      .from("service_phone_numbers")
-      .select("id")
-      .eq("service_id", activeServiceId)
-      .eq("active", true)
-      .maybeSingle()
-      .then(({ data }) => setSmsActivatedForService(!!data));
-  }, [activeServiceId]);
 
   // Sync ref for SMS notifications: when SMS panel is open for a ticket, don't show OS notification for that ticket
   useEffect(() => {
@@ -1781,142 +390,10 @@ export default function Orders({
     };
   }, [smsPanelOpen, detailId, smsPanelTicketIdRef]);
 
-  // SMS unread on detail header: conv linked by ticket_id OR same customer phone (shared thread)
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    if (!detailId || !activeServiceId || !client) {
-      setSmsUnreadCount(0);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const convIdSet = new Set<string>();
-      const { data: convsTicket } = await client.from("sms_conversations").select("id").eq("ticket_id", detailId);
-      convsTicket?.forEach((c) => convIdSet.add(c.id));
-      const { data: tick } = await client
-        .from("tickets")
-        .select("customer_phone")
-        .eq("id", detailId)
-        .eq("service_id", activeServiceId)
-        .maybeSingle();
-      const phoneNorm = tick?.customer_phone ? normalizePhone(String(tick.customer_phone)) : null;
-      if (phoneNorm) {
-        const { data: convPhone } = await client
-          .from("sms_conversations")
-          .select("id")
-          .eq("service_id", activeServiceId)
-          .eq("customer_phone", phoneNorm)
-          .maybeSingle();
-        if (convPhone?.id) convIdSet.add(convPhone.id);
-      }
-      if (convIdSet.size === 0) {
-        if (!cancelled) setSmsUnreadCount(0);
-        return;
-      }
-      const { count, error } = await client
-        .from("sms_messages")
-        .select("id", { count: "exact", head: true })
-        .in("conversation_id", [...convIdSet])
-        .eq("direction", "inbound")
-        .is("read_at", null);
-      if (cancelled) return;
-      setSmsUnreadCount(error ? 0 : count ?? 0);
-    })();
-    return () => { cancelled = true; };
-  }, [detailId, activeServiceId]);
+  const [smsUnreadCount, setSmsUnreadCount] = useSmsNeprecteneDetailu(detailId, activeServiceId);
 
-  // Load ticket history when history modal opens
-  useEffect(() => {
-    if (!ticketHistoryModalOpen || !detailId || !supabase || !activeServiceId) {
-      if (!ticketHistoryModalOpen) {
-        setTicketHistoryEntries([]);
-        setTicketHistoryError(null);
-        setTicketHistoryExpandedId(null);
-      }
-      return;
-    }
-    const ticketId = detailId;
-    setTicketHistoryLoading(true);
-    setTicketHistoryError(null);
-    (async () => {
-      try {
-        const { data: rows, error } = await (supabase as any)
-          .from("ticket_history")
-          .select("id, action, changed_by, created_at, details")
-          .eq("ticket_id", ticketId)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        const entries = (rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>;
-        const userIds = [...new Set(entries.map((e) => e.changed_by).filter(Boolean))] as string[];
-        const nicknames: Record<string, string> = {};
-        if (userIds.length > 0) {
-          const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
-          if (profiles) {
-            for (const p of profiles) {
-              if (p.nickname) nicknames[p.id] = p.nickname;
-            }
-          }
-        }
-        setTicketHistoryEntries(
-          entries.map((e) => ({ ...e, nickname: (e.changed_by && nicknames[e.changed_by]) || null }))
-        );
-      } catch (err) {
-        console.error("[Orders] ticket history load error", err);
-        const code = (err as { code?: string })?.code;
-        const msg = code === "PGRST205"
-          ? "Historie zatím není k dispozici. V databázi chybí tabulka – spusť migraci (např. supabase db push)."
-          : (err instanceof Error ? err.message : "Nelze načíst historii");
-        setTicketHistoryError(msg);
-        setTicketHistoryEntries([]);
-      } finally {
-        setTicketHistoryLoading(false);
-      }
-    })();
-  }, [ticketHistoryModalOpen, detailId, activeServiceId, supabase]);
-
-  // Load claim history when claim history modal opens
-  useEffect(() => {
-    if (!claimHistoryModalOpen || !detailClaimId || !supabase || !activeServiceId) {
-      if (!claimHistoryModalOpen) {
-        setClaimHistoryEntries([]);
-        setClaimHistoryError(null);
-      }
-      return;
-    }
-    const claimId = detailClaimId;
-    setClaimHistoryLoading(true);
-    setClaimHistoryError(null);
-    (async () => {
-      try {
-        const { data: rows, error } = await (supabase as any)
-          .from("warranty_claim_history")
-          .select("id, action, changed_by, created_at, details")
-          .eq("warranty_claim_id", claimId)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        const entries = (rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>;
-        const userIds = [...new Set(entries.map((e) => e.changed_by).filter(Boolean))] as string[];
-        const nicknames: Record<string, string> = {};
-        if (userIds.length > 0) {
-          const { data: profiles } = await (supabase as any).from("profiles").select("id, nickname").in("id", userIds);
-          if (profiles) {
-            for (const p of profiles) {
-              if (p.nickname) nicknames[p.id] = p.nickname;
-            }
-          }
-        }
-        setClaimHistoryEntries(
-          entries.map((e) => ({ ...e, nickname: (e.changed_by && nicknames[e.changed_by]) || null }))
-        );
-      } catch (err) {
-        console.error("[Orders] claim history load error", err);
-        setClaimHistoryError(err instanceof Error ? err.message : "Nelze načíst historii");
-        setClaimHistoryEntries([]);
-      } finally {
-        setClaimHistoryLoading(false);
-      }
-    })();
-  }, [claimHistoryModalOpen, detailClaimId, activeServiceId, supabase]);
+  const { ticketHistoryEntries, ticketHistoryLoading, ticketHistoryError, ticketHistoryExpandedId, setTicketHistoryExpandedId } = useHistorieZakazky(ticketHistoryModalOpen, detailId, activeServiceId);
+  const { claimHistoryEntries, claimHistoryLoading, claimHistoryError } = useHistorieReklamace(claimHistoryModalOpen, detailClaimId, activeServiceId);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -1932,12 +409,6 @@ export default function Orders({
       window.removeEventListener("jobsheet:ui-updated" as any, onUiUpdated);
     };
   }, []);
-
-  useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const t of tickets) next[t.id] = t.status as any;
-    setStatusById(next);
-  }, [tickets]);
 
   useLayoutEffect(() => {
     if (!openQuickPrintTicket) {
@@ -2056,429 +527,75 @@ export default function Orders({
     return () => { cancelled = true; };
   }, [activeServiceId, onCreateInvoice, onOpenInvoice]);
 
-  // Ceník oprav (Zařízení a opravy) žije v DB. Dřív se tu četl jednou při
-  // startu z localStorage, kam ho zapisovala jen stará verze stránky
-  // Zařízení – v čistém prohlížeči byl proto katalog v zakázkách prázdný
-  // („Vybrat z katalogu“ nic nenabídlo). Teď se načte z DB a při změně
-  // ceníku se obnoví.
-  const [devicesData, setDevicesData] = useState<DevicesData>(() => safeLoadDevicesData());
-  useEffect(() => {
-    if (!activeServiceId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const load = async () => {
-      const res = await loadDevicesFromDb(activeServiceId);
-      if (cancelled || res.error) return;
-      setDevicesData(res.data);
-    };
-    const scheduleReload = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void load(); }, 800);
-    };
-    void load();
-    const channel = supabase
-      ? supabase
-          .channel(`orders-devices:${activeServiceId}`)
-          // Tabulka se jmenuje `repairs`; pod názvem „device_repairs“ žádná
-          // neexistuje, takže se odběr tiše navázal a nikdy nic neposlal –
-          // změna ceníku se v otevřené zakázce neprojevila až do načtení
-          // stránky znovu. Supabase na neznámou tabulku nijak neupozorní.
-          .on("postgres_changes", { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
-          .on("postgres_changes", { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
-          .subscribe()
-      : null;
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      if (channel && supabase) void supabase.removeChannel(channel);
-    };
-  }, [activeServiceId]);
-  /**
-   * Produkty skladu pro výběr dílů u provedených oprav. Čtou se z databáze –
-   * starší kopie v localStorage vzniká jen na stránce Sklad a na jiném
-   * počítači je prázdná, takže výběr dílů nic nenabízel. Načítá se při
-   * otevření detailu, aby stav skladu odpovídal.
-   */
-  const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
-  /**
-   * Sklad z databáze v plné podobě (stav, dodavatel, nákupní cena) plus živé
-   * rezervace přes všechny zakázky – z toho řádek „Díly“ pozná, že díl není
-   * skladem, a nabídne objednání u dodavatele (components/orders/DilyOpravy).
-   */
-  const [skladProdukty, setSkladProdukty] = useState<ReadonlyMap<string, SkladProdukt>>(new Map());
-  const [rezervovanoCelkem, setRezervovanoCelkem] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Položky objednávek u dodavatele založené kvůli otevřené zakázce; klíčované id, ať pozdní odpověď nepřepíše jinou. */
-  const [objednanoProZakazku, setObjednanoProZakazku] = useState<{ ticketId: string | null; rows: TicketOrderItem[] }>({ ticketId: null, rows: [] });
-  const refreshObjednanoProZakazku = useCallback(async (ticketId: string) => {
-    const res = await loadTicketOrderItems(ticketId);
-    if (res.error) return;
-    setObjednanoProZakazku({ ticketId, rows: res.data });
-  }, []);
-  useEffect(() => {
-    if (!activeServiceId || !detailId) return;
-    let zruseno = false;
-    void loadReservations(activeServiceId).then((res) => {
-      if (zruseno || res.error) return;
-      setRezervovanoCelkem(res.data);
-    });
-    void loadTicketOrderItems(detailId).then((res) => {
-      if (zruseno || res.error) return;
-      setObjednanoProZakazku({ ticketId: detailId, rows: res.data });
-    });
-    void loadInventoryFromDb(activeServiceId).then((res) => {
-      if (zruseno || res.error) return;
-      setSkladProdukty(new Map(res.data.products.map((p) => [p.id, p])));
-      setInventoryData({
-        brands: [],
-        categories: [],
-        models: [],
-        products: res.data.products.map((p) => ({
-          id: p.id,
-          name: p.name,
-          modelIds: p.modelIds,
-          stock: p.stock,
-          price: p.price,
-          sku: p.sku,
-          description: p.description,
-          imageUrl: p.imageUrl,
-          repairIds: p.repairIds,
-          createdAt: p.createdAt,
-        })),
-      });
-    });
-    return () => {
-      zruseno = true;
-    };
-  }, [activeServiceId, detailId]);
+  const {
+    devicesData,
+    inventoryData,
+    skladProdukty,
+    rezervovanoCelkem,
+    objednanoProZakazku,
+    refreshObjednanoProZakazku,
+    modelsWithHierarchy,
+    repairsForDeviceLabel,
+  } = useKatalogASklad(activeServiceId, detailId);
 
-  const modelsWithHierarchy: ModelWithHierarchy[] = useMemo(() => {
-    if (!devicesData || !Array.isArray(devicesData.models)) return [];
-    return devicesData.models
-      .map((model) => {
-        if (!model || !model.id || !model.name) return null;
-        const category = devicesData.categories?.find((c) => c && c.id === model.categoryId);
-        const brand = category && devicesData.brands ? devicesData.brands.find((b) => b && b.id === category.brandId) : null;
-        const brandName = brand?.name ?? "";
-        const categoryName = category?.name ?? "";
-        return {
-          ...model,
-          categoryName,
-          brandName,
-          fullName: brand ? `${brand.name} ${model.name}` : model.name,
-        } satisfies ModelWithHierarchy;
-      })
-      .filter((m): m is ModelWithHierarchy => m !== null);
-  }, [devicesData]);
-
-  const draftDirty = useMemo(() => isDraftDirty(newDraft), [newDraft]);
-
-  const validEnoughToCreate = useMemo(() => {
-    const hasDevices = newDraft.devices.length > 0 && newDraft.devices.every((d) => (d.deviceLabel || "").trim().length > 0);
-    return (
-      hasDevices &&
-      isEmailValid(newDraft.customerEmail) &&
-      isPhoneValid(newDraft.customerPhone) &&
-      isZipValid(newDraft.addressZip) &&
-      isIcoValid(newDraft.ico)
-    );
-  }, [newDraft]);
-
-  const draftBadgeCount = useMemo(() => {
-    return draftDirty && !validEnoughToCreate && !isNewOpen ? 1 : 0;
-  }, [draftDirty, validEnoughToCreate, isNewOpen]);
-
-  useEffect(() => {
-    safeSaveDraft(draftDirty ? newDraft : null);
-    window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: draftBadgeCount } }));
-  }, [newDraft, draftDirty, draftBadgeCount]);
-
-  useEffect(() => {
-    if (!newOrderPrefill) return;
-    setShouldOpenNew(true);
-    // Rezervace z webu: údaje zákazníka a zařízení rovnou do formuláře.
-    // Rozepsanou zakázku nepřepisovat bez dotazu.
-    // Pojistka: rezervace patří ke svému servisu, i kdyby záměr přežil přepnutí.
-    const r = newOrderPrefill.rezervace && newOrderPrefill.rezervace.service_id === activeServiceId ? newOrderPrefill.rezervace : undefined;
-    if (r && isDraftDirty(newDraft) && !window.confirm("Máte rozepsanou novou zakázku. Nahradit ji údaji z rezervace?")) {
-      onNewOrderPrefillConsumed();
-      return;
-    }
-    if (r) {
-      setNewDraft((prev) => ({
-        ...defaultDraft(),
-        branchId: prev.branchId,
-        customerName: r.customer_name,
-        customerPhone: r.customer_phone,
-        customerEmail: r.customer_email ?? "",
-        devices: [{
-          ...defaultDraft().devices[0],
-          // Model z ceníku má přednost: podle názvu se pak nabídnou opravy z ceníku.
-          deviceLabel: r.model_name || r.device_label,
-          requestedRepair: r.repair_name ?? "",
-          deviceNote: [r.model_name && r.model_name !== r.device_label ? `Zákazník uvedl: ${r.device_label}` : "", r.note ? `Z rezervace: ${r.note}` : ""].filter(Boolean).join(" · "),
-          estimatedPrice: r.price_estimate ?? undefined,
-          // Termín z rezervace + délka opravy z ceníku = předpokládané dokončení.
-          expectedCompletionAt: r.preferred_at
-            ? new Date(new Date(r.preferred_at).getTime() + (r.duration_min ?? 0) * 60_000).toISOString()
-            : undefined,
-          plannedRepairs: (() => {
-            // Zákazník mohl v rezervaci vybrat víc oprav najednou.
-            const ids = r.repair_ids && r.repair_ids.length > 0 ? r.repair_ids : r.repair_id ? [r.repair_id] : [];
-            const vybrane = ids
-              .map((id) => devicesData.repairs.find((x) => x.id === id))
-              .filter((x): x is NonNullable<typeof x> => !!x)
-              .map((cen) => ({ id: `${Date.now()}_${Math.random()}`, name: cen.name, type: "selected" as const, repairId: cen.id, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds, pridalUserId: session?.user?.id ?? undefined }));
-            return vybrane.length > 0 ? vybrane : undefined;
-          })(),
-        }],
-        rezervaceId: r.id,
-      }));
-    }
-    if (!newOrderPrefill.customerId) onNewOrderPrefillConsumed();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- devicesData jen pro dohledání opravy z ceníku v okamžiku předvyplnění
-  }, [newOrderPrefill, onNewOrderPrefillConsumed]);
-
-  // Load customer detail and prefill form when newOrderPrefill.customerId is set (e.g. "Vytvořit zakázku" u zákazníka)
-  useEffect(() => {
-    const customerId = newOrderPrefill?.customerId;
-    if (!customerId || !supabase || !activeServiceId) return;
-
-    onNewOrderPrefillConsumed();
-    (async () => {
-      try {
-        const { data, error } = await (supabase
-          .from("customers") as any)
-          .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-          .eq("id", customerId)
-          .eq("service_id", activeServiceId)
-          .single();
-
-        if (error || !data) {
-          console.error("[Orders] Error loading customer for prefill:", error);
-          return;
-        }
-
-        setNewDraft((prev) => {
-          const shouldPrefill = !prev.customerId;
-          return {
-            ...prev,
-            customerId: data.id,
-            customerName: shouldPrefill || !prev.customerName.trim() ? (data.name || "") : prev.customerName,
-            customerPhone: shouldPrefill || !prev.customerPhone.trim() ? (data.phone || "") : prev.customerPhone,
-            customerEmail: shouldPrefill || !prev.customerEmail.trim() ? (data.email || "") : prev.customerEmail,
-            addressStreet: shouldPrefill || !prev.addressStreet.trim() ? (data.address_street || "") : prev.addressStreet,
-            addressCity: shouldPrefill || !prev.addressCity.trim() ? (data.address_city || "") : prev.addressCity,
-            addressZip: shouldPrefill || !prev.addressZip.trim() ? (data.address_zip || "") : prev.addressZip,
-            company: shouldPrefill || !prev.company.trim() ? (data.company || "") : prev.company,
-            ico: shouldPrefill || !prev.ico.trim() ? (data.ico || "") : prev.ico,
-            customerInfo: shouldPrefill || !prev.customerInfo.trim() ? (data.note || "") : prev.customerInfo,
-          };
-        });
-      } catch (err) {
-        console.error("[Orders] Error loading customer for prefill:", err);
-      }
-      // Okno příjmu se otevře až s načtenými údaji zákazníka. Dřív se otevíralo
-      // souběžně s načítáním a při pomalejší odpovědi zůstalo prázdné.
-      setShouldOpenNew(true);
-    })();
-  }, [newOrderPrefill?.customerId, supabase, activeServiceId, onNewOrderPrefillConsumed]);
-
-  useEffect(() => {
-    const onReq = () => setShouldOpenNew(true);
-    window.addEventListener("jobsheet:request-new-order" as any, onReq);
-    return () => window.removeEventListener("jobsheet:request-new-order" as any, onReq);
-     
-  }, []);
-
-  useEffect(() => {
-    if (!shouldOpenNew) return;
-    setShouldOpenNew(false);
-    setSubmitAttempted(false);
-    setIsNewOpen(true);
-  }, [shouldOpenNew]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NEW_ORDER_MORE_OPEN_KEY, newOrderMoreOpen ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  }, [newOrderMoreOpen]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NEW_ORDER_DEVICE_MORE_OPEN_KEY, newOrderDeviceMoreOpen ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  }, [newOrderDeviceMoreOpen]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NEW_ORDER_CUSTOMER_MORE_OPEN_KEY, newOrderCustomerMoreOpen ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  }, [newOrderCustomerMoreOpen]);
-
-  /**
-   * Našeptávač zákazníků v nové zakázce: jméno, telefon, e-mail nebo firma.
-   * Vrací i adresu a poznámku, aby výběr vyplnil celý blok bez dalšího dotazu.
-   */
-  const searchCustomers = useCallback(async (q: string): Promise<CustomerMatch[]> => {
-    if (!supabase || !activeServiceId) return [];
-    const safe = q.replace(/[,()*%\\]/g, " ").trim();
-    if (safe.length < 2) return [];
-    const digits = q.replace(/\D/g, "");
-    const ors = [
-      `name.ilike.*${safe}*`,
-      `email.ilike.*${safe}*`,
-      `company.ilike.*${safe}*`,
-      `phone.ilike.*${safe}*`,
-    ];
-    if (digits.length >= 3) {
-      ors.push(`phone_norm.ilike.*${digits}*`);
-      ors.push(`phone.ilike.*${digits}*`);
-    }
-    const { data, error } = await (supabase.from("customers") as any)
-      .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-      .eq("service_id", activeServiceId)
-      .or(ors.join(","))
-      .order("name", { ascending: true })
-      .limit(16);
-    if (error || !Array.isArray(data)) return [];
-    // „Jan“ má nabídnout Jana Nováka dřív než Aramise Tochjana: nejdřív
-    // shoda na začátku jména, pak na začátku slova, pak zbytek.
-    const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const needle = fold(safe);
-    const rank = (c: any) => {
-      const name = fold(String(c.name || ""));
-      if (name.startsWith(needle)) return 0;
-      if (name.split(/\s+/).some((w) => w.startsWith(needle))) return 1;
-      if (fold(String(c.company || "")).startsWith(needle)) return 2;
-      return 3;
-    };
-    data.sort((a: any, b: any) => rank(a) - rank(b));
-    return data.slice(0, 8).map((c: any) => ({
-      id: String(c.id),
-      name: c.name || "",
-      phone: c.phone || null,
-      email: c.email || null,
-      company: c.company || null,
-      city: c.address_city || null,
-      // navíc pro vyplnění formuláře
-      ico: c.ico || null,
-      address_street: c.address_street || null,
-      address_zip: c.address_zip || null,
-      note: c.note || null,
-    }));
-  }, [supabase, activeServiceId]);
-
-  /** Výběr zákazníka z našeptávače – vyplní celý blok a nastaví customerId. */
-  const applyCustomerMatch = useCallback((m: CustomerMatch & { ico?: string | null; address_street?: string | null; address_zip?: string | null; note?: string | null }) => {
-    setNewDraft((prev) => ({
-      ...prev,
-      customerId: m.id,
-      customerName: m.name || "",
-      customerPhone: m.phone || "",
-      customerEmail: m.email || "",
-      addressStreet: m.address_street || "",
-      addressCity: m.city || "",
-      addressZip: (m.address_zip || "").replace(/\D/g, ""),
-      company: m.company || "",
-      ico: (m.ico || "").replace(/\D/g, ""),
-      customerInfo: m.note || "",
-    }));
-    setCustomerMatchDecision("accepted");
-    setMatchedCustomer(null);
-    lastLookupPhoneNormRef.current = normalizePhone(m.phone || "") ?? null;
-    if (phoneLookupDebounceTimerRef.current) {
-      clearTimeout(phoneLookupDebounceTimerRef.current);
-      phoneLookupDebounceTimerRef.current = null;
-    }
-  }, []);
-
-  // Lookup customer by phone or name
-  const lookupCustomer = async (phone?: string, name?: string) => {
-    if (!supabase || !activeServiceId) return;
-
-    // Try phone lookup first (primary identifier)
-    if (phone) {
-      const phoneNorm = normalizePhone(phone);
-      if (phoneNorm) {
-        // Update lastLookupPhoneNormRef to prevent duplicate lookups
-        lastLookupPhoneNormRef.current = phoneNorm;
-
-        const { data, error } = await (supabase
-          .from("customers") as any)
-          .select("id,name,phone,email,company")
-          .eq("service_id", activeServiceId)
-          .eq("phone_norm", phoneNorm)
-          .maybeSingle();
-
-        if (!error && data) {
-          // If name is also provided, check if it matches (case-insensitive)
-          if (name && name.trim()) {
-            const nameMatch = data.name?.trim().toLowerCase() === name.trim().toLowerCase();
-            if (nameMatch) {
-              // Phone + name match - high confidence
-              setMatchedCustomer({
-                id: data.id,
-                name: data.name || "",
-                phone: data.phone || undefined,
-                email: data.email || undefined,
-                company: data.company || undefined,
-              });
-              setCustomerMatchDecision("undecided");
-              return;
-            }
-          }
-          // Phone match (name may or may not match)
-          setMatchedCustomer({
-            id: data.id,
-            name: data.name || "",
-            phone: data.phone || undefined,
-            email: data.email || undefined,
-            company: data.company || undefined,
-          });
-          setCustomerMatchDecision("undecided");
-          return;
-        }
-      } else {
-        // Invalid phone norm - reset lastLookupPhoneNormRef
-        lastLookupPhoneNormRef.current = null;
-      }
-    }
-
-    // Vyhledání podle jména (když není telefon nebo telefon nenašel)
-    if (name && name.trim().length >= 2) {
-      const nameTrim = name.trim();
-      const { data: nameData, error: nameError } = await (supabase
-        .from("customers") as any)
-        .select("id,name,phone,email,company")
-        .eq("service_id", activeServiceId)
-        .ilike("name", `%${nameTrim.replace(/%/g, "\\%")}%`)
-        .limit(1)
-        .maybeSingle();
-
-      if (!nameError && nameData) {
-        setMatchedCustomer({
-          id: nameData.id,
-          name: nameData.name || "",
-          phone: nameData.phone || undefined,
-          email: nameData.email || undefined,
-          company: nameData.company || undefined,
-        });
-        setCustomerMatchDecision("undecided");
-        return;
-      }
-    }
-
-    // No match found
-    setMatchedCustomer(null);
-    setCustomerMatchDecision("undecided");
-  };
-
+  const {
+    isNewOpen,
+    setIsNewOpen,
+    newDraft,
+    setNewDraft,
+    submitAttempted,
+    setSubmitAttempted,
+    matchedCustomer,
+    setMatchedCustomer,
+    customerMatchDecision,
+    setCustomerMatchDecision,
+    lastLookupPhoneNormRef,
+    phoneLookupDebounceTimerRef,
+    newOrderMoreOpen,
+    setNewOrderMoreOpen,
+    newOrderDeviceMoreOpen,
+    setNewOrderDeviceMoreOpen,
+    newOrderCustomerMoreOpen,
+    setNewOrderCustomerMoreOpen,
+    expandedDeviceIdx,
+    setExpandedDeviceIdx,
+    catalogShowAll,
+    setCatalogShowAll,
+    createTicketRef,
+    newOrderBodyRef,
+    searchCustomers,
+    applyCustomerMatch,
+    lookupCustomer,
+    togglePlannedRepair,
+    dalsiOprava,
+    setDalsiOprava,
+    addManualPlannedRepair,
+    nastavPlannedNabidnuto,
+    removePlannedRepair,
+    openNewOrder,
+    errors,
+    canCreate,
+    showError,
+    showDeviceError,
+    createBlockedReason,
+    focusFirstInvalidField,
+    closeNewOrder,
+    discardNewOrder,
+    closeCaptureQrModal,
+  } = useNovaZakazkaKoncept({
+    activeServiceId,
+    newOrderPrefill,
+    onNewOrderPrefillConsumed,
+    devicesData,
+    session,
+    mojeId,
+    customerPhoneRequired: uiCfg.orders.customerPhoneRequired,
+    draftCaptureTokenRef,
+    setDraftCapturePreviewUrls,
+    setDraftCaptureLiveCount,
+    captureQRItems,
+    setCaptureQRItems,
+  });
   // Lookup customer by phone or name (for Edit mode)
   const lookupCustomerEdit = async (phone?: string, name?: string) => {
     if (!supabase || !activeServiceId) return;
@@ -2563,6 +680,53 @@ export default function Orders({
     },
     [statusKeysSet, fallbackKey, statusesLoading, statuses.length]
   );
+
+  const {
+    activeGroup,
+    setActiveGroup,
+    activeStatusKey,
+    setActiveStatusKey,
+    claimsSubGroup,
+    setClaimsSubGroup,
+    query,
+    setQuery,
+    statusById,
+    setStatusById,
+    ordersPage,
+    setOrdersPage,
+    quickStatuses,
+    showSecondaryFiltersRow,
+    statusFilterOptions,
+    filtered,
+    showClaimsInOrdersList,
+    aktivniReklamace,
+    combinedList,
+    groupCounts,
+    filtrPresunu,
+    pageSize,
+    listLength,
+    effectivePageSize,
+    totalOrdersPages,
+    paginatedTickets,
+    paginatedClaims,
+    paginatedCombined,
+    ticketsForSmsUnread,
+  } = useFiltrSeznamu({
+    tickets,
+    cloudClaims,
+    statuses,
+    isFinal,
+    normalizeStatus,
+    statusKeysSet,
+    uiCfg,
+    mojeId,
+    activeBranchId,
+    ordersShowClaimsInList,
+    zasilkyZapnuty,
+    hasBranches,
+    nastaveniZasilek,
+    pridelovaniTechnika,
+  });
 
   // Order actions hook
   // Re-fetch single ticket by ID (for conflict resolution)
@@ -2650,400 +814,7 @@ export default function Orders({
     refetchTicketById,
   });
 
-  const selectedQuickKeys = uiCfg.home.orderFilters.selectedQuickStatusFilters;
-
-  const quickStatuses = useMemo(() => {
-    const set = new Set(statuses.map((s) => s.key));
-    const keys = selectedQuickKeys.filter((k) => set.has(k));
-    return statuses.filter((s) => keys.includes(s.key));
-  }, [selectedQuickKeys, statuses]);
-
-  const showSecondaryFiltersRow = quickStatuses.length > 0;
-
-  useEffect(() => {
-    if (!activeStatusKey) return;
-    if (statusKeysSet.has(activeStatusKey)) return;
-    setActiveStatusKey(null);
-  }, [activeStatusKey, statusKeysSet]);
-
-  const mojeId = session?.user?.id ?? null;
-
-  /** Patří zakázka do zvolené záložky (Vše / Aktivní / Moje / Přesuny / Dokončené)? */
-  const patriDoSkupiny = useCallback(
-    (t: TicketEx, st: string | null): boolean => {
-      // If statuses are not ready, show all tickets
-      if (st === null) return true;
-      if (activeGroup === "all") return true;
-      if (activeGroup === "final") return isFinal(st);
-      // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
-      if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
-      // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
-      if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
-      return !isFinal(st);
-    },
-    [activeGroup, mojeId, isFinal],
-  );
-
-  /** Nabídka filtru podle stavu: jen stavy, které ve zvolené záložce opravdu jsou, s počtem. */
-  const statusFilterOptions = useMemo((): { options: StatusFilterOption[]; total: number } => {
-    const pocty = new Map<string, number>();
-    let total = 0;
-    for (const t of tickets) {
-      const st = normalizeStatus((t.status as any) ?? statusById[t.id]);
-      if (!patriDoSkupiny(t, st)) continue;
-      total += 1;
-      if (st !== null) pocty.set(st, (pocty.get(st) ?? 0) + 1);
-    }
-    const options = statuses
-      .filter((s) => (pocty.get(s.key) ?? 0) > 0 || s.key === activeStatusKey)
-      .map((s) => ({ key: s.key, label: s.label, bg: s.bg, count: pocty.get(s.key) ?? 0 }));
-    return { options, total };
-  }, [tickets, statusById, normalizeStatus, patriDoSkupiny, statuses, activeStatusKey]);
-
-  // Po přepnutí záložky stav, který v ní není (např. „Vydáno“ v Aktivních), nedává smysl držet.
-  useEffect(() => {
-    if (!activeStatusKey) return;
-    const o = statusFilterOptions.options.find((x) => x.key === activeStatusKey);
-    if (!o || o.count === 0) setActiveStatusKey(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- jen při změně záložky, ne při každém přepočtu nabídky
-  }, [activeGroup]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const qDigits = q.replace(/\D/g, "");
-
-    const base = tickets
-      .filter((t) => patriDoSkupiny(t, normalizeStatus((t.status as any) ?? statusById[t.id])))
-      .filter((t) => {
-        if (!activeStatusKey) return true;
-        const raw = (t.status as any) ?? statusById[t.id];
-        const st = normalizeStatus(raw);
-        
-        // If statuses are not ready, don't filter by status
-        if (st === null) return true;
-        return st === activeStatusKey;
-      })
-      .filter((t) => {
-        if (!q) return true;
-        // Telefon se porovnává i po číslicích, aby „777123“ našlo „+420 777 123 456“.
-        const phoneDigits = (t.customerPhone ?? "").replace(/\D/g, "");
-        // Všechna pole přes `?? ""`: zakázka bez čísla (vzniká importem nebo
-        // přes veřejné API) shodila celou stránku Zakázky na `toLowerCase`
-        // of null, jakmile někdo začal psát do hledání. Jeden vadný řádek
-        // nesmí sundat seznam všem.
-        return (
-          (t.code ?? "").toLowerCase().includes(q) ||
-          (t.customerName ?? "").toLowerCase().includes(q) ||
-          (t.customerPhone ?? "").toLowerCase().includes(q) ||
-          (qDigits.length >= 3 && phoneDigits.includes(qDigits)) ||
-          (t.deviceLabel ?? "").toLowerCase().includes(q) ||
-          (t.serialOrImei ?? "").toLowerCase().includes(q) ||
-          (t.issueShort ?? "").toLowerCase().includes(q) ||
-          (t.externalId ?? "").toLowerCase().includes(q)
-        );
-      });
-    // Explicitně řadit od nejnovějších, aby stránkování bylo konzistentní
-    return [...base].sort(
-      (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
-    );
-  }, [tickets, patriDoSkupiny, query, statusById, activeStatusKey, normalizeStatus]);
-
-  /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
-  const claimsInBranch = useMemo(
-    () => (activeBranchId ? cloudClaims.filter((c) => !(c as any).branch_id || (c as any).branch_id === activeBranchId) : cloudClaims),
-    [cloudClaims, activeBranchId],
-  );
-  const filteredClaims = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = !q
-      ? claimsInBranch
-      : claimsInBranch.filter(
-          (c) =>
-            (c.code?.toLowerCase().includes(q)) ||
-            (c.customer_name?.toLowerCase().includes(q)) ||
-            (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
-            (c.device_serial?.toLowerCase().includes(q)) ||
-            (c.device_label?.toLowerCase().includes(q)) ||
-            (c.notes?.toLowerCase().includes(q))
-        );
-    // Explicitně řadit od nejnovějších kvůli konzistentnímu stránkování
-    return [...base].sort(
-      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
-    );
-  }, [claimsInBranch, query]);
-
-  const filteredClaimsForTab = useMemo(() => {
-    if (activeGroup !== "reklamace") return filteredClaims;
-    if (claimsSubGroup === "all") return filteredClaims;
-    return filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (st === null) return claimsSubGroup === "active";
-      if (claimsSubGroup === "final") return isFinal(st);
-      return !isFinal(st);
-    });
-  }, [activeGroup, claimsSubGroup, filteredClaims, normalizeStatus, isFinal]);
-
-  /* Aktivní: reklamace se do stránkovaného seznamu nemíchají – jsou vždy
-     všechny pod zakázkami v bloku „Aktivní reklamace“ (viz aktivniReklamace).
-     Míchání podle data zůstává jen ve Vše a Dokončené, a jen když je zapnuté. */
-  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "final") && ordersShowClaimsInList;
-  const aktivniReklamace = useMemo(
-    () => activeGroup !== "active" ? [] : filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (activeStatusKey && st !== activeStatusKey) return false;
-      return st === null || !isFinal(st);
-    }),
-    [activeGroup, activeStatusKey, filteredClaims, normalizeStatus, isFinal],
-  );
-  const combinedList = useMemo(() => {
-    if (!showClaimsInOrdersList) return [];
-    const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
-    const claimsForGroup = filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      // Filtr podle stavu platí i pro reklamace – dřív se do vyfiltrovaného
-      // seznamu pletly reklamace, které ten stav vůbec neměly.
-      if (activeStatusKey && st !== activeStatusKey) return false;
-      if (st === null) return activeGroup !== "final";
-      if (activeGroup === "all") return true;
-      if (activeGroup === "final") return isFinal(st);
-      return !isFinal(st);
-    });
-    const claimItems = claimsForGroup.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
-    return [...ticketItems, ...claimItems].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, activeStatusKey, normalizeStatus, isFinal]);
-
-  /** Počty do přepínače skupin – stejná pravidla jako seznam, jen bez textového hledání. */
-  const groupCounts = useMemo(() => {
-    let active = 0;
-    let final = 0;
-    let all = 0;
-    let moje = 0;
-    let presun = 0;
-    for (const t of tickets) {
-      const raw = (t.status as any) ?? statusById[t.id];
-      const st = normalizeStatus(raw);
-      if (activeStatusKey && st !== null && st !== activeStatusKey) continue;
-      all += 1;
-      if (umisteniZakazky(t).druh !== "doma") presun += 1;
-      if (st === null || !isFinal(st)) {
-        active += 1;
-        if (mojeId && t.assignedTo === mojeId) moje += 1;
-      } else final += 1;
-    }
-    // Aktivní reklamace jsou v záložce Aktivní vždy; do Vše a Dokončené jen
-    // když se tam míchají (nastavení).
-    for (const c of claimsInBranch) {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (activeStatusKey && st !== activeStatusKey) continue;
-      const aktivni = st === null || !isFinal(st);
-      if (aktivni) active += 1;
-      if (ordersShowClaimsInList) {
-        all += 1;
-        if (!aktivni) final += 1;
-      }
-    }
-    return { all, active, final, moje, presun, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
-
-  const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
-
-  // Vypnuté přidělování nesmí nechat seznam na skupině, která už neexistuje.
-  useEffect(() => {
-    if (!pridelovaniTechnika && activeGroup === "moje") setActiveGroup("active");
-    if (!filtrPresunu && activeGroup === "presun") setActiveGroup("active");
-  }, [pridelovaniTechnika, filtrPresunu, activeGroup]);
-
-  const groupLabel = (label: string, count: number) => (
-    <>
-      {label}
-      <span style={{ marginLeft: 6, fontSize: "var(--text-xs)", color: "var(--muted)", fontWeight: 600 }}>{count}</span>
-    </>
-  );
-
-  const pageSize = uiCfg.orders.pageSize ?? 50;
-  const listLength = activeGroup === "reklamace"
-    ? filteredClaimsForTab.length
-    : showClaimsInOrdersList
-      ? combinedList.length
-      : filtered.length;
-  const effectivePageSize = pageSize <= 0 ? listLength || 1 : pageSize;
-  const totalOrdersPages = Math.max(1, Math.ceil(listLength / effectivePageSize));
-  const paginatedTickets = useMemo(
-    () => (pageSize <= 0 ? filtered : filtered.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filtered, ordersPage, pageSize, effectivePageSize]
-  );
-  const paginatedClaims = useMemo(
-    () => (pageSize <= 0 ? filteredClaimsForTab : filteredClaimsForTab.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filteredClaimsForTab, ordersPage, pageSize, effectivePageSize]
-  );
-  const paginatedCombined = useMemo(
-    () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [combinedList, ordersPage, pageSize, effectivePageSize]
-  );
-
-  /** Zakázky, u kterých má smysl načíst SMS badge (shodné s tím, co je ve výpisu) */
-  const ticketsForSmsUnread = useMemo(() => {
-    if (activeGroup === "reklamace") return [];
-    const mode = uiCfg.orders.displayMode;
-    if (mode === "status-grouped") {
-      if (showClaimsInOrdersList) {
-        return paginatedCombined.filter((r) => r.type === "ticket").map((r) => r.data);
-      }
-      return filtered;
-    }
-    return paginatedTickets;
-  }, [
-    activeGroup,
-    uiCfg.orders.displayMode,
-    showClaimsInOrdersList,
-    paginatedCombined,
-    filtered,
-    paginatedTickets,
-  ]);
-
-  // Realtime: po příchozí SMS nebo označení přečteného přepočíst badge u řádků
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    if (!smsAvailable || !activeServiceId || !client) return;
-    const topic = `orders_sms_unread_rt:${activeServiceId}`;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "sms_messages" },
-        (payload) => {
-          if ((payload.new as { direction?: string })?.direction === "inbound") {
-            setSmsUnreadListBump((n) => n + 1);
-          }
-        }
-      )
-      .subscribe();
-    return () => {
-      client.removeChannel(channel);
-    };
-  }, [smsAvailable, activeServiceId]);
-
-  /**
-   * Klíč z obsahu, ne z identity pole.
-   *
-   * ticketsForSmsUnread je nové pole při každém renderu, takže efekt níž se
-   * spouštěl při každém úhozu ve vyhledávání – naměřeno 6 úhozů = 15 dotazů
-   * do Supabase, i když se seznam zakázek vůbec nezměnil.
-   */
-  const smsUnreadKey = useMemo(
-    () => ticketsForSmsUnread.map((t) => `${t.id}|${normalizePhone(t.customerPhone) ?? ""}`).join(","),
-    [ticketsForSmsUnread]
-  );
-  const ticketsForSmsUnreadRef = useRef(ticketsForSmsUnread);
-  ticketsForSmsUnreadRef.current = ticketsForSmsUnread;
-
-  // SMS unread per řádek: konverzace podle ticket_id nebo stejného telefonu jako u detailu
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    const ticketRowsAll = ticketsForSmsUnreadRef.current;
-    if (!smsAvailable || !activeServiceId || !client || ticketRowsAll.length === 0) {
-      // Nový prázdný objekt by byl pokaždé jiná reference a vynutil další render.
-      setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-      return;
-    }
-    const ticketRows = ticketRowsAll;
-    const ticketIds = ticketRows.map((t) => t.id);
-    const idSet = new Set(ticketIds);
-    const chunk = 180;
-    let cancelled = false;
-    // Rychlé psaní jinak spustí dotaz na každý mezistav.
-    const timer = setTimeout(() => {
-    (async () => {
-      const convsByTicket: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
-      for (let i = 0; i < ticketIds.length; i += chunk) {
-        const { data } = await client
-          .from("sms_conversations")
-          .select("id, ticket_id, customer_phone")
-          .eq("service_id", activeServiceId)
-          .in("ticket_id", ticketIds.slice(i, i + chunk));
-        convsByTicket.push(...((data ?? []) as typeof convsByTicket));
-      }
-      const phones = [
-        ...new Set(ticketRows.map((t) => normalizePhone(t.customerPhone)).filter((p): p is string => !!p)),
-      ];
-      const convsByPhone: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
-      for (let i = 0; i < phones.length; i += chunk) {
-        const { data } = await client
-          .from("sms_conversations")
-          .select("id, ticket_id, customer_phone")
-          .eq("service_id", activeServiceId)
-          .in("customer_phone", phones.slice(i, i + chunk));
-        for (const row of data ?? []) {
-          convsByPhone.push(row as (typeof convsByPhone)[number]);
-        }
-      }
-      const convMap = new Map<string, { id: string; ticket_id: string | null; customer_phone: string }>();
-      for (const c of [...convsByTicket, ...convsByPhone]) {
-        convMap.set(c.id, c);
-      }
-      const convIds = [...convMap.keys()];
-      if (convIds.length === 0) {
-        if (!cancelled) setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-        return;
-      }
-      const countByConv: Record<string, number> = {};
-      for (let i = 0; i < convIds.length; i += chunk) {
-        const slice = convIds.slice(i, i + chunk);
-        const { data: messages } = await client
-          .from("sms_messages")
-          .select("conversation_id")
-          .in("conversation_id", slice)
-          .eq("direction", "inbound")
-          .is("read_at", null);
-        if (cancelled) return;
-        (messages ?? []).forEach((m) => {
-          countByConv[m.conversation_id] = (countByConv[m.conversation_id] ?? 0) + 1;
-        });
-      }
-      const phonesMatch = (a: string | null | undefined, b: string | null | undefined) => {
-        const na = normalizePhone(a);
-        const nb = normalizePhone(b);
-        if (na && nb && na === nb) return true;
-        const da = String(a ?? "").replace(/\D/g, "");
-        const db = String(b ?? "").replace(/\D/g, "");
-        return da.length >= 9 && db.length >= 9 && da.slice(-9) === db.slice(-9);
-      };
-      const byTicket: Record<string, number> = {};
-      for (const [cid, n] of Object.entries(countByConv)) {
-        const conv = convMap.get(cid);
-        if (!conv) continue;
-        if (conv.ticket_id && idSet.has(conv.ticket_id)) {
-          byTicket[conv.ticket_id] = (byTicket[conv.ticket_id] ?? 0) + n;
-        } else {
-          for (const t of ticketRows) {
-            if (phonesMatch(t.customerPhone, conv.customer_phone)) {
-              byTicket[t.id] = (byTicket[t.id] ?? 0) + n;
-            }
-          }
-        }
-      }
-      if (!cancelled) setSmsUnreadByTicketId(byTicket);
-    })();
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [smsAvailable, activeServiceId, smsUnreadKey, smsUnreadListBump]);
-
-  useEffect(() => {
-    setOrdersPage(0);
-  }, [query, activeStatusKey, activeGroup, claimsSubGroup]);
-
-  useEffect(() => {
-    setOrdersPage(0);
-  }, [pageSize]);
-
-  useEffect(() => {
-    if (ordersPage >= totalOrdersPages && totalOrdersPages > 0) setOrdersPage(totalOrdersPages - 1);
-  }, [ordersPage, totalOrdersPages]);
+  const { smsUnreadByTicketId, setSmsUnreadListBump } = useSmsNeprecteneSeznamu({ smsAvailable, activeServiceId, ticketsForSmsUnread });
 
   /**
    * Otevřený detail se hledá v NEfiltrovaném seznamu.
@@ -3184,640 +955,45 @@ export default function Orders({
     });
   }, [detailId, detailedTicket]);
 
-  /** Opravy z ceníku pro zařízení podle názvu – stejné párování pro detail i pro příjem. */
-  const repairsForDeviceLabel = useCallback(
-    (label: string | undefined | null): DeviceRepair[] => {
-      const trimmed = (label || "").trim();
-      if (!trimmed) return [];
-      if (!devicesData || !Array.isArray(devicesData.models) || !Array.isArray(devicesData.repairs)) return [];
-      const deviceName = trimmed.toLowerCase();
-      const matchingModels = devicesData.models.filter(
-        (m) => m && m.name && (m.name.toLowerCase().includes(deviceName) || deviceName.includes(m.name.toLowerCase()))
-      );
-      const modelIds = matchingModels.map((m) => m.id).filter(Boolean);
-      if (modelIds.length === 0) return [];
-      return devicesData.repairs.filter((r) => r && r.modelIds && r.modelIds.some((mid: string) => modelIds.includes(mid)));
-    },
-    [devicesData]
-  );
-
   const availableRepairs = useMemo(
     () => repairsForDeviceLabel(detailedTicket?.deviceLabel),
     [detailedTicket?.deviceLabel, repairsForDeviceLabel]
   );
 
-  /** Přepne opravu z ceníku u zařízení v nové zakázce: text požadované opravy, seznam oprav i předschválenou cenu. */
-  const togglePlannedRepair = useCallback((idx: number, repair: DeviceRepair) => {
-    setNewDraft((p) => ({
-      ...p,
-      devices: p.devices.map((d, i) => {
-        if (i !== idx) return d;
-        const planned = d.plannedRepairs ?? [];
-        const has = planned.some((r) => r.repairId === repair.id);
-        const nextPlanned = has
-          ? planned.filter((r) => r.repairId !== repair.id)
-          : [
-              ...planned,
-              {
-                id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                name: repair.name,
-                type: "selected" as const,
-                repairId: repair.id,
-                price: repair.price,
-                costs: repair.costs,
-                estimatedTime: repair.estimatedTime,
-                productIds: repair.productIds,
-                // Odměny týmu: kdo opravu nabídl už při příjmu.
-                pridalUserId: mojeId ?? undefined,
-              },
-            ];
-        // Text požadované opravy: jména z ceníku oddělená čárkou, ruční text zůstává.
-        const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
-        const nextParts = has ? parts.filter((x) => x !== repair.name) : parts.includes(repair.name) ? parts : [...parts, repair.name];
-        // Předschválená cena (i se slevou) se přepisuje jen dokud ji uživatel nezadal ručně.
-        return {
-          ...d,
-          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
-          plannedRepairs: nextPlanned,
-          requestedRepair: nextParts.join(", "),
-        };
-      }),
-    }));
-  }, []);
-
-  /**
-   * Oprava mimo ceník už při příjmu. Jde do stejného seznamu jako opravy
-   * z ceníku, takže se počítá do součtu, do slevy i do předschválené ceny –
-   * dřív se na ni sleva musela dopočítat ručně, protože ji nebylo kam zapsat.
-   */
-  const [dalsiOprava, setDalsiOprava] = useState<Record<number, { name: string; price: string }>>({});
-
-  const addManualPlannedRepair = useCallback((idx: number, nazev: string, cenaText: string): boolean => {
-    const name = nazev.trim();
-    const price = Number(cenaText.replace(/\s/g, "").replace(",", "."));
-    if (!name || !Number.isFinite(price) || price < 0) return false;
-    setNewDraft((p) => ({
-      ...p,
-      devices: p.devices.map((d, i) => {
-        if (i !== idx) return d;
-        const planned = d.plannedRepairs ?? [];
-        const nextPlanned = [...planned, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name, type: "manual" as const, price, pridalUserId: mojeId ?? undefined }];
-        const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
-        return {
-          ...d,
-          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
-          plannedRepairs: nextPlanned,
-          requestedRepair: (parts.includes(name) ? parts : [...parts, name]).join(", "),
-        };
-      }),
-    }));
-    return true;
-  }, []);
-
-  /** Příznak „nabídnuto navíc“ u opravy vybrané při příjmu (odměny týmu). */
-  const nastavPlannedNabidnuto = useCallback((idx: number, id: string, nabidnuto: boolean) => {
-    setNewDraft((p) => ({
-      ...p,
-      devices: p.devices.map((d, i) => (i !== idx ? d : { ...d, plannedRepairs: (d.plannedRepairs ?? []).map((r) => (r.id === id ? { ...r, nabidnuto } : r)) })),
-    }));
-  }, []);
-
-  const removePlannedRepair = useCallback((idx: number, id: string) => {
-    setNewDraft((p) => ({
-      ...p,
-      devices: p.devices.map((d, i) => {
-        if (i !== idx) return d;
-        const planned = d.plannedRepairs ?? [];
-        const odebirana = planned.find((r) => r.id === id);
-        if (!odebirana) return d;
-        const nextPlanned = planned.filter((r) => r.id !== id);
-        const parts = (d.requestedRepair || "").split(",").map((x) => x.trim()).filter(Boolean);
-        return {
-          ...d,
-          ...poZmeneOprav(d, soucetOprav(planned), soucetOprav(nextPlanned)),
-          plannedRepairs: nextPlanned,
-          requestedRepair: parts.filter((x) => x !== odebirana.name).join(", "),
-        };
-      }),
-    }));
-  }, []);
-
-  /**
-   * Zákazník schválil nabídku – její položky se stanou provedenými opravami.
-   * Nahrazují se, ne přidávají: schválený rozpis je to, na čem se obě strany
-   * dohodly, a dvojitý zápis by se objevil na faktuře.
-   *
-   * Zapisuje se rovnou do databáze, ne přes běžné automatické ukládání, které
-   * čeká na zavření detailu. Uživatel klikl na jednu akci a dostal hlášku, že
-   * je hotovo – to musí platit i když hned zavře okno.
-   */
-  const applyQuoteRepairs = useCallback(
-    async (ticketId: string, repairsVstup: PerformedRepair[]) => {
-      // Schválená položka z cenové nabídky = nabídnuto a přijato; příznak se
-      // doplní jen tam, kde chybí a kde sedí pravidlo odměn.
-      const pozadovana = cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair;
-      const repairs = repairsVstup.map((r) => {
-        if (r.nabidnuto !== undefined) return r;
-        const n = vychoziNabidnuto(r.name, pozadovana, pravidlaOdmen);
-        return n === undefined ? r : { ...r, nabidnuto: n };
-      });
-      setCloudTickets((prev) =>
-        prev.map((t) => (t.id === ticketId ? { ...t, performedRepairs: repairs } : t))
-      );
-      if (!supabase) {
-        setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-        return;
-      }
-      // Stejná evidence jako u ostatních zápisů oprav: dokud zápis běží (a po
-      // chybě až do zavření detailu), realtime nesmí opravy přepsat.
-      zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-      try {
-        const { error } = await (supabase.from("tickets") as any)
-          .update({ performed_repairs: repairs })
-          .eq("id", ticketId);
-        if (error) {
-          // Zůstane rozpracované – uloží se při zavření detailu jako každá jiná změna.
-          setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-          neulozeneOpravyRef.current.add(ticketId);
-          throw error;
-        }
-        neulozeneOpravyRef.current.delete(ticketId);
-      } finally {
-        ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-      }
-    },
-    []
-  );
-
-  /**
-   * Zápis provedených oprav do databáze.
-   *
-   * Dřív se opravy ukládaly až při zavření detailu, ale rezervace dílů ve
-   * skladu vznikaly okamžitě. Když mezitím někdo změnil stav zakázky,
-   * realtime přepsal rozepsané opravy verzí z databáze: rezervace zůstaly
-   * bez opravy a při Dokončeno se odečetl díl za opravu, kterou zakázka
-   * neměla. Teď jde přidání a odebrání do databáze hned; úpravy ceny,
-   * nákladů a času (několik volání z jednoho tlačítka Uložit) s krátkým
-   * odkladem, aby se poslal jeden zápis. Při chybě zůstane příznak
-   * rozpracovanosti a opravy se uloží při zavření detailu jako dřív.
-   */
-  /**
-   * Označí zakázce běžící okamžitý zápis (opravy, kontrola, zápůjčka), aby
-   * realtime ozvěna staršího zápisu nepřepsala místní stav – viz upsert výše.
-   */
-  /** Číslo zakázky do výpisu neuložených změn; když ho neznáme, aspoň zákazník. */
-  const popisZakazky = useCallback((ticketId: string): string => {
-    const t = cloudTicketsRef.current.find((x) => x.id === ticketId);
-    return t?.code || t?.customerName || "zakázka";
-  }, []);
-
-  const sOkamzitymZapisem = useCallback(async <T,>(ticketId: string, zapis: () => Promise<T>): Promise<T> => {
-    zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-    try {
-      return await zapis();
-    } finally {
-      ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-    }
-  }, []);
-
-  const zapisProvedeneOpravy = useCallback((ticketId: string, repairs: PerformedRepair[], hned: boolean) => {
-    if (!supabase) {
-      setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-      return;
-    }
-    const odlozene = odlozeneZapisyOpravRef.current;
-    const cekajici = odlozene.get(ticketId);
-    if (cekajici) {
-      clearTimeout(cekajici.casovac);
-      odlozene.delete(ticketId);
-    }
-    const proved = () => {
-      odlozene.delete(ticketId);
-      zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-      void (async () => {
-        try {
-          const { error } = await (supabase!.from("tickets") as any)
-            .update({ performed_repairs: repairs })
-            .eq("id", ticketId);
-          if (error) throw error;
-          // Databáze má nejnovější opravy – realtime už je smí přepisovat.
-          neulozeneOpravyRef.current.delete(ticketId);
-        } catch (err) {
-          devLog("[opravy] zápis selhal, uloží se při zavření detailu", err);
-          setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-          // Opravy jsou teď jen v paměti; realtime je nesmí přepsat, dokud
-          // se neuloží při zavření detailu (jinak zůstane rezervace bez opravy).
-          neulozeneOpravyRef.current.add(ticketId);
-          /* Druhá pojistka: zavření detailu zkusí zápis znovu, ale když je
-             síť pryč i potom, opravy by se ztratily. Fronta je dopíše sama,
-             až spojení naskočí – přežije i zavření aplikace. */
-          if (!jeTrvalaChyba(err)) {
-            ulozNaPozdeji({
-              klic: `tickets:${ticketId}:performed_repairs`,
-              tabulka: "tickets",
-              id: ticketId,
-              data: { performed_repairs: repairs },
-              popis: `Provedené opravy · ${popisZakazky(ticketId)}`,
-              serviceId: activeServiceIdRef.current,
-              chyba: err,
-            });
-          }
-        } finally {
-          ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
-        }
-      })();
-    };
-    if (hned) proved();
-    else odlozene.set(ticketId, { casovac: setTimeout(proved, 400), proved });
-  }, []);
-
-  /** Odložené zápisy oprav pošle hned – před zavřením detailu a při odchodu ze stránky. */
-  const dokoncitOdlozeneZapisyOprav = useCallback(() => {
-    for (const { casovac, proved } of odlozeneZapisyOpravRef.current.values()) {
-      clearTimeout(casovac);
-      proved();
-    }
-    for (const { casovac, proved } of odlozenaKontrolaRef.current.values()) {
-      clearTimeout(casovac);
-      proved();
-    }
-    for (const { casovac, proved } of odlozenaDiagnostikaRef.current.values()) {
-      clearTimeout(casovac);
-      proved();
-    }
-  }, []);
-
-  useEffect(() => {
-    // `pagehide` chytí i Safari, kde se `beforeunload` někdy nespustí, a
-    // odmontování stránky Zakázky, kde by odložený zápis jinak visel.
-    window.addEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
-    window.addEventListener("pagehide", dokoncitOdlozeneZapisyOprav);
-    return () => {
-      window.removeEventListener("beforeunload", dokoncitOdlozeneZapisyOprav);
-      window.removeEventListener("pagehide", dokoncitOdlozeneZapisyOprav);
-      dokoncitOdlozeneZapisyOprav();
-    };
-  }, [dokoncitOdlozeneZapisyOprav]);
-
-  /** Upraví provedené opravy zakázky v místním stavu i v databázi. */
-  const upravProvedeneOpravy = useCallback(
-    (ticketId: string, uprava: (repairs: PerformedRepair[]) => PerformedRepair[], hned: boolean) => {
-      const ticket = cloudTicketsRef.current.find((t) => t.id === ticketId);
-      if (!ticket) return;
-      const next = uprava(ticket.performedRepairs ?? []);
-      // Do ref hned, aby další volání ve stejném kliknutí stavělo na tomhle výsledku.
-      cloudTicketsRef.current = cloudTicketsRef.current.map((t) => (t.id === ticketId ? { ...t, performedRepairs: next } : t));
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, performedRepairs: next } : t)));
-      zapisProvedeneOpravy(ticketId, next, hned);
-    },
-    [zapisProvedeneOpravy]
-  );
-
-  const addPerformedRepair = useCallback(
-    (ticketId: string, repair: { name: string; type: "selected" | "manual" | "hourly"; repairId?: string; price?: number; costs?: number; estimatedTime?: number; productIds?: string[]; hodiny?: number; sazba?: number; technik?: string; technikUserId?: string; zMereni?: boolean }) => {
-      // Ruční oprava si cenu, náklady, čas a díly nese sama; oprava z ceníku je má v ceníku.
-      let repairPrice: number | undefined = repair.price;
-      let repairCosts: number | undefined = repair.costs;
-      let repairTime: number | undefined = repair.estimatedTime;
-      let repairProductIds: string[] | undefined = repair.productIds;
-      if (repair.repairId) {
-        const repairData = devicesData.repairs.find((r) => r.id === repair.repairId);
-        if (repairData) {
-          repairPrice = repairData.price;
-          repairCosts = repairData.costs;
-          repairTime = repairData.estimatedTime;
-          repairProductIds = repairData.productIds;
-        }
-      }
-
-      const entryId = `${Date.now()}_${Math.random()}`;
-
-      // Díly se rezervují ve skladu (DB); ze skladu se odečtou až v koncovém stavu zakázky.
-      if (repairProductIds && repairProductIds.length > 0) {
-        void reserveEntryProducts(ticketId, entryId, repairProductIds).then((res) => {
-          if (res) toastReserveShortages(res.shortages);
-        });
-      }
-
-      // Hodinová práce: cena a čas se počítají z hodin a sazby.
-      if (repair.type === "hourly") {
-        const hodiny = repair.hodiny ?? 0;
-        const sazba = repair.sazba ?? 0;
-        repairPrice = Math.round(hodiny * sazba * 100) / 100;
-        repairTime = Math.round(hodiny * 60);
-      }
-
-      const newRepair: PerformedRepair = {
-        id: entryId,
-        name: repair.name,
-        type: repair.type,
-        repairId: repair.repairId,
-        price: repairPrice,
-        costs: repairCosts,
-        estimatedTime: repairTime,
-        productIds: repairProductIds,
-        // Odměny týmu (lib/odmeny): kdo opravu na zakázku přidal – nabídl ji zákazníkovi.
-        ...(mojeId ? { pridalUserId: mojeId } : {}),
-        // …a jestli ji nabídl navíc (není v požadované opravě z příjmu). Kdo přidává, může to v řádku otočit.
-        ...(() => {
-          const n = vychoziNabidnuto(repair.name, cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair, pravidlaOdmen);
-          return n === undefined ? {} : { nabidnuto: n };
-        })(),
-        ...(repair.type === "hourly" ? { hodiny: repair.hodiny, sazba: repair.sazba, technik: repair.technik, technikUserId: repair.technikUserId, ...(repair.zMereni ? { zMereni: true } : {}) } : {}),
-      };
-      upravProvedeneOpravy(ticketId, (repairs) => [...repairs, newRepair], true);
-    },
-    [devicesData, reserveEntryProducts, toastReserveShortages, upravProvedeneOpravy, mojeId, pravidlaOdmen]
-  );
-
-  const updatePerformedRepairPrice = useCallback((ticketId: string, repairId: string, price: number) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, price } : r)), false);
-  }, [upravProvedeneOpravy]);
-
-  const updatePerformedRepairCosts = useCallback((ticketId: string, repairId: string, costs: number) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, costs } : r)), false);
-  }, [upravProvedeneOpravy]);
-
-  const updatePerformedRepairTime = useCallback((ticketId: string, repairId: string, estimatedTime: number) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, estimatedTime } : r)), false);
-  }, [upravProvedeneOpravy]);
-
-  const updatePerformedRepairProducts = useCallback((ticketId: string, repairId: string, productIds: string[]) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, productIds } : r)), false);
-  }, [upravProvedeneOpravy]);
-
-  /** Náhradní zařízení se ukládá hned – smlouva se tiskne vzápětí a data musí být v DB. */
-  const ulozZapujcku = useCallback(async (ticketId: string, zapujcka: ZapujckaData | null) => {
-    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.loaner;
-    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: zapujcka ?? undefined } : t)));
-    if (!supabase) return;
-    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ loaner: zapujcka }).eq("id", ticketId));
-    if (error) {
-      devLog("[zapujcka] zápis selhal", error);
-      if (jeTrvalaChyba(error)) {
-        // Opakování by nepomohlo (chybí právo, zakázka zmizela). Zpět na stav
-        // z databáze – jinak by karta ukazovala něco, co po obnovení zmizí.
-        setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, loaner: puvodni } : t)));
-        showToast("Půjčení zařízení se nepodařilo uložit", "error");
-        return;
-      }
-      // Výpadek spojení: zadané údaje si necháme a frontu je dopíše sama.
-      ulozNaPozdeji({
-        klic: `tickets:${ticketId}:loaner`,
-        tabulka: "tickets",
-        id: ticketId,
-        data: { loaner: zapujcka },
-        popis: `Půjčení zařízení · ${popisZakazky(ticketId)}`,
-        serviceId: activeServiceIdRef.current,
-        chyba: error,
-      });
-      showToast("Spojení vypadlo – půjčení se uloží samo, jakmile bude připojení. Neztratí se.", "info");
-    }
-  }, []);
-
-  /**
-   * Kontrola po opravě se ukládá s krátkým odkladem.
-   *
-   * Bez něj šel do databáze zápis na každou klávesu v poznámce. Dvacet
-   * požadavků na stejný řádek nemá zaručené pořadí, takže při pomalejší síti
-   * mohl doběhnout jako poslední ten s kratším textem – a poznámka se
-   * ořízla nebo zmizela. Odklad pošle jen poslední stav; před zavřením
-   * detailu a při odchodu ze stránky se dopíše okamžitě.
-   */
-  /** Přidělený technik – hned do databáze, bez spojení do fronty. */
-  const ulozTechnika = useCallback(async (ticketId: string, userId: string | null) => {
-    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.assignedTo ?? null;
-    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assignedTo: userId } : t)));
-    if (!supabase) return;
-    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ assigned_to: userId }).eq("id", ticketId));
-    if (!error) return;
-    devLog("[technik] zápis selhal", error);
-    if (jeTrvalaChyba(error)) {
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assignedTo: puvodni } : t)));
-      showToast("Technika se nepodařilo uložit", "error");
-      return;
-    }
-    ulozNaPozdeji({
-      klic: `tickets:${ticketId}:assigned_to`,
-      tabulka: "tickets",
-      id: ticketId,
-      data: { assigned_to: userId },
-      popis: "Zakázka · technik",
-      serviceId: activeServiceId,
-      chyba: error,
-    });
-    showToast("Spojení vypadlo – technik se uloží, jakmile bude připojení.", "info");
-  }, [activeServiceId, sOkamzitymZapisem]);
-
-  /**
-   * Štítek Find My v detailu – přepíná se jedním klikem, hned do databáze.
-   * Stejný postup jako u technika: optimisticky do paměti, při trvalé chybě
-   * zpět, při výpadku do fronty.
-   */
-  const ulozFindMy = useCallback(async (ticketId: string, vypnuto: boolean) => {
-    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.findMyOff ?? null;
-    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: vypnuto } : t)));
-    if (!supabase) return;
-    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ find_my_off: vypnuto }).eq("id", ticketId));
-    if (!error) return;
-    devLog("[find my] zápis selhal", error);
-    if (jeTrvalaChyba(error)) {
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: puvodni } : t)));
-      showToast("Stav Find My se nepodařilo uložit", "error");
-      return;
-    }
-    ulozNaPozdeji({
-      klic: `tickets:${ticketId}:find_my_off`,
-      tabulka: "tickets",
-      id: ticketId,
-      data: { find_my_off: vypnuto },
-      popis: "Zakázka · Find My",
-      serviceId: activeServiceId,
-      chyba: error,
-    });
-    showToast("Spojení vypadlo – stav Find My se uloží, jakmile bude připojení.", "info");
-  }, [activeServiceId, sOkamzitymZapisem]);
-
-  const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
-    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
-    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: kontrola ?? undefined } : t)));
-    if (!supabase) return;
-    const odlozene = odlozenaKontrolaRef.current;
-    const cekajici = odlozene.get(ticketId);
-    if (cekajici) clearTimeout(cekajici.casovac);
-    const proved = () => {
-      odlozene.delete(ticketId);
-      void zapisKontrolu(ticketId, kontrola, puvodni);
-    };
-    odlozene.set(ticketId, { casovac: setTimeout(proved, 450), proved });
-  }, []);
-
-  const zapisKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null, puvodni: KontrolaPoOpraveData | undefined) => {
-    if (!supabase) return;
-    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ test_checklist: kontrola }).eq("id", ticketId));
-    if (error) {
-      devLog("[kontrola] zápis selhal", error);
-      if (jeTrvalaChyba(error)) {
-        setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, testChecklist: puvodni } : t)));
-        showToast("Kontrolu se nepodařilo uložit", "error");
-        return;
-      }
-      ulozNaPozdeji({
-        klic: `tickets:${ticketId}:test_checklist`,
-        tabulka: "tickets",
-        id: ticketId,
-        data: { test_checklist: kontrola },
-        popis: `Kontrola po opravě · ${popisZakazky(ticketId)}`,
-        serviceId: activeServiceIdRef.current,
-        chyba: error,
-      });
-      showToast("Spojení vypadlo – kontrola se uloží sama, jakmile bude připojení. Neztratí se.", "info");
-    }
-  }, []);
-
-
-  /** Odložené zápisy diagnostiky psané v detailu reklamace. */
-  const odlozenaDiagnostikaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void; patch: Record<string, unknown> }>>(new Map());
-
-  /**
-   * Zápis diagnostiky zakázky mimo její vlastní detail – typicky z reklamace,
-   * kde se ukazují údaje napojené zakázky.
-   *
-   * Dřív se změna zapsala jen do stavu v prohlížeči a u karty stálo „pro
-   * uložení otevřete zakázku a klikněte na Uložit“. Kdo si toho nevšiml,
-   * přišel o napsaný protokol i o nahrané fotky – ty zůstaly v úložišti,
-   * ale zakázka o nich nevěděla. Text se posílá s krátkým odkladem (píše se
-   * po písmenech), fotky hned.
-   */
-  const ulozDiagnostikuZakazky = useCallback((ticketId: string, patch: { diagnostic_text?: string; diagnostic_photos?: string[]; diagnostic_photos_before?: string[] }, hned: boolean) => {
-    if (!supabase) return;
-    const odlozene = odlozenaDiagnostikaRef.current;
-    const cekajici = odlozene.get(ticketId);
-    /* Čekající zápis se s novým sloučí, nezahodí. Patche jsou různé sloupce
-       (text vs. fotky), takže zrušením čekajícího by se ztratilo posledních
-       pár set milisekund psaní – a v okně by text zůstal, takže by si toho
-       nikdo nevšiml až do přenačtení. */
-    const spojeny = cekajici ? { ...cekajici.patch, ...patch } : patch;
-    if (cekajici) clearTimeout(cekajici.casovac);
-    const proved = () => {
-      odlozene.delete(ticketId);
-      void (async () => {
-        const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () =>
-          (supabase!.from("tickets") as any).update(spojeny).eq("id", ticketId));
-        if (!error) return;
-        devLog("[diagnostika] zápis selhal", error);
-        if (jeTrvalaChyba(error)) {
-          showToast("Diagnostiku se nepodařilo uložit", "error");
-          return;
-        }
-        ulozNaPozdeji({
-          klic: `tickets:${ticketId}:diagnostika`,
-          tabulka: "tickets",
-          id: ticketId,
-          data: spojeny,
-          popis: `Diagnostika · ${popisZakazky(ticketId)}`,
-          serviceId: activeServiceIdRef.current,
-          chyba: error,
-        });
-      })();
-    };
-    if (hned) proved();
-    else odlozene.set(ticketId, { casovac: setTimeout(proved, 600), proved, patch: spojeny });
-  }, [popisZakazky, sOkamzitymZapisem]);
-
-  const updatePerformedRepairFields = useCallback((ticketId: string, repairId: string, fields: Partial<PerformedRepair>) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.map((r) => (r.id === repairId ? { ...r, ...fields } : r)), false);
-  }, [upravProvedeneOpravy]);
-
-  const removePerformedRepair = useCallback((ticketId: string, repairId: string) => {
-    upravProvedeneOpravy(ticketId, (repairs) => repairs.filter((r) => r.id !== repairId), true);
-    // Odebraná oprava už díly nedrží – rezervace se uvolní (tiché, když RPC chybí).
-    void releaseReservations(ticketId, repairId).then((released) => {
-      if (released) void refreshTicketReservations(ticketId);
-    });
-  }, [refreshTicketReservations, upravProvedeneOpravy]);
-
-  const border = "1px solid var(--border)";
-  const borderError = "1px solid rgba(239,68,68,0.9)";
-
-  const inputStyle: React.CSSProperties = useMemo(
-    () => ({
-      // 360 px byla pevná šířka – na 375px displeji přetékala ven.
-      // Takhle zůstává na desktopu stejná a na mobilu se smrští.
-      width: 360,
-      maxWidth: "100%",
-      minWidth: 0,
-      padding: "10px 12px",
-      borderRadius: 12,
-      border,
-      outline: "none",
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-      color: "var(--text)",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-      transition: "var(--transition-smooth)",
-      boxShadow: "var(--shadow-soft)",
-    }),
-    [border]
-  );
-
-
-
-
-
-  const fieldLabel: React.CSSProperties = useMemo(() => ({ fontSize: 12, color: "var(--muted)", marginTop: 10 }), []);
-  const fieldHint: React.CSSProperties = useMemo(() => ({ fontSize: 12, marginTop: 6, color: "rgba(239,68,68,0.95)" }), []);
-  /** Vysvětlivka pod polem (12 px, tlumená) – místo dlouhých popisků nad polem. */
-  const fieldMuted: React.CSSProperties = useMemo(() => ({ fontSize: 12, marginTop: 6, color: "var(--muted)" }), []);
-  /** Drobný podnadpis skupiny polí v sekci „Další údaje“. */
-  const subHeading: React.CSSProperties = useMemo(
-    () => ({ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }),
-    []
-  );
-
-  const baseFieldInput: React.CSSProperties = useMemo(
-    () => ({
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: 12,
-      border,
-      outline: "none",
-      background: "var(--panel)",
-      color: "var(--text)",
-      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    }),
-    [border]
-  );
-
-  const baseFieldTextArea: React.CSSProperties = useMemo(
-    () => ({
-      ...baseFieldInput,
-      resize: "vertical",
-      minHeight: 88,
-      lineHeight: 1.35,
-    }),
-    [baseFieldInput]
-  );
-
-  const card: React.CSSProperties = useMemo(
-    () => ({
-      border,
-      borderRadius: "var(--radius-lg)",
-      background: "var(--panel)",
-      backdropFilter: "var(--blur)",
-      WebkitBackdropFilter: "var(--blur)",
-      padding: 12,
-      boxShadow: "var(--shadow-soft)",
-      color: "var(--text)",
-    }),
-    [border]
-  );
-
-  const openNewOrder = () => {
-    setSubmitAttempted(false);
-    setIsNewOpen(true);
-  };
+  const {
+    applyQuoteRepairs,
+    popisZakazky,
+    dokoncitOdlozeneZapisyOprav,
+    addPerformedRepair,
+    updatePerformedRepairPrice,
+    updatePerformedRepairCosts,
+    updatePerformedRepairTime,
+    updatePerformedRepairProducts,
+    updatePerformedRepairFields,
+    removePerformedRepair,
+    ulozZapujcku,
+    ulozTechnika,
+    ulozFindMy,
+    ulozKontrolu,
+    ulozDiagnostikuZakazky,
+  } = useZapisyZakazky({
+    activeServiceId,
+    activeServiceIdRef,
+    cloudTicketsRef,
+    setCloudTickets,
+    setDirtyFlags,
+    devicesData,
+    reserveEntryProducts,
+    toastReserveShortages,
+    refreshTicketReservations,
+    mojeId,
+    pravidlaOdmen,
+    rozpracovaneZapisyOpravRef,
+    odlozeneZapisyOpravRef,
+    neulozeneOpravyRef,
+    odlozenaKontrolaRef,
+    odlozenaDiagnostikaRef,
+  });
 
   const setClaimStatus = async (claimId: string, next: string) => {
     if (!statusKeysSet.has(next)) {
@@ -4346,69 +1522,6 @@ export default function Orders({
     return () => { for (const off of offs) off(); };
   }, [closeDetailWhen]);
 
-  const errors = useMemo(() => {
-    const e: Record<string, string> = {};
-    newDraft.devices.forEach((dev, i) => {
-      if (!dev.deviceLabel.trim()) e[`deviceLabel_${i}`] = "Vyplňte zařízení.";
-      // Záruční oprava bez data nákupu ani dokladu se u dodavatele neuplatní.
-      if (chybiPodkladZaruky(dev)) e[`zaruka_${i}`] = "U záruční opravy vyplňte datum nákupu nebo doklad o koupi.";
-    });
-    const phoneRequired = uiCfg.orders.customerPhoneRequired;
-    if (phoneRequired && !newDraft.customerPhone.trim()) e.customerPhone = "Telefon je povinný.";
-    else if (!isPhoneValid(newDraft.customerPhone)) e.customerPhone = "Telefon vypadá neplatně.";
-    if (!isEmailValid(newDraft.customerEmail)) e.customerEmail = "E-mail vypadá neplatně.";
-    if (!isZipValid(newDraft.addressZip)) e.addressZip = "PSČ musí mít 5 číslic.";
-    if (!isIcoValid(newDraft.ico)) e.ico = "IČO musí mít 8 číslic.";
-    return e;
-  }, [newDraft, uiCfg.orders.customerPhoneRequired]);
-
-  const canCreate = Object.keys(errors).length === 0;
-  const showError = (field: string) => submitAttempted && !!errors[field];
-  const showDeviceError = (idx: number) => submitAttempted && !!errors[`deviceLabel_${idx}`];
-
-  /** Krátký důvod, proč nejde vytvořit – k tlačítku v patičce. */
-  const createBlockedReason = useMemo(() => {
-    const keys = Object.keys(errors);
-    if (keys.length === 0) return null;
-    if (keys.some((k) => k.startsWith("deviceLabel_"))) return "Chybí zařízení";
-    if (keys.some((k) => k.startsWith("zaruka_"))) return "Chybí podklad záruky";
-    if (errors.customerPhone) return errors.customerPhone === "Telefon je povinný." ? "Chybí telefon" : "Neplatný telefon";
-    if (errors.customerEmail) return "Neplatný e-mail";
-    if (errors.addressZip) return "Neplatné PSČ";
-    if (errors.ico) return "Neplatné IČO";
-    return "Zkontrolujte vyplněné údaje";
-  }, [errors]);
-
-  /**
-   * Při pokusu o vytvoření s chybami: rozbalí, co je třeba, a přesune fokus
-   * do prvního chybného pole. Pořadí odpovídá pořadí polí ve formuláři.
-   */
-  const focusFirstInvalidField = () => {
-    const deviceIdx = newDraft.devices.findIndex((_, i) => !!errors[`deviceLabel_${i}`]);
-    let selector: string | null = null;
-    // E-mail, PSČ a IČO leží v kartě Zákazník pod sbalitelnými „Dalšími údaji zákazníka“.
-    let needsCustomerMore = false;
-    if (errors.customerPhone) selector = "#new-order-phone";
-    else if (errors.customerEmail) { selector = "#new-order-email"; needsCustomerMore = true; }
-    else if (errors.addressZip) { selector = "#new-order-zip"; needsCustomerMore = true; }
-    else if (errors.ico) { selector = "#new-order-ico"; needsCustomerMore = true; }
-    else if (deviceIdx >= 0) {
-      setExpandedDeviceIdx(deviceIdx);
-      selector = `#new-order-device-${deviceIdx} input`;
-    }
-    if (!selector) return;
-    if (needsCustomerMore) setNewOrderCustomerMoreOpen(true);
-    const sel = selector;
-    window.setTimeout(() => {
-      const root = newOrderBodyRef.current ?? document;
-      const el = root.querySelector<HTMLElement>(sel);
-      if (el) {
-        el.focus();
-        el.scrollIntoView({ block: "center", behavior: "smooth" });
-      }
-    }, 60);
-  };
-
   const createTicket = () => {
     setSubmitAttempted(true);
     if (!canCreate) {
@@ -4494,30 +1607,6 @@ export default function Orders({
     await runDesktopDocument(action, "prijemka_reklamace", sid, data, `prijemka-reklamace-${detailedClaim.code}.pdf`);
   };
 
-  /** Zavře okno Nová zakázka; rozpracované údaje zůstávají uložené. */
-  const closeNewOrder = () => {
-    setIsNewOpen(false);
-    setCustomerMatchDecision("undecided");
-    setMatchedCustomer(null);
-    lastLookupPhoneNormRef.current = null;
-    if (phoneLookupDebounceTimerRef.current) {
-      clearTimeout(phoneLookupDebounceTimerRef.current);
-      phoneLookupDebounceTimerRef.current = null;
-    }
-  };
-
-  /** Zruší rozpracovanou zakázku – zahodí koncept i přijímací fotky. */
-  const discardNewOrder = () => {
-    draftCaptureTokenRef.current = null;
-    setDraftCapturePreviewUrls([]);
-    setDraftCaptureLiveCount(0);
-    setNewDraft(defaultDraft());
-    safeSaveDraft(null);
-    window.dispatchEvent(new CustomEvent("jobsheet:draft-count", { detail: { count: 0 } }));
-    setExpandedDeviceIdx(0);
-    closeNewOrder();
-  };
-
   // ⌘/Ctrl+Enter v okně Nová zakázka = Vytvořit zakázku
   useEffect(() => {
     if (!isNewOpen) return;
@@ -4529,165 +1618,6 @@ export default function Orders({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isNewOpen]);
-
-  // Nově přidané zařízení je rozbalené; po smazání drží index v mezích.
-  useEffect(() => {
-    setExpandedDeviceIdx((idx) => Math.min(idx, Math.max(0, newDraft.devices.length - 1)));
-  }, [newDraft.devices.length]);
-
-  const loadDraftCapturePreviews = useCallback(async (showAddedToast: boolean = true) => {
-    const draftToken = draftCaptureTokenRef.current;
-    if (!draftToken || !supabase || !supabaseUrl || !supabaseAnonKey) return;
-    try {
-      const authToken = (await supabase.auth.getSession()).data?.session?.access_token;
-      if (!authToken) return;
-      const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-list-draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}`, apikey: supabaseAnonKey },
-        body: JSON.stringify({ token: draftToken }),
-      });
-      const raw = await res.text();
-      const data: { urls?: string[]; error?: string } = raw ? JSON.parse(raw) : {};
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      if (Array.isArray(data.urls)) {
-        setDraftCaptureLiveCount(data.urls.length);
-        setDraftCapturePreviewUrls((prev) => {
-          const added = Math.max(0, data.urls!.length - prev.length);
-          if (showAddedToast && added > 0) {
-            const suffix = added === 1 ? "fotka" : added >= 2 && added <= 4 ? "fotky" : "fotek";
-            showToast(`Načteno ${added} ${suffix} z mobilu`, "success");
-          }
-          return data.urls!;
-        });
-      }
-    } catch (err) {
-      console.warn("[Orders] loadDraftCapturePreviews failed", err);
-    }
-  }, []);
-
-  const closeCaptureQrModal = useCallback(() => {
-    setCaptureQRItems(null);
-    void loadDraftCapturePreviews(true);
-  }, [loadDraftCapturePreviews]);
-
-  useEffect(() => {
-    if (!captureQRItems || !draftCaptureTokenRef.current) return;
-    void loadDraftCapturePreviews(false);
-    const t = setInterval(() => {
-      void loadDraftCapturePreviews(false);
-    }, 3000);
-    return () => clearInterval(t);
-  }, [captureQRItems, loadDraftCapturePreviews]);
-
-  const commentsFor = (ticketId: string): TicketComment[] => {
-    const all = (commentsByTicket[ticketId] ?? []).slice();
-
-    all.sort((a, b) => {
-      const ap = !!a.pinned;
-      const bp = !!b.pinned;
-      if (ap !== bp) return ap ? -1 : 1;
-      return (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
-    });
-
-    return all;
-  };
-
-  const addComment = async (ticketId: string) => {
-    const text = (commentDraftByTicket[ticketId] ?? "").trim();
-    if (!text || !supabase || !activeServiceId) return;
-
-    const displayName = userProfile?.nickname?.trim() || session?.user?.email?.split("@")[0] || "Servis";
-    const payload = {
-      ticket_id: ticketId,
-      service_id: activeServiceId,
-      author: displayName,
-      author_id: session?.user?.id ?? null,
-      author_nickname: userProfile?.nickname?.trim() || null,
-      author_avatar_url: userProfile?.avatarUrl?.trim() || null,
-      content: text,
-      pinned: false,
-    };
-
-    setCommentDraftByTicket((p) => ({ ...p, [ticketId]: "" }));
-
-    const { data, error } = await (supabase.from("ticket_comments") as any)
-      .insert(payload)
-      .select("id,ticket_id,author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
-      .single();
-
-    if (error || !data) {
-      console.error("[Orders] Error adding comment:", error);
-      showToast("Nepodařilo se uložit komentář.", "error");
-      setCommentDraftByTicket((p) => ({ ...p, [ticketId]: text }));
-      return;
-    }
-
-    const c = mapSupabaseCommentRow(data as SupabaseTicketCommentRow);
-    setCommentsByTicket((p) => ({ ...p, [ticketId]: [...(p[ticketId] ?? []), c] }));
-  };
-
-  const editComment = async (ticketId: string, commentId: string, text: string) => {
-    if (!supabase) return;
-    const prev = commentsByTicket[ticketId]?.find((c) => c.id === commentId);
-    if (!prev || prev.text === text) return;
-    setCommentsByTicket((p) => ({
-      ...p,
-      [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, text } : c)),
-    }));
-    const { error } = await (supabase.from("ticket_comments") as any).update({ content: text }).eq("id", commentId);
-    if (error) {
-      setCommentsByTicket((p) => ({
-        ...p,
-        [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, text: prev.text } : c)),
-      }));
-      reportError({ code: "orders.comment_edit_failed", error, userMessage: "Komentář se nepodařilo upravit.", source: "Orders.editComment", serviceId: activeServiceId });
-    }
-  };
-
-  // Fotky a přezdívky autorů komentářů z aktuálních profilů (komentář má
-  // jen snímek z doby uložení – kdo si fotku přidal později, byl bez ní).
-  const commentAuthorIdsKey = useMemo(() => {
-    const ids = new Set<string>();
-    for (const list of Object.values(commentsByTicket)) for (const c of list) if (c.author_id) ids.add(c.author_id);
-    return [...ids].sort().join(",");
-  }, [commentsByTicket]);
-  useEffect(() => {
-    if (!supabase || !commentAuthorIdsKey) return;
-    const ids = commentAuthorIdsKey.split(",");
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await (supabase.from("profiles") as any).select("id, nickname, avatar_url").in("id", ids);
-      if (cancelled || error || !Array.isArray(data)) return;
-      const map: Record<string, { nickname: string | null; avatarUrl: string | null }> = {};
-      for (const p of data) map[p.id] = { nickname: p.nickname ?? null, avatarUrl: p.avatar_url ?? null };
-      setCommentAuthorProfiles(map);
-    })();
-    return () => { cancelled = true; };
-  }, [commentAuthorIdsKey]);
-
-  const togglePin = async (ticketId: string, commentId: string) => {
-    if (!supabase) return;
-    const current = commentsByTicket[ticketId]?.find((c) => c.id === commentId);
-    const nextPinned = !current?.pinned;
-
-    setCommentsByTicket((p) => ({
-      ...p,
-      [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, pinned: nextPinned } : c)),
-    }));
-
-    const { error } = await (supabase.from("ticket_comments") as any).update({ pinned: nextPinned }).eq("id", commentId);
-    if (error) {
-      console.error("[Orders] Error toggling comment pin:", error);
-      setCommentsByTicket((p) => ({
-        ...p,
-        [ticketId]: (p[ticketId] ?? []).map((c) => (c.id === commentId ? { ...c, pinned: !nextPinned } : c)),
-      }));
-    }
-  };
-
-  const handleCommentDraftChange = useCallback((ticketId: string, value: string) => {
-    setCommentDraftByTicket((p) => ({ ...p, [ticketId]: value }));
-  }, []);
 
   const toCardData = useCallback((t: (typeof filtered)[number]): TicketCardData => ({
     id: t.id,
@@ -4712,4167 +1642,382 @@ export default function Orders({
     expectedDoneAt: t.expectedDoneAt,
   }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni]);
 
-  const renderStatusPicker = useCallback((ticketId: string, currentStatus: string | null) => {
-    if (currentStatus !== null) {
-      return <StatusPicker value={currentStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(ticketId, next)} size="sm" actionsByStatus={statusActionsMap} />;
-    }
-    return <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "var(--panel-2)", color: "var(--muted)", fontWeight: 600 }}>…</div>;
-  }, [statuses, getByKey, setTicketStatus, statusActionsMap]);
-
-  const renderPrintButton = useCallback((t: TicketCardData, small?: boolean) => {
-    if (!canPrintExport) return null;
-    const sz = small ? 26 : 32;
-    return (
-      <button
-        type="button"
-        data-quick-print-trigger-id={t.id}
-        /* Z karty se tisknou celé dokumenty – zakázkový list chce adresu, stav
-           zařízení i kontrolu po opravě, tedy sloupce, které seznam nečte.
-           Dřív se do nabídky posílala jen data karty, takže se tisklo bez nich
-           a „Diagnostický protokol" se v nabídce nikdy neobjevil. */
-        onClick={(e) => {
-          e.stopPropagation();
-          if (openQuickPrintTicketRef.current?.id === t.id) { setOpenQuickPrintTicket(null); return; }
-          void zajistiPlnouZakazku(t.id).then((plna) => setOpenQuickPrintTicket(plna));
-        }}
-        title="Tisk"
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: sz, height: sz, minWidth: sz, minHeight: sz, borderRadius: small ? 6 : 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", cursor: "pointer", fontSize: small ? 12 : 14, flexShrink: 0 }}
-      ><PrintIcon size={small ? 13 : 15} /></button>
-    );
-  }, [canPrintExport, setOpenQuickPrintTicket, zajistiPlnouZakazku]);
-
-  const smsUnreadForTicket = (ticketId: string) => {
-    if (smsPanelOpen && detailId === ticketId) return 0;
-    return smsUnreadByTicketId[ticketId] ?? 0;
-  };
-
-  const smsUnreadByTicketIdDisplay = useMemo(() => {
-    const o = { ...smsUnreadByTicketId };
-    if (smsPanelOpen && detailId) o[detailId] = 0;
-    return o;
-  }, [smsUnreadByTicketId, smsPanelOpen, detailId]);
-
-  const smsBadge = (ticketId: string) => {
-    const n = smsUnreadForTicket(ticketId);
-    if (n <= 0) return null;
-    return (
-      <span
-        style={{
-          position: "absolute",
-          top: -8,
-          right: -8,
-          minWidth: 20,
-          height: 20,
-          borderRadius: "50%",
-          background: "#FF3B30",
-          color: "#fff",
-          fontSize: 11,
-          fontWeight: 700,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "0 6px",
-          zIndex: 1,
-        }}
-      >
-        {n > 99 ? "99+" : n}
-      </span>
-    );
-  };
-
-  const renderTicketCard = (t: (typeof filtered)[number]) => {
-    const raw = (t.status as any) ?? statusById[t.id];
-    const currentStatus = normalizeStatus(raw);
-    const meta = currentStatus !== null ? getByKey(currentStatus) : null;
-    const cardData = toCardData(t);
-    const mode = uiCfg.orders.displayMode;
-    const onClick = () => { setDetailId(t.id); setDetailClaimId(null); };
-    const viewers = viewersByTicket[t.id];
-    const statusNode = viewers && viewers.length > 0 ? (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        <PresenceAvatars viewers={viewers} size={18} />
-        {renderStatusPicker(t.id, currentStatus)}
-      </span>
-    ) : renderStatusPicker(t.id, currentStatus);
-    const metaOrNull = meta ?? null;
-    const wrap = (node: React.ReactNode) =>
-      smsUnreadForTicket(t.id) > 0 ? (
-        <div key={t.id} style={{ position: "relative" }}>
-          {smsBadge(t.id)}
-          {node}
-        </div>
-      ) : (
-        <React.Fragment key={t.id}>{node}</React.Fragment>
-      );
-
-    /* Síla zvýraznění stavu platí pro všechny režimy zobrazení – dřív ji
-       znal jen Seznam a v ostatních režimech volba v Nastavení nic nedělala. */
-    const zvyrazneni = uiCfg.orders.zvyrazneniStavu;
-    switch (mode) {
-      case "compact":
-        return wrap(<TicketCardCompact ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
-      case "compact-extra":
-        return wrap(<TicketCardCompactExtra ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
-      case "grid":
-        return wrap(<TicketCardGrid ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
-      case "stripe":
-        return wrap(<TicketCardStripe ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
-      case "list":
-      default:
-        return wrap(<TicketCardList ticket={cardData} meta={metaOrNull} onClick={onClick} statusPicker={statusNode} printButton={renderPrintButton(cardData, true)} zvyrazneni={zvyrazneni} />);
-    }
-  };
-
-  const renderClaimCard = (c: any, keyPrefix = "") => {
-    const rawStatus = (c.status as string | null) ?? "";
-    const currentStatus = normalizeStatus(rawStatus);
-    const claimMeta = currentStatus !== null ? getByKey(currentStatus) : null;
-    const statusColor = claimMeta?.bg || "var(--border)";
-    const isSmall = uiCfg.orders.displayMode === "compact" || uiCfg.orders.displayMode === "compact-extra";
-    const claimAsCardData: TicketCardData = {
-      id: c.id, code: c.code, customerName: c.customer_name ?? "—",
-      deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "",
-      createdAt: c.created_at ?? "", status: c.status,
-    };
-    return (
-      <ClaimCard
-        key={`${keyPrefix}${c.id}`}
-        claim={c}
-        displayMode={uiCfg.orders.displayMode}
-        statusColor={statusColor}
-        statusLabel={claimMeta?.label}
-        isFinal={claimMeta?.isFinal === true}
-        zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-        onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-        statusPicker={<StatusPicker value={c.status} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-        printButton={renderPrintButton(claimAsCardData, isSmall)}
-      />
-    );
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* První kroky nového servisu – jen pro majitele a správce, sám zmizí. */}
-      {activeServiceId && isAdmin && (
-        <OnboardingChecklist activeServiceId={activeServiceId} ticketIds={ticketIds} />
-      )}
-      {/* Header */}
-      <div>
-        <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zakázky</div>
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-          <div style={{ position: "relative", width: 360, maxWidth: "100%", minWidth: 0 }}>
-            <input
-              ref={searchInputRef}
-              data-tour="orders-search"
-              placeholder="Vyhledávání…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                // Esc v poli s textem jen vymaže hledání – nesmí dojít ke globální zkratce, která zavírá okna.
-                if (e.key === "Escape" && query) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setQuery("");
-                }
-              }}
-              style={{ ...inputStyle, width: "100%", paddingRight: query ? 38 : 12 }}
-            />
-            {query && (
-              <button
-                type="button"
-                aria-label="Vymazat hledání"
-                title="Vymazat hledání (Esc)"
-                onClick={() => {
-                  setQuery("");
-                  searchInputRef.current?.focus();
-                }}
-                style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 26, height: 26, display: "grid", placeItems: "center", border: "none", borderRadius: 8, background: "var(--panel-2)", color: "var(--muted)", cursor: "pointer" }}
-              >
-                <XIcon size={14} />
-              </button>
-            )}
-          </div>
-          <Button variant="primary" data-tour="orders-new-btn" onClick={openNewOrder}>
-            + Nová zakázka
-          </Button>
-          <Button variant="primary"
-            data-tour="orders-new-claim-btn"
-            onClick={() => { setClaimSourceTicket(null); setCreateClaimModalOpen(true); }}
-          >
-            + Nová reklamace
-          </Button>
-        </div>
-      </div>
-
-      {/* Group tabs + filtr podle stavu */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <div data-tour="orders-groups">
-        <Segmented<GroupKey>
-          dataTour="orders-filters"
-          ariaLabel="Filtr zakázek"
-          value={activeGroup}
-          onChange={setActiveGroup}
-          options={[
-            { value: "all", label: groupLabel("Vše", groupCounts.all) },
-            { value: "active", label: groupLabel("Aktivní", groupCounts.active) },
-            ...(pridelovaniTechnika ? [{ value: "moje" as GroupKey, label: groupLabel("Moje", groupCounts.moje) }] : []),
-            ...(filtrPresunu ? [{ value: "presun" as GroupKey, label: groupLabel("Přesuny", groupCounts.presun) }] : []),
-            { value: "final", label: groupLabel("Dokončené", groupCounts.final) },
-            { value: "reklamace", label: groupLabel("Reklamace", groupCounts.reklamace) },
-          ]}
-        />
-      </div>
-      {activeGroup !== "reklamace" && (
-        <StatusFilter value={activeStatusKey} onChange={setActiveStatusKey} options={statusFilterOptions.options} total={statusFilterOptions.total} />
-      )}
-      </div>
-
-      {/* Reklamace sub-filter: Aktivní / Final */}
-      {activeGroup === "reklamace" && (
-          <div data-tour="orders-claims-subfilter" style={{ marginTop: 10 }}>
-            <Segmented<ClaimsSubGroup>
-              size="sm"
-              ariaLabel="Filtr reklamací"
-              value={claimsSubGroup}
-              onChange={setClaimsSubGroup}
-              options={[
-                { value: "all", label: "Vše" },
-                { value: "active", label: "Aktivní" },
-                { value: "final", label: "Dokončené" },
-              ]}
-            />
-          </div>
-      )}
-
-      {/* Secondary quick status filters */}
-      {showSecondaryFiltersRow && (
-          <Segmented
-            dataTour="orders-filters"
-            ariaLabel="Filtr stavů"
-            size="sm"
-            value={activeStatusKey ?? ""}
-            onChange={(key) => setActiveStatusKey(key === "" ? null : key)}
-            options={[
-              { value: "", label: "Všechny stavy" },
-              ...quickStatuses.map((st) => ({ value: st.key, label: st.label, title: st.label })),
-            ]}
-          />
-      )}
-
-      {/* Loading/Error states */}
-      {statusesLoading && (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
-          Načítání statusů...
-        </div>
-      )}
-      {statusesError && (
-        <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
-          Chyba při načítání statusů: {statusesError}
-        </div>
-      )}
-      {ticketsLoading && (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
-          Načítání zakázek...
-        </div>
-      )}
-      {/* Seznam je vidět dřív, než dojedou všechny zakázky. Bez téhle věty by
-          se počty u záložek beze slova změnily pod rukama a hledání by chvíli
-          tvrdilo, že starší zakázka neexistuje. */}
-      {!ticketsLoading && ticketsPartial && (
-        <div style={{ padding: "4px 2px 8px", fontSize: "var(--text-xs)", color: "var(--muted)" }}>
-          Načítají se starší zakázky – počty a hledání zatím nemusí být úplné.
-        </div>
-      )}
-      {ticketsError && activeGroup !== "reklamace" && (
-        <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
-          {ticketsError}
-        </div>
-      )}
-      {claimsLoading && activeGroup === "reklamace" && (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Načítání reklamací…</div>
-      )}
-      {claimsError && (
-        <div style={{ padding: 24, textAlign: "center", color: "rgba(239,68,68,0.9)", background: "rgba(239,68,68,0.1)", borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)" }}>
-          {claimsError}
-        </div>
-      )}
-
-      {/* List/Grid - only render if statuses are ready and not loading and no error */}
-      {statusesReady && (activeGroup === "reklamace" ? !claimsLoading && !claimsError : !ticketsLoading && !ticketsError) && (
-      <div data-tour="orders-list" style={{ 
-        marginTop: 16, 
-        ...(uiCfg.orders.displayMode === "timeline" || uiCfg.orders.displayMode === "status-grouped"
-          ? { minWidth: 0 }
-          : {
-              display: "grid",
-              gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 280px), 1fr))" : "minmax(min(100%, 260px), 1fr)",
-              /* U plné výplně řádky těsně u sebe jako v Zakázkovém listu – mezery
-                 mezi sytě barevnými pruhy by rozbily dojem souvislého seznamu. */
-              gap: uiCfg.orders.displayMode === "grid" ? 12
-                : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" || uiCfg.orders.zvyrazneniStavu === "plne" ? 2
-                : 6,
-              minWidth: 0,
-            }),
-      }}>
-        {/* Timeline a seskupení podle stavu: pohledy přes celý kontejner */}
-        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "timeline" && (
-          <TicketTimeline
-            tickets={paginatedTickets.map(toCardData)}
-            getByKey={getByKey as any}
-            normalizeStatus={normalizeStatus}
-            onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
-            smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
-            zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-          />
-        )}
-        {activeGroup !== "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
-          showClaimsInOrdersList ? (
-            <CombinedStatusGrouped
-              tickets={combinedList.filter((r) => r.type === "ticket").map((r) => toCardData((r as { type: "ticket"; data: (typeof filtered)[number] }).data))}
-              claims={combinedList.filter((r) => r.type === "claim").map((r) => (r as { type: "claim"; data: WarrantyClaimRow }).data)}
-              statuses={statuses as any}
-              normalizeStatus={normalizeStatus}
-              onClickTicket={(id) => { setDetailId(id); setDetailClaimId(null); }}
-              onClickClaim={(id) => { setDetailClaimId(id); setDetailId(null); }}
-              statusPickerForTicket={(t, st) => renderStatusPicker(t.id, st)}
-              statusPickerForClaim={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-              printButtonForTicket={(t) => renderPrintButton(t, true)}
-              printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
-              customOrder={uiCfg.orders.statusGroupedOrder}
-              smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
-              zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-            />
-          ) : (
-            <TicketStatusGrouped
-              tickets={filtered.map(toCardData)}
-              statuses={statuses as any}
-              normalizeStatus={normalizeStatus}
-              onClickDetail={(id) => { setDetailId(id); setDetailClaimId(null); }}
-              statusPickerFor={(t, st) => renderStatusPicker(t.id, st)}
-              printButtonFor={(t) => renderPrintButton(t, true)}
-              customOrder={uiCfg.orders.statusGroupedOrder}
-              smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
-              zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-            />
-          )
-        )}
-        {activeGroup === "reklamace" && uiCfg.orders.displayMode === "status-grouped" && (
-          <ClaimStatusGrouped
-            claims={paginatedClaims}
-            statuses={statuses as any}
-            normalizeStatus={normalizeStatus}
-            onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
-            statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-            printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
-            customOrder={uiCfg.orders.statusGroupedOrder}
-            zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-          />
-        )}
-        {/* Card-based modes: render individual cards (skip if table/timeline/status-grouped already rendered above) */}
-        {activeGroup === "reklamace" && uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
-          ? paginatedClaims.map((c) => renderClaimCard(c))
-          : uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped" && showClaimsInOrdersList
-            ? paginatedCombined.map((row) =>
-                row.type === "claim"
-                  ? renderClaimCard(row.data, "claim-")
-                  : renderTicketCard(row.data)
-              )
-          : uiCfg.orders.displayMode !== "timeline" && uiCfg.orders.displayMode !== "status-grouped"
-            ? paginatedTickets.map((t) => renderTicketCard(t))
-            : null
-        }
-
-        {pageSize > 0 && listLength > pageSize && (() => {
-          const from = ordersPage * effectivePageSize + 1;
-          const to = Math.min((ordersPage + 1) * effectivePageSize, listLength);
-          const label = activeGroup === "reklamace" ? "reklamací" : "zakázek";
-          const maxPageButtons = 7;
-          const showPageNumbers = totalOrdersPages <= maxPageButtons;
-          const getPageNumbers = (): number[] => {
-            if (totalOrdersPages <= maxPageButtons) {
-              return Array.from({ length: totalOrdersPages }, (_, i) => i);
-            }
-            const cur = ordersPage;
-            const last = totalOrdersPages - 1;
-            const pages: number[] = [0];
-            if (cur > 2) pages.push(-1);
-            for (let i = Math.max(1, cur - 1); i <= Math.min(last - 1, cur + 1); i++) {
-              if (!pages.includes(i)) pages.push(i);
-            }
-            if (cur < last - 2) pages.push(-2);
-            if (last > 0 && !pages.includes(last)) pages.push(last);
-            return pages;
-          };
-          const pageNumbers = getPageNumbers();
-          const btnBase = {
-            minWidth: 36,
-            height: 36,
-            padding: "0 10px",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            color: "var(--text)",
-            fontWeight: 600,
-            fontSize: 13,
-            cursor: "pointer" as const,
-            transition: "background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
-          };
-          const btnDisabled = { opacity: 0.45, cursor: "not-allowed" as const };
-          return (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 16,
-                marginTop: 20,
-                /* Pruh pod stránkováním: plovoucí „+“ a bublina chatu sedí
-                   v pravém dolním rohu přesně přes šipky stránek. Takhle se
-                   stránkování doscrolluje nad ně. */
-                marginBottom: 72,
-                padding: "14px 20px",
-                background: "var(--panel)",
-                border: "1px solid var(--border)",
-                borderRadius: 14,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>
-                Zobrazeno <strong style={{ color: "var(--text)", fontWeight: 700 }}>{from}–{to}</strong> z {listLength} {label}
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <button
-                  type="button"
-                  aria-label="Předchozí stránka"
-                  onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
-                  disabled={ordersPage === 0}
-                  style={{
-                    ...btnBase,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    ...(ordersPage === 0 ? btnDisabled : {}),
-                  }}
-                  onMouseEnter={(e) => { if (ordersPage > 0) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-                >
-                  ‹
-                </button>
-                {showPageNumbers ? (
-                  pageNumbers.map((p) => {
-                    if (p === -1) return <span key="ell-left" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
-                    if (p === -2) return <span key="ell-right" style={{ padding: "0 4px", color: "var(--muted)", fontSize: 12 }}>…</span>;
-                    const isCurrent = p === ordersPage;
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        aria-label={`Stránka ${p + 1}`}
-                        aria-current={isCurrent ? "page" : undefined}
-                        onClick={() => setOrdersPage(p)}
-                        style={{
-                          ...btnBase,
-                          background: isCurrent ? "var(--accent)" : "var(--panel)",
-                          color: isCurrent ? "white" : "var(--text)",
-                          borderColor: isCurrent ? "var(--accent)" : "var(--border)",
-                          ...(isCurrent ? { boxShadow: "0 2px 8px var(--accent-glow)" } : {}),
-                        }}
-                        onMouseEnter={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; } }}
-                        onMouseLeave={(e) => { if (!isCurrent) { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; } }}
-                      >
-                        {p + 1}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <span style={{ fontSize: 13, color: "var(--muted)", minWidth: 72, textAlign: "center", fontWeight: 600 }}>
-                    {ordersPage + 1} / {totalOrdersPages}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  aria-label="Další stránka"
-                  onClick={() => setOrdersPage((p) => Math.min(totalOrdersPages - 1, p + 1))}
-                  disabled={ordersPage >= totalOrdersPages - 1}
-                  style={{
-                    ...btnBase,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    ...(ordersPage >= totalOrdersPages - 1 ? btnDisabled : {}),
-                  }}
-                  onMouseEnter={(e) => { if (ordersPage < totalOrdersPages - 1) { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--accent)"; } }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--panel)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Aktivní reklamace: v záložce Aktivní vždy pod zakázkami, všechny
-            najednou bez ohledu na stránkování. Reklamací bývá pár a nesmí se
-            ztratit na třetí stránce mezi zakázkami. */}
-        {activeGroup === "active" && aktivniReklamace.length > 0 && (
-          <div data-testid="aktivni-reklamace" style={{ gridColumn: "1 / -1", marginTop: 16, minWidth: 0 }}>
-            <SectionHeading size="sm">
-              Aktivní reklamace
-              <span style={{ marginLeft: 6, fontSize: "var(--text-xs)", color: "var(--muted)", fontWeight: 600 }}>{aktivniReklamace.length}</span>
-            </SectionHeading>
-            {uiCfg.orders.displayMode === "status-grouped" ? (
-              <ClaimStatusGrouped
-                claims={aktivniReklamace}
-                statuses={statuses as any}
-                normalizeStatus={normalizeStatus}
-                onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
-                statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
-                printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
-                customOrder={uiCfg.orders.statusGroupedOrder}
-                zvyrazneni={uiCfg.orders.zvyrazneniStavu}
-              />
-            ) : (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: uiCfg.orders.displayMode === "grid" ? "repeat(auto-fill, minmax(min(100%, 280px), 1fr))" : "minmax(min(100%, 260px), 1fr)",
-                gap: uiCfg.orders.displayMode === "grid" ? 12
-                  : uiCfg.orders.displayMode === "compact-extra" || uiCfg.orders.displayMode === "stripe" || uiCfg.orders.zvyrazneniStavu === "plne" ? 2
-                  : 6,
-                minWidth: 0,
-              }}>
-                {aktivniReklamace.map((c) => renderClaimCard(c, "aktivni-"))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {listLength === 0 && (
-          <div
-            style={{
-              padding: 48,
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--border)",
-              background: "var(--panel)",
-              backdropFilter: "var(--blur)",
-              WebkitBackdropFilter: "var(--blur)",
-              boxShadow: "var(--shadow-soft)",
-              textAlign: "center",
-              color: "var(--muted)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            {/*
-              Prázdný seznam má dvě úplně různé příčiny a nový servis potkává tu
-              druhou: buď filtr nic nenašel, nebo servis ještě nic nemá. Do teď
-              se v obou případech psalo „neodpovídají filtru“ – zákazník první
-              den v aplikaci tak četl, že má něco špatně nastaveného, a hledal
-              filtr, který nezapnul.
-            */}
-            {(() => {
-              const jeReklamace = activeGroup === "reklamace";
-              const nicNeexistuje = jeReklamace ? cloudClaims.length === 0 : cloudTickets.length === 0;
-              return (
-                <>
-                  <div style={{ fontSize: 48, opacity: 0.5 }}>{jeReklamace ? "—" : <DocumentIcon size={48} />}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
-                    {nicNeexistuje
-                      ? jeReklamace
-                        ? "Zatím žádné reklamace"
-                        : "Zatím žádné zakázky"
-                      : jeReklamace
-                        ? "Žádné reklamace neodpovídají filtru"
-                        : "Žádné zakázky neodpovídají filtru"}
-                  </div>
-                  <div style={{ fontSize: 13, maxWidth: 460 }}>
-                    {nicNeexistuje
-                      ? jeReklamace
-                        ? "Reklamaci založíte tlačítkem „+ Nová reklamace“ nahoře – navazuje na už dokončenou zakázku."
-                        : "Začněte příjmem prvního zařízení: jméno, telefon a co je rozbité. Číslo zakázky i doklad k tisku vzniknou samy."
-                      : jeReklamace
-                        ? "Zkuste změnit vyhledávání nebo vytvořte reklamaci"
-                        : "Zkuste změnit filtry nebo vytvořte novou zakázku"}
-                  </div>
-                  {nicNeexistuje && !jeReklamace && (
-                    // Jiný popis než tlačítko v liště schválně: dvě tlačítka se
-                    // stejným názvem na jedné obrazovce se nedají rozlišit ani
-                    // odečítačkou, ani testem.
-                    <Button variant="primary" onClick={openNewOrder}>Přijmout první zakázku</Button>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
-      )}
+      <SeznamZakazek
+        activeServiceId={activeServiceId}
+        isAdmin={isAdmin}
+        ticketIds={ticketIds}
+        searchInputRef={searchInputRef}
+        query={query}
+        setQuery={setQuery}
+        openNewOrder={openNewOrder}
+        onNovaReklamace={() => { setClaimSourceTicket(null); setCreateClaimModalOpen(true); }}
+        activeGroup={activeGroup}
+        setActiveGroup={setActiveGroup}
+        groupCounts={groupCounts}
+        pridelovaniTechnika={pridelovaniTechnika}
+        filtrPresunu={filtrPresunu}
+        activeStatusKey={activeStatusKey}
+        setActiveStatusKey={setActiveStatusKey}
+        statusFilterOptions={statusFilterOptions}
+        claimsSubGroup={claimsSubGroup}
+        setClaimsSubGroup={setClaimsSubGroup}
+        showSecondaryFiltersRow={showSecondaryFiltersRow}
+        quickStatuses={quickStatuses}
+        statusesLoading={statusesLoading}
+        statusesError={statusesError}
+        statusesReady={statusesReady}
+        ticketsLoading={ticketsLoading}
+        ticketsPartial={ticketsPartial}
+        ticketsError={ticketsError}
+        claimsLoading={claimsLoading}
+        claimsError={claimsError}
+        ordersCfg={uiCfg.orders}
+        statuses={statuses}
+        getByKey={getByKey}
+        normalizeStatus={normalizeStatus}
+        statusById={statusById}
+        toCardData={toCardData}
+        filtered={filtered}
+        combinedList={combinedList}
+        showClaimsInOrdersList={showClaimsInOrdersList}
+        paginatedTickets={paginatedTickets}
+        paginatedClaims={paginatedClaims}
+        paginatedCombined={paginatedCombined}
+        aktivniReklamace={aktivniReklamace}
+        pageSize={pageSize}
+        listLength={listLength}
+        effectivePageSize={effectivePageSize}
+        totalOrdersPages={totalOrdersPages}
+        ordersPage={ordersPage}
+        setOrdersPage={setOrdersPage}
+        zadneZakazky={cloudTickets.length === 0}
+        zadneReklamace={cloudClaims.length === 0}
+        setDetailId={setDetailId}
+        setDetailClaimId={setDetailClaimId}
+        setTicketStatus={setTicketStatus}
+        setClaimStatus={setClaimStatus}
+        statusActionsMap={statusActionsMap}
+        canPrintExport={canPrintExport}
+        zajistiPlnouZakazku={zajistiPlnouZakazku}
+        openQuickPrintTicketRef={openQuickPrintTicketRef}
+        setOpenQuickPrintTicket={setOpenQuickPrintTicket}
+        viewersByTicket={viewersByTicket}
+        smsPanelOpen={smsPanelOpen}
+        detailId={detailId}
+        smsUnreadByTicketId={smsUnreadByTicketId}
+      />
 
       {/* ===== Nová zakázka (portál do body, aby fixed byl vůči viewportu,
              ne vůči <main> s transformem – jinak si okno nechá přes sebe
              ležet spodní navigaci a plovoucí "+") ===== */}
-      {createPortal(
-        <>
-      <div
-        onClick={() => {
-          setIsNewOpen(false);
-          setCustomerMatchDecision("undecided");
-          setMatchedCustomer(null);
-          lastLookupPhoneNormRef.current = null;
-          if (phoneLookupDebounceTimerRef.current) {
-            clearTimeout(phoneLookupDebounceTimerRef.current);
-            phoneLookupDebounceTimerRef.current = null;
-          }
-        }}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.35)",
-          opacity: isNewOpen ? 1 : 0,
-          pointerEvents: isNewOpen ? "auto" : "none",
-          transition: "opacity 180ms ease",
-          zIndex: 1140,
-        }}
+      <NovaZakazkaPanel
+        isNewOpen={isNewOpen}
+        setIsNewOpen={setIsNewOpen}
+        newDraft={newDraft}
+        setNewDraft={setNewDraft}
+        isNarrow={isNarrow}
+        naTelefonu={naTelefonu}
+        activeServiceId={activeServiceId}
+        serviceName={serviceName}
+        hasBranches={hasBranches}
+        branches={branches}
+        branchForNew={branchForNew}
+        closeNewOrder={closeNewOrder}
+        discardNewOrder={discardNewOrder}
+        createTicket={createTicket}
+        canCreate={canCreate}
+        submitAttempted={submitAttempted}
+        createBlockedReason={createBlockedReason}
+        errors={errors}
+        showError={showError}
+        showDeviceError={showDeviceError}
+        newOrderBodyRef={newOrderBodyRef}
+        newOrderPhotosBeforeInputRef={newOrderPhotosBeforeInputRef}
+        customerPhoneRequired={uiCfg.orders.customerPhoneRequired}
+        searchCustomers={searchCustomers}
+        applyCustomerMatch={applyCustomerMatch}
+        lookupCustomer={lookupCustomer}
+        matchedCustomer={matchedCustomer}
+        setMatchedCustomer={setMatchedCustomer}
+        customerMatchDecision={customerMatchDecision}
+        setCustomerMatchDecision={setCustomerMatchDecision}
+        lastLookupPhoneNormRef={lastLookupPhoneNormRef}
+        phoneLookupDebounceTimerRef={phoneLookupDebounceTimerRef}
+        newOrderMoreOpen={newOrderMoreOpen}
+        setNewOrderMoreOpen={setNewOrderMoreOpen}
+        newOrderCustomerMoreOpen={newOrderCustomerMoreOpen}
+        setNewOrderCustomerMoreOpen={setNewOrderCustomerMoreOpen}
+        newOrderDeviceMoreOpen={newOrderDeviceMoreOpen}
+        setNewOrderDeviceMoreOpen={setNewOrderDeviceMoreOpen}
+        expandedDeviceIdx={expandedDeviceIdx}
+        setExpandedDeviceIdx={setExpandedDeviceIdx}
+        modelsWithHierarchy={modelsWithHierarchy}
+        repairsForDeviceLabel={repairsForDeviceLabel}
+        dalsiOprava={dalsiOprava}
+        setDalsiOprava={setDalsiOprava}
+        addManualPlannedRepair={addManualPlannedRepair}
+        catalogShowAll={catalogShowAll}
+        setCatalogShowAll={setCatalogShowAll}
+        togglePlannedRepair={togglePlannedRepair}
+        removePlannedRepair={removePlannedRepair}
+        nastavPlannedNabidnuto={nastavPlannedNabidnuto}
+        pravidlaOdmen={pravidlaOdmen}
+        prednastaveneSlevy={prednastaveneSlevy}
+        cloudTickets={cloudTickets}
+        draftCapturePreviewUrls={draftCapturePreviewUrls}
+        setDraftCapturePreviewUrls={setDraftCapturePreviewUrls}
+        setDraftCaptureLiveCount={setDraftCaptureLiveCount}
+        draftCaptureTokenRef={draftCaptureTokenRef}
+        setCaptureQRItems={setCaptureQRItems}
+        captureQRLoading={captureQRLoading}
+        setCaptureQRLoading={setCaptureQRLoading}
       />
-      <div
-        // Rozdělaná práce: tichá obnova webu (lib/aktualizaceWebu) čeká, dokud je panel otevřený.
-        data-jobi-rozdelano={isNewOpen ? "" : undefined}
-        style={{
-          position: "fixed",
-          // Vystředění okraji, ne translate(-50%, -50%) – viz detail zakázky níž (rozmazaný text ve WebKitu).
-          inset: 0,
-          margin: "auto",
-          height: "fit-content",
-          transform: isNewOpen ? "none" : "translateY(2%) scale(0.98)",
-          opacity: isNewOpen ? 1 : 0,
-          pointerEvents: isNewOpen ? "auto" : "none",
-          transition: "transform 180ms ease, opacity 180ms ease",
-          width: 920,
-          maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100dvh / var(--ui-scale, 1) - 24px)",
-          overflow: "auto",
-          background: "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          border,
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow)",
-          /* Zdola bez odsazení: patička je lepivá a drží se dna posuvné
-             oblasti, ale to dno bylo o 18 px níž než patička. V tom pruhu
-             se pod tlačítky „Zrušit / Vytvořit zakázku" posouval formulář
-             a byl vidět. Odsazení odspodu si patička dělá sama svým
-             vlastním paddingem. */
-          padding: "0 18px",
-          zIndex: 1150,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", position: "sticky", top: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: "0 -18px 0", padding: "18px 18px 12px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>Nová zakázka</div>
-            {/* Hlavička je lepivá, takže tenhle popisek na telefonu ukrajoval
-                řádky z každé obrazovky formuláře. Na širokém displeji zůstává. */}
-            {!isNarrow && (
-              <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-                Stav se automaticky nastaví na <b>Přijato</b>.
-              </div>
-            )}
-          </div>
-          {hasBranches && (
-            <select
-              className="ui-input"
-              aria-label="Pobočka nové zakázky"
-              title="Pobočka – určí zkratku v čísle zakázky a údaje na dokumentech"
-              value={newDraft.branchId ?? branchForNew?.id ?? ""}
-              onChange={(e) => setNewDraft((p) => ({ ...p, branchId: e.target.value || null }))}
-              style={{ width: "auto", maxWidth: 200, padding: "6px 10px", fontSize: 12, fontWeight: 600 }}
-            >
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          )}
-          <Button variant="soft" iconOnly icon={<XIcon size={16} />} aria-label="Zavřít" title="Zavřít (rozpracované údaje zůstanou uložené)" onClick={closeNewOrder} />
-        </div>
-
-        <div ref={newOrderBodyRef} style={{ marginTop: 14, display: "grid", gap: 14 }}>
-          {/* ===== ZÁKAZNÍK – rychlá část ===== */}
-          <div style={{ ...card, ...stylSekce("zakaznik") }}>
-            <SectionHeading icon={<UserIcon size={16} />} size="sm" barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
-            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ ...fieldLabel, marginTop: 0 }}>Jméno</div>
-                {newDraft.customerId ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: "1px solid var(--accent)", borderRadius: 12, background: "var(--accent-soft)", minHeight: 40 }}>
-                    <span style={{ color: "var(--accent)", display: "inline-flex", flex: "0 0 auto" }}><UserIcon size={15} /></span>
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 700 }}>{newDraft.customerName.trim() || "Bez jména"}</span>
-                      {newDraft.customerPhone.trim() && <span style={{ color: "var(--muted)" }}> · {formatPhoneNumber(newDraft.customerPhone)}</span>}
-                      {newDraft.customerEmail.trim() && <span style={{ color: "var(--muted)" }}> · {newDraft.customerEmail.trim()}</span>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewDraft((p) => ({ ...p, customerId: undefined }));
-                        setCustomerMatchDecision("undecided");
-                        setMatchedCustomer(null);
-                      }}
-                      style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, fontSize: 12, cursor: "pointer", flex: "0 0 auto" }}
-                      title="Vybrat jiného zákazníka nebo zadat nového"
-                    >
-                      Změnit
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <CustomerAutocomplete
-                      id="new-order-name"
-                      value={newDraft.customerName}
-                      autoFocus
-                      placeholder="Jan Novák"
-                      inputStyle={baseFieldInput}
-                      search={searchCustomers}
-                      onSelect={(m) => applyCustomerMatch(m as CustomerMatch & { ico?: string | null; address_street?: string | null; address_zip?: string | null; note?: string | null })}
-                      onChange={(text) => {
-                        setNewDraft((p) => ({ ...p, customerName: text }));
-                        setCustomerMatchDecision("undecided");
-                      }}
-                    />
-                    <div style={fieldMuted}>Bez jména bude zakázka anonymní. Začněte psát – existující zákazníky nabídneme.</div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={{ ...fieldLabel, marginTop: 0 }}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
-                <input
-                  id="new-order-phone"
-                  value={formatPhoneNumber(newDraft.customerPhone)}
-                  inputMode="tel"
-                  onChange={(e) => {
-                    const cleaned = e.target.value.replace(/[^\d+]/g, "");
-                    setNewDraft((p) => ({ ...p, customerPhone: cleaned }));
-                    // Vybraný zákazník zůstává vybraný – u něj se hledání podle telefonu nespouští.
-                    if (newDraft.customerId) return;
-                    // Clear matched customer and reset decision when phone changes
-                    if (matchedCustomer) setMatchedCustomer(null);
-                    setCustomerMatchDecision("undecided");
-
-                    // Clear any existing debounce timer
-                    if (phoneLookupDebounceTimerRef.current) {
-                      clearTimeout(phoneLookupDebounceTimerRef.current);
-                      phoneLookupDebounceTimerRef.current = null;
-                    }
-
-                    // Don't lookup if user explicitly rejected
-                    if (customerMatchDecision === "rejected") {
-                      return;
-                    }
-
-                    // Calculate normalized phone
-                    const phoneNorm = normalizePhone(cleaned);
-
-                    // Reset lastLookupPhoneNormRef if phone is empty or invalid
-                    if (!cleaned.trim() || !phoneNorm) {
-                      lastLookupPhoneNormRef.current = null;
-                    }
-
-                    // If phone is valid and different from last lookup, trigger lookup
-                    if (phoneNorm && phoneNorm !== lastLookupPhoneNormRef.current && customerMatchDecision === "undecided") {
-                      // Immediate lookup for valid, new phone number
-                      lookupCustomer(cleaned, newDraft.customerName);
-                    } else if (cleaned.trim()) {
-                      // Debounce for intermediate states or invalid numbers
-                      phoneLookupDebounceTimerRef.current = setTimeout(async () => {
-                        const finalPhoneNorm = normalizePhone(cleaned);
-                        if (finalPhoneNorm && finalPhoneNorm !== lastLookupPhoneNormRef.current && customerMatchDecision === "undecided") {
-                          await lookupCustomer(cleaned, newDraft.customerName);
-                        }
-                        phoneLookupDebounceTimerRef.current = null;
-                      }, 200);
-                    }
-                  }}
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" && !newDraft.customerId) {
-                      const phone = newDraft.customerPhone.trim();
-                      const name = newDraft.customerName.trim();
-                      if (phone || name) {
-                        await lookupCustomer(phone || undefined, name || undefined);
-                      }
-                    }
-                  }}
-                  onBlur={async () => {
-                    if (newDraft.customerId) return;
-                    await lookupCustomer(
-                      newDraft.customerPhone.trim() || undefined,
-                      newDraft.customerName.trim() || undefined
-                    );
-                  }}
-                  style={{ ...baseFieldInput, border: showError("customerPhone") ? borderError : border }}
-                  placeholder="+420 777 123 456"
-                />
-                {showError("customerPhone") && <div style={fieldHint}>{errors.customerPhone}</div>}
-
-                {/* Nalezený zákazník podle telefonu (jen když ještě žádný není vybraný) */}
-                {!newDraft.customerId && matchedCustomer && customerMatchDecision === "undecided" && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 12,
-                      background: "var(--accent-light)",
-                      borderRadius: 8,
-                      border: "1px solid var(--accent)",
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
-                      Chcete zákazníka přiřadit k této zakázce?
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-                      <div><strong>Jméno:</strong> {matchedCustomer.name}</div>
-                      {matchedCustomer.phone && <div><strong>Telefon:</strong> {matchedCustomer.phone}</div>}
-                      {matchedCustomer.email && <div><strong>E-mail:</strong> {matchedCustomer.email}</div>}
-                      {matchedCustomer.company && <div><strong>Firma:</strong> {matchedCustomer.company}</div>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => {
-                          // Load full customer data for prefill
-                          (async () => {
-                            if (!supabase || !activeServiceId) return;
-                            const { data } = await (supabase
-                              .from("customers") as any)
-                              .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-                              .eq("id", matchedCustomer.id)
-                              .eq("service_id", activeServiceId)
-                              .single();
-
-                            if (data) {
-                              // Prefill only empty fields
-                              setNewDraft((prev) => ({
-                                ...prev,
-                                customerId: data.id,
-                                customerName: !prev.customerName.trim() ? (data.name || "") : prev.customerName,
-                                customerPhone: !prev.customerPhone.trim() ? (data.phone || "") : prev.customerPhone,
-                                customerEmail: !prev.customerEmail.trim() ? (data.email || "") : prev.customerEmail,
-                                addressStreet: !prev.addressStreet.trim() ? (data.address_street || "") : prev.addressStreet,
-                                addressCity: !prev.addressCity.trim() ? (data.address_city || "") : prev.addressCity,
-                                addressZip: !prev.addressZip.trim() ? (data.address_zip || "") : prev.addressZip,
-                                company: !prev.company.trim() ? (data.company || "") : prev.company,
-                                ico: !prev.ico.trim() ? (data.ico || "") : prev.ico,
-                                customerInfo: !prev.customerInfo.trim() ? (data.note || "") : prev.customerInfo,
-                              }));
-                            }
-                            setCustomerMatchDecision("accepted");
-                            setMatchedCustomer(null);
-                          })();
-                        }}
-                      >
-                        Přiřadit zákazníka
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setCustomerMatchDecision("rejected");
-                          setMatchedCustomer(null);
-                        }}
-                      >
-                        Ne, pokračovat bez přiřazení
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-              {/* Další údaje zákazníka (e-mail, firma, IČO, adresa, poznámka).
-                  Dřív ležely až dole v sekci „Další údaje“ – při příjmu se pak
-                  přeskakovalo mezi zákazníkem nahoře a jeho údaji o obrazovku
-                  níž. Patří k zákazníkovi, tak jsou u něj; sbalení si aplikace
-                  pamatuje stejně jako u zařízení. */}
-              <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => setNewOrderCustomerMoreOpen((v) => !v)}
-                  aria-expanded={newOrderCustomerMoreOpen}
-                  aria-controls="new-order-customer-more"
-                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-                >
-                  <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderCustomerMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                  <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zákazníka</span>
-                  {!newOrderCustomerMoreOpen && (
-                    <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      e-mail, firma, IČO, adresa, poznámka
-                    </span>
-                  )}
-                </button>
-                {newOrderCustomerMoreOpen && (
-                  <div id="new-order-customer-more">
-                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
-                        <input
-                          id="new-order-email"
-                          type="email"
-                          value={newDraft.customerEmail}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
-                          style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
-                          placeholder="jan.novak@email.cz"
-                        />
-                        {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
-                        <input
-                          value={newDraft.company}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Novák s.r.o."
-                        />
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
-                        <input
-                          id="new-order-ico"
-                          inputMode="numeric"
-                          value={formatIco(newDraft.ico)}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/[^\d]/g, "");
-                            setNewDraft((p) => ({ ...p, ico: cleaned }));
-                          }}
-                          style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
-                          placeholder="1234 5678"
-                          maxLength={9}
-                        />
-                        {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
-                      </div>
-                    </div>
-
-                    {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
-                        by sebral půlku šířky, proto tam jsou dva sloupce. */}
-                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
-                      <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
-                        <div style={fieldLabel}>Ulice</div>
-                        <input
-                          value={newDraft.addressStreet}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Dlouhá 12"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Město</div>
-                        <input
-                          value={newDraft.addressCity}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Praha"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>PSČ</div>
-                        <input
-                          id="new-order-zip"
-                          inputMode="numeric"
-                          value={formatZipCode(newDraft.addressZip)}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/[^\d]/g, "");
-                            setNewDraft((p) => ({ ...p, addressZip: cleaned }));
-                          }}
-                          style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
-                          placeholder="110 00"
-                          maxLength={6}
-                        />
-                        {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
-                      </div>
-                    </div>
-
-                    <div style={fieldLabel}>Poznámka k zákazníkovi</div>
-                    <textarea
-                      value={newDraft.customerInfo}
-                      onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
-                      style={{ ...baseFieldTextArea, minHeight: 64 }}
-                      placeholder="Volá jen odpoledne, preferuje SMS"
-                    />
-                  </div>
-                )}
-              </div>
-          </div>
-
-          {/* ===== ZAŘÍZENÍ – rychlá část (seznam sbalitelných karet) ===== */}
-          <div style={{ ...card, ...stylSekce("zarizeni") }}>
-            <SectionHeading icon={<DeviceIcon size={16} />} size="sm" barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
-            <div style={{ display: "grid", gap: 8 }}>
-              {newDraft.devices.map((dev, idx) => {
-                const multi = newDraft.devices.length > 1;
-                const expanded = !multi || idx === expandedDeviceIdx;
-                const summary = [dev.deviceLabel.trim(), dev.requestedRepair.trim().split("\n")[0]].filter(Boolean).join(" · ") || `Zařízení ${idx + 1}`;
-                return (
-                  <div
-                    key={idx}
-                    id={`new-order-device-${idx}`}
-                    style={multi ? { border, borderRadius: "var(--radius-md)", padding: 10, background: expanded ? "var(--panel)" : "var(--panel-2)" } : undefined}
-                  >
-                    {multi && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDeviceIdx(expanded ? -1 : idx)}
-                          aria-expanded={expanded}
-                          style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}
-                        >
-                          <span style={{ display: "inline-flex", color: "var(--muted)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                          <span style={{ color: "var(--muted)", fontWeight: 600, fontSize: 12, flex: "0 0 auto" }}>{idx + 1}.</span>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
-                          {!expanded && showDeviceError(idx) && <span style={{ color: "rgba(239,68,68,0.95)", fontSize: 12, fontWeight: 600, flex: "0 0 auto" }}>chybí zařízení</span>}
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          iconOnly
-                          icon={<XIcon size={14} />}
-                          aria-label="Odebrat zařízení"
-                          title="Odebrat zařízení"
-                          onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))}
-                        />
-                      </div>
-                    )}
-                    {expanded && (
-                      <div style={{ marginTop: multi ? 8 : 0 }}>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Zařízení *</div>
-                        <DeviceAutocomplete
-                          value={dev.deviceLabel}
-                          onChange={(value) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceLabel: value } : d)),
-                            }))
-                          }
-                          models={modelsWithHierarchy}
-                          error={showDeviceError(idx)}
-                        />
-                        {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
-
-                        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 260px", gap: 10 }}>
-                          <div>
-                            <div style={fieldLabel}>Požadovaná oprava</div>
-                            <textarea
-                              value={dev.requestedRepair}
-                              onChange={(e) =>
-                                setNewDraft((p) => ({
-                                  ...p,
-                                  devices: p.devices.map((d, i) => (i === idx ? { ...d, requestedRepair: e.target.value } : d)),
-                                }))
-                              }
-                              style={{ ...baseFieldTextArea, minHeight: 64 }}
-                              placeholder="Výměna displeje, výměna baterie, diagnostika"
-                            />
-                            {(() => {
-                              const catalog = repairsForDeviceLabel(dev.deviceLabel);
-                              const planned = dev.plannedRepairs ?? [];
-                              const mimoCenik = planned.filter((r) => r.type !== "selected");
-                              const rozepsana = dalsiOprava[idx] ?? { name: "", price: "" };
-                              const pridejDalsi = () => {
-                                if (addManualPlannedRepair(idx, rozepsana.name, rozepsana.price || "0")) setDalsiOprava((p) => ({ ...p, [idx]: { name: "", price: "" } }));
-                              };
-                              const plannedIds = new Set(planned.map((r) => r.repairId));
-                              const sorted = [...catalog].sort((a, b) => a.name.localeCompare(b.name, "cs"));
-                              const showAll = !!catalogShowAll[idx];
-                              const visible = showAll ? sorted : sorted.slice(0, 8);
-                              const sum = planned.reduce((a, r) => a + (r.price || 0), 0);
-                              return (
-                                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                                  {catalog.length > 0 && (
-                                  <>
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
-                                    Z ceníku
-                                  </div>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                    {visible.map((r) => {
-                                      const on = plannedIds.has(r.id);
-                                      return (
-                                        <button
-                                          key={r.id}
-                                          type="button"
-                                          aria-pressed={on}
-                                          onClick={() => togglePlannedRepair(idx, r)}
-                                          title={on ? "Odebrat z požadované opravy" : "Přidat do požadované opravy"}
-                                          style={{
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: 6,
-                                            padding: "5px 10px",
-                                            borderRadius: 999,
-                                            border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
-                                            background: on ? "var(--accent-soft)" : "var(--panel)",
-                                            color: on ? "var(--accent)" : "var(--text)",
-                                            fontSize: 12,
-                                            fontWeight: 600,
-                                            cursor: "pointer",
-                                          }}
-                                        >
-                                          {on && <CheckIcon size={12} />}
-                                          <span>{r.name}</span>
-                                          {r.price > 0 && (
-                                            <span style={{ color: on ? "var(--accent)" : "var(--muted)", fontWeight: 500 }}>
-                                              {r.price.toLocaleString("cs-CZ")} Kč
-                                            </span>
-                                          )}
-                                        </button>
-                                      );
-                                    })}
-                                    {sorted.length > 8 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setCatalogShowAll((p) => ({ ...p, [idx]: !showAll }))}
-                                        style={{ padding: "5px 10px", borderRadius: 999, border: "1px dashed var(--border)", background: "transparent", color: "var(--muted)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
-                                      >
-                                        {showAll ? "Méně" : `Dalších ${sorted.length - 8}`}
-                                      </button>
-                                    )}
-                                  </div>
-                                  </>
-                                  )}
-                                  {/* Oprava, která v ceníku není: jde do stejného seznamu, takže
-                                      se počítá do součtu i do slevy. Dřív se psala jen do textu
-                                      a sleva se na ni musela dopočítat ručně. */}
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)", marginTop: catalog.length > 0 ? 4 : 0 }}>
-                                    Další oprava mimo ceník
-                                  </div>
-                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                    <input
-                                      value={rozepsana.name}
-                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, name: e.target.value } }))}
-                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
-                                      placeholder="Název opravy"
-                                      aria-label="Název další opravy"
-                                      style={{ ...baseFieldInput, flex: "1 1 180px", minWidth: 0, width: "auto" }}
-                                    />
-                                    <input
-                                      value={rozepsana.price}
-                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, price: e.target.value } }))}
-                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
-                                      placeholder="Cena Kč"
-                                      aria-label="Cena další opravy"
-                                      inputMode="decimal"
-                                      style={{ ...baseFieldInput, flex: "0 0 110px", width: 110 }}
-                                    />
-                                    <Button onClick={pridejDalsi} disabled={!rozepsana.name.trim()} title="Přidat opravu k zakázce">
-                                      Přidat
-                                    </Button>
-                                  </div>
-                                  {mimoCenik.length > 0 && (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                      {mimoCenik.map((r) => (
-                                        <span
-                                          key={r.id}
-                                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 6px 5px 10px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
-                                        >
-                                          <CheckIcon size={12} />
-                                          <span>{r.name}</span>
-                                          <span style={{ fontWeight: 500 }}>{(r.price || 0).toLocaleString("cs-CZ")} Kč</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => removePlannedRepair(idx, r.id)}
-                                            aria-label={`Odebrat opravu ${r.name}`}
-                                            title="Odebrat"
-                                            style={{ display: "inline-grid", placeItems: "center", width: 18, height: 18, padding: 0, border: "none", borderRadius: 999, background: "transparent", color: "inherit", cursor: "pointer" }}
-                                          >
-                                            <XIcon size={12} />
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Odměny týmu: co se na příjmu nabídlo navíc (ne to, s čím zákazník přišel). */}
-                                  {planned.some((r) => najdiPravidlo(pravidlaOdmen, r.name)) && (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", fontSize: 12, color: "var(--muted)" }}>
-                                      {planned.filter((r) => najdiPravidlo(pravidlaOdmen, r.name)).map((r) => (
-                                        <label key={`nab-${r.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }} title="Prémie za nabídnutou opravu vzniká jen tehdy, když ji zákazník neměl v požadavku a přijal ji.">
-                                          <input type="checkbox" checked={!!r.nabidnuto} onChange={(e) => nastavPlannedNabidnuto(idx, r.id, e.target.checked)} />
-                                          <span>Nabídnuto navíc: <b>{r.name}</b></span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {planned.length > 0 && (
-                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                      {planned.length === 1 ? "1 oprava" : planned.length < 5 ? `${planned.length} opravy` : `${planned.length} oprav`}
-                                      {sum > 0 ? ` · ${sum.toLocaleString("cs-CZ")} Kč` : ""} · přidají se do zakázky s touto cenou, v detailu je upravíte.
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                            {/* Sleva už při příjmu – přednastavená z Nastavení nebo vlastní.
-                                Dřív se dávala až v detailu, i když ji zákazník dostal
-                                domluvenou u pultu. */}
-                            {(() => {
-                              const typ = dev.discountType ?? null;
-                              const hodnota = dev.discountValue ?? 0;
-                              const zaklad = zakladCeny(dev, soucetOprav(dev.plannedRepairs));
-                              const sleva = castkaSlevy(zaklad, typ, hodnota);
-                              return (
-                                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
-                                    Sleva
-                                  </div>
-                                  <SlevaNovaZakazka
-                                    slevy={prednastaveneSlevy}
-                                    discountType={typ}
-                                    discountValue={hodnota}
-                                    onChange={(type, value) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        // Sleva se propíše i do předschválené ceny (lib/cenaPriPrijmu).
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poZmeneSlevy(d, soucetOprav(d.plannedRepairs), type, value) } : d)),
-                                      }))
-                                    }
-                                  />
-                                  {typ && hodnota > 0 && (
-                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                      {zaklad > 0
-                                        ? `Sleva −${formatCurrency(sleva)} z ${formatCurrency(zaklad)} · předschválená cena ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
-                                        : "Sleva se odečte z ceny oprav v zakázce. Zadejte předschválenou cenu nebo vyberte opravy z ceníku a propíše se hned."}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <div style={fieldLabel}>Předpokládaný termín dokončení</div>
-                            <DateTimePicker
-                              value={dev.expectedCompletionAt ?? null}
-                              onChange={(v) => {
-                                setNewDraft((p) => {
-                                  if (idx === 0) {
-                                    return { ...p, devices: p.devices.map((d) => ({ ...d, expectedCompletionAt: v })) };
-                                  }
-                                  return {
-                                    ...p,
-                                    devices: p.devices.map((d, i) => (i === idx ? { ...d, expectedCompletionAt: v } : d)),
-                                  };
-                                });
-                              }}
-                              inputStyle={baseFieldInput}
-                            />
-                            {multi && idx === 0 && <div style={fieldMuted}>Termín prvního zařízení se přenese na ostatní.</div>}
-                          </div>
-                        </div>
-
-                        {/* Záruka a Find My schválně mimo sbalené „Další údaje“: bez podkladu
-                            záruky se oprava u dodavatele neuplatní a se zapnutým Find My se
-                            Apple u autorizovaných dílů neopraví – obojí se musí vyřešit se
-                            zákazníkem u pultu, ne až u stolu. Find My se ptá jen u Apple. */}
-                        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-                          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={dev.warrantyClaim}
-                              onChange={(e) =>
-                                setNewDraft((p) => ({
-                                  ...p,
-                                  devices: p.devices.map((d, i) => (i === idx ? { ...d, warrantyClaim: e.target.checked } : d)),
-                                }))
-                              }
-                            />
-                            <span>Záruční oprava</span>
-                            <span style={{ color: "var(--muted)", fontSize: 12 }}>(nezaškrtnuto = pozáruční)</span>
-                          </label>
-                          {dev.warrantyClaim && (
-                            <div>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                                <div>
-                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Datum nákupu</div>
-                                  <input
-                                    type="date"
-                                    value={dev.purchaseDate}
-                                    max={new Date().toISOString().slice(0, 10)}
-                                    onChange={(e) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseDate: e.target.value } : d)),
-                                      }))
-                                    }
-                                    aria-invalid={showError(`zaruka_${idx}`) || undefined}
-                                    style={baseFieldInput}
-                                  />
-                                </div>
-                                <div>
-                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Doklad o koupi</div>
-                                  <input
-                                    value={dev.purchaseProof}
-                                    onChange={(e) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseProof: e.target.value } : d)),
-                                      }))
-                                    }
-                                    style={baseFieldInput}
-                                    placeholder="Číslo účtenky, faktura, „má v e-mailu“"
-                                  />
-                                </div>
-                              </div>
-                              {chybiPodkladZaruky(dev) && (
-                                <div style={showError(`zaruka_${idx}`) ? fieldHint : fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>
-                              )}
-                            </div>
-                          )}
-                          {jeAppleZarizeni(dev.deviceLabel) && (
-                            <>
-                              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                                <input
-                                  type="checkbox"
-                                  checked={dev.findMyOff}
-                                  onChange={(e) =>
-                                    setNewDraft((p) => ({
-                                      ...p,
-                                      devices: p.devices.map((d, i) => (i === idx ? { ...d, findMyOff: e.target.checked } : d)),
-                                    }))
-                                  }
-                                />
-                                <span>Find My vypnuto</span>
-                              </label>
-                              {!dev.findMyOff && (
-                                <div role="note" style={{ fontSize: 12, color: "#b45309", background: "rgba(245,158,11,0.12)", borderRadius: 8, padding: "6px 8px" }}>
-                                  Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů; požádejte zákazníka o vypnutí.
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-
-                        {/* Další údaje zařízení (IMEI, heslo, stav, příslušenství, převzetí,
-                            cena, poznámka). Dřív bydlely až dole v samostatné sekci „Další
-                            údaje“ – při příjmu se pak přeskakovalo mezi zařízením nahoře
-                            a jeho údaji o obrazovku níž. Patří k zařízení, tak jsou u něj;
-                            sbalení si aplikace pamatuje stejně jako u sekce Další údaje. */}
-                        <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => setNewOrderDeviceMoreOpen((v) => !v)}
-                            aria-expanded={newOrderDeviceMoreOpen}
-                            aria-controls={`new-order-device-more-${idx}`}
-                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-                          >
-                            <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderDeviceMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                            <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zařízení</span>
-                            {!newOrderDeviceMoreOpen && (
-                              <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                IMEI, heslo, stav, příslušenství, převzetí, cena
-                              </span>
-                            )}
-                          </button>
-                          {newOrderDeviceMoreOpen && (
-                            <div id={`new-order-device-more-${idx}`}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>IMEI / SN</div>
-                        {/* Překlep v IMEI, tvar Apple sériového čísla a „tenhle telefon už tu byl“ –
-                            všechno chce servis vědět hned při příjmu, ne až u stolu. */}
-                        {(() => {
-                          const sn = dev.serialOrImei;
-                          const stav = stavSerioveho(sn);
-                          const odkaz = odkazKontrolaImei(sn);
-                          const barva = !stav.platne ? "#dc2626" : stav.hlaska ? "#16a34a" : undefined;
-                          const drive = najdiStejneZarizeni(cloudTickets, sn);
-                          return (
-                            <>
-                              <input
-                                value={sn}
-                                onChange={(e) =>
-                                  setNewDraft((p) => ({
-                                    ...p,
-                                    devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
-                                  }))
-                                }
-                                aria-invalid={!stav.platne || undefined}
-                                style={barva ? { ...baseFieldInput, border: `1px solid ${barva}` } : baseFieldInput}
-                                placeholder="35-123456-789012-3"
-                              />
-                              {(stav.hlaska || drive.length > 0) && (
-                            <div style={{ marginTop: 6, display: "grid", gap: 4, fontSize: 12 }}>
-                              {stav.hlaska && (
-                                <div role={stav.platne ? undefined : "alert"} style={{ color: barva, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <span>{stav.hlaska}</span>
-                                  {odkaz && (
-                                    <Button variant="soft" size="sm" onClick={() => void otevriVProhlizeci(odkaz)} title="Otevře imei.info v prohlížeči (model, blacklist)">
-                                      Zkontrolovat IMEI
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
-                              {drive.length > 0 && (
-                                <div role="note" style={{ color: "var(--accent)", background: "var(--accent-soft)", borderRadius: 8, padding: "6px 8px" }}>
-                                  Zařízení už u vás bylo ({drive.length}×):{" "}
-                                  {drive
-                                    .slice(0, 3)
-                                    .map((t) => `${t.code ?? "—"} · ${formatCZ(t.createdAt)}${t.issueShort || t.requestedRepair ? ` · ${t.issueShort || t.requestedRepair}` : ""}`)
-                                    .join(", ")}
-                                  {drive.length > 3 ? " …" : ""}
-                                </div>
-                              )}
-                            </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Heslo / kód</div>
-                        <input
-                          value={dev.devicePasscode}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, devicePasscode: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="1234"
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Popis stavu</div>
-                        <input
-                          list="new-order-device-condition-list"
-                          value={dev.deviceCondition}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceCondition: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Rozbitý displej, oděrky"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Příslušenství</div>
-                        <input
-                          list="new-order-device-accessories-list"
-                          value={dev.deviceAccessories}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceAccessories: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Nabíječka, pouzdro"
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Způsob převzetí</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().receiveMethods}
-                          value={dev.handoffMethod}
-                          onChange={(v) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, handoffMethod: v } : d)),
-                            }))
-                          }
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Způsob předání</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().returnMethods}
-                          value={dev.handbackMethod}
-                          onChange={(v) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, handbackMethod: v } : d)),
-                            }))
-                          }
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Externí identifikace</div>
-                        <input
-                          value={dev.externalId}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, externalId: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Číslo zakázky partnera"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Předschválená cena</div>
-                        <input
-                          type="number"
-                          value={dev.estimatedPrice ?? ""}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              // Ručně napsaná cena je od teď základ pro slevu (lib/cenaPriPrijmu).
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poRucniCene(d, e.target.value) } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="2 500"
-                          min="0"
-                          step="1"
-                        />
-                        <div style={fieldMuted}>
-                          V Kč. Cena, se kterou zákazník předem souhlasí – už po slevě.
-                          {dev.discountType && (dev.discountValue ?? 0) > 0 && (dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs)) > 0
-                            ? ` Bez slevy ${formatCurrency(dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs))}.`
-                            : ""}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={fieldLabel}>Poznámka pro technika</div>
-                    <textarea
-                      value={dev.deviceNote}
-                      onChange={(e) =>
-                        setNewDraft((p) => ({
-                          ...p,
-                          devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceNote: e.target.value } : d)),
-                        }))
-                      }
-                      style={{ ...baseFieldTextArea, minHeight: 64 }}
-                      placeholder="Zákazník si přeje zachovat data"
-                    />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <Button
-              variant="soft"
-              size="sm"
-              icon={<PlusIcon size={14} />}
-              style={{ marginTop: 10 }}
-              disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
-              onClick={() => {
-                setNewDraft((p) => ({
-                  ...p,
-                  devices: [
-                    ...p.devices,
-                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
-                  ],
-                }));
-                setExpandedDeviceIdx(newDraft.devices.length);
-              }}
-              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Nejdřív vyplňte název posledního zařízení" : "Přidat další zařízení"}
-            >
-              Přidat další zařízení
-            </Button>
-          </div>
-
-          {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
-          <div style={{ ...card, ...stylSekce("diagnostika"), padding: 0, overflow: "hidden" }}>
-            <button
-              type="button"
-              onClick={() => setNewOrderMoreOpen((v) => !v)}
-              aria-expanded={newOrderMoreOpen}
-              aria-controls="new-order-more"
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={16} /></span>
-              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, background: `${BARVA_SEKCE.diagnostika}22`, color: BARVA_SEKCE.diagnostika, flexShrink: 0 }}><SearchIcon size={14} /></span>
-              <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
-              {!newOrderMoreOpen && (
-                <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  přijímací fotky
-                </span>
-              )}
-            </button>
-
-            {newOrderMoreOpen && (
-              <div id="new-order-more" style={{ padding: 12, paddingTop: 0, display: "grid", gap: 16 }}>
-                {/* Přijímací fotky – nahrají se po vytvoření zakázky */}
-                <div id="new-order-photos-before">
-                  <div style={subHeading}>Přijímací fotky</div>
-                  <div style={{ ...fieldMuted, marginTop: 0, marginBottom: 10 }}>Fotky se po vytvoření zakázky automaticky nahrají a připojí k zakázce.</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                    {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
-                      <div key={idx} style={{ position: "relative" }}>
-                        <img
-                          src={dataUrl}
-                          alt={`Fotka ${idx + 1}`}
-                          style={{
-                            width: 80,
-                            height: 80,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid var(--border)",
-                          }}
-                        />
-                        <button
-                          type="button"
-                          aria-label="Odebrat fotku"
-                          onClick={() =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              diagnosticPhotosBefore: (p.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
-                            }))
-                          }
-                          style={{
-                            position: "absolute",
-                            top: 4,
-                            right: 4,
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
-                            background: "rgba(239, 68, 68, 0.9)",
-                            color: "white",
-                            border: "none",
-                            cursor: "pointer",
-                            display: "grid",
-                            placeItems: "center",
-                            padding: 0,
-                          }}
-                        >
-                          <XIcon size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    {draftCapturePreviewUrls.map((photoUrl, idx) => (
-                      <div key={`draft-${idx}`} style={{ position: "relative" }}>
-                        <FotkaZakazky
-                          url={photoUrl}
-                          alt={`QR fotka ${idx + 1}`}
-                          style={{
-                            width: 80,
-                            height: 80,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid var(--border)",
-                          }}
-                        />
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: 4,
-                            right: 4,
-                            bottom: 4,
-                            fontSize: "var(--text-xs)",
-                            fontWeight: 700,
-                            borderRadius: 6,
-                            background: "rgba(0,0,0,0.55)",
-                            color: "white",
-                            textAlign: "center",
-                            padding: "2px 4px",
-                          }}
-                        >
-                          z mobilu
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
-                    <VyberFotek popisek={<><CameraIcon size={14} /> Nahrát fotky</>} style={{ ...baseFieldInput, width: "auto", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>
-                      <input
-                        ref={newOrderPhotosBeforeInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files || []);
-                          e.target.value = "";
-                          if (!files.length) return;
-                          const reader = (f: File) =>
-                            new Promise<string>((resolve, reject) => {
-                              const r = new FileReader();
-                              r.onload = () => resolve(r.result as string);
-                              r.onerror = () => reject(new Error("Načtení selhalo"));
-                              r.readAsDataURL(f);
-                            });
-                          Promise.all(files.map(reader)).then((urls) => {
-                            setNewDraft((p) => ({
-                              ...p,
-                              diagnosticPhotosBefore: [...(p.diagnosticPhotosBefore || []), ...urls],
-                            }));
-                          });
-                        }}
-                      />
-                    </VyberFotek>
-                    {!naTelefonu && (
-                    <Button
-                      variant="soft"
-                      size="sm"
-                      onClick={async () => {
-                        if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId) {
-                          showToast("Chybí připojení nebo aktivní služba.", "error");
-                          return;
-                        }
-                        setCaptureQRLoading(true);
-                        try {
-                          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
-                          if (refreshErr) throw new Error("Session vypršela.");
-                          const authToken = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
-                          if (!authToken) throw new Error("Nejste přihlášeni.");
-                          const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}`, apikey: supabaseAnonKey },
-                            body: JSON.stringify({ draft: true, serviceId: activeServiceId, isBefore: true }),
-                          });
-                          const raw = await res.text();
-                          const data: { url?: string; token?: string; error?: string } = raw ? JSON.parse(raw) : {};
-                          if (!res.ok) throw new Error(data.error || res.statusText);
-                          setDraftCapturePreviewUrls([]);
-                          setDraftCaptureLiveCount(0);
-                          if (data.token) draftCaptureTokenRef.current = data.token;
-                          if (data.url) {
-                            setCaptureQRItems([{ deviceLabel: "Přijímací fotky (před vytvořením zakázky)", url: popisDoOdkazu(data.url, { servis: serviceName }) }]);
-                          }
-                        } catch (err) {
-                          showToast(normalizeError(err) || "Nepodařilo se vytvořit QR pro focení.", "error");
-                        } finally {
-                          setCaptureQRLoading(false);
-                        }
-                      }}
-                      disabled={captureQRLoading}
-                      title="Zobrazit QR kód pro nafocení přijímacích fotek z telefonu. Zakázka se nevytvoří – fotky se připojí po kliknutí na „Vytvořit zakázku“."
-                    >
-                      {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu (QR)"}
-                    </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ===== Patička – lepivá ===== */}
-        <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: 10, justifyContent: "space-between", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: "14px -18px 0", padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-          {!isNarrow && <span style={{ fontSize: 12, color: "var(--muted)" }}>Rozpracované údaje se ukládají automaticky</span>}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-            {submitAttempted && createBlockedReason && (
-              <span role="status" style={{ fontSize: 12, color: "var(--muted)" }}>{createBlockedReason}</span>
-            )}
-            <Button variant="soft" onClick={discardNewOrder} title="Zahodit rozpracovanou zakázku">
-              Zrušit
-            </Button>
-            <Button variant="primary" onClick={createTicket} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)">
-              Vytvořit zakázku
-            </Button>
-          </div>
-        </div>
-      </div>
-        </>,
-        document.body
-      )}
 
       {/* ===== Full detail modal (portal do body, aby fixed byl vůči viewportu, ne main s transform) ===== */}
-      {createPortal(
-        <>
-          <div
-            onClick={handleCloseDetail}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.42)",
-              opacity: (detailId || detailClaimId) ? 1 : 0,
-              pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
-              transition: "opacity 160ms ease",
-              zIndex: 1200,
+      <DetailZakazky
+        detailId={detailId}
+        detailClaimId={detailClaimId}
+        detailedTicket={detailedTicket}
+        detailedClaim={detailedClaim}
+        detailSeNacita={detailSeNacita}
+        nedotazenaZakazka={nedotazenaZakazka}
+        setNedotazenaZakazka={setNedotazenaZakazka}
+        zajistiPlnouZakazku={zajistiPlnouZakazku}
+        isEditing={isEditing}
+        handleCloseDetail={handleCloseDetail}
+        hlavicka={
+          <DetailHlavicka
+            isNarrow={isNarrow}
+            activeServiceId={activeServiceId}
+            detailedClaim={detailedClaim}
+            otevrenaZeSeznamu={otevrenaZeSeznamu}
+            detailedTicket={detailedTicket}
+            isEditing={isEditing}
+            isEditingClaim={isEditingClaim}
+            statuses={statuses}
+            getByKey={getByKey}
+            isFinal={isFinal}
+            normalizeStatus={normalizeStatus}
+            statusById={statusById}
+            statusActionsMap={statusActionsMap}
+            setTicketStatus={setTicketStatus}
+            setClaimStatus={setClaimStatus}
+            ticketViewers={ticketViewers}
+            hasBranches={hasBranches}
+            branchById={branchById}
+            setMoveBranchOpen={setMoveBranchOpen}
+            onOpenCustomer={onOpenCustomer}
+            saveClaimChanges={saveClaimChanges}
+            setIsEditingClaim={setIsEditingClaim}
+            setEditedClaim={setEditedClaim}
+            startEditingClaim={startEditingClaim}
+            canPrintExport={canPrintExport}
+            runClaimDocument={runClaimDocument}
+            setDetailId={setDetailId}
+            setDetailClaimId={setDetailClaimId}
+            setClaimHistoryModalOpen={setClaimHistoryModalOpen}
+            setDeleteClaimId={setDeleteClaimId}
+            setDeleteClaimDialogOpen={setDeleteClaimDialogOpen}
+            saveTicketChanges={saveTicketChanges}
+            setIsEditing={setIsEditing}
+            setEditedTicket={setEditedTicket}
+            startEditing={startEditing}
+            smsAvailable={smsAvailable}
+            smsPanelOpen={smsPanelOpen}
+            setSmsPanelOpen={setSmsPanelOpen}
+            smsUnreadCount={smsUnreadCount}
+            onCreateInvoice={onCreateInvoice}
+            onOpenInvoice={onOpenInvoice}
+            invoiceIdByTicketId={invoiceIdByTicketId}
+            dph={dph}
+            setTicketHistoryModalOpen={setTicketHistoryModalOpen}
+            setClaimSourceTicket={setClaimSourceTicket}
+            setCreateClaimModalOpen={setCreateClaimModalOpen}
+            chatZapnuty={chatZapnuty}
+            setDeleteTicketId={setDeleteTicketId}
+            setDeleteDialogOpen={setDeleteDialogOpen}
+            handleCloseDetail={handleCloseDetail}
+          />
+        }
+        reklamace={detailedClaim && (
+          <DetailReklamace
+            detailedClaim={detailedClaim}
+            editedClaim={editedClaim}
+            setEditedClaim={setEditedClaim}
+            isEditingClaim={isEditingClaim}
+            cloudTickets={cloudTickets}
+            setCloudTickets={setCloudTickets}
+            detailedTicket={detailedTicket}
+            claimResolutionDraft={claimResolutionDraft}
+            setClaimResolutionDraft={setClaimResolutionDraft}
+            saveClaimResolutionItems={saveClaimResolutionItems}
+            statuses={statuses}
+            getByKey={getByKey}
+            statusActionsMap={statusActionsMap}
+            ulozDiagnostikuZakazky={ulozDiagnostikuZakazky}
+            setPhotoLightbox={setPhotoLightbox}
+            naTelefonu={naTelefonu}
+            activeServiceId={activeServiceId}
+            serviceName={serviceName}
+            captureQRLoading={captureQRLoading}
+            setCaptureQRLoading={setCaptureQRLoading}
+            diagnosticPhotosUploading={diagnosticPhotosUploading}
+            setDiagnosticPhotosUploading={setDiagnosticPhotosUploading}
+            setCaptureQRItems={setCaptureQRItems}
+            commentsFor={commentsFor}
+            commentDraftByTicket={commentDraftByTicket}
+            handleCommentDraftChange={handleCommentDraftChange}
+            addComment={addComment}
+            togglePin={togglePin}
+            editComment={editComment}
+            currentUserId={session?.user?.id ?? null}
+            commentAuthorProfiles={commentAuthorProfiles}
+          />
+        )}
+        prehled={detailedTicket && (
+          <DetailPrehled
+            detailedTicket={detailedTicket}
+            postupZakazky={uiCfg.app.postupZakazky}
+            invoiceIdByTicketId={invoiceIdByTicketId}
+            isFinal={isFinal}
+            getByKey={getByKey}
+            zasilkyZapnuty={zasilkyZapnuty}
+            hasBranches={hasBranches}
+            nastaveniZasilek={nastaveniZasilek}
+            historieZasilek={historieZasilek}
+            branchById={branchById}
+            skryteSekce={skryteSekce}
+            sjetNaSbalenouKartu={sjetNaSbalenouKartu}
+            onOpenCustomer={onOpenCustomer}
+            cloudClaims={cloudClaims}
+            cloudTickets={cloudTickets}
+            setDetailId={setDetailId}
+            setDetailClaimId={setDetailClaimId}
+            ulozFindMy={ulozFindMy}
+          />
+        )}
+        uprava={detailedTicket && (
+          <UpravaZakazky
+            detailedTicket={detailedTicket}
+            editedTicket={editedTicket}
+            setEditedTicket={setEditedTicket}
+            activeServiceId={activeServiceId}
+            customerPhoneRequired={uiCfg.orders.customerPhoneRequired}
+            lookupCustomerEdit={lookupCustomerEdit}
+            matchedCustomerEdit={matchedCustomerEdit}
+            setMatchedCustomerEdit={setMatchedCustomerEdit}
+            modelsWithHierarchy={modelsWithHierarchy}
+          />
+        )}
+        dalsiKarty={detailedTicket && (
+          <DetailDalsiKarty
+            detailedTicket={detailedTicket}
+            activeServiceId={activeServiceId}
+            skryteSekce={skryteSekce}
+            opravy={
+              <DetailOpravy
+                detailedTicket={detailedTicket}
+                ticketReservations={ticketReservations}
+                removePerformedRepair={removePerformedRepair}
+                updatePerformedRepairPrice={updatePerformedRepairPrice}
+                updatePerformedRepairCosts={updatePerformedRepairCosts}
+                updatePerformedRepairTime={updatePerformedRepairTime}
+                updatePerformedRepairProducts={updatePerformedRepairProducts}
+                updatePerformedRepairFields={updatePerformedRepairFields}
+                devicesData={devicesData}
+                inventoryData={inventoryData}
+                pravidlaOdmen={pravidlaOdmen}
+                activeServiceId={activeServiceId}
+                skladProdukty={skladProdukty}
+                rezervovanoCelkem={rezervovanoCelkem}
+                objednanoProZakazku={objednanoProZakazku}
+                muzeObjednatDily={hasCapability("can_edit_inventory")}
+                refreshObjednanoProZakazku={refreshObjednanoProZakazku}
+                setCloudTickets={setCloudTickets}
+                prednastaveneSlevy={prednastaveneSlevy}
+                availableRepairs={availableRepairs}
+                addPerformedRepair={addPerformedRepair}
+                hodinovaSazba={hodinovaSazba}
+                currentUserNickname={userProfile?.nickname}
+                currentUserId={session?.user?.id}
+              />
+            }
+            diagnostika={
+              <DetailDiagnostika
+                detailedTicket={detailedTicket}
+                detailDiagnostikaOpen={detailDiagnostikaOpen}
+                prepnoutDetailDiagnostiku={prepnoutDetailDiagnostiku}
+                setDirtyFlags={setDirtyFlags}
+                setCloudTickets={setCloudTickets}
+                setPhotoLightbox={setPhotoLightbox}
+                naTelefonu={naTelefonu}
+                activeServiceId={activeServiceId}
+                serviceName={serviceName}
+                captureQRLoading={captureQRLoading}
+                setCaptureQRLoading={setCaptureQRLoading}
+                diagnosticPhotosUploading={diagnosticPhotosUploading}
+                setDiagnosticPhotosUploading={setDiagnosticPhotosUploading}
+                setCaptureQRItems={setCaptureQRItems}
+              />
+            }
+            smsAvailable={smsAvailable}
+            availableRepairs={availableRepairs}
+            applyQuoteRepairs={applyQuoteRepairs}
+            setCloudTickets={setCloudTickets}
+            detailPortalOpen={detailPortalOpen}
+            prepnoutDetailPortal={prepnoutDetailPortal}
+            zasilkyZapnuty={zasilkyZapnuty}
+            hasBranches={hasBranches}
+            branches={branches}
+            branchById={branchById}
+            setHistorieZasilek={setHistorieZasilek}
+            nastaveniZasilek={nastaveniZasilek}
+            ulozZapujcku={ulozZapujcku}
+            nahradniZarizeni={nahradniZarizeni}
+            pujceneKusy={pujceneKusy}
+            pridelovaniTechnika={pridelovaniTechnika}
+            clenoveServisu={clenove.clenove}
+            ulozTechnika={ulozTechnika}
+            casNaOpraveZapnuto={casNaOpraveZapnuto}
+            currentUserId={session?.user?.id}
+            currentUserNickname={userProfile?.nickname}
+            hodinovaSazba={hodinovaSazba}
+            zaokrouhleniPrace={zaokrouhleniPrace}
+            addPerformedRepair={addPerformedRepair}
+            kontrolniSeznamy={kontrolniSeznamy}
+            ulozKontrolu={ulozKontrolu}
+          />
+        )}
+        komentare={detailedTicket && (
+          <TicketComments
+            ticketId={detailedTicket.id}
+            comments={commentsFor(detailedTicket.id)}
+            draft={commentDraftByTicket[detailedTicket.id] ?? ""}
+            onDraftChange={handleCommentDraftChange}
+            onAdd={addComment}
+            onTogglePin={togglePin}
+            onEdit={editComment}
+            currentUserId={session?.user?.id ?? null}
+            authorProfiles={commentAuthorProfiles}
+            card={card}
+            baseFieldTextArea={baseFieldTextArea}
+          />
+        )}
+        smsPanel={smsPanelOpen && detailedTicket && activeServiceId && (
+          <SmsPanel
+            detailedTicket={detailedTicket}
+            activeServiceId={activeServiceId}
+            sidebarPosition={uiCfg.sidebar?.position}
+            onClose={() => setSmsPanelOpen(false)}
+            onInboundMarkedRead={() => {
+              setSmsUnreadCount(0);
+              setSmsUnreadListBump((n) => n + 1);
             }}
           />
-
-          <div
-        // Rozdělaná práce: tichá obnova webu (lib/aktualizaceWebu) čeká, dokud je detail otevřený.
-        data-jobi-rozdelano={(detailId || detailClaimId) ? "" : undefined}
-        style={{
-          position: "fixed",
-          /* Vystředění okraji, ne translate(-50%, -50%): posun o půlku
-             vlastní výšky vychází na půl pixelu a WebKit (desktopová appka,
-             Safari) pak při posouvání obsahu překreslí celou vrstvu jako
-             bitmapu mimo mřížku – hlavička s číslem zakázky se rozmazala.
-             Otevřený panel proto nemá žádný transform ani will-change. */
-          inset: 0,
-          margin: "auto",
-          height: "fit-content",
-          transform: (detailId || detailClaimId) ? "none" : "translateY(2%) scale(0.99)",
-          opacity: (detailId || detailClaimId) ? 1 : 0,
-          pointerEvents: (detailId || detailClaimId) ? "auto" : "none",
-          transition: "transform 160ms ease, opacity 160ms ease",
-          width: 1080,
-          maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100dvh / var(--ui-scale, 1) - 24px)",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          background: "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          border,
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow)",
-          padding: 0,
-          zIndex: 1210,
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: isNarrow ? "column" : "row", justifyContent: "space-between", gap: isNarrow ? 10 : 12, alignItems: isNarrow ? "stretch" : "flex-start", zIndex: 5, background: "var(--panel)", padding: 18, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0, paddingRight: 44 }}>
-            <div style={{ fontWeight: 950, fontSize: 18, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
-              {/* Číslo zakázky umí i řádek seznamu, takže v hlavičce nebliká pomlčka,
-                  než se dotáhne zbytek sloupců. */}
-              {detailedClaim ? detailedClaim.code : (otevrenaZeSeznamu?.code ?? "—")}
-              <CopyButton value={detailedClaim ? detailedClaim.code : otevrenaZeSeznamu?.code} label={detailedClaim ? "číslo reklamace" : "číslo zakázky"} size={14} />
-              {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
-              {/* Stav přímo v hlavičce – pilulka je zároveň přepínač stavu. */}
-              {detailedClaim && !isEditingClaim && (
-                <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
-                  <StatusPicker value={detailedClaim.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(detailedClaim.id, next)} size="sm" actionsByStatus={statusActionsMap} />
-                </span>
-              )}
-              {!detailedClaim && detailedTicket && !isEditing && (() => {
-                const detailStatus = normalizeStatus((detailedTicket.status as any) ?? statusById[detailedTicket.id]);
-                if (detailStatus === null) return null;
-                return (
-                  <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <StatusPicker value={detailStatus} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setTicketStatus(detailedTicket.id, next)} size="sm" actionsByStatus={statusActionsMap} />
-                    {isFinal(detailStatus) && <span title="Dokončená zakázka" style={{ display: "inline-flex", color: "var(--accent)" }}><CheckIcon size={14} /></span>}
-                  </span>
-                );
-              })()}
-              {!detailedClaim && ticketViewers.length > 0 && (
-                <span style={{ marginLeft: 4, display: "inline-flex" }}><PresenceAvatars viewers={ticketViewers} /></span>
-              )}
-              {!detailedClaim && detailedTicket && hasBranches && (() => {
-                const b = branchById(detailedTicket.branchId);
-                return (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMoveBranchOpen(true); }}
-                    title="Pobočka zakázky – kliknutím přesunout"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--muted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-                  >
-                    <PinIcon size={11} />
-                    {b?.name ?? "Bez pobočky"}
-                  </button>
-                );
-              })()}
-            </div>
-            <div style={{ color: "var(--muted)", marginTop: 4 }}>
-              {detailedClaim ? (
-                <>{detailedClaim.customer_name ?? "—"} · {formatCZ(detailedClaim.created_at)}</>
-              ) : detailedTicket ? (
-                <>
-                  <span
-                    onClick={() => {
-                      const customerId = detailedTicket.customerId;
-                      if (customerId && onOpenCustomer) {
-                        onOpenCustomer(customerId);
-                      }
-                    }}
-                    style={{
-                      cursor: detailedTicket.customerId ? "pointer" : "default",
-                      color: "var(--muted)",
-                    }}
-                    title={detailedTicket.customerId ? "Otevřít profil zákazníka" : undefined}
-                    onMouseEnter={(e) => {
-                      if (detailedTicket.customerId) {
-                        e.currentTarget.style.color = "var(--text)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "var(--muted)";
-                    }}
-                  >
-                    {detailedTicket.customerName}
-                  </span>
-                  {" · "}
-                  {formatCZ(detailedTicket.createdAt)}
-                </>
-              ) : (
-                "—"
-              )}
-            </div>
-            {/* Telefon v hlavičce, ať je po ruce i po odscrollování ke komentářům. */}
-            {(() => {
-              const tel = detailedClaim ? detailedClaim.customer_phone : detailedTicket?.customerPhone;
-              if (!tel) return null;
-              return (
-                <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13 }}>
-                  <PhoneIcon size={13} />
-                  <a href={`tel:${tel.replace(/\s/g, "")}`} style={{ color: "var(--text)", fontWeight: 600, textDecoration: "none" }}>
-                    {formatPhoneNumber(tel)}
-                  </a>
-                  <CopyButton value={tel} label="telefon" />
-                </div>
-              );
-            })()}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, alignItems: "center", /* Na mobilu se tlačítka nesmí lámat pod sebe – sloupec sežral šířku a název zakázky se zmáčkl na pár znaků. Radši jedna řada, kterou lze posunout. */ flexWrap: isNarrow ? "nowrap" : "wrap", overflowX: isNarrow ? "auto" : "visible", paddingRight: isNarrow ? 0 : 70, paddingBottom: isNarrow ? 2 : 0 }}>
-            {detailedClaim ? (
-              isEditingClaim ? (
-                <>
-                  <Button variant="primary" onClick={() => saveClaimChanges().then((ok) => ok && showToast("Změny uloženy", "success"))} title="Uložit změny" icon={<SaveIcon size={16} />}>
-                    Uložit
-                  </Button>
-                  <Button variant="soft" onClick={() => { setIsEditingClaim(false); setEditedClaim({}); }} title="Zrušit úpravy">Zrušit</Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="primary" onClick={startEditingClaim} title="Upravit reklamaci" icon={<EditIcon size={16} />}>
-                    Upravit
-                  </Button>
-                  {canPrintExport && (
-                    <PrintMenu
-                      rows={[
-                        {
-                          key: "prijemka_reklamace",
-                          label: "Přijetí reklamace",
-                          icon: <DocumentIcon size={14} />,
-                          onPrint: () => runClaimDocument("print"),
-                          onExport: () => runClaimDocument("export"),
-                        },
-                      ]}
-                    />
-                  )}
-                  {detailedClaim.source_ticket_id && (
-                    <Button
-                      variant="soft"
-                      onClick={() => { setDetailId(detailedClaim.source_ticket_id!); setDetailClaimId(null); }}
-                      title="Otevřít původní zakázku"
-                      icon={<LinkIcon size={14} />}
-                    >
-                      Otevřít zakázku
-                    </Button>
-                  )}
-                  <OverflowMenu
-                    ariaLabel="Další akce"
-                    items={[
-                      { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setClaimHistoryModalOpen(true) },
-                      {
-                        label: "Smazat reklamaci",
-                        icon: <TrashIcon size={14} />,
-                        danger: true,
-                        dividerBefore: true,
-                        onSelect: () => { setDeleteClaimId(detailedClaim.id); setDeleteClaimDialogOpen(true); },
-                      },
-                    ]}
-                  />
-                </>
-              )
-            ) : isEditing ? (
-              <>
-                <Button variant="primary" onClick={saveTicketChanges} title="Uložit změny" icon={<SaveIcon size={16} />}>
-                  Uložit
-                </Button>
-                <Button
-                  variant="soft"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditedTicket({});
-                  }}
-                  title="Zrušit úpravy"
-                >
-                  Zrušit
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="primary" onClick={startEditing} title="Upravit zakázku" data-tour="detail-upravit" icon={<EditIcon size={16} />}>
-                  Upravit
-                </Button>
-
-                {detailedTicket && canPrintExport && (
-                  <PrintMenu
-                    rows={[
-                      {
-                        key: "ticket",
-                        label: "Zakázkový list",
-                        icon: <DocumentIcon size={14} />,
-                        onPrint: () => { printTicket(detailedTicket, activeServiceId); },
-                        onExport: () => { exportTicketToPDF(detailedTicket, activeServiceId); },
-                      },
-                      ...((detailedTicket.diagnosticText || (detailedTicket.diagnosticPhotos && detailedTicket.diagnosticPhotos.length > 0))
-                        ? [{
-                            key: "diagnostic",
-                            label: "Diagnostický protokol",
-                            icon: <SearchIcon size={14} />,
-                            onPrint: () => { printDiagnosticProtocol(detailedTicket, activeServiceId); },
-                            onExport: () => { exportDiagnosticProtocolToPDF(detailedTicket, activeServiceId); },
-                          }]
-                        : []),
-                      {
-                        key: "warranty",
-                        label: "Záruční list",
-                        icon: <DocumentIcon size={14} />,
-                        onPrint: () => { printWarranty(detailedTicket, activeServiceId); },
-                        onExport: () => { exportWarrantyToPDF(detailedTicket, activeServiceId); },
-                      },
-                      ...(detailedTicket.loaner
-                        ? [{
-                            key: "zapujcka",
-                            label: "Smlouva o zápůjčce",
-                            icon: <DeviceIcon size={14} />,
-                            onPrint: () => { printZapujcku(detailedTicket, activeServiceId); },
-                            onExport: () => { exportZapujckuToPDF(detailedTicket, activeServiceId); },
-                          }]
-                        : []),
-                    ]}
-                  />
-                )}
-
-                {detailedTicket && smsAvailable && (
-                  <Button variant="soft"
-                    onClick={() => { setSmsPanelOpen(true); }} style={{ position: "relative" }}
-                    title="SMS chat se zákazníkem"
-                    data-tour="detail-sms"
-                    icon={<ChatIcon size={16} />}
-                  >
-                    SMS
-                    {smsUnreadCount > 0 && !smsPanelOpen && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: -8,
-                          right: -8,
-                          minWidth: 20,
-                          height: 20,
-                          borderRadius: "50%",
-                          background: "#FF3B30",
-                          color: "#fff",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: "0 6px",
-                        }}
-                      >
-                        {smsUnreadCount > 99 ? "99+" : smsUnreadCount}
-                      </span>
-                    )}
-                  </Button>
-                )}
-
-                {detailedTicket && (onCreateInvoice || onOpenInvoice) && (() => {
-                  const existingInvoiceId = invoiceIdByTicketId[detailedTicket.id];
-                  return existingInvoiceId && onOpenInvoice ? (
-                    <Button
-                      key="open-invoice"
-                      variant="soft"
-                      onClick={() => onOpenInvoice(existingInvoiceId)}
-                      title="Otevřít fakturu k této zakázce"
-                      icon={<CoinsIcon size={14} />}
-                    >
-                      Přejít na fakturu
-                    </Button>
-                  ) : onCreateInvoice ? (
-                    <span id="detail-vystavit-fakturu" style={{ display: "contents" }}>
-                    <Button variant="soft"
-                      key="create-invoice"
-                      onClick={() => {
-                        const t = detailedTicket;
-                        const repairs = (t.performedRepairs || []).filter((r) => r.name);
-                        onCreateInvoice({
-                          ticketId: t.id,
-                          customerId: t.customerId || undefined,
-                          customerName: t.customerName || t.customerCompany || undefined,
-                          customerEmail: t.customerEmail || undefined,
-                          customerPhone: t.customerPhone || undefined,
-                          customerIco: t.customerIco || undefined,
-                          customerAddress: [t.customerAddressStreet, t.customerAddressCity, t.customerAddressZip].filter(Boolean).join(", ") || undefined,
-                          branchId: t.branchId ?? null,
-                          items: repairs.length > 0 ? repairs.map((r) => ({
-                            // Hodinová práce jde na fakturu jako hodiny × sazba, ne 1 ks.
-                            name: r.type === "hourly" && r.technik ? `${r.name} (${r.technik})` : r.name,
-                            qty: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? r.hodiny! : 1,
-                            unit: r.type === "hourly" ? "h" : "ks",
-                            unit_price: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? (r.sazba ?? 0) : (r.price ?? 0),
-                            // Neplátce DPH má 0; dřív tu bylo napevno 21 %.
-                            vat_rate: sazbaProNovouPolozku(dph),
-                          })) : undefined,
-                        });
-                      }}
-                      title="Vytvořit fakturu z této zakázky"
-                      icon={<CoinsIcon size={14} />}
-                    >
-                      Vystavit fakturu
-                    </Button>
-                    </span>
-                  ) : null;
-                })()}
-
-                {detailedTicket && (
-                  <OverflowMenu
-                    ariaLabel="Další akce"
-                    items={[
-                      { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setTicketHistoryModalOpen(true) },
-                      {
-                        label: "Založit reklamaci z této zakázky",
-                        icon: <InboxIcon size={14} />,
-                        onSelect: () => {
-                          setClaimSourceTicket(detailedTicket);
-                          setCreateClaimModalOpen(true);
-                        },
-                      },
-                      ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
-                      // Karta zakázky do chatu místo opisování čísla – nejčastější důvod, proč si lidé v servisu píšou.
-                      ...(chatZapnuty ? [{
-                        label: "Sdílet do chatu",
-                        icon: <ChatIcon size={14} />,
-                        onSelect: () => {
-                          const kod = detailedTicket.code || "";
-                          window.dispatchEvent(new CustomEvent("jobi:chat-otevrit", {
-                            detail: {
-                              text: `#${kod} – ${detailedTicket.deviceLabel || "zakázka"}, ${detailedTicket.customerName || ""} `,
-                              zminka: { typ: "zakazka", id: detailedTicket.id, popis: kod },
-                            },
-                          }));
-                        },
-                      }] : []),
-                      {
-                        label: "Smazat zakázku",
-                        icon: <TrashIcon size={14} />,
-                        danger: true,
-                        dividerBefore: true,
-                        onSelect: () => {
-                          setDeleteTicketId(detailedTicket.id);
-                          setDeleteDialogOpen(true);
-                        },
-                      },
-                    ]}
-                  />
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Close button - uvnitř náhledu, s odsazením aby nezasahoval mimo */}
-          <Button variant="soft"
-            onClick={handleCloseDetail} style={{ position: "absolute", top: 10, right: 10, zIndex: 2 }}
-            aria-label="Zavřít"
-          >
-            ×
-          </Button>
-        </div>
-
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 18 }}>
-        {detailedClaim && (() => {
-          const c = { ...detailedClaim, ...editedClaim };
-          /* Diagnostika napojené zakázky se odsud rovnou zapisuje, takže se
-             ukáže až s celou zakázkou – z řádku seznamu by byla prázdná a
-             první úhoz by tu původní přepsal. */
-          const zdrojZeSeznamu = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
-          const sourceTicket = zdrojZeSeznamu?.uplna ? zdrojZeSeznamu : undefined;
-          const zdrojSeNacita = !!zdrojZeSeznamu && !sourceTicket;
-          return (
-          <>
-          <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
-            <div style={{ ...card, ...stylSekce("zakaznik") }}>
-              <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
-              {!isEditingClaim ? (
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.customer_name ?? "—"}</div>
-                  {c.customer_phone && (
-                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <PhoneIcon size={14} />
-                      <span>{formatPhoneNumber(c.customer_phone)}</span>
-                    </div>
-                  )}
-                  {c.customer_email && (
-                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <MailIcon size={14} />
-                      <span>{c.customer_email}</span>
-                    </div>
-                  )}
-                  {[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).length > 0 && (
-                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                      <PinIcon size={14} />
-                      <span>{[c.customer_address_street, c.customer_address_city, c.customer_address_zip].filter(Boolean).join(", ")}</span>
-                    </div>
-                  )}
-                  {(c.customer_company || c.customer_ico) && (
-                    <div style={{ fontSize: 13, color: "var(--text)", marginTop: 4 }}>{[c.customer_company, c.customer_ico].filter(Boolean).join(" · ")}</div>
-                  )}
-                  {c.customer_info && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, whiteSpace: "pre-wrap" }}>{c.customer_info}</div>}
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <input value={c.customer_name ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_name: e.target.value }))} placeholder="Jméno / firma" style={baseFieldInput} />
-                  <input value={c.customer_phone ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_phone: e.target.value }))} placeholder="Telefon" style={baseFieldInput} />
-                  <input value={c.customer_email ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_email: e.target.value }))} placeholder="E-mail" style={baseFieldInput} />
-                  <input value={c.customer_address_street ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_street: e.target.value }))} placeholder="Ulice, č.p." style={baseFieldInput} />
-                  <input value={c.customer_address_city ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_city: e.target.value }))} placeholder="Město" style={baseFieldInput} />
-                  <input value={c.customer_address_zip ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_address_zip: e.target.value }))} placeholder="PSČ" style={baseFieldInput} />
-                  <input value={c.customer_company ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_company: e.target.value }))} placeholder="Firma" style={baseFieldInput} />
-                  <input value={c.customer_ico ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_ico: e.target.value }))} placeholder="IČO" style={baseFieldInput} />
-                  <textarea value={c.customer_info ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, customer_info: e.target.value }))} placeholder="Poznámka k zákazníkovi" rows={2} style={{ ...baseFieldInput, minHeight: 60 }} />
-                </div>
-              )}
-            </div>
-            <div style={{ ...card, ...stylSekce("zarizeni") }}>
-              <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
-              {!isEditingClaim ? (
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>{c.device_label || c.device_serial || "—"}</div>
-                  {c.device_serial && (
-                    <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <HashIcon size={14} />
-                      <span>SN: {c.device_serial}</span>
-                    </div>
-                  )}
-                  {(c.device_brand || c.device_model) && (
-                    <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_brand, c.device_model].filter(Boolean).join(" ")}</div>
-                  )}
-                  {c.device_condition && <div style={{ fontSize: 13, color: "var(--text)" }}>{c.device_condition}</div>}
-                  {(c.device_accessories || c.device_note) && (
-                    <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_accessories, c.device_note].filter(Boolean).join(" · ")}</div>
-                  )}
-                  {c.device_passcode && <div style={{ fontSize: 13, color: "var(--text)" }}>Heslo/kód: {c.device_passcode}</div>}
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <input value={c.device_label ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_label: e.target.value }))} placeholder="Popis zařízení" style={baseFieldInput} />
-                  <input value={c.device_serial ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_serial: e.target.value }))} placeholder="SN / IMEI" style={baseFieldInput} />
-                  <input value={c.device_condition ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_condition: e.target.value }))} placeholder="Stav zařízení" style={baseFieldInput} />
-                  <input value={c.device_accessories ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_accessories: e.target.value }))} placeholder="Příslušenství" style={baseFieldInput} />
-                  <input value={c.device_note ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_note: e.target.value }))} placeholder="Poznámka k zařízení" style={baseFieldInput} />
-                  <input value={c.device_passcode ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, device_passcode: e.target.value }))} placeholder="Heslo/kód" style={baseFieldInput} />
-                  <div>
-                    <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
-                    <DateTimePicker
-                      value={(c as any).expected_completion_at ?? null}
-                      onChange={(v) => setEditedClaim((p) => ({ ...p, expected_completion_at: v }))}
-                      inputStyle={baseFieldInput}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-            <div style={{ ...card, gridColumn: "1 / -1" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Poznámka / důvod reklamace</div>
-              {!isEditingClaim ? (
-                <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
-              ) : (
-                <textarea value={c.notes ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, notes: e.target.value }))} placeholder="Poznámka / důvod reklamace" rows={4} style={{ ...baseFieldInput, minHeight: 100 }} />
-              )}
-            </div>
-            <div style={{ ...card, gridColumn: "1 / -1" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
-              {(() => {
-                const resolutionItems = claimResolutionDraft ?? parseClaimResolutionItems(detailedClaim?.resolution_summary ?? null);
-                const setResolutionItems = (next: ClaimResolutionItem[]) => setClaimResolutionDraft(next);
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {resolutionItems.length === 0 ? (
-                      <div style={{ fontSize: 14, color: "var(--muted)" }}>Zatím nebyly přidány žádné zákroky. Přidejte zákrok nebo opravu a u každého můžete nastavit cenu (0 Kč = zdarma při uznané reklamaci).</div>
-                    ) : (
-                      resolutionItems.map((item) => (
-                        <div key={item.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 10, background: "var(--panel)", border: "1px solid var(--border)" }}>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-                            <input
-                              value={item.name}
-                              onChange={(e) => setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, name: e.target.value } : x)))}
-                              placeholder="Název zákroku / opravy"
-                              style={{ ...baseFieldInput, flex: 1, minWidth: 180 }}
-                            />
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <label style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>Cena (Kč)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={item.price ?? ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  const num = v === "" ? undefined : Number(v);
-                                  setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, price: num } : x)));
-                                }}
-                                placeholder="0 = zdarma"
-                                title="Při uznané reklamaci 0 Kč, při neuznané uvedte cenu opravy"
-                                style={{ ...baseFieldInput, width: 100, fontWeight: 700 }}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setResolutionItems(resolutionItems.filter((x) => x.id !== item.id))}
-                              style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontWeight: 600, cursor: "pointer", fontSize: 12 }}
-                            >
-                              Odstranit
-                            </button>
-                          </div>
-                          <textarea
-                            value={item.description ?? ""}
-                            onChange={(e) => setResolutionItems(resolutionItems.map((x) => (x.id === item.id ? { ...x, description: e.target.value || undefined } : x)))}
-                            placeholder="Popis (volitelné)"
-                            rows={2}
-                            style={{ ...baseFieldInput, minHeight: 50, fontSize: 12 }}
-                          />
-                        </div>
-                      ))
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <Button variant="primary"
-                        disabled={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim()}
-                        onClick={() => setResolutionItems([...resolutionItems, { id: (crypto as any).randomUUID?.() ?? `z-${Date.now()}`, name: "" }])}
-                        title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}>
-                        <span>+</span> Přidat zákrok
-                      </Button>
-                      {claimResolutionDraft !== null && (
-                        <Button variant="primary"
-                          onClick={() => {
-                            saveClaimResolutionItems(detailedClaim!.id, claimResolutionDraft!).then((ok) => ok && showToast("Zákroky uloženy", "success"));
-                          }} style={{ display: "inline-flex", alignItems: "center", gap: 8,  background: "var(--accent)", color: "var(--accent-fg)" }}
-                        >
-                          Uložit zákroky
-                        </Button>
-                      )}
-                    </div>
-                    {resolutionItems.length > 0 && (() => {
-                      const total = resolutionItems.reduce((sum, r) => sum + (r.price || 0), 0);
-                      return (
-                        <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)", fontSize: 14, fontWeight: 800, color: "var(--text)" }}>
-                          Celkem: {total.toLocaleString("cs-CZ")} Kč
-                          {total === 0 && resolutionItems.some((r) => r.price === 0 || r.price === undefined) && (
-                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginLeft: 8 }}>(vše zdarma)</span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              })()}
-            </div>
-            <div style={{ ...card, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 0 }}>Stav</div>
-              <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-                {/* Mimo úpravy je přepínač stavu v hlavičce; tady zůstává jen pro režim úprav. */}
-                {isEditingClaim ? (
-                  <StatusPicker value={c.status ?? "received"} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setEditedClaim((p) => ({ ...p, status: next }))} size="sm" actionsByStatus={statusActionsMap} />
-                ) : (
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{getByKey(String(c.status ?? ""))?.label ?? "—"}</span>
-                )}
-              </div>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>Vytvořeno: {formatCZ(c.created_at)}</span>
-              {c.updated_at && <span style={{ fontSize: 12, color: "var(--muted)" }}>· Upraveno: {formatCZ(c.updated_at)}</span>}
-            </div>
-          </div>
-
-          {sourceTicket ? (
-            <>
-              <div style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
-                <SectionHeading icon={<SearchIcon size={16} />} barva={BARVA_SEKCE.diagnostika}>Diagnostika</SectionHeading>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Údaje napojené zakázky {sourceTicket.code ? `(${sourceTicket.code})` : ""}. Změny se ukládají rovnou do ní.</div>
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div>
-                    <div style={fieldLabel}>Diagnostický protokol</div>
-                    <textarea
-                      value={sourceTicket.diagnosticText || ""}
-                      onChange={(e) => {
-                        const text = e.target.value;
-                        setCloudTickets((prev) =>
-                          prev.map((t) => (t.id === sourceTicket.id ? { ...t, diagnosticText: text } : t))
-                        );
-                        ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_text: text }, false);
-                      }}
-                      style={baseFieldTextArea}
-                      placeholder="Zadejte výsledky diagnostiky zařízení..."
-                      rows={6}
-                    />
-                  </div>
-                  {(sourceTicket.diagnosticPhotosBefore?.length ?? 0) > 0 && (
-                    <div>
-                      <div style={fieldLabel}>Fotky před</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
-                        {(sourceTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
-                          <div key={idx} style={{ position: "relative" }}>
-                            <FotkaZakazky
-                              url={photoUrl}
-                              alt={`Fotka před ${idx + 1}`}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
-                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotosBefore || [], index: idx, ticketCode: sourceTicket.code })}
-                              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
-                            />
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                (async () => {
-                                  const url = (sourceTicket.diagnosticPhotosBefore || [])[idx];
-                                  if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
-                                    try {
-                                      await deleteDiagnosticPhotoFromStorage(supabase, url);
-                                    } catch (e) {
-                                      // Fotka zůstane v úložišti jako sirotek – uživateli
-                                      // to nevadí, ale hromadí se to a nikdo by si toho
-                                      // nevšiml. Proto se to aspoň zaloguje.
-                                      reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
-                                    }
-                                  }
-                                  const zbyva = (sourceTicket.diagnosticPhotosBefore || []).filter((_, i) => i !== idx);
-                                  ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos_before: zbyva }, true);
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === sourceTicket.id
-                                        ? { ...t, diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx) }
-                                        : t
-                                    )
-                                  );
-                                })();
-                              }}
-                              style={{
-                                position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: "50%",
-                                background: "rgba(239, 68, 68, 0.9)", color: "white", border: "none", cursor: "pointer",
-                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700,
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <div style={fieldLabel}>Diagnostické fotografie</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
-                      {(sourceTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
-                        <div key={idx} style={{ position: "relative" }}>
-                          <FotkaZakazky
-                            url={photoUrl}
-                            alt={`Diagnostika ${idx + 1}`}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
-                            onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: sourceTicket.diagnosticPhotos || [], index: idx, ticketCode: sourceTicket.code })}
-                            style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
-                          />
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              (async () => {
-                              const url = (sourceTicket.diagnosticPhotos || [])[idx];
-                              if (url && isDiagnosticPhotoStorageUrl(url) && supabase) {
-                                try {
-                                  await deleteDiagnosticPhotoFromStorage(supabase, url);
-                                } catch (e) {
-                                  reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
-                                }
-                              }
-                              const zbyva = (sourceTicket.diagnosticPhotos || []).filter((_, i) => i !== idx);
-                              ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: zbyva }, true);
-                              setCloudTickets((prev) =>
-                                prev.map((t) =>
-                                  t.id === sourceTicket.id ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) } : t
-                                )
-                              );
-                            })();
-                            }}
-                            style={{
-                              position: "absolute",
-                              top: 4,
-                              right: 4,
-                              width: 24,
-                              height: 24,
-                              borderRadius: "50%",
-                              background: "rgba(239, 68, 68, 0.9)",
-                              color: "white",
-                              border: "none",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 14,
-                              fontWeight: 700,
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                      {!naTelefonu && (
-                      <Button variant="soft"
-                        onClick={async () => {
-                          if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !sourceTicket?.id) return;
-                          const client = supabase!;
-                          setCaptureQRLoading(true);
-                          try {
-                          let lastErr: unknown = null;
-                          for (let attempt = 0; attempt < 2; attempt++) {
-                            try {
-                              const doRequest = async (retry = false): Promise<Response> => {
-                                const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
-                                if (refreshErr && !retry) {
-                                  throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
-                                }
-                                const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
-                                if (!token) {
-                                  throw new Error("Nejste přihlášeni.");
-                                }
-                                return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
-                                  body: JSON.stringify({ ticketId: sourceTicket.id }),
-                                });
-                              };
-                              let res = await doRequest();
-                              if (res.status === 401) {
-                                res = await doRequest(true);
-                              }
-                              const raw = await res.text();
-                              let data: { url?: string; error?: string; detail?: string } = {};
-                              try { if (raw) data = JSON.parse(raw); } catch {}
-                              if (!res.ok) {
-                                if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
-                                throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
-                              }
-                              if (data?.error) throw new Error(data.error);
-                              if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                              setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: popisDoOdkazu(data.url, { cislo: sourceTicket.code, servis: serviceName }) }]);
-                              return;
-                            } catch (err) {
-                              lastErr = err;
-                              const msg = err instanceof Error ? err.message : String(err);
-                              if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
-                                resetTauriFetchState();
-                                continue;
-                              }
-                              break;
-                            }
-                          }
-                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
-                          } finally {
-                            setCaptureQRLoading(false);
-                          }
-                        }}
-                        disabled={!supabase || !activeServiceId || !sourceTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
-                      >
-                        {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                      </Button>
-                      )}
-                      <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          disabled={diagnosticPhotosUploading}
-                          style={{ display: "none" }}
-                          onChange={async (e) => {
-                            const files = Array.from(e.target.files || []);
-                            e.target.value = "";
-                            if (!files.length) return;
-                            const hasId = !!(activeServiceId && sourceTicket.id);
-                            if (hasId && supabase) {
-                              setDiagnosticPhotosUploading(true);
-                              try {
-                                const urls: string[] = [];
-                                for (const file of files) {
-                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId!, sourceTicket.id!, file, { cislo: sourceTicket.code, servis: serviceName });
-                                  urls.push(url);
-                                }
-                                const vsechny = [...(sourceTicket.diagnosticPhotos || []), ...urls];
-                                ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: vsechny }, true);
-                                setCloudTickets((prev) =>
-                                  prev.map((t) =>
-                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] } : t
-                                  )
-                                );
-                              } catch (err) {
-                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
-                              } finally {
-                                setDiagnosticPhotosUploading(false);
-                              }
-                            } else {
-                              const reader = (file: File) =>
-                                new Promise<string>((resolve, reject) => {
-                                  const r = new FileReader();
-                                  r.onload = () => resolve(r.result as string);
-                                  r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                                  r.readAsDataURL(file);
-                                });
-                              try {
-                                const results = await Promise.all(files.map(reader));
-                                const vsechny = [...(sourceTicket.diagnosticPhotos || []), ...results];
-                                ulozDiagnostikuZakazky(sourceTicket.id, { diagnostic_photos: vsechny }, true);
-                                setCloudTickets((prev) =>
-                                  prev.map((t) =>
-                                    t.id === sourceTicket.id ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] } : t
-                                  )
-                                );
-                              } catch (_) {
-                                showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                              }
-                            }
-                          }}
-                        />
-                      </VyberFotek>
-                      {diagnosticPhotosUploading && (
-                        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <TicketComments
-                ticketId={sourceTicket.id}
-                comments={commentsFor(sourceTicket.id)}
-                draft={commentDraftByTicket[sourceTicket.id] ?? ""}
-                onDraftChange={handleCommentDraftChange}
-                onAdd={addComment}
-                onTogglePin={togglePin}
-                onEdit={editComment}
-                currentUserId={session?.user?.id ?? null}
-                authorProfiles={commentAuthorProfiles}
-                card={card}
-                baseFieldTextArea={baseFieldTextArea}
-              />
-            </>
-          ) : zdrojSeNacita ? (
-            <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
-              Načítám zakázku…
-            </div>
-          ) : (
-            <div style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13 }}>
-              Reklamace není napojená na zakázku. Diagnostiku a komentáře lze přidat u navázané zakázky.
-            </div>
-          )}
-          </>
-          );
-        })()}
-        {/* Zbytek sloupců zakázky se dotahuje jedním dotazem podle `id`.
-            Trvá to desítky milisekund, ale prázdné okno by v tu chvíli vypadalo
-            jako chyba. */}
-        {detailSeNacita && !detailedClaim && (
-          <div data-detail-nacita style={{ ...card, marginTop: 16, color: "var(--muted)", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
-            {nedotazenaZakazka === detailId ? (
-              <>
-                <span>Zakázku se nepodařilo načíst – zkontrolujte připojení.</span>
-                <Button variant="soft" onClick={() => { setNedotazenaZakazka(null); void zajistiPlnouZakazku(detailId!); }}>Zkusit znovu</Button>
-              </>
-            ) : (
-              <span>Načítám zakázku…</span>
-            )}
-          </div>
         )}
-        {detailedTicket && (
-          <>
-            {!isEditing ? (
-              <>
-                {/* Kde zakázka je a co je na řadě. Kroky se čtou z dat, nic se neukládá.
-                    Zkušený člověk si řádek skryje křížkem nebo v Nastavení → Rozhraní. */}
-                {uiCfg.app.postupZakazky !== false && (() => {
-                  const t = detailedTicket;
-                  const maFotky = (t.diagnosticPhotosBefore?.length ?? 0) + (t.diagnosticPhotos?.length ?? 0) > 0;
-                  const maOpravy = (t.performedRepairs ?? []).some((r) => !!r.name);
-                  const nabidka = t.quoteStatus ?? "none";
-                  const maFakturu = !!invoiceIdByTicketId[t.id];
-                  const hotovo = isFinal(t.status);
-                  /* Kroky přesunu (zásilky mezi pobočkami): jen když zakázka někam
-                     jela nebo je v konceptu; opravená doma je nedostane. */
-                  const presun = zasilkyZapnuty && hasBranches && nastaveniZasilek.postup
-                    ? krokyPresunu(t, historieZasilek?.ticketId === t.id ? historieZasilek.zasilky : [], (id) => branchById(id)?.name ?? "jiná pobočka", maOpravy || hotovo)
-                    : { predOpravou: [], poOprave: [] };
-                  const krokPresunu = (k: (typeof presun.predOpravou)[number]) => ({
-                    id: k.id,
-                    label: k.label,
-                    hotovo: k.hotovo,
-                    poznamka: k.poznamka,
-                    akce: k.akce ? "Přidat do zásilky" : undefined,
-                    onAkce: k.akce ? () => sjetNaKartu("detail-presun") : undefined,
-                  });
-                  return (
-                    <div style={{ marginTop: 16 }}>
-                      <PostupZakazky
-                        onSkryt={skrytPostupZakazky}
-                        kroky={[
-                          { id: "prijato", label: "Přijato", hotovo: true },
-                          { id: "fotky", label: "Fotky při převzetí", hotovo: maFotky, volitelny: true, akce: "Přejít na fotky", onAkce: () => sjetNaSbalenouKartu("detail-diagnostika") },
-                          ...presun.predOpravou.map(krokPresunu),
-                          { id: "opravy", label: "Opravy a cena", hotovo: maOpravy, akce: "Přejít na opravy", onAkce: () => sjetNaKartu("detail-opravy") },
-                          /* Vypnutá sekce (Nastavení → Detail zakázky) nemá v postupu co nabízet. */
-                          ...(skryteSekce.has("kontrola") ? [] : [
-                            { id: "kontrola", label: "Kontrola po opravě", hotovo: shrnutiKontroly(t.testChecklist).dokonceno, volitelny: true, akce: "Přejít na kontrolu", onAkce: () => sjetNaKartu("detail-kontrola") },
-                          ]),
-                          ...(skryteSekce.has("portal") ? [] : [{
-                            id: "nabidka",
-                            label: "Nabídka zákazníkovi",
-                            hotovo: nabidka === "approved",
-                            volitelny: true,
-                            akce: nabidka === "sent" ? undefined : "Přejít na nabídku",
-                            onAkce: nabidka === "sent" ? undefined : () => sjetNaSbalenouKartu("detail-portal"),
-                            poznamka: nabidka === "sent" ? "Čeká na schválení zákazníkem" : undefined,
-                          }]),
-                          ...presun.poOprave.map(krokPresunu),
-                          {
-                            id: "faktura",
-                            label: "Faktura",
-                            hotovo: maFakturu,
-                            volitelny: true,
-                            akce: "Vystavit fakturu",
-                            onAkce: () => document.getElementById("detail-vystavit-fakturu")?.querySelector("button")?.click(),
-                          },
-                          { id: "hotovo", label: "Dokončeno a předáno", hotovo, poznamka: "Přepněte stav v hlavičce, až bude oprava hotová" },
-                        ]}
-                      />
-                    </div>
-                  );
-                })()}
-                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
-                  <div style={{ ...card, ...stylSekce("zakaznik") }}>
-                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <div
-                        onClick={() => {
-                          const customerId = detailedTicket.customerId;
-                          if (customerId && onOpenCustomer) {
-                            onOpenCustomer(customerId);
-                          }
-                        }}
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 800,
-                          color: "var(--text)",
-                          cursor: detailedTicket.customerId ? "pointer" : "default",
-                        }}
-                        title={detailedTicket.customerId ? "Otevřít profil zákazníka" : undefined}
-                        onMouseEnter={(e) => {
-                          if (detailedTicket.customerId) {
-                            e.currentTarget.style.opacity = "0.8";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.opacity = "1";
-                        }}
-                      >
-                        {detailedTicket.customerName}
-                      </div>
-                      <CopyButton value={detailedTicket.customerName} label="jméno" />
-                      </div>
-                      {detailedTicket.customerPhone && (
-                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <PhoneIcon size={14} />
-                          <span>{formatPhoneNumber(detailedTicket.customerPhone)}</span>
-                          <CopyButton value={detailedTicket.customerPhone} label="telefon" />
-                        </div>
-                      )}
-                      {detailedTicket.customerEmail && (
-                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <MailIcon size={14} />
-                          <span>{detailedTicket.customerEmail}</span>
-                          <CopyButton value={detailedTicket.customerEmail} label="e-mail" />
-                        </div>
-                      )}
-                      {[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip].filter(Boolean).length >
-                        0 && (
-                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                          <PinIcon size={14} />
-                          <span>
-                            {[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip]
-                              .filter(Boolean)
-                              .join(", ")}
-                          </span>
-                          <CopyButton
-                            value={[detailedTicket.customerAddressStreet, detailedTicket.customerAddressCity, detailedTicket.customerAddressZip].filter(Boolean).join(", ")}
-                            label="adresu"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
-                    return claimsForTicket.length > 0 ? (
-                      <div style={{ gridColumn: "1 / -1", ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
-                        <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {claimsForTicket.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-                              style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
-                            >
-                              <span style={{ fontWeight: 800 }}>{c.code}</span>
-                              <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null;
-                  })()}
-
-                  <div style={{ ...card, ...stylSekce("zarizeni") }}>
-                    <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                        <span>{detailedTicket.deviceLabel}</span>
-                        <CopyButton value={detailedTicket.deviceLabel} label="název zařízení" />
-                      </div>
-                      {detailedTicket.serialOrImei && (
-                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
-                          <HashIcon size={14} />
-                          <span>SN: {detailedTicket.serialOrImei}</span>
-                          <CopyButton value={detailedTicket.serialOrImei} label="sériové číslo" />
-                        </div>
-                      )}
-                      {/* Záruka z příjmu; u starších zakázek (null) se řádek nevykreslí. */}
-                      {detailedTicket.warrantyClaim != null && (
-                        <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <span style={{ fontWeight: 600 }}>{detailedTicket.warrantyClaim ? "Záruční oprava" : "Pozáruční oprava"}</span>
-                          {detailedTicket.warrantyClaim && detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
-                          {detailedTicket.warrantyClaim && detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
-                        </div>
-                      )}
-                      {/* Štítek Find My s přepnutím na klik – zákazník ho často vypne až po
-                          telefonátu, tak ať to technik nemusí řešit přes úpravu zakázky. */}
-                      {(detailedTicket.findMyOff != null || jeAppleZarizeni(detailedTicket.deviceLabel)) && (() => {
-                        const vypnuto = detailedTicket.findMyOff === true;
-                        return (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
-                            <button
-                              type="button"
-                              aria-pressed={vypnuto}
-                              title={vypnuto ? "Označit Find My jako nevypnuté" : "Označit Find My jako vypnuté"}
-                              onClick={() => void ulozFindMy(detailedTicket.id, !vypnuto)}
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                padding: "3px 10px",
-                                borderRadius: 999,
-                                border: `1px solid ${vypnuto ? "rgba(22,163,74,0.45)" : "rgba(220,38,38,0.45)"}`,
-                                background: vypnuto ? "rgba(22,163,74,0.12)" : "rgba(220,38,38,0.12)",
-                                color: vypnuto ? "#15803d" : "#b91c1c",
-                                fontWeight: 700,
-                                fontSize: 12,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Find My {vypnuto ? "vypnuto" : "NEVYPNUTO"}
-                            </button>
-                            {!vypnuto && <span style={{ color: "var(--muted)" }}>Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů.</span>}
-                          </div>
-                        );
-                      })()}
-                      {(() => {
-                        const drive = najdiStejneZarizeni(cloudTickets, detailedTicket.serialOrImei, detailedTicket.id);
-                        if (drive.length === 0) return null;
-                        return (
-                          <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span>Toto zařízení u vás už bylo ({drive.length}×):</span>
-                            {drive.slice(0, 4).map((t) => (
-                              <button
-                                key={t.id}
-                                type="button"
-                                onClick={() => { setDetailId(t.id); setDetailClaimId(null); }}
-                                style={{ background: "transparent", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}
-                              >
-                                {t.code ?? "—"} · {formatCZ(t.createdAt)}
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: "var(--text)",
-                          marginTop: 8,
-                          padding: 10,
-                          borderRadius: 12,
-                          background: "var(--panel-2)",
-                          border: "1px solid var(--border)",
-                        }}
-                      >
-                        <WrenchIcon size={14} /> {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              // EDIT
-              <div style={{ marginTop: 20 }}>
-                <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)", marginBottom: 16 }}>Upravit zakázku</div>
-
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div style={{ ...card, ...stylSekce("zakaznik") }}>
-                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div>
-                        <div style={fieldLabel}>Jméno *</div>
-                        <input
-                          type="text"
-                          value={editedTicket.customerName || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, customerName: e.target.value }))}
-                          onBlur={async () => {
-                            const phone = editedTicket.customerPhone?.trim();
-                            const name = editedTicket.customerName?.trim();
-                            if (phone && name) {
-                              await lookupCustomerEdit(phone, name);
-                            }
-                          }}
-                          style={baseFieldInput}
-                          placeholder="Jméno zákazníka"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
-                        <input
-                          type="text"
-                          value={editedTicket.customerPhone || ""}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/\D/g, "");
-                            setEditedTicket((p) => ({ ...p, customerPhone: cleaned }));
-                            // Clear matched customer when phone changes
-                            if (matchedCustomerEdit) setMatchedCustomerEdit(null);
-                            
-                            // Trigger lookup if phone is valid (without waiting for blur)
-                            if (cleaned.trim()) {
-                              const phoneNorm = normalizePhone(cleaned);
-                              if (phoneNorm) {
-                                const name = editedTicket.customerName?.trim();
-                                lookupCustomerEdit(cleaned, name);
-                              }
-                            }
-                          }}
-                          onKeyDown={async (e) => {
-                            if (e.key === "Enter") {
-                              const phone = editedTicket.customerPhone?.trim();
-                              const name = editedTicket.customerName?.trim();
-                              if (phone) {
-                                await lookupCustomerEdit(phone, name);
-                              }
-                            }
-                          }}
-                          onBlur={async () => {
-                            const phone = editedTicket.customerPhone?.trim();
-                            const name = editedTicket.customerName?.trim();
-                            if (phone) {
-                              await lookupCustomerEdit(phone, name);
-                            } else {
-                              setMatchedCustomerEdit(null);
-                            }
-                          }}
-                          style={baseFieldInput}
-                          placeholder="(+420) xxx xxx xxx"
-                        />
-                        
-                        {/* Customer match panel for Edit */}
-                        {matchedCustomerEdit && (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              padding: 12,
-                              background: "var(--accent-light)",
-                              borderRadius: 8,
-                              border: "1px solid var(--accent)",
-                            }}
-                          >
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
-                              Chcete změnit zákazníka této zakázky?
-                            </div>
-                            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-                              <div><strong>Jméno:</strong> {matchedCustomerEdit.name}</div>
-                              {matchedCustomerEdit.phone && <div><strong>Telefon:</strong> {matchedCustomerEdit.phone}</div>}
-                              {matchedCustomerEdit.email && <div><strong>E-mail:</strong> {matchedCustomerEdit.email}</div>}
-                              {matchedCustomerEdit.company && <div><strong>Firma:</strong> {matchedCustomerEdit.company}</div>}
-                            </div>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <button
-                                onClick={async () => {
-                                  // Load full customer data for prefill
-                                  if (!supabase || !activeServiceId) return;
-                                  const { data } = await (supabase
-                                    .from("customers") as any)
-                                    .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-                                    .eq("id", matchedCustomerEdit.id)
-                                    .eq("service_id", activeServiceId)
-                                    .single();
-                                  
-                                  if (data) {
-                                    // Audit: Log customer data loaded from DB
-                                    devLog("[EditTicket] Customer data loaded from DB:", {
-                                      id: data.id,
-                                      name: data.name,
-                                      phone: data.phone,
-                                      email: data.email,
-                                      address_street: data.address_street,
-                                      address_city: data.address_city,
-                                      address_zip: data.address_zip,
-                                      company: data.company,
-                                      ico: data.ico,
-                                      note: data.note,
-                                    });
-                                    
-                                    // User explicitly confirmed change - update all customer snapshot fields
-                                    const updatedFields = {
-                                      customerId: data.id,
-                                      customerName: data.name || "",
-                                      customerPhone: data.phone || "",
-                                      customerEmail: data.email || "",
-                                      customerAddressStreet: data.address_street || "",
-                                      customerAddressCity: data.address_city || "",
-                                      customerAddressZip: data.address_zip || "",
-                                      customerCompany: data.company || "",
-                                      customerIco: data.ico || "",
-                                      customerInfo: data.note || "",
-                                    };
-                                    
-                                    // Audit: Log what we're setting to editedTicket
-                                    devLog("[EditTicket] Setting to editedTicket:", updatedFields);
-                                    
-                                    setEditedTicket((prev) => ({
-                                      ...prev,
-                                      ...updatedFields,
-                                    }));
-                                  }
-                                  setMatchedCustomerEdit(null);
-                                }}
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: 6,
-                                  border: "none",
-                                  background: "var(--accent)",
-                                  color: "white",
-                                  fontWeight: 600,
-                                  fontSize: 12,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Změnit zákazníka
-                              </button>
-                              <button
-                                onClick={() => setMatchedCustomerEdit(null)}
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: 6,
-                                  border: "1px solid var(--border)",
-                                  background: "transparent",
-                                  color: "var(--text)",
-                                  fontWeight: 500,
-                                  fontSize: 12,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Ne, ponechat
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>E-mail</div>
-                        <input
-                          type="email"
-                          value={editedTicket.customerEmail || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, customerEmail: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="email@example.com"
-                        />
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
-                        <div>
-                          <div style={fieldLabel}>Ulice</div>
-                          <input
-                            type="text"
-                            value={editedTicket.customerAddressStreet || ""}
-                            onChange={(e) => setEditedTicket((p) => ({ ...p, customerAddressStreet: e.target.value }))}
-                            style={baseFieldInput}
-                            placeholder="Ulice a číslo"
-                          />
-                        </div>
-                        <div>
-                          <div style={fieldLabel}>Město</div>
-                          <input
-                            type="text"
-                            value={editedTicket.customerAddressCity || ""}
-                            onChange={(e) => setEditedTicket((p) => ({ ...p, customerAddressCity: e.target.value }))}
-                            style={baseFieldInput}
-                            placeholder="Město"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>PSČ</div>
-                        <input
-                          type="text"
-                          value={editedTicket.customerAddressZip || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, customerAddressZip: e.target.value.replace(/\D/g, "") }))}
-                          style={baseFieldInput}
-                          placeholder="123 45"
-                        />
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
-                        <div>
-                          <div style={fieldLabel}>Firma</div>
-                          <input
-                            type="text"
-                            value={editedTicket.customerCompany || ""}
-                            onChange={(e) => setEditedTicket((p) => ({ ...p, customerCompany: e.target.value }))}
-                            style={baseFieldInput}
-                            placeholder="Název firmy"
-                          />
-                        </div>
-                        <div>
-                          <div style={fieldLabel}>IČO</div>
-                          <input
-                            type="text"
-                            value={editedTicket.customerIco || ""}
-                            onChange={(e) => setEditedTicket((p) => ({ ...p, customerIco: e.target.value.replace(/\D/g, "") }))}
-                            style={baseFieldInput}
-                            placeholder="12345678"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Poznámka o zákazníkovi</div>
-                        <textarea
-                          value={editedTicket.customerInfo || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, customerInfo: e.target.value }))}
-                          style={baseFieldTextArea}
-                          placeholder="Dodatečné informace o zákazníkovi..."
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ ...card, ...stylSekce("zarizeni") }}>
-                    <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div>
-                        <div style={fieldLabel}>Zařízení *</div>
-                        <DeviceAutocomplete
-                          value={editedTicket.deviceLabel || ""}
-                          onChange={(value) => setEditedTicket((p) => ({ ...p, deviceLabel: value }))}
-                          models={modelsWithHierarchy}
-                          error={undefined}
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Sériové číslo / IMEI</div>
-                        <input
-                          type="text"
-                          value={editedTicket.serialOrImei || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, serialOrImei: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="SN123456789"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Záruka</div>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", minHeight: 36 }}>
-                          <input
-                            type="checkbox"
-                            checked={editedTicket.warrantyClaim === true}
-                            onChange={(e) => setEditedTicket((p) => ({ ...p, warrantyClaim: e.target.checked }))}
-                          />
-                          Záruční oprava
-                        </label>
-                      </div>
-                      {editedTicket.warrantyClaim === true && (
-                        <>
-                          <div>
-                            <div style={fieldLabel}>Datum nákupu</div>
-                            <input
-                              type="date"
-                              value={editedTicket.purchaseDate || ""}
-                              max={new Date().toISOString().slice(0, 10)}
-                              onChange={(e) => setEditedTicket((p) => ({ ...p, purchaseDate: e.target.value }))}
-                              style={baseFieldInput}
-                            />
-                          </div>
-                          <div>
-                            <div style={fieldLabel}>Doklad o koupi</div>
-                            <input
-                              type="text"
-                              value={editedTicket.purchaseProof || ""}
-                              onChange={(e) => setEditedTicket((p) => ({ ...p, purchaseProof: e.target.value }))}
-                              style={baseFieldInput}
-                              placeholder="Číslo účtenky, faktura"
-                            />
-                            {chybiPodkladZaruky(editedTicket) && <div style={fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>}
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <div style={fieldLabel}>Požadovaná oprava *</div>
-                        <input
-                          type="text"
-                          value={editedTicket.requestedRepair || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, requestedRepair: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Popis požadované opravy"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Heslo/kód zařízení</div>
-                        <input
-                          type="text"
-                          value={editedTicket.devicePasscode || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, devicePasscode: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Heslo nebo kód"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Popis stavu zařízení</div>
-                        <input
-                          list="edit-device-condition-list"
-                          value={editedTicket.deviceCondition || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, deviceCondition: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Vyberte nebo napište vlastní..."
-                        />
-                        <datalist id="edit-device-condition-list">
-                          {getDeviceOptions().deviceConditions.map((c, i) => (
-                            <option key={i} value={c} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Příslušenství</div>
-                        <input
-                          list="edit-device-accessories-list"
-                          value={editedTicket.deviceAccessories || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, deviceAccessories: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Vyberte nebo napište vlastní..."
-                        />
-                        <datalist id="edit-device-accessories-list">
-                          {getDeviceOptions().deviceAccessories.map((a, i) => (
-                            <option key={i} value={a} />
-                          ))}
-                        </datalist>
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Poznámka k zařízení</div>
-                        <textarea
-                          value={editedTicket.deviceNote || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, deviceNote: e.target.value }))}
-                          style={baseFieldTextArea}
-                          placeholder="Dodatečné poznámky k zařízení..."
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Způsob převzetí</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().receiveMethods}
-                          value={editedTicket.handoffMethod || ""}
-                          onChange={(v) => setEditedTicket((p) => ({ ...p, handoffMethod: v }))}
-                          extraOption={editedTicket.handoffMethod || undefined}
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Způsob předání</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().returnMethods}
-                          value={editedTicket.handbackMethod || ""}
-                          onChange={(v) => setEditedTicket((p) => ({ ...p, handbackMethod: v }))}
-                          extraOption={editedTicket.handbackMethod || undefined}
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Externí ID</div>
-                        <input
-                          type="text"
-                          value={editedTicket.externalId || ""}
-                          onChange={(e) => setEditedTicket((p) => ({ ...p, externalId: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Externí identifikátor"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Předpokládané datum/čas dokončení</div>
-                        <DateTimePicker
-                          value={
-                            (editedTicket as any).expectedCompletionAt ?? (detailedTicket as any).expected_completion_at ?? null
-                          }
-                          onChange={(v) =>
-                            setEditedTicket((p) => ({
-                              ...p,
-                              expectedCompletionAt: v,
-                            } as any))
-                          }
-                          inputStyle={baseFieldInput}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!isEditing && (
-              <>
-                {/* Stav zakázky je v hlavičce (pilulka = přepínač), tady už se neopakuje. */}
-                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
-                  {(detailedTicket.customerCompany || detailedTicket.customerIco || detailedTicket.customerInfo) && (
-                  <div style={{ ...card, opacity: 0.85 }}>
-                    <SectionHeading size="sm">Dodatečné informace o zákazníkovi</SectionHeading>
-                    <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                      {detailedTicket.customerCompany && (
-                        <div>
-                          <span style={{ color: "var(--muted)" }}>Firma:</span> {detailedTicket.customerCompany}
-                        </div>
-                      )}
-                      {detailedTicket.customerIco && (
-                        <div>
-                          <span style={{ color: "var(--muted)" }}>IČO:</span> {detailedTicket.customerIco}
-                        </div>
-                      )}
-                      {detailedTicket.customerInfo && (
-                        <div
-                          style={{
-                            marginTop: 6,
-                            padding: 10,
-                            borderRadius: 10,
-                            background: "var(--panel-2)",
-                            color: "var(--text)",
-                            fontSize: 12,
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {detailedTicket.customerInfo}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  )}
-
-                  <div style={{ ...card, opacity: 0.85 }}>
-                    <SectionHeading size="sm">Technické detaily</SectionHeading>
-                    <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                      {detailedTicket.devicePasscode && (
-                        <div>
-                          <span style={{ color: "var(--muted)" }}>Heslo/kód:</span> {detailedTicket.devicePasscode}
-                        </div>
-                      )}
-                      {detailedTicket.deviceCondition && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ color: "var(--muted)", marginBottom: 4 }}>Popis stavu:</div>
-                          <div style={{ padding: 8, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, lineHeight: 1.4 }}>
-                            {detailedTicket.deviceCondition}
-                          </div>
-                        </div>
-                      )}
-                      {detailedTicket.deviceAccessories && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ color: "var(--muted)", marginBottom: 4 }}>Příslušenství:</div>
-                          <div style={{ padding: 8, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, lineHeight: 1.4 }}>
-                            {detailedTicket.deviceAccessories}
-                          </div>
-                        </div>
-                      )}
-                      {detailedTicket.deviceNote && (
-                        <div style={{ marginTop: 4 }}>
-                          <div style={{ color: "var(--muted)", marginBottom: 4 }}>Poznámka:</div>
-                          <div style={{ padding: 8, borderRadius: 8, background: "var(--panel-2)", fontSize: 12, lineHeight: 1.4 }}>
-                            {detailedTicket.deviceNote}
-                          </div>
-                        </div>
-                      )}
-                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {detailedTicket.handoffMethod && (
-                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <InboxIcon size={14} /> Převzetí: {detailedTicket.handoffMethod}
-                          </div>
-                        )}
-                        {detailedTicket.handbackMethod && (
-                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <OutboxIcon size={14} /> Předání: {detailedTicket.handbackMethod}
-                          </div>
-                        )}
-                        {detailedTicket.externalId && (
-                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                            <LinkIcon size={14} /> Ext: {detailedTicket.externalId}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div id="detail-opravy" data-tour="detail-opravy" style={{ ...card, ...stylSekce("opravy"), marginTop: 16 }}>
-                  <SectionHeading icon={<WrenchIcon size={16} />} barva={BARVA_SEKCE.opravy}>Provedené opravy</SectionHeading>
-
-                  <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                    {(detailedTicket.performedRepairs ?? []).map((repair) => {
-                      // Rezervované/odečtené díly této opravy; uvolněné se neukazují.
-                      const dily = ticketReservations.ticketId === detailedTicket.id
-                        ? ticketReservations.rows.filter((r) => r.repairEntryId === repair.id && r.status !== "released")
-                        : [];
-                      return (
-                        <div key={repair.id} style={{ display: "grid", gap: 2 }}>
-                          <PerformedRepairItem
-                            repair={repair}
-                            onRemove={(repairId) => removePerformedRepair(detailedTicket.id, repairId)}
-                            onUpdatePrice={(repairId, price) => updatePerformedRepairPrice(detailedTicket.id, repairId, price)}
-                            onUpdateCosts={(repairId, costs) => updatePerformedRepairCosts(detailedTicket.id, repairId, costs)}
-                            onUpdateTime={(repairId, time) => updatePerformedRepairTime(detailedTicket.id, repairId, time)}
-                            onUpdateProducts={(repairId, productIds) => updatePerformedRepairProducts(detailedTicket.id, repairId, productIds)}
-                            onUpdateFields={(repairId, fields) => updatePerformedRepairFields(detailedTicket.id, repairId, fields)}
-                            devicesData={devicesData}
-                            inventoryData={inventoryData}
-                            odmenaMozna={najdiPravidlo(pravidlaOdmen, repair.name) !== null}
-                          />
-                          <DilyOpravy
-                            ticketId={detailedTicket.id}
-                            serviceId={activeServiceId}
-                            rows={dily}
-                            produkty={skladProdukty}
-                            rezervovanoCelkem={rezervovanoCelkem}
-                            objednano={objednanoProZakazku.ticketId === detailedTicket.id ? objednanoProZakazku.rows : []}
-                            muzeObjednat={hasCapability("can_edit_inventory")}
-                            onObjednano={() => void refreshObjednanoProZakazku(detailedTicket.id)}
-                          />
-                        </div>
-                      );
-                    })}
-                    {(detailedTicket.performedRepairs ?? []).length === 0 && (
-                      <div style={{ color: "var(--muted)", fontSize: 13, padding: 12, textAlign: "center" }}>
-                        Zatím nebyly přidány žádné opravy
-                      </div>
-                    )}
-                    {(detailedTicket.performedRepairs ?? []).length > 0 && (() => {
-                      const totalPrice = hrubaCena(detailedTicket.performedRepairs);
-                      const discountType: "percentage" | "amount" | null = detailedTicket.discountType ?? null;
-                      const discountValue = detailedTicket.discountValue || 0;
-                      /* Sleva i konečná cena přes společný vzorec (slevaZakazky.ts).
-                         Vlastní kopie, která tu byla, neznala strop ani zaokrouhlení:
-                         sleva 5 000 Kč na zakázce za 1 500 Kč vypsala „Sleva −5 000,00
-                         Kč“ vedle „Finální cena 0,00 Kč“ – dvě čísla, která si na
-                         obrazovce odporují a na dokladu jsou pak jiná. */
-                      const discountAmount = castkaSlevy(totalPrice, discountType, discountValue);
-                      const finalPrice = konecnaCena(totalPrice, discountType, discountValue);
-                      
-                      return (
-                        <div style={{ 
-                          padding: 12, 
-                          borderRadius: 10,
-                          background: "var(--accent-soft)", 
-                          border: "1px solid var(--accent)",
-                          marginTop: 8,
-                        }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <span style={{ fontWeight: 950, fontSize: 14, color: "var(--text)" }}>Celková cena oprav:</span>
-                              <span style={{ fontWeight: 950, fontSize: 16, color: "var(--accent)" }}>
-                                {formatCurrency(totalPrice)}
-                              </span>
-                            </div>
-                            
-                            {/* Discount UI */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                              <DiscountPicker
-                                discountType={discountType ?? null}
-                                discountValue={discountValue || 0}
-                                onChange={(type, value) => {
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === detailedTicket.id
-                                        ? { ...t, discountType: type, discountValue: type ? value : undefined }
-                                        : t
-                                    )
-                                  );
-                                }}
-                              />
-
-                              {/* Přednastavené slevy (Nastavení → Zakázky → Slevy): jedno
-                                  klepnutí místo výběru typu a vypisování hodnoty. Druhé
-                                  klepnutí na aktivní slevu ji zase sundá. */}
-                              <TlacitkaSlev
-                                slevy={prednastaveneSlevy}
-                                discountType={discountType}
-                                discountValue={discountValue}
-                                onChange={(type, value) => {
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === detailedTicket.id
-                                        ? { ...t, discountType: type, discountValue: type ? value : undefined }
-                                        : t
-                                    )
-                                  );
-                                }}
-                              />
-
-                              {discountAmount > 0 && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                                    Sleva {discountType === "percentage" ? `(${discountValue}%)` : ""}:
-                                  </span>
-                                  <span style={{ fontSize: 13, color: "var(--accent)", fontWeight: 700 }}>
-                                    −{formatCurrency(discountAmount)}
-                                  </span>
-                                </div>
-                              )}
-                              
-                              {discountAmount > 0 && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 4, borderTop: "1px solid var(--border)" }}>
-                                  <span style={{ fontWeight: 950, fontSize: 14, color: "var(--text)" }}>Finální cena:</span>
-                                  <span style={{ fontWeight: 950, fontSize: 18, color: "var(--accent)" }}>
-                                    {formatCurrency(finalPrice)}
-                                  </span>
-                        </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  <PerformedRepairAdder 
-                    availableRepairs={availableRepairs} 
-                    onAdd={(repair) => addPerformedRepair(detailedTicket.id, repair)}
-                    deviceLabel={detailedTicket.deviceLabel}
-                    devicesData={devicesData}
-                    inventoryData={inventoryData}
-                    vychoziSazba={hodinovaSazba ?? undefined}
-                    vychoziTechnik={userProfile?.nickname ?? undefined}
-                    vychoziTechnikId={session?.user?.id ?? undefined}
-                    onAddToModel={(repairData) => {
-                      // Add repair to model in Devices
-                      const currentDevices = safeLoadDevicesData();
-                      const newRepair: DeviceRepair = {
-                        id: `${Date.now()}_${Math.random()}`,
-                        modelIds: [repairData.modelId],
-                        name: repairData.name,
-                        price: repairData.price || 0,
-                        estimatedTime: repairData.estimatedTime || 0,
-                        details: "",
-                        costs: repairData.costs,
-                        productIds: repairData.productIds,
-                        createdAt: new Date().toISOString(),
-                      };
-                      const updatedDevices = {
-                        ...currentDevices,
-                        repairs: [...currentDevices.repairs, newRepair],
-                      };
-                      try {
-                        localStorage.setItem(STORAGE_KEYS.DEVICES, JSON.stringify(updatedDevices));
-                        // Also add to current ticket
-                        addPerformedRepair(detailedTicket.id, { name: repairData.name, type: "manual" });
-                        showToast(`Oprava "${repairData.name}" byla přidána k modelu a do zakázky.`, "success");
-                      } catch (_e) {
-                        showToast("Chyba při ukládání opravy k modelu.", "error");
-                      }
-                    }}
-                  />
-                </div>
-
-                {activeServiceId && !skryteSekce.has("portal") && (
-                  <div id="detail-portal" data-tour="detail-portal">
-                  <PortalCard
-                    key={detailedTicket.id}
-                    ticket={detailedTicket}
-                    serviceId={activeServiceId}
-                    smsAvailable={smsAvailable}
-                    availableRepairs={availableRepairs}
-                    onQuoteApprovedRepairs={applyQuoteRepairs}
-                    style={{ marginTop: 16, ...stylSekce("portal") }}
-                    barva={BARVA_SEKCE.portal}
-                    onFieldsChange={(ticketId, fields) =>
-                      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...fields } : t)))
-                    }
-                    otevreno={detailPortalOpen}
-                    onToggle={prepnoutDetailPortal}
-                  />
-                  </div>
-                )}
-
-                <div id="detail-diagnostika" data-tour="detail-diagnostika" style={{ ...card, ...stylSekce("diagnostika"), marginTop: 16 }}>
-                  <SbalitelnaHlavicka
-                    icon={<SearchIcon size={16} />}
-                    barva={BARVA_SEKCE.diagnostika}
-                    title="Diagnostika"
-                    otevreno={detailDiagnostikaOpen}
-                    onToggle={prepnoutDetailDiagnostiku}
-                    ovlada="detail-diagnostika-obsah"
-                    souhrn="protokol, fotky"
-                  />
-                  {detailDiagnostikaOpen && (
-                  <div id="detail-diagnostika-obsah" style={{ display: "grid", gap: 12 }}>
-                    <div>
-                      <div style={fieldLabel}>Diagnostický protokol</div>
-                      <textarea
-                        value={detailedTicket.diagnosticText || ""}
-                        onChange={(e) => {
-                          setDirtyFlags((prev) => ({ ...prev, diagnosticText: true }));
-                          setCloudTickets((prev) =>
-                            prev.map((t) =>
-                              t.id === detailedTicket.id
-                                ? { ...t, diagnosticText: e.target.value }
-                                : t
-                            )
-                          );
-                        }}
-                        style={baseFieldTextArea}
-                        placeholder="Zadejte výsledky diagnostiky zařízení..."
-                        rows={6}
-                      />
-                    </div>
-                    
-                    <div>
-                      <div style={fieldLabel}>Fotky před</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
-                        {(detailedTicket.diagnosticPhotosBefore || []).map((photoUrl, idx) => (
-                            <div key={idx} style={{ position: "relative" }}>
-                              <FotkaZakazky
-                                url={photoUrl}
-                                alt={`Fotka před ${idx + 1}`}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() =>
-                                  setPhotoLightbox({
-                                    urls: detailedTicket.diagnosticPhotosBefore || [],
-                                    index: idx,
-                                    ticketCode: detailedTicket.code,
-                                  })
-                                }
-                                onKeyDown={(e) =>
-                                  e.key === "Enter" &&
-                                  setPhotoLightbox({
-                                    urls: detailedTicket.diagnosticPhotosBefore || [],
-                                    index: idx,
-                                    ticketCode: detailedTicket.code,
-                                  })
-                                }
-                                style={{
-                                  width: 120,
-                                  height: 120,
-                                  objectFit: "cover",
-                                  borderRadius: 8,
-                                  border: "1px solid var(--border)",
-                                  cursor: "pointer",
-                                }}
-                              />
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const url = (detailedTicket.diagnosticPhotosBefore || [])[idx];
-                                  if (url && isDiagnosticPhotoStorageUrl(url)) {
-                                    try {
-                                      await deleteDiagnosticPhotoFromStorage(supabase, url);
-                                    } catch (e) {
-                                      reportSilent({ code: "orders.photo_delete_failed", error: e, source: "Orders.deleteDiagnosticPhoto" });
-                                    }
-                                  }
-                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === detailedTicket.id
-                                        ? {
-                                            ...t,
-                                            diagnosticPhotosBefore: (t.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
-                                          }
-                                        : t
-                                    )
-                                  );
-                                }}
-                                style={{
-                                  position: "absolute",
-                                  top: 4,
-                                  right: 4,
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius: "50%",
-                                  background: "rgba(239, 68, 68, 0.9)",
-                                  color: "white",
-                                  border: "none",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontSize: 14,
-                                  fontWeight: 700,
-                                }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                        {!naTelefonu && (
-                        <Button variant="soft"
-                          onClick={async () => {
-                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
-                            setCaptureQRLoading(true);
-                            try {
-                              let lastErr: unknown = null;
-                              for (let attempt = 0; attempt < 2; attempt++) {
-                                try {
-                                  const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
-                                  if (refreshErr && attempt === 0) throw new Error("Session vypršela.");
-                                  const token = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
-                                  if (!token) throw new Error("Nejste přihlášeni.");
-                                  const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
-                                    body: JSON.stringify({ ticketId: detailedTicket.id, isBefore: true }),
-                                  });
-                                  const raw = await res.text();
-                                  const data: { url?: string; error?: string } = raw ? JSON.parse(raw) : {};
-                                  if (!res.ok) throw new Error(data.error || res.statusText);
-                                  if (data.url) setCaptureQRItems([{ deviceLabel: detailedTicket.deviceLabel || "Zakázka", url: popisDoOdkazu(data.url, { cislo: detailedTicket.code, servis: serviceName }) }]);
-                                  return;
-                                } catch (err) {
-                                  lastErr = err;
-                                  const msg = err instanceof Error ? err.message : String(err);
-                                  if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
-                                    resetTauriFetchState();
-                                    continue;
-                                  }
-                                  break;
-                                }
-                              }
-                              showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
-                            } finally {
-                              setCaptureQRLoading(false);
-                            }
-                          }}
-                          disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
-                        >
-                          {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                        </Button>
-                        )}
-                        <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            disabled={diagnosticPhotosUploading}
-                            style={{ display: "none" }}
-                            onChange={async (e) => {
-                              const files = Array.from(e.target.files || []);
-                              e.target.value = "";
-                              if (!files.length || !supabase || !activeServiceId || !detailedTicket?.id) return;
-                              setDiagnosticPhotosUploading(true);
-                              try {
-                                const urls: string[] = [];
-                                for (const file of files) {
-                                  const url = await uploadDiagnosticPhotoWithWatermark(supabase, activeServiceId, detailedTicket.id, file, { cislo: detailedTicket.code, servis: serviceName });
-                                  urls.push(url);
-                                }
-                                setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                                setCloudTickets((prev) =>
-                                  prev.map((t) =>
-                                    t.id === detailedTicket.id
-                                      ? { ...t, diagnosticPhotosBefore: [...(t.diagnosticPhotosBefore || []), ...urls] }
-                                      : t
-                                  )
-                                );
-                              } catch (err) {
-                                showToast(`Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`, "error");
-                              } finally {
-                                setDiagnosticPhotosUploading(false);
-                              }
-                            }}
-                          />
-                        </VyberFotek>
-                      </div>
-                    </div>
-                    <div>
-                      <div style={fieldLabel}>Diagnostické fotografie</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
-                        {(detailedTicket.diagnosticPhotos || []).map((photoUrl, idx) => (
-                          <div key={idx} style={{ position: "relative" }}>
-                            <FotkaZakazky
-                              url={photoUrl}
-                              alt={`Diagnostika ${idx + 1}`}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
-                              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: detailedTicket.diagnosticPhotos || [], index: idx, ticketCode: detailedTicket.code })}
-                              style={{
-                                width: 120, 
-                                height: 120, 
-                                objectFit: "cover", 
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                cursor: "pointer",
-                              }}
-                            />
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                (async () => {
-                                const photoUrl = (detailedTicket.diagnosticPhotos || [])[idx];
-                                if (photoUrl && isDiagnosticPhotoStorageUrl(photoUrl)) {
-                                  try {
-                                    await deleteDiagnosticPhotoFromStorage(supabase, photoUrl);
-                                  } catch (_) {
-                                    // Orphan v Storage; odstraníme jen z UI
-                                  }
-                                }
-                                setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                                setCloudTickets((prev) =>
-                                  prev.map((t) =>
-                                    t.id === detailedTicket.id
-                                      ? { ...t, diagnosticPhotos: (t.diagnosticPhotos || []).filter((_, i) => i !== idx) }
-                                      : t
-                                  )
-                                );
-                              })();
-                              }}
-                              style={{
-                                position: "absolute",
-                                top: 4,
-                                right: 4,
-                                width: 24,
-                                height: 24,
-                                borderRadius: "50%",
-                                background: "rgba(239, 68, 68, 0.9)",
-                                color: "white",
-                                border: "none",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 14,
-                                fontWeight: 700,
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
-                        {!naTelefonu && (
-                        <Button variant="soft"
-                          onClick={async () => {
-                            if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId || !detailedTicket?.id) return;
-                            const client = supabase!;
-                            setCaptureQRLoading(true);
-                            try {
-                            let lastErr: unknown = null;
-                            for (let attempt = 0; attempt < 2; attempt++) {
-                              try {
-                                const doRequest = async (retry = false): Promise<Response> => {
-                                  const { data: refreshData, error: refreshErr } = await client.auth.refreshSession();
-                                  if (refreshErr && !retry) {
-                                    throw new Error("Session vypršela. Odhlaste se a přihlaste znovu.");
-                                  }
-                                  const token = refreshData?.session?.access_token ?? (await client.auth.getSession()).data?.session?.access_token;
-                                  if (!token) {
-                                    throw new Error("Nejste přihlášeni.");
-                                  }
-                                  return supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: supabaseAnonKey },
-                                    body: JSON.stringify({ ticketId: detailedTicket.id }),
-                                  });
-                                };
-                                let res = await doRequest();
-                                if (res.status === 401) {
-                                  res = await doRequest(true);
-                                }
-                                const raw = await res.text();
-                                let data: { url?: string; error?: string; detail?: string } = {};
-                                try { if (raw) data = JSON.parse(raw); } catch {}
-                                if (!res.ok) {
-                                  if (res.status === 401) throw new Error("Přihlášení vypršelo. Odhlaste se a přihlaste znovu.");
-                                  throw new Error(data?.error || data?.detail || res.statusText || "Chyba serveru");
-                                }
-                                if (data?.error) throw new Error(data.error);
-                                if (!data?.url) throw new Error("Chybí URL v odpovědi");
-                                setCaptureQRItems([{ deviceLabel: (detailedTicket?.deviceLabel) || "Zakázka", url: popisDoOdkazu(data.url, { cislo: detailedTicket.code, servis: serviceName }) }]);
-                                return;
-                              } catch (err) {
-                                lastErr = err;
-                                const msg = err instanceof Error ? err.message : String(err);
-                                if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
-                                  resetTauriFetchState();
-                                  continue;
-                                }
-                                break;
-                              }
-                            }
-                            showToast(normalizeError(lastErr) || "Nepodařilo vytvořit QR odkaz.", "error");
-                          } finally {
-                            setCaptureQRLoading(false);
-                          }
-                        }}
-                        disabled={!supabase || !activeServiceId || !detailedTicket?.id || diagnosticPhotosUploading || captureQRLoading} style={{ fontSize: 13 }}
-                        >
-                          {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu"}
-                        </Button>
-                        )}
-                        <VyberFotek popisek="Nahrát soubory" disabled={diagnosticPhotosUploading} style={{ ...baseFieldInput, padding: "8px 12px", margin: 0 }}>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            disabled={diagnosticPhotosUploading}
-                            style={{ display: "none" }}
-                            onChange={async (e) => {
-                              const files = Array.from(e.target.files || []);
-                              e.target.value = "";
-                              if (!files.length) return;
-                              const hasId = !!(activeServiceId && detailedTicket.id);
-                              if (hasId && supabase) {
-                                setDiagnosticPhotosUploading(true);
-                                try {
-                                const urls: string[] = [];
-                                for (const file of files) {
-                                  const url = await uploadDiagnosticPhotoWithWatermark(
-                                    supabase,
-                                    activeServiceId!,
-                                    detailedTicket.id!,
-                                    file,
-                                    { cislo: detailedTicket.code, servis: serviceName }
-                                  );
-                                    urls.push(url);
-                                  }
-                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === detailedTicket.id
-                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...urls] }
-                                        : t
-                                    )
-                                  );
-                                } catch (err) {
-                                  showToast(
-                                    `Nahrání fotky se nezdařilo: ${normalizeError(err) || "neznámá chyba"}`,
-                                    "error"
-                                  );
-                                } finally {
-                                  setDiagnosticPhotosUploading(false);
-                                }
-                              } else {
-                                const reader = (file: File) =>
-                                  new Promise<string>((resolve, reject) => {
-                                    const r = new FileReader();
-                                    r.onload = () => resolve(r.result as string);
-                                    r.onerror = () => reject(new Error("Načtení souboru selhalo"));
-                                    r.readAsDataURL(file);
-                                  });
-                                try {
-                                  const results = await Promise.all(files.map(reader));
-                                  setDirtyFlags((prev) => ({ ...prev, diagnosticPhotos: true }));
-                                  setCloudTickets((prev) =>
-                                    prev.map((t) =>
-                                      t.id === detailedTicket.id
-                                        ? { ...t, diagnosticPhotos: [...(t.diagnosticPhotos || []), ...results] }
-                                        : t
-                                    )
-                                  );
-                                } catch (_) {
-                                  showToast("Nepodařilo se načíst vybrané soubory.", "error");
-                                }
-                              }
-                            }}
-                          />
-                        </VyberFotek>
-                        {diagnosticPhotosUploading && (
-                          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Nahrávám…</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  )}
-                </div>
-
-                {zasilkyZapnuty && hasBranches && activeServiceId && (
-                  <div id="detail-presun" style={{ ...card, ...stylSekce("presun"), marginTop: 16 }}>
-                    <SectionHeading icon={<PinIcon size={16} />} barva={BARVA_SEKCE.presun}>Kde je zakázka</SectionHeading>
-                    <KdeJeZakazka
-                      key={detailedTicket.id}
-                      ticket={detailedTicket}
-                      serviceId={activeServiceId}
-                      branches={branches}
-                      nazevPobocky={(id) => branchById(id)?.name ?? "jiná pobočka"}
-                      onOtevritZasilky={() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "zasilky" } }))}
-                      onHistorie={(zasilky) => setHistorieZasilek({ ticketId: detailedTicket.id, zasilky })}
-                      dniBezZmeny={dniBezZmenyJinde(detailedTicket, nastaveniZasilek.upozorneniDni)}
-                    />
-                  </div>
-                )}
-
-                {!skryteSekce.has("nahradni") && (
-                <div id="detail-zapujcka" style={{ ...card, ...stylSekce("nahradni"), marginTop: 16 }}>
-                  <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.nahradni}>Náhradní zařízení</SectionHeading>
-                  <ZapujckaKarta
-                    zapujcka={detailedTicket.loaner}
-                    onChange={(z) => void ulozZapujcku(detailedTicket.id, z)}
-                    onTisk={() => void printZapujcku(detailedTicket, activeServiceId)}
-                    katalog={nahradniZarizeni}
-                    branchId={hasBranches ? detailedTicket.branchId ?? null : null}
-                    nazevPobocky={(id) => branchById(id)?.name ?? "jiná pobočka"}
-                    pujcenaJinde={(() => {
-                      // Které zařízení je právě u jiného zákazníka (viz pujceneKusy).
-                      const out: Record<string, string> = {};
-                      for (const p of pujceneKusy) {
-                        if (p.id === detailedTicket.id) continue;
-                        out[p.katalogId] = p.code ?? "jiná zakázka";
-                      }
-                      return out;
-                    })()}
-                  />
-                </div>
-                )}
-
-                {pridelovaniTechnika && (
-                  <div id="detail-technik" data-tour="detail-technik" style={{ ...card, ...stylSekce("technik"), marginTop: 16 }}>
-                    <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.technik}>Technik</SectionHeading>
-                    <TechnikZakazky
-                      clenove={clenove.clenove}
-                      hodnota={detailedTicket.assignedTo}
-                      jaId={session?.user?.id ?? null}
-                      onChange={(userId) => void ulozTechnika(detailedTicket.id, userId)}
-                    />
-                  </div>
-                )}
-
-                {casNaOpraveZapnuto && activeServiceId && (
-                  <div id="detail-cas" data-tour="detail-cas" style={{ ...card, ...stylSekce("cas"), marginTop: 16 }}>
-                    <SectionHeading icon={<HistoryIcon size={16} />} barva={BARVA_SEKCE.cas}>Čas na opravě</SectionHeading>
-                    <CasNaOprave
-                      serviceId={activeServiceId}
-                      ticketId={detailedTicket.id}
-                      userId={session?.user?.id ?? null}
-                      jmena={session?.user?.id && userProfile?.nickname ? { [session.user.id]: userProfile.nickname } : {}}
-                      sazba={hodinovaSazba}
-                      zaokrouhleniMinut={zaokrouhleniPrace}
-                      uzPridano={(detailedTicket.performedRepairs ?? []).some((r) => r.type === "hourly" && r.zMereni)}
-                      onPridatHodinovouPraci={(prace) => addPerformedRepair(detailedTicket.id, { name: "Práce technika", type: "hourly", zMereni: true, ...prace })}
-                    />
-                  </div>
-                )}
-
-                {!skryteSekce.has("kontrola") && (
-                <div id="detail-kontrola" data-tour="detail-kontrola" style={{ ...card, ...stylSekce("kontrola"), marginTop: 16 }}>
-                  <SectionHeading icon={<CheckIcon size={16} />} barva={BARVA_SEKCE.kontrola}>Kontrola po opravě</SectionHeading>
-                  <KontrolaPoOprave
-                    kontrola={detailedTicket.testChecklist}
-                    sablony={kontrolniSeznamy}
-                    nazevZarizeni={detailedTicket.deviceLabel}
-                    onChange={(k) => void ulozKontrolu(detailedTicket.id, k)}
-                  />
-                </div>
-                )}
-              </>
-            )}
-
-            {/* Komentáře - vždy viditelné */}
-            <TicketComments
-              ticketId={detailedTicket.id}
-              comments={commentsFor(detailedTicket.id)}
-              draft={commentDraftByTicket[detailedTicket.id] ?? ""}
-              onDraftChange={handleCommentDraftChange}
-              onAdd={addComment}
-              onTogglePin={togglePin}
-              onEdit={editComment}
-              currentUserId={session?.user?.id ?? null}
-              authorProfiles={commentAuthorProfiles}
-              card={card}
-              baseFieldTextArea={baseFieldTextArea}
-            />
-          </>
-        )}
-        </div>
-      </div>
-
-      {/* SMS slide-over panel – respektuje pozici sidebaru (dole / vpravo), aby nebyl překryt */}
-      {smsPanelOpen && detailedTicket && activeServiceId && (() => {
-        const sidebarPos = uiCfg.sidebar?.position ?? "left";
-        const isSidebarBottom = sidebarPos === "bottom";
-        const isSidebarRight = sidebarPos === "right";
-        const panelStyle: React.CSSProperties = {
-          position: "fixed",
-          top: 0,
-          right: isSidebarRight ? "var(--sidebar-collapsed)" : 0,
-          width: 380,
-          maxWidth: "100vw",
-          height: isSidebarBottom ? "calc(100dvh / var(--ui-scale, 1) - var(--sidebar-bottom-collapsed))" : "calc(100dvh / var(--ui-scale, 1))",
-          background: "var(--panel)",
-          borderLeft: "1px solid var(--border)",
-          boxShadow: "var(--shadow)",
-          zIndex: 1321,
-          display: "flex",
-          flexDirection: "column",
-          transform: "translateX(0)",
-          transition: "transform 400ms ease",
-        };
-        return (
-        <>
-          <div
-            role="presentation"
-            onClick={() => setSmsPanelOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 1320 }}
-          />
-          <div
-            style={panelStyle}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 12, borderBottom: "1px solid var(--border)" }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>
-                  {detailedTicket.customerName?.trim() || "Zákazník"}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                  {detailedTicket.code && <span style={{ marginRight: 8 }}>Zakázka {detailedTicket.code}</span>}
-                  {detailedTicket.customerPhone?.trim() && <span>{detailedTicket.customerPhone.trim()}</span>}
-                </div>
-              </div>
-              <Button variant="soft" onClick={() => setSmsPanelOpen(false)} style={{ width: 36, height: 36 }} aria-label="Zavřít">×</Button>
-            </div>
-            <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-              <SmsChat
-                ticketId={detailedTicket.id}
-                serviceId={(detailedTicket as { service_id?: string }).service_id ?? activeServiceId ?? undefined}
-                customerPhone={detailedTicket.customerPhone ?? null}
-                customerName={detailedTicket.customerName ?? null}
-                onInboundMarkedRead={() => {
-                  setSmsUnreadCount(0);
-                  setSmsUnreadListBump((n) => n + 1);
-                }}
-              />
-            </div>
-          </div>
-        </>
-        );
-      })()}
-        </>,
-        document.body
-      )}
+      />
 
       {/* ConfirmDialog for soft delete */}
       <StornoDialog
@@ -8977,248 +2122,18 @@ export default function Orders({
       />
 
       {/* Ticket history modal */}
-      {ticketHistoryModalOpen && createPortal(
-        <div
-          role="dialog"
-          aria-label="Historie zakázky"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.4)",
-            padding: 24,
-          }}
-          onClick={() => setTicketHistoryModalOpen(false)}
-        >
-          <div
-            style={{
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-lg)",
-              boxShadow: "var(--shadow-soft)",
-              maxWidth: 480,
-              width: "100%",
-              maxHeight: "80vh",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              color: "var(--text)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Historie zakázky</div>
-              <Button variant="soft" size="sm" onClick={() => setTicketHistoryModalOpen(false)}>Zavřít</Button>
-            </div>
-            <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
-              {ticketHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
-              {ticketHistoryError && <div style={{ color: "rgba(239,68,68,0.9)", padding: 12 }}>{ticketHistoryError}</div>}
-              {!ticketHistoryLoading && !ticketHistoryError && ticketHistoryEntries.length === 0 && (
-                <div style={{ color: "var(--muted)", padding: 12 }}>Žádné záznamy v historii. Historie se vytváří po uložení zakázky na server.</div>
-              )}
-              {!ticketHistoryLoading && !ticketHistoryError && ticketHistoryEntries.length > 0 && (() => {
-                const FIELD_LABELS: Record<string, string> = {
-                  title: "Zakázka / zařízení",
-                  status: "Stav",
-                  notes: "Popis",
-                  estimated_price: "Odhadovaná cena",
-                  performed_repairs: "Provedené opravy",
-                  diagnostic_text: "Diagnostika",
-                  customer_name: "Zákazník",
-                  customer_phone: "Telefon",
-                  customer_email: "E-mail",
-                  device_label: "Zařízení",
-                  discount: "Sleva",
-                  device_condition: "Stav zařízení",
-                  device_note: "Poznámka k zařízení",
-                  device_accessories: "Příslušenství",
-                  device_brand: "Značka",
-                  device_model: "Model",
-                  device_serial: "Sériové číslo",
-                  device_imei: "IMEI",
-                  device_passcode: "Kód zařízení",
-                  customer_company: "Firma",
-                  customer_ico: "IČO",
-                  customer_info: "Poznámka k zákazníkovi",
-                  customer_address_street: "Ulice",
-                  customer_address_city: "Město",
-                  customer_address_zip: "PSČ",
-                  customer_address_country: "Země",
-                  customer_id: "Zákazník v adresáři",
-                  external_id: "Externí číslo",
-                  handoff_method: "Převzetí",
-                  handback_method: "Předání",
-                  diagnostic_photos: "Fotky diagnostiky",
-                  expected_completion_at: "Předpokládané dokončení",
-                  completed_at: "Dokončeno",
-                  branch_id: "Pobočka",
-                  assigned_to: "Technik",
-                  test_checklist: "Kontrola po opravě",
-                  loaner: "Náhradní zařízení",
-                  quote_items: "Cenová nabídka",
-                  quote_status: "Stav nabídky",
-                  quote_amount: "Částka nabídky",
-                  quote_sent_at: "Nabídka odeslána",
-                  quote_decided_at: "Nabídka rozhodnuta",
-                  quote_decision_meta: "Rozhodnutí o nabídce",
-                  intake_signed_at: "Podpis převzetí",
-                  intake_signature_url: "Podpis převzetí (obrázek)",
-                };
-                const formatHistoryVal = (key: string, val: unknown): string => {
-                  if (val === null || val === undefined) return "—";
-                  // V databázi je stav anglický klíč ("received"). Zbytek aplikace
-                  // ho překládá přes getByKey; historie ho vypisovala surový, takže
-                  // uživatel četl "received → ready" místo "Přijato → Připraveno".
-                  if (key === "status") return getByKey(String(val))?.label ?? String(val);
-                  if (key === "estimated_price" && typeof val === "number") return `${val} Kč`;
-                  if (key === "performed_repairs" && Array.isArray(val)) {
-                    return val.map((r: { name?: string; price?: number }) => `${r?.name ?? "—"}${typeof r?.price === "number" ? ` (${formatCurrency(r.price)})` : ""}`).join(", ") || "—";
-                  }
-                  if (key === "discount" && val && typeof val === "object" && !Array.isArray(val)) {
-                    const o = val as { type?: string; value?: number };
-                    return [o.type, typeof o.value === "number" ? `${o.value} Kč` : ""].filter(Boolean).join(" · ") || "—";
-                  }
-                  // Strukturované sloupce: krátké shrnutí místo JSON.
-                  if (key === "test_checklist" && val && typeof val === "object") {
-                    const k = val as { sablonaNazev?: string; polozky?: Array<{ stav?: string | null }> };
-                    const p = k.polozky ?? [];
-                    return `${k.sablonaNazev ?? "kontrola"}: ověřeno ${p.filter((x) => x.stav).length} z ${p.length}${p.some((x) => x.stav === "chyba") ? " (s chybou)" : ""}`;
-                  }
-                  if (key === "loaner" && val && typeof val === "object") {
-                    const z = val as { nazev?: string; vraceno?: string | null };
-                    return `${z.nazev ?? "—"}${z.vraceno ? " (vráceno)" : " (u zákazníka)"}`;
-                  }
-                  if (key === "quote_items" && Array.isArray(val)) return `${val.length} položek`;
-                  if (key === "quote_status") return ({ none: "bez nabídky", draft: "koncept", sent: "odeslána", approved: "schválena", rejected: "zamítnuta" } as Record<string, string>)[String(val)] ?? String(val);
-                  if (key === "quote_amount" && typeof val === "number") return formatCurrency(val);
-                  if (key === "branch_id") return getCachedBranch(activeServiceId ?? undefined, String(val))?.name ?? "jiná pobočka";
-                  if (key === "assigned_to") return val ? clenove.jmeno(String(val)) ?? "kolega" : "nikdo";
-                  if (key === "intake_signature_url") return "podepsáno";
-                  if ((key === "expected_completion_at" || key === "completed_at" || key === "quote_sent_at" || key === "quote_decided_at" || key === "intake_signed_at") && typeof val === "string") return formatCZ(val);
-                  if (Array.isArray(val)) return `${val.length} položek`;
-                  if (typeof val === "object") return JSON.stringify(val).slice(0, 80);
-                  return String(val);
-                };
-                const getHistoryChanges = (details: Record<string, unknown>): Array<{ label: string; oldVal: string; newVal: string }> => {
-                  const out: Array<{ label: string; oldVal: string; newVal: string }> = [];
-                  const changes = details?.changes as Record<string, { old?: unknown; new?: unknown }> | undefined;
-                  if (changes && typeof changes === "object") {
-                    for (const [field, v] of Object.entries(changes)) {
-                      if (!v || typeof v !== "object") continue;
-                      const label = FIELD_LABELS[field] ?? field;
-                      if (field === "discount") {
-                        const oldD = v.old as { type?: string; value?: number } | undefined;
-                        const newD = v.new as { type?: string; value?: number } | undefined;
-                        out.push({
-                          label,
-                          oldVal: oldD ? formatHistoryVal("discount", oldD) : "—",
-                          newVal: newD ? formatHistoryVal("discount", newD) : "—",
-                        });
-                      } else {
-                        out.push({
-                          label,
-                          oldVal: formatHistoryVal(field, v.old),
-                          newVal: formatHistoryVal(field, v.new),
-                        });
-                      }
-                    }
-                  } else if (details?.status_old !== undefined || details?.title_old !== undefined) {
-                    if (details.status_old !== undefined && details.status_new !== undefined) {
-                      out.push({
-                        label: "Stav",
-                        oldVal: formatHistoryVal("status", details.status_old),
-                        newVal: formatHistoryVal("status", details.status_new),
-                      });
-                    }
-                    if (details.title_old !== undefined && details.title_new !== undefined) {
-                      out.push({ label: "Zakázka / zařízení", oldVal: String(details.title_old), newVal: String(details.title_new) });
-                    }
-                  }
-                  return out;
-                };
-                return (
-                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                    {ticketHistoryEntries.map((e) => {
-                      const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action;
-                      const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
-                      const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
-                      const statusChange = changes.find((c) => c.label === "Stav");
-                      const isExpanded = ticketHistoryExpandedId === e.id;
-                      return (
-                        <li key={e.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                            <div>
-                              <div style={{ fontWeight: 700 }}>
-                                {actionLabel}
-                                {statusChange && (
-                                  <span style={{ fontWeight: 600, color: "var(--muted)", marginLeft: 6 }}>
-                                    · Stav: {statusChange.oldVal} → {statusChange.newVal}
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
-                              {e.action === "cancel_reason" && (
-                                <div style={{ marginTop: 4 }}>
-                                  {String((e.details as Record<string, unknown>)?.duvod ?? "")}
-                                  {(e.details as Record<string, unknown>)?.poznamka ? ` – ${String((e.details as Record<string, unknown>).poznamka)}` : ""}
-                                </div>
-                              )}
-                              {e.action === "updated" && changes.length === 0 && (
-                                // Starší záznamy vznikly před migrací s plným diffem, takže
-                                // co se změnilo, se nikam neuložilo. Bez téhle věty vidí
-                                // uživatel jen „Upravena" a nemá jak zjistit proč.
-                                <div style={{ color: "var(--muted)", marginTop: 2, fontSize: 12, fontStyle: "italic" }}>
-                                  Podrobnosti u tohoto záznamu nejsou – zaznamenávají se až u novějších změn.
-                                </div>
-                              )}
-                            </div>
-                            {changes.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setTicketHistoryExpandedId(isExpanded ? null : e.id)}
-                                style={{
-                                  padding: "4px 8px",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: 6,
-                                  background: "var(--bg)",
-                                  color: "var(--accent)",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  cursor: "pointer",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {isExpanded ? "Skrýt detail" : "Detail změn"}
-                              </button>
-                            )}
-                          </div>
-                          {isExpanded && changes.length > 0 && (
-                            <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>
-                              {changes.map((c, i) => (
-                                <div key={i} style={{ marginBottom: i < changes.length - 1 ? 8 : 0, fontSize: 12 }}>
-                                  <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>{c.label}</div>
-                                  <div style={{ color: "var(--muted)", display: "flex", flexWrap: "wrap", gap: "4px 8px" }}>
-                                    <span>{c.oldVal}</span>
-                                    <span style={{ color: "var(--text)" }}>→</span>
-                                    <span>{c.newVal}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                );
-              })()}
-            </div>
-          </div>
-        </div>,
-        document.body
+      {ticketHistoryModalOpen && (
+        <HistorieZakazkyModal
+          entries={ticketHistoryEntries}
+          loading={ticketHistoryLoading}
+          error={ticketHistoryError}
+          expandedId={ticketHistoryExpandedId}
+          setExpandedId={setTicketHistoryExpandedId}
+          onClose={() => setTicketHistoryModalOpen(false)}
+          getByKey={getByKey}
+          activeServiceId={activeServiceId}
+          jmenoClena={clenove.jmeno}
+        />
       )}
 
       {/* Claim history modal */}
@@ -9258,295 +2173,39 @@ export default function Orders({
           });
         }}
       />
-      {claimHistoryModalOpen && createPortal(
-        <div
-          role="dialog"
-          aria-label="Historie reklamace"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.4)",
-            padding: 24,
-          }}
-          onClick={() => setClaimHistoryModalOpen(false)}
-        >
-          <div
-            style={{
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-lg)",
-              boxShadow: "var(--shadow-soft)",
-              maxWidth: 480,
-              width: "100%",
-              maxHeight: "80vh",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              color: "var(--text)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Historie reklamace</div>
-              <Button variant="soft" size="sm" onClick={() => setClaimHistoryModalOpen(false)}>Zavřít</Button>
-            </div>
-            <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
-              {claimHistoryLoading && <div style={{ color: "var(--muted)", padding: 12 }}>Načítám…</div>}
-              {claimHistoryError && <div style={{ color: "rgba(239,68,68,0.9)", padding: 12 }}>{claimHistoryError}</div>}
-              {!claimHistoryLoading && !claimHistoryError && claimHistoryEntries.length === 0 && (
-                <div style={{ color: "var(--muted)", padding: 12 }}>Žádné záznamy v historii.</div>
-              )}
-              {!claimHistoryLoading && !claimHistoryError && claimHistoryEntries.length > 0 && (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                  {claimHistoryEntries.map((e) => {
-                    const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "status_changed" ? "Změna stavu" : e.action === "updated" ? "Upravena" : e.action;
-                    const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
-                    const details = (e.details || {}) as Record<string, unknown>;
-                    const statusOld = details.status_old;
-                    const statusNew = details.status_new;
-                    return (
-                      <li key={e.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
-                        <div style={{ fontWeight: 700 }}>{actionLabel}</div>
-                        {e.action === "status_changed" && statusOld != null && statusNew != null && (
-                          <div style={{ fontWeight: 600, color: "var(--muted)", marginTop: 4 }}>
-                            Stav: {getByKey(String(statusOld))?.label ?? String(statusOld)} → {getByKey(String(statusNew))?.label ?? String(statusNew)}
-                          </div>
-                        )}
-                        <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
+      {claimHistoryModalOpen && (
+        <HistorieReklamaceModal
+          entries={claimHistoryEntries}
+          loading={claimHistoryLoading}
+          error={claimHistoryError}
+          onClose={() => setClaimHistoryModalOpen(false)}
+          getByKey={getByKey}
+        />
       )}
 
       {/* Capture QR modal – fotka z telefonu */}
-      {captureQRItems && captureQRItems.length > 0 && createPortal(
-        <div
-          role="dialog"
-          aria-label="Vyfotit z telefonu"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.5)",
-            padding: 24,
-          }}
-          onClick={closeCaptureQrModal}
-        >
-          <div
-            style={{
-              background: "var(--panel)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-lg)",
-              boxShadow: "var(--shadow-soft)",
-              maxWidth: captureQRItems.length > 1 ? 480 : 360,
-              width: "100%",
-              maxHeight: "90vh",
-              overflow: "auto",
-              padding: 24,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 16,
-              color: "var(--text)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <SectionHeading icon={<DeviceIcon size={18} />}>Vyfotit z telefonu</SectionHeading>
-            <p style={{ margin: 0, fontSize: 14, color: "var(--text-secondary)", textAlign: "center" }}>
-              {draftCaptureTokenRef.current
-                ? "Naskenujte QR kód mobilem. Vyfocené fotky se po zavření tohoto okna načtou do rozpracované zakázky."
-                : captureQRItems.length > 1
-                ? "Naskenujte QR kód podle zařízení. Fotka se uloží k příslušné zakázce."
-                : "Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce."}
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, justifyContent: "center" }}>
-              {captureQRItems.map((item, i) => (
-                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                  {captureQRItems.length > 1 && (
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", textAlign: "center" }}>{item.deviceLabel || `Zakázka ${i + 1}`}</div>
-                  )}
-                  <div style={{ background: "white", padding: 12, borderRadius: 12 }}>
-                    {/* QR se kreslí lokálně. Dřív se tahal z api.qrserver.com,
-                        takže do cizí služby odcházel odkaz i s tokenem, kterým
-                        se dá k zakázce nahrát fotka – a bez internetu se QR
-                        nevykreslil vůbec. Stejná funkce kreslí QR platbu na
-                        fakturách. */}
-                    <img
-                      src={qrDataUrl(item.url, 220, "L")}
-                      alt={`QR pro ${item.deviceLabel || "zakázku"}`}
-                      style={{ display: "block", width: 220, height: 220 }}
-                    />
-                  </div>
-                  <Button variant="soft"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(item.url).then(() => showToast("Odkaz zkopírován", "success"));
-                    }} style={{ fontSize: 12 }}
-                  >
-                    Kopírovat odkaz
-                  </Button>
-                </div>
-              ))}
-            </div>
-            {draftCaptureTokenRef.current && (
-              <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center" }}>
-                Aktuálně nafoceno: <b style={{ color: "var(--text)" }}>{draftCaptureLiveCount}</b>. Zavřete až po nafocení všech fotek.
-              </div>
-            )}
-            <Button variant="soft" onClick={closeCaptureQrModal} style={{ marginTop: 8 }}>
-              {draftCaptureTokenRef.current
-                ? `Zavřít (${draftCaptureLiveCount} ${draftCaptureLiveCount === 1 ? "fotka" : draftCaptureLiveCount >= 2 && draftCaptureLiveCount <= 4 ? "fotky" : "fotek"})`
-                : "Zavřít"}
-            </Button>
-          </div>
-        </div>,
-        document.body
+      {captureQRItems && captureQRItems.length > 0 && (
+        <CaptureQrModal
+          items={captureQRItems}
+          onClose={closeCaptureQrModal}
+          draftCaptureTokenRef={draftCaptureTokenRef}
+          draftCaptureLiveCount={draftCaptureLiveCount}
+        />
       )}
 
       {/* Photo lightbox – rozkliknutí diagnostických fotek */}
-      {photoLightbox && createPortal(
-        <div
-          role="dialog"
-          aria-label="Zvětšit fotku"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10002,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.85)",
-            padding: 24,
-          }}
-          onClick={() => setPhotoLightbox(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setPhotoLightbox(null)}
-            style={{
-              position: "absolute",
-              top: 16,
-              right: 16,
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.2)",
-              color: "white",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 20,
-              fontWeight: 700,
-              lineHeight: 1,
-            }}
-            aria-label="Zavřít"
-          >
-            ×
-          </button>
-          <button
-            type="button"
-            onClick={async (e) => {
-              e.stopPropagation();
-              // Bez podpisu vrátí úložiště 400 – holá URL fotku nevydá.
-              const url = await podepsFotku(supabase, photoLightbox.urls[photoLightbox.index]);
-              const code = photoLightbox.ticketCode || "zakazka";
-              const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
-              const name = `${safe(code)}_pic${photoLightbox.index + 1}.jpg`;
-              try {
-                const res = await fetch(url, { mode: "cors" });
-                const blob = await res.blob();
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = name;
-                a.click();
-                URL.revokeObjectURL(a.href);
-                showToast("Fotka stažena", "success");
-              } catch {
-                window.open(url, "_blank");
-              }
-            }}
-            style={{
-              position: "absolute",
-              top: 16,
-              right: 64,
-              padding: "8px 16px",
-              borderRadius: 8,
-              background: "rgba(255,255,255,0.2)",
-              color: "white",
-              border: "1px solid rgba(255,255,255,0.4)",
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Stáhnout
-          </button>
-          <img
-            src={fotkyLightboxu[photoLightbox.index] ?? photoLightbox.urls[photoLightbox.index]}
-            alt={`Diagnostika ${photoLightbox.index + 1}`}
-            style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain" }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>,
-        document.body
+      {photoLightbox && (
+        <FotoLightbox photoLightbox={photoLightbox} fotkyLightboxu={fotkyLightboxu} onClose={() => setPhotoLightbox(null)} />
       )}
 
-      {canPrintExport && openQuickPrintTicket && quickPrintDropdownRect && (() => {
-        const dropdownWidth = 200;
-        const margin = 8;
-        let left = quickPrintDropdownRect.left;
-        if (left + dropdownWidth > window.innerWidth - margin) left = quickPrintDropdownRect.right - dropdownWidth;
-        if (left < margin) left = margin;
-        const top = quickPrintDropdownRect.top + 6;
-        const maxBottom = window.innerHeight - margin;
-        return createPortal(
-        <div
-          data-quick-print-menu
-          role="listbox"
-          style={{
-            position: "fixed",
-            left,
-            top: Math.min(top, maxBottom - 120),
-            minWidth: dropdownWidth,
-            maxHeight: Math.min(240, window.innerHeight - top - margin),
-            overflowY: "auto",
-            background: "var(--panel)",
-            border: "1px solid var(--border)",
-            borderRadius: 12,
-            boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-            zIndex: 10001,
-            padding: 6,
-          }}
-        >
-          {[
-            { type: "ticket" as const, label: "Zakázkový list" },
-            { type: "warranty" as const, label: "Záruční list" },
-            ...((openQuickPrintTicket.diagnosticText?.trim() || (openQuickPrintTicket.diagnosticPhotos && openQuickPrintTicket.diagnosticPhotos.length > 0)) ? [{ type: "diagnostic" as const, label: "Diagnostický protokol" }] : []),
-          ].map(({ type, label }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setOpenQuickPrintTicket(null); quickPrintFromList(openQuickPrintTicket, type, activeServiceId); }}
-              style={{ display: "block", width: "100%", padding: "10px 14px", textAlign: "left", border: "none", background: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "var(--text)" }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>,
-        document.body
-      );
-      })()}
+      {canPrintExport && openQuickPrintTicket && quickPrintDropdownRect && (
+        <RychlyTiskNabidka
+          ticket={openQuickPrintTicket}
+          rect={quickPrintDropdownRect}
+          activeServiceId={activeServiceId}
+          onClose={() => setOpenQuickPrintTicket(null)}
+        />
+      )}
     </div>
   );
 }
