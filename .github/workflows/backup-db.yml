@@ -194,8 +194,8 @@ jobs:
       # zakázky zůstaly bez příloh. Stahují se jednou týdně (v neděli), aby
       # artefakty nezabraly zbytečně moc místa – denní kopie by byla skoro
       # totožná. Ručně se dá vynutit vstupem „soubory".
-      # Nahrazuje ho backup-storage.yml (R2); tenhle krok padá na neveřejném
-      # bucketu chat-prilohy – viz docs/ZALOHY_DATABAZE.md, kapitola 6.
+      # Nahrazuje ho backup-storage.yml (R2); tenhle krok bere jen veřejné
+      # buckety – viz docs/ZALOHY_DATABAZE.md, kapitola 6.
       - name: Je čas na soubory?
         id: kdy
         run: |
@@ -219,17 +219,19 @@ jobs:
             exit 1
           fi
           mkdir -p soubory
-          # Neveřejný bucket by přes veřejnou adresu vrátil 400 – radši to
-          # řekneme rovnou, ať se nezálohuje polovina souborů potichu.
-          neverejne=$(psql "$DB_URL" -At -c "select string_agg(id, ' ') from storage.buckets where not public")
+          # Neveřejný bucket přes veřejnou adresu stáhnout nejde (400). Dřív to
+          # shodilo celý krok, i když byl bucket prázdný (chat-prilohy od 20. 9.),
+          # a fotky se nezálohovaly vůbec. Teď se neveřejné buckety přeskočí
+          # s varováním a zálohují se aspoň veřejné; neveřejné kryje
+          # backup-storage.yml přes S3 klíče.
+          neverejne=$(psql "$DB_URL" -At -c "select string_agg(b.id || ' (' || coalesce(o.n, 0) || ' souborů)', ', ') from storage.buckets b left join (select bucket_id, count(*) n from storage.objects group by bucket_id) o on o.bucket_id = b.id where not b.public")
           if [ -n "$neverejne" ]; then
-            echo "::error::Bucket(y) $neverejne nejsou veřejné – ke stažení je potřeba service role klíč. Doplň ho do workflow."
-            exit 1
+            echo "::warning::Neveřejné buckety se přes veřejnou adresu nestahují: $neverejne. Kryje je backup-storage.yml (R2)."
           fi
           # Seznam se bere z databáze s oddělovačem tabulátorem: v názvu souboru
           # může být čárka i mezera, z CSV by se pak četla nesmyslná cesta.
           psql "$DB_URL" -At -F "$(printf '\t')" -c \
-            "select bucket_id, name from storage.objects order by bucket_id, name" > /tmp/soubory.txt
+            "select o.bucket_id, o.name from storage.objects o join storage.buckets b on b.id = o.bucket_id where b.public order by 1, 2" > /tmp/soubory.txt
           chyby=0
           pocet=0
           while IFS="$(printf '\t')" read -r bucket nazev; do
