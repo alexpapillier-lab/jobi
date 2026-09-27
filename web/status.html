@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Stav služeb Jobi – jestli právě běží web, aplikace a databáze. Kontrola probíhá přímo z vašeho prohlížeče." />
+  <title>Stav služeb | Jobi</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css?v=202609062100" />
+  <!-- Stránka je schválně bez app.js: ten řídí loader a animace hlavní
+       stránky a na cizí stránce by hledal prvky, které tu nejsou. Kontroly
+       jsou v krátkém skriptu dole. Stejné kontroly dělá každých 10 minut
+       .github/workflows/uptime.yml – když ležíme, sem se návštěvník
+       podívá dřív, než napíše podpoře. -->
+  <style>
+    .stav-wrap { max-width: 720px; margin: 0 auto; padding: clamp(48px, 8vw, 80px) var(--pad); }
+    .stav-souhrn {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; margin-bottom: 20px;
+      border-radius: var(--radius-md); border: 1px solid var(--border);
+      background: var(--panel); font-weight: 600;
+    }
+    .stav-seznam { list-style: none; display: grid; gap: 12px; }
+    .stav-radek {
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+      padding: 18px 20px; border-radius: var(--radius-md);
+      border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow-soft);
+    }
+    .stav-radek h2 { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
+    .stav-radek p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .stav-detail { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+    /* Tečka: šedá = ještě nevíme, zelená = odpovídá, červená = neodpovídá.
+       Text vedle ní říká totéž slovy – barva sama nestačí. */
+    .tecka { width: 14px; height: 14px; border-radius: 50%; background: rgba(255, 255, 255, 0.25); flex: none; }
+    .tecka.ok { background: #22c55e; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18); }
+    .tecka.chyba { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18); }
+    .tecka.kontrola { animation: stav-pulz 1.2s ease-in-out infinite; }
+    @keyframes stav-pulz { 50% { opacity: 0.35; } }
+    @media (prefers-reduced-motion: reduce) { .tecka.kontrola { animation: none; } }
+    .stav-pata { margin-top: 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+    .stav-cas { font-size: 13px; color: var(--muted); }
+    .stav-pozn { margin-top: 28px; font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .stav-pozn a { color: var(--accent); }
+    @media (max-width: 560px) {
+      .stav-radek { grid-template-columns: auto 1fr; }
+      .stav-detail { grid-column: 2; text-align: left; white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a href="/" class="site-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="36" height="36" />
+        <span>Jobi</span>
+      </a>
+      <nav class="nav-links" aria-label="Hlavní navigace">
+        <a href="/napoveda">Nápověda</a>
+        <a href="/status" aria-current="page">Stav služeb</a>
+        <a href="/servis/" class="nav-web" rel="nofollow" title="Otevřít Jobi v prohlížeči"><span class="nav-web-full">Webové rozhraní</span><span class="nav-web-short">Web</span></a>
+        <a href="/#stazeni" class="nav-cta">Stáhnout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="stav-wrap">
+    <p class="section-eyebrow">Provoz</p>
+    <h1 class="section-title">Stav služeb Jobi</h1>
+    <p class="section-desc">Kontrola proběhne přímo z vašeho prohlížeče, takže ukazuje, co vidíte právě vy – ne co hlásíme my.</p>
+
+    <div class="stav-souhrn" id="souhrn" aria-live="polite">
+      <span class="tecka kontrola" id="souhrn-tecka" aria-hidden="true"></span>
+      <span id="souhrn-text">Kontroluji…</span>
+    </div>
+
+    <ul class="stav-seznam">
+      <li class="stav-radek" data-sluzba="web">
+        <span class="tecka kontrola" aria-hidden="true"></span>
+        <div>
+          <h2>Web</h2>
+          <p>appjobi.com – tahle stránka, ceník, nápověda.</p>
+        </div>
+        <span class="stav-detail">Kontroluji…</span>
+      </li>
+      <li class="stav-radek" data-sluzba="aplikace">
+        <span class="tecka kontrola" aria-hidden="true"></span>
+        <div>
+          <h2>Aplikace</h2>
+          <p>Webová verze na appjobi.com/servis/ a zákaznický portál.</p>
+        </div>
+        <span class="stav-detail">Kontroluji…</span>
+      </li>
+      <li class="stav-radek" data-sluzba="databaze">
+        <span class="tecka kontrola" aria-hidden="true"></span>
+        <div>
+          <h2>Databáze a API</h2>
+          <p>Supabase – data zakázek, přihlašování, veřejné API a tisk dokumentů.</p>
+        </div>
+        <span class="stav-detail">Kontroluji…</span>
+      </li>
+    </ul>
+
+    <div class="stav-pata">
+      <span class="stav-cas" id="cas"></span>
+      <button type="button" class="btn btn-ghost" id="znovu">Zkontrolovat znovu</button>
+    </div>
+
+    <p class="stav-pozn">
+      Když tu svítí červená, už o tom nejspíš víme – služby hlídáme každých deset minut i zvenčí.
+      Svítí-li všechno zeleně a Jobi vám přesto nejde, napište na
+      <a href="mailto:podpora@appjobi.com">podpora@appjobi.com</a> a přidejte, co přesně se děje.
+      Desktopová aplikace pracuje i bez připojení; změny se odešlou, jakmile se služby vrátí.
+    </p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <a href="/" class="footer-logo" aria-label="Jobi – domů">
+        <img src="logo.svg" alt="" width="22" height="22" />
+        Jobi
+      </a>
+      <p class="footer-copy">© 2026 Jobi</p>
+      <div class="footer-links">
+        <a href="/napoveda">Nápověda</a>
+        <a href="/status" aria-current="page">Stav služeb</a>
+        <a href="/obchodni-podminky">Obchodní podmínky</a>
+        <a href="/ochrana-osobnich-udaju">Ochrana osobních údajů</a>
+        <a href="/zpracovani-udaju">Zpracování osobních údajů</a>
+        <a href="mailto:info@appjobi.com">Kontakt</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var WEB = "https://appjobi.com";
+      var SUPABASE = "https://ijtvcgolsdsrquqbvjrz.supabase.co";
+      // Veřejný anon klíč – stejný je v každém buildu aplikace i v portálu.
+      // Sám o sobě nic neotevře, práva hlídá RLS; bez něj Supabase neodpoví.
+      var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlqdHZjZ29sc2RzcnF1cWJ2anJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5MjgxNjMsImV4cCI6MjA4MjUwNDE2M30.5sFtSIrYuPm1YWtcwGfYViy-NT_oD9QAM8x7Lub5EnI";
+      var LIMIT_MS = 15000;
+      var POKUSY = 2;      // druhý pokus po krátké pauze – jedno škobrtnutí sítě není výpadek
+      var PAUZA_MS = 3000;
+
+      function cekej(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+      /** fetch s časovým limitem; síťovou chybu i timeout vrací jako {status: 0}. */
+      function dotaz(url, hlavicky) {
+        var ctl = new AbortController();
+        var casovac = setTimeout(function () { ctl.abort(); }, LIMIT_MS);
+        return fetch(url, { headers: hlavicky || {}, cache: "no-store", signal: ctl.signal })
+          .then(function (odp) {
+            return odp.text().then(function (telo) { return { status: odp.status, telo: telo }; });
+          })
+          .catch(function () { return { status: 0, telo: "" }; })
+          .finally(function () { clearTimeout(casovac); });
+      }
+
+      /**
+       * Web: z appjobi.com se ptáme napřímo. Otevřená jako soubor nebo z jiné
+       * domény by fetch narazil na CORS (web hlavičku nemá), tak se místo toho
+       * načte favicon jako obrázek – onload/onerror CORS nepotřebují.
+       */
+      function web() {
+        if (location.origin === WEB) {
+          return dotaz(WEB + "/").then(function (o) {
+            if (o.status === 200 && o.telo.indexOf("Jobi") !== -1) return { ok: true, detail: "odpovídá" };
+            return { ok: false, detail: o.status ? "kód " + o.status : "neodpovídá" };
+          });
+        }
+        return new Promise(function (vyres) {
+          var img = new Image();
+          var casovac = setTimeout(function () { img.src = ""; vyres({ ok: false, detail: "neodpovídá" }); }, LIMIT_MS);
+          img.onload = function () { clearTimeout(casovac); vyres({ ok: true, detail: "odpovídá" }); };
+          img.onerror = function () { clearTimeout(casovac); vyres({ ok: false, detail: "neodpovídá" }); };
+          img.src = WEB + "/favicon.svg?t=" + Date.now();
+        });
+      }
+
+      /**
+       * Aplikace: version.json má pole build. Cloudflare Pages vrací pro
+       * neznámou cestu index.html s 200, proto nestačí kód – kontroluje se JSON.
+       */
+      function aplikace() {
+        return dotaz(WEB + "/servis/version.json").then(function (o) {
+          if (o.status !== 200) return { ok: false, detail: o.status ? "kód " + o.status : "neodpovídá" };
+          try {
+            var data = JSON.parse(o.telo);
+            if (data && data.build) return { ok: true, detail: "build " + String(data.build).slice(0, 7) };
+          } catch (e) { /* není JSON – řeší se níž */ }
+          return { ok: false, detail: "nečekaná odpověď" };
+        });
+      }
+
+      /**
+       * Databáze a API: dvě věci naráz. REST přes anon klíč (200 = RLS vrátila
+       * prázdno, 401/403 = brána žije a odmítla – obojí znamená, že databáze
+       * odpovídá) a edge funkce public-catalog s cizím slugem (404 = funkce
+       * doběhla až do databáze). Cokoli 5xx nebo ticho je porucha.
+       */
+      function databaze() {
+        var rest = dotaz(SUPABASE + "/rest/v1/services?select=id&limit=1", { apikey: ANON });
+        var funkce = dotaz(SUPABASE + "/functions/v1/public-catalog?service=stav-neexistuje");
+        return Promise.all([rest, funkce]).then(function (v) {
+          var restOk = v[0].status === 200 || v[0].status === 401 || v[0].status === 403;
+          var funkceOk = v[1].status === 404 || v[1].status === 200;
+          if (restOk && funkceOk) return { ok: true, detail: "odpovídá" };
+          var co = [];
+          if (!restOk) co.push("databáze " + (v[0].status ? "kód " + v[0].status : "neodpovídá"));
+          if (!funkceOk) co.push("API " + (v[1].status ? "kód " + v[1].status : "neodpovídá"));
+          return { ok: false, detail: co.join(", ") };
+        });
+      }
+
+      function sOpakovanim(fn) {
+        return fn().then(function (v) {
+          if (v.ok || POKUSY < 2) return v;
+          return cekej(PAUZA_MS).then(fn);
+        });
+      }
+
+      function ukaz(sluzba, vysledek) {
+        var radek = document.querySelector('[data-sluzba="' + sluzba + '"]');
+        var tecka = radek.querySelector(".tecka");
+        tecka.classList.remove("kontrola", "ok", "chyba");
+        tecka.classList.add(vysledek.ok ? "ok" : "chyba");
+        radek.querySelector(".stav-detail").textContent = vysledek.detail;
+      }
+
+      function nastavKontrolu() {
+        document.querySelectorAll(".tecka").forEach(function (t) {
+          t.classList.remove("ok", "chyba"); t.classList.add("kontrola");
+        });
+        document.querySelectorAll(".stav-detail").forEach(function (d) { d.textContent = "Kontroluji…"; });
+        document.getElementById("souhrn-text").textContent = "Kontroluji…";
+      }
+
+      function zkontroluj() {
+        var tlacitko = document.getElementById("znovu");
+        tlacitko.disabled = true;
+        nastavKontrolu();
+        var kontroly = { web: web, aplikace: aplikace, databaze: databaze };
+        var sliby = Object.keys(kontroly).map(function (k) {
+          return sOpakovanim(kontroly[k]).then(function (v) { ukaz(k, v); return v.ok; });
+        });
+        Promise.all(sliby).then(function (oks) {
+          var vse = oks.every(Boolean);
+          var tecka = document.getElementById("souhrn-tecka");
+          tecka.classList.remove("kontrola", "ok", "chyba");
+          tecka.classList.add(vse ? "ok" : "chyba");
+          document.getElementById("souhrn-text").textContent = vse
+            ? "Všechny služby odpovídají."
+            : "Některá služba neodpovídá.";
+          document.getElementById("cas").textContent =
+            "Zkontrolováno " + new Date().toLocaleString("cs-CZ", { dateStyle: "short", timeStyle: "medium" });
+          tlacitko.disabled = false;
+        });
+      }
+
+      document.getElementById("znovu").addEventListener("click", zkontroluj);
+      zkontroluj();
+    })();
+  </script>
+</body>
+</html>

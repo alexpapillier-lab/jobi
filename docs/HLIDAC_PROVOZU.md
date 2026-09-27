@@ -12,6 +12,14 @@ Hlídači jsou dva a dělají opačnou práci:
 Oba posílají e-mail **stejnou cestou** – přes `alerts-check`, na adresu ze
 secretu `ALERT_EMAIL` a se stejným tlumením v `alert_events`.
 
+Právě proto je od 26. 9. 2026 ještě třetí, **hlídání zvenčí**
+(`.github/workflows/uptime.yml`): když spadne Supabase nebo Cloudflare, oba
+hlídači výš mlčí, protože nemají čím poslat poplach. Uptime workflow každých
+10 minut sahá z GitHubu na veřejné adresy bez přihlášení a e-mail posílá
+rovnou přes Resend (secrets `RESEND_API_KEY`, `ALERT_EMAIL`), nejvýš jeden za
+2 hodiny. Tytéž kontroly si udělá návštěvník na `appjobi.com/status`. Popis
+v `docs/ROADMAP.md`, odstavec „Hlídání zvenčí“, a v komentáři workflow.
+
 ---
 
 # Část 1: hlídač chyb

@@ -55,6 +55,10 @@ const cloudflareHeaders = () => ({
       // novou verzi nepoznala (src/lib/aktualizaceWebu.ts).
       `${prefix}/version.json`,
       "  Cache-Control: no-store",
+      // Otisk buildu je veřejný a stavová stránka (web/status.html) ho čte
+      // i mimo appjobi.com – otevřená jako soubor nebo z jiné domény by bez
+      // CORS hlavičky hlásila „neodpovídá“ kvůli sobě, ne kvůli výpadku.
+      "  Access-Control-Allow-Origin: *",
       "",
       `${prefix}/*`,
       "  X-Frame-Options: SAMEORIGIN",
