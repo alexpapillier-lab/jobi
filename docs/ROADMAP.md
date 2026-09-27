@@ -42,6 +42,18 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    objednávky (ruční cena na produktu je jen záloha), z detailu zakázky
    jde díl, který není skladem, objednat u dodavatele („Objednat u
    dodavatele“ → návrh ve Skladu s číslem zakázky u položky).
+   Doplněno 27. 9.: **inventura skladu** (Sklad → Inventura, migrace
+   `20260927110000_inventura_skladu.sql`, `src/lib/inventura.ts`,
+   `src/pages/Inventory/InventuraTab.tsx`) – inventura po skladech (pobočka =
+   její sklad), zahájení zmrazí evidovaný stav a rezervace, napočítané kusy se
+   ukládají po řádku hned (realtime pro víc lidí, výpadek sítě → fronta
+   neuložených změn), čtečka kódu přičítá po kuse a umí přidat nalezený díl,
+   uzavření (právo sklad + množství) ukáže manko/přebytek v ks a nákupních
+   cenách a v jedné transakci zapíše do `inventory_stock` rozdíl proti stavu
+   *při počítání*, takže pohyby mezi spočítáním a uzavřením zůstanou. Historie
+   s protokolem a export CSV. **Zbývá:** nasadit migraci, projet sondy
+   1000–1006 v `scripts/rls-probe.sql`, ověřit v běžící aplikaci (dva lidé
+   naráz, čtečka, uzavření s pobočkou); tisk protokolu přes JobiDocs zatím ne.
 5. `[~]` **Více poboček a lidé** (pobočky nasazeny 5. 9. jako placený modul `branches` zapínaný v Owner panelu: tabulka `branches`, vlastní IČO/DIČ/účet pobočky,
    výchozí pobočka na servis, zkratka v čísle zakázky, adresa a telefon
    pobočky na dokumentech a v portálu, filtr v Zakázkách / Kalendáři /

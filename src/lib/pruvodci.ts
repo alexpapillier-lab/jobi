@@ -153,12 +153,14 @@ export const PRUVODCI: Pruvodce[] = [
   {
     id: "sklad",
     nazev: "Sklad",
-    popis: "Díly, nákupní ceny, rezervace k opravám a doobjednání.",
+    popis: "Díly, nákupní ceny, rezervace k opravám, doobjednání a inventura.",
     page: "inventory",
+    novinkaOd: "2026-09-27",
     kroky: [
       { page: "inventory", title: "Produkty", description: "Díly s nákupní cenou a vazbou na model zařízení. Nákupní cena jde do marže ve Statistikách.", selector: sel("inventory-products"), icon: "inventory" },
       { page: "inventory", title: "Rezervace a odpis", description: "Díl navázaný na opravu se při přidání na zakázku rezervuje a v koncovém stavu odepíše. Nedostatek zásoby aplikace hlásí hned.", selector: sel("inventory-main"), icon: "inventory" },
       { page: "inventory", title: "Doobjednání", description: "Co je pod minimem, je tady. Import z CSV pro hromadné naplnění skladu.", selector: sel("inventory-restock"), icon: "inventory" },
+      { page: "inventory", title: "Inventura", description: "Jednou za čas přepočítejte regál: zahájení zmrazí evidovaný stav skladu, napočítané kusy zapisujete ručně nebo čtečkou (i víc lidí naráz a víc dní). Uzavření ukáže manko a přebytek v kusech i v nákupních cenách, srovná sklad a v historii zůstane protokol do CSV.", selector: sel("inventory-inventura"), icon: "inventory" },
     ],
   },
   {
