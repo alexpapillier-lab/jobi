@@ -83,7 +83,20 @@ test("pravidlo odměn se uloží, zapne stránku Odměny a po úklidu zmizí", a
     // a není poznat, co stránka Odměny ukázala.
     await page.waitForTimeout(3_000);
     await page.screenshot({ path: test.info().outputPath("odmeny-stranka.png"), fullPage: true });
-    await expect(page.getByText(/^Zaměstnanc[ei] měsíce$/).first()).toBeVisible({ timeout: 30_000 });
+    try {
+      await expect(page.getByText(/^Zaměstnanc[ei] měsíce$/).first()).toBeVisible({ timeout: 30_000 });
+    } catch (e) {
+      // Diagnostika: co je na stránce ve chvíli selhání (před úklidem ve finally).
+      await page.screenshot({ path: test.info().outputPath("odmeny-selhani.png"), fullPage: true });
+      const stav = await page.evaluate(() => ({
+        url: location.href,
+        stranky: [...document.querySelectorAll('[data-tour^="page-"]')].map((el) => `${(el as HTMLElement).dataset.tour}:${(el as HTMLElement).style.display || "block"}`),
+        odmeny: document.querySelector('[data-tour="page-odmeny"]')?.textContent?.slice(0, 300) ?? null,
+        vyskyt: document.body.innerText.includes("měsíce"),
+      }));
+      await test.info().attach("odmeny-stav.json", { body: JSON.stringify(stav, null, 2), contentType: "application/json" });
+      throw e;
+    }
     await expect(page.getByText("Celkem odměn za měsíc", { exact: true })).toBeVisible();
   } finally {
     // Úklid: pravidlo pryč, přepínač jak byl. Smazání se potvrzuje oknem prohlížeče.
