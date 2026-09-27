@@ -109,7 +109,7 @@ serve(async (req) => {
       }
       const { data: ticket, error: ticketErr } = await svc
         .from("tickets")
-        .select("id, service_id")
+        .select("id, service_id, branch_id, location_branch_id")
         .eq("id", ticketId)
         .is("deleted_at", null)
         .single();
@@ -131,6 +131,25 @@ serve(async (req) => {
       if (!membership) {
         return new Response(
           JSON.stringify({ error: "Nemáte oprávnění k této zakázce" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // Servisní klíč obchází RLS, takže pobočku (i místo, kde zařízení leží)
+      // je nutné ověřit tady – jinak člen omezený na pobočku nafotí zakázku
+      // cizí pobočky (audit oprávnění, 4. kolo).
+      const pobockaSmi = async (branchId: string | null) => {
+        const { data } = await svc.rpc("pobocka_povolena_pro", {
+          p_user_id: userId,
+          p_service_id: ticket.service_id,
+          p_branch_id: branchId,
+        });
+        return data === true;
+      };
+      const povoleno = (await pobockaSmi(ticket.branch_id ?? null)) ||
+        (!!ticket.location_branch_id && (await pobockaSmi(ticket.location_branch_id)));
+      if (!povoleno) {
+        return new Response(
+          JSON.stringify({ error: "Zakázka patří jiné pobočce" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }

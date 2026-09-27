@@ -28,6 +28,12 @@ const MODEL = "claude-opus-5";
 const STROP_UZIVATEL_DEN = 60;
 const STROP_SERVIS_DEN = 400;
 const MAX_HISTORIE = 8;
+// Stropy velikosti vstupu od klienta (znaky). Katalog všech průvodců má dnes
+// do 35 tisíc znaků (src/lib/pruvodci.ts), takže je v nich rezerva.
+const MAX_ZPRAVA_ZNAKU = 3000;
+const MAX_PRUVODCU = 200;
+const MAX_KATALOG_ZNAKU = 100000;
+const MAX_KONTEXT_ZNAKU = 4000;
 
 type Krok = { title: string; description: string };
 type PruvodceVstup = { id: string; nazev: string; popis: string; page: string; settingsSubsection?: string; kroky: Krok[] };
@@ -124,11 +130,19 @@ serve(async (req) => {
       return json({ error: "limit", detail: "Denní limit dotazů je vyčerpaný. Zkuste to zítra, nebo napište na podpora@appjobi.com." }, 429);
     }
 
+    // Katalog, kontext i historie posílá klient – bez stropu by šel jedním
+    // dotazem poslat do placeného modelu libovolně velký prompt (audit
+    // oprávnění, 4. kolo). Denní strop počítá dotazy, ne jejich velikost.
     const kontext = (body.kontext && typeof body.kontext === "object" ? body.kontext : {}) as Kontext;
-    const pruvodci = (Array.isArray(body.pruvodci) ? body.pruvodci : []) as PruvodceVstup[];
+    if (kontextText(kontext).length > MAX_KONTEXT_ZNAKU) return json({ error: "Příliš velký kontext dotazu." }, 400);
+    const pruvodci = (Array.isArray(body.pruvodci) ? body.pruvodci : [])
+      .filter((p: PruvodceVstup) => p && typeof p === "object" && Array.isArray(p.kroky))
+      .slice(0, MAX_PRUVODCU) as PruvodceVstup[];
+    if (katalogText(pruvodci).length > MAX_KATALOG_ZNAKU) return json({ error: "Příliš velký katalog průvodců." }, 400);
     const historie = (Array.isArray(body.historie) ? body.historie : [])
       .filter((z: Zprava) => (z.role === "user" || z.role === "assistant") && typeof z.content === "string" && z.content.trim())
-      .slice(-MAX_HISTORIE) as Zprava[];
+      .slice(-MAX_HISTORIE)
+      .map((z: Zprava) => ({ role: z.role, content: z.content.slice(0, MAX_ZPRAVA_ZNAKU) })) as Zprava[];
 
     const client = new Anthropic({ apiKey });
     const tools: Anthropic.Tool[] = [

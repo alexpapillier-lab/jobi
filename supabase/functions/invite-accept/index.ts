@@ -43,7 +43,8 @@ serve(async (req) => {
         );
       }
       body = JSON.parse(text);
-      console.log("[invite-accept] body", body);
+      // Jen klíče – tělo nese token pozvánky a ten do logu nepatří (audit 4).
+      console.log("[invite-accept] body keys", Object.keys((body ?? {}) as Record<string, unknown>));
     } catch (e) {
       console.error("[invite-accept] invalid json", e);
       return new Response(

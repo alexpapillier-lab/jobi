@@ -45,6 +45,12 @@ ALTER TABLE public.tickets ADD COLUMN IF NOT EXISTS flag boolean DEFAULT false;
   (historie, komentáře, úseky práce) by šlo přečíst obsah cizí pobočky. Stejně
   tak každá nová funkce `security definer`, která bere `ticket_id`, musí zavolat
   `pobocka_povolena(service_id, branch_id)`.
+  Platí to i pro funkce, které zakázku jen **přesouvají** (mění `location_branch_id`):
+  místo zařízení rozhoduje o viditelnosti, takže přesun je taky zpřístupnění
+  (4. kolo auditu 27. 9. – zásilky).
+- **Každá nová tabulka se `service_id`** patří do hradby přístupu (restriktivní
+  politiky `<tabulka>_jen_zapnuty_servis` a `_jen_s_pristupem_*`, vzor
+  `20260912130000_hradba_levneji_a_uplne.sql`) a nedostane granty pro `anon`.
 - Po každé migraci s politikou spusť `scripts/rls-probe.sql` (3. kolo = člen omezený
   na pobočku) a přidej sondu pro novou tabulku.
 
