@@ -21,6 +21,7 @@ import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { DphNastaveni } from "./Settings/DphNastaveni";
 import { IntegrationsSettings } from "./Settings/IntegrationsSettings";
 import { HelpSupportSettings } from "./Settings/HelpSupportSettings";
+import { MigraceSettings } from "./Settings/MigraceSettings";
 import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { ApiNastaveni } from "./Settings/ApiNastaveni";
 import { useEntitlements } from "../hooks/useEntitlements";
@@ -67,7 +68,7 @@ import { useAuth } from "../auth/AuthProvider";
  */
 export type SettingsCategory = "company" | "orders" | "documents" | "communication" | "people" | "app" | "profile";
 export type SettingsSubsection = 
-  | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_sms" | "service_team" | "service_odmeny" | "service_owner" | "service_api"
+  | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_migrace" | "service_sms" | "service_team" | "service_odmeny" | "service_owner" | "service_api"
   | "communication_automations" | "communication_chat" | "communication_report"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail" | "orders_zasilky"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
@@ -81,7 +82,7 @@ type SettingsSection = {
 
 /** Do které skupiny podsekce patří – ať hluboký odkaz nemusí znát skupinu. */
 const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
-  service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_owner: "company",
+  service_basic: "company", service_contact: "company", service_billing: "company", service_subscription: "company", service_branches: "company", service_migrace: "company", service_owner: "company",
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_slevy: "orders", orders_detail: "orders", orders_zasilky: "orders",
@@ -945,6 +946,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         { key: "service_billing", label: "Fakturace a DPH", keywords: ["dph", "faktura", "fakturace", "sazba", "plátce", "ceny s dph", "veřejné api", "adresa api", "slug"] },
         ...(isAdmin ? [{ key: "service_subscription" as const, label: "Předplatné", keywords: ["předplatné", "platba", "tarif", "plán", "faktura za jobi", "zkušební období", "stripe", "karta"] }] : []),
         ...(isAdmin && maModul("branches") ? [{ key: "service_branches" as const, label: "Pobočky", keywords: ["pobočka", "pobočky", "provozovna", "adresa", "sklad", "zkratka", "více míst"] }] : []),
+        ...(isAdmin ? [{ key: "service_migrace" as const, label: "Migrace z jiného systému", keywords: ["migrace", "import", "csv", "přechod", "zakázkový list", "myrepair", "zákazníci", "zakázky", "ceník", "excel", "export"] }] : []),
         ...(isRootOwner ? [{ key: "service_owner" as const, label: "Owner", keywords: ["owner", "majitel", "servisy", "moduly", "licence", "vytvořit servis", "smazat servis"] }] : []),
       ],
     },
@@ -1052,7 +1054,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   // Member nemá přístup k Tým/Přístupy ani SMS – při výběru servisu kde je member přesměruj
   useEffect(() => {
-    if ((section.subsection === "service_team" || section.subsection === "service_odmeny" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "communication_report" || section.subsection === "service_branches" || section.subsection === "service_subscription") && !isAdmin) {
+    if ((section.subsection === "service_team" || section.subsection === "service_odmeny" || section.subsection === "service_sms" || section.subsection === "communication_automations" || section.subsection === "communication_chat" || section.subsection === "communication_report" || section.subsection === "service_branches" || section.subsection === "service_subscription" || section.subsection === "service_migrace") && !isAdmin) {
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isAdmin]);
@@ -1470,6 +1472,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       {/* FIRMA - POBOČKY */}
       {section.subsection === "service_branches" && activeServiceId && isAdmin && maModul("branches") && (
         <BranchesSettings activeServiceId={activeServiceId} abbreviation={companyData.abbreviation} />
+      )}
+
+      {/* FIRMA - MIGRACE Z JINÉHO SYSTÉMU: zákazníci, zakázky a ceník z CSV pohromadě */}
+      {section.subsection === "service_migrace" && isAdmin && (
+        <MigraceSettings activeServiceId={activeServiceId} />
       )}
 
       {/* SERVIS - TÝM / PŘÍSTUPY */}

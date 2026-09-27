@@ -97,9 +97,15 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
     ve `scripts/import-zakazkovylist`).
     Hotovo 6. 9.: **import zákazníků z CSV** (Zákazníci → Import z CSV; `src/lib/csv.ts`,
     `ImportZakazniku.tsx`) – oddělovač i sloupce se poznají samy, ručně jde přemapovat,
-    duplicity podle normalizovaného telefonu se přeskočí, dávkové vkládání. Zbývá:
-    import zakázek s historií (chce vzorové exporty z MyRepair a Zakázkového listu –
-    nemáme), přenos katalogu z těchto systémů.
+    duplicity podle normalizovaného telefonu se přeskočí, dávkové vkládání.
+    Hotovo 26. 9.: **import zakázek a ceníku z CSV** a sekce Nastavení → Firma →
+    Migrace z jiného systému (`src/lib/importZakazek.ts`, `importCeniku.ts`,
+    `ImportZakazek.tsx`, `ImportCeniku.tsx`, `Settings/MigraceSettings.tsx`) –
+    předvolby sloupců pro Zakázkový list (podle reálného exportu) a MyRepair (odhad),
+    mapování cizích stavů na stavy servisu, datum vydání do `completed_at`, duplicity
+    podle čísla zakázky, ceník bez zakládání toho, co v katalogu už je. Zbývá:
+    ověřit proti skutečnému CSV exportu z MyRepair (nemáme), historie stavů zakázky
+    (`ticket_history`) se nepřenáší.
 
 První tři měsíce: body 1, 2, 4.
 
