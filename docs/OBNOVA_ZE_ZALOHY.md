@@ -220,6 +220,16 @@ bez fotek.
    Proměnné cíle mají schválně jiné názvy než u zálohy (`CIL_…`), ať se
    obnova nepustí omylem proti produkci.
 
+1. **Rozšíření a bucket(y) Storage.** V novém projektu vytvoř buckety
+   `diagnostic-photos` a `product-images` (viz `docs/JOBIDOCS_STORAGE_BUCKET.md`)
+   se stejným nastavením veřejnosti a limitem velikosti.
+   **Politiky nad `storage.objects` v záloze nejsou** (`schema.sql` bere jen
+   schéma `public`) – bez nich nejde nahrát ani zobrazit fotku. Vrátí je
+   příkazy `create policy … on storage.objects` z migrací
+   (`grep -li 'policy.*on storage.objects' supabase/migrations/*.sql`),
+   poslední verze každé politiky. Viz i docs/STAGING.md, kapitola Politiky Storage.
+2. **Soubory ve Storage.** Rozbal poslední artefakt `zaloha-storage-*` a nahraj
+   soubory zpět, cesty musí sedět na `storage-soubory.csv`:
    ```bash
    export R2_ACCOUNT_ID=… R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=…
    export CIL_SUPABASE_URL="https://[NOVY_REF].supabase.co"

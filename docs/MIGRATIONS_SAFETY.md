@@ -59,6 +59,30 @@ ALTER TABLE public.tickets ADD COLUMN IF NOT EXISTS flag boolean DEFAULT false;
 - Migraci nejdřív **otestuj** (lokálně nebo na kopii DB): `supabase db push` nebo aplikace migrací na testovací projekt.
 - Zkontroluj, že stávající data zůstávají v pořádku a aplikace po migraci běží.
 
+### 7. Staging před produkcí – vždycky
+
+**Migrace → staging → kouřová zkouška → produkce.** Žádná migrace ani edge
+funkce nejde na produkci, dokud neprošla stagingem (kopie produkce bez
+osobních údajů, [STAGING.md](STAGING.md)). `supabase db push --dry-run` proti
+produkci řekne jen, *které* soubory se pustí – ne co udělají s daty, která
+v produkci jsou.
+
+```bash
+npm run test:migrace                                   # projde od nuly?
+npm run staging:obnov                                  # u rizikové migrace: staging = dnešní produkce
+npm run staging:migrace -- --funkce zmenene --sonda    # na staging + sonda oprávnění
+npm run dev:web:staging                                # proklikat, čeho se změna týká
+npx supabase db push --dry-run                         # stejné migrace jako na stagingu?
+npm run db:migrate                                     # teprve teď produkce
+```
+
+- Migraci, která na stagingu neprošla, **neopravuj novou migrací navrch**, dokud
+  není na produkci: uprav soubor, obnov staging z produkce a zkus znovu.
+  Staging má pak stejnou historii migrací jako produkce a `db push` na něm
+  ukazuje přesně to, co se pustí do ostré databáze.
+- Na staging se nelinkuje (`supabase link`): link v `supabase/.temp` je
+  v gitu a patří produkci. Skripty používají `--db-url` / `--project-ref`.
+
 ---
 
-Shrnutí: **přidávej, neměň a nemazej bez přípravy** – tak budoucí změny nepoškodí zakázky vytvořené testovacími uživateli.
+Shrnutí: **přidávej, neměň a nemazej bez přípravy, a vždycky nejdřív na staging** – tak budoucí změny nepoškodí zakázky vytvořené testovacími uživateli.
