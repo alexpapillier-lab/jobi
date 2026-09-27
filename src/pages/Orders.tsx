@@ -62,6 +62,8 @@ import { safeLoadUIConfig } from "./Orders/uiConfig";
 import {
   safeSaveDraft,
   defaultDraft,
+  defaultDeviceRow,
+  isDraftDirty,
 } from "./Orders/koncept";
 import { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
 import { type ClaimResolutionItem, parseClaimResolutionItems, serializeClaimResolutionItems } from "./Orders/reklamaceZakroky";
@@ -566,6 +568,36 @@ export default function Orders({
     captureQRItems,
     setCaptureQRItems,
   });
+  /**
+   * Reklamace po záruce → placená oprava: příjem předvyplněný zákazníkem
+   * a zařízením původní zakázky (z okna Vytvořit reklamaci).
+   */
+  const zalozitPlacenouOpravu = (t: TicketEx) => {
+    if (isDraftDirty(newDraft) && !window.confirm(`Máte rozepsanou novou zakázku. Nahradit ji údaji ze zakázky ${t.code ?? ""}?`)) return;
+    setNewDraft((prev) => ({
+      ...defaultDraft(),
+      branchId: prev.branchId,
+      customerId: t.customerId,
+      customerName: t.customerName ?? "",
+      customerPhone: t.customerPhone ?? "",
+      customerEmail: t.customerEmail ?? "",
+      addressStreet: t.customerAddressStreet ?? "",
+      addressCity: t.customerAddressCity ?? "",
+      addressZip: t.customerAddressZip ?? "",
+      company: t.customerCompany ?? "",
+      ico: t.customerIco ?? "",
+      customerInfo: t.customerInfo ?? "",
+      devices: [{
+        ...defaultDeviceRow(),
+        deviceLabel: t.deviceLabel ?? "",
+        serialOrImei: t.serialOrImei ?? "",
+        devicePasscode: t.devicePasscode ?? "",
+        deviceNote: t.code ? `Placená oprava po záruce – navazuje na zakázku ${t.code}` : "Placená oprava po záruce",
+      }],
+    }));
+    openNewOrder();
+  };
+
   // Lookup customer by phone or name (for Edit mode)
   const lookupCustomerEdit = async (phone?: string, name?: string) => {
     if (!supabase || !activeServiceId) return;
@@ -1197,7 +1229,23 @@ export default function Orders({
           config?.autoPrint?.warrantyOnStatusKey === next ||
           hasAutomationRulesFor(next);
         const zaklad = potrebaCelaZakazka ? ((await zajistiPlnouZakazku(ticketId)) ?? ticket) : ticket;
-        const ticketUpdated = zaklad ? { ...zaklad, status: next as any } : tickets.find((t) => t.id === ticketId);
+        /* Záruku na opravu zapsala databáze právě teď (trigger při vydání).
+           Záruční list tištěný hned po přepnutí ji musí mít a detail ji má
+           ukázat bez čekání na realtime. Chyba (server bez migrace) nevadí. */
+        let zarukaDo: string | null | undefined;
+        if (isFinal(next)) {
+          const { data: zaruka, error: zarukaErr } = await (supabase.from("tickets") as any)
+            .select("warranty_until")
+            .eq("id", ticketId)
+            .maybeSingle();
+          if (!zarukaErr && zaruka) {
+            zarukaDo = typeof zaruka.warranty_until === "string" ? zaruka.warranty_until : null;
+            setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? ({ ...t, warrantyUntil: zarukaDo } as TicketEx) : t)));
+          }
+        }
+        const ticketUpdated = zaklad
+          ? { ...zaklad, status: next as any, ...(zarukaDo !== undefined ? { warrantyUntil: zarukaDo } : {}) }
+          : tickets.find((t) => t.id === ticketId);
         if (config?.autoPrint && ticketUpdated) {
           if (config.autoPrint.ticketListOnStatusKey === next) {
             printTicket(ticketUpdated as TicketEx, activeServiceId).then(() => {});
@@ -2088,6 +2136,7 @@ export default function Orders({
         initialTicket={claimSourceTicket}
         nactiPlnouZakazku={zajistiPlnouZakazku}
         existingClaimCodes={cloudClaims.map((c) => ({ code: c.code }))}
+        onPlacenaOprava={zalozitPlacenouOpravu}
         onCreated={async (_claimCode, claim) => {
           setCreateClaimModalOpen(false);
           setClaimSourceTicket(null);

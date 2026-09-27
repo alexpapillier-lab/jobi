@@ -4,6 +4,7 @@ import { useStatuses } from "../../../state/StatusesStore";
 import { useWarrantyClaims } from "../hooks/useWarrantyClaims";
 import type { TicketEx } from "../../Orders";
 import type { WarrantyClaimInsert } from "../hooks/useWarrantyClaims";
+import { stavZarukyOpravy } from "../../../lib/zarukaOpravy";
 
 type CreateWarrantyClaimModalProps = {
   open: boolean;
@@ -20,6 +21,11 @@ type CreateWarrantyClaimModalProps = {
   /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu) – přeskočí hledání. */
   initialTicket?: TicketEx | null;
   onCreated?: (claimCode: string, claim?: import("../hooks/useWarrantyClaims").WarrantyClaimRow) => void;
+  /**
+   * Zakázka je po záruce: místo reklamace otevřít příjem placené opravy
+   * předvyplněný zákazníkem a zařízením. Bez propu se tlačítko neukáže.
+   */
+  onPlacenaOprava?: (ticket: TicketEx) => void;
 };
 
 /** Draft pro údaje zákazníka a zařízení (jako u nové zakázky), editovatelné před odesláním */
@@ -118,6 +124,7 @@ export function CreateWarrantyClaimModal({
   existingClaimCodes,
   initialTicket,
   onCreated,
+  onPlacenaOprava,
 }: CreateWarrantyClaimModalProps) {
   const { statuses } = useStatuses();
   const { createFromTicket, createWithoutTicket } = useWarrantyClaims(activeServiceId);
@@ -346,6 +353,44 @@ export function CreateWarrantyClaimModal({
                   Zpět na výběr
                 </button>
               </div>
+
+              {/* Záruka na opravu původní zakázky. Jen upozornění – reklamaci
+                  po záruce servis založit může (vstřícnost, spor o datum). */}
+              {selectedTicket && !nacitamZakazku && (() => {
+                const zaruka = stavZarukyOpravy(selectedTicket.warrantyUntil);
+                if (!zaruka) {
+                  return (
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+                      Záruka na opravu u zakázky není uvedená (zakázka nebyla vydaná nebo je z doby před evidencí záruky).
+                    </div>
+                  );
+                }
+                if (zaruka.platna) {
+                  return (
+                    <div role="status" style={{ fontSize: 13, fontWeight: 600, color: "var(--success-text)", marginBottom: 12, padding: "8px 10px", background: "color-mix(in srgb, var(--success) 12%, transparent)", borderRadius: 8, border: "1px solid color-mix(in srgb, var(--success) 40%, transparent)" }}>
+                      V záruce do {zaruka.datum}
+                    </div>
+                  );
+                }
+                return (
+                  <div role="status" style={{ fontSize: 13, color: "var(--warning-text)", marginBottom: 12, padding: "8px 10px", background: "color-mix(in srgb, var(--warning) 14%, transparent)", borderRadius: 8, border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <span><strong>Po záruce</strong> (skončila {zaruka.datum}). Reklamaci můžete založit i tak, nebo přijmout zařízení jako placenou opravu.</span>
+                    {onPlacenaOprava && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = selectedTicket;
+                          handleClose();
+                          onPlacenaOprava(t);
+                        }}
+                        style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Založit placenou opravu
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, padding: "8px 10px", background: "rgba(234,179,8,0.08)", borderRadius: 8, border: "1px solid rgba(234,179,8,0.3)" }}>
                 Stav reklamace: <strong>Přijato</strong> (automaticky)

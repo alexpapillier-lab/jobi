@@ -259,6 +259,7 @@ export function RepairsPane(p: RepairsPaneProps) {
                       <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", whiteSpace: "nowrap" }}>
                         {formatMinutes(r.estimatedTime)}
                         {r.costs ? ` · náklady ${formatKc(r.costs)}` : ""}
+                        {r.warrantyMonths != null ? ` · záruka ${r.warrantyMonths === 0 ? "žádná" : `${r.warrantyMonths} měs.`}` : ""}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 0 }}>
@@ -508,6 +509,11 @@ export function RepairForm({
         <div>
           <Label>Náklady (Kč, volitelné)</Label>
           <Input type="number" inputMode="decimal" placeholder="0" value={draft.costs} onChange={(e) => onChange((d) => ({ ...d, costs: e.target.value }))} style={inputStyle} />
+        </div>
+        <div>
+          {/* Prázdné = výchozí záruka servisu (Nastavení → Zakázky → Reklamace). */}
+          <Label>Záruka (měsíců)</Label>
+          <Input type="number" inputMode="numeric" min={0} max={120} placeholder="výchozí" title="Prázdné = výchozí záruka servisu, 0 = bez záruky" value={draft.warranty} onChange={(e) => onChange((d) => ({ ...d, warranty: e.target.value }))} style={inputStyle} />
         </div>
       </div>
 

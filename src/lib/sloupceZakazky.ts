@@ -88,6 +88,8 @@ export const SLOUPCE_DETAILU = [
   "purchase_date",
   "purchase_proof",
   "find_my_off",
+  // Záruka na provedenou opravu – plní databáze při vydání (migrace 20260927150000).
+  "warranty_until",
   "external_id",
   "handoff_method",
   "handback_method",

@@ -149,6 +149,11 @@ export type DocumentData = {
   // Délka záruky je buď v měsících, nebo ve dnech – přepočet dnů na měsíce
   // by na papíře lhal („45 dnů“ není „1,5 měsíce“).
   warranty?: { months?: number; days?: number; until?: string; text?: string };
+  /** Údaje zakázky, které nepatří zařízení ani datům dokladu. */
+  ticket?: {
+    /** Záruka na provedenou opravu platí do (ISO datum) – zapisuje Jobi při vydání zakázky. */
+    warrantyUntil?: string;
+  };
   /** Náhradní zařízení půjčené zákazníkovi na dobu opravy (smlouva o zápůjčce). */
   loaner?: { name?: string; serial?: string; accessories?: string; deposit?: number; lentAt?: string; returnedAt?: string; note?: string };
   payment?: { account?: string; iban?: string; swift?: string; vs?: string; spayd?: string };

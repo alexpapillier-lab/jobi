@@ -141,6 +141,7 @@ export type Database = {
           purchase_date: string | null
           purchase_proof: string | null
           find_my_off: boolean | null
+          warranty_until: string | null
         }
         Insert: {
           id?: string
@@ -188,6 +189,7 @@ export type Database = {
           purchase_date?: string | null
           purchase_proof?: string | null
           find_my_off?: boolean | null
+          warranty_until?: string | null
         }
         Update: {
           id?: string
@@ -234,6 +236,7 @@ export type Database = {
           purchase_date?: string | null
           purchase_proof?: string | null
           find_my_off?: boolean | null
+          warranty_until?: string | null
         }
         Relationships: []
       }

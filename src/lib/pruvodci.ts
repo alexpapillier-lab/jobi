@@ -283,6 +283,17 @@ export const PRUVODCI: Pruvodce[] = [
     kroky: [{ page: "settings", title: "Hodinová práce", description: "Výchozí sazba Kč/h; v zakázce pak přidáte položku hodiny × sazba. Stopky na zakázce měří čas technika a promítají se do KPI ve Statistikách.", selector: sel("settings-content"), settingsSection: nast("orders", "orders_prace"), icon: "settings" }],
   },
   {
+    id: "nastaveni-reklamace",
+    nazev: "Reklamace a záruka na opravu",
+    popis: "Do kdy platí záruka na opravu a jak se reklamace ukazují v seznamu.",
+    page: "settings",
+    settingsSubsection: "orders_reklamace",
+    novinkaOd: "2026-09-27",
+    kroky: [
+      { page: "settings", title: "Záruka na opravu", description: "Výchozí délka záruky v měsících – zvlášť pro spotřebitele (24) a pro firmu s IČO (12). Při vydání zakázky se na ni zapíše „Záruka na opravu do …“ podle nejdelší záruky z provedených oprav; oprava v ceníku může mít vlastní délku. Při zakládání reklamace pak Jobi ukáže, jestli je zakázka v záruce, a po záruce nabídne založit placenou opravu.", selector: sel("settings-zaruka-opravy"), settingsSection: nast("orders", "orders_reklamace"), icon: "settings" },
+    ],
+  },
+  {
     id: "nastaveni-kontrola",
     nazev: "Kontrola po opravě",
     popis: "Kontrolní seznamy před vydáním.",

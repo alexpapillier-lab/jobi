@@ -90,6 +90,8 @@ export type TicketEx = Ticket & {
   purchaseProof?: string;
   /** Apple: Find My vypnuto při příjmu; null = neuvedeno / netýká se (tickets.find_my_off). */
   findMyOff?: boolean | null;
+  /** Záruka na provedenou opravu platí do (RRRR-MM-DD, včetně); plní databáze při vydání (tickets.warranty_until). */
+  warrantyUntil?: string | null;
 
   discountType?: "percentage" | "amount" | null; // typ slevy: procenta, částka, nebo žádná
   discountValue?: number; // hodnota slevy (% nebo Kč)

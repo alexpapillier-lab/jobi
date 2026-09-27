@@ -23,6 +23,7 @@ import type { StatusMeta } from "../../state/StatusesStore";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
+import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
 import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
 
@@ -162,6 +163,19 @@ export function DetailReklamace({
             <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_accessories, c.device_note].filter(Boolean).join(" · ")}</div>
           )}
           {c.device_passcode && <div style={{ fontSize: 13, color: "var(--text)" }}>Heslo/kód: {c.device_passcode}</div>}
+          {/* Záruka na opravu napojené zakázky – jestli jde reklamace uznat.
+              Rozhoduje den přijetí reklamace, ne dnešek: reklamace přijatá
+              v záruce zůstává v záruce, i když se vyřizuje déle. */}
+          {(() => {
+            const prijato = new Date(c.received_at || c.created_at);
+            const zaruka = stavZarukyOpravy(sourceTicket?.warrantyUntil, Number.isNaN(prijato.getTime()) ? new Date() : prijato);
+            if (!zaruka) return null;
+            return (
+              <div style={{ fontSize: 13, fontWeight: 600, color: zaruka.platna ? "var(--success-text)" : "var(--warning-text)" }}>
+                {zaruka.platna ? `V záruce do ${zaruka.datum}` : `Po záruce (skončila ${zaruka.datum})`}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

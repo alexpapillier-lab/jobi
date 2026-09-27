@@ -347,6 +347,19 @@ export function UpravaZakazky({
               </>
             )}
             <div>
+              <div style={fieldLabel}>Záruka na opravu do</div>
+              {/* Doplní se samo při vydání (datum vydání + nejdelší záruka
+                  z provedených oprav); tady jde přepsat nebo smazat. */}
+              <input
+                type="date"
+                value={(editedTicket.warrantyUntil !== undefined ? editedTicket.warrantyUntil : detailedTicket.warrantyUntil) || ""}
+                onChange={(e) => setEditedTicket((p) => ({ ...p, warrantyUntil: e.target.value || null }))}
+                style={baseFieldInput}
+                aria-label="Záruka na provedenou opravu platí do"
+              />
+              <div style={fieldMuted}>Vyplní se samo při vydání zakázky podle záruky oprav.</div>
+            </div>
+            <div>
               <div style={fieldLabel}>Požadovaná oprava *</div>
               <input
                 type="text"

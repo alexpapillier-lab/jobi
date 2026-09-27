@@ -66,6 +66,7 @@ export const VARIABLES: VariableDef[] = [
   { key: "dates.completed", label: "Zakázka dokončena", group: G.dates, sample: "3. 9. 2026" },
   { key: "dates.diagnosed", label: "Datum vytvoření diagnostiky", group: G.dates, sample: "3. 9. 2026" },
   { key: "dates.released", label: "Vydáno zákazníkovi", group: G.dates, sample: "4. 9. 2026" },
+  { key: "ticket.warrantyUntil", label: "Záruka na opravu do", group: G.dates, sample: "3. 9. 2028" },
   { key: "dates.issued", label: "Datum vystavení", group: G.dates, sample: "3. 9. 2026" },
   { key: "dates.due", label: "Datum splatnosti", group: G.dates, sample: "17. 9. 2026" },
   { key: "dates.taxable", label: "Datum zdanitelného plnění", group: G.dates, sample: "3. 9. 2026" },
@@ -391,6 +392,8 @@ export function resolveVariable(key: string, data: DocumentData): string {
     case "warranty.duration": return warrantyDurationText(data.warranty);
     case "warranty.until": return formatDate(data.warranty?.until);
     case "warranty.text": return data.warranty?.text ?? "";
+    // Datum ze zakázky (tickets.warranty_until), ne dopočet z nastavení dokumentů.
+    case "ticket.warrantyUntil": return formatDate(data.ticket?.warrantyUntil);
     case "diagnostic": return data.diagnostic ?? "";
     case "loaner.name": return data.loaner?.name ?? "";
     case "loaner.serial": return data.loaner?.serial ?? "";

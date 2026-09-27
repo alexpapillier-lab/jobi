@@ -9,6 +9,7 @@ import { logError } from "../lib/errorLog";
 import { sloucData } from "../lib/sloucitSnimky";
 import { STORAGE_KEYS, getDevicesKey, getInventoryKey } from "../constants/storageKeys";
 import { loadDevicesFromDb, saveDevicesToDb } from "../lib/devicesDb";
+import { normalizujMesice } from "../lib/zarukaOpravy";
 import { oznamZmenuKatalogu } from "../lib/webhookPing";
 import { loadInventoryFromDb, saveInventoryToDb, celkemKusu, vychoziSklad, stavyZeStarehoTvaru } from "../lib/inventoryDb";
 import { supabase, resetTauriFetchState } from "../lib/supabaseClient";
@@ -671,6 +672,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       estimatedTime: parseInt(newRepair.time) || 0,
       details: newRepair.details.trim(),
       costs: parseFloat(newRepair.costs) || undefined,
+      warrantyMonths: normalizujMesice(newRepair.warranty),
       productIds: newRepair.productIds.length > 0 ? newRepair.productIds : undefined,
       createdAt: now(),
     };
@@ -688,6 +690,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
       time: String(r.estimatedTime),
       details: r.details,
       costs: r.costs ? String(r.costs) : "",
+      warranty: r.warrantyMonths != null ? String(r.warrantyMonths) : "",
       productIds: r.productIds || [],
       modelIds: r.modelIds || [],
       hiddenModelIds: r.publicHiddenModelIds || [],
@@ -727,6 +730,7 @@ export default function Devices({ activeServiceId }: { activeServiceId: string |
               estimatedTime: parseInt(repairData.time) || 0,
               details: repairData.details.trim(),
               costs: parseFloat(repairData.costs) || undefined,
+              warrantyMonths: normalizujMesice(repairData.warranty),
               productIds: repairData.productIds.length > 0 ? repairData.productIds : undefined,
               // výjimka nemá smysl u modelu, který k opravě už nepatří
               publicHiddenModelIds: repairData.hiddenModelIds.filter((mid) =>

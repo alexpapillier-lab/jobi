@@ -45,6 +45,8 @@ export type Repair = {
   publicVisible?: boolean;
   /** Modely, u kterých se tahle oprava do ceníku neposílá. */
   publicHiddenModelIds?: string[];
+  /** Vlastní záruka na opravu v měsících; null/undefined = výchozí servisu, 0 = bez záruky. */
+  warrantyMonths?: number | null;
 };
 
 export type DevicesData = {
@@ -80,6 +82,8 @@ export type RepairDraft = {
   time: string;
   details: string;
   costs: string;
+  /** Záruka v měsících jako text pole; prázdné = výchozí servisu. */
+  warranty: string;
   productIds: string[];
   modelIds: string[];
   hiddenModelIds: string[];
@@ -93,6 +97,7 @@ export const EMPTY_REPAIR_DRAFT: RepairDraft = {
   time: "",
   details: "",
   costs: "",
+  warranty: "",
   productIds: [],
   modelIds: [],
   hiddenModelIds: [],

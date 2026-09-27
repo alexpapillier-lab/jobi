@@ -591,6 +591,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         warrantyClaim: editedTicket.warrantyClaim !== undefined ? editedTicket.warrantyClaim : detailedTicket.warrantyClaim,
         purchaseDate: editedTicket.purchaseDate !== undefined ? (editedTicket.purchaseDate.trim() || undefined) : detailedTicket.purchaseDate,
         purchaseProof: editedTicket.purchaseProof !== undefined ? (editedTicket.purchaseProof.trim() || undefined) : detailedTicket.purchaseProof,
+        warrantyUntil: editedTicket.warrantyUntil !== undefined ? (editedTicket.warrantyUntil || null) : detailedTicket.warrantyUntil,
         requestedRepair: editedTicket.requestedRepair !== undefined ? (editedTicket.requestedRepair.trim() || undefined) : detailedTicket.requestedRepair,
         handoffMethod: editedTicket.handoffMethod !== undefined ? (editedTicket.handoffMethod.trim() || undefined) : detailedTicket.handoffMethod,
         handbackMethod: editedTicket.handbackMethod !== undefined ? (editedTicket.handbackMethod.trim() || undefined) : detailedTicket.handbackMethod,
@@ -676,6 +677,12 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         discount_value: updated.discountValue ?? null,
         expected_completion_at: (editedTicket as any).expectedCompletionAt !== undefined ? (editedTicket as any).expectedCompletionAt : (detailedTicket as any).expected_completion_at ?? null,
       };
+      /* Záruku na opravu doplňuje databáze při vydání. Posílá se jen ruční
+         přepis z úprav: hodnota v paměti může být starší než ta, kterou
+         trigger zapsal při přepnutí stavu, a přepsala by ji. */
+      if (editedTicket.warrantyUntil !== undefined) {
+        payload.warranty_until = editedTicket.warrantyUntil || null;
+      }
       
       // Audit: Log customer snapshot fields in payload
       devLog("[SaveTicket] PAYLOAD - Customer snapshot fields:", {

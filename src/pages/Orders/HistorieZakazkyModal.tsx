@@ -9,6 +9,7 @@ import { formatCZ } from "../../components/tickets";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { getCachedBranch } from "../../lib/branches";
 import type { StatusMeta } from "../../state/StatusesStore";
+import { formatDatumZaruky } from "../../lib/zarukaOpravy";
 
 /** Jeden řádek historie (zakázky i reklamace) s doplněnou přezdívkou autora. */
 export type ZaznamHistorie = { id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown>; nickname: string | null };
@@ -104,6 +105,7 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
               diagnostic_photos: "Fotky diagnostiky",
               expected_completion_at: "Předpokládané dokončení",
               completed_at: "Dokončeno",
+              warranty_until: "Záruka na opravu do",
               branch_id: "Pobočka",
               assigned_to: "Technik",
               test_checklist: "Kontrola po opravě",
@@ -147,6 +149,7 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
               if (key === "branch_id") return getCachedBranch(activeServiceId ?? undefined, String(val))?.name ?? "jiná pobočka";
               if (key === "assigned_to") return val ? jmenoClena(String(val)) ?? "kolega" : "nikdo";
               if (key === "intake_signature_url") return "podepsáno";
+              if (key === "warranty_until" && typeof val === "string") return formatDatumZaruky(val) || val;
               if ((key === "expected_completion_at" || key === "completed_at" || key === "quote_sent_at" || key === "quote_decided_at" || key === "intake_signed_at") && typeof val === "string") return formatCZ(val);
               if (Array.isArray(val)) return `${val.length} položek`;
               if (typeof val === "object") return JSON.stringify(val).slice(0, 80);

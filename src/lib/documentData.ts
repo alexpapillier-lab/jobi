@@ -159,6 +159,8 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     note: s(t.notes),
     photos: (ticket.diagnosticPhotos ?? []).filter((u) => typeof u === "string" && u.trim()),
     warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : warrantyDays ? { days: warrantyDays, until: warrantyUntil } : undefined,
+    // Záruka na provedenou opravu, jak ji databáze zapsala při vydání ({{ticket.warrantyUntil}}).
+    ticket: { warrantyUntil: s(ticket.warrantyUntil) },
     extra: { external_id: ticket.externalId ?? "" },
   };
 }

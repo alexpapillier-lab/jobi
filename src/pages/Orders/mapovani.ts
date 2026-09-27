@@ -62,6 +62,8 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     purchaseDate: supabaseTicket.purchase_date || undefined,
     purchaseProof: supabaseTicket.purchase_proof || undefined,
     findMyOff: typeof supabaseTicket.find_my_off === "boolean" ? supabaseTicket.find_my_off : null,
+    // Záruka na opravu (datum RRRR-MM-DD); null = nevydáno / bez záruky.
+    warrantyUntil: typeof supabaseTicket.warranty_until === "string" ? supabaseTicket.warranty_until : null,
     requestedRepair: supabaseTicket.notes || undefined,
     handoffMethod: supabaseTicket.handoff_method || undefined,
     handbackMethod: (supabaseTicket as any).handback_method || undefined,

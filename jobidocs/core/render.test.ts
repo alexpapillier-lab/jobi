@@ -106,6 +106,11 @@ describe("proměnné", () => {
     expect(substitute("{{device.findMy}}|{{device.warranty}}", nevypnuto)).toBe("NEVYPNUTO|");
     expect(isEmptyAfterSubstitution("Záruka: {{device.warranty}}", { service: {} })).toBe(true);
   });
+  it("záruka na opravu ze zakázky; bez data zůstane prázdná", () => {
+    expect(substitute("Záruka na opravu do {{ticket.warrantyUntil}}", sampleData("zarucni_list"))).toBe("Záruka na opravu do 3. 9. 2028");
+    expect(substitute("{{ticket.warrantyUntil}}", { service: {} })).toBe("");
+    expect(isEmptyAfterSubstitution("Záruka do: {{ticket.warrantyUntil}}", { service: {}, ticket: {} })).toBe(true);
+  });
   it("formátuje", () => {
     expect(formatDate("2026-09-01")).toBe("1. 9. 2026");
     expect(formatDate("1.9.2026")).toBe("1.9.2026");

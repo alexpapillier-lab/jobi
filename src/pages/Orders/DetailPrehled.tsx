@@ -21,6 +21,7 @@ import type { TicketEx } from "./typy";
 import { skrytPostupZakazky } from "./uiConfig";
 import { formatPhoneNumber } from "./formatovani";
 import { card } from "./styly";
+import { stavZarukyOpravy, textZarukyOpravy } from "../../lib/zarukaOpravy";
 
 type Props = {
   detailedTicket: TicketEx;
@@ -235,6 +236,19 @@ export function DetailPrehled({
                 {detailedTicket.warrantyClaim && detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
               </div>
             )}
+            {/* Záruka na provedenou opravu – datum zapisuje databáze při vydání. */}
+            {(() => {
+              const zaruka = stavZarukyOpravy(detailedTicket.warrantyUntil);
+              if (!zaruka) return null;
+              return (
+                <div
+                  style={{ fontSize: 13, color: zaruka.platna ? "var(--text)" : "var(--muted)", display: "flex", alignItems: "center", gap: 6 }}
+                  title={zaruka.platna ? "Reklamace do tohoto dne je v záruce" : "Záruka na opravu už prošla"}
+                >
+                  <span>{textZarukyOpravy(zaruka)}</span>
+                </div>
+              );
+            })()}
             {/* Štítek Find My s přepnutím na klik – zákazník ho často vypne až po
                 telefonátu, tak ať to technik nemusí řešit přes úpravu zakázky. */}
             {(detailedTicket.findMyOff != null || jeAppleZarizeni(detailedTicket.deviceLabel)) && (() => {

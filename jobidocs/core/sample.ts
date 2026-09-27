@@ -88,6 +88,8 @@ export function sampleData(docType: DocType, kind: SampleKind = "short", service
     note: long ? "Zákazník žádá zavolat před opravou nad 6 000 Kč. Platba kartou při vyzvednutí." : "",
     photos: long ? [PHOTO("Foto 1"), PHOTO("Foto 2"), PHOTO("Foto 3")] : [PHOTO("Foto 1")],
     warranty: { months: 12, until: "2027-09-03" },
+    // Záruka na opravu ze zakázky: vydáno 3. 9. 2026 + 24 měsíců (spotřebitel).
+    ticket: docType === "faktura" ? undefined : { warrantyUntil: "2028-09-03" },
     payment: { account: "19-2000145399/0800", iban: "CZ65 0800 0000 1920 0014 5399", swift: "GIBACZPX", vs: "2026000042", spayd: "SPD*1.0*ACC:CZ6508000000192000145399*AM:5990.00*CC:CZK*X-VS:2026000042*MSG:Faktura FV-2026-0042" },
   };
   if (docType === "smlouva_zapujcka") {

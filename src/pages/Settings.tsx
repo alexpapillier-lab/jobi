@@ -18,6 +18,7 @@ import { TeamSettings } from "./Settings/TeamSettings";
 import { OdmenySettingsSection } from "./Settings/OdmenySettingsSection";
 import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
+import { nastaveniZarukyZConfigu, normalizujMesice, VYCHOZI_ZARUKA_FIRMA, VYCHOZI_ZARUKA_SPOTREBITEL } from "../lib/zarukaOpravy";
 import { DphNastaveni } from "./Settings/DphNastaveni";
 import { IntegrationsSettings } from "./Settings/IntegrationsSettings";
 import { HelpSupportSettings } from "./Settings/HelpSupportSettings";
@@ -506,6 +507,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     }
     setOrdersShowClaimsInList(!!config.orders_show_claims_in_list);
     setHodinovaSazbaText(typeof config.hodinova_sazba === "number" ? String(config.hodinova_sazba) : "");
+    {
+      const zaruka = nastaveniZarukyZConfigu(config as Record<string, unknown>);
+      setZarukaSpotrebitelText(String(zaruka.spotrebitel));
+      setZarukaFirmaText(String(zaruka.firma));
+    }
     setZaokrouhleniPrace(normalizujZaokrouhleni(config.zaokrouhleni_prace));
     setCasNaOprave(config.cas_na_oprave === true);
     setChatZapnuty(config.chat !== false);
@@ -647,6 +653,9 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
 
   /** Hodinová sazba servisu (Kč/h) – výchozí pro položku „Hodinová práce“ v zakázce. */
   const [hodinovaSazbaText, setHodinovaSazbaText] = useState("");
+  /** Výchozí záruka na opravu v měsících (config.zaruka_opravy_mesice / _firma) – text pole. */
+  const [zarukaSpotrebitelText, setZarukaSpotrebitelText] = useState(String(VYCHOZI_ZARUKA_SPOTREBITEL));
+  const [zarukaFirmaText, setZarukaFirmaText] = useState(String(VYCHOZI_ZARUKA_FIRMA));
   /** Krok zaokrouhlení naměřeného času při přenosu do hodinové práce (config.zaokrouhleni_prace). */
   const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
   /*
@@ -722,6 +731,32 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
     } catch (err) {
       console.error("[Settings] saveHodinovaSazba", err);
       showToast("Sazbu se nepodařilo uložit", "error");
+      return false;
+    }
+  }, [activeServiceId]);
+
+  /**
+   * Výchozí záruka na opravu. Čte ji trigger v databázi při vydání zakázky
+   * (migrace 20260927150000), proto se ukládá jako číslo. Prázdné pole
+   * vrátí výchozí hodnotu (24 / 12 měsíců).
+   */
+  const saveZarukaOpravy = useCallback(async (druh: "spotrebitel" | "firma", text: string): Promise<boolean> => {
+    if (!activeServiceId || !supabase) return false;
+    const vychozi = druh === "firma" ? VYCHOZI_ZARUKA_FIRMA : VYCHOZI_ZARUKA_SPOTREBITEL;
+    const hodnota = normalizujMesice(text) ?? vychozi;
+    const klic = druh === "firma" ? "zaruka_opravy_mesice_firma" : "zaruka_opravy_mesice";
+    try {
+      const { error } = await (supabase as any).rpc("update_service_settings", {
+        p_service_id: activeServiceId,
+        p_patch: { config: { [klic]: hodnota } },
+      });
+      if (error) throw new Error(error.message);
+      (druh === "firma" ? setZarukaFirmaText : setZarukaSpotrebitelText)(String(hodnota));
+      window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
+      return true;
+    } catch (err) {
+      console.error("[Settings] saveZarukaOpravy", err);
+      showToast("Záruku se nepodařilo uložit", "error");
       return false;
     }
   }, [activeServiceId]);
@@ -897,6 +932,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
   const hintStrankovani = useSavedHint();
   const hintFiltry = useSavedHint();
   const hintReklamace = useSavedHint();
+  const hintZaruka = useSavedHint();
   const hintSazba = useSavedHint();
   const hintPovinne = useSavedHint();
   const hintTisk = useSavedHint();
@@ -997,7 +1033,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         ...(isAdmin && maModul("branches") ? [{ key: "orders_zasilky" as const, label: "Přesuny mezi pobočkami", keywords: ["zásilka", "zásilky", "přesun", "pobočka", "poslat", "odeslat", "převzít", "svoz", "sledovací číslo", "dopravce"] }] : []),
         { key: "orders_device_options", label: "Stavy zařízení a příslušenství", keywords: ["zařízení", "příslušenství", "stav zařízení", "kryt", "nabíječka", "poškození"] },
         { key: "orders_handoff_options", label: "Převzetí a předání", keywords: ["převzetí", "předání", "osobně", "pošta", "kurýr", "způsob"] },
-        { key: "orders_reklamace", label: "Reklamace", keywords: ["reklamace", "seznam", "aktivní", "vše"] },
+        { key: "orders_reklamace", label: "Reklamace", keywords: ["reklamace", "seznam", "aktivní", "vše", "záruka", "záruka na opravu", "záruční doba", "měsíců"] },
         { key: "orders_prace", label: "Hodinová práce", keywords: ["hodinová", "sazba", "práce", "technik", "hodina", "kč/h", "hodinovka"] },
         { key: "orders_kontrola", label: "Kontrola po opravě", keywords: ["kontrola", "checklist", "kontrolní seznam", "test", "po opravě", "šablona", "protokol"] },
         { key: "orders_nahradni", label: "Náhradní zařízení", keywords: ["náhradní", "zápůjčka", "půjčení", "zařízení", "kauce", "smlouva"] },
@@ -2507,6 +2543,57 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       )}
 
       {/* ZAKÁZKY - REKLAMACE */}
+      {section.subsection === "orders_reklamace" && (
+        <Card data-tour="settings-zaruka-opravy">
+          <CardHeader
+            title="Záruka na opravu"
+            description="Při vydání zakázky se na ni zapíše, do kdy platí záruka: datum vydání + nejdelší záruka z provedených oprav. Opravy z ceníku můžou mít vlastní délku (Zařízení → oprava → Záruka); ostatní dostanou výchozí. Při zakládání reklamace pak Jobi ukáže, jestli je zakázka ještě v záruce."
+            right={hintZaruka.node}
+          />
+          <SettingRows>
+            <SettingRow
+              label="Výchozí záruka na opravu – spotřebitel"
+              description="Zákazník bez IČO na zakázce. Zákonná lhůta pro spotřebitele je 24 měsíců."
+              control={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    step={1}
+                    value={zarukaSpotrebitelText}
+                    onChange={(e) => setZarukaSpotrebitelText(e.target.value)}
+                    onBlur={(e) => { void saveZarukaOpravy("spotrebitel", e.target.value).then((ok) => { if (ok) hintZaruka.show(); }); }}
+                    aria-label="Výchozí záruka na opravu pro spotřebitele v měsících"
+                    style={{ width: 90 }}
+                  />
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>měsíců</span>
+                </span>
+              }
+            />
+            <SettingRow
+              label="Výchozí záruka na opravu – firma"
+              description="Zákazník s IČO na zakázce. 0 = bez záruky."
+              control={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    step={1}
+                    value={zarukaFirmaText}
+                    onChange={(e) => setZarukaFirmaText(e.target.value)}
+                    onBlur={(e) => { void saveZarukaOpravy("firma", e.target.value).then((ok) => { if (ok) hintZaruka.show(); }); }}
+                    aria-label="Výchozí záruka na opravu pro firmu v měsících"
+                    style={{ width: 90 }}
+                  />
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>měsíců</span>
+                </span>
+              }
+            />
+          </SettingRows>
+        </Card>
+      )}
       {section.subsection === "orders_reklamace" && (
         <Card>
           <CardHeader title="Reklamace v seznamu" description="V záložce Aktivní jsou aktivní reklamace vždy pod zakázkami v bloku „Aktivní reklamace“ – všechny najednou, bez stránkování. Tady nastavíte, jestli se reklamace mají navíc míchat mezi zakázky podle data i v záložkách Vše a Dokončené." right={hintReklamace.node} />

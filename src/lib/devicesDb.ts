@@ -44,6 +44,8 @@ export type Repair = {
   publicVisible?: boolean;
   /** Modely, u kterých se tahle oprava do ceníku neposílá. Uvnitř appky se nabízí dál. */
   publicHiddenModelIds?: string[];
+  /** Vlastní záruka na opravu v měsících (repairs.warranty_months); null = výchozí servisu, 0 = bez záruky. */
+  warrantyMonths?: number | null;
 };
 
 export type DevicesData = {
@@ -77,6 +79,7 @@ function mapRepairRow(r: {
   created_at: string;
   public_visible?: boolean;
   public_hidden_model_ids?: unknown;
+  warranty_months?: number | null;
 }): Repair {
   const modelIds = Array.isArray(r.model_ids) ? (r.model_ids as string[]) : [];
   const productIds = Array.isArray(r.product_ids) ? (r.product_ids as string[]) : undefined;
@@ -94,7 +97,23 @@ function mapRepairRow(r: {
     publicHiddenModelIds: Array.isArray(r.public_hidden_model_ids)
       ? (r.public_hidden_model_ids as string[])
       : [],
+    warrantyMonths: typeof r.warranty_months === "number" ? r.warranty_months : null,
   };
+}
+
+/**
+ * Sloupce oprav, které starší server nemusí mít (migrace 20260927150000).
+ * Čtení i zápis se při chybě „column … does not exist“ zopakují bez nich –
+ * jinak by po nasazení klienta před migrací zmizel celý ceník.
+ */
+const NOVE_SLOUPCE_OPRAV = ["warranty_months"] as const;
+const ZAKLADNI_SLOUPCE_OPRAV = "id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible, public_hidden_model_ids";
+
+function jeChybaChybejicihoSloupce(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  if (err.code === "42703" || err.code === "PGRST204") return true;
+  const m = (err.message ?? "").toLowerCase();
+  return m.includes("does not exist") || m.includes("schema cache") || m.includes("could not find the");
 }
 
 export type LoadDevicesResult = { data: DevicesData; error?: string };
@@ -110,7 +129,10 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadD
   const brandsRes = await (supabase.from("device_brands") as any).select("id, name, created_at, public_visible").eq("service_id", serviceId).order("created_at");
   const categoriesRes = await (supabase.from("device_categories") as any).select("id, brand_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
   const modelsRes = await (supabase.from("device_models") as any).select("id, category_id, name, created_at, public_visible").eq("service_id", serviceId).order("order_index").order("created_at");
-  const repairsRes = await (supabase.from("repairs") as any).select("id, name, price, estimated_time, details, costs, model_ids, product_ids, created_at, public_visible, public_hidden_model_ids").eq("service_id", serviceId).order("order_index").order("created_at");
+  const vybratOpravy = (sloupce: string) =>
+    (supabase.from("repairs") as any).select(sloupce).eq("service_id", serviceId).order("order_index").order("created_at");
+  let repairsRes = await vybratOpravy(`${ZAKLADNI_SLOUPCE_OPRAV}, ${NOVE_SLOUPCE_OPRAV.join(", ")}`);
+  if (repairsRes.error && jeChybaChybejicihoSloupce(repairsRes.error)) repairsRes = await vybratOpravy(ZAKLADNI_SLOUPCE_OPRAV);
 
   const err = brandsRes.error || categoriesRes.error || modelsRes.error || repairsRes.error;
   if (err) {
@@ -235,10 +257,19 @@ export async function saveDevicesToDb(serviceId: string | null, data: DevicesDat
       product_ids: r.productIds ?? [],
       public_visible: r.publicVisible !== false,
       public_hidden_model_ids: r.publicHiddenModelIds ?? [],
+      warranty_months: r.warrantyMonths ?? null,
       order_index: i,
       created_at: r.createdAt,
     }));
-    const { error } = await (supabase.from("repairs") as any).upsert(rows, { onConflict: "id" });
+    let { error } = await (supabase.from("repairs") as any).upsert(rows, { onConflict: "id" });
+    if (error && jeChybaChybejicihoSloupce(error)) {
+      const bezNovych = rows.map((r) => {
+        const kopie: Record<string, unknown> = { ...r };
+        for (const sl of NOVE_SLOUPCE_OPRAV) delete kopie[sl];
+        return kopie;
+      });
+      ({ error } = await (supabase.from("repairs") as any).upsert(bezNovych, { onConflict: "id" }));
+    }
     if (error) {
       console.warn("[devicesDb] Upsert repairs error:", (error as { message?: string }).message ?? error);
       return { error: (error as { message?: string }).message ?? "Chyba ukládání oprav" };
