@@ -64,10 +64,14 @@ serve(async (req) => {
     const { error: updateErr } = await svc.auth.admin.updateUserById(userId, { password: newPassword });
     /* Po změně hesla se odhlásí i ostatní zařízení. Bez toho by ukradená
        relace přežila změnu hesla ještě týden (`jwt_expiry` je 604800 s),
-       takže by změna hesla útočníka nevyhodila. */
+       takže by změna hesla útočníka nevyhodila.
+       Pozor: auth.admin.signOut() bere JWT relace, ne id uživatele – dřívější
+       volání signOut(userId, "global") vždycky selhalo a nikoho neodhlásilo
+       (audit oprávnění, 4. kolo). Relace proto maže databázová funkce
+       odhlas_vsechna_zarizeni (jen service_role, migrace 20260927100000). */
     if (!updateErr) {
-      const { error: odhlaseniErr } = await svc.auth.admin.signOut(userId, "global");
-      if (odhlaseniErr) console.error("[password-reset-confirm] signOut failed", odhlaseniErr);
+      const { error: odhlaseniErr } = await svc.rpc("odhlas_vsechna_zarizeni", { p_user_id: userId });
+      if (odhlaseniErr) console.error("[password-reset-confirm] odhlášení zařízení selhalo", odhlaseniErr);
     }
     if (updateErr) {
       console.error("[password-reset-confirm] updateUserById failed", updateErr);
