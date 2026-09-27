@@ -34,6 +34,8 @@ export type TicketCardData = {
   umisteni?: string | null;
   /** Kolik dní leží mimo pobočku bez změny, když přesáhla nastavený limit. */
   umisteniVaruje?: number | null;
+  /** Číslo faktury, která zakázku kryje (i souhrnná); null = nevyfakturováno. */
+  faktura?: string | null;
 };
 
 export type TicketCardActions = {

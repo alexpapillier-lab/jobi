@@ -11,7 +11,6 @@ import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StornoDialog } from "../components/orders/StornoDialog";
 import { supabase } from "../lib/supabaseClient";
-import { typedSupabase } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
 import { usePodepsaneFotky } from "../hooks/usePodepsaneFotky";
@@ -95,6 +94,8 @@ import { useZapisyZakazky } from "./Orders/hooks/useZapisyZakazky";
 import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
 import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
 import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
+import { useFakturyZakazek } from "./Orders/hooks/useFakturyZakazek";
+import { stitekFaktury } from "../lib/fakturyZakazek";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
 import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
 import { DetailZakazky } from "./Orders/DetailZakazky";
@@ -486,42 +487,15 @@ export default function Orders({
     onOpenClaimIntentConsumed();
   }, [openClaimIntent, cloudClaims, onOpenClaimIntentConsumed]);
 
-  // Map ticket_id -> invoice id for "Přejít na fakturu" when invoice already exists
-  const [invoiceIdByTicketId, setInvoiceIdByTicketId] = useState<Record<string, string>>({});
-  useEffect(() => {
-    if (!activeServiceId || (!onCreateInvoice && !onOpenInvoice)) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data } = await typedSupabase
-          .from("invoices")
-          .select("id, ticket_id, kind")
-          .eq("service_id", activeServiceId)
-          .not("ticket_id", "is", null)
-          .is("deleted_at", null)
-          // Stornovaná faktura zakázku neblokuje – jinak by po stornu šlo
-          // jen „Přejít na fakturu“ a novou by z zakázky nebylo jak vystavit.
-          .neq("status", "cancelled")
-          // Dobropis není faktura zakázky; záloha (proforma) se ukáže jen
-          // dokud k zakázce není běžná faktura – ta má přednost.
-          .neq("kind", "credit_note");
-        if (cancelled || !data) return;
-        const map: Record<string, string> = {};
-        const druh: Record<string, string> = {};
-        for (const row of data as Array<{ id: string; ticket_id: string | null; kind: string | null }>) {
-          if (!row.ticket_id) continue;
-          const uz = druh[row.ticket_id];
-          if (uz === "invoice" && row.kind !== "invoice") continue;
-          map[row.ticket_id] = row.id;
-          druh[row.ticket_id] = row.kind ?? "invoice";
-        }
-        setInvoiceIdByTicketId(map);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeServiceId, onCreateInvoice, onOpenInvoice]);
+  /* Zakázka → faktura pro „Přejít na fakturu“ a štítek v seznamu. Čte se
+     z invoice_tickets, takže platí i pro souhrnnou fakturu za víc zakázek;
+     záloha dál přes invoices.ticket_id (viz lib/fakturyZakazek). */
+  const fakturaByTicketId = useFakturyZakazek(activeServiceId, !!(onCreateInvoice || onOpenInvoice), !closeDetailWhen);
+  const invoiceIdByTicketId = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const [ticketId, f] of Object.entries(fakturaByTicketId)) m[ticketId] = f.id;
+    return m;
+  }, [fakturaByTicketId]);
 
   const {
     devicesData,
@@ -1648,7 +1622,9 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni]);
+    // Číslo faktury, která zakázku kryje (i souhrnná); záloha štítek nemá.
+    faktura: stitekFaktury(fakturaByTicketId[t.id]),
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

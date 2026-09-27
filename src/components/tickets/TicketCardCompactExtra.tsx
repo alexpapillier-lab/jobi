@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData } from "./types";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketPobocka, TicketTechnik, TicketUmisteni } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketRepair, TicketPobocka, TicketTechnik, TicketUmisteni, TicketFaktura } from "./fields";
 import { CheckIcon } from "../icons";
 import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
@@ -58,7 +58,7 @@ export function TicketCardCompactExtra({ ticket: t, meta, onClick, statusPicker,
         <TicketDevice label={t.deviceLabel} dense />
         <TicketCustomer name={t.customerName} />
         <TicketTechnik name={t.technik} />
-        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
+        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} /><TicketFaktura cislo={t.faktura} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
           <TicketRepair text={t.requestedRepair || t.issueShort} />
         </div>

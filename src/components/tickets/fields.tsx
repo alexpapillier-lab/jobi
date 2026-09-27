@@ -153,6 +153,19 @@ export function TicketPobocka({ label }: { label?: string | null }) {
   );
 }
 
+/** Zakázka je vyfakturovaná – číslo dokladu (i souhrnné faktury za víc zakázek). */
+export function TicketFaktura({ cislo }: { cislo?: string | null }) {
+  if (!cislo) return null;
+  return (
+    <span
+      title={`Vyfakturováno v ${cislo}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--success-text)", background: "color-mix(in srgb, currentColor 10%, transparent)", border: "1px solid color-mix(in srgb, currentColor 35%, transparent)", borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {cislo}
+    </span>
+  );
+}
+
 /**
  * Kde zakázka fyzicky je, když ne na své pobočce (zásilky mezi pobočkami).
  * `varovani` = leží tam moc dlouho bez změny (Nastavení → Přesuny mezi pobočkami).

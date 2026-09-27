@@ -1,6 +1,6 @@
 import React from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketDate, TicketDevice, TicketCustomer, TicketRepair, MetaSeparator, TicketPobocka, TicketTechnik, TicketUmisteni } from "./fields";
+import { TicketCode, TicketDate, TicketDevice, TicketCustomer, TicketRepair, MetaSeparator, TicketPobocka, TicketTechnik, TicketUmisteni, TicketFaktura } from "./fields";
 import { promenneOvladani, promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
 type Props = {
@@ -77,7 +77,7 @@ export function TicketCardList({ ticket: t, meta, onClick, statusPicker, printBu
         <TicketDevice label={t.deviceLabel} />
         <TicketCustomer name={t.customerName} />
         <TicketTechnik name={t.technik} />
-        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
+        <TicketPobocka label={t.pobocka} /><TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} /><TicketFaktura cislo={t.faktura} />
 
         {/* Volný střed: oprava se roztáhne podle dostupného místa */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", overflow: "hidden" }}>
