@@ -125,7 +125,7 @@ describe("QR jde naskenovat", () => {
  */
 describe("QR se nikde netahá z internetu", () => {
   it("Zakázky kreslí QR pro focení z telefonu lokálně", () => {
-    const zdroj = readFileSync(join(KOREN, "src/pages/Orders.tsx"), "utf8");
+    const zdroj = readFileSync(join(KOREN, "src/pages/Orders/CaptureQrModal.tsx"), "utf8");
     expect(zdroj, "QR z api.qrserver.com je zpátky").not.toMatch(/src=\{`https:\/\/api\.qrserver\.com/);
     expect(zdroj, "chybí lokální generování QR").toMatch(/qrDataUrl\(item\.url/);
   });
