@@ -54,7 +54,7 @@ test("ze zakázky jde vystavit faktura", async ({ page }) => {
   // Po vystavení má faktura číslo z řady. Hlášení mizí po pár vteřinách a na
   // pomalém CI ho test nestihl – číslo se proto čte z detailu nebo seznamu,
   // kam se po vystavení přejde.
-  const cislo = page.getByText(/FV\d{4}-\d{4}/).first();
+  const cislo = page.locator('[data-tour="page-invoices"]').getByText(/FV\d{4}-\d{4}/).first();
   await expect(cislo).toBeVisible({ timeout: 30_000 });
   const cisloText = ((await cislo.textContent()) ?? "").match(/FV\d{4}-\d{4}/)?.[0] ?? "";
   expect(cisloText).toMatch(/^FV\d{4}-\d{4}$/);
@@ -68,7 +68,8 @@ test("zaplacení se ptá na způsob platby a faktura je v denní uzávěrce", as
   // Poslední vystavená faktura (z předchozího testu) – otevřít detail a označit zaplacenou hotově.
   // Filtr má v názvu i počet („Vystavené 22“).
   await page.getByRole("button", { name: /^Vystavené/ }).click();
-  const prvni = page.getByText(/^FV\d{4}-\d{4}$/).first();
+  // Jen na stránce Faktury – karty zakázek za ní nesou štítek „Vyfakturováno v FV…“.
+  const prvni = page.locator('[data-tour="page-invoices"]').getByText(/^FV\d{4}-\d{4}$/).first();
   await expect(prvni).toBeVisible({ timeout: 20_000 });
   const cislo = (await prvni.textContent())!.trim();
   await prvni.click();
@@ -95,7 +96,8 @@ test("faktura je po přenačtení pořád v databázi", async ({ page }) => {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "invoices" } })));
   await expect(page.getByRole("button", { name: "Uzávěrka" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /^Vystavené/ }).click();
-  const prvni = page.getByText(/^FV\d{4}-\d{4}$/).first();
+  // Jen na stránce Faktury – karty zakázek za ní nesou štítek „Vyfakturováno v FV…“.
+  const prvni = page.locator('[data-tour="page-invoices"]').getByText(/^FV\d{4}-\d{4}$/).first();
   await expect(prvni).toBeVisible({ timeout: 20_000 });
   const cislo = (await prvni.textContent())!.trim();
 

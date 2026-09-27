@@ -275,7 +275,7 @@ test("hláška o prázdném období nesvítí nad plnými statistikami", async (
   test.setTimeout(180_000);
   await prihlasSe(page);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "statistics" } })));
-  await expect(page.getByText("Celkem zakázek").first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("Přijato zakázek").first()).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".stats-skeleton")).toHaveCount(0, { timeout: 60_000 });
 
   const prazdno = page.getByText(/Za vybrané období tu zatím nic není/);

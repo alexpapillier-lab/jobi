@@ -39,7 +39,7 @@ test("nová zakázka se objeví v počtu zakázek za období", async ({ page }) 
   test.setTimeout(180_000);
   await prihlasSe(page);
   await naStatistiky(page);
-  const pred = await dlazdice(page, "Celkem zakázek");
+  const pred = await dlazdice(page, "Přijato zakázek");
   expect(pred).toBeGreaterThanOrEqual(0);
 
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "orders" } })));
@@ -50,14 +50,14 @@ test("nová zakázka se objeví v počtu zakázek za období", async ({ page }) 
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
   await naStatistiky(page);
-  await expect.poll(() => dlazdice(page, "Celkem zakázek"), { timeout: 60_000 }).toBe(pred + 1);
+  await expect.poll(() => dlazdice(page, "Přijato zakázek"), { timeout: 60_000 }).toBe(pred + 1);
 });
 
 test("statistiky se dají zúžit na období a čísla se přepočítají", async ({ page }) => {
   test.setTimeout(150_000);
   await prihlasSe(page);
   await naStatistiky(page);
-  const zaObdobi = await dlazdice(page, "Celkem zakázek");
+  const zaObdobi = await dlazdice(page, "Přijato zakázek");
   // Které období je zvolené, se pozná podle stisknutého tlačítka.
   const obdobi = page.getByRole("group", { name: "Časové období" });
   const vychozi = (await obdobi.locator('button[aria-pressed="true"]').first().innerText()).trim();
@@ -68,9 +68,9 @@ test("statistiky se dají zúžit na období a čísla se přepočítají", asyn
   await page.getByRole("textbox", { name: "Od", exact: true }).fill("2020-01-01");
   await page.getByRole("textbox", { name: "Do", exact: true }).fill("2020-01-31");
   await pockejNaDopocitani(page);
-  await expect.poll(() => dlazdice(page, "Celkem zakázek"), { timeout: 60_000 }).toBe(0);
+  await expect.poll(() => dlazdice(page, "Přijato zakázek"), { timeout: 60_000 }).toBe(0);
 
   await obdobi.getByRole("button", { name: vychozi, exact: true }).click();
   await pockejNaDopocitani(page);
-  await expect.poll(() => dlazdice(page, "Celkem zakázek"), { timeout: 60_000 }).toBe(zaObdobi);
+  await expect.poll(() => dlazdice(page, "Přijato zakázek"), { timeout: 60_000 }).toBe(zaObdobi);
 });

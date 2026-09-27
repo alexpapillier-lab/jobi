@@ -120,5 +120,6 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
   await vidZakazku(page, kod).first().click();
-  await expect(page.getByText(text).first()).toBeVisible({ timeout: 30_000 });
+  // Diagnostika je v detailu zakázky textové pole – getByText hodnotu pole nevidí.
+  await expect(page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...").first()).toHaveValue(text, { timeout: 30_000 });
 });

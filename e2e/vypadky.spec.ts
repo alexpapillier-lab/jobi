@@ -244,7 +244,7 @@ test("cenová nabídka odeslaná při výpadku se uloží sama", async ({ page }
   const nazev = `Výměna konektoru ${Date.now().toString(36).slice(-4)}`;
   await page.getByPlaceholder("Vlastní položka").first().fill(nazev);
   await page.getByPlaceholder("Kč", { exact: true }).first().fill("1490");
-  await page.getByRole("button", { name: "Přidat", exact: true }).first().click();
+  await page.locator("#detail-portal").getByRole("button", { name: "Přidat", exact: true }).first().click();
   await expect(page.getByLabel(`Cena položky ${nazev}`)).toBeVisible({ timeout: 20_000 });
 
   /* Rozpis nabídky žije jen ve stavu karty. Bez fronty stačilo zavřít detail
