@@ -455,11 +455,12 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
               <Segmented
                 ariaLabel="Pohled"
                 size="sm"
+                dataTour="calendar-pohled"
                 value={mainView}
                 onChange={setMainView}
                 options={[
-                  { value: "agenda", label: "Agenda" },
-                  { value: "timeline", label: "Časová osa" },
+                  { value: "agenda", label: "Agenda", dataTour: "calendar-pohled-agenda" },
+                  { value: "timeline", label: "Časová osa", dataTour: "calendar-pohled-osa" },
                 ]}
               />
 
@@ -484,6 +485,7 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
                   </span>
                   <Segmented
                     ariaLabel="Měřítko časové osy"
+                    dataTour="calendar-meritko"
                     size="sm"
                     value={timelineView}
                     onChange={setTimelineView}
@@ -498,6 +500,7 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
 
               <span ref={filterAnchorRef} style={{ display: "inline-flex" }}>
               <Button
+                data-tour="calendar-filtr"
                 size="sm"
                 variant={statusFilterOpen ? "primary" : "soft"}
                 aria-expanded={statusFilterOpen}
@@ -561,6 +564,7 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
             <div
               role="dialog"
               aria-label="Filtr statusů"
+              data-tour="calendar-filtr-okno"
               style={{
                 position: "fixed",
                 top: filterDropdownRect?.top ?? 0,

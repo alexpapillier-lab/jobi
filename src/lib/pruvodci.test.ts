@@ -20,7 +20,7 @@ function kotvyVKodu(): { literaly: Set<string>; predpony: string[] } {
         for (const m of s.matchAll(/dataTour(?:="|: ")([^"]+)"/g)) literaly.add(m[1]);
         for (const m of s.matchAll(/data-tour=\{`([^`$]+)\$\{/g)) predpony.push(m[1]);
         // Podmíněná kotva: data-tour={i === 0 ? "zasilky-prvni" : undefined}.
-        for (const m of s.matchAll(/data-tour=\{([^}`]*)\}/g)) for (const q of m[1].matchAll(/"([^"]+)"/g)) literaly.add(q[1]);
+        for (const m of s.matchAll(/(?:data-tour|dataTour)=\{([^}`]*)\}/g)) for (const q of m[1].matchAll(/"([^"]+)"/g)) literaly.add(q[1]);
       }
     }
   };

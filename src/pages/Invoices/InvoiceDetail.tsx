@@ -159,7 +159,7 @@ export function InvoiceDetail({
           </div>
 
           {/* Akce */}
-          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", flexWrap: "wrap", alignItems: "center" }}>
+          <div data-tour="invoices-detail-akce" style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", flexWrap: "wrap", alignItems: "center" }}>
             {isDraft && (
               <Button variant="primary" icon={<CheckIcon size={16} />} onClick={onIssue}>
                 Vystavit

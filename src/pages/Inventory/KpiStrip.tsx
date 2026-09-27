@@ -35,6 +35,7 @@ export function KpiStrip({
 
   return (
     <div
+      data-tour="inventory-kpi"
       style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",

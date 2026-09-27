@@ -282,7 +282,7 @@ export function SouhrnnaFakturaDialog({
 
         <div style={{ flex: 1, overflow: "auto", padding: "var(--space-4) var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {/* Zákazník */}
-          <div>
+          <div data-tour="souhrnna-zakaznik">
             <Label>Zákazník</Label>
             <div style={{ marginTop: 4 }}>
               {zakaznik ? (
@@ -322,7 +322,7 @@ export function SouhrnnaFakturaDialog({
           </div>
 
           {/* Období */}
-          <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div data-tour="souhrnna-obdobi" style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
               <Label>Období vydání</Label>
               <div style={{ marginTop: 4 }}>
@@ -375,7 +375,7 @@ export function SouhrnnaFakturaDialog({
           ) : vyber.kandidati.length === 0 && vyber.vyfakturovane.length === 0 ? (
             <Prazdne text={`Za ${popisObdobi(obdobi)} nemá zákazník žádnou vydanou zakázku.`} />
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div data-tour="souhrnna-zakazky" style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)", minWidth: 560 }}>
                 <thead>
                   <tr style={{ borderBottom: "2px solid var(--border)" }}>
@@ -435,7 +435,7 @@ export function SouhrnnaFakturaDialog({
             <Button variant="ghost" onClick={onClose}>
               Zrušit
             </Button>
-            <Button variant="primary" onClick={vytvorit} disabled={zaskrtnute.length === 0 || nacitam || !!chyba}>
+            <Button data-tour="souhrnna-vytvorit" variant="primary" onClick={vytvorit} disabled={zaskrtnute.length === 0 || nacitam || !!chyba}>
               Vytvořit fakturu
             </Button>
           </div>

@@ -175,6 +175,7 @@ export function RepairsPane(p: RepairsPaneProps) {
           )}
           <span title={p.canAdd ? undefined : "Nejdřív vyberte model nebo kategorii ve stromu vlevo."} style={{ display: "inline-flex" }}>
             <Button
+              data-tour="devices-pridat-opravu"
               variant="primary"
               size="sm"
               icon={<PlusIcon size={14} />}
@@ -187,7 +188,7 @@ export function RepairsPane(p: RepairsPaneProps) {
         </div>
 
         {p.adding && (
-          <div style={{ border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)", padding: "var(--space-4)", background: "var(--panel-2)" }}>
+          <div data-tour="devices-nova-oprava" style={{ border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)", padding: "var(--space-4)", background: "var(--panel-2)" }}>
             <div style={{ fontWeight: 800, fontSize: "var(--text-base)", color: "var(--text)", marginBottom: "var(--space-3)" }}>Nová oprava</div>
             <RepairForm
               draft={p.newRepair}
@@ -204,7 +205,7 @@ export function RepairsPane(p: RepairsPaneProps) {
       </Card>
 
       {/* Seznam oprav – řádky. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+      <div data-tour="devices-opravy" style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
         {p.repairs.map((r) => {
           const isEditing = p.editingId === r.id;
           const repairModels = (r.modelIds ?? []).map((id) => modelsById.get(id)).filter((m): m is NonNullable<typeof m> => !!m);
@@ -586,7 +587,7 @@ export function RepairForm({
         <Button variant="soft" onClick={onCancel}>
           Zrušit
         </Button>
-        <Button variant="primary" onClick={onSubmit} disabled={!canSubmit}>
+        <Button data-tour={compact ? undefined : "devices-ulozit-opravu"} variant="primary" onClick={onSubmit} disabled={!canSubmit}>
           {submitLabel}
         </Button>
       </div>

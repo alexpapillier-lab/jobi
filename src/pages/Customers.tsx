@@ -550,7 +550,7 @@ export default function Customers({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)" }}>Zákazníci</div>
         {smiImportovat && (
-          <Button variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
+          <Button data-tour="customers-import" variant="soft" size="sm" onClick={() => setImportOpen(true)} title="Nahrát zákazníky z CSV (export z jiného systému nebo Excelu)">
             Import z CSV
           </Button>
         )}

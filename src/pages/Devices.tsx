@@ -1456,7 +1456,7 @@ DETALY: Výměna opotřebované baterie
         title="Zařízení a opravy"
         subtitle={subtitle}
         actions={
-          <Button variant="primary" onClick={() => setShowImport(true)}>
+          <Button data-tour="devices-import" variant="primary" onClick={() => setShowImport(true)}>
             Import
           </Button>
         }

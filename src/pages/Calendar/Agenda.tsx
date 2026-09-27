@@ -138,6 +138,8 @@ export function Agenda({ items, now, isNarrow, onOpen, onReschedule }: Props) {
   // Když má každá zakázka termín prázdný, zbyde jen sbalená skupina „Bez
   // termínu“ – bez nápovědy by stránka vypadala rozbitě.
   const hasDated = groups.some((g) => !g.collapsible);
+  // První viditelná zakázka – na její „Změnit termín“ ukazuje průvodce Kalendáře.
+  const prvniViditelna = groups.find((g) => !(g.collapsible && !expandedNone))?.items[0] ?? null;
 
   const gridColumns = isNarrow
     ? "64px minmax(0, 1fr) auto"
@@ -255,6 +257,7 @@ export function Agenda({ items, now, isNarrow, onOpen, onReschedule }: Props) {
                 const isRescheduling = reschedule?.item.id === item.id && reschedule.item.type === item.type;
                 const rescheduleBtn = (
                   <Button
+                    data-tour={item === prvniViditelna ? "calendar-zmenit-termin" : undefined}
                     size="sm"
                     variant={isRescheduling ? "primary" : "soft"}
                     iconOnly={isNarrow}

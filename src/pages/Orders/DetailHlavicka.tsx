@@ -427,7 +427,7 @@ export function DetailHlavicka({
                 </Button>
               ) : onCreateInvoice ? (
                 <span id="detail-vystavit-fakturu" style={{ display: "contents" }}>
-                <Button variant="soft"
+                <Button data-tour="detail-vystavit-fakturu" variant="soft"
                   key="create-invoice"
                   onClick={() => {
                     const t = detailedTicket;

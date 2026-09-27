@@ -48,7 +48,10 @@ function najdiViditelny(selector: string): HTMLElement | null {
 
 const kotvaSel = (kotva: string) => `[data-tour="${kotva}"]`;
 
-/** Je klik na prvek zbytečný? Zapnutý přepínač nebo už viditelný výsledek. */
+/**
+ * Je klik na prvek zbytečný? U přepínače (záložka, volba) rozhoduje, jestli
+ * je zapnutý; u ostatního, jestli už je vidět, co má klik ukázat.
+ */
 function klikUzHotovy(el: HTMLElement, vysledek: string | undefined): boolean {
   const pressed = el.getAttribute("aria-pressed") ?? el.getAttribute("aria-selected");
   if (pressed != null) return pressed === "true";
@@ -75,11 +78,13 @@ function useKlikyKroku(active: boolean, step: TourStep | null) {
       for (let i = 0; i < kliky.length; i++) {
         const sel = kotvaSel(kliky[i]);
         const vysledek = i + 1 < kliky.length ? kotvaSel(kliky[i + 1]) : cil;
-        let el: HTMLElement | null = null;
-        for (let pokus = 0; pokus < 25 && !zruseno; pokus++) {
-          el = najdiViditelny(sel);
-          if (el) break;
+        let el: HTMLElement | null = najdiViditelny(sel);
+        // Tlačítko není vidět, ale jeho výsledek ano (dialog už je otevřený
+        // a tlačítko pod ním schované): není na co čekat.
+        if (!el && vysledek && najdiViditelny(vysledek)) continue;
+        for (let pokus = 0; !el && pokus < 25 && !zruseno; pokus++) {
           await cekej(200);
+          el = najdiViditelny(sel);
         }
         if (zruseno || !el) return;
         if (!klikUzHotovy(el, vysledek)) {
@@ -451,7 +456,10 @@ export function AppTourOverlay({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 9998,
+        // Nad rozbalovacími okny stránek (9998 pozadí, 9999 okno – termín
+        // v Kalendáři, filtr statusů): jejich pozadí by jinak spolklo klik
+        // na Další. Okno samo je v DOM později, takže zůstane nad průvodcem.
+        zIndex: 9999,
         pointerEvents: "none",
         display: "flex",
         alignItems: kartaNahore ? "flex-start" : "flex-end",

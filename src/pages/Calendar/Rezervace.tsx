@@ -119,7 +119,7 @@ export function RezervacePanel({
   );
 
   return (
-    <section aria-label="Rezervace z webu" style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", background: "var(--panel-2)" }}>
+    <section data-tour="calendar-rezervace" aria-label="Rezervace z webu" style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", background: "var(--panel-2)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <div style={{ fontWeight: 900, fontSize: 14 }}>
           Rezervace z webu{otevrene.length > 0 ? ` · ${otevrene.length} k vyřízení` : ""}

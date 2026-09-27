@@ -76,12 +76,13 @@ export function CustomerList({ customers, selectedCustomerId, onSelect, loading,
       )}
 
       {!loading && !error && (
-        <div style={{ display: "grid" }}>
-          {customers.map((c) => {
+        <div data-tour="customers-seznam" style={{ display: "grid" }}>
+          {customers.map((c, i) => {
             const active = c.id === selectedCustomerId;
             return (
               <button
                 key={c.id}
+                data-tour={i === 0 ? "customers-prvni" : undefined}
                 onClick={() => onSelect(c.id)}
                 style={{
                   textAlign: "left",

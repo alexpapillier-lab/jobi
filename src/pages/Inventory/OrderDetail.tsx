@@ -506,7 +506,7 @@ export function OrderDetail({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: "var(--space-3)" }}>
+        <div data-tour="objednavka-akce" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: "var(--space-3)" }}>
           {navrh && (
             <Button variant="danger" onClick={() => setPotvrditSmazani(true)} style={{ marginRight: "auto" }}>
               Smazat návrh

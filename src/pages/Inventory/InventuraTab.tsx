@@ -688,6 +688,7 @@ export function InventuraTab({
               )}
               {otevrena && (
                 <Button
+                  data-tour="inventura-uzavrit"
                   variant="primary"
                   icon={<CheckIcon size={14} />}
                   disabled={!canClose || !nactenoPolozky}
@@ -755,6 +756,7 @@ export function InventuraTab({
                   value={kod}
                   onChange={(e) => setKod(e.target.value)}
                   placeholder="Čtečka: načtěte kód (+1 ks)"
+                  data-tour="inventura-ctecka"
                   aria-label="Kód ze čtečky"
                   title="Kód produktu (SKU) z čtečky nebo ručně a Enter. Každé načtení přičte jeden kus; díl, který v inventuře není, se přidá."
                   autoComplete="off"
@@ -797,7 +799,7 @@ export function InventuraTab({
           ) : zobrazene.length === 0 ? (
             <div style={{ padding: "var(--space-5)", textAlign: "center", color: "var(--muted)" }}>Nic neodpovídá hledání ani filtru.</div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div data-tour="inventura-polozky" style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                 <thead>
                   <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: "var(--text-xs)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
@@ -1042,8 +1044,8 @@ export function InventuraTab({
         <div className="ui-card" style={{ display: "flex", flexDirection: "column" }}>
           <SectionHeading icon={<BoxIcon size={16} />}>Rozdělané inventury</SectionHeading>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            {otevrene.map((i) => (
-              <button key={i.id} type="button" onClick={() => otevrit(i.id)} style={{ ...radekSeznamu, cursor: "pointer" }}>
+            {otevrene.map((i, poradi) => (
+              <button key={i.id} type="button" data-tour={poradi === 0 ? "inventura-prvni-rozdelana" : undefined} onClick={() => otevrit(i.id)} style={{ ...radekSeznamu, cursor: "pointer" }}>
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{i.cislo}</span>
@@ -1061,7 +1063,7 @@ export function InventuraTab({
         </div>
       )}
 
-      <div className="ui-card" style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      <div data-tour="inventura-zahajit" className="ui-card" style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         <SectionHeading icon={<PlusIcon size={16} />}>Zahájit inventuru</SectionHeading>
         <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)", maxWidth: 720 }}>
           Inventura se dělá po skladech. Zahájení zmrazí seznam produktů s evidovaným stavem; pak postupně zapisujete, kolik kusů
@@ -1116,7 +1118,7 @@ export function InventuraTab({
         )}
       </div>
 
-      <div className="ui-card" style={{ display: "flex", flexDirection: "column" }}>
+      <div data-tour="inventura-historie" className="ui-card" style={{ display: "flex", flexDirection: "column" }}>
         <SectionHeading icon={<HistoryIcon size={16} />}>Historie inventur</SectionHeading>
         {!nacteno ? (
           <div style={{ padding: "var(--space-4)", color: "var(--muted)", textAlign: "center" }}>Načítám…</div>

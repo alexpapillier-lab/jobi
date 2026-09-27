@@ -721,7 +721,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     : "Porovnání je dostupné pro Dnes, Týden, Měsíc, Kvartál a Rok.";
 
   const statusSection = (
-    <Card style={{ padding: "var(--pad-24)" }}>
+    <Card data-tour="statistics-stavy" style={{ padding: "var(--pad-24)" }}>
       <SectionHeading icon={<StatusIcon size={18} />}>Zakázky podle stavu</SectionHeading>
       <StatusBars
         items={statusItems}
@@ -922,12 +922,13 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       <Toolbar>
         <Segmented<ViewMode>
           ariaLabel="Režim zobrazení statistik"
+          dataTour="statistics-view"
           size="sm"
           value={viewMode}
           onChange={setViewMode}
           options={[
-            { value: "cards", label: "Karty" },
-            { value: "table", label: "Tabulka" },
+            { value: "cards", label: "Karty", dataTour: "statistics-view-karty" },
+            { value: "table", label: "Tabulka", dataTour: "statistics-view-tabulka" },
             { value: "charts", label: "Grafy", dataTour: "statistics-view-charts" },
           ]}
         />
@@ -988,7 +989,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           </span>
         )}
 
-        <span title={compareTitle} style={{ display: "inline-flex" }}>
+        <span data-tour="statistics-porovnat" title={compareTitle} style={{ display: "inline-flex" }}>
           <Selectable
             selected={compareActive}
             disabled={!compareAvailable}
@@ -1093,7 +1094,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         <>
           {/* Klíčová čísla */}
           {viewMode !== "charts" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
+            <div data-tour="statistics-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "var(--space-3)" }}>
               <KpiTile
                 title="Přijato zakázek"
                 value={celeCislo(kpis.totalTickets)}
@@ -1253,6 +1254,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
                   </div>
                 </div>
                 <Button
+                  data-tour="statistics-export"
                   variant="soft"
                   size="sm"
                   icon={<DownloadIcon size={14} />}
