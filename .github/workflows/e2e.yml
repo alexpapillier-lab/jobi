@@ -97,7 +97,10 @@ jobs:
           # prázdný a jede se celá sada přes npm skript (respektuje testIgnore
           # v playwright.config.ts).
           if [ -n "$SPEC" ]; then
-            npx playwright test "$SPEC"
+            # Bez uvozovek schválně: vstup může nést víc souborů oddělených
+            # mezerou; v uvozovkách by byl jeden neexistující název („No tests found“).
+            # shellcheck disable=SC2086
+            npx playwright test $SPEC
           else
             npm run test:e2e
           fi
