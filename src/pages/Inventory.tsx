@@ -2425,7 +2425,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             <Button variant="primary" icon={<BoxIcon size={14} />} data-tour="inventory-restock" onClick={() => setRestockOpen(true)}>
               Naskladnit
             </Button>
-            <Button variant="soft" icon={<PlusIcon size={14} />} onClick={() => setNewProductOpen(true)}>
+            <Button variant="soft" icon={<PlusIcon size={14} />} data-tour="inventory-novy" onClick={() => setNewProductOpen(true)}>
               Nový produkt
             </Button>
             <Button variant="soft" icon={<DownloadIcon size={14} />} data-tour="inventory-import" onClick={() => setShowImport(true)}>
@@ -2441,10 +2441,11 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         value={zalozka}
         onChange={setZalozka}
         options={[
-          { value: "products", label: <>Produkty<Pocet n={data.products.length} /></> },
+          { value: "products", label: <>Produkty<Pocet n={data.products.length} /></>, dataTour: "inventory-zalozka-produkty" },
           {
             value: "orders",
             label: <>Objednávky{aktivnichObjednavek > 0 && <Pocet n={aktivnichObjednavek} />}</>,
+            dataTour: "inventory-zalozka-objednavky",
             title: poNedostupne ? HLASKA_NEDOSTUPNE : "Návrhy a objednávky dílů u dodavatelů",
           },
           { value: "suppliers", label: <>Dodavatelé{suppliers.length > 0 && <Pocet n={suppliers.length} />}</> },
@@ -3508,7 +3509,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
         }
         width={560}
       >
-        <div style={{ display: "grid", gap: 8 }}>
+        <div data-tour="inventory-novy-formular" style={{ display: "grid", gap: 8 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
             <input
               type="checkbox"
@@ -3658,6 +3659,7 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
               Zrušit
             </Button>
             <Button
+              data-tour="inventory-pridat-produkt"
               variant="primary"
               disabled={!newProduct.name.trim()}
               title={!newProduct.name.trim() ? "Zadejte název produktu" : "Přidat produkt"}

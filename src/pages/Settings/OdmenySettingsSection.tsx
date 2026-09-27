@@ -180,7 +180,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+      <div data-tour="odmeny-nove-pravidlo" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
         <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
           Název (nepovinné)
           <Input value={nove.nazev} onChange={(e) => setNove((n) => ({ ...n, nazev: e.target.value }))} placeholder="Servisní čištění" style={{ width: 170 }} />
@@ -206,15 +206,15 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
             <option value="technik">Přidělený technik</option>
           </select>
         </label>
-        <Button variant="primary" size="sm" onClick={pridat} disabled={!nacteno || chybaNacteni}>Přidat pravidlo</Button>
+        <Button data-tour="odmeny-pridat-pravidlo" variant="primary" size="sm" onClick={pridat} disabled={!nacteno || chybaNacteni}>Přidat pravidlo</Button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+      <div data-tour="odmeny-vyzkouset" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <Input value={zkouska} onChange={(e) => setZkouska(e.target.value)} placeholder="Vyzkoušet název opravy, např. Servisní čištění + výměna filtru" style={{ width: 360, maxWidth: "100%" }} />
         {zkouskaVysledek && <span style={{ fontSize: 13, color: "var(--muted)" }}>{zkouskaVysledek}</span>}
       </div>
 
-      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>
+      <label data-tour="odmeny-v-navigaci" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>
         <input type="checkbox" checked={nastaveni.zobrazit_v_navigaci} onChange={(e) => void ulozit({ ...nastaveni, zobrazit_v_navigaci: e.target.checked })} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />
         <span>
           <b>Zobrazit Odměny v navigaci</b>

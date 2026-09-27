@@ -27,10 +27,13 @@ export function PrintMenu({
   rows,
   label = "Tisk",
   size = "md",
+  dataTour,
 }: {
   rows: PrintMenuRow[];
   label?: ReactNode;
   size?: "sm" | "md";
+  /** Kotva pro průvodce aplikací (AppTourOverlay). */
+  dataTour?: string;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLSpanElement>(null);
@@ -211,7 +214,7 @@ export function PrintMenu({
 
   return (
     <>
-      <span ref={btnRef} style={{ display: "inline-flex", flex: "0 0 auto" }}>
+      <span ref={btnRef} data-tour={dataTour} style={{ display: "inline-flex", flex: "0 0 auto" }}>
       <Button
         variant="soft"
         size={size}

@@ -19,6 +19,8 @@ function kotvyVKodu(): { literaly: Set<string>; predpony: string[] } {
         // Komponenty (Segmented) dostávají kotvu jako prop dataTour="…" a vykreslí ji jako data-tour.
         for (const m of s.matchAll(/dataTour(?:="|: ")([^"]+)"/g)) literaly.add(m[1]);
         for (const m of s.matchAll(/data-tour=\{`([^`$]+)\$\{/g)) predpony.push(m[1]);
+        // Podmíněná kotva: data-tour={i === 0 ? "zasilky-prvni" : undefined}.
+        for (const m of s.matchAll(/(?:data-tour|dataTour)=\{([^}`]*)\}/g)) for (const q of m[1].matchAll(/"([^"]+)"/g)) literaly.add(q[1]);
       }
     }
   };
@@ -56,6 +58,33 @@ describe("kotvy průvodců existují v kódu", () => {
       const p = PRUVODCI.find((x) => x.id === k.pruvodce.id);
       expect(p, `krok „${k.id}“ odkazuje na neznámého průvodce ${k.pruvodce.id}`).toBeTruthy();
       expect(k.pruvodce.krok ?? 0).toBeLessThan(p!.kroky.length);
+      // Krok, na který „Ukázat, jak“ vede, je v té podsekci Nastavení, kam míří tlačítko kroku.
+      const cil = p!.kroky[k.pruvodce.krok ?? 0];
+      if (k.cil) expect(cil.settingsSection?.subsection, `krok „${k.id}“ vede na „${cil.title}“`).toBe(k.cil);
+    }
+  });
+
+  /* Průvodce má vést za ruku: každý krok svítí na konkrétní tlačítko, pole
+     nebo záložku. Krok, který ukáže na celou stránku a řekne, co na ní je,
+     nikomu nepomůže – takový smí mít průvodce nejvýš jeden. */
+  const celaStranka = (sel: string | undefined) => !!sel && /^\[data-tour="(page-[^"]+|settings-content)"\]$/.test(sel);
+  for (const p of PRUVODCI) {
+    if (p.id === "uvod" || p.id === "provize") continue;
+    it(`průvodce „${p.nazev}“ ukazuje na prvky, ne na celou stránku`, () => {
+      const naStranku = p.kroky.filter((k) => celaStranka(k.selector));
+      expect(naStranku.length, `kroky na celou stránku: ${naStranku.map((k) => k.title).join(", ")}`).toBeLessThanOrEqual(1);
+      expect(p.kroky.length, "delší úkol rozdělte na víc průvodců").toBeLessThanOrEqual(8);
+    });
+  }
+
+  it("kliky kroků (klik) míří na existující kotvy", () => {
+    for (const p of PRUVODCI) {
+      for (const k of p.kroky) {
+        for (const kotva of k.klik ?? []) {
+          const existuje = literaly.has(kotva) || predpony.some((pre) => kotva.startsWith(pre));
+          expect(existuje, `klik na „${kotva}“ (průvodce ${p.id}, krok „${k.title}“) – kotva v kódu není`).toBe(true);
+        }
+      }
     }
   });
 

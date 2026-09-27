@@ -86,6 +86,7 @@ export function SdilenyPocitacSection() {
         </div>
         <SettingRows>
           <SettingRow
+            dataTour="settings-profil-pin"
             label="Můj PIN"
             description={mamPin === null ? "Zjišťuji…" : mamPin ? "PIN je nastavený. Zadáním nového ho změníte." : "PIN není nastavený."}
             control={
@@ -98,6 +99,7 @@ export function SdilenyPocitacSection() {
             }
           />
           <SettingRow
+            dataTour="settings-profil-zamek"
             label="Zamknout po nečinnosti"
             description="Nastavení tohoto počítače. Po uplynutí se ukáže obrazovka s účty; odemkne ji PIN. Bez nastaveného PINu se nezamyká."
             control={
@@ -107,6 +109,7 @@ export function SdilenyPocitacSection() {
             }
           />
           <SettingRow
+            dataTour="settings-profil-prepnout"
             label="Přepnout nebo zamknout teď"
             description="Totéž je v nabídce pod vaším jménem v postranním panelu."
             control={

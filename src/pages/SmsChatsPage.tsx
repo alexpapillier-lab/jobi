@@ -365,7 +365,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
       <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", gap: isNarrow ? 12 : 24, flex: 1, minHeight: 0 }}>
         {(!isNarrow || !(selected || synthetic)) && (
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: isNarrow ? "1 1 auto" : "0 0 320px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "var(--text)", cursor: "pointer" }}>
+          <label data-tour="sms-archivovane" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "var(--text)", cursor: "pointer" }}>
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
             Zobrazit archivované
           </label>
@@ -376,7 +376,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
               {showArchived ? "Žádné archivované chaty." : "Žádné SMS konverzace."}
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1, minHeight: 0 }}>
+            <div data-tour="sms-seznam" style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: 1, minHeight: 0 }}>
               {synthetic && !conversations.some((c) => c.customer_phone === synthetic.phone) && (
                 <div
                   style={{
@@ -398,9 +398,10 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
                   </div>
                 </div>
               )}
-              {conversations.map((c) => (
+              {conversations.map((c, i) => (
                 <div
                   key={c.id}
+                  data-tour={i === 0 ? "sms-prvni" : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -462,6 +463,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
                   </div>
                   <button
                     type="button"
+                    data-tour={i === 0 ? "sms-archivovat" : undefined}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleArchive(c.id, !showArchived);
@@ -540,6 +542,7 @@ export default function SmsChatsPage({ activeServiceId, onOpenTicket, openSmsInt
                         {onOpenTicket ? (
                           <button
                             type="button"
+                            data-tour="sms-zakazka"
                             onClick={() => onOpenTicket(panelTicketId, true)}
                             style={{
                               fontSize: 12,

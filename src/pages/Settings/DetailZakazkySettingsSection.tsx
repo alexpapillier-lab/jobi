@@ -80,7 +80,7 @@ export function DetailZakazkySettingsSection({ activeServiceId }: { activeServic
   };
 
   return (
-    <Card data-config-nacteno={nacteno ? "1" : "0"}>
+    <Card data-config-nacteno={nacteno ? "1" : "0"} data-tour="settings-detail-sekce">
       <CardHeader
         title="Sekce v detailu zakázky"
         description="Co nepoužíváte, vypněte – detail zakázky bude kratší. Platí pro všechny v servisu."
@@ -111,6 +111,7 @@ export function DetailZakazkySettingsSection({ activeServiceId }: { activeServic
         ))}
         <SettingRow
           clickable
+          dataTour="settings-detail-technik"
           label="Technik"
           description="Přidělení zakázky technikovi („Přidělit mně“), v seznamu skupina Moje a jméno technika na kartě. Stejný přepínač je v Nastavení → Tým."
           control={

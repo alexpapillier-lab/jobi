@@ -161,7 +161,7 @@ export function InvoiceEditor({
       <div style={{ flex: 1, overflow: "auto", padding: "var(--space-5) var(--space-6) var(--space-8)" }}>
         <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {/* Odběratel */}
-          <Card>
+          <Card data-tour="invoices-odberatel">
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-3)" }}>
               <SectionHeading icon={<UserIcon size={18} />}>Odběratel</SectionHeading>
               {customerMode === "card" && (
@@ -225,7 +225,7 @@ export function InvoiceEditor({
           )}
 
           {/* Položky */}
-          <Card>
+          <Card data-tour="invoices-polozky">
             <SectionHeading icon={<DocumentIcon size={18} />}>Položky</SectionHeading>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
@@ -446,10 +446,10 @@ export function InvoiceEditor({
           </Button>
           {isDraft ? (
             <>
-              <Button variant="soft" onClick={onSave} disabled={saving} title="⌘/Ctrl+S">
+              <Button data-tour="invoices-koncept" variant="soft" onClick={onSave} disabled={saving} title="⌘/Ctrl+S">
                 {saving ? "Ukládám…" : "Uložit koncept"}
               </Button>
-              <Button variant="primary" onClick={onIssue} disabled={saving}>
+              <Button data-tour="invoices-vystavit" variant="primary" onClick={onIssue} disabled={saving}>
                 Vystavit
               </Button>
             </>

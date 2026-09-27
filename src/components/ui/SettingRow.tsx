@@ -18,12 +18,15 @@ export function SettingRow({
   control,
   clickable = false,
   className = "",
+  dataTour,
 }: {
   label: ReactNode;
   description?: ReactNode;
   control: ReactNode;
   clickable?: boolean;
   className?: string;
+  /** Kotva pro průvodce aplikací (AppTourOverlay). */
+  dataTour?: string;
 }) {
   const cls = ["ui-setting-row", className].filter(Boolean).join(" ");
   const body = (
@@ -35,7 +38,7 @@ export function SettingRow({
       <span className="ui-setting-row__control">{control}</span>
     </>
   );
-  return clickable ? <label className={cls}>{body}</label> : <div className={cls}>{body}</div>;
+  return clickable ? <label className={cls} data-tour={dataTour}>{body}</label> : <div className={cls} data-tour={dataTour}>{body}</div>;
 }
 
 /** Obal pro několik SettingRow – kreslí mezi nimi oddělovací linky. */

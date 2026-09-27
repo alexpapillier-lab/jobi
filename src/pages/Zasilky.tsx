@@ -269,16 +269,16 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
         subtitle="Přesuny zakázek mezi pobočkami: koncept naplníte zakázkami, odešlete, druhá pobočka převezme."
         actions={
           branches.length >= 2 ? (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <select className="ui-input" aria-label="Z pobočky" value={novaOdkud} onChange={(e) => { setNovaOdkud(e.target.value); if (e.target.value === novaKam) setNovaKam(druhaPobocka(branches, e.target.value) ?? ""); }} style={{ width: "auto" }}>
+            <div data-tour="zasilky-pobocky" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <select data-tour="zasilky-z-pobocky" className="ui-input" aria-label="Z pobočky" value={novaOdkud} onChange={(e) => { setNovaOdkud(e.target.value); if (e.target.value === novaKam) setNovaKam(druhaPobocka(branches, e.target.value) ?? ""); }} style={{ width: "auto" }}>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
               <span style={{ color: "var(--muted)" }}>→</span>
-              <select className="ui-input" aria-label="Na pobočku" value={novaKam} onChange={(e) => setNovaKam(e.target.value)} style={{ width: "auto" }}>
+              <select data-tour="zasilky-cilova-pobocka" className="ui-input" aria-label="Na pobočku" value={novaKam} onChange={(e) => setNovaKam(e.target.value)} style={{ width: "auto" }}>
                 <option value="">– cílová pobočka –</option>
                 {branches.filter((b) => b.id !== novaOdkud).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <Button variant="primary" onClick={() => void zalozit()} disabled={zauzlovano || !novaOdkud || !novaKam}>+ Nová zásilka</Button>
+              <Button data-tour="zasilky-nova" variant="primary" onClick={() => void zalozit()} disabled={zauzlovano || !novaOdkud || !novaKam}>+ Nová zásilka</Button>
             </div>
           ) : undefined
         }
@@ -294,12 +294,13 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
             <Segmented<Zalozka>
               size="sm"
               ariaLabel="Stav zásilek"
+              dataTour="zasilky-zalozky"
               value={zalozka}
               onChange={(v) => { setZalozka(v); setOtevrenaId(null); }}
               options={[
-                { value: "draft", label: `Koncepty (${pocty.draft})` },
-                { value: "sent", label: `Na cestě (${pocty.sent})` },
-                { value: "received", label: `Převzaté (${pocty.received})` },
+                { value: "draft", label: `Koncepty (${pocty.draft})`, dataTour: "zasilky-zalozka-koncepty" },
+                { value: "sent", label: `Na cestě (${pocty.sent})`, dataTour: "zasilky-zalozka-na-ceste" },
+                { value: "received", label: `Převzaté (${pocty.received})`, dataTour: "zasilky-zalozka-prevzate" },
               ]}
             />
             {nacitam ? (
@@ -309,14 +310,16 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                 {zalozka === "draft" ? "Žádný koncept. Založte novou zásilku tlačítkem nahoře." : zalozka === "sent" ? "Nic není na cestě." : "Zatím žádná převzatá zásilka."}
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 6 }}>
-                {vZalozce.map((z) => {
+              <div data-tour="zasilky-seznam" style={{ display: "grid", gap: 6 }}>
+                {vZalozce.map((z, i) => {
                   const chybi = nepreveztePolozky(z).length;
                   const aktivni = z.id === otevrenaId;
                   return (
                     <button
                       key={z.id}
                       type="button"
+                      // Průvodce otevře první zásilku v záložce, když uživatel žádnou nevybral.
+                      data-tour={i === 0 ? "zasilky-prvni" : undefined}
                       onClick={() => setOtevrenaId(z.id)}
                       aria-pressed={aktivni}
                       style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, border: `1px solid ${aktivni ? "var(--accent)" : "var(--border)"}`, background: aktivni ? "var(--accent-soft)" : "var(--panel)", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", display: "grid", gap: 2 }}
@@ -362,11 +365,11 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Button size="sm" variant="soft" onClick={() => void tiskProtokolu(otevrena)} disabled={otevrena.polozky.length === 0}>Předávací protokol</Button>
+                  <Button data-tour="zasilky-protokol" size="sm" variant="soft" onClick={() => void tiskProtokolu(otevrena)} disabled={otevrena.polozky.length === 0}>Předávací protokol</Button>
                   {otevrena.status === "draft" && (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setPotvrditSmazani(true)} disabled={zauzlovano}>Smazat koncept</Button>
-                      <Button size="sm" variant="primary" disabled={zauzlovano || otevrena.polozky.length === 0} onClick={() => void akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.")}>
+                      <Button data-tour="zasilky-odeslat" size="sm" variant="primary" disabled={zauzlovano || otevrena.polozky.length === 0} onClick={() => void akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.")}>
                         Odeslat ({otevrena.polozky.length})
                       </Button>
                     </>
@@ -375,7 +378,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
               </div>
 
               {/* Hlavička: dopravce, sledovací číslo, poznámka – jde doplnit i po odeslání. */}
-              <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 8 }}>
+              <div data-tour="zasilky-hlavicka" style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 8 }}>
                 <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" }}>
                   Dopravce
                   <Input key={`${otevrena.id}-c`} defaultValue={otevrena.carrier} placeholder="např. PPL, Zásilkovna, vlastní svoz" onBlur={(e) => { if (e.target.value.trim() !== otevrena.carrier) void akce(() => ulozHlavickuZasilky(otevrena.id, { carrier: e.target.value })); }} />
@@ -391,7 +394,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
               </div>
 
               {/* Položky */}
-              <div style={{ display: "grid", gap: 6 }}>
+              <div data-tour="zasilky-polozky" style={{ display: "grid", gap: 6 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
                   Zakázky v zásilce ({otevrena.polozky.length})
                 </div>
@@ -419,12 +422,13 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
               </div>
 
               {otevrena.status === "sent" && nepreveztePolozky(otevrena).length > 0 && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <div data-tour="zasilky-prevzeti" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                   <span style={{ fontSize: 13, color: "var(--muted)", flex: 1 }}>
                     Převzetí na pobočce {nazevPobocky(otevrena.toBranchId)}: zaškrtněte, co v krabici je. Co chybí, zůstane „na cestě“ a jde převzít později.
                   </span>
                   <Button size="sm" variant="ghost" onClick={() => setVybraneKPrevzeti(new Set(nepreveztePolozky(otevrena).map((p) => p.ticketId)))}>Vybrat vše</Button>
                   <Button
+                    data-tour="zasilky-prevzit"
                     size="sm"
                     variant="primary"
                     disabled={zauzlovano || vybraneKPrevzeti.size === 0}
@@ -436,7 +440,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
               )}
 
               {otevrena.status === "draft" && (
-                <div style={{ display: "grid", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <div data-tour="zasilky-pridat-zakazky" style={{ display: "grid", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)", flex: 1 }}>
                       Přidat zakázky z pobočky {nazevPobocky(otevrena.fromBranchId)}
@@ -445,7 +449,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                       <input type="checkbox" checked={iHotove} onChange={(e) => setIHotove(e.target.checked)} /> i hotové (mimo vracející se)
                     </label>
                   </div>
-                  <Input value={hledat} onChange={(e) => setHledat(e.target.value)} placeholder="Hledat podle čísla, zařízení, zákazníka nebo IMEI…" aria-label="Hledat zakázku" />
+                  <Input data-tour="zasilky-hledat" value={hledat} onChange={(e) => setHledat(e.target.value)} placeholder="Hledat podle čísla, zařízení, zákazníka nebo IMEI…" aria-label="Hledat zakázku" />
                   {nabidka.domu.length === 0 && nabidka.ostatni.length === 0 ? (
                     <div style={{ color: "var(--muted)", fontSize: 13 }}>Žádná další zakázka na této pobočce k odeslání.</div>
                   ) : (

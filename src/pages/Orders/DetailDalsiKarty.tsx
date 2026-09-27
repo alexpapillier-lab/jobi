@@ -213,7 +213,7 @@ export function DetailDalsiKarty({
       {diagnostika}
 
       {zasilkyZapnuty && hasBranches && activeServiceId && (
-        <div id="detail-presun" style={{ ...card, ...stylSekce("presun"), marginTop: 16 }}>
+        <div id="detail-presun" data-tour="detail-kde-je" style={{ ...card, ...stylSekce("presun"), marginTop: 16 }}>
           <SectionHeading icon={<PinIcon size={16} />} barva={BARVA_SEKCE.presun}>Kde je zakázka</SectionHeading>
           <KdeJeZakazka
             key={detailedTicket.id}

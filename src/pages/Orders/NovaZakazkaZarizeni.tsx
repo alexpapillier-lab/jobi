@@ -82,7 +82,7 @@ export function NovaZakazkaZarizeni({
   cloudTickets,
 }: Props) {
   return (
-    <div style={{ ...card, ...stylSekce("zarizeni") }}>
+    <div data-tour="nova-zarizeni" style={{ ...card, ...stylSekce("zarizeni") }}>
       <SectionHeading icon={<DeviceIcon size={16} />} size="sm" barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
       <div style={{ display: "grid", gap: 8 }}>
         {newDraft.devices.map((dev, idx) => {
@@ -136,7 +136,7 @@ export function NovaZakazkaZarizeni({
                   {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
 
                   <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 260px", gap: 10 }}>
-                    <div>
+                    <div data-tour="nova-pozadovana-oprava">
                       <div style={fieldLabel}>Požadovaná oprava</div>
                       <textarea
                         value={dev.requestedRepair}

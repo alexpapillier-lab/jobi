@@ -351,6 +351,7 @@ export function SmsChat({
       <div style={{ padding: "8px 12px 12px", borderTop: "1px solid var(--border)", background: "var(--panel)" }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
           <textarea
+            data-tour="sms-zprava"
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -372,6 +373,7 @@ export function SmsChat({
             }}
           />
           <button
+            data-tour="sms-odeslat"
             type="button"
             disabled={!input.trim() || sending}
             onClick={sendMessage}

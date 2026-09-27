@@ -290,7 +290,7 @@ export function CustomerDetail({
                   </div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <Button variant="soft"
+                    <Button data-tour="customers-upravit" variant="soft"
                       onClick={openEdit}>
                       Upravit
                     </Button>
@@ -303,7 +303,7 @@ export function CustomerDetail({
                       Smazat
                     </Button>
 
-                    <Button variant="primary"
+                    <Button data-tour="customers-nova-zakazka" variant="primary"
                       onClick={() =>
                         window.dispatchEvent(
                           new CustomEvent("jobsheet:request-new-order", { detail: { customerId: customer.id } })
@@ -347,7 +347,7 @@ export function CustomerDetail({
                 onVersion={(version) => onSave({ ...customer, version }, customer.id)}
               />
 
-              <div style={{ marginTop: 12, fontWeight: 900, fontSize: 13 }}>Zakázky</div>
+              <div data-tour="customers-zakazky" style={{ marginTop: 12, fontWeight: 900, fontSize: 13 }}>Zakázky</div>
 
               {ticketsLoading && (
                 <div style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>

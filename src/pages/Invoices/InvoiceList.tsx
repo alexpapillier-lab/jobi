@@ -147,7 +147,7 @@ export function InvoiceList({
           actions={
             <>
             {onUzaverka && (
-              <Button variant="soft" onClick={onUzaverka} title="Zaplacené doklady za den podle způsobu platby">
+              <Button data-tour="invoices-uzaverka" variant="soft" onClick={onUzaverka} title="Zaplacené doklady za den podle způsobu platby">
                 Uzávěrka
               </Button>
             )}
@@ -156,7 +156,7 @@ export function InvoiceList({
                 Souhrnná faktura
               </Button>
             )}
-            <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onNew}>
+            <Button data-tour="invoices-nova" variant="primary" icon={<PlusIcon size={16} />} onClick={onNew}>
               Nová faktura
             </Button>
             </>
@@ -166,6 +166,7 @@ export function InvoiceList({
         {hasAny && (
           <>
             <div
+              data-tour="invoices-dlazdice"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
@@ -244,8 +245,8 @@ export function InvoiceList({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            {filtered.map((inv) => (
-              <InvoiceRow key={inv.id} invoice={inv} today={today} onOpen={() => onOpen(inv)} />
+            {filtered.map((inv, i) => (
+              <InvoiceRow key={inv.id} invoice={inv} today={today} onOpen={() => onOpen(inv)} dataTour={i === 0 ? "invoices-prvni" : undefined} />
             ))}
           </div>
         )}
@@ -346,7 +347,7 @@ export function KindPill({ kind }: { kind: InvoiceKind }) {
   );
 }
 
-function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: string; onOpen: () => void }) {
+function InvoiceRow({ invoice: inv, today, onOpen, dataTour }: { invoice: Invoice; today: string; onOpen: () => void; /** Kotva průvodce (první řádek). */ dataTour?: string }) {
   const status: InvoiceStatus = asStatus(inv.status);
   const kind = asKind(inv);
   const overdueDays = status === "overdue" ? daysOverdue(inv.due_date, today) : 0;
@@ -371,7 +372,7 @@ function InvoiceRow({ invoice: inv, today, onOpen }: { invoice: Invoice; today: 
   };
 
   return (
-    <button type="button" onClick={onOpen} style={rowStyle} aria-label={`${KIND_LABELS[kind]} ${inv.number}`}>
+    <button type="button" data-tour={dataTour} onClick={onOpen} style={rowStyle} aria-label={`${KIND_LABELS[kind]} ${inv.number}`}>
       <div style={{ flex: "1 1 180px", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: 2, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700, fontSize: "var(--text-base)", whiteSpace: "nowrap" }}>{inv.number}</span>

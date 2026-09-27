@@ -66,7 +66,7 @@ export function ProfileSettingsSection() {
                 {error}
               </div>
             )}
-            <div>
+            <div data-tour="settings-profil-prezdivka">
               <FieldLabel>Přezdívka (nick)</FieldLabel>
               <TextInput
                 value={draft.nickname}
@@ -74,7 +74,7 @@ export function ProfileSettingsSection() {
                 placeholder="např. Honza, Servisák"
               />
             </div>
-            <div>
+            <div data-tour="settings-profil-fotka">
               <FieldLabel>URL fotky (avatar)</FieldLabel>
               <TextInput
                 type="url"

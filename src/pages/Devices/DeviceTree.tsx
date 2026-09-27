@@ -382,6 +382,7 @@ export function DeviceTree({
           type="search"
           placeholder="Hledat značku, kategorii, model…"
           aria-label="Hledat ve stromu zařízení"
+          data-tour="devices-strom-hledat"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -399,6 +400,7 @@ export function DeviceTree({
         className="devtree"
         role="tree"
         aria-label="Značky, kategorie a modely"
+        data-tour="devices-strom"
         tabIndex={0}
         onKeyDown={onKeyDown}
         style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, paddingBottom: "var(--space-2)" }}

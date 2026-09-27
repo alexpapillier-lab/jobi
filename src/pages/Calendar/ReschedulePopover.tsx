@@ -88,6 +88,7 @@ export function ReschedulePopover({ anchor, value, onCommit, onClose }: Props) {
       <div
         role="dialog"
         aria-label="Změnit termín"
+        data-tour="calendar-termin"
         style={{
           position: "fixed",
           top: pos?.top ?? 0,

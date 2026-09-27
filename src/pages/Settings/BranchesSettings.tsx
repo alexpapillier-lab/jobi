@@ -168,6 +168,7 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
               </span>
             )}
             <Button
+              data-tour="pobocky-pridat"
               variant="primary"
               icon={<PlusIcon size={14} />}
               onClick={() => setEditing(emptyInput())}
@@ -179,7 +180,7 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+        <div data-tour="pobocky-seznam" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
           {loading && branches.length === 0 && <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)" }}>Načítání…</div>}
           {branches.map((b) => {
             const addr = addressLine(b);
@@ -233,10 +234,10 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
       </Card>
 
       {editing && (
-        <Card>
+        <Card data-tour="pobocky-formular">
           <SectionHeading size="sm" icon={<PinIcon size={16} />}>{editing.id ? "Upravit pobočku" : "Nová pobočka"}</SectionHeading>
           <div style={{ display: "grid", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "2fr 1fr", gap: 14 }}>
+            <div data-tour="pobocky-nazev" style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "2fr 1fr", gap: 14 }}>
               <div>
                 <FieldLabel>Název *</FieldLabel>
                 <TextInput value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="Praha 6 – Dejvice" style={inputStyle} autoFocus />
@@ -334,7 +335,7 @@ export function BranchesSettings({ activeServiceId, abbreviation }: { activeServ
             </label>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="soft" onClick={() => setEditing(null)} disabled={saving}>Zrušit</Button>
-              <Button variant="primary" onClick={submit} disabled={saving}>{saving ? "Ukládám…" : "Uložit pobočku"}</Button>
+              <Button data-tour="pobocky-ulozit" variant="primary" onClick={submit} disabled={saving}>{saving ? "Ukládám…" : "Uložit pobočku"}</Button>
             </div>
           </div>
         </Card>

@@ -200,7 +200,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           </div>
           <div style={{ ...popisek, marginTop: 4 }}>Prémie za opravy nabídnuté zákazníkovi navíc (ne za ty, se kterými přišel). Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div data-tour="odmeny-mesic" style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, -1))} aria-label="Předchozí měsíc">‹</Button>
           <span style={{ fontWeight: 800, minWidth: 130, textAlign: "center" }}>{nazevMesice(mesic)}</span>
           <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, 1))} disabled={mesic >= tentoMesic} aria-label="Další měsíc">›</Button>
@@ -220,7 +220,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
 
       {data && (
         <>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div data-tour="odmeny-dlazdice" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...dlazdice, borderColor: vitezove.length > 0 ? "var(--accent)" : undefined, background: vitezove.length > 0 ? "var(--accent-soft)" : "var(--panel)" }}>
               <div style={popisek}>{vitezove.length > 1 ? "Zaměstnanci měsíce" : "Zaměstnanec měsíce"}</div>
               <div style={velke}>{vitezove.length > 0 ? `🏆 ${vitezove.map((v) => v.jmeno).join(" a ")}` : "—"}</div>
@@ -242,7 +242,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           </div>
 
           {(data.admin || data.verejny) && (
-            <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
+            <div data-tour="odmeny-zebricek" style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
@@ -282,7 +282,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div data-tour="odmeny-filtr" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <select value={filtrClovek} onChange={(e) => setFiltrClovek(e.target.value)} style={pole} aria-label="Filtr podle člověka">
               <option value="vse">Všichni ({data.radky.length})</option>
               {data.lide.map((l) => (
@@ -299,7 +299,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             )}
           </div>
 
-          <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
+          <div data-tour="odmeny-radky" style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>

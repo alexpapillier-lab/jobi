@@ -105,7 +105,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <Card>
+      <Card data-tour="predplatne-stav">
         <SectionHeading size="sm">Co máte zapnuté</SectionHeading>
 
         {loading ? (
@@ -154,7 +154,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
               )}
             </dl>
 
-            <div role="list" style={{ display: "grid", gap: 6 }}>
+            <div role="list" data-tour="predplatne-moduly" style={{ display: "grid", gap: 6 }}>
               {stavModulu.map(({ modul, popis, zapnuty }) => (
                 <div
                   key={modul}
@@ -186,7 +186,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
       </Card>
 
       {!loading && !maPredplatne && (
-        <Card>
+        <Card data-tour="predplatne-tarif">
           <SectionHeading size="sm">Vyberte tarif</SectionHeading>
           <div style={{ color: "var(--muted)", fontSize: "var(--text-sm)", marginTop: "calc(-1 * var(--space-2))" }}>
             Platí se kartou. Fakturu a správu karty řeší platební brána, tarif se dá kdykoli změnit.
@@ -332,7 +332,7 @@ export function SubscriptionSettings({ activeServiceId }: { activeServiceId: str
                 <Button variant="soft" onClick={() => window.open("https://appjobi.com/cenik", "_blank", "noopener")}>
                   Ceník na webu
                 </Button>
-                <Button variant="primary" onClick={() => void koupit()} disabled={busy !== null}>
+                <Button data-tour="predplatne-pokracovat" variant="primary" onClick={() => void koupit()} disabled={busy !== null}>
                   {busy === "checkout" ? "Otevírám…" : `Pokračovat s tarifem ${vybranyInfo.label}`}
                 </Button>
               </div>

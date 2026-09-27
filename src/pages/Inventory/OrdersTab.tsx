@@ -121,6 +121,7 @@ export function OrdersTab({
               </span>
             )}
             <Button
+              data-tour="inventory-navrhnout"
               variant="primary"
               disabled={nedostupne || navrhuji || podMinimem === 0}
               title={
@@ -177,11 +178,12 @@ export function OrdersTab({
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-                {zobrazene.map((o) => {
+                {zobrazene.map((o, i) => {
                   const kusy = o.items.reduce((a, it) => a + it.qty, 0);
                   return (
                     <button
                       key={o.id}
+                      data-tour={i === 0 ? "objednavka-prvni" : undefined}
                       type="button"
                       onClick={() => setOtevrenaId(o.id)}
                       style={{

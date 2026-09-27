@@ -137,7 +137,7 @@ export function KdeJeZakazka({
                   {branches.filter((b) => b.id !== odkud).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               )}
-              <Button size="sm" variant="soft" onClick={() => void pridat()} disabled={zauzlovano || !cil}>
+              <Button data-tour="detail-pridat-do-zasilky" size="sm" variant="soft" onClick={() => void pridat()} disabled={zauzlovano || !cil}>
                 {cil ? `Přidat do zásilky do pobočky ${nazevPobocky(cil)}` : "Přidat do zásilky"}
               </Button>
               {koncept && <span style={muted}>přidá se do otevřeného konceptu {cisloZasilky(koncept)}</span>}

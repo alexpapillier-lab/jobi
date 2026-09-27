@@ -4,7 +4,7 @@ import { prihlasSe } from "./pomocnici";
 /**
  * Průvodci: otazník v postranním panelu otevře „Průvodce a nápověda“,
  * „Spustit“ pustí průvodce stránkou (na Zakázkách „Přehled zakázek“),
- * karta má „Další →“ a na konci „Hotovo, začít“, „Přeskočit průvodce“ ji
+ * karta má „Další →“ a na konci „Hotovo“, „Přeskočit průvodce“ ji
  * zavře. Co kdo prošel, se pamatuje jen v localStorage prohlížeče, takže
  * test v databázi nic nemění.
  */
@@ -40,7 +40,8 @@ async function spustPruvodceStranky(page: Page) {
   // Panel nápovědy se zavře a místo něj je karta průvodce s prvním krokem.
   await expect(panel).toBeHidden();
   await expect(kartaPruvodce(page)).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("heading", { level: 3, name: "Hledání" })).toBeVisible();
+  // Každý průvodce začíná krokem „K čemu to je“.
+  await expect(page.getByRole("heading", { level: 3, name: "K čemu to je" })).toBeVisible();
 }
 
 test("otazník otevře nápovědu, Spustit pustí průvodce a Přeskočit ho zavře", async ({ page }) => {
@@ -49,24 +50,24 @@ test("otazník otevře nápovědu, Spustit pustí průvodce a Přeskočit ho zav
   await spustPruvodceStranky(page);
 
   await page.getByRole("button", { name: "Další →" }).click();
-  await expect(page.getByRole("heading", { level: 3, name: "Skupiny zakázek" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Hledání" })).toBeVisible();
   // Od druhého kroku jde i zpátky.
   await expect(page.getByRole("button", { name: "← Zpět" })).toBeVisible();
 
   await kartaPruvodce(page).click();
   await expect(kartaPruvodce(page)).toBeHidden();
-  await expect(page.getByRole("heading", { level: 3, name: "Skupiny zakázek" })).toBeHidden();
+  await expect(page.getByRole("heading", { level: 3, name: "Hledání" })).toBeHidden();
   // Aplikace zůstala na Zakázkách a dá se s ní dál pracovat.
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible();
 });
 
-test("průvodce se dá projít až na „Hotovo, začít“ a nápověda zavřít křížkem", async ({ page }) => {
+test("průvodce se dá projít až na „Hotovo“ a nápověda zavřít křížkem", async ({ page }) => {
   test.setTimeout(120_000);
   await prihlasSe(page);
   await spustPruvodceStranky(page);
 
   // Kroků je pár; když by „Hotovo“ nepřišlo, je průvodce v cyklu a test má spadnout.
-  const hotovo = page.getByRole("button", { name: "Hotovo, začít" });
+  const hotovo = page.getByRole("button", { name: "Hotovo", exact: true });
   for (let i = 0; i < 12 && !(await hotovo.isVisible().catch(() => false)); i++) {
     await page.getByRole("button", { name: "Další →" }).click();
   }

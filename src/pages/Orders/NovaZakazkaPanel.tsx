@@ -244,7 +244,7 @@ export function NovaZakazkaPanel({
 
     <div ref={newOrderBodyRef} style={{ marginTop: 14, display: "grid", gap: 14 }}>
       {/* ===== ZÁKAZNÍK – rychlá část ===== */}
-      <div style={{ ...card, ...stylSekce("zakaznik") }}>
+      <div data-tour="nova-zakaznik" style={{ ...card, ...stylSekce("zakaznik") }}>
         <SectionHeading icon={<UserIcon size={16} />} size="sm" barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
         <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
           <div style={{ minWidth: 0 }}>
@@ -357,6 +357,7 @@ export function NovaZakazkaPanel({
               }}
               style={{ ...baseFieldInput, border: showError("customerPhone") ? borderError : border }}
               placeholder="+420 777 123 456"
+              data-tour="nova-telefon"
             />
             {showError("customerPhone") && <div style={fieldHint}>{errors.customerPhone}</div>}
 
@@ -581,6 +582,7 @@ export function NovaZakazkaPanel({
           type="button"
           onClick={() => setNewOrderMoreOpen((v) => !v)}
           aria-expanded={newOrderMoreOpen}
+          data-tour="nova-dalsi-udaje"
           aria-controls="new-order-more"
           style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
         >
@@ -762,7 +764,7 @@ export function NovaZakazkaPanel({
         <Button variant="soft" onClick={discardNewOrder} title="Zahodit rozpracovanou zakázku">
           Zrušit
         </Button>
-        <Button variant="primary" onClick={createTicket} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)">
+        <Button variant="primary" onClick={createTicket} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)" data-tour="nova-vytvorit">
           Vytvořit zakázku
         </Button>
       </div>
