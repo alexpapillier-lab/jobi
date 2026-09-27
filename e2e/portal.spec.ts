@@ -69,6 +69,8 @@ test("schválení je vidět v zakázce", async ({ page }) => {
   test.setTimeout(120_000);
   await prihlasSe(page);
   await vidZakazku(page, kod).first().click();
+  // Karta portálu je v detailu sbalená („Zákaznický portál · nabídka schválena“).
+  await rozbalSekci(page, "Zákaznický portál");
   await expect(page.getByText(/Schváleno/).first()).toBeVisible({ timeout: 30_000 });
   await zavriDetail(page);
 });

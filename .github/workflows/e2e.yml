@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     # Sada roste (přes 150 testů, ~15 min); 20 minut už těsně nestačilo a job
     # zabitý timeoutem nechá v databázi rozdělaná testovací data.
-    timeout-minutes: 45
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v7
 

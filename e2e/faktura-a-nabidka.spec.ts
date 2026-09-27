@@ -47,7 +47,8 @@ test("ze zakázky jde vystavit faktura", async ({ page }) => {
   // Prázdnou fakturu vystavovat nebudeme – doplníme položku a vystavíme.
   await page.getByPlaceholder("Název položky").first().fill("Oprava (E2E)");
   await page.locator('input[type="number"]').nth(1).fill("1000");
-  await expect(page.getByText("1 000,00 Kč").first()).toBeVisible({ timeout: 10_000 });
+  // Buňka v editoru faktury – getByText by našel i skrytou cenu na kartě zakázky v seznamu za oknem.
+  await expect(page.getByRole("cell", { name: "1 000,00 Kč" }).first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Vystavit", exact: true }).click();
   // Po vystavení má faktura číslo z řady. Hlášení mizí po pár vteřinách a na

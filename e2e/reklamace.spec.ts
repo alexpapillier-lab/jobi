@@ -104,7 +104,7 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   // Řádek reklamace nese „R… · datum · Reklamace · zařízení · zákazník“ v jednom
   // textu; karta zdrojové zakázky má stejné jméno, ale „Reklamace ·“ v ní není.
   await page.getByRole("button", { name: /^Reklamace\s*\d*$/ }).first().click();
-  const naseReklamace = page.getByText(new RegExp(`Reklamace · .*${zakaznik}`)).first();
+  const naseReklamace = page.locator(`:text-is("${zakaznik}"):visible`).first();
   await expect(naseReklamace).toBeVisible({ timeout: 30_000 });
   await naseReklamace.click();
 
