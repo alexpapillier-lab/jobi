@@ -79,6 +79,10 @@ test("pravidlo odměn se uloží, zapne stránku Odměny a po úklidu zmizí", a
 
     // Stránka Odměny s dlaždicí zaměstnance měsíce (i když zatím nikdo odměnu nemá).
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobsheet:navigate", { detail: { page: "odmeny" } })));
+    // Snímek před kontrolou: při pádu se jinak fotí až po úklidu ve `finally`
+    // a není poznat, co stránka Odměny ukázala.
+    await page.waitForTimeout(3_000);
+    await page.screenshot({ path: test.info().outputPath("odmeny-stranka.png"), fullPage: true });
     await expect(page.getByText(/^Zaměstnanc[ei] měsíce$/).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Celkem odměn za měsíc", { exact: true })).toBeVisible();
   } finally {

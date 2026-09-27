@@ -40,6 +40,8 @@ const SETTINGS: Tab = { key: "settings", label: "Nastavení", icon: icon("M12 15
 /* Dnes je první – technik na telefonu začíná tam. Aby zůstaly čtyři hlavní
    záložky + Více, přestěhoval se Sklad do Více (nahoře). */
 const PRIMARY: Tab[] = [DNES, ORDERS, CUSTOMERS, CALENDAR];
+/* Bez Dnes se Sklad vrací mezi hlavní záložky, jak to bylo dřív. */
+const PRIMARY_BEZ_DNES: Tab[] = [ORDERS, CUSTOMERS, CALENDAR, INVENTORY];
 
 export type BottomNavProps = {
   active: NavKey;
@@ -50,6 +52,7 @@ export type BottomNavProps = {
   /** Člen bez práva can_view_statistics záložku Statistiky nevidí. */
   statisticsEnabled?: boolean;
   zasilkyEnabled?: boolean;
+  dnesEnabled?: boolean;
   provizeEnabled?: boolean;
   odmenyEnabled?: boolean;
   zasilkyBadge?: number;
@@ -71,6 +74,7 @@ export function BottomNav({
   smsUnreadCount = 0,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  dnesEnabled = true,
   provizeEnabled = false,
   odmenyEnabled = false,
   zasilkyBadge = 0,
@@ -97,8 +101,9 @@ export function BottomNav({
     }
   }, [moreOpen]);
 
+  const primary = dnesEnabled ? PRIMARY : PRIMARY_BEZ_DNES;
   const secondary: Tab[] = [
-    INVENTORY,
+    ...(dnesEnabled ? [INVENTORY] : []),
     ...(smsEnabled ? [SMS] : []),
     DEVICES,
     ...(invoicingEnabled ? [INVOICES] : []),
@@ -423,7 +428,7 @@ export function BottomNav({
           zIndex: 1002,
         }}
       >
-        {PRIMARY.map((t) => tabButton(t, active === t.key, () => onNavigate(t.key)))}
+        {primary.map((t) => tabButton(t, active === t.key, () => onNavigate(t.key)))}
         {tabButton(
           { key: "settings", label: "Více", icon: icon("M4 12h.01M12 12h.01M20 12h.01") },
           moreActive || moreOpen,

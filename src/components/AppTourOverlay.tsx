@@ -41,6 +41,16 @@ type AppTourOverlayProps = {
 const SPOTLIGHT_PADDING = 10;
 const BACKDROP_COLOR = "rgba(15, 23, 42, 0.55)";
 
+/** CSS zoom dokumentu (web: --ui-scale / style.zoom), 1 když se nezvětšuje. */
+function meritkoDokumentu(): number {
+  if (typeof document === "undefined") return 1;
+  const html = document.documentElement;
+  const zStyle = parseFloat(html.style.zoom || "");
+  if (Number.isFinite(zStyle) && zStyle > 0) return zStyle;
+  const zVar = parseFloat(getComputedStyle(html).getPropertyValue("--ui-scale"));
+  return Number.isFinite(zVar) && zVar > 0 ? zVar : 1;
+}
+
 /*
  * Ikony kroků. Dřív emoji – ta ale každý systém vykreslí jinak (Windows
  * vs. macOS), jsou barevná tam, kde má být jednobarevná ikona, a nedají
@@ -80,7 +90,13 @@ function useTourTarget(active: boolean, page: NavKey, selector: string | undefin
     const update = () => {
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setRect(new DOMRect(r.x, r.y, r.width, r.height));
+      // Na webu se rozhraní zvětšuje CSS `zoom`em na <html> (--ui-scale).
+      // getBoundingClientRect vrací souřadnice v pixelech obrazovky, ale
+      // spotlight leží uvnitř zoomovaného dokumentu, kde se `left`/`top`
+      // násobí měřítkem – bez přepočtu je rámeček posunutý a menší
+      // (viděno v Safari při 115 %). Na desktopu je měřítko 1.
+      const z = meritkoDokumentu();
+      setRect(new DOMRect(r.x / z, r.y / z, r.width / z, r.height / z));
     };
     const pripoj = () => {
       if (!el) return;
@@ -143,6 +159,11 @@ export function AppTourOverlay({
     <div
       style={{
         pointerEvents: "auto",
+        // Spotlight je pozicovaný sourozenec a jeho stín (ztmavení stránky)
+        // by se jinak vykreslil přes tuhle nepozicovanou kartu – proto byla
+        // karta průvodce šedá a špatně čitelná.
+        position: "relative",
+        zIndex: 1,
         maxWidth: 440,
         width: "100%",
         background: "var(--panel)",

@@ -189,6 +189,8 @@ type UIConfig = {
     postupZakazky?: boolean;
     /** Stránka po přihlášení; výchozí Zakázky (App.tsx čte totéž). */
     startPage?: "orders" | "dnes";
+    /** Zda je stránka Dnes v navigaci; výchozí ano. Kdo ji nepoužívá, vypne si ji. */
+    dnesVNavigaci?: boolean;
   };
   sidebar: {
     position: SidebarPosition;
@@ -259,6 +261,7 @@ function safeLoadUIConfig(): UIConfig {
             : d.app.reducedEffects,
         postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
         startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
+        dnesVNavigaci: parsed?.app?.dnesVNavigaci !== false,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -2201,6 +2204,25 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                 }
               />
               <SettingRow
+                clickable
+                label="Stránka Dnes v navigaci"
+                description="Přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy. Vypnutím zmizí z navigace."
+                control={
+                  <input
+                    type="checkbox"
+                    checked={uiCfg.app.dnesVNavigaci !== false}
+                    onChange={(e) => {
+                      const zapnuto = e.target.checked;
+                      updateUi(
+                        { ...uiCfg, app: { ...uiCfg.app, dnesVNavigaci: zapnuto, ...(zapnuto ? {} : { startPage: "orders" as const }) } },
+                        hintFab,
+                      );
+                    }}
+                  />
+                }
+              />
+              {uiCfg.app.dnesVNavigaci !== false && (
+              <SettingRow
                 label="Po přihlášení otevřít"
                 description="Dnes je přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy."
                 control={
@@ -2216,6 +2238,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   />
                 }
               />
+              )}
               <SettingRow
                 label="Umístění navigace"
                 control={

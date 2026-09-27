@@ -167,6 +167,7 @@ export type SidebarProps = {
   statisticsEnabled?: boolean;
   /** Modul „Přesuny mezi pobočkami“ (Nastavení → Zakázky) přidá stránku Zásilky. */
   zasilkyEnabled?: boolean;
+  dnesEnabled?: boolean;
   /** Majitel aplikace s tímhle účtem sdílí své provize (provize_sdileni). */
   provizeEnabled?: boolean;
   /** Servis má pravidla odměn za opravy (Nastavení → Tým → Odměny za opravy). */
@@ -285,6 +286,7 @@ export function Sidebar({
   smsEnabled = false,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  dnesEnabled = true,
   provizeEnabled = false,
   odmenyEnabled = false,
   zasilkyBadge = 0,
@@ -317,7 +319,7 @@ export function Sidebar({
   /* Pořadí a skupiny: Práce / Katalog / Statistiky. Nastavení bydlí dole u účtu. */
   const navGroups = useMemo<NavItem[][]>(() => {
     const prace: NavItem[] = [
-      { key: "dnes", label: "Dnes", icon: DnesIcon },
+      ...(dnesEnabled ? [{ key: "dnes" as const, label: "Dnes", icon: DnesIcon }] : []),
       { key: "orders", label: "Zakázky", icon: OrdersIcon },
       { key: "calendar", label: "Kalendář", icon: CalendarIcon },
       { key: "customers", label: "Zákazníci", icon: UsersIcon },
@@ -336,7 +338,7 @@ export function Sidebar({
       ...(odmenyEnabled ? [{ key: "odmeny" as const, label: "Odměny", icon: OdmenyIcon }] : []),
     ];
     return ostatni.length > 0 ? [prace, katalog, ostatni] : [prace, katalog];
-  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled, provizeEnabled, odmenyEnabled]);
+  }, [smsEnabled, invoicingEnabled, statisticsEnabled, zasilkyEnabled, provizeEnabled, odmenyEnabled, dnesEnabled]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [serviceMenuOpen, setServiceMenuOpen] = useState(false);
   const [serviceMenuPosition, setServiceMenuPosition] = useState<

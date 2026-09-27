@@ -11,8 +11,18 @@ import { prihlasSe } from "./pomocnici";
 
 async function otevriNapovedu(page: Page) {
   // Otazník je nad Nastavením; ve sbaleném panelu má jen ikonu, ale tlačítko tam je vždy.
-  await page.locator('[data-tour="sidebar-help"]').click();
+  // Sbalený postranní panel se při najetí myší rozbaluje a otazník se při
+  // tom posune – první klik v CI padal mimo. Nejdřív najet, počkat na
+  // animaci a pak kliknout; kdyby okno přesto nebylo, kliknout znovu
+  // (tlačítko okno přepíná, proto nejvýš dvakrát).
+  const otaznik = page.locator('[data-tour="sidebar-help"]');
   const panel = page.getByRole("dialog", { name: "Průvodce a nápověda" });
+  await otaznik.hover();
+  await page.waitForTimeout(400);
+  await otaznik.click();
+  if (!(await panel.isVisible({ timeout: 5_000 }).catch(() => false))) {
+    await otaznik.click();
+  }
   await expect(panel).toBeVisible({ timeout: 20_000 });
   return panel;
 }

@@ -112,7 +112,7 @@ const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 type StartovniStranka = "orders" | "dnes";
 
 type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean; startPage?: StartovniStranka };
+  app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean; startPage?: StartovniStranka; dnesVNavigaci?: boolean };
   /** `pinned` – lišta trvale rozbalená (viz AppLayout); chybí-li, bere se false. */
   sidebar: { position: SidebarPosition; pinned?: boolean };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
@@ -177,6 +177,7 @@ function safeLoadUIConfig(): UIConfig {
             : d.app.reducedEffects,
         // Výchozí Zakázky – nikomu se po aktualizaci nezmění, kde začíná.
         startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
+        dnesVNavigaci: parsed?.app?.dnesVNavigaci !== false,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -410,6 +411,8 @@ export default function App() {
   /* Zásilky mezi pobočkami: zapíná správce v Nastavení, potřebuje modul poboček. */
   const zasilkyZapnuty = useZasilkyZapnuty(activeServiceId);
   const zasilkyAvailable = zasilkyZapnuty && hasModule("branches");
+  /** Dnes si každý vypíná sám v Nastavení → Rozhraní (osobní předvolba). */
+  const dnesAvailable = uiCfg.app.dnesVNavigaci !== false;
 
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
@@ -436,10 +439,10 @@ export default function App() {
       admin: isAdmin,
       rootOwner: jeRootOwner,
       web: isWeb(),
-      stranky: { dnes: true, orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
+      stranky: { dnes: dnesAvailable, orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
       moduly: { api_catalog: hasModule("api_catalog"), api_inventory: hasModule("api_inventory"), branches: hasModule("branches"), invoices: hasModule("invoices"), sms: hasModule("sms") },
     }),
-    [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, odmenyAvailable, provizeAvailable, hasModule]
+    [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, odmenyAvailable, provizeAvailable, dnesAvailable, hasModule]
   );
   const pruvodciDostupni = useMemo(() => dostupniPruvodci(kontextPruvodcu), [kontextPruvodcu]);
 
@@ -842,6 +845,9 @@ export default function App() {
   useEffect(() => {
     if (!odmenyAvailable && activePage === "odmeny") setActivePage("orders");
   }, [odmenyAvailable, activePage]);
+  useEffect(() => {
+    if (!dnesAvailable && activePage === "dnes") setActivePage("orders");
+  }, [dnesAvailable, activePage]);
 
   /*
    * Stránka po přihlášení (Nastavení → Rozhraní → Po přihlášení otevřít).
@@ -854,7 +860,7 @@ export default function App() {
   const prihlasenyRef = useRef<string | null>(null);
   const prvniPrihlaseniRef = useRef(true);
   const startPoPrihlaseniRef = useRef<{ cas: number; stranka: NavKey } | null>(null);
-  const startPage: NavKey = uiCfg.app.startPage === "dnes" ? "dnes" : "orders";
+  const startPage: NavKey = uiCfg.app.startPage === "dnes" && dnesAvailable ? "dnes" : "orders";
   useEffect(() => {
     const uid = session?.user?.id ?? null;
     const predchozi = prihlasenyRef.current;
@@ -958,6 +964,7 @@ export default function App() {
         if (page === "statistics" && !canViewStatistics) return;
         if (page === "provize" && !provizeAvailable) return;
         if (page === "odmeny" && !odmenyAvailable) return;
+        if (page === "dnes" && !dnesAvailable) return;
         if (page === "zasilky" && !zasilkyAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
@@ -976,7 +983,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     // Dostupnost stránek se mění po načtení (sdílené provize, modul zásilek,
     // pravidla odměn) – bez nich tu zůstal starý handler, který novou
     // stránku odmítl, i když už byla v navigaci.
-  }, [invoicesAvailable, canViewStatistics, provizeAvailable, zasilkyAvailable, odmenyAvailable]);
+  }, [invoicesAvailable, canViewStatistics, provizeAvailable, zasilkyAvailable, odmenyAvailable, dnesAvailable]);
 
   // Orders → publish draft badge count
   useEffect(() => {
@@ -1415,6 +1422,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsEnabled={smsEnabled}
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
+          dnesEnabled={dnesAvailable}
           provizeEnabled={provizeAvailable}
           odmenyEnabled={odmenyVNavigaci}
           onHelp={otevriPruvodce}

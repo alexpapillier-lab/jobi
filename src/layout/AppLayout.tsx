@@ -48,6 +48,7 @@ export function AppLayout({
   smsEnabled = false,
   statisticsEnabled = true,
   zasilkyEnabled = false,
+  dnesEnabled = true,
   provizeEnabled = false,
   odmenyEnabled = false,
   onHelp,
@@ -73,6 +74,7 @@ export function AppLayout({
   statisticsEnabled?: boolean;
   /** Modul „Přesuny mezi pobočkami“ přidá stránku Zásilky. */
   zasilkyEnabled?: boolean;
+  dnesEnabled?: boolean;
   /** Majitel aplikace s tímhle účtem sdílí své provize. */
   provizeEnabled?: boolean;
   /** Servis má pravidla odměn za opravy – stránka Odměny. */
@@ -285,6 +287,7 @@ export function AppLayout({
             smsEnabled,
             statisticsEnabled,
             zasilkyEnabled,
+            dnesEnabled,
             provizeEnabled,
             odmenyEnabled,
             zasilkyBadge,
@@ -304,6 +307,7 @@ export function AppLayout({
           smsUnreadCount={smsUnreadCount}
           statisticsEnabled={statisticsEnabled}
           zasilkyEnabled={zasilkyEnabled}
+          dnesEnabled={dnesEnabled}
           provizeEnabled={provizeEnabled}
           odmenyEnabled={odmenyEnabled}
           zasilkyBadge={zasilkyBadge}
