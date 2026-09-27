@@ -10,6 +10,7 @@ import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
 import { zkratkaZConfigu } from "../../../lib/servisy";
 import { SLOUPCE_DETAILU } from "../../../lib/sloupceZakazky";
 import { jeAppleZarizeni } from "../../../lib/zarizeniHistorie";
+import { jeNasZapis, konfliktniPole, zmenenaPole, zmenilaSeVerze, type PoleZakazky } from "../../../lib/editaceZamek";
 
 // Helper: load service settings for code generation
 async function loadServiceSettingsForCode(
@@ -241,6 +242,21 @@ type UseOrderActionsDeps = {
   statusKeysSet: Set<string>;
   normalizeStatus: (key: string) => string | null;
   refetchTicketById: (ticketId: string) => Promise<TicketEx | null>;
+  /**
+   * Sloučí zakázku znovu načtenou po konfliktu verzí s pamětí (neuložené
+   * opravy z fronty, rozepsaná diagnostika). Bez ní se převezme celá.
+   */
+  sloucitZDb?: (mistni: TicketEx, zDb: TicketEx) => TicketEx;
+};
+
+/** Zakázku mezitím změnil někdo jiný – co zjistila kontrola před uložením. */
+export type SoubehUpravy = {
+  /** Řádek, jak je teď v databázi. */
+  zDb: TicketEx;
+  /** Co se v databázi změnilo od začátku úprav. */
+  zmeny: PoleZakazky[];
+  /** Z toho to, co by uložení přepsalo jinou hodnotou. */
+  konflikty: PoleZakazky[];
 };
 
 type CreateTicketParams = {
@@ -265,6 +281,20 @@ type SaveTicketChangesParams = {
   onConflict?: (ticket: TicketEx) => void;
   /** Zápis skončil ve frontě neuložených změn – volající o tom nesmí hlásit „uloženo“. */
   onQueued?: () => void;
+  /**
+   * Kontrola souběžné úpravy (formulář Upravit zakázku): před zápisem se
+   * přečte řádek z databáze a porovná se základem z chvíle, kdy se kliklo
+   * na Upravit (src/lib/editaceZamek.ts). Když by uložení přepsalo změnu
+   * někoho jiného, nezapíše se nic a zavolá se `onKonflikt`.
+   */
+  soubeh?: {
+    zaklad: TicketEx;
+    /** Klíče, které drží paměť (rozepsaná diagnostika, neuložené opravy). */
+    vynechat?: ReadonlySet<string>;
+    /** updated_at z odpovědí na naše vlastní uložení. */
+    naseZapisy?: ReadonlySet<string>;
+    onKonflikt: (soubeh: SoubehUpravy) => void;
+  };
 };
 
 /**
@@ -306,6 +336,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     statusKeysSet,
     normalizeStatus,
     refetchTicketById,
+    sloucitZDb,
   } = deps;
 
   const createTicket = useCallback(async (params: CreateTicketParams): Promise<boolean> => {
@@ -489,7 +520,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
   }, [activeServiceId, userId, cloudTickets, setCloudTickets, setStatusById, statusesReady, statuses, statusKeysSet, normalizeStatus]);
 
   const saveTicketChanges = useCallback(async (params: SaveTicketChangesParams): Promise<boolean> => {
-    const { detailedTicket: zadanaZakazka, editedTicket, onSuccess, onConflict, onQueued } = params;
+    const { detailedTicket: zadanaZakazka, editedTicket, onSuccess, onConflict, onQueued, soubeh } = params;
 
     /* Pojistka proti přepsání prázdnem.
        Uložení posílá do databáze *celý* řádek složený z toho, co má aplikace
@@ -539,7 +570,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
     resetTauriFetchState();
 
     // Get expected version for optimistic locking
-    const expectedVersion = detailedTicket.version;
+    let expectedVersion = detailedTicket.version;
     if (expectedVersion === undefined) {
       devWarn("[SaveTicket] Ticket version is missing, cannot use optimistic locking");
       // Continue without version check (fallback for old tickets without version)
@@ -700,6 +731,45 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       poslednPayload = payload;
       poslednUpraveny = updated;
       devLog("[SaveTicket] PAYLOAD (full)", payload);
+
+      /* Souběžná úprava: realtime zakázce v paměti dorovná `version`, takže
+         zámek verze níž projde i nad formulářem vyplněným před kolegovým
+         uložením – a jeho změny by se tiše přepsaly. Proto se tu řádek
+         přečte a porovná se základem z chvíle, kdy se kliklo na Upravit.
+         Když se čtení nepovede (výpadek), jde se dál jako dřív: zápis sám
+         skončí ve frontě nebo na zámku verze. */
+      if (soubeh) {
+        try {
+          const { data: radek, error: chybaCteni } = await (supabase.from("tickets") as any)
+            .select(SLOUPCE_DETAILU)
+            .eq("id", detailedTicket.id)
+            .eq("service_id", activeServiceId)
+            .maybeSingle();
+          if (!chybaCteni && radek) {
+            const zDb = mapSupabaseTicketToTicketEx(radek);
+            if (zmenilaSeVerze(soubeh.zaklad, zDb) && !jeNasZapis(zDb, soubeh.naseZapisy)) {
+              // Co by po zápisu v řádku bylo – přes stejné mapování, ať se porovnává stejné se stejným.
+              const zapisujeme = mapSupabaseTicketToTicketEx({ ...radek, ...payload });
+              const konflikty = konfliktniPole(soubeh.zaklad, zDb, zapisujeme, soubeh.vynechat);
+              if (konflikty.length > 0) {
+                devWarn("[SaveTicket] souběžná úprava", konflikty.map((p) => p.popisek));
+                soubeh.onKonflikt({ zDb, zmeny: zmenenaPole(soubeh.zaklad, zDb, soubeh.vynechat), konflikty });
+                devLog("[SaveTicket] END (souběh)");
+                return false;
+              }
+            }
+            /* Nic cizího by se nepřepsalo – zámek se opře o verzi, kterou jsme
+               právě zkontrolovali. Vlastní okamžité zápisy (stav, technik)
+               verzi zvýšily, a kdyby realtime nedorazil, hlásil by se
+               zbytečný konflikt. Kdo zapíše mezi čtením a zápisem, na zámku
+               narazí. */
+            if (typeof zDb.version === "number") expectedVersion = zDb.version;
+          }
+        } catch (err) {
+          devWarn("[SaveTicket] kontrola souběhu se nepovedla, ukládám bez ní", err);
+        }
+      }
+
       devLog("[SaveTicket] Optimistic lock - expected version:", expectedVersion);
       
       // Build update query with optimistic locking
@@ -751,7 +821,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         try {
           const refreshedTicket = await refetchTicketById(detailedTicket.id);
           if (refreshedTicket) {
-            setCloudTickets((prev) => prev.map((t) => (t.id === detailedTicket.id ? refreshedTicket : t)));
+            /* Sloučit s pamětí, ne převzít celou: neuložené opravy z fronty
+               a rozepsaná diagnostika by jinak z obrazovky zmizely. */
+            setCloudTickets((prev) =>
+              prev.map((t) => (t.id === detailedTicket.id ? (sloucitZDb ? sloucitZDb(t, refreshedTicket) : refreshedTicket) : t))
+            );
             /* Jen čerstvý základ (a s ním nová `version`), ne konec úprav:
                `onSuccess` by zavřel režim úprav a rozepsané změny smazal –
                po hlášce „zkontrolujte je a uložte znovu“ by nebylo co. */
@@ -809,7 +883,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       devLog("[SaveTicket] END");
       return false;
     }
-  }, [activeServiceId, setCloudTickets, refetchTicketById]);
+  }, [activeServiceId, setCloudTickets, refetchTicketById, sloucitZDb]);
 
   return {
     createTicket,

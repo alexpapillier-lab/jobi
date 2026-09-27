@@ -15,6 +15,7 @@ import { showToast } from "../../components/Toast";
 import { sazbaProNovouPolozku, type ServiceVat } from "../../hooks/useServiceVat";
 import type { StatusMeta } from "../../state/StatusesStore";
 import type { TicketViewer } from "../../lib/presence";
+import { casHodiny, popisKolegu, type PritomnostVDetailu } from "../../lib/editaceZamek";
 import type { Branch } from "../../lib/branches";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { OrdersProps, TicketEx } from "./typy";
@@ -49,6 +50,8 @@ type Props = {
   setTicketStatus: (ticketId: string, next: string) => Promise<void>;
   setClaimStatus: (claimId: string, next: string) => Promise<void>;
   ticketViewers: TicketViewer[];
+  /** Kdo další má tenhle detail otevřený / upravuje (useEditaceZakazky). */
+  kolegoveVDetailu: PritomnostVDetailu[];
   hasBranches: boolean;
   branchById: (id: string | null | undefined) => Branch | null;
   setMoveBranchOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -102,6 +105,7 @@ export function DetailHlavicka({
   setTicketStatus,
   setClaimStatus,
   ticketViewers,
+  kolegoveVDetailu,
   hasBranches,
   branchById,
   setMoveBranchOpen,
@@ -162,9 +166,41 @@ export function DetailHlavicka({
               </span>
             );
           })()}
-          {!detailedClaim && ticketViewers.length > 0 && (
-            <span style={{ marginLeft: 4, display: "inline-flex" }}><PresenceAvatars viewers={ticketViewers} /></span>
-          )}
+          {!detailedClaim && (() => {
+            /* Bubliny (kdo má zakázku otevřenou, presence servisu) a štítek
+               „Otevřeno / Upravuje“ (presence detailu, useEditaceZakazky).
+               Bez kolegů se nic nevykreslí – průvodce pak ukáže kartu bez
+               zvýraznění. */
+            const stitek = popisKolegu(kolegoveVDetailu);
+            if (ticketViewers.length === 0 && !stitek) return null;
+            return (
+              <span data-tour="detail-kolega" style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {ticketViewers.length > 0 && <PresenceAvatars viewers={ticketViewers} />}
+                {stitek && (
+                  <span
+                    role="status"
+                    title={kolegoveVDetailu
+                      .map((k) => `${k.jmeno}: ${k.upravuje ? "upravuje" : "má otevřeno"}${casHodiny(k.od) ? ` od ${casHodiny(k.od)}` : ""}`)
+                      .join("\n")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      border: `1px solid ${stitek.upravuje ? "var(--warning)" : "var(--border)"}`,
+                      background: stitek.upravuje ? "var(--warning-soft)" : "var(--panel-2)",
+                      color: stitek.upravuje ? "var(--warning-text)" : "var(--muted)",
+                    }}
+                  >
+                    {stitek.text}
+                  </span>
+                )}
+              </span>
+            );
+          })()}
           {!detailedClaim && detailedTicket && hasBranches && (() => {
             const b = branchById(detailedTicket.branchId);
             return (
