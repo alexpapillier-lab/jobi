@@ -8,13 +8,37 @@ name: E2E testy
 # Potřebuje secrets E2E_PASSWORD a E2E_PASSWORD_TECHNIK (hesla dvou účtů ve
 # stejném servisu – majitel a technik; ten druhý je na testy souběžné práce).
 # Bez nich se testy přeskočí, ať workflow nepadá lidem, kteří secrets nemají.
+#
+# Kromě pushe/PR na main jede sada i každou noc (po záloze databáze, viz
+# backup-db.yml) – to odchytí regresi, kterou nikdo nepustil ručně, a testy,
+# co se dřív spouštěly jen výjimečně. Ruční běh (workflow_dispatch) umí přes
+# vstup „spec“ spustit jen vybraný soubor/glob, což se hodí na ověření
+# jednoho nového testu bez čekání na celou sadu.
+#
+# Pozor na dvě věci kolem plánovaného běhu:
+#  - Když noční běh spadne, GitHub o tom pošle e-mail tomu, kdo naposledy
+#    upravil tenhle soubor workflow (ne vlastníkovi repa ani celému týmu) –
+#    kdo sem sahá, dědí i tohle upozornění.
+#  - GitHub sám vypne `schedule` spouštění u workflow, do jehož repozitáře
+#    60 dní nepřijde žádný commit (jakýkoli, ne nutně do tohohle souboru).
+#    U aktivně vyvíjeného repa se to neděje, ale při dlouhé pauze je potřeba
+#    plán po návratu ručně znovu povolit v záložce Actions.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # 3:30 UTC – půl hodiny po denní záloze databáze (backup-db.yml v 2:30
+    # UTC), ať noční běhy na sobě nestojí frontu na stejných útratách CI minut.
+    - cron: "30 3 * * *"
   workflow_dispatch:
+    inputs:
+      spec:
+        description: "Které specy spustit (cesta/glob pro playwright test, např. e2e/odmeny.spec.ts). Prázdné = celá sada."
+        type: string
+        default: ""
 
 concurrency:
   # Testy pracují se společným testovacím servisem – dva běhy naráz by si
@@ -67,7 +91,16 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_ROOT_OWNER_ID: ${{ secrets.VITE_ROOT_OWNER_ID }}
-        run: npm run test:e2e
+          SPEC: ${{ github.event.inputs.spec }}
+        run: |
+          # Vstup „spec" existuje jen u ručního spuštění; u pushe/PR/plánu je
+          # prázdný a jede se celá sada přes npm skript (respektuje testIgnore
+          # v playwright.config.ts).
+          if [ -n "$SPEC" ]; then
+            npx playwright test "$SPEC"
+          else
+            npm run test:e2e
+          fi
 
       - name: Záznam z neúspěšných testů
         if: failure() && steps.secrets.outputs.mame == 'ano'
@@ -77,5 +110,5 @@ jobs:
           path: |
             test-results/
             playwright-report/
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: ignore
