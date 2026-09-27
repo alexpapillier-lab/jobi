@@ -35,12 +35,12 @@ import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarr
 import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
-import { isWeb, otevriVProhlizeci } from "../lib/platform";
+import { isWeb } from "../lib/platform";
 import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { VyberFotek } from "../components/orders/VyberFotek";
 import { popisDoOdkazu } from "../lib/diagnosticPhotoWatermark";
 import { SectionHeading } from "../components/SectionHeading";
-import { CameraIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, PlusIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon, XIcon } from "../components/icons";
+import { ChatIcon, CheckIcon, CoinsIcon, DeviceIcon, DocumentIcon, EditIcon, HashIcon, HistoryIcon, InboxIcon, LinkIcon, MailIcon, NoteIcon, OutboxIcon, PhoneIcon, PinIcon, SaveIcon, SearchIcon, TrashIcon, UserIcon, WrenchIcon } from "../components/icons";
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb, type Product as SkladProdukt } from "../lib/inventoryDb";
 import { KontrolaPoOprave } from "../components/orders/KontrolaPoOprave";
@@ -50,7 +50,7 @@ import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
 import { ZapujckaKarta } from "../components/orders/ZapujckaKarta";
 import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
-import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../lib/zarizeniHistorie";
+import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni } from "../lib/zarizeniHistorie";
 import { formatCZDate } from "../components/tickets/types";
 import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
@@ -63,7 +63,7 @@ import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
 import { najdiPravidlo, normalizujOdmeny, vychoziNabidnuto, type PravidloOdmeny } from "../lib/odmeny";
-import { poRucniCene, poZmeneOprav, poZmeneSlevy, soucetOprav, zakladCeny } from "../lib/cenaPriPrijmu";
+import { poZmeneOprav, soucetOprav } from "../lib/cenaPriPrijmu";
 import { BARVA_SEKCE, normalizujSkryteSekce, stylSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
 import { dniBezZmenyJinde, krokyPresunu, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
 import { KdeJeZakazka } from "../components/orders/KdeJeZakazka";
@@ -98,11 +98,9 @@ import {
   HandoffMethodSelect,
   DiscountPicker,
   TlacitkaSlev,
-  SlevaNovaZakazka,
   StatusPicker,
   PrintMenu,
   OverflowMenu,
-  CustomerAutocomplete,
   type CustomerMatch,
 } from "../components/orders";
 import { useActiveRole } from "../hooks/useActiveRole";
@@ -136,11 +134,10 @@ import {
   NEW_ORDER_CUSTOMER_MORE_OPEN_KEY,
   safeLoadDraft,
   safeSaveDraft,
-  defaultDeviceRow,
   defaultDraft,
   isDraftDirty,
 } from "./Orders/koncept";
-import { isEmailValid, isPhoneValid, formatPhoneNumber, formatZipCode, formatIco, isZipValid, isIcoValid } from "./Orders/formatovani";
+import { isEmailValid, isPhoneValid, formatPhoneNumber, isZipValid, isIcoValid } from "./Orders/formatovani";
 import { type SupabaseTicketCommentRow, mapSupabaseCommentRow, mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
 import { type ClaimResolutionItem, parseClaimResolutionItems, serializeClaimResolutionItems } from "./Orders/reklamaceZakroky";
 import {
@@ -156,7 +153,7 @@ import {
   exportWarrantyToPDF,
   printWarranty,
 } from "./Orders/tiskZakazky";
-import { border, borderError, fieldLabel, fieldHint, fieldMuted, subHeading, baseFieldInput, baseFieldTextArea, card } from "./Orders/styly";
+import { border, fieldLabel, fieldMuted, baseFieldInput, baseFieldTextArea, card } from "./Orders/styly";
 import { SmsPanel } from "./Orders/SmsPanel";
 import { HistorieZakazkyModal } from "./Orders/HistorieZakazkyModal";
 import { HistorieReklamaceModal } from "./Orders/HistorieReklamaceModal";
@@ -166,6 +163,7 @@ import { RychlyTiskNabidka } from "./Orders/RychlyTiskNabidka";
 import { useHistorieZakazky } from "./Orders/hooks/useHistorieZakazky";
 import { useHistorieReklamace } from "./Orders/hooks/useHistorieReklamace";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
+import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
@@ -3883,1176 +3881,68 @@ export default function Orders({
       {/* ===== Nová zakázka (portál do body, aby fixed byl vůči viewportu,
              ne vůči <main> s transformem – jinak si okno nechá přes sebe
              ležet spodní navigaci a plovoucí "+") ===== */}
-      {createPortal(
-        <>
-      <div
-        onClick={() => {
-          setIsNewOpen(false);
-          setCustomerMatchDecision("undecided");
-          setMatchedCustomer(null);
-          lastLookupPhoneNormRef.current = null;
-          if (phoneLookupDebounceTimerRef.current) {
-            clearTimeout(phoneLookupDebounceTimerRef.current);
-            phoneLookupDebounceTimerRef.current = null;
-          }
-        }}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.35)",
-          opacity: isNewOpen ? 1 : 0,
-          pointerEvents: isNewOpen ? "auto" : "none",
-          transition: "opacity 180ms ease",
-          zIndex: 1140,
-        }}
+      <NovaZakazkaPanel
+        isNewOpen={isNewOpen}
+        setIsNewOpen={setIsNewOpen}
+        newDraft={newDraft}
+        setNewDraft={setNewDraft}
+        isNarrow={isNarrow}
+        naTelefonu={naTelefonu}
+        activeServiceId={activeServiceId}
+        serviceName={serviceName}
+        hasBranches={hasBranches}
+        branches={branches}
+        branchForNew={branchForNew}
+        closeNewOrder={closeNewOrder}
+        discardNewOrder={discardNewOrder}
+        createTicket={createTicket}
+        canCreate={canCreate}
+        submitAttempted={submitAttempted}
+        createBlockedReason={createBlockedReason}
+        errors={errors}
+        showError={showError}
+        showDeviceError={showDeviceError}
+        newOrderBodyRef={newOrderBodyRef}
+        newOrderPhotosBeforeInputRef={newOrderPhotosBeforeInputRef}
+        customerPhoneRequired={uiCfg.orders.customerPhoneRequired}
+        searchCustomers={searchCustomers}
+        applyCustomerMatch={applyCustomerMatch}
+        lookupCustomer={lookupCustomer}
+        matchedCustomer={matchedCustomer}
+        setMatchedCustomer={setMatchedCustomer}
+        customerMatchDecision={customerMatchDecision}
+        setCustomerMatchDecision={setCustomerMatchDecision}
+        lastLookupPhoneNormRef={lastLookupPhoneNormRef}
+        phoneLookupDebounceTimerRef={phoneLookupDebounceTimerRef}
+        newOrderMoreOpen={newOrderMoreOpen}
+        setNewOrderMoreOpen={setNewOrderMoreOpen}
+        newOrderCustomerMoreOpen={newOrderCustomerMoreOpen}
+        setNewOrderCustomerMoreOpen={setNewOrderCustomerMoreOpen}
+        newOrderDeviceMoreOpen={newOrderDeviceMoreOpen}
+        setNewOrderDeviceMoreOpen={setNewOrderDeviceMoreOpen}
+        expandedDeviceIdx={expandedDeviceIdx}
+        setExpandedDeviceIdx={setExpandedDeviceIdx}
+        modelsWithHierarchy={modelsWithHierarchy}
+        repairsForDeviceLabel={repairsForDeviceLabel}
+        dalsiOprava={dalsiOprava}
+        setDalsiOprava={setDalsiOprava}
+        addManualPlannedRepair={addManualPlannedRepair}
+        catalogShowAll={catalogShowAll}
+        setCatalogShowAll={setCatalogShowAll}
+        togglePlannedRepair={togglePlannedRepair}
+        removePlannedRepair={removePlannedRepair}
+        nastavPlannedNabidnuto={nastavPlannedNabidnuto}
+        pravidlaOdmen={pravidlaOdmen}
+        prednastaveneSlevy={prednastaveneSlevy}
+        cloudTickets={cloudTickets}
+        draftCapturePreviewUrls={draftCapturePreviewUrls}
+        setDraftCapturePreviewUrls={setDraftCapturePreviewUrls}
+        setDraftCaptureLiveCount={setDraftCaptureLiveCount}
+        draftCaptureTokenRef={draftCaptureTokenRef}
+        setCaptureQRItems={setCaptureQRItems}
+        captureQRLoading={captureQRLoading}
+        setCaptureQRLoading={setCaptureQRLoading}
       />
-      <div
-        // Rozdělaná práce: tichá obnova webu (lib/aktualizaceWebu) čeká, dokud je panel otevřený.
-        data-jobi-rozdelano={isNewOpen ? "" : undefined}
-        style={{
-          position: "fixed",
-          // Vystředění okraji, ne translate(-50%, -50%) – viz detail zakázky níž (rozmazaný text ve WebKitu).
-          inset: 0,
-          margin: "auto",
-          height: "fit-content",
-          transform: isNewOpen ? "none" : "translateY(2%) scale(0.98)",
-          opacity: isNewOpen ? 1 : 0,
-          pointerEvents: isNewOpen ? "auto" : "none",
-          transition: "transform 180ms ease, opacity 180ms ease",
-          width: 920,
-          maxWidth: "calc(100vw - 24px)",
-          maxHeight: "calc(100dvh / var(--ui-scale, 1) - 24px)",
-          overflow: "auto",
-          background: "var(--panel)",
-          backdropFilter: "var(--blur)",
-          WebkitBackdropFilter: "var(--blur)",
-          border,
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow)",
-          /* Zdola bez odsazení: patička je lepivá a drží se dna posuvné
-             oblasti, ale to dno bylo o 18 px níž než patička. V tom pruhu
-             se pod tlačítky „Zrušit / Vytvořit zakázku" posouval formulář
-             a byl vidět. Odsazení odspodu si patička dělá sama svým
-             vlastním paddingem. */
-          padding: "0 18px",
-          zIndex: 1150,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", position: "sticky", top: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: "0 -18px 0", padding: "18px 18px 12px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 950, fontSize: 16, color: "var(--text)" }}>Nová zakázka</div>
-            {/* Hlavička je lepivá, takže tenhle popisek na telefonu ukrajoval
-                řádky z každé obrazovky formuláře. Na širokém displeji zůstává. */}
-            {!isNarrow && (
-              <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-                Stav se automaticky nastaví na <b>Přijato</b>.
-              </div>
-            )}
-          </div>
-          {hasBranches && (
-            <select
-              className="ui-input"
-              aria-label="Pobočka nové zakázky"
-              title="Pobočka – určí zkratku v čísle zakázky a údaje na dokumentech"
-              value={newDraft.branchId ?? branchForNew?.id ?? ""}
-              onChange={(e) => setNewDraft((p) => ({ ...p, branchId: e.target.value || null }))}
-              style={{ width: "auto", maxWidth: 200, padding: "6px 10px", fontSize: 12, fontWeight: 600 }}
-            >
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          )}
-          <Button variant="soft" iconOnly icon={<XIcon size={16} />} aria-label="Zavřít" title="Zavřít (rozpracované údaje zůstanou uložené)" onClick={closeNewOrder} />
-        </div>
-
-        <div ref={newOrderBodyRef} style={{ marginTop: 14, display: "grid", gap: 14 }}>
-          {/* ===== ZÁKAZNÍK – rychlá část ===== */}
-          <div style={{ ...card, ...stylSekce("zakaznik") }}>
-            <SectionHeading icon={<UserIcon size={16} />} size="sm" barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
-            <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ ...fieldLabel, marginTop: 0 }}>Jméno</div>
-                {newDraft.customerId ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: "1px solid var(--accent)", borderRadius: 12, background: "var(--accent-soft)", minHeight: 40 }}>
-                    <span style={{ color: "var(--accent)", display: "inline-flex", flex: "0 0 auto" }}><UserIcon size={15} /></span>
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 700 }}>{newDraft.customerName.trim() || "Bez jména"}</span>
-                      {newDraft.customerPhone.trim() && <span style={{ color: "var(--muted)" }}> · {formatPhoneNumber(newDraft.customerPhone)}</span>}
-                      {newDraft.customerEmail.trim() && <span style={{ color: "var(--muted)" }}> · {newDraft.customerEmail.trim()}</span>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewDraft((p) => ({ ...p, customerId: undefined }));
-                        setCustomerMatchDecision("undecided");
-                        setMatchedCustomer(null);
-                      }}
-                      style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, fontSize: 12, cursor: "pointer", flex: "0 0 auto" }}
-                      title="Vybrat jiného zákazníka nebo zadat nového"
-                    >
-                      Změnit
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <CustomerAutocomplete
-                      id="new-order-name"
-                      value={newDraft.customerName}
-                      autoFocus
-                      placeholder="Jan Novák"
-                      inputStyle={baseFieldInput}
-                      search={searchCustomers}
-                      onSelect={(m) => applyCustomerMatch(m as CustomerMatch & { ico?: string | null; address_street?: string | null; address_zip?: string | null; note?: string | null })}
-                      onChange={(text) => {
-                        setNewDraft((p) => ({ ...p, customerName: text }));
-                        setCustomerMatchDecision("undecided");
-                      }}
-                    />
-                    <div style={fieldMuted}>Bez jména bude zakázka anonymní. Začněte psát – existující zákazníky nabídneme.</div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={{ ...fieldLabel, marginTop: 0 }}>Telefon{uiCfg.orders.customerPhoneRequired ? " *" : ""}</div>
-                <input
-                  id="new-order-phone"
-                  value={formatPhoneNumber(newDraft.customerPhone)}
-                  inputMode="tel"
-                  onChange={(e) => {
-                    const cleaned = e.target.value.replace(/[^\d+]/g, "");
-                    setNewDraft((p) => ({ ...p, customerPhone: cleaned }));
-                    // Vybraný zákazník zůstává vybraný – u něj se hledání podle telefonu nespouští.
-                    if (newDraft.customerId) return;
-                    // Clear matched customer and reset decision when phone changes
-                    if (matchedCustomer) setMatchedCustomer(null);
-                    setCustomerMatchDecision("undecided");
-
-                    // Clear any existing debounce timer
-                    if (phoneLookupDebounceTimerRef.current) {
-                      clearTimeout(phoneLookupDebounceTimerRef.current);
-                      phoneLookupDebounceTimerRef.current = null;
-                    }
-
-                    // Don't lookup if user explicitly rejected
-                    if (customerMatchDecision === "rejected") {
-                      return;
-                    }
-
-                    // Calculate normalized phone
-                    const phoneNorm = normalizePhone(cleaned);
-
-                    // Reset lastLookupPhoneNormRef if phone is empty or invalid
-                    if (!cleaned.trim() || !phoneNorm) {
-                      lastLookupPhoneNormRef.current = null;
-                    }
-
-                    // If phone is valid and different from last lookup, trigger lookup
-                    if (phoneNorm && phoneNorm !== lastLookupPhoneNormRef.current && customerMatchDecision === "undecided") {
-                      // Immediate lookup for valid, new phone number
-                      lookupCustomer(cleaned, newDraft.customerName);
-                    } else if (cleaned.trim()) {
-                      // Debounce for intermediate states or invalid numbers
-                      phoneLookupDebounceTimerRef.current = setTimeout(async () => {
-                        const finalPhoneNorm = normalizePhone(cleaned);
-                        if (finalPhoneNorm && finalPhoneNorm !== lastLookupPhoneNormRef.current && customerMatchDecision === "undecided") {
-                          await lookupCustomer(cleaned, newDraft.customerName);
-                        }
-                        phoneLookupDebounceTimerRef.current = null;
-                      }, 200);
-                    }
-                  }}
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" && !newDraft.customerId) {
-                      const phone = newDraft.customerPhone.trim();
-                      const name = newDraft.customerName.trim();
-                      if (phone || name) {
-                        await lookupCustomer(phone || undefined, name || undefined);
-                      }
-                    }
-                  }}
-                  onBlur={async () => {
-                    if (newDraft.customerId) return;
-                    await lookupCustomer(
-                      newDraft.customerPhone.trim() || undefined,
-                      newDraft.customerName.trim() || undefined
-                    );
-                  }}
-                  style={{ ...baseFieldInput, border: showError("customerPhone") ? borderError : border }}
-                  placeholder="+420 777 123 456"
-                />
-                {showError("customerPhone") && <div style={fieldHint}>{errors.customerPhone}</div>}
-
-                {/* Nalezený zákazník podle telefonu (jen když ještě žádný není vybraný) */}
-                {!newDraft.customerId && matchedCustomer && customerMatchDecision === "undecided" && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 12,
-                      background: "var(--accent-light)",
-                      borderRadius: 8,
-                      border: "1px solid var(--accent)",
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
-                      Chcete zákazníka přiřadit k této zakázce?
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-                      <div><strong>Jméno:</strong> {matchedCustomer.name}</div>
-                      {matchedCustomer.phone && <div><strong>Telefon:</strong> {matchedCustomer.phone}</div>}
-                      {matchedCustomer.email && <div><strong>E-mail:</strong> {matchedCustomer.email}</div>}
-                      {matchedCustomer.company && <div><strong>Firma:</strong> {matchedCustomer.company}</div>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => {
-                          // Load full customer data for prefill
-                          (async () => {
-                            if (!supabase || !activeServiceId) return;
-                            const { data } = await (supabase
-                              .from("customers") as any)
-                              .select("id,name,phone,email,company,ico,address_street,address_city,address_zip,note")
-                              .eq("id", matchedCustomer.id)
-                              .eq("service_id", activeServiceId)
-                              .single();
-
-                            if (data) {
-                              // Prefill only empty fields
-                              setNewDraft((prev) => ({
-                                ...prev,
-                                customerId: data.id,
-                                customerName: !prev.customerName.trim() ? (data.name || "") : prev.customerName,
-                                customerPhone: !prev.customerPhone.trim() ? (data.phone || "") : prev.customerPhone,
-                                customerEmail: !prev.customerEmail.trim() ? (data.email || "") : prev.customerEmail,
-                                addressStreet: !prev.addressStreet.trim() ? (data.address_street || "") : prev.addressStreet,
-                                addressCity: !prev.addressCity.trim() ? (data.address_city || "") : prev.addressCity,
-                                addressZip: !prev.addressZip.trim() ? (data.address_zip || "") : prev.addressZip,
-                                company: !prev.company.trim() ? (data.company || "") : prev.company,
-                                ico: !prev.ico.trim() ? (data.ico || "") : prev.ico,
-                                customerInfo: !prev.customerInfo.trim() ? (data.note || "") : prev.customerInfo,
-                              }));
-                            }
-                            setCustomerMatchDecision("accepted");
-                            setMatchedCustomer(null);
-                          })();
-                        }}
-                      >
-                        Přiřadit zákazníka
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setCustomerMatchDecision("rejected");
-                          setMatchedCustomer(null);
-                        }}
-                      >
-                        Ne, pokračovat bez přiřazení
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-              {/* Další údaje zákazníka (e-mail, firma, IČO, adresa, poznámka).
-                  Dřív ležely až dole v sekci „Další údaje“ – při příjmu se pak
-                  přeskakovalo mezi zákazníkem nahoře a jeho údaji o obrazovku
-                  níž. Patří k zákazníkovi, tak jsou u něj; sbalení si aplikace
-                  pamatuje stejně jako u zařízení. */}
-              <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => setNewOrderCustomerMoreOpen((v) => !v)}
-                  aria-expanded={newOrderCustomerMoreOpen}
-                  aria-controls="new-order-customer-more"
-                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-                >
-                  <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderCustomerMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                  <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zákazníka</span>
-                  {!newOrderCustomerMoreOpen && (
-                    <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      e-mail, firma, IČO, adresa, poznámka
-                    </span>
-                  )}
-                </button>
-                {newOrderCustomerMoreOpen && (
-                  <div id="new-order-customer-more">
-                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr 160px", gap: 10 }}>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>E-mail</div>
-                        <input
-                          id="new-order-email"
-                          type="email"
-                          value={newDraft.customerEmail}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, customerEmail: e.target.value }))}
-                          style={{ ...baseFieldInput, border: showError("customerEmail") ? borderError : border }}
-                          placeholder="jan.novak@email.cz"
-                        />
-                        {showError("customerEmail") && <div style={fieldHint}>{errors.customerEmail}</div>}
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Firma</div>
-                        <input
-                          value={newDraft.company}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, company: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Novák s.r.o."
-                        />
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>IČO</div>
-                        <input
-                          id="new-order-ico"
-                          inputMode="numeric"
-                          value={formatIco(newDraft.ico)}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/[^\d]/g, "");
-                            setNewDraft((p) => ({ ...p, ico: cleaned }));
-                          }}
-                          style={{ ...baseFieldInput, border: showError("ico") ? borderError : border }}
-                          placeholder="1234 5678"
-                          maxLength={9}
-                        />
-                        {showError("ico") && <div style={fieldHint}>{errors.ico}</div>}
-                      </div>
-                    </div>
-
-                    {/* Třetí sloupec je na desktopu rezerva pro PSČ. Na telefonu
-                        by sebral půlku šířky, proto tam jsou dva sloupce. */}
-                    <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "2fr 1fr 160px", gap: 10 }}>
-                      <div style={{ gridColumn: isNarrow ? "1 / -1" : "auto" }}>
-                        <div style={fieldLabel}>Ulice</div>
-                        <input
-                          value={newDraft.addressStreet}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, addressStreet: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Dlouhá 12"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Město</div>
-                        <input
-                          value={newDraft.addressCity}
-                          onChange={(e) => setNewDraft((p) => ({ ...p, addressCity: e.target.value }))}
-                          style={baseFieldInput}
-                          placeholder="Praha"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>PSČ</div>
-                        <input
-                          id="new-order-zip"
-                          inputMode="numeric"
-                          value={formatZipCode(newDraft.addressZip)}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/[^\d]/g, "");
-                            setNewDraft((p) => ({ ...p, addressZip: cleaned }));
-                          }}
-                          style={{ ...baseFieldInput, border: showError("addressZip") ? borderError : border }}
-                          placeholder="110 00"
-                          maxLength={6}
-                        />
-                        {showError("addressZip") && <div style={fieldHint}>{errors.addressZip}</div>}
-                      </div>
-                    </div>
-
-                    <div style={fieldLabel}>Poznámka k zákazníkovi</div>
-                    <textarea
-                      value={newDraft.customerInfo}
-                      onChange={(e) => setNewDraft((p) => ({ ...p, customerInfo: e.target.value }))}
-                      style={{ ...baseFieldTextArea, minHeight: 64 }}
-                      placeholder="Volá jen odpoledne, preferuje SMS"
-                    />
-                  </div>
-                )}
-              </div>
-          </div>
-
-          {/* ===== ZAŘÍZENÍ – rychlá část (seznam sbalitelných karet) ===== */}
-          <div style={{ ...card, ...stylSekce("zarizeni") }}>
-            <SectionHeading icon={<DeviceIcon size={16} />} size="sm" barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
-            <div style={{ display: "grid", gap: 8 }}>
-              {newDraft.devices.map((dev, idx) => {
-                const multi = newDraft.devices.length > 1;
-                const expanded = !multi || idx === expandedDeviceIdx;
-                const summary = [dev.deviceLabel.trim(), dev.requestedRepair.trim().split("\n")[0]].filter(Boolean).join(" · ") || `Zařízení ${idx + 1}`;
-                return (
-                  <div
-                    key={idx}
-                    id={`new-order-device-${idx}`}
-                    style={multi ? { border, borderRadius: "var(--radius-md)", padding: 10, background: expanded ? "var(--panel)" : "var(--panel-2)" } : undefined}
-                  >
-                    {multi && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDeviceIdx(expanded ? -1 : idx)}
-                          aria-expanded={expanded}
-                          style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}
-                        >
-                          <span style={{ display: "inline-flex", color: "var(--muted)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                          <span style={{ color: "var(--muted)", fontWeight: 600, fontSize: 12, flex: "0 0 auto" }}>{idx + 1}.</span>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
-                          {!expanded && showDeviceError(idx) && <span style={{ color: "rgba(239,68,68,0.95)", fontSize: 12, fontWeight: 600, flex: "0 0 auto" }}>chybí zařízení</span>}
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          iconOnly
-                          icon={<XIcon size={14} />}
-                          aria-label="Odebrat zařízení"
-                          title="Odebrat zařízení"
-                          onClick={() => setNewDraft((p) => ({ ...p, devices: p.devices.filter((_, i) => i !== idx) }))}
-                        />
-                      </div>
-                    )}
-                    {expanded && (
-                      <div style={{ marginTop: multi ? 8 : 0 }}>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Zařízení *</div>
-                        <DeviceAutocomplete
-                          value={dev.deviceLabel}
-                          onChange={(value) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceLabel: value } : d)),
-                            }))
-                          }
-                          models={modelsWithHierarchy}
-                          error={showDeviceError(idx)}
-                        />
-                        {showDeviceError(idx) && <div style={fieldHint}>{errors[`deviceLabel_${idx}`]}</div>}
-
-                        <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 260px", gap: 10 }}>
-                          <div>
-                            <div style={fieldLabel}>Požadovaná oprava</div>
-                            <textarea
-                              value={dev.requestedRepair}
-                              onChange={(e) =>
-                                setNewDraft((p) => ({
-                                  ...p,
-                                  devices: p.devices.map((d, i) => (i === idx ? { ...d, requestedRepair: e.target.value } : d)),
-                                }))
-                              }
-                              style={{ ...baseFieldTextArea, minHeight: 64 }}
-                              placeholder="Výměna displeje, výměna baterie, diagnostika"
-                            />
-                            {(() => {
-                              const catalog = repairsForDeviceLabel(dev.deviceLabel);
-                              const planned = dev.plannedRepairs ?? [];
-                              const mimoCenik = planned.filter((r) => r.type !== "selected");
-                              const rozepsana = dalsiOprava[idx] ?? { name: "", price: "" };
-                              const pridejDalsi = () => {
-                                if (addManualPlannedRepair(idx, rozepsana.name, rozepsana.price || "0")) setDalsiOprava((p) => ({ ...p, [idx]: { name: "", price: "" } }));
-                              };
-                              const plannedIds = new Set(planned.map((r) => r.repairId));
-                              const sorted = [...catalog].sort((a, b) => a.name.localeCompare(b.name, "cs"));
-                              const showAll = !!catalogShowAll[idx];
-                              const visible = showAll ? sorted : sorted.slice(0, 8);
-                              const sum = planned.reduce((a, r) => a + (r.price || 0), 0);
-                              return (
-                                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                                  {catalog.length > 0 && (
-                                  <>
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
-                                    Z ceníku
-                                  </div>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                    {visible.map((r) => {
-                                      const on = plannedIds.has(r.id);
-                                      return (
-                                        <button
-                                          key={r.id}
-                                          type="button"
-                                          aria-pressed={on}
-                                          onClick={() => togglePlannedRepair(idx, r)}
-                                          title={on ? "Odebrat z požadované opravy" : "Přidat do požadované opravy"}
-                                          style={{
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: 6,
-                                            padding: "5px 10px",
-                                            borderRadius: 999,
-                                            border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
-                                            background: on ? "var(--accent-soft)" : "var(--panel)",
-                                            color: on ? "var(--accent)" : "var(--text)",
-                                            fontSize: 12,
-                                            fontWeight: 600,
-                                            cursor: "pointer",
-                                          }}
-                                        >
-                                          {on && <CheckIcon size={12} />}
-                                          <span>{r.name}</span>
-                                          {r.price > 0 && (
-                                            <span style={{ color: on ? "var(--accent)" : "var(--muted)", fontWeight: 500 }}>
-                                              {r.price.toLocaleString("cs-CZ")} Kč
-                                            </span>
-                                          )}
-                                        </button>
-                                      );
-                                    })}
-                                    {sorted.length > 8 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setCatalogShowAll((p) => ({ ...p, [idx]: !showAll }))}
-                                        style={{ padding: "5px 10px", borderRadius: 999, border: "1px dashed var(--border)", background: "transparent", color: "var(--muted)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
-                                      >
-                                        {showAll ? "Méně" : `Dalších ${sorted.length - 8}`}
-                                      </button>
-                                    )}
-                                  </div>
-                                  </>
-                                  )}
-                                  {/* Oprava, která v ceníku není: jde do stejného seznamu, takže
-                                      se počítá do součtu i do slevy. Dřív se psala jen do textu
-                                      a sleva se na ni musela dopočítat ručně. */}
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)", marginTop: catalog.length > 0 ? 4 : 0 }}>
-                                    Další oprava mimo ceník
-                                  </div>
-                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                    <input
-                                      value={rozepsana.name}
-                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, name: e.target.value } }))}
-                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
-                                      placeholder="Název opravy"
-                                      aria-label="Název další opravy"
-                                      style={{ ...baseFieldInput, flex: "1 1 180px", minWidth: 0, width: "auto" }}
-                                    />
-                                    <input
-                                      value={rozepsana.price}
-                                      onChange={(e) => setDalsiOprava((p) => ({ ...p, [idx]: { ...rozepsana, price: e.target.value } }))}
-                                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pridejDalsi(); } }}
-                                      placeholder="Cena Kč"
-                                      aria-label="Cena další opravy"
-                                      inputMode="decimal"
-                                      style={{ ...baseFieldInput, flex: "0 0 110px", width: 110 }}
-                                    />
-                                    <Button onClick={pridejDalsi} disabled={!rozepsana.name.trim()} title="Přidat opravu k zakázce">
-                                      Přidat
-                                    </Button>
-                                  </div>
-                                  {mimoCenik.length > 0 && (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                      {mimoCenik.map((r) => (
-                                        <span
-                                          key={r.id}
-                                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 6px 5px 10px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
-                                        >
-                                          <CheckIcon size={12} />
-                                          <span>{r.name}</span>
-                                          <span style={{ fontWeight: 500 }}>{(r.price || 0).toLocaleString("cs-CZ")} Kč</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => removePlannedRepair(idx, r.id)}
-                                            aria-label={`Odebrat opravu ${r.name}`}
-                                            title="Odebrat"
-                                            style={{ display: "inline-grid", placeItems: "center", width: 18, height: 18, padding: 0, border: "none", borderRadius: 999, background: "transparent", color: "inherit", cursor: "pointer" }}
-                                          >
-                                            <XIcon size={12} />
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {/* Odměny týmu: co se na příjmu nabídlo navíc (ne to, s čím zákazník přišel). */}
-                                  {planned.some((r) => najdiPravidlo(pravidlaOdmen, r.name)) && (
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", fontSize: 12, color: "var(--muted)" }}>
-                                      {planned.filter((r) => najdiPravidlo(pravidlaOdmen, r.name)).map((r) => (
-                                        <label key={`nab-${r.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }} title="Prémie za nabídnutou opravu vzniká jen tehdy, když ji zákazník neměl v požadavku a přijal ji.">
-                                          <input type="checkbox" checked={!!r.nabidnuto} onChange={(e) => nastavPlannedNabidnuto(idx, r.id, e.target.checked)} />
-                                          <span>Nabídnuto navíc: <b>{r.name}</b></span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {planned.length > 0 && (
-                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                      {planned.length === 1 ? "1 oprava" : planned.length < 5 ? `${planned.length} opravy` : `${planned.length} oprav`}
-                                      {sum > 0 ? ` · ${sum.toLocaleString("cs-CZ")} Kč` : ""} · přidají se do zakázky s touto cenou, v detailu je upravíte.
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                            {/* Sleva už při příjmu – přednastavená z Nastavení nebo vlastní.
-                                Dřív se dávala až v detailu, i když ji zákazník dostal
-                                domluvenou u pultu. */}
-                            {(() => {
-                              const typ = dev.discountType ?? null;
-                              const hodnota = dev.discountValue ?? 0;
-                              const zaklad = zakladCeny(dev, soucetOprav(dev.plannedRepairs));
-                              const sleva = castkaSlevy(zaklad, typ, hodnota);
-                              return (
-                                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" }}>
-                                    Sleva
-                                  </div>
-                                  <SlevaNovaZakazka
-                                    slevy={prednastaveneSlevy}
-                                    discountType={typ}
-                                    discountValue={hodnota}
-                                    onChange={(type, value) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        // Sleva se propíše i do předschválené ceny (lib/cenaPriPrijmu).
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poZmeneSlevy(d, soucetOprav(d.plannedRepairs), type, value) } : d)),
-                                      }))
-                                    }
-                                  />
-                                  {typ && hodnota > 0 && (
-                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                                      {zaklad > 0
-                                        ? `Sleva −${formatCurrency(sleva)} z ${formatCurrency(zaklad)} · předschválená cena ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
-                                        : "Sleva se odečte z ceny oprav v zakázce. Zadejte předschválenou cenu nebo vyberte opravy z ceníku a propíše se hned."}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <div style={fieldLabel}>Předpokládaný termín dokončení</div>
-                            <DateTimePicker
-                              value={dev.expectedCompletionAt ?? null}
-                              onChange={(v) => {
-                                setNewDraft((p) => {
-                                  if (idx === 0) {
-                                    return { ...p, devices: p.devices.map((d) => ({ ...d, expectedCompletionAt: v })) };
-                                  }
-                                  return {
-                                    ...p,
-                                    devices: p.devices.map((d, i) => (i === idx ? { ...d, expectedCompletionAt: v } : d)),
-                                  };
-                                });
-                              }}
-                              inputStyle={baseFieldInput}
-                            />
-                            {multi && idx === 0 && <div style={fieldMuted}>Termín prvního zařízení se přenese na ostatní.</div>}
-                          </div>
-                        </div>
-
-                        {/* Záruka a Find My schválně mimo sbalené „Další údaje“: bez podkladu
-                            záruky se oprava u dodavatele neuplatní a se zapnutým Find My se
-                            Apple u autorizovaných dílů neopraví – obojí se musí vyřešit se
-                            zákazníkem u pultu, ne až u stolu. Find My se ptá jen u Apple. */}
-                        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-                          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={dev.warrantyClaim}
-                              onChange={(e) =>
-                                setNewDraft((p) => ({
-                                  ...p,
-                                  devices: p.devices.map((d, i) => (i === idx ? { ...d, warrantyClaim: e.target.checked } : d)),
-                                }))
-                              }
-                            />
-                            <span>Záruční oprava</span>
-                            <span style={{ color: "var(--muted)", fontSize: 12 }}>(nezaškrtnuto = pozáruční)</span>
-                          </label>
-                          {dev.warrantyClaim && (
-                            <div>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                                <div>
-                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Datum nákupu</div>
-                                  <input
-                                    type="date"
-                                    value={dev.purchaseDate}
-                                    max={new Date().toISOString().slice(0, 10)}
-                                    onChange={(e) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseDate: e.target.value } : d)),
-                                      }))
-                                    }
-                                    aria-invalid={showError(`zaruka_${idx}`) || undefined}
-                                    style={baseFieldInput}
-                                  />
-                                </div>
-                                <div>
-                                  <div style={{ ...fieldLabel, marginTop: 0 }}>Doklad o koupi</div>
-                                  <input
-                                    value={dev.purchaseProof}
-                                    onChange={(e) =>
-                                      setNewDraft((p) => ({
-                                        ...p,
-                                        devices: p.devices.map((d, i) => (i === idx ? { ...d, purchaseProof: e.target.value } : d)),
-                                      }))
-                                    }
-                                    style={baseFieldInput}
-                                    placeholder="Číslo účtenky, faktura, „má v e-mailu“"
-                                  />
-                                </div>
-                              </div>
-                              {chybiPodkladZaruky(dev) && (
-                                <div style={showError(`zaruka_${idx}`) ? fieldHint : fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>
-                              )}
-                            </div>
-                          )}
-                          {jeAppleZarizeni(dev.deviceLabel) && (
-                            <>
-                              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                                <input
-                                  type="checkbox"
-                                  checked={dev.findMyOff}
-                                  onChange={(e) =>
-                                    setNewDraft((p) => ({
-                                      ...p,
-                                      devices: p.devices.map((d, i) => (i === idx ? { ...d, findMyOff: e.target.checked } : d)),
-                                    }))
-                                  }
-                                />
-                                <span>Find My vypnuto</span>
-                              </label>
-                              {!dev.findMyOff && (
-                                <div role="note" style={{ fontSize: 12, color: "#b45309", background: "rgba(245,158,11,0.12)", borderRadius: 8, padding: "6px 8px" }}>
-                                  Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů; požádejte zákazníka o vypnutí.
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-
-                        {/* Další údaje zařízení (IMEI, heslo, stav, příslušenství, převzetí,
-                            cena, poznámka). Dřív bydlely až dole v samostatné sekci „Další
-                            údaje“ – při příjmu se pak přeskakovalo mezi zařízením nahoře
-                            a jeho údaji o obrazovku níž. Patří k zařízení, tak jsou u něj;
-                            sbalení si aplikace pamatuje stejně jako u sekce Další údaje. */}
-                        <div style={{ marginTop: 12, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => setNewOrderDeviceMoreOpen((v) => !v)}
-                            aria-expanded={newOrderDeviceMoreOpen}
-                            aria-controls={`new-order-device-more-${idx}`}
-                            style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 0", background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-                          >
-                            <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderDeviceMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={14} /></span>
-                            <span style={{ ...subHeading, marginBottom: 0 }}>Další údaje zařízení</span>
-                            {!newOrderDeviceMoreOpen && (
-                              <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                IMEI, heslo, stav, příslušenství, převzetí, cena
-                              </span>
-                            )}
-                          </button>
-                          {newOrderDeviceMoreOpen && (
-                            <div id={`new-order-device-more-${idx}`}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>IMEI / SN</div>
-                        {/* Překlep v IMEI, tvar Apple sériového čísla a „tenhle telefon už tu byl“ –
-                            všechno chce servis vědět hned při příjmu, ne až u stolu. */}
-                        {(() => {
-                          const sn = dev.serialOrImei;
-                          const stav = stavSerioveho(sn);
-                          const odkaz = odkazKontrolaImei(sn);
-                          const barva = !stav.platne ? "#dc2626" : stav.hlaska ? "#16a34a" : undefined;
-                          const drive = najdiStejneZarizeni(cloudTickets, sn);
-                          return (
-                            <>
-                              <input
-                                value={sn}
-                                onChange={(e) =>
-                                  setNewDraft((p) => ({
-                                    ...p,
-                                    devices: p.devices.map((d, i) => (i === idx ? { ...d, serialOrImei: e.target.value } : d)),
-                                  }))
-                                }
-                                aria-invalid={!stav.platne || undefined}
-                                style={barva ? { ...baseFieldInput, border: `1px solid ${barva}` } : baseFieldInput}
-                                placeholder="35-123456-789012-3"
-                              />
-                              {(stav.hlaska || drive.length > 0) && (
-                            <div style={{ marginTop: 6, display: "grid", gap: 4, fontSize: 12 }}>
-                              {stav.hlaska && (
-                                <div role={stav.platne ? undefined : "alert"} style={{ color: barva, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <span>{stav.hlaska}</span>
-                                  {odkaz && (
-                                    <Button variant="soft" size="sm" onClick={() => void otevriVProhlizeci(odkaz)} title="Otevře imei.info v prohlížeči (model, blacklist)">
-                                      Zkontrolovat IMEI
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
-                              {drive.length > 0 && (
-                                <div role="note" style={{ color: "var(--accent)", background: "var(--accent-soft)", borderRadius: 8, padding: "6px 8px" }}>
-                                  Zařízení už u vás bylo ({drive.length}×):{" "}
-                                  {drive
-                                    .slice(0, 3)
-                                    .map((t) => `${t.code ?? "—"} · ${formatCZ(t.createdAt)}${t.issueShort || t.requestedRepair ? ` · ${t.issueShort || t.requestedRepair}` : ""}`)
-                                    .join(", ")}
-                                  {drive.length > 3 ? " …" : ""}
-                                </div>
-                              )}
-                            </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div>
-                        <div style={{ ...fieldLabel, marginTop: 0 }}>Heslo / kód</div>
-                        <input
-                          value={dev.devicePasscode}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, devicePasscode: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="1234"
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Popis stavu</div>
-                        <input
-                          list="new-order-device-condition-list"
-                          value={dev.deviceCondition}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceCondition: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Rozbitý displej, oděrky"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Příslušenství</div>
-                        <input
-                          list="new-order-device-accessories-list"
-                          value={dev.deviceAccessories}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceAccessories: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Nabíječka, pouzdro"
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Způsob převzetí</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().receiveMethods}
-                          value={dev.handoffMethod}
-                          onChange={(v) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, handoffMethod: v } : d)),
-                            }))
-                          }
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Způsob předání</div>
-                        <HandoffMethodSelect
-                          options={getHandoffOptions().returnMethods}
-                          value={dev.handbackMethod}
-                          onChange={(v) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, handbackMethod: v } : d)),
-                            }))
-                          }
-                          triggerStyle={baseFieldInput}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-                      <div>
-                        <div style={fieldLabel}>Externí identifikace</div>
-                        <input
-                          value={dev.externalId}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, externalId: e.target.value } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="Číslo zakázky partnera"
-                        />
-                      </div>
-                      <div>
-                        <div style={fieldLabel}>Předschválená cena</div>
-                        <input
-                          type="number"
-                          value={dev.estimatedPrice ?? ""}
-                          onChange={(e) =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              // Ručně napsaná cena je od teď základ pro slevu (lib/cenaPriPrijmu).
-                              devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poRucniCene(d, e.target.value) } : d)),
-                            }))
-                          }
-                          style={baseFieldInput}
-                          placeholder="2 500"
-                          min="0"
-                          step="1"
-                        />
-                        <div style={fieldMuted}>
-                          V Kč. Cena, se kterou zákazník předem souhlasí – už po slevě.
-                          {dev.discountType && (dev.discountValue ?? 0) > 0 && (dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs)) > 0
-                            ? ` Bez slevy ${formatCurrency(dev.cenaPredSlevou ?? soucetOprav(dev.plannedRepairs))}.`
-                            : ""}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={fieldLabel}>Poznámka pro technika</div>
-                    <textarea
-                      value={dev.deviceNote}
-                      onChange={(e) =>
-                        setNewDraft((p) => ({
-                          ...p,
-                          devices: p.devices.map((d, i) => (i === idx ? { ...d, deviceNote: e.target.value } : d)),
-                        }))
-                      }
-                      style={{ ...baseFieldTextArea, minHeight: 64 }}
-                      placeholder="Zákazník si přeje zachovat data"
-                    />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <Button
-              variant="soft"
-              size="sm"
-              icon={<PlusIcon size={14} />}
-              style={{ marginTop: 10 }}
-              disabled={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim()}
-              onClick={() => {
-                setNewDraft((p) => ({
-                  ...p,
-                  devices: [
-                    ...p.devices,
-                    { ...defaultDeviceRow(), expectedCompletionAt: p.devices[0]?.expectedCompletionAt ?? undefined },
-                  ],
-                }));
-                setExpandedDeviceIdx(newDraft.devices.length);
-              }}
-              title={!newDraft.devices[newDraft.devices.length - 1]?.deviceLabel?.trim() ? "Nejdřív vyplňte název posledního zařízení" : "Přidat další zařízení"}
-            >
-              Přidat další zařízení
-            </Button>
-          </div>
-
-          {/* ===== DALŠÍ ÚDAJE – sbalené, stav se pamatuje ===== */}
-          <div style={{ ...card, ...stylSekce("diagnostika"), padding: 0, overflow: "hidden" }}>
-            <button
-              type="button"
-              onClick={() => setNewOrderMoreOpen((v) => !v)}
-              aria-expanded={newOrderMoreOpen}
-              aria-controls="new-order-more"
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: 12, background: "none", border: "none", cursor: "pointer", color: "var(--text)", textAlign: "left" }}
-            >
-              <span style={{ display: "inline-flex", color: "var(--muted)", transform: newOrderMoreOpen ? "rotate(180deg)" : "none", transition: "transform 120ms ease" }}><ChevronDownIcon size={16} /></span>
-              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, background: `${BARVA_SEKCE.diagnostika}22`, color: BARVA_SEKCE.diagnostika, flexShrink: 0 }}><SearchIcon size={14} /></span>
-              <span style={{ fontWeight: 950, fontSize: "var(--text-base)" }}>Další údaje</span>
-              {!newOrderMoreOpen && (
-                <span style={{ color: "var(--muted)", fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  přijímací fotky
-                </span>
-              )}
-            </button>
-
-            {newOrderMoreOpen && (
-              <div id="new-order-more" style={{ padding: 12, paddingTop: 0, display: "grid", gap: 16 }}>
-                {/* Přijímací fotky – nahrají se po vytvoření zakázky */}
-                <div id="new-order-photos-before">
-                  <div style={subHeading}>Přijímací fotky</div>
-                  <div style={{ ...fieldMuted, marginTop: 0, marginBottom: 10 }}>Fotky se po vytvoření zakázky automaticky nahrají a připojí k zakázce.</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                    {(newDraft.diagnosticPhotosBefore || []).map((dataUrl, idx) => (
-                      <div key={idx} style={{ position: "relative" }}>
-                        <img
-                          src={dataUrl}
-                          alt={`Fotka ${idx + 1}`}
-                          style={{
-                            width: 80,
-                            height: 80,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid var(--border)",
-                          }}
-                        />
-                        <button
-                          type="button"
-                          aria-label="Odebrat fotku"
-                          onClick={() =>
-                            setNewDraft((p) => ({
-                              ...p,
-                              diagnosticPhotosBefore: (p.diagnosticPhotosBefore || []).filter((_, i) => i !== idx),
-                            }))
-                          }
-                          style={{
-                            position: "absolute",
-                            top: 4,
-                            right: 4,
-                            width: 22,
-                            height: 22,
-                            borderRadius: "50%",
-                            background: "rgba(239, 68, 68, 0.9)",
-                            color: "white",
-                            border: "none",
-                            cursor: "pointer",
-                            display: "grid",
-                            placeItems: "center",
-                            padding: 0,
-                          }}
-                        >
-                          <XIcon size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    {draftCapturePreviewUrls.map((photoUrl, idx) => (
-                      <div key={`draft-${idx}`} style={{ position: "relative" }}>
-                        <FotkaZakazky
-                          url={photoUrl}
-                          alt={`QR fotka ${idx + 1}`}
-                          style={{
-                            width: 80,
-                            height: 80,
-                            objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid var(--border)",
-                          }}
-                        />
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: 4,
-                            right: 4,
-                            bottom: 4,
-                            fontSize: "var(--text-xs)",
-                            fontWeight: 700,
-                            borderRadius: 6,
-                            background: "rgba(0,0,0,0.55)",
-                            color: "white",
-                            textAlign: "center",
-                            padding: "2px 4px",
-                          }}
-                        >
-                          z mobilu
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
-                    <VyberFotek popisek={<><CameraIcon size={14} /> Nahrát fotky</>} style={{ ...baseFieldInput, width: "auto", padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>
-                      <input
-                        ref={newOrderPhotosBeforeInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files || []);
-                          e.target.value = "";
-                          if (!files.length) return;
-                          const reader = (f: File) =>
-                            new Promise<string>((resolve, reject) => {
-                              const r = new FileReader();
-                              r.onload = () => resolve(r.result as string);
-                              r.onerror = () => reject(new Error("Načtení selhalo"));
-                              r.readAsDataURL(f);
-                            });
-                          Promise.all(files.map(reader)).then((urls) => {
-                            setNewDraft((p) => ({
-                              ...p,
-                              diagnosticPhotosBefore: [...(p.diagnosticPhotosBefore || []), ...urls],
-                            }));
-                          });
-                        }}
-                      />
-                    </VyberFotek>
-                    {!naTelefonu && (
-                    <Button
-                      variant="soft"
-                      size="sm"
-                      onClick={async () => {
-                        if (!supabase || !supabaseUrl || !supabaseAnonKey || !activeServiceId) {
-                          showToast("Chybí připojení nebo aktivní služba.", "error");
-                          return;
-                        }
-                        setCaptureQRLoading(true);
-                        try {
-                          const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
-                          if (refreshErr) throw new Error("Session vypršela.");
-                          const authToken = refreshData?.session?.access_token ?? (await supabase.auth.getSession()).data?.session?.access_token;
-                          if (!authToken) throw new Error("Nejste přihlášeni.");
-                          const res = await supabaseFetch(`${supabaseUrl}/functions/v1/capture-create-token`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}`, apikey: supabaseAnonKey },
-                            body: JSON.stringify({ draft: true, serviceId: activeServiceId, isBefore: true }),
-                          });
-                          const raw = await res.text();
-                          const data: { url?: string; token?: string; error?: string } = raw ? JSON.parse(raw) : {};
-                          if (!res.ok) throw new Error(data.error || res.statusText);
-                          setDraftCapturePreviewUrls([]);
-                          setDraftCaptureLiveCount(0);
-                          if (data.token) draftCaptureTokenRef.current = data.token;
-                          if (data.url) {
-                            setCaptureQRItems([{ deviceLabel: "Přijímací fotky (před vytvořením zakázky)", url: popisDoOdkazu(data.url, { servis: serviceName }) }]);
-                          }
-                        } catch (err) {
-                          showToast(normalizeError(err) || "Nepodařilo se vytvořit QR pro focení.", "error");
-                        } finally {
-                          setCaptureQRLoading(false);
-                        }
-                      }}
-                      disabled={captureQRLoading}
-                      title="Zobrazit QR kód pro nafocení přijímacích fotek z telefonu. Zakázka se nevytvoří – fotky se připojí po kliknutí na „Vytvořit zakázku“."
-                    >
-                      {captureQRLoading ? "Vytvářím…" : "Vyfotit z telefonu (QR)"}
-                    </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ===== Patička – lepivá ===== */}
-        <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: 10, justifyContent: "space-between", position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 3, background: "var(--panel)", margin: "14px -18px 0", padding: 18, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-          {!isNarrow && <span style={{ fontSize: 12, color: "var(--muted)" }}>Rozpracované údaje se ukládají automaticky</span>}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-            {submitAttempted && createBlockedReason && (
-              <span role="status" style={{ fontSize: 12, color: "var(--muted)" }}>{createBlockedReason}</span>
-            )}
-            <Button variant="soft" onClick={discardNewOrder} title="Zahodit rozpracovanou zakázku">
-              Zrušit
-            </Button>
-            <Button variant="primary" onClick={createTicket} aria-disabled={!canCreate} title="Vytvořit zakázku (⌘/Ctrl+Enter)">
-              Vytvořit zakázku
-            </Button>
-          </div>
-        </div>
-      </div>
-        </>,
-        document.body
-      )}
 
       {/* ===== Full detail modal (portal do body, aby fixed byl vůči viewportu, ne main s transform) ===== */}
       {createPortal(

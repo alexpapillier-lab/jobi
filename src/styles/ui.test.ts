@@ -86,7 +86,7 @@ describe("validační tlačítka zůstávají klikatelná", () => {
   // na odesílací tlačítko. Kdyby bylo `disabled`, uživatel se nikdy nedozví,
   // co je špatně – proto smí být jen `aria-disabled`.
   const forms = [
-    ["pages/Orders.tsx", "canCreate"],
+    ["pages/Orders/NovaZakazkaPanel.tsx", "canCreate"],
     ["pages/Customers/CustomerDetail.tsx", "canSave"],
   ] as const;
 

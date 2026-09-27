@@ -184,3 +184,12 @@ export type ModelWithHierarchy = DeviceModel & {
   brandName: string;
   categoryName: string;
 };
+
+/** Zákazník dohledaný při příjmu podle telefonu nebo jména (nabídka „Přiřadit zákazníka“). */
+export type ShodaZakaznika = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  company?: string;
+};
