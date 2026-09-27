@@ -205,6 +205,11 @@ test("stornovaná zakázka zůstane v počtu, ale zmizí z tržeb", async ({ pag
     discount_value: 5000,
   });
 
+  // Peníze se od 26. 9. počítají jen z vydaných zakázek (podle data vydání),
+  // počty podle přijetí – obě zakázky se proto nejdřív vydají.
+  await zapis("PATCH", `tickets?id=eq.${prvni}`, { status: "completed" });
+  await zapis("PATCH", `tickets?id=eq.${druha}`, { status: "completed" });
+
   const pred = await kpiZaMojeZakazky();
   expect(pred.totalTickets).toBe(2);
   // 1 000 z první + 0 z druhé (sleva ji smázla na nulu, ne pod nulu).
