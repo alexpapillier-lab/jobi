@@ -61,6 +61,7 @@ import { type Rezervace, nastavStavRezervace } from "../lib/rezervace";
 import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony, shrnutiKontroly } from "../lib/kontrolniSeznamy";
 import { formatCurrency } from "../lib/invoiceMath";
 import { castkaSlevy, hrubaCena, konecnaCena } from "../lib/slevaZakazky";
+import { sloucZakazkuZDb, zacniZapis, ukonciZapis, type EvidenceZapisu } from "../lib/slouceniZakazky";
 import { PortalCard } from "../components/orders/PortalCard";
 import { PostupZakazky, sjetNaKartu } from "../components/orders/PostupZakazky";
 import { SbalitelnaHlavicka, useSbaleno } from "../components/orders/SbalitelnaSekce";
@@ -910,6 +911,21 @@ export default function Orders({
   /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
   const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
   const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
+  /**
+   * Zakázky, kterým okamžitý zápis oprav selhal – opravy jsou jen v paměti
+   * a uloží se při zavření detailu. Do té doby je realtime nesmí přepsat,
+   * jinak by po nich zůstala jen rezervace dílů ve skladu.
+   */
+  const neulozeneOpravyRef = useRef<Set<string>>(new Set());
+  /** Evidence pro sloučení řádku z databáze s pamětí – viz src/lib/slouceniZakazky.ts. */
+  const evidenceZapisu = useCallback(
+    (): EvidenceZapisu => ({
+      bezici: rozpracovaneZapisyOpravRef.current,
+      odlozene: odlozeneZapisyOpravRef.current,
+      neulozene: neulozeneOpravyRef.current,
+    }),
+    []
+  );
   /** Odložené zápisy kontroly po opravě – psaní poznámky jinak posílá zápis na každou klávesu. */
   const odlozenaKontrolaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
   const [ticketsLoading, setTicketsLoading] = useState(false);
@@ -1448,8 +1464,9 @@ export default function Orders({
                   newStatus: newTicket.status,
                 });
                 if (existing) {
-                  // Update existing
-                  return prev.map((t) => (t.id === newTicket.id ? newTicket : t));
+                  // Update existing – stejné sloučení jako u běžné změny níže.
+                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
+                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
                 } else {
                   // Add new - insert in correct position based on created_at
                   const sorted = [...prev, newTicket].sort((a, b) => {
@@ -1488,18 +1505,14 @@ export default function Orders({
                 }
                 
                 if (existing) {
-                  // Provedené opravy se ukládají hned; dokud zápis běží (nebo čeká
-                  // na odklad), drží se místní verze. Jinak by změna stavu od
-                  // kolegy vrátila opravy z databáze, které jsou o krok pozadu,
-                  // a ve skladu by zůstala rezervace na opravu, kterou nikdo nevidí.
-                  const zapisBezi =
-                    (rozpracovaneZapisyOpravRef.current.get(newTicket.id) ?? 0) > 0 ||
-                    odlozeneZapisyOpravRef.current.has(newTicket.id);
-                  // Stejně se hned ukládá kontrola po opravě a náhradní zařízení –
-                  // ozvěna staršího zápisu by přepsala kliknutí, které přišlo mezitím.
-                  const sloucena = zapisBezi
-                    ? { ...newTicket, performedRepairs: existing.performedRepairs, testChecklist: existing.testChecklist, loaner: existing.loaner }
-                    : newTicket;
+                  // Provedené opravy se ukládají hned; dokud zápis běží, čeká na
+                  // odklad, nebo selhal a čeká na zavření detailu, drží se místní
+                  // verze. Jinak by změna stavu od kolegy vrátila opravy z databáze,
+                  // které jsou o krok pozadu, a ve skladu by zůstala rezervace na
+                  // opravu, kterou nikdo nevidí. Stejně se hned ukládá kontrola po
+                  // opravě a náhradní zařízení – ozvěna staršího zápisu by přepsala
+                  // kliknutí, které přišlo mezitím. Pravidlo: src/lib/slouceniZakazky.ts.
+                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
                   return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
                 } else {
                   // Add new - insert in correct position based on created_at
@@ -2557,15 +2570,12 @@ export default function Orders({
     /* Provedené opravy se ukládají okamžitě; když zrovna běží (nebo čeká)
        zápis, je verze v paměti novější než ta z databáze. Ostatní sloupce
        detailu se z neúplného řádku měnit nedají, tak se přepsat můžou. */
-    const zapisBezi =
-      (rozpracovaneZapisyOpravRef.current.get(ticketId) ?? 0) > 0 || odlozeneZapisyOpravRef.current.has(ticketId);
+    const evidence = evidenceZapisu();
     setCloudTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId ? (zapisBezi ? { ...plna, performedRepairs: t.performedRepairs } : plna) : t
-      )
+      prev.map((t) => (t.id === ticketId ? sloucZakazkuZDb(t, plna, evidence, ticketId, ["performedRepairs"]) : t))
     );
     return plna;
-  }, [refetchTicketById]);
+  }, [refetchTicketById, evidenceZapisu]);
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
@@ -3259,13 +3269,22 @@ export default function Orders({
         setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
         return;
       }
-      const { error } = await (supabase.from("tickets") as any)
-        .update({ performed_repairs: repairs })
-        .eq("id", ticketId);
-      if (error) {
-        // Zůstane rozpracované – uloží se při zavření detailu jako každá jiná změna.
-        setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
-        throw error;
+      // Stejná evidence jako u ostatních zápisů oprav: dokud zápis běží (a po
+      // chybě až do zavření detailu), realtime nesmí opravy přepsat.
+      zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
+      try {
+        const { error } = await (supabase.from("tickets") as any)
+          .update({ performed_repairs: repairs })
+          .eq("id", ticketId);
+        if (error) {
+          // Zůstane rozpracované – uloží se při zavření detailu jako každá jiná změna.
+          setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+          neulozeneOpravyRef.current.add(ticketId);
+          throw error;
+        }
+        neulozeneOpravyRef.current.delete(ticketId);
+      } finally {
+        ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
       }
     },
     []
@@ -3294,14 +3313,11 @@ export default function Orders({
   }, []);
 
   const sOkamzitymZapisem = useCallback(async <T,>(ticketId: string, zapis: () => Promise<T>): Promise<T> => {
-    const pocty = rozpracovaneZapisyOpravRef.current;
-    pocty.set(ticketId, (pocty.get(ticketId) ?? 0) + 1);
+    zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
     try {
       return await zapis();
     } finally {
-      const n = (pocty.get(ticketId) ?? 1) - 1;
-      if (n <= 0) pocty.delete(ticketId);
-      else pocty.set(ticketId, n);
+      ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
     }
   }, []);
 
@@ -3318,17 +3334,21 @@ export default function Orders({
     }
     const proved = () => {
       odlozene.delete(ticketId);
-      const pocty = rozpracovaneZapisyOpravRef.current;
-      pocty.set(ticketId, (pocty.get(ticketId) ?? 0) + 1);
+      zacniZapis(rozpracovaneZapisyOpravRef.current, ticketId);
       void (async () => {
         try {
           const { error } = await (supabase!.from("tickets") as any)
             .update({ performed_repairs: repairs })
             .eq("id", ticketId);
           if (error) throw error;
+          // Databáze má nejnovější opravy – realtime už je smí přepisovat.
+          neulozeneOpravyRef.current.delete(ticketId);
         } catch (err) {
           devLog("[opravy] zápis selhal, uloží se při zavření detailu", err);
           setDirtyFlags((prev) => ({ ...prev, performedRepairs: true }));
+          // Opravy jsou teď jen v paměti; realtime je nesmí přepsat, dokud
+          // se neuloží při zavření detailu (jinak zůstane rezervace bez opravy).
+          neulozeneOpravyRef.current.add(ticketId);
           /* Druhá pojistka: zavření detailu zkusí zápis znovu, ale když je
              síť pryč i potom, opravy by se ztratily. Fronta je dopíše sama,
              až spojení naskočí – přežije i zavření aplikace. */
@@ -3344,9 +3364,7 @@ export default function Orders({
             });
           }
         } finally {
-          const n = (pocty.get(ticketId) ?? 1) - 1;
-          if (n <= 0) pocty.delete(ticketId);
-          else pocty.set(ticketId, n);
+          ukonciZapis(rozpracovaneZapisyOpravRef.current, ticketId);
         }
       })();
     };
@@ -4025,6 +4043,8 @@ export default function Orders({
           diagnosticPhotos: false,
           performedRepairs: false,
         });
+        // Opravy po neúspěšném okamžitém zápisu jsou teď v databázi.
+        neulozeneOpravyRef.current.delete(updatedTicket.id);
       },
       /* Souběžná úprava: zakázka se načte znovu (kvůli `version`, jinak by
          každé další uložení narazilo na stejný konflikt), ale režim úprav

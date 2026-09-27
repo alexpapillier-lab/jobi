@@ -20,7 +20,7 @@ export type RadekImportuProvizi = {
 
 /** „2 190,50 Kč“, „2190.5“, „2,190.50“ → číslo. Nečitelné = 0. */
 export function cisloZTabulky(v: string | undefined): number {
-  let s = (v ?? "").replace(/[\s  ]/g, "").replace(/Kč|CZK/gi, "");
+  let s = (v ?? "").replace(/[\s\u00a0\u202f]/g, "").replace(/Kč|CZK/gi, "");
   if (!s) return 0;
   const carka = s.lastIndexOf(",");
   const tecka = s.lastIndexOf(".");

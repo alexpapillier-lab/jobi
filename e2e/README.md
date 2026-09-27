@@ -20,6 +20,9 @@ takový test neuspokojí.
 | `faktura-a-nabidka.spec.ts` | nabídka, faktura, uzávěrka, rozepsaný doklad |
 | `portal.spec.ts` | zákazník schválí nabídku na appjobi.com |
 | `statistiky.spec.ts` | čísla odpovídají tomu, co se stalo |
+| `statistiky-prehled.spec.ts` | dlaždice Přijato / Rozpracováno / Celkový příjem a poznámka „podle data vydání“ přežijí přepnutí období |
+| `odmeny.spec.ts` | pravidlo odměn v Nastavení, přepínač Odměny v navigaci, zaměstnanec měsíce; po sobě uklidí |
+| `pruvodci.spec.ts` | otazník → Průvodce a nápověda → Spustit, Další, Hotovo, Přeskočit průvodce |
 | `kalendar.spec.ts` | slíbený termín dokončení |
 | `soubezna-prace.spec.ts` | dva lidé naráz, práva technika |
 | `servisy.spec.ts` | založení servisu, zkratka v číslech zakázek, pozvánky, smazání servisu |

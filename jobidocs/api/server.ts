@@ -11,7 +11,6 @@
 import Fastify, { type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import path from "path";
-import os from "os";
 import fs from "fs/promises";
 import { listPrinters } from "./printers.js";
 import { getSettings, putSettings, setSettingsPath } from "./settings.js";

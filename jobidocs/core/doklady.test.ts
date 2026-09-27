@@ -82,7 +82,7 @@ describe("doklad z neúplných dat", () => {
       // Skutečná částka má před „Kč“ nezlomitelnou mezeru a před ní číslici.
       // (Legální text mluví o skladném „20 Kč“, ten sem nepatří.)
       expect(papir, docType).not.toMatch(/>\s*Kč/);
-      expect(papir, docType).not.toMatch(/[^0-9] Kč/);
+      expect(papir, docType).not.toMatch(/[^0-9]\u00a0Kč/);
     }
   });
 

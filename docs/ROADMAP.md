@@ -235,6 +235,14 @@ První tři měsíce: body 1, 2, 4.
     opravy se ukládají do databáze hned při přidání a odebrání, úpravy ceny
     s odkladem 400 ms; realtime nepřepíše místní opravy, dokud zápis běží.
     E2E „oprava přidaná majitelem přežije změnu stavu od technika“.
+    Prověřeno znovu 26. 9.: běžný realtime upsert i dotažení detailu
+    počítadla respektovaly, ale tři cesty ne – obnovení zakázky z koše,
+    opravy z cenové nabídky (`applyQuoteRepairs` zapisoval bez počítadla)
+    a hlavně **neúspěšný okamžitý zápis**: opravy pak čekaly jen v paměti
+    na zavření detailu a změna stavu od kolegy je přepsala (původní chyba
+    v jiném hávu). Opraveno: pravidlo sloučení je v
+    `src/lib/slouceniZakazky.ts` (test `slouceniZakazky.test.ts`), evidence
+    má navíc `neulozeneOpravyRef` a všechny čtyři cesty jdou přes ni.
   - `[x]` Detail zakázky bere produkty ze skladu v databázi (5. 9.); výběr
     dílů u ruční opravy nabídne celý sklad, když se model nepozná.
   - `[x]` Kód reklamace přiděluje databáze (`dalsi_cislo_reklamace`, migrace

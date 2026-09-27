@@ -4,7 +4,8 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'src-tauri'] },
+  // RECOVER je záchranný výpis po obnově disku (torza souborů), ne zdrojový kód.
+  { ignores: ['dist', 'node_modules', 'src-tauri', 'RECOVER'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
