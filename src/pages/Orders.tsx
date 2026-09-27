@@ -7,15 +7,13 @@ import { computeFinalPrice } from "../components/tickets/types";
 import { showToast } from "../components/Toast";
 import { reportError } from "../lib/reportError";
 import { claimDocumentData } from "../lib/documentData";
-import { normalizeError } from "../utils/errorNormalizer";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StornoDialog } from "../components/orders/StornoDialog";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../lib/supabaseClient";
-import { typedSupabase, getTypedSupabaseClient } from "../lib/typedSupabase";
+import { typedSupabase } from "../lib/typedSupabase";
 import { devLog } from "../lib/devLog";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../lib/frontaZapisu";
-import { subscribeServiceConfig } from "../lib/serviceSettingsSync";
 import { fetchAllPages } from "../lib/fetchAllPages";
 import { usePodepsaneFotky } from "../hooks/usePodepsaneFotky";
 import { normalizePhone } from "../lib/phone";
@@ -31,20 +29,17 @@ import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { type PerformedRepair } from "../components/orders/types";
 import { loadInventoryFromDb, type Product as SkladProdukt } from "../lib/inventoryDb";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
-import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../lib/usekyPrace";
-import { type NahradniZarizeni, type ZapujckaData, normalizujNahradni } from "../lib/zapujcka";
+import { type ZapujckaData } from "../lib/zapujcka";
 import { chybiPodkladZaruky } from "../lib/zarizeniHistorie";
-import { SLOUPCE_SEZNAMU, SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
+import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
-import { type KontrolaPoOpraveData, type SablonaKontroly, normalizujSablony } from "../lib/kontrolniSeznamy";
+import { type KontrolaPoOpraveData } from "../lib/kontrolniSeznamy";
 import { sloucZakazkuZDb, zacniZapis, ukonciZapis, type EvidenceZapisu } from "../lib/slouceniZakazky";
 import { sjetNaKartu } from "../components/orders/PostupZakazky";
 import { useSbaleno } from "../components/orders/SbalitelnaSekce";
-import { normalizujSlevy, type PrednastavenaSleva } from "../lib/prednastaveneSlevy";
-import { normalizujOdmeny, vychoziNabidnuto, type PravidloOdmeny } from "../lib/odmeny";
+import { vychoziNabidnuto } from "../lib/odmeny";
 import { poZmeneOprav, soucetOprav } from "../lib/cenaPriPrijmu";
-import { normalizujSkryteSekce, type SkrytelnaSekce } from "../lib/sekceDetailu";
-import { dniBezZmenyJinde, normalizujNastaveniZasilek, stitekUmisteni, umisteniZakazky, type NastaveniZasilek, type Zasilka } from "../lib/zasilky";
+import { dniBezZmenyJinde, stitekUmisteni, umisteniZakazky, type Zasilka } from "../lib/zasilky";
 import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { setTicketBranch, type Branch } from "../lib/branches";
@@ -74,12 +69,11 @@ import {
 import { useActiveRole } from "../hooks/useActiveRole";
 import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
-import { safeLoadCompanyData, doplnFiremniUdajeZDb } from "../lib/companyData";
+import { safeLoadCompanyData } from "../lib/companyData";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import { type StatusFilterOption } from "../components/orders/StatusFilter";
 import {
   loadDocumentsConfigFromDB,
-  safeLoadDocumentsConfig,
 } from "../lib/documentHelpers";
 
 import {
@@ -120,6 +114,13 @@ import { FotoLightbox } from "./Orders/FotoLightbox";
 import { RychlyTiskNabidka } from "./Orders/RychlyTiskNabidka";
 import { useHistorieZakazky } from "./Orders/hooks/useHistorieZakazky";
 import { useHistorieReklamace } from "./Orders/hooks/useHistorieReklamace";
+import { useKonfiguraceDokumentu } from "./Orders/hooks/useKonfiguraceDokumentu";
+import { useNastaveniServisu } from "./Orders/hooks/useNastaveniServisu";
+import { useNacitaniZakazek } from "./Orders/hooks/useNacitaniZakazek";
+import { useRealtimeZakazek } from "./Orders/hooks/useRealtimeZakazek";
+import { useSmsDostupnost } from "./Orders/hooks/useSmsDostupnost";
+import { useSmsNeprecteneDetailu } from "./Orders/hooks/useSmsNeprecteneDetailu";
+import { useSmsNeprecteneSeznamu } from "./Orders/hooks/useSmsNeprecteneSeznamu";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
 import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
 import { DetailZakazky } from "./Orders/DetailZakazky";
@@ -138,16 +139,6 @@ export type { TicketEx } from "./Orders/typy";
 export { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
 
 
-
-/**
- * Kolik zakázek se natáhne v prvním kole.
- *
- * Odpovídá největší nastavitelné velikosti stránky, takže se z první odpovědi
- * dá vykreslit celá první stránka seznamu, ať má uživatel nastavené cokoli.
- * Zbytek dojede na pozadí – bez toho čeká i ten, kdo chce jen otevřít první
- * zakázku shora.
- */
-const PRVNI_DAVKA_ZAKAZEK = 200;
 /** Sbalené sekce v detailu zakázky – stav se pamatuje na zařízení. */
 const DETAIL_PORTAL_OPEN_KEY = "jobsheet_detail_portal_open_v1";
 const DETAIL_DIAGNOSTIKA_OPEN_KEY = "jobsheet_detail_diagnostika_open_v1";
@@ -178,18 +169,6 @@ export default function Orders({
   const canPrintExport = hasCapability("can_print_export");
 
   const [uiCfg, setUiCfg] = useState<UIConfig>(() => safeLoadUIConfig());
-  const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
-  /**
-   * Aktuální zakázky mimo React – pro úpravy provedených oprav, které se
-   * ukládají hned do databáze. Několik změn za sebou v jednom kliknutí
-   * (cena, náklady, čas, díly) musí vidět výsledek té předchozí, a ne stav
-   * z posledního vykreslení.
-   */
-  const cloudTicketsRef = useRef<TicketEx[]>([]);
-  cloudTicketsRef.current = cloudTickets;
-  /* Pro První kroky: id všech zakázek – karta si z nich podle stopy v configu
-     odečte ukázkové, aby „první zakázku“ neodškrtla ukázka. */
-  const ticketIds = useMemo(() => cloudTickets.map((t) => t.id), [cloudTickets]);
   /** Zápisy provedených oprav, které ještě běží nebo čekají na odklad – podle zakázky. */
   const rozpracovaneZapisyOpravRef = useRef<Map<string, number>>(new Map());
   const odlozeneZapisyOpravRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
@@ -210,24 +189,12 @@ export default function Orders({
   );
   /** Odložené zápisy kontroly po opravě – psaní poznámky jinak posílá zápis na každou klávesu. */
   const odlozenaKontrolaRef = useRef<Map<string, { casovac: ReturnType<typeof setTimeout>; proved: () => void }>>(new Map());
-  const [ticketsLoading, setTicketsLoading] = useState(false);
-  /** Seznam už jde používat, ale ještě není celý – dotahuje se zbytek stránek. */
-  const [ticketsPartial, setTicketsPartial] = useState(false);
-  const [ticketsError, setTicketsError] = useState<string | null>(null);
-  const [cloudClaims, setCloudClaims] = useState<WarrantyClaimRow[]>([]);
-  const [claimsLoading, setClaimsLoading] = useState(false);
-  const [claimsError, setClaimsError] = useState<string | null>(null);
   const [commentsByTicket, setCommentsByTicket] = useState<Record<string, TicketComment[]>>({});
   /** Živé profily autorů komentářů (fotka a přezdívka) – viz TicketComments. */
   const [commentAuthorProfiles, setCommentAuthorProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
 
-  const [, setDocumentsConfig] = useState<any>(() => safeLoadDocumentsConfig());
-
   // Refs for race condition protection
-  const ticketsReqIdRef = useRef(0);
-  const claimsReqIdRef = useRef(0);
   const commentsReqIdRef = useRef(0);
-  const docsReqIdRef = useRef(0);
   const activeServiceIdRef = useRef<string | null>(activeServiceId);
   
   // Keep activeServiceIdRef in sync
@@ -235,278 +202,38 @@ export default function Orders({
     activeServiceIdRef.current = activeServiceId;
   }, [activeServiceId]);
   
-  // Load documents config from DB when activeServiceId changes
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      return;
-    }
-    
-    const myReqId = ++docsReqIdRef.current;
-    
-    const loadConfig = async () => {
-      const dbConfig = await loadDocumentsConfigFromDB(activeServiceId);
-      
-      // Check if this request is still valid
-      if (myReqId !== docsReqIdRef.current) {
-        return; // This request is stale, ignore it
-      }
-      
-      if (dbConfig) {
-        setDocumentsConfig(dbConfig);
-      }
-    };
-    
-    loadConfig().catch((err) => {
-      console.error("[Orders] Error loading documents config:", err);
-    });
+  useKonfiguraceDokumentu(activeServiceId, activeServiceIdRef);
 
-    /* Firemní údaje pro tisk se berou z kopie v prohlížeči, a tu zapisuje
-       jen obrazovka Nastavení. Kdo ji nikdy neotevřel (nový zákazník, druhý
-       počítač), tiskl zakázkový list bez názvu servisu. Doplní se z databáze,
-       kde je od založení servisu. */
-    void doplnFiremniUdajeZDb(activeServiceId).catch((err) => {
-      console.error("[Orders] Firemní údaje se nedoplnily:", err);
-    });
+  const {
+    ordersShowClaimsInList,
+    hodinovaSazba,
+    zaokrouhleniPrace,
+    kontrolniSeznamy,
+    nahradniZarizeni,
+    casNaOpraveZapnuto,
+    pridelovaniTechnika,
+    prednastaveneSlevy,
+    pravidlaOdmen,
+    skryteSekce,
+    zasilkyZapnuty,
+    nastaveniZasilek,
+    chatZapnuty,
+  } = useNastaveniServisu(activeServiceId);
 
-    return () => {
-      docsReqIdRef.current++;
-    };
-  }, [activeServiceId]);
-
-  // Realtime subscription for service_document_settings
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-
-    const topic = `service_document_settings:${activeServiceId}`;
-    devLog("[RT] subscribe", topic, new Date().toISOString());
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "service_document_settings",
-          filter: `service_id=eq.${activeServiceId}`,
-        },
-        async (payload) => {
-          devLog("[Orders] service_document_settings changed", payload);
-          // Use ref to get current activeServiceId (not closure value)
-          const sid = activeServiceIdRef.current;
-          if (!sid) return;
-          
-          // Reload config from DB
-          const dbConfig = await loadDocumentsConfigFromDB(sid);
-          if (dbConfig) {
-            setDocumentsConfig(dbConfig);
-            // Sync to localStorage as fallback
-            localStorage.setItem(STORAGE_KEYS.DOCUMENTS_CONFIG, JSON.stringify(dbConfig));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      devLog("[RT] unsubscribe", topic, new Date().toISOString());
-      if (supabase) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, [activeServiceId]);
-
-  /* Nastavení servisu do stavu stránky. Jedno místo pro první načtení,
-     ruční událost i realtime – dřív to byly dvě skoro stejné kopie a na
-     realtime se zapomnělo. Kvůli tomu se nově přidané náhradní zařízení
-     v otevřené aplikaci v detailu zakázky vůbec neobjevilo: stránka
-     Zakázky zůstává připojená a config si nikdy znovu nenačetla. */
-  const pouzijConfigServisu = useCallback((config: any) => {
-    setOrdersShowClaimsInList(!!config?.orders_show_claims_in_list);
-    setHodinovaSazba(typeof config?.hodinova_sazba === "number" ? config.hodinova_sazba : null);
-    setZaokrouhleniPrace(normalizujZaokrouhleni(config?.zaokrouhleni_prace));
-    setKontrolniSeznamy(normalizujSablony(config?.kontrolniSeznamy));
-    setNahradniZarizeni(normalizujNahradni(config?.nahradniZarizeni));
-    setCasNaOpraveZapnuto(config?.cas_na_oprave === true);
-    setPridelovaniTechnika(config?.pridelovani_technika !== false);
-    setChatZapnuty(config?.chat !== false);
-    setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
-    setPravidlaOdmen(normalizujOdmeny(config?.odmeny).pravidla.filter((p) => p.aktivni));
-    setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
-    setZasilkyZapnuty(config?.zasilky === true);
-    setNastaveniZasilek(normalizujNastaveniZasilek(config ?? undefined));
-  }, []);
-
-  const nactiConfigServisu = useCallback(() => {
-    if (!activeServiceId || !supabase) return;
-    (supabase.from("service_settings") as any)
-      .select("config")
-      .eq("service_id", activeServiceId)
-      .maybeSingle()
-      .then(({ data }: any) => pouzijConfigServisu(data?.config))
-      .catch(() => {});
-  }, [activeServiceId, pouzijConfigServisu]);
-
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setOrdersShowClaimsInList(false);
-      return;
-    }
-    nactiConfigServisu();
-  }, [activeServiceId, nactiConfigServisu]);
-
-  useEffect(() => {
-    window.addEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
-    return () => window.removeEventListener("jobsheet:ui-updated" as any, nactiConfigServisu);
-  }, [nactiConfigServisu]);
-
-  // Změna nastavení odjinud (jiný počítač, druhá záložka, kolega) se projeví hned.
-  useEffect(() => {
-    if (!activeServiceId) return;
-    return subscribeServiceConfig(activeServiceId, (config) => pouzijConfigServisu(config), "orders");
-  }, [activeServiceId, pouzijConfigServisu]);
-
-  // Load tickets from cloud when activeServiceId changes
-  //
-  // Čtou se jen sloupce, ze kterých se skládá seznam (SLOUPCE_SEZNAMU).
-  // Zbytek – diagnostika, fotky, kontrola po opravě, zápůjčka, adresa –
-  // se dotáhne až při otevření konkrétní zakázky. U servisu s 2 100
-  // zakázkami tím ze seznamu zmizely přes dva megabajty (docs/ZATEZ.md).
-  //
-  // Načítá se ve dvou kolech. První dotaz vezme jen PRVNI_DAVKA_ZAKAZEK
-  // nejnovějších zakázek – tolik, že první stránka seznamu je z čeho vykreslit –
-  // a teprve pak se dotahuje zbytek. U servisu s 4 800 zakázkami se tím první
-  // řádek seznamu objevil za 520 ms místo 2 505 ms (medián ze tří běhů,
-  // 6. 9. 2026, viz docs/ZATEZ.md oddíl 5).
-  // Servis pod dvě stě zakázek pošle pořád jen jeden dotaz.
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-        setCloudTickets([]);
-      setTicketsLoading(false);
-      setTicketsPartial(false);
-        setTicketsError(null);
-      return;
-    }
-
-    const myReqId = ++ticketsReqIdRef.current;
-
-    setTicketsLoading(true);
-    setTicketsPartial(false);
-    setTicketsError(null);
-
-    const stranka = (from: number, to: number) =>
-      (supabase!
-        .from("tickets") as any)
-        .select(SLOUPCE_SEZNAMU)
-        .eq("service_id", activeServiceId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to);
-
-    // `service_id` se nečte – pro celý seznam je stejné a v každém řádku by to
-    // bylo jen uuid navíc po drátě. Doplní se z aktivního servisu, protože
-    // podle něj se pak tisknou dokumenty a otevírá SMS.
-    const doZakazky = (r: any): TicketEx => mapSupabaseTicketToTicketEx({ ...r, service_id: activeServiceId });
-
-    /* Zakázka, kterou si detail mezitím dotáhl celou, se nesmí vrátit na
-       sloupce seznamu – druhé kolo dojíždí vteřiny po prvním a uživatel už
-       může mít detail otevřený. */
-    const zachovejDotazene = (nove: TicketEx[], prev: TicketEx[]): TicketEx[] => {
-      const plne = new Map(prev.filter((t) => t.uplna).map((t) => [t.id, t] as const));
-      return plne.size === 0 ? nove : nove.map((t) => plne.get(t.id) ?? t);
-    };
-
-    const loadTickets = async () => {
-      try {
-        const { data: prvni, error: chybaPrvni } = await stranka(0, PRVNI_DAVKA_ZAKAZEK - 1);
-
-        // Check if this request is still valid
-        if (myReqId !== ticketsReqIdRef.current) {
-          return; // This request is stale, ignore it
-        }
-        if (chybaPrvni) throw chybaPrvni;
-
-        const prvniRadky: any[] = prvni ?? [];
-        setCloudTickets((prev) => zachovejDotazene(prvniRadky.map(doZakazky), prev));
-        setTicketsLoading(false);
-
-        // Kratší odpověď = servis nemá víc zakázek, druhé kolo nemá co dotáhnout.
-        if (prvniRadky.length < PRVNI_DAVKA_ZAKAZEK) {
-          setTicketsPartial(false);
-          return;
-        }
-
-        // Seznam je od téhle chvíle použitelný, ale ještě není celý – hledání
-        // a počty by na neúplných datech lhaly, proto se to dá poznat zvenčí.
-        setTicketsPartial(true);
-        const { data, error } = await fetchAllPages((from, to) =>
-          stranka(PRVNI_DAVKA_ZAKAZEK + from, PRVNI_DAVKA_ZAKAZEK + to)
-        );
-
-        if (myReqId !== ticketsReqIdRef.current) return;
-        if (error) throw error;
-
-        const zbytek: any[] = data ?? [];
-        setCloudTickets((prev) => zachovejDotazene([...prvniRadky, ...zbytek].map(doZakazky), prev));
-        setTicketsPartial(false);
-      } catch (err) {
-        // Check if this request is still valid before setting error
-        if (myReqId !== ticketsReqIdRef.current) {
-          return; // This request is stale, ignore it
-        }
-        console.error("[Orders] Error loading tickets:", err);
-        setTicketsError(normalizeError(err) || "Neznámá chyba při načítání zakázek");
-        setCloudTickets([]);
-        setTicketsLoading(false);
-        setTicketsPartial(false);
-      }
-    };
-
-    loadTickets();
-
-    return () => {
-      ticketsReqIdRef.current++;
-    };
-  }, [activeServiceId, supabase]);
-
-  // Load warranty claims when activeServiceId changes
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setCloudClaims([]);
-      setClaimsLoading(false);
-      setClaimsError(null);
-      return;
-    }
-    const myReqId = ++claimsReqIdRef.current;
-    const client = supabase;
-    setClaimsLoading(true);
-    setClaimsError(null);
-    const loadClaims = async () => {
-      if (!client) return;
-      try {
-        const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
-          (client
-            .from("warranty_claims") as any)
-            .select("*")
-            .eq("service_id", activeServiceId)
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: false })
-            .range(from, to)
-        );
-        if (myReqId !== claimsReqIdRef.current) return;
-        if (error) throw error;
-        setCloudClaims(data ?? []);
-      } catch (err) {
-        if (myReqId !== claimsReqIdRef.current) return;
-        setClaimsError(normalizeError(err) || "Chyba při načítání reklamací");
-        setCloudClaims([]);
-      } finally {
-        if (myReqId === claimsReqIdRef.current) setClaimsLoading(false);
-      }
-    };
-    loadClaims();
-    return () => { claimsReqIdRef.current++; };
-  }, [activeServiceId, supabase]);
+  const {
+    cloudTickets,
+    setCloudTickets,
+    cloudTicketsRef,
+    ticketIds,
+    ticketsLoading,
+    ticketsPartial,
+    ticketsError,
+    cloudClaims,
+    setCloudClaims,
+    claimsLoading,
+    claimsError,
+    refetchClaims,
+  } = useNacitaniZakazek(activeServiceId);
 
   // Interní komentáře (chat) k zakázkám – dřív jen v localStorage, teď sdílená
   // tabulka ticket_comments.
@@ -572,39 +299,7 @@ export default function Orders({
       if (client) client.removeChannel(channel);
     };
   }, [activeServiceId, supabase, nactiKomentare]);
-
-  const refetchClaims = useCallback(async () => {
-    if (!activeServiceId || !supabase) return;
-    const { data, error } = await fetchAllPages<WarrantyClaimRow>((from, to) =>
-      (supabase!.from("warranty_claims") as any)
-        .select("*")
-        .eq("service_id", activeServiceId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to)
-    );
-    if (!error && data) setCloudClaims(data);
-  }, [activeServiceId, supabase]);
-
   const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
-
-  // Realtime subscription for warranty_claims
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-    const topic = `warranty_claims:${activeServiceId}`;
-    const client = supabase;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "warranty_claims", filter: `service_id=eq.${activeServiceId}` },
-        () => refetchClaims()
-      )
-      .subscribe();
-    return () => {
-      if (client) client.removeChannel(channel);
-    };
-  }, [activeServiceId, supabase, refetchClaims]);
 
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -702,132 +397,7 @@ export default function Orders({
     }
   }, [closeDetailWhen]);
 
-  // Realtime subscription for tickets
-  useEffect(() => {
-    if (!activeServiceId || !supabase) return;
-
-    const topic = `tickets:${activeServiceId}`;
-    devLog("[RT] subscribe", topic, new Date().toISOString());
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "tickets",
-          filter: `service_id=eq.${activeServiceId}`,
-        },
-        async (payload) => {
-          devLog("[Orders] tickets changed", payload);
-          
-          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            devLog("[RT tickets] event", payload.eventType, {
-              id: (payload.new as any)?.id,
-              service_id: (payload.new as any)?.service_id,
-              status: (payload.new as any)?.status,
-              updated_at: (payload.new as any)?.updated_at,
-            });
-
-            const newTicket = mapSupabaseTicketToTicketEx(payload.new as any);
-            const wasDeleted = (payload.old as any)?.deleted_at != null;
-            const isDeleted = (payload.new as any)?.deleted_at != null;
-            
-            // Handle restore: deleted_at changed from not null to null
-            if (wasDeleted && !isDeleted) {
-              // Ticket was restored - add it back
-            setCloudTickets((prev) => {
-                const existing = prev.find((t) => t.id === newTicket.id);
-                devLog("[RT tickets] setCloudTickets (restore)", {
-                  id: newTicket.id,
-                  hadExisting: !!existing,
-                  prevLen: prev.length,
-                  newStatus: newTicket.status,
-                });
-                if (existing) {
-                  // Update existing – stejné sloučení jako u běžné změny níže.
-                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
-                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
-                } else {
-                  // Add new - insert in correct position based on created_at
-                  const sorted = [...prev, newTicket].sort((a, b) => {
-                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return bTime - aTime; // Descending order (newest first)
-                  });
-                  return sorted;
-                }
-              });
-            } else if (!isDeleted) {
-              // Ticket is not deleted - upsert
-              setCloudTickets((prev) => {
-                const existing = prev.find((t) => t.id === newTicket.id);
-                devLog("[RT tickets] setCloudTickets (upsert)", {
-                  id: newTicket.id,
-                  hadExisting: !!existing,
-                  prevLen: prev.length,
-                  newStatus: newTicket.status,
-                  oldStatus: existing?.status,
-                });
-                
-                // Check if this is the currently edited ticket and if version conflict occurred
-                if (existing && isEditing && detailId === newTicket.id) {
-                  const existingVersion = existing.version ?? 0;
-                  const newVersion = newTicket.version ?? 0;
-                  if (newVersion > existingVersion) {
-                    // Remote update detected during editing - show banner/toast
-                    devLog("[RT tickets] Remote update detected for edited ticket", {
-                      ticketId: newTicket.id,
-                      existingVersion,
-                      newVersion,
-                    });
-                    showToast("Zakázka se změnila na pozadí", "info");
-                  }
-                }
-                
-                if (existing) {
-                  // Provedené opravy se ukládají hned; dokud zápis běží, čeká na
-                  // odklad, nebo selhal a čeká na zavření detailu, drží se místní
-                  // verze. Jinak by změna stavu od kolegy vrátila opravy z databáze,
-                  // které jsou o krok pozadu, a ve skladu by zůstala rezervace na
-                  // opravu, kterou nikdo nevidí. Stejně se hned ukládá kontrola po
-                  // opravě a náhradní zařízení – ozvěna staršího zápisu by přepsala
-                  // kliknutí, které přišlo mezitím. Pravidlo: src/lib/slouceniZakazky.ts.
-                  const sloucena = sloucZakazkuZDb(existing, newTicket, evidenceZapisu(), newTicket.id);
-                  return prev.map((t) => (t.id === newTicket.id ? sloucena : t));
-                } else {
-                  // Add new - insert in correct position based on created_at
-                  const sorted = [...prev, newTicket].sort((a, b) => {
-                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return bTime - aTime; // Descending order (newest first)
-                  });
-                  return sorted;
-                }
-              });
-            } else {
-              // Ticket was soft-deleted (deleted_at changed from null to not null)
-              setCloudTickets((prev) => prev.filter((t) => t.id !== newTicket.id));
-            }
-          } else if (payload.eventType === "DELETE") {
-            // Hard delete - remove from list
-            const deletedId = (payload.old as any)?.id || (payload.new as any)?.id;
-            if (deletedId) {
-            setCloudTickets((prev) => prev.filter((t) => t.id !== deletedId));
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      devLog("[RT] unsubscribe", topic, new Date().toISOString());
-      if (supabase) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, [activeServiceId, isEditing, detailId]);
+  useRealtimeZakazek({ activeServiceId, isEditing, detailId, setCloudTickets, evidenceZapisu });
 
   // Cloud mode only: show only cloud tickets
   const { activeBranchId, isMulti: hasBranches, branches, branchById, branchForNew } = useBranches();
@@ -954,32 +524,8 @@ export default function Orders({
   const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
   /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu); null = výběr hledáním. */
   const [claimSourceTicket, setClaimSourceTicket] = useState<TicketEx | null>(null);
-  const [ordersShowClaimsInList, setOrdersShowClaimsInList] = useState(false);
-  /** Hodinová sazba servisu (Kč/h) pro položku „Hodinová práce“; null = nenastavena. */
-  const [hodinovaSazba, setHodinovaSazba] = useState<number | null>(null);
-  /** Krok zaokrouhlení naměřeného času na hodinovou práci (service_settings.config.zaokrouhleni_prace). */
-  const [zaokrouhleniPrace, setZaokrouhleniPrace] = useState<number>(VYCHOZI_ZAOKROUHLENI_PRACE);
-  /** Šablony kontroly po opravě (service_settings.config.kontrolniSeznamy, jinak výchozí). */
-  const [kontrolniSeznamy, setKontrolniSeznamy] = useState<SablonaKontroly[]>(() => normalizujSablony(undefined));
-  /** Stálý seznam náhradních zařízení servisu (service_settings.config.nahradniZarizeni). */
-  const [nahradniZarizeni, setNahradniZarizeni] = useState<NahradniZarizeni[]>([]);
-  /** Stopky na zakázce – volitelné (service_settings.config.cas_na_oprave). */
-  const [casNaOpraveZapnuto, setCasNaOpraveZapnuto] = useState(false);
-  /** Přidělování technika (config.pridelovani_technika, výchozí zapnuto). Servis s jedním technikem si ho vypne. */
-  const [pridelovaniTechnika, setPridelovaniTechnika] = useState(true);
-  /** Přednastavené slevy (config.prednastavene_slevy) – tlačítka u ceny oprav v detailu. */
-  const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
-  /** Aktivní pravidla odměn (config.odmeny) – u opravy, na kterou sedí, se nabízí příznak „nabídnuto navíc“. */
-  const [pravidlaOdmen, setPravidlaOdmen] = useState<PravidloOdmeny[]>([]);
-  /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
-  const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
-  /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
-  const [zasilkyZapnuty, setZasilkyZapnuty] = useState(false);
-  const [nastaveniZasilek, setNastaveniZasilek] = useState<NastaveniZasilek>(() => normalizujNastaveniZasilek(undefined));
   /** Zásilky otevřené zakázky (dodá karta Kde je zakázka) – pro kroky v Postupu zakázky. */
   const [historieZasilek, setHistorieZasilek] = useState<{ ticketId: string; zasilky: Zasilka[] } | null>(null);
-  /** Chat týmu (config.chat) – kvůli položce „Sdílet do chatu“ v detailu. */
-  const [chatZapnuty, setChatZapnuty] = useState(true);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
   const [isEditingClaim, setIsEditingClaim] = useState(false);
   const [editedClaim, setEditedClaim] = useState<Partial<WarrantyClaimRow>>({});
@@ -989,26 +535,10 @@ export default function Orders({
   const [deleteClaimDialogOpen, setDeleteClaimDialogOpen] = useState(false);
   const [deleteClaimId, setDeleteClaimId] = useState<string | null>(null);
   const [smsPanelOpen, setSmsPanelOpen] = useState(false);
-  const [smsUnreadCount, setSmsUnreadCount] = useState(0);
-  const [smsUnreadByTicketId, setSmsUnreadByTicketId] = useState<Record<string, number>>({});
-  const [smsUnreadListBump, setSmsUnreadListBump] = useState(0);
-  const [smsActivatedForService, setSmsActivatedForService] = useState(false);
+
+  const smsActivatedForService = useSmsDostupnost(activeServiceId);
   /** Číslo i modul zároveň – jen tak se SMS smí kdekoli objevit. */
   const smsAvailable = smsActivatedForService && smsEnabled;
-
-  useEffect(() => {
-    if (!activeServiceId || !supabase) {
-      setSmsActivatedForService(false);
-      return;
-    }
-    supabase
-      .from("service_phone_numbers")
-      .select("id")
-      .eq("service_id", activeServiceId)
-      .eq("active", true)
-      .maybeSingle()
-      .then(({ data }) => setSmsActivatedForService(!!data));
-  }, [activeServiceId]);
 
   // Sync ref for SMS notifications: when SMS panel is open for a ticket, don't show OS notification for that ticket
   useEffect(() => {
@@ -1020,49 +550,7 @@ export default function Orders({
     };
   }, [smsPanelOpen, detailId, smsPanelTicketIdRef]);
 
-  // SMS unread on detail header: conv linked by ticket_id OR same customer phone (shared thread)
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    if (!detailId || !activeServiceId || !client) {
-      setSmsUnreadCount(0);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const convIdSet = new Set<string>();
-      const { data: convsTicket } = await client.from("sms_conversations").select("id").eq("ticket_id", detailId);
-      convsTicket?.forEach((c) => convIdSet.add(c.id));
-      const { data: tick } = await client
-        .from("tickets")
-        .select("customer_phone")
-        .eq("id", detailId)
-        .eq("service_id", activeServiceId)
-        .maybeSingle();
-      const phoneNorm = tick?.customer_phone ? normalizePhone(String(tick.customer_phone)) : null;
-      if (phoneNorm) {
-        const { data: convPhone } = await client
-          .from("sms_conversations")
-          .select("id")
-          .eq("service_id", activeServiceId)
-          .eq("customer_phone", phoneNorm)
-          .maybeSingle();
-        if (convPhone?.id) convIdSet.add(convPhone.id);
-      }
-      if (convIdSet.size === 0) {
-        if (!cancelled) setSmsUnreadCount(0);
-        return;
-      }
-      const { count, error } = await client
-        .from("sms_messages")
-        .select("id", { count: "exact", head: true })
-        .in("conversation_id", [...convIdSet])
-        .eq("direction", "inbound")
-        .is("read_at", null);
-      if (cancelled) return;
-      setSmsUnreadCount(error ? 0 : count ?? 0);
-    })();
-    return () => { cancelled = true; };
-  }, [detailId, activeServiceId]);
+  const [smsUnreadCount, setSmsUnreadCount] = useSmsNeprecteneDetailu(detailId, activeServiceId);
 
   const { ticketHistoryEntries, ticketHistoryLoading, ticketHistoryError, ticketHistoryExpandedId, setTicketHistoryExpandedId } = useHistorieZakazky(ticketHistoryModalOpen, detailId, activeServiceId);
   const { claimHistoryEntries, claimHistoryLoading, claimHistoryError } = useHistorieReklamace(claimHistoryModalOpen, detailClaimId, activeServiceId);
@@ -2045,135 +1533,7 @@ export default function Orders({
     paginatedTickets,
   ]);
 
-  // Realtime: po příchozí SMS nebo označení přečteného přepočíst badge u řádků
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    if (!smsAvailable || !activeServiceId || !client) return;
-    const topic = `orders_sms_unread_rt:${activeServiceId}`;
-    const channel = client
-      .channel(topic)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "sms_messages" },
-        (payload) => {
-          if ((payload.new as { direction?: string })?.direction === "inbound") {
-            setSmsUnreadListBump((n) => n + 1);
-          }
-        }
-      )
-      .subscribe();
-    return () => {
-      client.removeChannel(channel);
-    };
-  }, [smsAvailable, activeServiceId]);
-
-  /**
-   * Klíč z obsahu, ne z identity pole.
-   *
-   * ticketsForSmsUnread je nové pole při každém renderu, takže efekt níž se
-   * spouštěl při každém úhozu ve vyhledávání – naměřeno 6 úhozů = 15 dotazů
-   * do Supabase, i když se seznam zakázek vůbec nezměnil.
-   */
-  const smsUnreadKey = useMemo(
-    () => ticketsForSmsUnread.map((t) => `${t.id}|${normalizePhone(t.customerPhone) ?? ""}`).join(","),
-    [ticketsForSmsUnread]
-  );
-  const ticketsForSmsUnreadRef = useRef(ticketsForSmsUnread);
-  ticketsForSmsUnreadRef.current = ticketsForSmsUnread;
-
-  // SMS unread per řádek: konverzace podle ticket_id nebo stejného telefonu jako u detailu
-  useEffect(() => {
-    const client = getTypedSupabaseClient();
-    const ticketRowsAll = ticketsForSmsUnreadRef.current;
-    if (!smsAvailable || !activeServiceId || !client || ticketRowsAll.length === 0) {
-      // Nový prázdný objekt by byl pokaždé jiná reference a vynutil další render.
-      setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-      return;
-    }
-    const ticketRows = ticketRowsAll;
-    const ticketIds = ticketRows.map((t) => t.id);
-    const idSet = new Set(ticketIds);
-    const chunk = 180;
-    let cancelled = false;
-    // Rychlé psaní jinak spustí dotaz na každý mezistav.
-    const timer = setTimeout(() => {
-    (async () => {
-      const convsByTicket: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
-      for (let i = 0; i < ticketIds.length; i += chunk) {
-        const { data } = await client
-          .from("sms_conversations")
-          .select("id, ticket_id, customer_phone")
-          .eq("service_id", activeServiceId)
-          .in("ticket_id", ticketIds.slice(i, i + chunk));
-        convsByTicket.push(...((data ?? []) as typeof convsByTicket));
-      }
-      const phones = [
-        ...new Set(ticketRows.map((t) => normalizePhone(t.customerPhone)).filter((p): p is string => !!p)),
-      ];
-      const convsByPhone: { id: string; ticket_id: string | null; customer_phone: string }[] = [];
-      for (let i = 0; i < phones.length; i += chunk) {
-        const { data } = await client
-          .from("sms_conversations")
-          .select("id, ticket_id, customer_phone")
-          .eq("service_id", activeServiceId)
-          .in("customer_phone", phones.slice(i, i + chunk));
-        for (const row of data ?? []) {
-          convsByPhone.push(row as (typeof convsByPhone)[number]);
-        }
-      }
-      const convMap = new Map<string, { id: string; ticket_id: string | null; customer_phone: string }>();
-      for (const c of [...convsByTicket, ...convsByPhone]) {
-        convMap.set(c.id, c);
-      }
-      const convIds = [...convMap.keys()];
-      if (convIds.length === 0) {
-        if (!cancelled) setSmsUnreadByTicketId((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-        return;
-      }
-      const countByConv: Record<string, number> = {};
-      for (let i = 0; i < convIds.length; i += chunk) {
-        const slice = convIds.slice(i, i + chunk);
-        const { data: messages } = await client
-          .from("sms_messages")
-          .select("conversation_id")
-          .in("conversation_id", slice)
-          .eq("direction", "inbound")
-          .is("read_at", null);
-        if (cancelled) return;
-        (messages ?? []).forEach((m) => {
-          countByConv[m.conversation_id] = (countByConv[m.conversation_id] ?? 0) + 1;
-        });
-      }
-      const phonesMatch = (a: string | null | undefined, b: string | null | undefined) => {
-        const na = normalizePhone(a);
-        const nb = normalizePhone(b);
-        if (na && nb && na === nb) return true;
-        const da = String(a ?? "").replace(/\D/g, "");
-        const db = String(b ?? "").replace(/\D/g, "");
-        return da.length >= 9 && db.length >= 9 && da.slice(-9) === db.slice(-9);
-      };
-      const byTicket: Record<string, number> = {};
-      for (const [cid, n] of Object.entries(countByConv)) {
-        const conv = convMap.get(cid);
-        if (!conv) continue;
-        if (conv.ticket_id && idSet.has(conv.ticket_id)) {
-          byTicket[conv.ticket_id] = (byTicket[conv.ticket_id] ?? 0) + n;
-        } else {
-          for (const t of ticketRows) {
-            if (phonesMatch(t.customerPhone, conv.customer_phone)) {
-              byTicket[t.id] = (byTicket[t.id] ?? 0) + n;
-            }
-          }
-        }
-      }
-      if (!cancelled) setSmsUnreadByTicketId(byTicket);
-    })();
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [smsAvailable, activeServiceId, smsUnreadKey, smsUnreadListBump]);
+  const { smsUnreadByTicketId, setSmsUnreadListBump } = useSmsNeprecteneSeznamu({ smsAvailable, activeServiceId, ticketsForSmsUnread });
 
   useEffect(() => {
     setOrdersPage(0);
