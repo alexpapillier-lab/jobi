@@ -57,6 +57,32 @@ Každých 15 minut projde všechny servisy s aktivními pravidly a vyhodnotí:
   `opened → portal_opened`, `quote_approved`, `quote_rejected`, `signed`.
   Dedupe přes `automation_runs.detail` začínající `event:<id události>`.
 
+- **fronta `automation_schedule`** (migrace `20260927140000_zadost_o_recenzi.sql`)
+  – splatné řádky (`status = pending`, `run_at ≤ teď`, max. 200 na tik).
+  Řádek zakládá trigger `automation_schedule_po_vydani` na `tickets`, když se
+  zakázka přepne (UPDATE, ne INSERT) do vydaného stavu a servis má aktivní
+  pravidlo `ticket_issued` (`run_at = teď + after_hours`). Tik si řádek zamkne
+  podmíněným UPDATE `pending → processing`, ověří pravidlo (zapnuté, stejný
+  servis), zakázku (existuje, pořád ve vydaném stavu) a denní okno
+  (`conditions.send_from_hour/send_to_hour/time_zone`, výchozí 9–19
+  Europe/Prague) – mimo okno jen posune `run_at` na začátek okna. Pak
+  `evaluateRule` jako u ostatních spouštěčů. Výsledek: `done / skipped /
+  error / cancelled`; chyba se zkusí znovu za hodinu, nejvýš 3×. Řádek
+  uvízlý v `processing` déle než hodinu vrátí další tik do fronty.
+
+### Akce review_request (žádost o recenzi)
+
+Rozhodování je sdílené v `_shared/recenze.ts` (`posudKandidata`), testy
+v `src/lib/recenze.test.ts`. Přeskočí se: zakázka mimo vydaný stav, bez
+platného `review_url`, zákazník s `customers.neposilat_zadost_o_recenzi`,
+zakázka, ke které žádost už odešla, zákazník bez telefonu i e-mailu,
+a zákazník, kterému žádost odešla za posledních
+`conditions.customer_cooldown_days` dní (výchozí 90; hledá se podle
+zákazníka, telefonu i e-mailu). Kanál: SMS (stejná cesta jako akce `sms`,
+balíček, chat), bez telefonu nebo bez SMS modulu e-mail. Po odeslání řádek
+v `zadosti_o_recenzi`. Proměnná `{{review_url}}`; když ji šablona nemá,
+odkaz se přidá na konec.
+
 ### Okamžité spuštění z Jobi
 
 ```json

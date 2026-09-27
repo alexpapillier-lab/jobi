@@ -228,11 +228,14 @@ export function draftToRulePayload(d: RuleDraft): { trigger: Trigger; action: Ac
 // ---------------------------------------------------------------------------
 // Předpřipravené šablony pro prázdný stav
 
-export type PresetId = "pickup_reminder" | "review_request" | "quote_no_reply";
+// Žádost o recenzi tu dřív byla jako „při přepnutí do koncového stavu → SMS“.
+// Teď má vlastní kartu (ReviewRequestCard) se zpožděním, denním oknem
+// a limitem na zákazníka – obecné pravidlo by poslalo SMS hned při vydání
+// a stálému zákazníkovi ke každé zakázce.
+export type PresetId = "pickup_reminder" | "quote_no_reply";
 
 export const PRESETS: Array<{ id: PresetId; title: string; description: string }> = [
   { id: "pickup_reminder", title: "Připomínka vyzvednutí", description: "Po 3 dnech ve stavu k vyzvednutí pošle SMS a každé 3 dny ji zopakuje." },
-  { id: "review_request", title: "Žádost o recenzi", description: "Po dokončení zakázky poděkuje SMS a požádá o hodnocení." },
   { id: "quote_no_reply", title: "Nabídka bez odpovědi", description: "Když zákazník 2 dny neschválí nabídku, pošle mu odkaz znovu." },
 ];
 
@@ -258,16 +261,6 @@ export function presetDraft(id: PresetId, statuses: StatusMeta[]): RuleDraft {
       d.actionType = "sms";
       d.smsTemplate = "Dobrý den, zakázka {{code}} ({{device_label}}) je připravena k vyzvednutí už {{days}} dní. {{service_name}}, {{service_phone}}";
       d.oncePerTicket = false;
-      break;
-    }
-    case "review_request": {
-      const s = statuses.find((x) => x.isFinal)?.key ?? findStatus(statuses, ["vyd", "dokon", "uzav"])?.key ?? first;
-      d.name = "Žádost o recenzi";
-      d.triggerType = "status_change";
-      d.triggerStatusKey = s;
-      d.actionType = "sms";
-      d.smsTemplate = "Děkujeme za návštěvu {{service_name}}. Budeme rádi za hodnocení.";
-      d.skipFinal = false;
       break;
     }
     default: {

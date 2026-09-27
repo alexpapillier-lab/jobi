@@ -18,6 +18,18 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
 2. `[x]` **Stavebnice automatizací** (nasazeno 4. 9.; WhatsApp zatím ne) – pravidla „když stav X → šablona Y“ pro
    SMS, e-mail, WhatsApp; upomínky „čeká 7 dní na vyzvednutí“, skladné,
    žádost o recenzi po vydání. Základ (SMS podle stavu) existuje.
+   Doplněno 27. 9.: **žádost o recenzi po vydání** (Nastavení → Komunikace →
+   Automatizace → karta Žádost o recenzi): odkaz na Google / Firmy.cz / Heureku,
+   X hodin/dní po vydání (výchozí 1 den), jen v denním okně 9–19 místního času,
+   stejnému zákazníkovi nejvýš jednou za N dní (výchozí 90), SMS a bez telefonu
+   e-mail, v kartě „odesláno za 30 dní“. U zákazníka přepínač „Neposílat žádosti
+   o recenzi“. Nově **plánovač zpožděných akcí**: tabulka `automation_schedule`
+   (`run_at`), plní ji trigger na `tickets` při přepnutí do vydaného stavu,
+   zpracovává tik `automations-run`; jde použít i pro další „za X po události“.
+   Migrace 20260927140000, logika `supabase/functions/_shared/recenze.ts` +
+   `src/lib/recenze.ts`. Zbývá: nasadit migraci a edge funkci, ověřit na
+   testovacím servisu skutečné odeslání (SMS i e-mail), statistika proklik→recenze
+   není (odkaz se neměří).
 3. `[x]` **Cenová nabídka a schválení** jako první krok opravy (nasazeno 5. 9.):
    rozpis se skládá z ceníku nebo ručně, zákazník ho vidí položku po položce
    v portálu a schválí nebo zamítne; po schválení se položky jedním tlačítkem

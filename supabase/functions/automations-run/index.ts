@@ -11,6 +11,11 @@
  *     všechny servisy s aktivními pravidly a vyhodnotí:
  *       - status_age  „zakázka je ve stavu déle než N hodin“
  *       - event       události zákaznického portálu (ticket_portal_events)
+ *     a zpracuje splatné řádky fronty automation_schedule (run_at ≤ teď):
+ *       - ticket_issued „N hodin po vydání zakázky“ – řádek zakládá databázový
+ *         trigger při přepnutí do vydaného stavu; tady se hlídá denní okno
+ *         (mimo okno se run_at posune na jeho začátek) a vyhodnotí pravidlo,
+ *         typicky akce review_request (žádost o recenzi).
  *
  *  2) { service_id, ticket_id, event: "status_change" | "ticket_created", status_key? }
  *     Volá Jobi s JWT uživatele hned po změně stavu / založení zakázky.
@@ -27,6 +32,18 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 import { SMS_MAX_BODY_LENGTH, normalizeE164, segmentu, textProSms, zkontrolujBalicek, type SmsKlient } from "../_shared/sms.ts";
 import { escapeHtml } from "../_shared/html.ts";
 import { castkaBezMeny, cenaZakazky, formatujCastku, naHalere } from "../_shared/penize.ts";
+import {
+  RECENZE_VYCHOZI,
+  dalsiCasOdeslani,
+  maEmail,
+  normalizujOdkazRecenze,
+  sablonaSOdkazem,
+  platneOkno,
+  platnyLimitDni,
+  posudKandidata,
+  stavSpoustiRecenzi,
+  zacatekLimitu,
+} from "../_shared/recenze.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +59,13 @@ const MAX_TICKETS_PER_RULE = 200;
 const EVENT_LOOKBACK_MS = 20 * 60 * 1000;
 /** Přeskočená / chybná status_age pravidla se zkusí znovu nejdřív za den (jinak by log rostl každých 15 minut). */
 const RETRY_SKIPPED_HOURS = 24;
+/** Kolik řádků fronty automation_schedule na jeden tik (všechny servisy dohromady). */
+const MAX_SCHEDULED_PER_TICK = 200;
+/** Řádek, který zůstal „processing“ déle (pád funkce uprostřed), se vrátí do fronty. */
+const STALE_CLAIM_MS = 60 * 60 * 1000;
+/** Naplánovaná akce, která skončí chybou (Twilio, Resend), se zkusí nejvýš tolikrát, vždy za hodinu. */
+const MAX_SCHEDULE_ATTEMPTS = 3;
+const SCHEDULE_RETRY_MS = 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Typy (kopie kontraktu ze src/lib/automations.ts – edge funkce ze src importovat nemůže)
@@ -52,20 +76,26 @@ type Trigger =
   | { type: "status_change"; status_key: string }
   | { type: "status_age"; status_key: string; after_hours: number; repeat_hours?: number | null }
   | { type: "event"; event: AutomationEvent }
-  | { type: "ticket_created" };
+  | { type: "ticket_created" }
+  | { type: "ticket_issued"; after_hours: number; status_keys?: string[] };
 
 type Action =
   | { type: "sms"; template: string }
   | { type: "email"; subject: string; body: string }
   | { type: "set_status"; status_key: string }
   | { type: "add_fee"; name: string; amount: number; per_day?: boolean }
-  | { type: "notify"; message: string };
+  | { type: "notify"; message: string }
+  | { type: "review_request"; review_url: string; template: string; email_subject: string; email_body: string };
 
 type Conditions = {
   skip_final?: boolean;
   once_per_ticket?: boolean;
   require_phone?: boolean;
   require_email?: boolean;
+  send_from_hour?: number;
+  send_to_hour?: number;
+  time_zone?: string;
+  customer_cooldown_days?: number;
 };
 
 type Rule = {
@@ -102,12 +132,13 @@ type TicketRow = {
   discount_type: string | null;
   discount_value: number | string | null;
   portal_token: string | null;
+  customer_id?: string | null;
 };
 
 const TICKET_COLUMNS =
   "id, service_id, code, status, notes, created_at, updated_at, deleted_at, expected_completion_at, " +
   "customer_name, customer_phone, customer_email, device_label, device_brand, device_model, " +
-  "performed_repairs, discount_type, discount_value, portal_token, branch_id";
+  "performed_repairs, discount_type, discount_value, portal_token, branch_id, customer_id";
 
 type StatusInfo = { key: string; label: string; is_final: boolean };
 
@@ -363,6 +394,7 @@ async function buildVars(
   ticket: TicketRow,
   days: number,
   templateText: string,
+  extraVars: Record<string, string> = {},
 ): Promise<Record<string, string>> {
   const repairs = parseRepairs(ticket.performed_repairs);
   const total = computeFinalPrice(repairs, ticket.discount_type, toNumber(ticket.discount_value));
@@ -386,6 +418,7 @@ async function buildVars(
     portal_url: portalUrl,
     service_name: ctx.serviceName,
     service_phone: (ticket.branch_id && ctx.branches.get(ticket.branch_id)?.phone) || ctx.servicePhone,
+    ...extraVars,
   };
 }
 
@@ -394,16 +427,14 @@ async function buildVars(
 
 type ActionOutcome = [RunResult, string | null];
 
-async function actionSms(svc: SupabaseClient, ctx: ServiceCtx, ticket: TicketRow, template: string, days: number): Promise<ActionOutcome> {
-  const phoneRaw = strOrNull(ticket.customer_phone);
-  if (!phoneRaw) return ["skipped", "Zákazník nemá telefon"];
-
+/** Umí servis poslat SMS? Nárok na modul a aktivní číslo; výsledek se drží v kontextu. */
+async function smsUnavailableReason(svc: SupabaseClient, ctx: ServiceCtx): Promise<string | null> {
   // Nárok na modul SMS – stejně jako sms-send, ověřuje se na serveru.
   if (ctx.smsEntitled === null) {
     const { data, error } = await svc.rpc("has_entitlement", { p_service_id: ctx.serviceId, p_module: "sms" });
     ctx.smsEntitled = !error && data === true;
   }
-  if (!ctx.smsEntitled) return ["skipped", "Modul SMS není pro servis aktivní"];
+  if (!ctx.smsEntitled) return "Modul SMS není pro servis aktivní";
 
   if (ctx.twilioNumber === undefined) {
     const { data } = await svc
@@ -414,13 +445,29 @@ async function actionSms(svc: SupabaseClient, ctx: ServiceCtx, ticket: TicketRow
       .maybeSingle();
     ctx.twilioNumber = (data as { twilio_number?: string } | null)?.twilio_number ?? null;
   }
-  if (!ctx.twilioNumber) return ["skipped", "Servis nemá aktivní telefonní číslo pro SMS"];
+  if (!ctx.twilioNumber) return "Servis nemá aktivní telefonní číslo pro SMS";
+  return null;
+}
+
+async function actionSms(
+  svc: SupabaseClient,
+  ctx: ServiceCtx,
+  ticket: TicketRow,
+  template: string,
+  days: number,
+  extraVars: Record<string, string> = {},
+): Promise<ActionOutcome> {
+  const phoneRaw = strOrNull(ticket.customer_phone);
+  if (!phoneRaw) return ["skipped", "Zákazník nemá telefon"];
+
+  const unavailable = await smsUnavailableReason(svc, ctx);
+  if (unavailable || !ctx.twilioNumber) return ["skipped", unavailable ?? "Servis nemá aktivní telefonní číslo pro SMS"];
 
   const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
   if (!accountSid || !authToken) return ["error", "SMS není nakonfigurována (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)"];
 
-  const vars = await buildVars(svc, ctx, ticket, days, template);
+  const vars = await buildVars(svc, ctx, ticket, days, template, extraVars);
   /* Text se posílá stejně jako z chatu: bez diakritiky a bez typografických
      znaků. Automatizace to dřív nedělala, takže česká zpráva letěla v UCS-2
      po 70 znacích – dvakrát dražší, než co ukazoval chat u téhož textu. */
@@ -513,6 +560,7 @@ async function actionEmail(
   subjectTpl: string,
   bodyTpl: string,
   days: number,
+  extraVars: Record<string, string> = {},
 ): Promise<ActionOutcome> {
   const to = strOrNull(ticket.customer_email);
   if (!to || !to.includes("@")) return ["skipped", "Zákazník nemá e-mail"];
@@ -521,7 +569,7 @@ async function actionEmail(
   if (!resendKey) return ["error", "E-mail není nakonfigurován (RESEND_API_KEY)"];
   const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
 
-  const vars = await buildVars(svc, ctx, ticket, days, `${subjectTpl}\n${bodyTpl}`);
+  const vars = await buildVars(svc, ctx, ticket, days, `${subjectTpl}\n${bodyTpl}`, extraVars);
   const subject = substituteTemplate(subjectTpl, vars).trim() || `Zakázka ${vars.code}`.trim();
   const text = substituteTemplate(bodyTpl, vars).trim();
   if (!text) return ["skipped", "Prázdný text e-mailu po dosazení proměnných"];
@@ -619,6 +667,159 @@ async function actionNotify(svc: SupabaseClient, ctx: ServiceCtx, ticket: Ticket
   return ["ok", `Poznámka: ${content.slice(0, 120)}`];
 }
 
+
+// ---------------------------------------------------------------------------
+// Žádost o recenzi (akce review_request)
+
+/**
+ * Zákazník zakázky – podle customer_id, bez něj podle normalizovaného
+ * telefonu. Chyba dotazu se vyhodí: když nevíme, jestli zákazník žádosti
+ * nechce, neposílá se (běh skončí jako error a zkusí se ručně / příště).
+ */
+async function findReviewCustomer(
+  svc: SupabaseClient,
+  ctx: ServiceCtx,
+  ticket: TicketRow,
+  phoneE164: string | null,
+): Promise<{ id: string; optOut: boolean } | null> {
+  type Row = { id: string; neposilat_zadost_o_recenzi: boolean | null };
+  if (ticket.customer_id) {
+    const { data, error } = await svc
+      .from("customers")
+      .select("id, neposilat_zadost_o_recenzi")
+      .eq("id", ticket.customer_id)
+      .eq("service_id", ctx.serviceId)
+      .maybeSingle();
+    if (error) throw new Error(`Zákazníka se nepodařilo načíst: ${error.message}`);
+    if (data) return { id: (data as Row).id, optOut: (data as Row).neposilat_zadost_o_recenzi === true };
+  }
+  if (phoneE164) {
+    const { data, error } = await svc
+      .from("customers")
+      .select("id, neposilat_zadost_o_recenzi")
+      .eq("service_id", ctx.serviceId)
+      .eq("phone_norm", phoneE164)
+      .limit(1);
+    if (error) throw new Error(`Zákazníka se nepodařilo načíst: ${error.message}`);
+    const row = ((data ?? []) as Row[])[0];
+    if (row) return { id: row.id, optOut: row.neposilat_zadost_o_recenzi === true };
+  }
+  return null;
+}
+
+/** Poslední žádost stejnému zákazníkovi od `since` – přes zákazníka, telefon i e-mail. */
+async function lastReviewRequestAt(
+  svc: SupabaseClient,
+  serviceId: string,
+  since: Date,
+  keys: { customerId: string | null; phone: string | null; email: string | null },
+): Promise<Date | null> {
+  const lookups: Array<[string, string]> = [];
+  if (keys.customerId) lookups.push(["customer_id", keys.customerId]);
+  if (keys.phone) lookups.push(["telefon", keys.phone]);
+  if (keys.email) lookups.push(["email", keys.email]);
+  let latest: Date | null = null;
+  for (const [column, value] of lookups) {
+    const { data, error } = await svc
+      .from("zadosti_o_recenzi")
+      .select("odeslano_at")
+      .eq("service_id", serviceId)
+      .eq(column, value)
+      .gte("odeslano_at", since.toISOString())
+      .order("odeslano_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`Předchozí žádosti se nepodařilo načíst: ${error.message}`);
+    const at = ((data ?? []) as Array<{ odeslano_at: string }>)[0]?.odeslano_at;
+    if (at && (!latest || new Date(at) > latest)) latest = new Date(at);
+  }
+  return latest;
+}
+
+async function actionReviewRequest(
+  svc: SupabaseClient,
+  ctx: ServiceCtx,
+  rule: Rule,
+  ticket: TicketRow,
+  a: Extract<Action, { type: "review_request" }>,
+): Promise<ActionOutcome> {
+  const c = rule.conditions ?? {};
+  const now = new Date();
+  const link = normalizujOdkazRecenze(a.review_url);
+  const phoneRaw = strOrNull(ticket.customer_phone);
+  const phoneE164 = phoneRaw ? normalizeE164(phoneRaw) : null;
+  const email = maEmail(ticket.customer_email) ? String(ticket.customer_email).trim().toLowerCase() : null;
+  const limitDays = platnyLimitDni(c.customer_cooldown_days ?? RECENZE_VYCHOZI.limitDni);
+
+  const customer = await findReviewCustomer(svc, ctx, ticket, phoneE164);
+
+  const { data: sentRows, error: sentErr } = await svc
+    .from("zadosti_o_recenzi")
+    .select("id")
+    .eq("service_id", ctx.serviceId)
+    .eq("ticket_id", ticket.id)
+    .limit(1);
+  if (sentErr) throw new Error(`Předchozí žádosti se nepodařilo načíst: ${sentErr.message}`);
+
+  const last = await lastReviewRequestAt(svc, ctx.serviceId, zacatekLimitu(now, limitDays), {
+    customerId: customer?.id ?? null,
+    phone: phoneE164,
+    email,
+  });
+
+  // Pravidlo s jiným spouštěčem než „po vydání“ (ručně přes API) stav nehlídá.
+  const issued = rule.trigger.type === "ticket_issued"
+    ? stavSpoustiRecenzi(ticket.status, [...ctx.statuses.values()], rule.trigger.status_keys)
+    : true;
+
+  const smsReason = phoneE164 ? await smsUnavailableReason(svc, ctx) : null;
+
+  const verdict = posudKandidata({
+    ted: now,
+    smazana: !!ticket.deleted_at,
+    vydanyStav: issued,
+    odkaz: link,
+    telefon: phoneE164,
+    email,
+    zakaznikNechce: customer?.optOut === true,
+    odeslanoNaZakazku: Array.isArray(sentRows) && sentRows.length > 0,
+    posledniZadost: last,
+    limitDni: limitDays,
+    smsDostupna: smsReason === null,
+  });
+  if (!verdict.ok) return ["skipped", verdict.duvod];
+
+  const extraVars = { review_url: link ?? "" };
+  let outcome: ActionOutcome;
+  if (verdict.kanal === "sms") {
+    outcome = await actionSms(svc, ctx, ticket, sablonaSOdkazem(String(a.template ?? "") || RECENZE_VYCHOZI.sms), 0, extraVars);
+  } else {
+    outcome = await actionEmail(
+      svc,
+      ctx,
+      ticket,
+      String(a.email_subject ?? "") || RECENZE_VYCHOZI.emailPredmet,
+      sablonaSOdkazem(String(a.email_body ?? "") || RECENZE_VYCHOZI.emailText),
+      0,
+      extraVars,
+    );
+  }
+  if (outcome[0] !== "ok") return outcome;
+
+  // Záznam „odesláno“ – podle něj se hlídá limit N dní. Zpráva už odešla,
+  // takže chyba zápisu běh neshodí, jen se ukáže v detailu.
+  const { error: logErr } = await svc.from("zadosti_o_recenzi").insert({
+    service_id: ctx.serviceId,
+    rule_id: rule.id,
+    ticket_id: ticket.id,
+    customer_id: customer?.id ?? null,
+    telefon: phoneE164,
+    email,
+    kanal: verdict.kanal,
+  });
+  const note = logErr ? ` (záznam o odeslání se neuložil: ${logErr.message})` : "";
+  return ["ok", `Žádost o recenzi – ${outcome[1] ?? verdict.kanal}${note}`];
+}
+
 // ---------------------------------------------------------------------------
 // Vyhodnocení jednoho pravidla nad jednou zakázkou
 
@@ -629,42 +830,41 @@ async function evaluateRule(
   ticket: TicketRow,
   extra: EvalExtra,
   counters: Counters,
-): Promise<void> {
+): Promise<ActionOutcome> {
   const days = extra.days ?? 0;
   const depth = extra.depth ?? 0;
   const prefix = extra.eventId ? `event:${extra.eventId} ` : "";
-  const log = (result: RunResult, detail: string | null) =>
-    logRun(svc, rule, ticket.id, result, detail ? `${prefix}${detail}` : prefix || null, counters);
+  const log = async (result: RunResult, detail: string | null): Promise<ActionOutcome> => {
+    await logRun(svc, rule, ticket.id, result, detail ? `${prefix}${detail}` : prefix || null, counters);
+    return [result, detail];
+  };
 
   try {
     const c = rule.conditions ?? {};
 
     if (ticket.deleted_at) {
-      await log("skipped", "Zakázka je smazaná");
-      return;
+      return await log("skipped", "Zakázka je smazaná");
     }
     // skip_final se netýká stavu, na který pravidlo samo míří („při přepnutí
     // do Vyzvednuto → SMS“ by se jinak nikdy nespustilo).
+    // Totéž platí pro „po vydání“ – vydaný stav je koncový z definice.
     const targetsCurrentStatus =
-      (rule.trigger.type === "status_change" || rule.trigger.type === "status_age") &&
-      rule.trigger.status_key === ticket.status;
+      ((rule.trigger.type === "status_change" || rule.trigger.type === "status_age") &&
+        rule.trigger.status_key === ticket.status) ||
+      rule.trigger.type === "ticket_issued";
     if (c.skip_final !== false && !targetsCurrentStatus && ctx.statuses.get(ticket.status)?.is_final) {
-      await log("skipped", `Zakázka je v koncovém stavu „${ctx.statuses.get(ticket.status)?.label ?? ticket.status}“`);
-      return;
+      return await log("skipped", `Zakázka je v koncovém stavu „${ctx.statuses.get(ticket.status)?.label ?? ticket.status}“`);
     }
     // U status_age s repeat_hours rozhoduje odstup opakování (řeší se před voláním), ne once_per_ticket.
     const repeating = rule.trigger.type === "status_age" && !!rule.trigger.repeat_hours;
     if (c.once_per_ticket !== false && !repeating && (await hasOkRun(svc, rule.id, ticket.id))) {
-      await log("skipped", "Pravidlo už na této zakázce proběhlo");
-      return;
+      return await log("skipped", "Pravidlo už na této zakázce proběhlo");
     }
     if (c.require_phone && !strOrNull(ticket.customer_phone)) {
-      await log("skipped", "Zákazník nemá telefon");
-      return;
+      return await log("skipped", "Zákazník nemá telefon");
     }
     if (c.require_email && !strOrNull(ticket.customer_email)?.includes("@")) {
-      await log("skipped", "Zákazník nemá e-mail");
-      return;
+      return await log("skipped", "Zákazník nemá e-mail");
     }
 
     const a = rule.action;
@@ -685,6 +885,9 @@ async function evaluateRule(
       case "notify":
         outcome = await actionNotify(svc, ctx, ticket, String(a.message ?? ""), days);
         break;
+      case "review_request":
+        outcome = await actionReviewRequest(svc, ctx, rule, ticket, a);
+        break;
       default:
         outcome = ["error", `Neznámá akce „${(a as { type?: string }).type}“`];
     }
@@ -696,8 +899,9 @@ async function evaluateRule(
     if (a.type === "set_status" && outcome[0] === "ok" && depth === 0) {
       await runStatusChange(svc, ctx, ticket, ticket.status, depth + 1, counters);
     }
+    return outcome;
   } catch (e) {
-    await log("error", errMsg(e));
+    return await log("error", errMsg(e));
   }
 }
 
@@ -859,6 +1063,180 @@ async function runEventRules(svc: SupabaseClient, ctx: ServiceCtx, rules: Rule[]
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Plánovaný běh: fronta automation_schedule
+//
+// Řádky zakládá trigger public.automation_schedule_po_vydani (přepnutí do
+// vydaného stavu). Tik vezme splatné (run_at ≤ teď), každý si „zamkne“
+// přepnutím pending → processing (podmíněný UPDATE, takže dva souběžné tiky
+// tentýž řádek nezpracují), ověří pravidlo, zakázku a denní okno a pravidlo
+// vyhodnotí stejnou cestou jako ostatní spouštěče (evaluateRule → log v
+// automation_runs). Výsledek se zapíše zpátky do řádku.
+
+type ScheduleRow = {
+  id: string;
+  service_id: string;
+  rule_id: string | null;
+  ticket_id: string | null;
+  kind: string;
+  run_at: string;
+  attempts: number;
+};
+
+async function finishSchedule(
+  svc: SupabaseClient,
+  id: string,
+  status: "pending" | "done" | "skipped" | "error" | "cancelled",
+  detail: string | null,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const { error } = await svc
+    .from("automation_schedule")
+    .update({
+      status,
+      detail: detail ? detail.slice(0, 2000) : null,
+      processed_at: status === "pending" ? null : new Date().toISOString(),
+      claimed_at: status === "pending" ? null : undefined,
+      ...extra,
+    })
+    .eq("id", id);
+  if (error) console.error("[automations-run] automation_schedule update:", error.message);
+}
+
+async function loadRuleById(svc: SupabaseClient, ruleId: string): Promise<Rule | null> {
+  const { data, error } = await svc
+    .from("automation_rules")
+    .select("id, service_id, name, active, trigger, action, conditions, sort_order")
+    .eq("id", ruleId)
+    .maybeSingle();
+  if (error) throw new Error(`automation_rules: ${error.message}`);
+  const r = data as Rule | null;
+  if (!r || !r.trigger || typeof r.trigger !== "object" || !r.action || typeof r.action !== "object") return null;
+  return r;
+}
+
+/** Hlídá se denní okno? U žádosti o recenzi vždy, jinak jen když ho pravidlo má. */
+function usesSendWindow(rule: Rule): boolean {
+  const c = rule.conditions ?? {};
+  return rule.action.type === "review_request" || c.send_from_hour != null || c.send_to_hour != null;
+}
+
+async function processScheduleRow(
+  svc: SupabaseClient,
+  row: ScheduleRow,
+  ctxCache: Map<string, ServiceCtx>,
+  ruleCache: Map<string, Rule | null>,
+  now: Date,
+  counters: Counters,
+): Promise<void> {
+  if (row.kind !== "rule" || !row.rule_id || !row.ticket_id) {
+    await finishSchedule(svc, row.id, "cancelled", `Neznámý druh naplánované akce „${row.kind}“`);
+    return;
+  }
+
+  if (!ruleCache.has(row.rule_id)) ruleCache.set(row.rule_id, await loadRuleById(svc, row.rule_id));
+  const rule = ruleCache.get(row.rule_id) ?? null;
+  // Pravidlo cizího servisu nad naší zakázkou se nesmí spustit ani omylem.
+  if (!rule || rule.service_id !== row.service_id) {
+    await finishSchedule(svc, row.id, "cancelled", "Pravidlo neexistuje");
+    return;
+  }
+  if (!rule.active) {
+    await finishSchedule(svc, row.id, "cancelled", "Pravidlo je vypnuté");
+    return;
+  }
+
+  const ticket = await loadTicket(svc, row.ticket_id);
+  if (!ticket || ticket.service_id !== row.service_id) {
+    await finishSchedule(svc, row.id, "cancelled", "Zakázka nenalezena");
+    return;
+  }
+
+  let ctx = ctxCache.get(row.service_id);
+  if (!ctx) {
+    ctx = await loadServiceCtx(svc, row.service_id);
+    ctxCache.set(row.service_id, ctx);
+  }
+
+  // Zakázka mezitím odešla z vydaného stavu (reklamace, omyl) – nic neposílat.
+  if (rule.trigger.type === "ticket_issued" && !ticket.deleted_at &&
+      !stavSpoustiRecenzi(ticket.status, [...ctx.statuses.values()], rule.trigger.status_keys)) {
+    const detail = `Zakázka už není ve vydaném stavu („${ctx.statuses.get(ticket.status)?.label ?? ticket.status}“)`;
+    await logRun(svc, rule, ticket.id, "skipped", detail, counters);
+    await finishSchedule(svc, row.id, "skipped", detail);
+    return;
+  }
+
+  // Mimo denní okno se jen posune na jeho začátek – bez řádku v logu.
+  if (usesSendWindow(rule)) {
+    const c = rule.conditions ?? {};
+    const window = platneOkno(c.send_from_hour ?? RECENZE_VYCHOZI.oknoOd, c.send_to_hour ?? RECENZE_VYCHOZI.oknoDo);
+    const next = dalsiCasOdeslani(now, window, c.time_zone);
+    if (next.getTime() > now.getTime()) {
+      await finishSchedule(svc, row.id, "pending", "Mimo denní okno – posunuto", { run_at: next.toISOString() });
+      return;
+    }
+  }
+
+  const [result, detail] = await evaluateRule(svc, ctx, rule, ticket, {}, counters);
+  const attempts = row.attempts + 1;
+  if (result === "error" && attempts < MAX_SCHEDULE_ATTEMPTS) {
+    await finishSchedule(svc, row.id, "pending", detail, {
+      run_at: new Date(now.getTime() + SCHEDULE_RETRY_MS).toISOString(),
+      attempts,
+    });
+    return;
+  }
+  await finishSchedule(svc, row.id, result === "ok" ? "done" : result, detail);
+}
+
+async function runSchedule(svc: SupabaseClient, ctxCache: Map<string, ServiceCtx>, now: Date, counters: Counters): Promise<void> {
+  // Řádky, které zůstaly rozpracované po pádu funkce, vrátit do fronty.
+  const { error: staleErr } = await svc
+    .from("automation_schedule")
+    .update({ status: "pending", claimed_at: null })
+    .eq("status", "processing")
+    .lt("claimed_at", new Date(now.getTime() - STALE_CLAIM_MS).toISOString());
+  if (staleErr) {
+    // Typicky: migrace 20260927140000 ještě není nasazená. Ostatní spouštěče běží dál.
+    console.error("[automations-run] automation_schedule:", staleErr.message);
+    return;
+  }
+
+  const { data, error } = await svc
+    .from("automation_schedule")
+    .select("id, service_id, rule_id, ticket_id, kind, run_at, attempts")
+    .eq("status", "pending")
+    .lte("run_at", now.toISOString())
+    .order("run_at", { ascending: true })
+    .limit(MAX_SCHEDULED_PER_TICK);
+  if (error) {
+    console.error("[automations-run] automation_schedule select:", error.message);
+    counters.errors += 1;
+    return;
+  }
+
+  const ruleCache = new Map<string, Rule | null>();
+  for (const row of (data ?? []) as ScheduleRow[]) {
+    // Zámek: jen když je řádek pořád pending (souběžný tik ho mohl vzít).
+    const { data: claimed, error: claimErr } = await svc
+      .from("automation_schedule")
+      .update({ status: "processing", claimed_at: now.toISOString() })
+      .eq("id", row.id)
+      .eq("status", "pending")
+      .select("id");
+    if (claimErr || !Array.isArray(claimed) || claimed.length === 0) continue;
+
+    try {
+      await processScheduleRow(svc, row, ctxCache, ruleCache, now, counters);
+    } catch (e) {
+      counters.errors += 1;
+      await finishSchedule(svc, row.id, "error", errMsg(e));
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Vstupy
 
@@ -888,10 +1266,12 @@ async function handleScheduled(svc: SupabaseClient, body: Record<string, unknown
     byService.set(r.service_id, list);
   }
 
+  const ctxCache = new Map<string, ServiceCtx>();
   for (const [serviceId, serviceRules] of byService) {
     let ctx: ServiceCtx;
     try {
       ctx = await loadServiceCtx(svc, serviceId);
+      ctxCache.set(serviceId, ctx);
     } catch (e) {
       console.error(`[automations-run] kontext servisu ${serviceId}:`, errMsg(e));
       counters.errors += 1;
@@ -912,6 +1292,15 @@ async function handleScheduled(svc: SupabaseClient, body: Record<string, unknown
       console.error(`[automations-run] události portálu ${serviceId}:`, errMsg(e));
       counters.errors += 1;
     }
+  }
+
+  // Fronta naplánovaných akcí (žádost o recenzi po vydání…) – nezávisle na
+  // tom, jestli má servis pravidla status_age / event.
+  try {
+    await runSchedule(svc, ctxCache, now, counters);
+  } catch (e) {
+    console.error("[automations-run] fronta automation_schedule:", errMsg(e));
+    counters.errors += 1;
   }
 
   return json({ ok: true, ...counters });

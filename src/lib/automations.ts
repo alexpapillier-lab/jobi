@@ -9,8 +9,15 @@
 import { supabase, getSupabaseClient } from "./supabaseClient";
 import { supabaseFetch } from "./supabaseClient";
 
-export type TriggerType = "status_change" | "status_age" | "event" | "ticket_created";
+export type TriggerType = "status_change" | "status_age" | "event" | "ticket_created" | "ticket_issued";
+/**
+ * Akce obecného editoru pravidel. Žádost o recenzi (`review_request`) sem
+ * schválně nepatří: má vlastní kartu, a části, které pracují se všemi
+ * akcemi (editor, nápověda v nabídce stavů Zakázek), ji neumějí. Pravidla
+ * s ní se poznají přes `isReviewRule` a obecné části je přeskakují.
+ */
 export type ActionType = "sms" | "email" | "set_status" | "add_fee" | "notify";
+export type SpecialActionType = "review_request";
 export type AutomationEvent = "quote_approved" | "quote_rejected" | "signed" | "portal_opened";
 
 export type Trigger =
@@ -18,7 +25,15 @@ export type Trigger =
   /** Zakázka je ve stavu déle než `after_hours`; `repeat_hours` = opakovat každých N hodin (null = jednou). */
   | { type: "status_age"; status_key: string; after_hours: number; repeat_hours?: number | null }
   | { type: "event"; event: AutomationEvent }
-  | { type: "ticket_created" };
+  | { type: "ticket_created" }
+  /**
+   * N hodin po vydání zakázky. Neběží hned: přepnutí do vydaného stavu
+   * založí databázový trigger řádek v `automation_schedule` s `run_at`
+   * a plánovaný tik ho pak zpracuje. `status_keys` = stavy, které se
+   * počítají jako vydání; prázdné = koncové stavy kromě storna a vrácení
+   * bez opravy (`jeVydanyStav`).
+   */
+  | { type: "ticket_issued"; after_hours: number; status_keys?: string[] };
 
 export type Action =
   | { type: "sms"; template: string }
@@ -29,6 +44,16 @@ export type Action =
   /** Interní poznámka k zakázce (komentář), vidí ji technik. */
   | { type: "notify"; message: string };
 
+/**
+ * Poděkování s odkazem na recenze: SMS, a když zákazník nemá telefon
+ * (nebo servis SMS neumí), e-mail. `{{review_url}}` dosadí `review_url`.
+ * Vykonává edge funkce automations-run (její kopie typu `Action` ji má).
+ */
+export type ReviewRequestAction = { type: "review_request"; review_url: string; template: string; email_subject: string; email_body: string };
+
+/** Libovolná akce uložená v automation_rules (včetně těch s vlastní kartou). */
+export type AnyAction = Action | ReviewRequestAction;
+
 export type Conditions = {
   /** Nespouštět u zakázek v koncovém stavu. */
   skip_final?: boolean;
@@ -37,6 +62,13 @@ export type Conditions = {
   /** Přeskočit, když zákazník nemá telefon / e-mail. */
   require_phone?: boolean;
   require_email?: boolean;
+  /** Denní okno odeslání v místním čase (celé hodiny, od ≤ h < do). Jen u plánovaných akcí. */
+  send_from_hour?: number;
+  send_to_hour?: number;
+  /** Časová zóna okna (IANA), výchozí Europe/Prague. */
+  time_zone?: string;
+  /** Žádost o recenzi stejnému zákazníkovi nejvýš jednou za N dní. */
+  customer_cooldown_days?: number;
 };
 
 export type AutomationRule = {
@@ -67,6 +99,7 @@ export const TRIGGER_LABELS: Record<TriggerType, string> = {
   status_age: "Zakázka je ve stavu déle než",
   event: "Zákazník na portálu",
   ticket_created: "Založí se nová zakázka",
+  ticket_issued: "Po vydání zakázky",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {
@@ -76,6 +109,30 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   add_fee: "Připsat poplatek do oprav",
   notify: "Zapsat poznámku technikovi",
 };
+
+export const SPECIAL_ACTION_LABELS: Record<SpecialActionType, string> = {
+  review_request: "Požádat o recenzi",
+};
+
+/** Spouštěče, které má vlastní karta (Žádost o recenzi), ne obecný editor pravidel. */
+export const SPECIAL_TRIGGERS: ReadonlySet<TriggerType> = new Set<TriggerType>(["ticket_issued"]);
+
+/** Pravidlo „Žádost o recenzi“ se spravuje kartou, ne obecným editorem. */
+export type ReviewRule = Omit<AutomationRule, "action"> & { action: ReviewRequestAction };
+
+/**
+ * Je to pravidlo „Žádost o recenzi“? Řádek z databáze má typ AutomationRule,
+ * ale akci review_request – proto se ptá na surový typ akce.
+ */
+export function isReviewRule(rule: { action?: { type?: string } | null }): rule is ReviewRule {
+  return (rule.action as { type?: string } | null | undefined)?.type === "review_request";
+}
+
+/** Pravidlo žádosti o recenzi servisu (karta ho spravuje jako jediné; bere se první). */
+export function findReviewRule(rules: ReadonlyArray<AutomationRule>): ReviewRule | null {
+  for (const r of rules) if (isReviewRule(r)) return r as unknown as ReviewRule;
+  return null;
+}
 
 export const EVENT_LABELS: Record<AutomationEvent, string> = {
   quote_approved: "schválí cenovou nabídku",
@@ -99,18 +156,29 @@ export const TEMPLATE_VARIABLES: Array<{ key: string; label: string; sample: str
   { key: "service_phone", label: "Telefon servisu", sample: "+420 773 118 472" },
 ];
 
+/** Proměnné žádosti o recenzi: odkaz navíc, stav/cena/dny tam nedávají smysl. */
+export const REVIEW_TEMPLATE_VARIABLES: Array<{ key: string; label: string; sample: string }> = [
+  { key: "review_url", label: "Odkaz na recenze", sample: "https://g.page/r/CaBcDeF/review" },
+  ...TEMPLATE_VARIABLES.filter((v) => ["customer_name", "device_label", "code", "service_name", "service_phone"].includes(v.key)),
+];
+
 export function substituteTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => vars[k] ?? "");
 }
 
 /** Lidská věta pro seznam pravidel: „Když … → …“. */
-export function describeRule(rule: AutomationRule, statusLabel: (key: string) => string): string {
+export function describeRule(rule: AutomationRule | ReviewRule, statusLabel: (key: string) => string): string {
   const t = rule.trigger;
+  if (isReviewRule(rule)) {
+    const po = t.type === "ticket_issued" ? `${formatHours(t.after_hours)} po vydání zakázky` : "Po vydání zakázky";
+    return `${po} → ${SPECIAL_ACTION_LABELS.review_request} (SMS, bez telefonu e-mail)`;
+  }
   let when: string;
   switch (t.type) {
     case "status_change": when = `${TRIGGER_LABELS.status_change} „${statusLabel(t.status_key)}“`; break;
     case "status_age": when = `${TRIGGER_LABELS.status_age} ${formatHours(t.after_hours)} ve stavu „${statusLabel(t.status_key)}“${t.repeat_hours ? `, opakovat každých ${formatHours(t.repeat_hours)}` : ""}`; break;
     case "event": when = `${TRIGGER_LABELS.event} ${EVENT_LABELS[t.event]}`; break;
+    case "ticket_issued": when = `${formatHours(t.after_hours)} po vydání zakázky`; break;
     default: when = TRIGGER_LABELS.ticket_created;
   }
   const a = rule.action;

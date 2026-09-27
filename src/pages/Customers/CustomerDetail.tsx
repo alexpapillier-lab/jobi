@@ -7,6 +7,7 @@ import { useStatuses } from "../../state/StatusesStore";
 import { CustomerRecord } from "./CustomerList";
 import { useCustomerActions } from "./hooks/useCustomerActions";
 import { useSmsEnabled } from "../../hooks/useSmsEnabled";
+import { NeposilatRecenze } from "./NeposilatRecenze";
 
 type TicketLite = {
   id: string;
@@ -339,6 +340,12 @@ export function CustomerDetail({
                   <div style={{ marginTop: 6 }}>{customer.info}</div>
                 </div>
               )}
+
+              <NeposilatRecenze
+                customer={customer}
+                activeServiceId={activeServiceId}
+                onVersion={(version) => onSave({ ...customer, version }, customer.id)}
+              />
 
               <div style={{ marginTop: 12, fontWeight: 900, fontSize: 13 }}>Zakázky</div>
 
