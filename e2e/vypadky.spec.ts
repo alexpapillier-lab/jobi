@@ -550,17 +550,13 @@ test("souběžná úprava se ohlásí a rozepsaný text nezmizí", async ({ page
     // musí zůstat ve formuláři. Dřív ho aplikace přepsala verzí ze serveru
     // a nad hláškou „zkontrolujte a uložte znovu“ nebylo co kontrolovat.
     await page.locator('button[title="Uložit změny"]:visible').first().click();
-    await expect(page.getByText(/mezitím upravil někdo jiný/).first()).toBeVisible({ timeout: 30_000 });
+    /* Od 27. 9. se konflikt neohlásí toastem, ale dialogem „Zakázku mezitím
+       změnil někdo jiný“ s volbou Přepsat / Načíst jeho verzi / Zpět k úpravám.
+       Rozepsaný text musí zůstat ve formuláři a Přepsat ho uloží. */
+    const konflikt = page.getByRole("dialog", { name: /mezitím změnil někdo jiný/ });
+    await expect(konflikt).toBeVisible({ timeout: 30_000 });
     await expect(poleZavady(page)).toHaveValue(mojeVerze);
-
-    // Detail zůstal v úpravách – je co uložit podruhé.
-    await expect(page.locator('button[title="Uložit změny"]:visible').first()).toBeVisible();
-    /* Než se klikne podruhé, musí se stihnout vykreslit zakázka načtená po
-       konfliktu – teprve s její `version` má druhé uložení šanci projít. */
-    await page.waitForTimeout(2000);
-
-    // Druhé uložení už projde: detail vyskočí z režimu úprav a text je v databázi.
-    await page.locator('button[title="Uložit změny"]:visible').first().click();
+    await konflikt.getByRole("button", { name: "Přepsat" }).click();
     await expect(page.locator('button[title="Upravit zakázku"]:visible').first()).toBeVisible({ timeout: 30_000 });
 
     await technik.reload();

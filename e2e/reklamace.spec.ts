@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
 
 /**
  * Reklamace: kód přiděluje databáze (funkce dalsi_cislo_reklamace) a je
@@ -120,6 +120,7 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   await page.reload();
   await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
   await vidZakazku(page, kod).first().click();
-  // Diagnostika je v detailu zakázky textové pole – getByText hodnotu pole nevidí.
+  // Karta Diagnostika je v detailu sbalená a textové pole se vykreslí až po rozbalení.
+  await rozbalSekci(page, "Diagnostika");
   await expect(page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...").first()).toHaveValue(text, { timeout: 30_000 });
 });

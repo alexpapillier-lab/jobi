@@ -149,7 +149,7 @@ test("faktura, která se neuloží, zůstane rozepsaná v editoru", async ({ pag
      žádné jiné koncepty nejsou, tak se smažou všechny. */
   await page.getByRole("button", { name: /^Koncepty/ }).first().click();
   for (let i = 0; i < 10; i++) {
-    const radek = page.getByText(/^FV\d{4}-\d{4}$|^Bez čísla$/).first();
+    const radek = page.locator('[data-tour="page-invoices"]').getByText(/^FV\d{4}-\d{4}$|^Bez čísla$/).first();
     if ((await radek.count()) === 0) break;
     await radek.click();
     const nabidka = page.getByRole("button", { name: /Další akce|Více akcí|Více/ }).first();
