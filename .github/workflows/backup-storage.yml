@@ -1,0 +1,145 @@
+name: Záloha souborů (Storage)
+
+# Databázi zálohuje backup-db.yml. V jejím dumpu je ale jen evidence souborů
+# (storage.objects), ne samotné fotky z příjmu, podpisy zákazníků, obrázky
+# produktů a přílohy chatu. Když by úložiště zmizelo, servis nemá u reklamace
+# čím doložit, v jakém stavu zařízení přijal. Tohle je jejich denní kopie
+# mimo Supabase, v Cloudflare R2.
+#
+# Jak to funguje (podrobně v scripts/backup-storage.sh a docs/ZALOHY_DATABAZE.md,
+# kapitola 7):
+#   * rclone sync přes S3 protokol Supabase Storage → R2 bucket
+#     jobi-zaloha-storage/aktualni/<bucket>/…, přenáší se jen změny,
+#   * co z produkce zmizí nebo se přepíše, se přesune do
+#     smazane/<RRRR-MM-DD>/… (--backup-dir) a R2 to smaže až po 30 dnech,
+#   * po synchronizaci se R2 porovná se storage.objects v databázi; když
+#     nesedí nad toleranci, běh spadne,
+#   * bez S3 klíčů, ale se service role klíčem jde náhradní cestou přes REST API.
+#
+# Obnova: scripts/obnov-storage.sh, postup v docs/OBNOVA_ZE_ZALOHY.md.
+#
+# Potřebné secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL          už je (sdílí se s backup-db.yml)
+#   R2_ACCOUNT_ID            Cloudflare → R2 → Account ID (vpravo na přehledu R2)
+#   R2_ACCESS_KEY_ID         Cloudflare → R2 → Manage API tokens → token
+#   R2_SECRET_ACCESS_KEY       s právy Object Read & Write jen na jobi-zaloha-storage
+#   SUPABASE_S3_ACCESS_KEY   Supabase Dashboard → Storage → S3 → Access keys
+#   SUPABASE_S3_SECRET_KEY     (klíč vidí všechny buckety, obchází RLS)
+#   SUPABASE_S3_ENDPOINT     volitelně; jinak se odvodí z VITE_SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY  jen pro náhradní cestu bez S3 klíčů
+# Bez nich se běh ukončí s vysvětlením, co chybí.
+
+on:
+  schedule:
+    # 04:15 UTC – po záloze databáze (02:30), ať se obě nepřetahují o spojení.
+    # GitHub plánované běhy stejně spouští se zpožděním i o hodiny.
+    - cron: "15 4 * * *"
+  workflow_dispatch:
+    inputs:
+      rezim:
+        description: "Cesta ke Storage"
+        type: choice
+        options: [auto, s3, rest]
+        default: auto
+      nanecisto:
+        description: "Nanečisto – jen vypsat, co by se přeneslo"
+        type: boolean
+        default: false
+      plne_porovnani:
+        description: "Porovnat i časy změn každého souboru (pomalejší)"
+        type: boolean
+        default: false
+      povolit_hromadne_mazani:
+        description: "V produkci opravdu zmizela víc než polovina souborů bucketu – přesto synchronizovat"
+        type: boolean
+        default: false
+
+concurrency:
+  group: zaloha-storage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RCLONE_VERZE: v1.75.1
+  # SHA-256 z https://downloads.rclone.org/v1.75.1/SHA256SUMS (linux-amd64.zip).
+  # Při zvednutí verze přepsat obojí.
+  RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+  R2_BUCKET: jobi-zaloha-storage
+
+jobs:
+  zaloha:
+    name: Zrcadlení do R2 a ověření
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Kontrola secrets
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          S3_KLIC: ${{ secrets.SUPABASE_S3_ACCESS_KEY }}
+          S3_TAJEMSTVI: ${{ secrets.SUPABASE_S3_SECRET_KEY }}
+          S3_ENDPOINT: ${{ secrets.SUPABASE_S3_ENDPOINT }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REZIM: ${{ github.event.inputs.rezim || 'auto' }}
+        run: |
+          chybi=""
+          [ -z "$DB_URL" ] && chybi="$chybi SUPABASE_DB_URL"
+          [ -z "$R2_ACCOUNT_ID" ] && chybi="$chybi R2_ACCOUNT_ID"
+          [ -z "$R2_ACCESS_KEY_ID" ] && chybi="$chybi R2_ACCESS_KEY_ID"
+          [ -z "$R2_SECRET_ACCESS_KEY" ] && chybi="$chybi R2_SECRET_ACCESS_KEY"
+          s3=0; rest=0
+          [ -n "$S3_KLIC" ] && [ -n "$S3_TAJEMSTVI" ] && { [ -n "$S3_ENDPOINT" ] || [ -n "$SUPABASE_URL" ]; } && s3=1
+          [ -n "$SERVICE_KEY" ] && [ -n "$SUPABASE_URL" ] && rest=1
+          if [ "$REZIM" = s3 ] && [ "$s3" = 0 ]; then
+            chybi="$chybi SUPABASE_S3_ACCESS_KEY SUPABASE_S3_SECRET_KEY (a VITE_SUPABASE_URL nebo SUPABASE_S3_ENDPOINT)"
+          elif [ "$REZIM" = rest ] && [ "$rest" = 0 ]; then
+            chybi="$chybi SUPABASE_SERVICE_ROLE_KEY (a VITE_SUPABASE_URL)"
+          elif [ "$s3" = 0 ] && [ "$rest" = 0 ]; then
+            chybi="$chybi SUPABASE_S3_ACCESS_KEY+SUPABASE_S3_SECRET_KEY (nebo náhradně SUPABASE_SERVICE_ROLE_KEY)"
+          fi
+          if [ -n "$chybi" ]; then
+            echo "::error::Chybí secrets:$chybi. Nastav je v Settings → Secrets and variables → Actions. Postup je v docs/ZALOHY_DATABAZE.md, kapitola 7."
+            exit 1
+          fi
+          if [ "$REZIM" = auto ] && [ "$s3" = 0 ]; then
+            echo "::warning::S3 klíče Storage nejsou nastavené, záloha půjde náhradní cestou přes REST API."
+          fi
+
+      - name: Nástroje (psql, rclone)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client unzip
+          # Pevná verze s kontrolou otisku místo „curl | sudo bash".
+          curl -fsSLo rclone.zip "https://downloads.rclone.org/$RCLONE_VERZE/rclone-$RCLONE_VERZE-linux-amd64.zip"
+          echo "$RCLONE_SHA256  rclone.zip" | sha256sum -c -
+          unzip -q rclone.zip
+          sudo install -m 0755 "rclone-$RCLONE_VERZE-linux-amd64/rclone" /usr/local/bin/rclone
+          rm -rf rclone.zip "rclone-$RCLONE_VERZE-linux-amd64"
+          rclone version | head -n 1
+          psql --version
+
+      - name: Záloha a ověření
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SUPABASE_S3_ACCESS_KEY: ${{ secrets.SUPABASE_S3_ACCESS_KEY }}
+          SUPABASE_S3_SECRET_KEY: ${{ secrets.SUPABASE_S3_SECRET_KEY }}
+          SUPABASE_S3_ENDPOINT: ${{ secrets.SUPABASE_S3_ENDPOINT }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ZALOHA_REZIM: ${{ github.event.inputs.rezim || 'auto' }}
+          NANECISTO: ${{ github.event.inputs.nanecisto == 'true' && '1' || '0' }}
+          ZALOHA_PLNE_POROVNANI: ${{ github.event.inputs.plne_porovnani == 'true' && '1' || '0' }}
+          ZALOHA_POVOLIT_HROMADNE_MAZANI: ${{ github.event.inputs.povolit_hromadne_mazani == 'true' && '1' || '0' }}
+        run: bash scripts/backup-storage.sh
