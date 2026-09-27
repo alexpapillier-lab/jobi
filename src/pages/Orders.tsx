@@ -6096,7 +6096,7 @@ export default function Orders({
                                   }))
                                 }
                                 aria-invalid={!stav.platne || undefined}
-                                style={barva ? { ...baseFieldInput, borderColor: barva } : baseFieldInput}
+                                style={barva ? { ...baseFieldInput, border: `1px solid ${barva}` } : baseFieldInput}
                                 placeholder="35-123456-789012-3"
                               />
                               {(stav.hlaska || drive.length > 0) && (
