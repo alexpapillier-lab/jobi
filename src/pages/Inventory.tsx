@@ -8,6 +8,7 @@ import { InventoryDialog } from "./Inventory/InventoryDialog";
 import { DeviceFilter } from "./Inventory/DeviceFilter";
 import { OrdersTab } from "./Inventory/OrdersTab";
 import { SuppliersTab, SupplierForm } from "./Inventory/SuppliersTab";
+import { InventuraTab } from "./Inventory/InventuraTab";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
 import { nahlasCekani, jeTrvalaChyba } from "../lib/frontaZapisu";
@@ -34,9 +35,9 @@ import {
 const PRODUCT_DISPLAY_MODE_KEY = STORAGE_KEYS.INVENTORY_DISPLAY_MODE;
 const INVENTORY_DISPLAY_MODE_EVENT = "jobsheet:inventory-display-mode-changed";
 const ADMIN_OPEN_KEY = "jobsheet_inventory_admin_open";
-/** Otevřená záložka stránky Sklad: Produkty | Objednávky | Dodavatelé. */
+/** Otevřená záložka stránky Sklad: Produkty | Objednávky | Dodavatelé | Inventura. */
 const INVENTORY_TAB_KEY = "jobsheet_inventory_tab";
-type SkladZalozka = "products" | "orders" | "suppliers";
+type SkladZalozka = "products" | "orders" | "suppliers" | "inventura";
 /** Hodnota v selectu dodavatele, která místo výběru otevře formulář nového dodavatele. */
 const NOVY_DODAVATEL = "__novy_dodavatel__";
 
@@ -503,6 +504,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   // Pobočka z lišty: v Produktech se ukazují jen sklady té pobočky; ve Správě skladu jde sklad pobočce přiřadit.
   const { activeBranchId, isMulti: hasBranches, branches, branchById } = useBranches();
   const canAdjustInventoryQuantity = hasCapability("can_adjust_inventory_quantity");
+  const canEditInventory = hasCapability("can_edit_inventory");
 
   const [data, setData] = useState<InventoryData>(EMPTY_INVENTORY);
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
@@ -556,7 +558,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
   const [zalozka, setZalozka] = useState<SkladZalozka>(() => {
     try {
       const s = localStorage.getItem(INVENTORY_TAB_KEY);
-      return s === "orders" || s === "suppliers" ? s : "products";
+      return s === "orders" || s === "suppliers" || s === "inventura" ? s : "products";
     } catch {
       return "products";
     }
@@ -2446,8 +2448,24 @@ POPIS: Náhradní baterie pro iPhone 15 Pro Max
             title: poNedostupne ? HLASKA_NEDOSTUPNE : "Návrhy a objednávky dílů u dodavatelů",
           },
           { value: "suppliers", label: <>Dodavatelé{suppliers.length > 0 && <Pocet n={suppliers.length} />}</> },
+          { value: "inventura", label: "Inventura", title: "Fyzické přepočítání skladu, zápis rozdílů a protokol", dataTour: "inventory-inventura" },
         ]}
       />
+
+      {zalozka === "inventura" && (
+        <InventuraTab
+          key={activeServiceId ?? "bez-servisu"}
+          activeServiceId={activeServiceId}
+          warehouses={skladyPobocky}
+          products={data.products}
+          activeBranchId={activeBranchId}
+          branchName={(id) => (hasBranches && id ? branchById(id)?.name ?? null : null)}
+          canCount={canEditInventory || canAdjustInventoryQuantity}
+          canManage={canEditInventory}
+          canClose={canEditInventory && canAdjustInventoryQuantity}
+          onSkladZmenen={prenacistSklad}
+        />
+      )}
 
       {zalozka === "orders" && (
         <OrdersTab
