@@ -8,6 +8,7 @@ import Customers from "./pages/Customers";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import Statistics from "./pages/Statistics";
+import Dnes from "./pages/Dnes";
 import { ProvizeSdilene } from "./pages/ProvizeSdilene";
 import { Odmeny } from "./pages/Odmeny";
 import { UDALOST_ZMENY_CONFIGU, nactiServiceConfig, subscribeServiceConfig } from "./lib/serviceSettingsSync";
@@ -107,8 +108,11 @@ type SidebarPosition = "left" | "right" | "bottom";
 const VALID_DISPLAY_MODES: DisplayMode[] = ["list", "grid", "compact", "compact-extra", "timeline", "stripe", "status-grouped"];
 const VALID_SIDEBAR_POSITIONS: SidebarPosition[] = ["left", "right", "bottom"];
 
+/** Stránka po přihlášení / otevření aplikace (Nastavení → Rozhraní). */
+type StartovniStranka = "orders" | "dnes";
+
 type UIConfig = {
-  app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean };
+  app: { fabNewOrderEnabled: boolean; uiScale: number; reducedEffects?: boolean; startPage?: StartovniStranka };
   /** `pinned` – lišta trvale rozbalená (viz AppLayout); chybí-li, bere se false. */
   sidebar: { position: SidebarPosition; pinned?: boolean };
   home: { orderFilters: { selectedQuickStatusFilters: string[] } };
@@ -171,6 +175,8 @@ function safeLoadUIConfig(): UIConfig {
           typeof parsed?.app?.reducedEffects === "boolean"
             ? parsed.app.reducedEffects
             : d.app.reducedEffects,
+        // Výchozí Zakázky – nikomu se po aktualizaci nezmění, kde začíná.
+        startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -202,12 +208,15 @@ export default function App() {
   const { session, initializing: authInitializing } = useAuth();
   const { profile: userProfile } = useUserProfile();
   const [, setAuthenticatedState] = useState(() => isAuthenticated());
-  const [activePage, setActivePage] = useState<NavKey>(() => {
+  const [startovni] = useState<{ stranka: NavKey; obnovena: boolean }>(() => {
     // Po tiché obnově webu (nová verze) se vrátit tam, kde uživatel byl.
     const s = strankaPoObnove();
-    const zname: NavKey[] = ["orders", "sms", "calendar", "inventory", "devices", "customers", "invoices", "zasilky", "statistics", "provize", "odmeny", "settings"];
-    return s && (zname as string[]).includes(s) ? (s as NavKey) : "orders";
+    const zname: NavKey[] = ["dnes", "orders", "sms", "calendar", "inventory", "devices", "customers", "invoices", "zasilky", "statistics", "provize", "odmeny", "settings"];
+    if (s && (zname as string[]).includes(s)) return { stranka: s as NavKey, obnovena: true };
+    // Jinak stránka podle volby „Po přihlášení otevřít“ (výchozí Zakázky).
+    return { stranka: safeLoadUIConfig().app.startPage === "dnes" ? "dnes" : "orders", obnovena: false };
   });
+  const [activePage, setActivePage] = useState<NavKey>(startovni.stranka);
   /* Nová verze webu: v klidné chvíli se záložka obnoví sama, jinak lišta dole. */
   const aktualizaceWebu = useAktualizaceWebu(() => activePage);
   /* Majitel aplikace: po přihlášení jednou denně připomenout servisy, které
@@ -427,7 +436,7 @@ export default function App() {
       admin: isAdmin,
       rootOwner: jeRootOwner,
       web: isWeb(),
-      stranky: { orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
+      stranky: { dnes: true, orders: true, calendar: true, customers: true, inventory: true, devices: true, settings: true, statistics: canViewStatistics, invoices: invoicesAvailable, sms: smsEnabled, zasilky: zasilkyAvailable, odmeny: odmenyAvailable, provize: provizeAvailable },
       moduly: { api_catalog: hasModule("api_catalog"), api_inventory: hasModule("api_inventory"), branches: hasModule("branches"), invoices: hasModule("invoices"), sms: hasModule("sms") },
     }),
     [isAdmin, jeRootOwner, canViewStatistics, invoicesAvailable, smsEnabled, zasilkyAvailable, odmenyAvailable, provizeAvailable, hasModule]
@@ -834,6 +843,38 @@ export default function App() {
     if (!odmenyAvailable && activePage === "odmeny") setActivePage("orders");
   }, [odmenyAvailable, activePage]);
 
+  /*
+   * Stránka po přihlášení (Nastavení → Rozhraní → Po přihlášení otevřít).
+   * Při startu s uloženým přihlášením ji nastaví už výchozí stav; tady jde
+   * o přihlášení v otevřené aplikaci (i přepnutí účtu) a o volbu, která
+   * dorazí z jiného zařízení (personalPreferencesSync) chvíli po přihlášení
+   * – ta se použije jen tehdy, když uživatel mezitím nikam nešel.
+   * Po obnově webu kvůli nové verzi zůstává tam, kde byl.
+   */
+  const prihlasenyRef = useRef<string | null>(null);
+  const prvniPrihlaseniRef = useRef(true);
+  const startPoPrihlaseniRef = useRef<{ cas: number; stranka: NavKey } | null>(null);
+  const startPage: NavKey = uiCfg.app.startPage === "dnes" ? "dnes" : "orders";
+  useEffect(() => {
+    const uid = session?.user?.id ?? null;
+    const predchozi = prihlasenyRef.current;
+    prihlasenyRef.current = uid;
+    if (!uid || predchozi === uid) return;
+    const prvni = prvniPrihlaseniRef.current;
+    prvniPrihlaseniRef.current = false;
+    if (prvni && startovni.obnovena) return;
+    startPoPrihlaseniRef.current = { cas: Date.now(), stranka: startPage };
+    setActivePage(startPage);
+    // Jen při změně účtu; startPage se čte v okamžiku přihlášení.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
+  useEffect(() => {
+    const s = startPoPrihlaseniRef.current;
+    if (!s || Date.now() - s.cas > 15_000 || s.stranka === startPage) return;
+    startPoPrihlaseniRef.current = { ...s, stranka: startPage };
+    setActivePage((a) => (a === s.stranka ? startPage : a));
+  }, [startPage]);
+
   // React to UI settings changes (Settings will dispatch "jobsheet:ui-updated")
   useEffect(() => {
     const onUiUpdated = () => setUiCfg(safeLoadUIConfig());
@@ -864,6 +905,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     const navMap: Array<[ShortcutId, NavKey]> = [
+      ["nav_dnes", "dnes"],
       ["nav_orders", "orders"],
       ["nav_calendar", "calendar"],
       ["nav_inventory", "inventory"],
@@ -897,11 +939,13 @@ export default function App() {
   // Navigace ze zkratek – Orders posílá jobsheet:navigate (window i document)
   useEffect(() => {
     const onNav = (e: Event) => {
-      const ev = e as CustomEvent<{ page: NavKey; subsection?: string; openTicketId?: string; openCustomerId?: string }>;
+      const ev = e as CustomEvent<{ page: NavKey; subsection?: string; openTicketId?: string; openCustomerId?: string; returnToPage?: NavKey }>;
       const page = ev.detail?.page;
       // Zmínka v chatu (#SN26000012, #Pavel Konečný) otevře rovnou detail.
+      // `returnToPage` (stránka Dnes): po zavření detailu zpátky tam.
       if (page === "orders" && typeof ev.detail?.openTicketId === "string") {
-        setOpenTicketIntent({ ticketId: ev.detail.openTicketId, mode: "detail" });
+        const zpet = ev.detail.returnToPage;
+        setOpenTicketIntent({ ticketId: ev.detail.openTicketId, mode: "detail", ...(zpet === "dnes" ? { returnToPage: zpet } : {}) });
       }
       if (page === "customers" && typeof ev.detail?.openCustomerId === "string") {
         setOpenCustomerIntent({ customerId: ev.detail.openCustomerId });
@@ -909,7 +953,7 @@ export default function App() {
       // Seznam je psaný ručně, takže na novou stránku se snadno zapomene –
       // chybějící „sms“ znamenalo, že na chaty se programově (a tedy ani
       // z testu nebo z odkazu) nedalo dostat, i když v liště jsou.
-      if (page && ["orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize", "odmeny"].includes(page)) {
+      if (page && ["dnes", "orders", "calendar", "inventory", "devices", "customers", "invoices", "sms", "statistics", "settings", "zasilky", "provize", "odmeny"].includes(page)) {
         if (page === "invoices" && !invoicesAvailable) return;
         if (page === "statistics" && !canViewStatistics) return;
         if (page === "provize" && !provizeAvailable) return;
@@ -1094,6 +1138,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
 
   const pageTitle = useMemo(() => {
     switch (activePage) {
+      case "dnes":
+        return "Dnes";
       case "orders":
         return "Zakázky";
       case "calendar":
@@ -1429,6 +1475,18 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
               </div>
             )}
 
+          {visitedPages.has("dnes") && (
+            <div data-tour="page-dnes" style={{ display: activePage === "dnes" ? "block" : "none", minHeight: "100%" }} aria-hidden={activePage !== "dnes"}>
+              <Dnes
+                activeServiceId={activeServiceId}
+                onZalozitZakazku={(rezervace) => {
+                  setNewOrderPrefill({ rezervace });
+                  setActivePage("orders");
+                }}
+              />
+            </div>
+          )}
+
           {visitedPages.has("sms") && (
             <div data-tour="page-sms" style={{ display: activePage === "sms" ? "block" : "none", height: "100%", minHeight: 0 }} aria-hidden={activePage !== "sms"}>
               <SmsChatsPage
@@ -1594,8 +1652,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           )}
 
           {/* "sms" v seznamu chybělo, takže se pod SMS chaty vykresloval navíc
-              prázdný panel "Placeholder page." */}
-          {!["orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms", "zasilky"].includes(activePage) && (
+              prázdný panel "Placeholder page." Stejně Provize a Odměny. */}
+          {!["dnes", "orders", "calendar", "settings", "customers", "devices", "inventory", "statistics", "invoices", "sms", "zasilky", "provize", "odmeny"].includes(activePage) && (
             <div
               style={{
                 background: "var(--panel)",

@@ -23,6 +23,7 @@ const icon = (d: string) => (
   </svg>
 );
 
+const DNES: Tab = { key: "dnes", label: "Dnes", icon: icon("M17 18a5 5 0 0 0-10 0M12 2v7M4.22 10.22l1.42 1.42M1 18h2M21 18h2M18.36 11.64l1.42-1.42M23 22H1M8 6l4-4 4 4") };
 const ORDERS: Tab = { key: "orders", label: "Zakázky", icon: icon("M9 12h6M9 16h6M10 8h4M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z") };
 const CUSTOMERS: Tab = { key: "customers", label: "Zákazníci", icon: icon("M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z") };
 const CALENDAR: Tab = { key: "calendar", label: "Kalendář", icon: icon("M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 2v4M8 2v4M3 10h18") };
@@ -36,7 +37,9 @@ const ODMENY: Tab = { key: "odmeny", label: "Odměny", icon: icon("M8 21h8M12 17
 const ZASILKY: Tab = { key: "zasilky", label: "Zásilky", icon: icon("M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM8 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM21 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z") };
 const SETTINGS: Tab = { key: "settings", label: "Nastavení", icon: icon("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z") };
 
-const PRIMARY: Tab[] = [ORDERS, CUSTOMERS, CALENDAR, INVENTORY];
+/* Dnes je první – technik na telefonu začíná tam. Aby zůstaly čtyři hlavní
+   záložky + Více, přestěhoval se Sklad do Více (nahoře). */
+const PRIMARY: Tab[] = [DNES, ORDERS, CUSTOMERS, CALENDAR];
 
 export type BottomNavProps = {
   active: NavKey;
@@ -95,6 +98,7 @@ export function BottomNav({
   }, [moreOpen]);
 
   const secondary: Tab[] = [
+    INVENTORY,
     ...(smsEnabled ? [SMS] : []),
     DEVICES,
     ...(invoicingEnabled ? [INVOICES] : []),

@@ -53,7 +53,7 @@ const nast = (category: string, subsection: string) => ({ category, subsection }
 /** Kroky úvodního průvodce (po prvním přihlášení, „Spustit průvodce“ v O aplikaci). */
 export const KROKY_UVOD: TourStep[] = [
   { page: "orders", title: "Vítejte v Jobi", description: "Krátká prohlídka hlavních stránek. Kdykoli ji přeskočíte; ke každé stránce a části nastavení je pak vlastní průvodce pod otazníkem v postranním panelu.", icon: "welcome" },
-  { page: "orders", title: "Postranní panel", description: "Zakázky, Kalendář, Zákazníci, Sklad, Zařízení, Statistiky a Nastavení. Co servis nemá zapnuté (SMS, faktury, pobočky), v panelu není.", selector: sel("sidebar-nav-orders"), icon: "orders" },
+  { page: "orders", title: "Postranní panel", description: "Dnes, Zakázky, Kalendář, Zákazníci, Sklad, Zařízení, Statistiky a Nastavení. Co servis nemá zapnuté (SMS, faktury, pobočky), v panelu není.", selector: sel("sidebar-nav-orders"), icon: "orders" },
   { page: "orders", title: "Zakázky", description: "Srdce aplikace: příjem, stav, opravy s cenami, tisk dokumentů, SMS a historie. Nová zakázka je jedno tlačítko; zákazník se podle telefonu najde sám.", selector: sel("orders-new-btn"), icon: "orders" },
   { page: "orders", title: "Hledání a filtry", description: "Hledejte podle čehokoli, přepínejte skupiny Vše / Aktivní / Dokončené a filtrujte podle stavu.", selector: sel("orders-search"), icon: "orders" },
   { page: "customers", title: "Zákazníci", description: "Vznikají sami z první zakázky. Karta drží kontakty, adresu pro doklady a všechny zakázky zákazníka.", selector: sel("customers-content"), icon: "customers" },
@@ -85,6 +85,22 @@ export const PRUVODCI: Pruvodce[] = [
     popis: "Projděte hlavní stránky aplikace krok za krokem.",
     page: "orders",
     kroky: KROKY_UVOD,
+  },
+  {
+    id: "dnes",
+    nazev: "Dnes",
+    popis: "Jedna obrazovka na ráno: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy.",
+    page: "dnes",
+    novinkaOd: "2026-09-27",
+    kroky: [
+      { page: "dnes", title: "Dnes", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce a kliknutím na řádek se otevře detail zakázky; po zavření jste zpátky tady. Respektuje vybranou pobočku.", selector: sel("sidebar-nav-dnes"), icon: "orders" },
+      { page: "dnes", title: "Jen moje / Celý tým", description: "Jen moje zúží všechny karty na zakázky přidělené vám; Celý tým ukáže všechno a u zakázky i jméno technika. Volba se pamatuje a platí i na telefonu. Když servis techniky nepřiděluje, přepínač tu není.", selector: sel("dnes-rozsah"), icon: "team" },
+      { page: "dnes", title: "Po termínu a Dnes dokončit", description: "Podle pole Předpokládaný termín dokončení v detailu zakázky. Nejdéle po termínu je nahoře. Hotové zakázky (k převzetí) se do termínů nepočítají.", selector: sel("dnes-po-terminu"), icon: "orders" },
+      { page: "dnes", title: "Připraveno k převzetí", description: "Zakázky ve stavu pro hotové (Připraveno, K vyzvednutí…) – kdo si pro zařízení může přijít. Nahoře ty, které leží nejdéle.", selector: sel("dnes-k-prevzeti"), icon: "orders" },
+      { page: "dnes", title: "Čeká na díl a na zákazníka", description: "Na díl čeká zakázka s objednaným dílem, který ještě nedorazil (Objednat u dodavatele), nebo ve stavu typu Čeká na díl. Na zákazníka čeká odeslaná cenová nabídka bez odpovědi.", selector: sel("dnes-dil"), icon: "inventory" },
+      { page: "dnes", title: "Rezervace na dnes", description: "Zákazníci objednaní přes formulář na webu. Kliknutím rovnou založíte zakázku s údaji z rezervace.", selector: sel("dnes-rezervace"), icon: "customers" },
+      { page: "settings", title: "Začínat na Dnes", description: "V Nastavení → Rozhraní → Po přihlášení otevřít si vyberte Dnes a aplikace se bude otevírat tady. Výchozí klávesová zkratka je T (změníte v Klávesových zkratkách).", selector: sel("settings-content"), settingsSection: nast("app", "appearance_ui"), icon: "settings" },
+    ],
   },
   {
     id: "zakazky",

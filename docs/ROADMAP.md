@@ -106,6 +106,26 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
     podle čísla zakázky, ceník bez zakládání toho, co v katalogu už je. Zbývá:
     ověřit proti skutečnému CSV exportu z MyRepair (nemáme), historie stavů zakázky
     (`ticket_history`) se nepřenáší.
+11. `[~]` **Stránka Dnes pro technika** (27. 9.): jedna obrazovka bez klikání,
+    první položka navigace (zkratka T, na telefonu první záložka – Sklad se
+    přesunul do Více). Karty Po termínu, Dnes dokončit (obojí podle
+    `expected_completion_at`), Rezervace na dnes (`bookings`, klik založí
+    zakázku), Připraveno k převzetí, Čeká na díl (objednaný díl, který
+    nedorazil – `inventory_purchase_order_items.ticket_id` v návrhu/objednané
+    objednávce – nebo stav typu „Čeká na díl“), Čeká na zákazníka (odeslaná
+    nabídka `quote_status = sent` nebo stav typu „Čeká na zákazníka“),
+    Přidělené mně (`assigned_to`) a Nepřečtené zprávy v chatu. Přepínač
+    Jen moje / Celý tým v osobních volbách (`dnes.rozsah`, sync přes
+    `user_preferences`), respektuje vybranou pobočku. Řádek otevře detail
+    zakázky přes `jobsheet:navigate` (`openTicketId`, `returnToPage: "dnes"`).
+    Nastavení → Rozhraní → Po přihlášení otevřít: Zakázky / Dnes (výchozí
+    Zakázky). Třídění `src/lib/dnes.ts` + test, stránka `src/pages/Dnes.tsx`,
+    průvodce `dnes`. Stavy mají jen vlastnost „koncový“, takže „připraveno“
+    a „čeká na díl/zákazníka“ bez objednávky či nabídky se poznají podle
+    klíče a názvu stavu (bez stavu „Připraveno“ = poslední nekoncový).
+    **Zbývá:** ověřit v běžící aplikaci (desktop i telefon), zvážit vlastnost
+    stavu „k převzetí“ v Nastavení → Statusy místo odhadu podle názvu, běžící
+    stopky na kartě.
 
 První tři měsíce: body 1, 2, 4.
 

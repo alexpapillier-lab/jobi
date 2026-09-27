@@ -185,6 +185,8 @@ type UIConfig = {
     reducedEffects?: boolean;
     /** Řádek kroků v detailu zakázky. Pomáhá novým lidem; zkušení si ho vypnou. */
     postupZakazky?: boolean;
+    /** Stránka po přihlášení; výchozí Zakázky (App.tsx čte totéž). */
+    startPage?: "orders" | "dnes";
   };
   sidebar: {
     position: SidebarPosition;
@@ -254,6 +256,7 @@ function safeLoadUIConfig(): UIConfig {
             ? parsed.app.reducedEffects
             : d.app.reducedEffects,
         postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
+        startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -281,8 +284,34 @@ function safeLoadUIConfig(): UIConfig {
   }
 }
 
+/**
+ * Volby ve stejném klíči, které Nastavení neupravuje, ale jiná místa ano:
+ * připnutí lišty (App, špendlík v liště) a „Jen moje / Celý tým“ na stránce
+ * Dnes. Uložení odsud přepisuje celý klíč, takže se berou z úložiště – ze
+ * stavu Nastavení by byly zastaralé nebo by chyběly úplně (připnutá lišta
+ * se po každé změně v Nastavení odepnula).
+ */
+function ciziVolby(): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.UI_SETTINGS);
+    const p = raw ? JSON.parse(raw) : null;
+    const out: Record<string, unknown> = {};
+    if (typeof p?.sidebar?.pinned === "boolean") out.pinned = p.sidebar.pinned;
+    if (p?.dnes && typeof p.dnes === "object") out.dnes = p.dnes;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 function saveUIConfig(cfg: UIConfig & { invoicingEnabled?: boolean }) {
-  localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(cfg));
+  const { pinned, dnes } = ciziVolby();
+  const out = {
+    ...cfg,
+    sidebar: { ...cfg.sidebar, ...(pinned !== undefined ? { pinned } : {}) },
+    ...(dnes !== undefined ? { dnes } : {}),
+  };
+  localStorage.setItem(STORAGE_KEYS.UI_SETTINGS, JSON.stringify(out));
   window.dispatchEvent(new CustomEvent("jobsheet:ui-updated"));
 }
 
@@ -1025,7 +1054,7 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
-        { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu", "asistent postupu", "postup zakázky", "kroky"] },
+        { key: "appearance_ui", label: "Rozhraní", keywords: ["rozhraní", "měřítko", "velikost", "zvuky", "plovoucí tlačítko", "zobrazení zakázek", "seznam", "mřížka", "kompaktní", "sidebar", "postranní panel", "navigace", "efekty", "výkon", "rozostření", "zvýraznění stavu", "asistent postupu", "postup zakázky", "kroky", "dnes", "po přihlášení", "úvodní stránka", "domovská stránka", "start", "přehled dne", "moje zakázky"] },
         { key: "appearance_theme", label: "Vzhled", keywords: ["tmavý", "světlý", "barva", "motiv", "téma", "akcent", "vzhled", "logo", "ikona", "podle systému", "dark mode", "předvolby", "zl", "zakázkový list"] },
         { key: "appearance_shortcuts", label: "Klávesové zkratky", keywords: ["klávesové zkratky", "zkratky", "klávesnice", "hotkey"] },
         { key: "appearance_modules", label: "Moduly", keywords: ["moduly", "faktury", "fakturační systém", "vypnout faktury", "modul"] },
@@ -2125,6 +2154,22 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                       setSoundsEnabledState(v);
                       hintZvuky.show();
                     }}
+                  />
+                }
+              />
+              <SettingRow
+                label="Po přihlášení otevřít"
+                description="Dnes je přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy."
+                control={
+                  <Segmented<"orders" | "dnes">
+                    size="sm"
+                    ariaLabel="Stránka po přihlášení"
+                    value={uiCfg.app.startPage === "dnes" ? "dnes" : "orders"}
+                    onChange={(v) => updateUi({ ...uiCfg, app: { ...uiCfg.app, startPage: v } }, hintFab)}
+                    options={[
+                      { value: "orders", label: "Zakázky" },
+                      { value: "dnes", label: "Dnes" },
+                    ]}
                   />
                 }
               />

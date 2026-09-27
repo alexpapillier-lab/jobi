@@ -544,3 +544,10 @@ label.ui-setting-row { cursor: pointer; }
 
 /* Položka rozbalovacího filtru podle stavu (StatusFilter) */
 .status-filter-item:hover { background: var(--panel-2) !important; }
+
+/* Řádek sekce na stránce Dnes (RadekSekce) – celý řádek je tlačítko.
+   Hover stejným nádechem akcentu jako položka nabídky: --panel-2 na kartě
+   skoro není vidět. */
+.dnes-radek { transition: background 120ms ease; }
+.dnes-radek:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) !important; }
+.dnes-radek:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

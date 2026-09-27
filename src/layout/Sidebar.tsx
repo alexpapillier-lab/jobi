@@ -14,7 +14,7 @@ import { isDesktop } from "../lib/platform";
 import { useBranches } from "../context/BranchContext";
 import { getShortcut, formatShortcutForDisplay, SHORTCUTS_CHANGED_EVENT, type ShortcutId } from "../lib/keyboardShortcuts";
 
-export type NavKey = "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "provize" | "odmeny" | "settings";
+export type NavKey = "dnes" | "orders" | "sms" | "calendar" | "inventory" | "devices" | "customers" | "invoices" | "zasilky" | "statistics" | "provize" | "odmeny" | "settings";
 
 function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -40,6 +40,15 @@ function IconBox({ children, size = 40 }: { children: React.ReactNode; size?: nu
     >
       {children}
     </div>
+  );
+}
+
+/** Dnes: slunce nad obzorem – den, ne kalendář (ten má vlastní ikonu). */
+function DnesIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 18a5 5 0 0 0-10 0M12 2v7M4.22 10.22l1.42 1.42M1 18h2M21 18h2M18.36 11.64l1.42-1.42M23 22H1M8 6l4-4 4 4"/>
+    </svg>
   );
 }
 
@@ -181,6 +190,7 @@ export type SidebarProps = {
 type NavItem = { key: NavKey; label: string; icon: React.ComponentType<{ size?: number }> };
 
 const NAV_SHORTCUT_IDS: Partial<Record<NavKey, ShortcutId>> = {
+  dnes: "nav_dnes",
   orders: "nav_orders",
   calendar: "nav_calendar",
   invoices: "nav_invoices",
@@ -307,6 +317,7 @@ export function Sidebar({
   /* Pořadí a skupiny: Práce / Katalog / Statistiky. Nastavení bydlí dole u účtu. */
   const navGroups = useMemo<NavItem[][]>(() => {
     const prace: NavItem[] = [
+      { key: "dnes", label: "Dnes", icon: DnesIcon },
       { key: "orders", label: "Zakázky", icon: OrdersIcon },
       { key: "calendar", label: "Kalendář", icon: CalendarIcon },
       { key: "customers", label: "Zákazníci", icon: UsersIcon },

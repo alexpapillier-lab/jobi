@@ -7,6 +7,7 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 
 export type ShortcutId =
   | "help"
+  | "nav_dnes"
   | "nav_orders"
   | "nav_calendar"
   | "nav_invoices"
@@ -23,12 +24,13 @@ export type ShortcutId =
   | "order_print";
 
 export const ALL_SHORTCUT_IDS: ShortcutId[] = [
-  "help", "nav_orders", "nav_calendar", "nav_customers", "nav_invoices", "nav_inventory", "nav_devices", "nav_statistics", "nav_settings",
+  "help", "nav_dnes", "nav_orders", "nav_calendar", "nav_customers", "nav_invoices", "nav_inventory", "nav_devices", "nav_statistics", "nav_settings",
   "orders_new", "orders_search", "order_detail_edit", "order_detail_save", "order_detail_save_close", "order_print",
 ];
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
   help: "Shift+?",
+  nav_dnes: "t",
   nav_orders: "q",
   nav_calendar: "k",
   nav_invoices: "f",
@@ -47,6 +49,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutId, string> = {
 
 export const SHORTCUT_LABELS: Record<ShortcutId, string> = {
   help: "Nápověda zkratek",
+  nav_dnes: "Přepnout na Dnes",
   nav_orders: "Přepnout na Zakázky",
   nav_calendar: "Přepnout na Kalendář",
   nav_invoices: "Přepnout na Faktury",
