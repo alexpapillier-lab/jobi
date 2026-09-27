@@ -103,9 +103,22 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
     `ImportZakazek.tsx`, `ImportCeniku.tsx`, `Settings/MigraceSettings.tsx`) –
     předvolby sloupců pro Zakázkový list (podle reálného exportu) a MyRepair (odhad),
     mapování cizích stavů na stavy servisu, datum vydání do `completed_at`, duplicity
-    podle čísla zakázky, ceník bez zakládání toho, co v katalogu už je. Zbývá:
-    ověřit proti skutečnému CSV exportu z MyRepair (nemáme), historie stavů zakázky
-    (`ticket_history`) se nepřenáší.
+    podle čísla zakázky, ceník bez zakládání toho, co v katalogu už je.
+    Hotovo 27. 9.: **migrace ze Zakázkového listu jedním skriptem**
+    (`scripts/migrace-zl/`, README tam). ZL export zakázek nemá, takže se servis
+    přihlásí přes Playwright (postup a selektory z `zakazkovylist-bot`), skript
+    projde všechny strany seznamu zakázek a reklamací a každý detail (údaje,
+    položky oprav, komentáře, historie stavů), ukládá průběžně a po pádu pokračuje;
+    výstupem jsou `zakazky.csv`, `zakaznici.csv`, `cenik.csv` přesně pro předvolbu
+    „Zakázkový list“ + `report.md` s tím, co se nepřeneslo. Ceník z API ZL jen
+    s tokeny (`ZL_APPLICATION_TOKEN`, `ZL_BRAND_TOKEN`). Import zakázek nově
+    přenáší **historii stavů** (sloupec „Historie stavů“ → `ticket_history`
+    jako změny stavu s původním datem, `changed_by` prázdné). Ověřeno na uloženém
+    exportu iSwapu (3 671 zakázek a 1 352 řádků ceníku projdou importem bez chyby)
+    a proti atrapě ZL na localhostu; ostrý běh proti ZL zatím neproběhl.
+    Zbývá: ostrý běh, ověřit export zákazníků ze ZL (adresa a tlačítko jsou odhad),
+    import komentářů a reklamací (dnes jen archivní CSV), ověřit proti skutečnému
+    CSV exportu z MyRepair (nemáme).
 
 První tři měsíce: body 1, 2, 4.
 

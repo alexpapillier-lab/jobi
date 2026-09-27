@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Umělá stránka ve tvaru detailu zakázky ZL podle selektorů v stahovani.ts
+     (skutečné HTML se nikde neuložilo – diag soubory bota jsou prázdné). -->
+<html lang="cs">
+<head><meta charset="utf-8"><title>Zakázkový list - Zakázka - TSTZ2400001 Vydáno</title></head>
+<body>
+<h1>Zakázka TSTZ2400001 <span class="badge">Vydáno</span></h1>
+<div class="card">
+  <table class="table">
+    <tr><th>Zařízení</th><td><a href="/device/detail/TSTD2400001">iPhone 13</a></td></tr>
+    <tr><th>Sériové číslo</th><td>F2LTEST0001</td></tr>
+    <tr><th>Heslo zařízení / Kód obrazovky</th><td>1234</td></tr>
+    <tr><th>PIN</th><td>9999</td></tr>
+    <tr><th>Požadovaná oprava</th><td>Výměna
+      displeje</td></tr>
+    <tr><th>Předpokládaná cena</th><td>3 500,00 Kč <small>Cena zakázky je vyšší než předpokládaná cena.</small></td></tr>
+  </table>
+</div>
+<div class="card">
+  <table class="table">
+    <tr><th>Zákazník</th><td><a href="/customer/detail/TSTC2400001">Jana Testová</a> <button>Skrýt jméno</button></td></tr>
+    <tr><th>Jméno a příjmení</th><td>Jana Testová</td></tr>
+    <tr><th>Telefonní číslo</th><td>+420 777 000 111</td></tr>
+    <tr><th>Přijetí zařízení do opravy</th><td>03.01.2024 09:15</td></tr>
+    <tr><th>Zakázka vydána</th><td>06.01.2024 10:30</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h3>Oprava</h3>
+  <table class="table">
+    <thead><tr><th>Položka opravy</th><th>Náklady</th><th>Cena</th><th>Akce</th></tr></thead>
+    <tbody>
+      <tr><td>Výměna displeje (originální)</td><td>2 100,00 Kč</td><td>3 990,00 Kč</td><td><button>Smazat</button></td></tr>
+      <tr><th>Celkem</th><td>2 100,00 Kč</td><td><strong>3 990,00 Kč</strong></td></tr>
+    </tbody>
+  </table>
+</div>
+<div id="snippet-orderCommentsDatagrid-datagrid">
+  <table><tbody id="orderCommentsDatagrid-datagrid-tbody">
+    <tr><td class="col-user"><span>Technik B</span> <span>04.01.2024 11:00</span></td><td class="col-content">Objednán displej,
+      zákazník souhlasí.</td></tr>
+  </tbody></table>
+</div>
+<div class="modal" id="logModal" aria-hidden="true">
+  <table class="table"><thead><tr><th>Stav</th><th>Uživatel</th><th>Datum</th></tr></thead>
+    <tbody>
+      <tr><td>Přijato</td><td>Technik A</td><td>03.01.2024 09:16</td></tr>
+      <tr><td>Vydáno - Zakázka dokončena</td><td>Technik A</td><td>06.01.2024 10:30</td></tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

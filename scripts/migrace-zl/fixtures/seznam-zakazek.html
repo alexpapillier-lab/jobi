@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Umělá stránka ve tvaru seznamu zakázek ZL (datagrid Nette) podle selektorů v stahovani.ts. -->
+<html lang="cs">
+<head><meta charset="utf-8"><title>Zakázky</title></head>
+<body>
+<a href="/order/detail/TSTZ2400009">Poslední otevřená (mimo tabulku)</a>
+<table class="datagrid">
+  <thead><tr><th>Kód</th><th>Zařízení</th><th>Stav</th></tr></thead>
+  <tbody>
+    <tr><td><a href="/order/detail/TSTZ2400001?backlink=abc">TSTZ2400001</a></td><td>iPhone 13</td><td><button class="btn">Vydáno</button></td></tr>
+    <tr><td><a href="/order/detail/TSTZ2400002">TSTZ2400002</a></td><td>iPad</td><td><select><option>Přijato</option><option selected>Čeká na díl</option></select></td></tr>
+    <tr><td><a href="/order/detail/TSTZ2400003">TSTZ2400003</a></td><td>Dyson</td><td><span class="badge">  Připraveno k převzetí </span></td></tr>
+  </tbody>
+</table>
+<div class="row"><div class="col-pagination">
+  <a href="?ordersDatagrid-datagrid-page=1">1</a> <a href="?ordersDatagrid-datagrid-page=2">2</a> <span>…</span>
+  <a href="?ordersDatagrid-datagrid-page=72">72</a> <a href="?ordersDatagrid-datagrid-page=2">Další</a>
+</div></div>
+</body>
+</html>

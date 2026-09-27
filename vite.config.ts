@@ -95,6 +95,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["src/**/*.test.{ts,tsx}", "jobidocs/core/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "jobidocs/core/**/*.test.ts", "scripts/migrace-zl/**/*.test.ts"],
   },
 });

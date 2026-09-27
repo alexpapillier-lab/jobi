@@ -129,7 +129,8 @@ export function ImportZakazek({
     // Jedno pole smí mít jen jeden sloupec – jinak by se hodnoty tiše přebíjely.
     const m = mapovani.map((x, j) => (j === i ? pole : x === pole ? null : x));
     setMapovani(m);
-    if (pole === "status" || mapovani[i] === "status") {
+    const stavove = (p: PoleZakazky | null) => p === "status" || p === "status_history";
+    if (stavove(pole) || stavove(mapovani[i])) {
       setMapovaniStavu(navrhniMapovaniStavu(stavyZeSouboru(tabulka, m), statuses, fallbackKey));
     }
   };
@@ -146,8 +147,9 @@ export function ImportZakazek({
     setBezi(true);
     setChyba(null);
     const radky = priprava.zaznamy.flatMap((z) => (z.stav === "novy" ? [z.data] : []));
+    const historie = Object.fromEntries(priprava.zaznamy.flatMap((z) => (z.stav === "novy" && z.historie ? [[z.data.code, z.historie] as const] : [])));
     const klient = { from: (tabulka: string) => supabase!.from(tabulka) as any };
-    const v = await zapisZakazky(klient, activeServiceId, radky, setPostup);
+    const v = await zapisZakazky(klient, activeServiceId, radky, setPostup, undefined, historie);
     const cely: VysledekImportuZakazek = { ...v, preskoceno: v.preskoceno + priprava.duplicit, chybnychRadku: priprava.chyb };
     setVysledek(cely);
     setBezi(false);
@@ -276,6 +278,7 @@ export function ImportZakazek({
               {vysledek.preskoceno > 0 ? `, ${vysledek.preskoceno} přeskočeno (číslo zakázky už v servisu bylo)` : ""}
               {vysledek.chybnychRadku > 0 ? `, ${vysledek.chybnychRadku} řádků s chybou vynecháno` : ""}
               {vysledek.chyb > 0 ? `, ${vysledek.chyb} se nepodařilo uložit` : ""}.
+              {vysledek.historie ? ` Historie stavů: ${vysledek.historie.zapsano} změn${vysledek.historie.chyb > 0 ? `, ${vysledek.historie.chyb} se nezapsalo` : ""}.` : ""}
             </div>
             {vysledek.chyby.length > 0 && (
               <div style={{ fontSize: 12, color: "#dc2626", display: "grid", gap: 2 }}>

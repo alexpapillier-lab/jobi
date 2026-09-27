@@ -77,7 +77,10 @@ export function MigraceSettings({ activeServiceId }: { activeServiceId: string |
           <div style={krok}>
             <div style={nadpis}>Zakázkový list</div>
             <div style={text}>
-              V nastavení nebo v přehledech (zakázky, zákazníci, ceník) hledejte export do CSV či Excelu. Excel (.xlsx) uložte jako CSV. Předvolba „Zakázkový list“ v importu zakázek počítá s názvy z detailu zakázky: „Přijetí zařízení do opravy“, „Zakázka vydána“, „Jméno a příjmení“, „Telefonní číslo“, „Zařízení“, „Sériové číslo“, „IMEI“, „Požadovaná oprava“, „Popis stavu zařízení“. Když se export jmenuje jinak, sloupce přiřaďte ručně.
+              Zakázkový list export zakázek nemá. Připravili jsme nástroj, který se za vás přihlásí do Zakázkového listu na vašem počítači, projde všechny zakázky a reklamace a vyrobí soubory zakazky.csv, zakaznici.csv a cenik.csv přesně pro tenhle import – i s historií stavů a provedenými opravami. Přihlašovací údaje ani data nikam neodchází. Napište nám v Nastavení → Nápověda a podpora → Nahlásit chybu a nástroj vám pošleme i s návodem krok za krokem, nebo migraci spustíme s vámi. Pak stačí soubory nahrát tady v pořadí zákazníci, zakázky, ceník.
+            </div>
+            <div style={text}>
+              Předvolba „Zakázkový list“ v importu zakázek počítá s názvy z detailu zakázky: „Přijetí zařízení do opravy“, „Zakázka vydána“, „Jméno a příjmení“, „Telefonní číslo“, „Zařízení“, „Sériové číslo“, „IMEI“, „Požadovaná oprava“, „Popis stavu zařízení“, „Položky opravy“, „Historie stavů“. Když máte soubor odjinud a sloupce se jmenují jinak, přiřaďte je ručně.
             </div>
           </div>
           <div style={krok}>

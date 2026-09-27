@@ -1,0 +1,201 @@
+{
+ "1": {
+  "app": {},
+  "response": {
+   "id": 1,
+   "name": "hash1",
+   "description": "iPhone 13",
+   "priority": 2,
+   "isDeprecated": false,
+   "hasPriceList": true,
+   "parent": {
+    "id": 101,
+    "description": "iPhone"
+   },
+   "priceLists": [
+    {
+     "id": 11,
+     "name": "Výměna displeje (originální)",
+     "description": "Originální díl; záruka 6 měsíců.",
+     "time_requirement": "60 min.",
+     "priority": 1,
+     "price": 3990,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    },
+    {
+     "id": 12,
+     "name": "Výměna baterie",
+     "description": "",
+     "time_requirement": "60 mion.",
+     "priority": 2,
+     "price": 1490,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    }
+   ]
+  }
+ },
+ "2": {
+  "app": {},
+  "response": {
+   "id": 2,
+   "name": "hash2",
+   "description": "iPhone 12",
+   "priority": 1,
+   "isDeprecated": false,
+   "hasPriceList": true,
+   "parent": {
+    "id": 102,
+    "description": "iPhone"
+   },
+   "priceLists": [
+    {
+     "id": 21,
+     "name": "Výměna baterie",
+     "description": "",
+     "time_requirement": "60 min",
+     "priority": 1,
+     "price": 1490,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    }
+   ]
+  }
+ },
+ "3": {
+  "app": {},
+  "response": {
+   "id": 3,
+   "name": "hash3",
+   "description": "Apple Watch Series 6 44mm",
+   "priority": 1,
+   "isDeprecated": false,
+   "hasPriceList": true,
+   "parent": {
+    "id": 103,
+    "description": "Watch"
+   },
+   "priceLists": [
+    {
+     "id": 31,
+     "name": "Výměna skla",
+     "description": "",
+     "time_requirement": "2 - 3 dny",
+     "priority": 1,
+     "price": 2490,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    }
+   ]
+  }
+ },
+ "4": {
+  "app": {},
+  "response": {
+   "id": 4,
+   "name": "hash4",
+   "description": "Apple Watch Series 6 44mm",
+   "priority": 1,
+   "isDeprecated": false,
+   "hasPriceList": false,
+   "parent": {
+    "id": 104,
+    "description": "Apple Watch"
+   },
+   "priceLists": []
+  }
+ },
+ "5": {
+  "app": {},
+  "response": {
+   "id": 5,
+   "name": "hash5",
+   "description": "Dyson V15",
+   "priority": 1,
+   "isDeprecated": false,
+   "hasPriceList": true,
+   "parent": {
+    "id": 105,
+    "description": "Vysavače"
+   },
+   "priceLists": [
+    {
+     "id": 51,
+     "name": "Nová baterie",
+     "description": "",
+     "time_requirement": "1 den",
+     "priority": 1,
+     "price": 3300,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    }
+   ]
+  }
+ },
+ "6": {
+  "app": {},
+  "response": {
+   "id": 6,
+   "name": "hash6",
+   "description": "Jiný model Dyson",
+   "priority": 2,
+   "isDeprecated": false,
+   "hasPriceList": true,
+   "parent": {
+    "id": 106,
+    "description": "Ostatní"
+   },
+   "priceLists": [
+    {
+     "id": 61,
+     "name": "Diagnostika",
+     "description": "",
+     "time_requirement": "",
+     "priority": 1,
+     "price": 490,
+     "discount": 0,
+     "language": "czech",
+     "currency": "Kč"
+    }
+   ]
+  }
+ },
+ "7": {
+  "app": {},
+  "response": {
+   "id": 7,
+   "name": "hash7",
+   "description": "Ostatní",
+   "priority": 1,
+   "isDeprecated": false,
+   "hasPriceList": false,
+   "parent": {
+    "id": 107,
+    "description": "Ostatní"
+   },
+   "priceLists": []
+  }
+ },
+ "8": {
+  "app": {},
+  "response": {
+   "id": 8,
+   "name": "hash8",
+   "description": "Dyson WashG1",
+   "priority": 3,
+   "isDeprecated": false,
+   "hasPriceList": false,
+   "parent": {
+    "id": 108,
+    "description": "Ostatní"
+   },
+   "priceLists": []
+  }
+ }
+}
