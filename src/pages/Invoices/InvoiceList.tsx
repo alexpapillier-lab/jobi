@@ -51,6 +51,7 @@ export function InvoiceList({
   onSearchChange,
   onNew,
   onUzaverka,
+  onSouhrnna,
   onOpen,
 }: {
   invoices: Invoice[];
@@ -64,6 +65,8 @@ export function InvoiceList({
   onNew: () => void;
   /** Denní uzávěrka – zaplacené doklady podle způsobu platby. */
   onUzaverka?: () => void;
+  /** Souhrnná faktura za víc zakázek jednoho zákazníka. */
+  onSouhrnna?: () => void;
   onOpen: (inv: Invoice) => void;
 }) {
   const today = todayIso();
@@ -146,6 +149,11 @@ export function InvoiceList({
             {onUzaverka && (
               <Button variant="soft" onClick={onUzaverka} title="Zaplacené doklady za den podle způsobu platby">
                 Uzávěrka
+              </Button>
+            )}
+            {onSouhrnna && (
+              <Button variant="soft" data-tour="invoices-souhrnna" onClick={onSouhrnna} title="Jedna faktura za vydané zakázky zákazníka v období">
+                Souhrnná faktura
               </Button>
             )}
             <Button variant="primary" icon={<PlusIcon size={16} />} onClick={onNew}>
