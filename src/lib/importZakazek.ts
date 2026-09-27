@@ -38,7 +38,8 @@ export type PoleZakazky =
   | "repair_name"
   | "repair_price"
   | "repair_costs"
-  | "total_price";
+  | "total_price"
+  | "status_history";
 
 export const POPIS_POLE_ZAKAZKY: Record<PoleZakazky, string> = {
   code: "Číslo zakázky",
@@ -63,6 +64,7 @@ export const POPIS_POLE_ZAKAZKY: Record<PoleZakazky, string> = {
   repair_price: "Oprava – cena",
   repair_costs: "Oprava – náklady",
   total_price: "Celková cena",
+  status_history: "Historie stavů (datum;stav;kdo|…)",
 };
 
 /** Pořadí polí v nabídce mapování (nejdřív to, co bývá v každém exportu). */
@@ -72,6 +74,7 @@ export const POLE_ZAKAZKY: PoleZakazky[] = [
   "device_label", "device_brand", "device_serial", "device_imei", "device_passcode",
   "notes", "device_condition", "estimated_price", "external_id",
   "performed_repairs", "repair_name", "repair_price", "repair_costs", "total_price",
+  "status_history",
 ];
 
 export type Predvolba = "zl" | "myrepair" | "vlastni";
@@ -105,6 +108,7 @@ export const PREDVOLBY: Record<Predvolba, { label: string; popis: string; sloupc
       external_id: ["Externí identifikace"],
       performed_repairs: ["Položky opravy", "Položka opravy", "Opravy", "Provedené opravy"],
       total_price: ["Celková cena", "Cena celkem", "Celkem"],
+      status_history: ["Historie stavů", "Historie stavu"],
     },
   },
   myrepair: {
@@ -144,6 +148,7 @@ export const PREDVOLBY: Record<Predvolba, { label: string; popis: string; sloupc
 
 /** Obecné vzory pro sloupce, které předvolba nezná. Pořadí = priorita. */
 const VZORY: Array<[PoleZakazky, RegExp]> = [
+  ["status_history", /histori/i],
   ["completed_at", /vyd[aá]n|p[řr]ed[aá]n|dokon[čc]en|uzav[řr]en|deliver|complet|finish|closed/i],
   ["created_at", /p[řr]ij(et|at)|vytvo[řr]en|datum|creat|received/i],
   ["code", /^(k[oó]d|[čc][ií]slo|zak[aá]zka|id|order)/i],
@@ -303,6 +308,27 @@ export function parsujOpravy(text: string): { opravy: ImportovanaOprava[]; chyba
   return { opravy };
 }
 
+/** Jedna změna stavu ze sloupce „Historie stavů“ – stav je text ze souboru, ne klíč. */
+export type ZmenaStavuZeSouboru = { at: string; stav: string; kdo: string | null };
+
+/**
+ * Sloupec „Historie stavů“ ve tvaru „datum;stav;kdo|datum;stav;kdo“
+ * (položky oddělené svislítkem nebo novým řádkem, „kdo“ nepovinné).
+ * Datum v zápisech jako u data přijetí. Vrací změny, nebo text chyby.
+ */
+export function parsujHistoriiStavu(text: string): { zmeny: ZmenaStavuZeSouboru[]; chyba?: string } {
+  const zmeny: ZmenaStavuZeSouboru[] = [];
+  if (jePrazdne(text)) return { zmeny };
+  for (const p of text.split(/\s*(?:\||\r?\n)\s*/).map((x) => x.trim()).filter(Boolean)) {
+    const [datum = "", stav = "", kdo = ""] = p.split(";").map((x) => x.trim());
+    if (!stav) return { zmeny, chyba: `historie stavů bez stavu: ${p}` };
+    const at = parsujDatum(datum);
+    if (!at) return { zmeny, chyba: `nečitelné datum v historii stavů: ${datum || p}` };
+    zmeny.push({ at, stav, kdo: kdo || null });
+  }
+  return { zmeny };
+}
+
 /** Stav servisu – to, co potřebuje mapování (podmnožina StatusMeta). */
 export type StavServisu = { key: string; label: string; isFinal: boolean };
 
@@ -379,8 +405,11 @@ export type RadekZakazky = {
   performed_repairs: ImportovanaOprava[];
 };
 
+/** Změna stavu připravená pro `ticket_history` (stav už jako klíč servisu). */
+export type PolozkaHistorie = { created_at: string; status: string; stavText: string; kdo: string | null };
+
 export type ZaznamImportu =
-  | { radek: number; stav: "novy"; data: RadekZakazky }
+  | { radek: number; stav: "novy"; data: RadekZakazky; historie?: PolozkaHistorie[] }
   | { radek: number; stav: "duplicita"; kod: string }
   | { radek: number; stav: "chyba"; zprava: string }
   | { radek: number; stav: "prazdny" };
@@ -411,11 +440,19 @@ export type VolbyPripravy = {
 /** Odlišné hodnoty ve sloupci stavu, v pořadí výskytu. */
 export function stavyZeSouboru(tabulka: CsvTabulka, mapovani: Array<PoleZakazky | null>): string[] {
   const i = mapovani.indexOf("status");
-  if (i < 0) return [];
+  const h = mapovani.indexOf("status_history");
   const videno = new Set<string>();
-  for (const r of tabulka.radky) {
-    const v = (r[i] ?? "").trim();
-    if (v && !jePrazdne(v)) videno.add(v);
+  if (i >= 0) {
+    for (const r of tabulka.radky) {
+      const v = (r[i] ?? "").trim();
+      if (v && !jePrazdne(v)) videno.add(v);
+    }
+  }
+  // Stavy, které jsou jen v historii, se mapují stejnou tabulkou – až za stavy ze sloupce Stav.
+  if (h >= 0) {
+    for (const r of tabulka.radky) {
+      for (const z of parsujHistoriiStavu(r[h] ?? "").zmeny) videno.add(z.stav);
+    }
   }
   return [...videno];
 }
@@ -489,9 +526,17 @@ export function pripravZakazky(tabulka: CsvTabulka, mapovani: Array<PoleZakazky 
       performed_repairs.push({ id: noveIdOpravy(), name: "Oprava (z importu)", type: "manual", price: total });
     }
 
-    const stavText = hodnota("status");
+    const hist = parsujHistoriiStavu(hodnota("status_history"));
+    if (hist.chyba) return chyba(hist.chyba);
+
+    // Bez sloupce Stav rozhoduje poslední změna v historii.
+    const stavText = hodnota("status") || hist.zmeny[hist.zmeny.length - 1]?.stav || "";
     let status = stavText ? mapovaniStavu[stavText] : undefined;
     if (!status || !znameKlice.has(status)) status = completed_at ? koncovy : volby.fallbackKey;
+    const historie: PolozkaHistorie[] = hist.zmeny.map((z) => {
+      const k = mapovaniStavu[z.stav];
+      return { created_at: z.at, status: k && znameKlice.has(k) ? k : volby.fallbackKey, stavText: z.stav, kdo: z.kdo };
+    });
 
     const device_label = hodnota("device_label") || null;
     zaznamy.push({
@@ -518,6 +563,7 @@ export function pripravZakazky(tabulka: CsvTabulka, mapovani: Array<PoleZakazky 
         external_id: hodnota("external_id") || null,
         performed_repairs,
       },
+      ...(historie.length > 0 ? { historie } : {}),
     });
     videneKody.add(code);
   });
@@ -534,9 +580,15 @@ export function pripravZakazky(tabulka: CsvTabulka, mapovani: Array<PoleZakazky 
   };
 }
 
+type ChybaZapisu = { code?: string; message?: string } | null;
 /** Kousek supabase klienta, který zápis potřebuje – v testech ho nahradí atrapa. */
 export type KlientZapisu = {
-  from: (tabulka: string) => { insert: (radky: unknown) => PromiseLike<{ error: { code?: string; message?: string } | null }> };
+  from: (tabulka: string) => {
+    insert: (radky: unknown) => PromiseLike<{ error: ChybaZapisu }> & {
+      /** Jen kvůli historii stavů – vrácená id zakázek. */
+      select?: (sloupce: string) => PromiseLike<{ data: Array<{ id: string; code: string }> | null; error: ChybaZapisu }>;
+    };
+  };
 };
 
 export type VysledekZapisu = {
@@ -545,7 +597,34 @@ export type VysledekZapisu = {
   preskoceno: number;
   chyb: number;
   chyby: Array<{ kod: string; zprava: string }>;
+  /** Jen když se zapisovala historie stavů. */
+  historie?: { zapsano: number; chyb: number };
 };
+
+/**
+ * Řádky `ticket_history` z historie stavů: jedna „úprava“ se změnou stavu
+ * na každou změnu (stejná po sobě jdoucí se sloučí), s datem ze souboru.
+ * `changed_by` zůstává prázdné – lidé z cizího systému nejsou uživatelé
+ * Jobi; historie ukáže „Systém“ a statistiky techniků je nepočítají.
+ * Jméno a původní text stavu jsou v `details.import` pro dohledání.
+ */
+export function radkyHistorie(ticketId: string, serviceId: string, historie: PolozkaHistorie[]) {
+  const out: Array<{ ticket_id: string; service_id: string; action: "updated"; changed_by: null; created_at: string; details: Record<string, unknown> }> = [];
+  let predchozi: string | null = null;
+  for (const h of historie) {
+    if (h.status === predchozi) continue;
+    out.push({
+      ticket_id: ticketId,
+      service_id: serviceId,
+      action: "updated",
+      changed_by: null,
+      created_at: h.created_at,
+      details: { changes: { status: { old: predchozi, new: h.status } }, import: { stav: h.stavText, kdo: h.kdo } },
+    });
+    predchozi = h.status;
+  }
+  return out;
+}
 
 /**
  * Vloží zakázky po dávkách. Když dávka spadne (typicky kolize čísla
@@ -559,22 +638,48 @@ export async function zapisZakazky(
   radky: RadekZakazky[],
   onPostup?: (procent: number) => void,
   velikostDavky = 200,
+  /** Historie stavů podle čísla zakázky (z `pripravZakazky`); zapíše se do `ticket_history`. */
+  historie?: Record<string, PolozkaHistorie[]>,
 ): Promise<VysledekZapisu> {
   const v: VysledekZapisu = { novych: 0, preskoceno: 0, chyb: 0, chyby: [] };
+  const sHistorii = !!historie && Object.keys(historie).length > 0;
+  const idPodleKodu = new Map<string, string>();
+  const vloz = async (data: unknown) => {
+    const dotaz = klient.from("tickets").insert(data);
+    if (sHistorii && dotaz.select) {
+      const r = await dotaz.select("id, code");
+      for (const t of r.data ?? []) idPodleKodu.set(t.code, t.id);
+      return r.error;
+    }
+    return (await dotaz).error;
+  };
   for (let i = 0; i < radky.length; i += velikostDavky) {
     const davka = radky.slice(i, i + velikostDavky).map((r) => ({ ...r, service_id: serviceId }));
-    const { error } = await klient.from("tickets").insert(davka);
+    const error = await vloz(davka);
     if (!error) {
       v.novych += davka.length;
     } else {
       for (const radek of davka) {
-        const { error: e1 } = await klient.from("tickets").insert(radek);
+        const e1 = await vloz(radek);
         if (!e1) v.novych += 1;
         else if (e1.code === "23505") v.preskoceno += 1;
         else { v.chyb += 1; v.chyby.push({ kod: radek.code, zprava: e1.message ?? "zápis selhal" }); }
       }
     }
     onPostup?.(Math.min(100, Math.round(((i + davka.length) / Math.max(1, radky.length)) * 100)));
+  }
+
+  if (sHistorii) {
+    // Historie až po zakázkách: potřebuje jejich id. Když spadne, zakázky zůstanou – je to doplněk.
+    const h = { zapsano: 0, chyb: 0 };
+    const vse = [...idPodleKodu.entries()].flatMap(([kod, id]) => radkyHistorie(id, serviceId, historie![kod] ?? []));
+    for (let i = 0; i < vse.length; i += 500) {
+      const davka = vse.slice(i, i + 500);
+      const { error } = await klient.from("ticket_history").insert(davka);
+      if (error) h.chyb += davka.length;
+      else h.zapsano += davka.length;
+    }
+    v.historie = h;
   }
   return v;
 }

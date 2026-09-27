@@ -6,8 +6,10 @@ import {
   odhadniMapovaniZakazek,
   parsujCastku,
   parsujDatum,
+  parsujHistoriiStavu,
   parsujOpravy,
   pripravZakazky,
+  radkyHistorie,
   zapisZakazky,
   type KlientZapisu,
   type StavServisu,
@@ -263,5 +265,75 @@ describe("importZakazek – zápis po dávkách", () => {
     const jina = atrapa(new Set(["K1"]), "42501");
     const v2 = await zapisZakazky(jina.klient, "svc", [radek("K0"), radek("K1")], undefined, 10);
     expect(v2).toEqual({ novych: 1, preskoceno: 0, chyb: 1, chyby: [{ kod: "K1", zprava: "kolize" }] });
+  });
+});
+
+describe("importZakazek – historie stavů", () => {
+  const ted = () => "2026-09-26T10:00:00.000Z";
+
+  it("sloupec „datum;stav;kdo|…“ a chyby v něm", () => {
+    expect(parsujHistoriiStavu("08.12.2022 09:53;Přijato;Jakub Zima|09.12.2022 10:00;Vydáno")).toEqual({
+      zmeny: [
+        { at: new Date(2022, 11, 8, 9, 53).toISOString(), stav: "Přijato", kdo: "Jakub Zima" },
+        { at: new Date(2022, 11, 9, 10, 0).toISOString(), stav: "Vydáno", kdo: null },
+      ],
+    });
+    expect(parsujHistoriiStavu("")).toEqual({ zmeny: [] });
+    expect(parsujHistoriiStavu("zítra;Přijato").chyba).toMatch(/nečitelné datum/);
+    expect(parsujHistoriiStavu("08.12.2022 09:53;").chyba).toMatch(/bez stavu/);
+  });
+
+  it("stavy z historie jdou do mapování; bez sloupce Stav rozhoduje poslední změna", () => {
+    const t = parseCsv(["Kód;Přijato;Historie stavů", 'H1;1.1.2024;"01.01.2024 10:00;Přijato;A|02.01.2024 10:00;V opravě;B|03.01.2024 10:00;Vydáno;A"', "H2;1.1.2024;", 'H3;1.1.2024;"nesmysl;Přijato"'].join("\n"));
+    const m = odhadniMapovaniZakazek(t.hlavicka, "zl");
+    expect(m).toEqual(["code", "created_at", "status_history"]);
+    const p = pripravZakazky(t, m, { existujiciKody: new Set(), stavy: STAVY_ZL, fallbackKey: "received", ted });
+    expect(p.stavyVeVstupu).toEqual(["Přijato", "V opravě", "Vydáno"]);
+    expect(p.chyby).toEqual([{ radek: 4, zprava: "nečitelné datum v historii stavů: nesmysl" }]);
+    const [h1, h2] = p.zaznamy.flatMap((z) => (z.stav === "novy" ? [z] : []));
+    expect(h1.data.status).toBe("issued");
+    expect(h1.historie?.map((h) => h.status)).toEqual(["received", "in_repair", "issued"]);
+    expect(h2.historie).toBeUndefined();
+
+    expect(radkyHistorie("t1", "svc", [...h1.historie!, { ...h1.historie![2], created_at: "2024-01-04T00:00:00.000Z" }])).toEqual([
+      { ticket_id: "t1", service_id: "svc", action: "updated", changed_by: null, created_at: new Date(2024, 0, 1, 10).toISOString(), details: { changes: { status: { old: null, new: "received" } }, import: { stav: "Přijato", kdo: "A" } } },
+      { ticket_id: "t1", service_id: "svc", action: "updated", changed_by: null, created_at: new Date(2024, 0, 2, 10).toISOString(), details: { changes: { status: { old: "received", new: "in_repair" } }, import: { stav: "V opravě", kdo: "B" } } },
+      { ticket_id: "t1", service_id: "svc", action: "updated", changed_by: null, created_at: new Date(2024, 0, 3, 10).toISOString(), details: { changes: { status: { old: "in_repair", new: "issued" } }, import: { stav: "Vydáno", kdo: "A" } } },
+    ]);
+  });
+
+  it("zápis: id zakázek z insert…select, historie po zakázkách, chyba historie nezruší zakázky", async () => {
+    const vlozeno: Record<string, unknown[]> = { tickets: [], ticket_history: [] };
+    let historieSpadne = false;
+    const klient: KlientZapisu = {
+      from: (tabulka: string) => ({
+        insert: (radky: unknown) => {
+          const pole = (Array.isArray(radky) ? radky : [radky]) as Array<Record<string, unknown>>;
+          const chyba = tabulka === "ticket_history" && historieSpadne ? { message: "rls" } : null;
+          if (!chyba) vlozeno[tabulka].push(...pole);
+          const vysledek = { error: chyba };
+          return Object.assign(Promise.resolve(vysledek), {
+            select: async () => ({ data: pole.map((r, i) => ({ id: `id-${String(r.code)}-${i}`, code: String(r.code) })), error: null }),
+          });
+        },
+      }),
+    };
+    const radek = (code: string) => ({
+      code, created_at: "2024-01-01T00:00:00.000Z", completed_at: null, status: "received", title: "X", notes: "—",
+      customer_name: null, customer_phone: null, customer_email: null, customer_company: null, device_label: null, device_brand: null,
+      device_serial: null, device_imei: null, device_passcode: null, device_condition: null, estimated_price: null, external_id: null, performed_repairs: [],
+    });
+    const historie = { A: [{ created_at: "2024-01-01T00:00:00.000Z", status: "received", stavText: "Přijato", kdo: null }, { created_at: "2024-01-02T00:00:00.000Z", status: "issued", stavText: "Vydáno", kdo: null }] };
+    const v = await zapisZakazky(klient, "svc", [radek("A"), radek("B")], undefined, 200, historie);
+    expect(v).toMatchObject({ novych: 2, historie: { zapsano: 2, chyb: 0 } });
+    expect(vlozeno.ticket_history.map((r) => (r as { ticket_id: string }).ticket_id)).toEqual(["id-A-0", "id-A-0"]);
+
+    historieSpadne = true;
+    const v2 = await zapisZakazky(klient, "svc", [radek("C")], undefined, 200, { C: historie.A });
+    expect(v2).toMatchObject({ novych: 1, historie: { zapsano: 0, chyb: 2 } });
+
+    // Bez historie se select nevolá a výsledek je stejný jako dřív.
+    const v3 = await zapisZakazky(klient, "svc", [radek("D")]);
+    expect(v3).toEqual({ novych: 1, preskoceno: 0, chyb: 0, chyby: [] });
   });
 });

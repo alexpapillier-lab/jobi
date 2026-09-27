@@ -81,3 +81,9 @@ test-results/
 playwright-report/
 # Build webové verze jen pro sadu prohlizece.spec.ts (nesmí přepsat dist-web)
 dist-web-prohlizece/
+
+# Migrace ze Zakázkového listu: stažená data a CSV servisu (osobní údaje
+# zákazníků) – vznikají tam, kde se skript spustí, do repa nikdy.
+migrace-zl-vystup/
+scripts/migrace-zl/node_modules/
+scripts/migrace-zl/package-lock.json
