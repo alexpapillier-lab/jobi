@@ -59,6 +59,7 @@ export function BranchBar({ narrow = false }: { narrow?: boolean }) {
         <Segmented<string>
           size="sm"
           ariaLabel="Přepnout pobočku"
+          dataTour="pobocka-lista"
           value={activeBranchId ?? VSECHNY}
           onChange={(v) => setActiveBranchId(v === VSECHNY ? null : v)}
           options={options}
