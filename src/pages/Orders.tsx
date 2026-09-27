@@ -25,7 +25,6 @@ import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
 import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
-import { loadInventoryFromDb, type Product as SkladProdukt } from "../lib/inventoryDb";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
@@ -37,23 +36,13 @@ import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
 import { setTicketBranch, type Branch } from "../lib/branches";
 import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
-import { loadDevicesFromDb } from "../lib/devicesDb";
-import {
-  type DevicesData,
-  type InventoryData,
-  type DeviceRepair,
-  safeLoadDevicesData,
-} from "../lib/catalogStorage";
 import {
   reserveForRepair,
   releaseReservations,
   consumeTicketReservations,
   loadTicketReservations,
-  loadReservations,
-  loadTicketOrderItems,
   jenUuid,
   type TicketReservation,
-  type TicketOrderItem,
   type ReserveShortage,
 } from "../lib/purchaseOrders";
 import { useActiveRole } from "../hooks/useActiveRole";
@@ -61,18 +50,14 @@ import { smsDoNotNotifyRef } from "../hooks/useSmsNotifications";
 import { registerShortcut } from "../lib/keyboardShortcuts";
 import { safeLoadCompanyData } from "../lib/companyData";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
-import { type StatusFilterOption } from "../components/orders/StatusFilter";
 import {
   loadDocumentsConfigFromDB,
 } from "../lib/documentHelpers";
 
 import {
-  type GroupKey,
-  type ClaimsSubGroup,
   type UIConfig,
   type OrdersProps,
   type TicketEx,
-  type ModelWithHierarchy,
 } from "./Orders/typy";
 import { safeLoadUIConfig } from "./Orders/uiConfig";
 import {
@@ -108,6 +93,8 @@ import { useEvidenceZapisu } from "./Orders/hooks/useEvidenceZapisu";
 import { useKomentare } from "./Orders/hooks/useKomentare";
 import { useZapisyZakazky } from "./Orders/hooks/useZapisyZakazky";
 import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
+import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
+import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
 import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
 import { DetailZakazky } from "./Orders/DetailZakazky";
@@ -316,13 +303,6 @@ export default function Orders({
   const [moveBranchOpen, setMoveBranchOpen] = useState(false);
   const tickets = useMemo(() => filterByBranch(cloudTickets, activeBranchId), [cloudTickets, activeBranchId]);
 
-  const [activeGroup, setActiveGroup] = useState<GroupKey>("active");
-  const [activeStatusKey, setActiveStatusKey] = useState<string | null>(null);
-  const [claimsSubGroup, setClaimsSubGroup] = useState<ClaimsSubGroup>("all");
-
-  const [query, setQuery] = useState("");
-  const [statusById, setStatusById] = useState<Record<string, string>>({});
-
   /* Zákaznický portál a Diagnostika v detailu jsou výchozím stavem sbalené –
      při běžné práci se nečtou a odsouvaly opravy a stav o obrazovku níž. */
   const [detailPortalOpen, prepnoutDetailPortal, setDetailPortalOpen] = useSbaleno(DETAIL_PORTAL_OPEN_KEY, false);
@@ -377,8 +357,6 @@ export default function Orders({
   openQuickPrintTicketRef.current = openQuickPrintTicket;
   const [quickPrintDropdownRect, setQuickPrintDropdownRect] = useState<{ top: number; left: number; right: number; height: number } | null>(null);
 
-  const [ordersPage, setOrdersPage] = useState(0);
-
   // Delete ticket dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTicketId, setDeleteTicketId] = useState<string | null>(null);
@@ -431,12 +409,6 @@ export default function Orders({
       window.removeEventListener("jobsheet:ui-updated" as any, onUiUpdated);
     };
   }, []);
-
-  useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const t of tickets) next[t.id] = t.status as any;
-    setStatusById(next);
-  }, [tickets]);
 
   useLayoutEffect(() => {
     if (!openQuickPrintTicket) {
@@ -555,119 +527,16 @@ export default function Orders({
     return () => { cancelled = true; };
   }, [activeServiceId, onCreateInvoice, onOpenInvoice]);
 
-  // Ceník oprav (Zařízení a opravy) žije v DB. Dřív se tu četl jednou při
-  // startu z localStorage, kam ho zapisovala jen stará verze stránky
-  // Zařízení – v čistém prohlížeči byl proto katalog v zakázkách prázdný
-  // („Vybrat z katalogu“ nic nenabídlo). Teď se načte z DB a při změně
-  // ceníku se obnoví.
-  const [devicesData, setDevicesData] = useState<DevicesData>(() => safeLoadDevicesData());
-  useEffect(() => {
-    if (!activeServiceId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const load = async () => {
-      const res = await loadDevicesFromDb(activeServiceId);
-      if (cancelled || res.error) return;
-      setDevicesData(res.data);
-    };
-    const scheduleReload = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void load(); }, 800);
-    };
-    void load();
-    const channel = supabase
-      ? supabase
-          .channel(`orders-devices:${activeServiceId}`)
-          // Tabulka se jmenuje `repairs`; pod názvem „device_repairs“ žádná
-          // neexistuje, takže se odběr tiše navázal a nikdy nic neposlal –
-          // změna ceníku se v otevřené zakázce neprojevila až do načtení
-          // stránky znovu. Supabase na neznámou tabulku nijak neupozorní.
-          .on("postgres_changes", { event: "*", schema: "public", table: "repairs", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
-          .on("postgres_changes", { event: "*", schema: "public", table: "device_models", filter: `service_id=eq.${activeServiceId}` }, scheduleReload)
-          .subscribe()
-      : null;
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      if (channel && supabase) void supabase.removeChannel(channel);
-    };
-  }, [activeServiceId]);
-  /**
-   * Produkty skladu pro výběr dílů u provedených oprav. Čtou se z databáze –
-   * starší kopie v localStorage vzniká jen na stránce Sklad a na jiném
-   * počítači je prázdná, takže výběr dílů nic nenabízel. Načítá se při
-   * otevření detailu, aby stav skladu odpovídal.
-   */
-  const [inventoryData, setInventoryData] = useState<InventoryData>({ brands: [], categories: [], models: [], products: [] });
-  /**
-   * Sklad z databáze v plné podobě (stav, dodavatel, nákupní cena) plus živé
-   * rezervace přes všechny zakázky – z toho řádek „Díly“ pozná, že díl není
-   * skladem, a nabídne objednání u dodavatele (components/orders/DilyOpravy).
-   */
-  const [skladProdukty, setSkladProdukty] = useState<ReadonlyMap<string, SkladProdukt>>(new Map());
-  const [rezervovanoCelkem, setRezervovanoCelkem] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Položky objednávek u dodavatele založené kvůli otevřené zakázce; klíčované id, ať pozdní odpověď nepřepíše jinou. */
-  const [objednanoProZakazku, setObjednanoProZakazku] = useState<{ ticketId: string | null; rows: TicketOrderItem[] }>({ ticketId: null, rows: [] });
-  const refreshObjednanoProZakazku = useCallback(async (ticketId: string) => {
-    const res = await loadTicketOrderItems(ticketId);
-    if (res.error) return;
-    setObjednanoProZakazku({ ticketId, rows: res.data });
-  }, []);
-  useEffect(() => {
-    if (!activeServiceId || !detailId) return;
-    let zruseno = false;
-    void loadReservations(activeServiceId).then((res) => {
-      if (zruseno || res.error) return;
-      setRezervovanoCelkem(res.data);
-    });
-    void loadTicketOrderItems(detailId).then((res) => {
-      if (zruseno || res.error) return;
-      setObjednanoProZakazku({ ticketId: detailId, rows: res.data });
-    });
-    void loadInventoryFromDb(activeServiceId).then((res) => {
-      if (zruseno || res.error) return;
-      setSkladProdukty(new Map(res.data.products.map((p) => [p.id, p])));
-      setInventoryData({
-        brands: [],
-        categories: [],
-        models: [],
-        products: res.data.products.map((p) => ({
-          id: p.id,
-          name: p.name,
-          modelIds: p.modelIds,
-          stock: p.stock,
-          price: p.price,
-          sku: p.sku,
-          description: p.description,
-          imageUrl: p.imageUrl,
-          repairIds: p.repairIds,
-          createdAt: p.createdAt,
-        })),
-      });
-    });
-    return () => {
-      zruseno = true;
-    };
-  }, [activeServiceId, detailId]);
-
-  const modelsWithHierarchy: ModelWithHierarchy[] = useMemo(() => {
-    if (!devicesData || !Array.isArray(devicesData.models)) return [];
-    return devicesData.models
-      .map((model) => {
-        if (!model || !model.id || !model.name) return null;
-        const category = devicesData.categories?.find((c) => c && c.id === model.categoryId);
-        const brand = category && devicesData.brands ? devicesData.brands.find((b) => b && b.id === category.brandId) : null;
-        const brandName = brand?.name ?? "";
-        const categoryName = category?.name ?? "";
-        return {
-          ...model,
-          categoryName,
-          brandName,
-          fullName: brand ? `${brand.name} ${model.name}` : model.name,
-        } satisfies ModelWithHierarchy;
-      })
-      .filter((m): m is ModelWithHierarchy => m !== null);
-  }, [devicesData]);
+  const {
+    devicesData,
+    inventoryData,
+    skladProdukty,
+    rezervovanoCelkem,
+    objednanoProZakazku,
+    refreshObjednanoProZakazku,
+    modelsWithHierarchy,
+    repairsForDeviceLabel,
+  } = useKatalogASklad(activeServiceId, detailId);
 
   const {
     isNewOpen,
@@ -812,6 +681,53 @@ export default function Orders({
     [statusKeysSet, fallbackKey, statusesLoading, statuses.length]
   );
 
+  const {
+    activeGroup,
+    setActiveGroup,
+    activeStatusKey,
+    setActiveStatusKey,
+    claimsSubGroup,
+    setClaimsSubGroup,
+    query,
+    setQuery,
+    statusById,
+    setStatusById,
+    ordersPage,
+    setOrdersPage,
+    quickStatuses,
+    showSecondaryFiltersRow,
+    statusFilterOptions,
+    filtered,
+    showClaimsInOrdersList,
+    aktivniReklamace,
+    combinedList,
+    groupCounts,
+    filtrPresunu,
+    pageSize,
+    listLength,
+    effectivePageSize,
+    totalOrdersPages,
+    paginatedTickets,
+    paginatedClaims,
+    paginatedCombined,
+    ticketsForSmsUnread,
+  } = useFiltrSeznamu({
+    tickets,
+    cloudClaims,
+    statuses,
+    isFinal,
+    normalizeStatus,
+    statusKeysSet,
+    uiCfg,
+    mojeId,
+    activeBranchId,
+    ordersShowClaimsInList,
+    zasilkyZapnuty,
+    hasBranches,
+    nastaveniZasilek,
+    pridelovaniTechnika,
+  });
+
   // Order actions hook
   // Re-fetch single ticket by ID (for conflict resolution)
   const refetchTicketById = useCallback(async (ticketId: string): Promise<TicketEx | null> => {
@@ -898,264 +814,7 @@ export default function Orders({
     refetchTicketById,
   });
 
-  const selectedQuickKeys = uiCfg.home.orderFilters.selectedQuickStatusFilters;
-
-  const quickStatuses = useMemo(() => {
-    const set = new Set(statuses.map((s) => s.key));
-    const keys = selectedQuickKeys.filter((k) => set.has(k));
-    return statuses.filter((s) => keys.includes(s.key));
-  }, [selectedQuickKeys, statuses]);
-
-  const showSecondaryFiltersRow = quickStatuses.length > 0;
-
-  useEffect(() => {
-    if (!activeStatusKey) return;
-    if (statusKeysSet.has(activeStatusKey)) return;
-    setActiveStatusKey(null);
-  }, [activeStatusKey, statusKeysSet]);
-
-
-  /** Patří zakázka do zvolené záložky (Vše / Aktivní / Moje / Přesuny / Dokončené)? */
-  const patriDoSkupiny = useCallback(
-    (t: TicketEx, st: string | null): boolean => {
-      // If statuses are not ready, show all tickets
-      if (st === null) return true;
-      if (activeGroup === "all") return true;
-      if (activeGroup === "final") return isFinal(st);
-      // „Moje“ = co mám dodělat: přidělené mně a ještě nedokončené.
-      if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
-      // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
-      if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
-      return !isFinal(st);
-    },
-    [activeGroup, mojeId, isFinal],
-  );
-
-  /** Nabídka filtru podle stavu: jen stavy, které ve zvolené záložce opravdu jsou, s počtem. */
-  const statusFilterOptions = useMemo((): { options: StatusFilterOption[]; total: number } => {
-    const pocty = new Map<string, number>();
-    let total = 0;
-    for (const t of tickets) {
-      const st = normalizeStatus((t.status as any) ?? statusById[t.id]);
-      if (!patriDoSkupiny(t, st)) continue;
-      total += 1;
-      if (st !== null) pocty.set(st, (pocty.get(st) ?? 0) + 1);
-    }
-    const options = statuses
-      .filter((s) => (pocty.get(s.key) ?? 0) > 0 || s.key === activeStatusKey)
-      .map((s) => ({ key: s.key, label: s.label, bg: s.bg, count: pocty.get(s.key) ?? 0 }));
-    return { options, total };
-  }, [tickets, statusById, normalizeStatus, patriDoSkupiny, statuses, activeStatusKey]);
-
-  // Po přepnutí záložky stav, který v ní není (např. „Vydáno“ v Aktivních), nedává smysl držet.
-  useEffect(() => {
-    if (!activeStatusKey) return;
-    const o = statusFilterOptions.options.find((x) => x.key === activeStatusKey);
-    if (!o || o.count === 0) setActiveStatusKey(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- jen při změně záložky, ne při každém přepočtu nabídky
-  }, [activeGroup]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const qDigits = q.replace(/\D/g, "");
-
-    const base = tickets
-      .filter((t) => patriDoSkupiny(t, normalizeStatus((t.status as any) ?? statusById[t.id])))
-      .filter((t) => {
-        if (!activeStatusKey) return true;
-        const raw = (t.status as any) ?? statusById[t.id];
-        const st = normalizeStatus(raw);
-        
-        // If statuses are not ready, don't filter by status
-        if (st === null) return true;
-        return st === activeStatusKey;
-      })
-      .filter((t) => {
-        if (!q) return true;
-        // Telefon se porovnává i po číslicích, aby „777123“ našlo „+420 777 123 456“.
-        const phoneDigits = (t.customerPhone ?? "").replace(/\D/g, "");
-        // Všechna pole přes `?? ""`: zakázka bez čísla (vzniká importem nebo
-        // přes veřejné API) shodila celou stránku Zakázky na `toLowerCase`
-        // of null, jakmile někdo začal psát do hledání. Jeden vadný řádek
-        // nesmí sundat seznam všem.
-        return (
-          (t.code ?? "").toLowerCase().includes(q) ||
-          (t.customerName ?? "").toLowerCase().includes(q) ||
-          (t.customerPhone ?? "").toLowerCase().includes(q) ||
-          (qDigits.length >= 3 && phoneDigits.includes(qDigits)) ||
-          (t.deviceLabel ?? "").toLowerCase().includes(q) ||
-          (t.serialOrImei ?? "").toLowerCase().includes(q) ||
-          (t.issueShort ?? "").toLowerCase().includes(q) ||
-          (t.externalId ?? "").toLowerCase().includes(q)
-        );
-      });
-    // Explicitně řadit od nejnovějších, aby stránkování bylo konzistentní
-    return [...base].sort(
-      (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
-    );
-  }, [tickets, patriDoSkupiny, query, statusById, activeStatusKey, normalizeStatus]);
-
-  /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
-  const claimsInBranch = useMemo(
-    () => (activeBranchId ? cloudClaims.filter((c) => !(c as any).branch_id || (c as any).branch_id === activeBranchId) : cloudClaims),
-    [cloudClaims, activeBranchId],
-  );
-  const filteredClaims = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = !q
-      ? claimsInBranch
-      : claimsInBranch.filter(
-          (c) =>
-            (c.code?.toLowerCase().includes(q)) ||
-            (c.customer_name?.toLowerCase().includes(q)) ||
-            (c.customer_phone?.replace(/\s/g, "").includes(q.replace(/\s/g, ""))) ||
-            (c.device_serial?.toLowerCase().includes(q)) ||
-            (c.device_label?.toLowerCase().includes(q)) ||
-            (c.notes?.toLowerCase().includes(q))
-        );
-    // Explicitně řadit od nejnovějších kvůli konzistentnímu stránkování
-    return [...base].sort(
-      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
-    );
-  }, [claimsInBranch, query]);
-
-  const filteredClaimsForTab = useMemo(() => {
-    if (activeGroup !== "reklamace") return filteredClaims;
-    if (claimsSubGroup === "all") return filteredClaims;
-    return filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (st === null) return claimsSubGroup === "active";
-      if (claimsSubGroup === "final") return isFinal(st);
-      return !isFinal(st);
-    });
-  }, [activeGroup, claimsSubGroup, filteredClaims, normalizeStatus, isFinal]);
-
-  /* Aktivní: reklamace se do stránkovaného seznamu nemíchají – jsou vždy
-     všechny pod zakázkami v bloku „Aktivní reklamace“ (viz aktivniReklamace).
-     Míchání podle data zůstává jen ve Vše a Dokončené, a jen když je zapnuté. */
-  const showClaimsInOrdersList = (activeGroup === "all" || activeGroup === "final") && ordersShowClaimsInList;
-  const aktivniReklamace = useMemo(
-    () => activeGroup !== "active" ? [] : filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (activeStatusKey && st !== activeStatusKey) return false;
-      return st === null || !isFinal(st);
-    }),
-    [activeGroup, activeStatusKey, filteredClaims, normalizeStatus, isFinal],
-  );
-  const combinedList = useMemo(() => {
-    if (!showClaimsInOrdersList) return [];
-    const ticketItems = filtered.map((t) => ({ type: "ticket" as const, data: t, created_at: t.createdAt ?? "" }));
-    const claimsForGroup = filteredClaims.filter((c) => {
-      const st = normalizeStatus((c.status as string) ?? "");
-      // Filtr podle stavu platí i pro reklamace – dřív se do vyfiltrovaného
-      // seznamu pletly reklamace, které ten stav vůbec neměly.
-      if (activeStatusKey && st !== activeStatusKey) return false;
-      if (st === null) return activeGroup !== "final";
-      if (activeGroup === "all") return true;
-      if (activeGroup === "final") return isFinal(st);
-      return !isFinal(st);
-    });
-    const claimItems = claimsForGroup.map((c) => ({ type: "claim" as const, data: c, created_at: c.created_at ?? "" }));
-    return [...ticketItems, ...claimItems].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [showClaimsInOrdersList, filtered, filteredClaims, activeGroup, activeStatusKey, normalizeStatus, isFinal]);
-
-  /** Počty do přepínače skupin – stejná pravidla jako seznam, jen bez textového hledání. */
-  const groupCounts = useMemo(() => {
-    let active = 0;
-    let final = 0;
-    let all = 0;
-    let moje = 0;
-    let presun = 0;
-    for (const t of tickets) {
-      const raw = (t.status as any) ?? statusById[t.id];
-      const st = normalizeStatus(raw);
-      if (activeStatusKey && st !== null && st !== activeStatusKey) continue;
-      all += 1;
-      if (umisteniZakazky(t).druh !== "doma") presun += 1;
-      if (st === null || !isFinal(st)) {
-        active += 1;
-        if (mojeId && t.assignedTo === mojeId) moje += 1;
-      } else final += 1;
-    }
-    // Aktivní reklamace jsou v záložce Aktivní vždy; do Vše a Dokončené jen
-    // když se tam míchají (nastavení).
-    for (const c of claimsInBranch) {
-      const st = normalizeStatus((c.status as string) ?? "");
-      if (activeStatusKey && st !== activeStatusKey) continue;
-      const aktivni = st === null || !isFinal(st);
-      if (aktivni) active += 1;
-      if (ordersShowClaimsInList) {
-        all += 1;
-        if (!aktivni) final += 1;
-      }
-    }
-    return { all, active, final, moje, presun, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
-
-  const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
-
-  // Vypnuté přidělování nesmí nechat seznam na skupině, která už neexistuje.
-  useEffect(() => {
-    if (!pridelovaniTechnika && activeGroup === "moje") setActiveGroup("active");
-    if (!filtrPresunu && activeGroup === "presun") setActiveGroup("active");
-  }, [pridelovaniTechnika, filtrPresunu, activeGroup]);
-
-  const pageSize = uiCfg.orders.pageSize ?? 50;
-  const listLength = activeGroup === "reklamace"
-    ? filteredClaimsForTab.length
-    : showClaimsInOrdersList
-      ? combinedList.length
-      : filtered.length;
-  const effectivePageSize = pageSize <= 0 ? listLength || 1 : pageSize;
-  const totalOrdersPages = Math.max(1, Math.ceil(listLength / effectivePageSize));
-  const paginatedTickets = useMemo(
-    () => (pageSize <= 0 ? filtered : filtered.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filtered, ordersPage, pageSize, effectivePageSize]
-  );
-  const paginatedClaims = useMemo(
-    () => (pageSize <= 0 ? filteredClaimsForTab : filteredClaimsForTab.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [filteredClaimsForTab, ordersPage, pageSize, effectivePageSize]
-  );
-  const paginatedCombined = useMemo(
-    () => (pageSize <= 0 ? combinedList : combinedList.slice(ordersPage * effectivePageSize, (ordersPage + 1) * effectivePageSize)),
-    [combinedList, ordersPage, pageSize, effectivePageSize]
-  );
-
-  /** Zakázky, u kterých má smysl načíst SMS badge (shodné s tím, co je ve výpisu) */
-  const ticketsForSmsUnread = useMemo(() => {
-    if (activeGroup === "reklamace") return [];
-    const mode = uiCfg.orders.displayMode;
-    if (mode === "status-grouped") {
-      if (showClaimsInOrdersList) {
-        return paginatedCombined.filter((r) => r.type === "ticket").map((r) => r.data);
-      }
-      return filtered;
-    }
-    return paginatedTickets;
-  }, [
-    activeGroup,
-    uiCfg.orders.displayMode,
-    showClaimsInOrdersList,
-    paginatedCombined,
-    filtered,
-    paginatedTickets,
-  ]);
-
   const { smsUnreadByTicketId, setSmsUnreadListBump } = useSmsNeprecteneSeznamu({ smsAvailable, activeServiceId, ticketsForSmsUnread });
-
-  useEffect(() => {
-    setOrdersPage(0);
-  }, [query, activeStatusKey, activeGroup, claimsSubGroup]);
-
-  useEffect(() => {
-    setOrdersPage(0);
-  }, [pageSize]);
-
-  useEffect(() => {
-    if (ordersPage >= totalOrdersPages && totalOrdersPages > 0) setOrdersPage(totalOrdersPages - 1);
-  }, [ordersPage, totalOrdersPages]);
 
   /**
    * Otevřený detail se hledá v NEfiltrovaném seznamu.
@@ -1295,23 +954,6 @@ export default function Orders({
       performedRepairs: false,
     });
   }, [detailId, detailedTicket]);
-
-  /** Opravy z ceníku pro zařízení podle názvu – stejné párování pro detail i pro příjem. */
-  const repairsForDeviceLabel = useCallback(
-    (label: string | undefined | null): DeviceRepair[] => {
-      const trimmed = (label || "").trim();
-      if (!trimmed) return [];
-      if (!devicesData || !Array.isArray(devicesData.models) || !Array.isArray(devicesData.repairs)) return [];
-      const deviceName = trimmed.toLowerCase();
-      const matchingModels = devicesData.models.filter(
-        (m) => m && m.name && (m.name.toLowerCase().includes(deviceName) || deviceName.includes(m.name.toLowerCase()))
-      );
-      const modelIds = matchingModels.map((m) => m.id).filter(Boolean);
-      if (modelIds.length === 0) return [];
-      return devicesData.repairs.filter((r) => r && r.modelIds && r.modelIds.some((mid: string) => modelIds.includes(mid)));
-    },
-    [devicesData]
-  );
 
   const availableRepairs = useMemo(
     () => repairsForDeviceLabel(detailedTicket?.deviceLabel),
