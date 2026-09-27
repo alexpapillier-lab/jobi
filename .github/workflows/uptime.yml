@@ -26,7 +26,7 @@ name: Dostupnost zvenčí
 #                                         do databáze a nenašla servis)
 #   e) /rest/v1/services přes anon klíč   200 (RLS vrátí prázdno) nebo 401/403,
 #                                         hlavně NE 5xx ani timeout
-# Bez secretu SUPABASE_ANON_KEY se c) a e) přeskočí s varováním; ostatní
+# Bez secretu VITE_SUPABASE_ANON_KEY se c) a e) přeskočí s varováním; ostatní
 # kontroly klíč nepotřebují.
 #
 # Když něco selže i na třetí pokus, workflow SELŽE. GitHub pak sám pošle
@@ -51,7 +51,7 @@ name: Dostupnost zvenčí
 # „zadarmo a bez správy“, ne SLA.
 #
 # Potřebné secrets (Settings → Secrets and variables → Actions):
-#   SUPABASE_ANON_KEY   veřejný anon klíč (= VITE_SUPABASE_ANON_KEY z .env);
+#   VITE_SUPABASE_ANON_KEY  veřejný anon klíč (stejný secret jako pro build);
 #                       bez něj se kontroly c) a e) přeskočí
 #   RESEND_API_KEY      klíč Resend pro e-mail s výpisem (volitelné)
 #   ALERT_EMAIL         kam e-mail poslat (volitelné, bez něj se neposílá)
@@ -88,10 +88,10 @@ jobs:
       - name: Chybí anon klíč?
         id: klic
         env:
-          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANON: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           if [ -z "$ANON" ]; then
-            echo "::warning::Secret SUPABASE_ANON_KEY není nastavený – kontroly Supabase REST a databáze se přeskočí. Hodnota je veřejný klíč VITE_SUPABASE_ANON_KEY z .env."
+            echo "::warning::Secret VITE_SUPABASE_ANON_KEY není nastavený – kontroly Supabase REST a databáze se přeskočí."
             echo "mame=false" >> "$GITHUB_OUTPUT"
           else
             echo "mame=true" >> "$GITHUB_OUTPUT"
@@ -117,7 +117,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         env:
-          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANON: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           scripts/uptime/kontrola.sh "Supabase REST" 200,401 "$SUPABASE/rest/v1/" \
             --hlavicka "apikey: $ANON" --obsahuje message
@@ -144,7 +144,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 3
         env:
-          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANON: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           scripts/uptime/kontrola.sh "Databáze přes REST (services)" 200,401,403 \
             "$SUPABASE/rest/v1/services?select=id&limit=1" --hlavicka "apikey: $ANON"
