@@ -170,11 +170,12 @@ export const PRUVODCI: Pruvodce[] = [
   {
     id: "faktury",
     nazev: "Faktury",
-    popis: "Vystavení faktury ze zakázky, číselné řady, export do účetnictví.",
+    popis: "Vystavení faktury ze zakázky, souhrnná faktura pro firmy, číselné řady, export do účetnictví.",
     page: "invoices",
     dostupny: (k) => !!k.stranky.invoices,
     kroky: [
       { page: "invoices", title: "Faktury", description: "Faktura vzniká z detailu zakázky jedním tlačítkem s položkami a DPH podle nastavení servisu. Tady je přehled, stav úhrady a export.", selector: sel("page-invoices"), icon: "doc" },
+      { page: "invoices", title: "Souhrnná faktura", description: "Firemnímu zákazníkovi jedna faktura za měsíc: vyberte zákazníka a období, odškrtejte vydané zakázky a otevře se běžný editor faktury. Vyfakturované zakázky se znovu nenabídnou; stornem faktury se uvolní.", selector: sel("invoices-souhrnna"), icon: "doc" },
     ],
   },
   {

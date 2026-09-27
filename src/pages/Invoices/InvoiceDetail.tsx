@@ -5,6 +5,7 @@ import { PROVIDER_LABELS, type IntegrationProvider } from "../../lib/integration
 import { CheckIcon, DocumentIcon, EditIcon, LinkIcon, MailIcon, TrashIcon, XIcon } from "../../components/icons";
 import { OverflowMenu, type OverflowMenuItem } from "../../components/orders/OverflowMenu";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { pluralZakazky, pocetZakazek } from "../../lib/souhrnnaFaktura";
 import { InvoicePrintMenu } from "./InvoicePrintMenu";
 import { KindPill, StatusPill } from "./InvoiceList";
 import {
@@ -53,6 +54,8 @@ export function InvoiceDetail({
   exportProviders = [],
   onExportTo,
   exporting = false,
+  souhrnZakazky = [],
+  onOpenZakazka,
 }: {
   invoice: Invoice;
   items: InvoiceItem[];
@@ -80,6 +83,9 @@ export function InvoiceDetail({
   exportProviders?: IntegrationProvider[];
   onExportTo?: (provider: IntegrationProvider) => void;
   exporting?: boolean;
+  /** Souhrnná faktura: zakázky, které kryje (z invoice_tickets). */
+  souhrnZakazky?: { id: string; code: string | null; castka: number | null }[];
+  onOpenZakazka?: (ticketId: string) => void;
 }) {
   const status = asStatus(inv.status);
   const kind = asKind(inv);
@@ -92,7 +98,9 @@ export function InvoiceDetail({
   const menuItems: OverflowMenuItem[] = [];
   if (isDraft) menuItems.push({ label: "Upravit", icon: <EditIcon size={15} />, onSelect: onEdit });
   // Dobropis bez vazby na fakturu nedává smysl – ten se neduplikuje.
-  if (kind !== "credit_note") menuItems.push({ label: "Duplikovat", onSelect: onDuplicate });
+  // Souhrnná faktura se neduplikuje: kopie by nesla tytéž zakázky bez vazby a šly by vyfakturovat dvakrát.
+  const souhrnna = souhrnZakazky.length > 0;
+  if (kind !== "credit_note" && !souhrnna) menuItems.push({ label: "Duplikovat", onSelect: onDuplicate });
   if (kind === "invoice" && (awaitingPayment || status === "paid") && onVystavitDobropis) {
     menuItems.push({ label: "Vystavit dobropis", onSelect: onVystavitDobropis });
   }
@@ -244,6 +252,28 @@ export function InvoiceDetail({
             </DetailSection>
           )}
 
+          {souhrnna && (
+            <DetailSection title={`Souhrnná faktura · ${pocetZakazek(souhrnZakazky.length)}`}>
+              {status === "cancelled" && (
+                <p style={{ margin: "0 0 var(--space-2)", fontSize: "var(--text-sm)", color: "var(--muted)" }}>Doklad je stornovaný – zakázky jdou vyfakturovat znovu.</p>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+                {souhrnZakazky.map((z) => (
+                  <button
+                    key={z.id}
+                    type="button"
+                    onClick={onOpenZakazka ? () => onOpenZakazka(z.id) : undefined}
+                    disabled={!onOpenZakazka}
+                    title={z.castka != null ? formatCurrency(z.castka, inv.currency) : undefined}
+                    style={{ padding: "3px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-pill)", background: "var(--panel-2)", color: "var(--text)", cursor: onOpenZakazka ? "pointer" : "default", fontFamily: "inherit", fontSize: "var(--text-sm)", fontWeight: 600 }}
+                  >
+                    {z.code || "bez čísla"}
+                  </button>
+                ))}
+              </div>
+            </DetailSection>
+          )}
+
           <DetailSection title="Položky">
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
@@ -336,6 +366,7 @@ function describeEvent(ev: InvoiceEvent): string {
     case "created":
       if (typeof p.credit_note_for_number === "string") return `Vytvořeno jako dobropis k faktuře ${p.credit_note_for_number}`;
       if (typeof p.settles_proforma_number === "string") return `Vytvořeno vyúčtováním zálohy ${p.settles_proforma_number}`;
+      if (p.souhrnna) return typeof p.zakazek === "number" ? `Vytvořeno jako souhrnná faktura za ${pluralZakazky(p.zakazek)}` : "Vytvořeno jako souhrnná faktura";
       return p.duplicated_from ? "Vytvořeno duplikací" : "Vytvořeno";
     case "updated":
       return "Upraveno";

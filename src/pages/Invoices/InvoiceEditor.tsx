@@ -4,6 +4,7 @@ import { SectionHeading } from "../../components/SectionHeading";
 import { ChevronDownIcon, DocumentIcon, PlusIcon, UserIcon, XIcon } from "../../components/icons";
 import { CustomerAutocomplete, type CustomerMatch } from "../../components/orders/CustomerAutocomplete";
 import { computeLine, emptyLineItem, formatCurrency, type InvoiceLineItem, type InvoiceTotals } from "../../lib/invoiceMath";
+import { pluralZakazky } from "../../lib/souhrnnaFaktura";
 import { KindPill, StatusPill } from "./InvoiceList";
 import { KIND_LABELS, asKind, formatDate, type EditorLineItem, type Invoice, type InvoiceKind } from "./types";
 
@@ -42,6 +43,7 @@ export function InvoiceEditor({
   onSave,
   onIssue,
   onCancel,
+  souhrn,
 }: {
   invoice: Partial<Invoice>;
   setInvoice: (i: Partial<Invoice>) => void;
@@ -59,11 +61,14 @@ export function InvoiceEditor({
   /** Uloží a nastaví stav „vystaveno“. */
   onIssue: () => void;
   onCancel: () => void;
+  /** Souhrnná faktura: zakázky, které doklad kryje (jen informace, v editoru se nemění). */
+  souhrn?: { zakazky: { id: string; code: string | null }[] } | null;
 }) {
   const isDraft = (invoice.status || "draft") === "draft";
   const kind = asKind(invoice);
   // Přepínač druhu jen u čerstvého dokladu – odvozené (dobropis, vyúčtování) mají druh daný.
-  const lzePrepnoutDruh = isNew && kind !== "credit_note" && !invoice.related_invoice_id;
+  // Souhrnná faktura je vždy běžná faktura – záloha zakázky nevyfakturuje.
+  const lzePrepnoutDruh = isNew && kind !== "credit_note" && !invoice.related_invoice_id && !souhrn;
   const [customerMode, setCustomerMode] = useState<"card" | "form">(invoice.customer_name ? "card" : "form");
 
   const updateField = <K extends keyof Invoice>(field: K, value: Invoice[K]) => {
@@ -207,6 +212,17 @@ export function InvoiceEditor({
               </>
             )}
           </Card>
+
+          {souhrn && souhrn.zakazky.length > 0 && (
+            <div
+              role="note"
+              style={{ padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "var(--accent-soft)", fontSize: "var(--text-sm)", color: "var(--text)" }}
+            >
+              <strong>Souhrnná faktura</strong> za {pluralZakazky(souhrn.zakazky.length)}:{" "}
+              {souhrn.zakazky.map((z) => z.code || "bez čísla").join(", ")}.
+              <span style={{ color: "var(--muted)" }}> Zakázky budou vedené jako vyfakturované; stornem faktury se uvolní.</span>
+            </div>
+          )}
 
           {/* Položky */}
           <Card>

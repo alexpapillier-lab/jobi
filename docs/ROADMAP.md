@@ -72,8 +72,17 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    `invoice-export`, tabulka `service_integrations`, placený modul `accounting`)
    – 6. 9. **denní uzávěrka**: způsob platby při označení Zaplaceno
    (`invoices.payment_method`, migrace 20260908130000), dialog Uzávěrka nad
-   seznamem faktur (doklady dne podle způsobu platby, tisk). Zbývá Pohoda,
-   Money, platební terminál (SumUp, GoPay).
+   seznamem faktur (doklady dne podle způsobu platby, tisk). 27. 9.
+   **souhrnná faktura** pro firemní zákazníky: Faktury → Souhrnná faktura,
+   zákazník (i podle IČO) + měsíc / od–do, odškrtání vydaných
+   nevyfakturovaných zakázek, otevře se běžný editor (řádek za zakázku,
+   volitelně rozpad na opravy). Vazba `invoice_tickets` s unikátním indexem
+   „zakázka na jedné nestornované faktuře“ platí i pro fakturu z detailu
+   zakázky, storno zakázky uvolní (migrace 20260927130000, `src/lib/souhrnnaFaktura.ts`,
+   sondy 1000–1005 v `rls-probe.sql`). Zbývá: štítek „Vyfakturováno v F…“
+   v seznamu a detailu zakázky (Orders.tsx má brát vazby z `invoice_tickets`,
+   ne jen `invoices.ticket_id`). Zbývá Pohoda, Money, platební terminál
+   (SumUp, GoPay).
 8. `[~]` **Apple a telefonní specifika** – kontrola IMEI a záruky při příjmu,
    Find My, historie zařízení napříč servisy, checklist příjmu s fotkou.
    Hotovo 6. 9.: **historie zařízení** – při příjmu i v detailu Jobi ukáže, že

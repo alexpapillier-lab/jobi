@@ -656,6 +656,34 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_tickets: {
+        Row: {
+          invoice_id: string
+          ticket_id: string
+          service_id: string
+          castka: number | null
+          aktivni: boolean
+          created_at: string
+        }
+        Insert: {
+          invoice_id: string
+          ticket_id: string
+          /** Doplní trigger z faktury; posílá se kvůli typu a RLS. */
+          service_id: string
+          castka?: number | null
+          aktivni?: boolean
+          created_at?: string
+        }
+        Update: {
+          invoice_id?: string
+          ticket_id?: string
+          service_id?: string
+          castka?: number | null
+          aktivni?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       invoice_series: {
         Row: {
           id: string

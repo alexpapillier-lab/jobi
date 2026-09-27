@@ -25,6 +25,7 @@ import { useBranches } from "../context/BranchContext";
 import { exportInvoice, loadActiveProviders, type IntegrationProvider } from "../lib/integrations";
 import { InvoiceEditor, type InvoiceCustomerMatch } from "./Invoices/InvoiceEditor";
 import { InvoiceDetail } from "./Invoices/InvoiceDetail";
+import { SouhrnnaFakturaDialog, type SouhrnnaFakturaPrefill } from "./Invoices/SouhrnnaFakturaDialog";
 import {
   KIND_ACCUSATIVE,
   KIND_LABELS,
@@ -152,6 +153,70 @@ function radekZPolozky(it: InvoiceItem): InvoiceLineItem {
   return { name: it.name, qty: it.qty, unit: it.unit, unit_price: it.unit_price, vat_rate: it.vat_rate };
 }
 
+/** Prefill nového dokladu – ze zakázky (s ticketId) nebo ze souhrnné faktury (bez něj). */
+type NovyDokladPrefill = Omit<NonNullable<Props["prefillFromTicket"]>, "ticketId"> & { ticketId?: string };
+
+/**
+ * Souhrnná faktura v editoru: které zakázky kryje. Nový doklad vazby
+ * (`invoice_tickets`) zapíše při prvním uložení; u existujícího konceptu
+ * už v databázi jsou a editor je jen ukazuje.
+ */
+type SouhrnEditoru = {
+  vazby: { ticket_id: string; castka: number | null }[];
+  zakazky: { id: string; code: string | null }[];
+  ulozeno: boolean;
+};
+
+type ZakazkaFaktury = { id: string; code: string | null; castka: number | null };
+
+/** Kód chyby PostgREST/Postgres pro chybějící tabulku – migrace souhrnné faktury ještě neproběhla. */
+function chybiTabulka(e: unknown): boolean {
+  const kod = (e as { code?: string } | null)?.code;
+  return kod === "PGRST205" || kod === "42P01";
+}
+
+/**
+ * Zakázky, které faktura kryje (souhrnná faktura). Chyba čtení doklad
+ * neblokuje – bez vazeb se jen neukáže seznam zakázek.
+ */
+async function nactiZakazkyFaktury(invoiceId: string): Promise<ZakazkaFaktury[]> {
+  const { data, error } = await typedSupabase.from("invoice_tickets").select("ticket_id, castka").eq("invoice_id", invoiceId);
+  if (error) {
+    if (!chybiTabulka(error)) reportSilent({ code: "invoices.souhrn_load_failed", error, source: "Invoices.nactiZakazkyFaktury" });
+    return [];
+  }
+  if (!data || data.length === 0) return [];
+  const { data: t } = await typedSupabase.from("tickets").select("id, code").in("id", data.map((d) => d.ticket_id));
+  const kody = new Map((t ?? []).map((x) => [x.id, x.code]));
+  return data
+    .map((d) => ({ id: d.ticket_id, code: kody.get(d.ticket_id) ?? null, castka: d.castka }))
+    .sort((a, b) => (a.code ?? "").localeCompare(b.code ?? ""));
+}
+
+/**
+ * Nestornované doklady, na kterých už zakázky jsou (id zakázky → doklad).
+ * Chyba se vyhazuje: bez odpovědi nejde říct, že zakázka vyfakturovaná není.
+ */
+async function aktivniFakturyZakazek(ticketIds: string[]): Promise<Map<string, { invoiceId: string; number: string }>> {
+  const out = new Map<string, { invoiceId: string; number: string }>();
+  for (let i = 0; i < ticketIds.length; i += 150) {
+    const { data, error } = await typedSupabase
+      .from("invoice_tickets")
+      .select("ticket_id, invoice_id")
+      .in("ticket_id", ticketIds.slice(i, i + 150))
+      .eq("aktivni", true);
+    if (error) throw error;
+    const fakturaIds = [...new Set((data ?? []).map((d) => d.invoice_id))];
+    const cisla = new Map<string, string>();
+    if (fakturaIds.length > 0) {
+      const { data: f } = await typedSupabase.from("invoices").select("id, number").in("id", fakturaIds);
+      for (const x of f ?? []) cisla.set(x.id, x.number);
+    }
+    for (const d of data ?? []) out.set(d.ticket_id, { invoiceId: d.invoice_id, number: cisla.get(d.invoice_id) || "(koncept)" });
+  }
+  return out;
+}
+
 /** Otisk editoru pro zjištění neuložených změn. */
 function snapshot(inv: Partial<Invoice>, items: EditorLineItem[]): string {
   return JSON.stringify([inv, items]);
@@ -188,6 +253,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const [platbaDialog, setPlatbaDialog] = useState<Invoice | null>(null);
   const [uzaverkaOpen, setUzaverkaOpen] = useState(false);
   const [editorBaseline, setEditorBaseline] = useState("");
+  /** Souhrnná faktura v editoru (null = běžný doklad). */
+  const [editorSouhrn, setEditorSouhrn] = useState<SouhrnEditoru | null>(null);
+  const [souhrnnaOpen, setSouhrnnaOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Detail
@@ -219,6 +287,9 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const [detailEvents, setDetailEvents] = useState<InvoiceEvent[]>([]);
   // Související doklady: původní faktura dobropisu / záloha, nebo naopak doklady odvozené z tohoto.
   const [detailRelated, setDetailRelated] = useState<Invoice[]>([]);
+  // Zakázky souhrnné faktury v detailu; ref hlídá, aby pozdní odpověď nepatřila jinému dokladu.
+  const [detailSouhrn, setDetailSouhrn] = useState<ZakazkaFaktury[]>([]);
+  const detailIdRef = useRef<string | null>(null);
   const [showDetail, setShowDetail] = useState(false);
 
   // Odeslání e-mailem
@@ -294,7 +365,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const dodavatelNacitaniRef = useRef<Promise<Partial<Invoice>> | null>(null);
 
   const openNewInvoice = useCallback(
-    (prefill?: Props["prefillFromTicket"]) => {
+    (prefill?: NovyDokladPrefill | null, souhrn?: SouhrnEditoru & { poznamka?: string }) => {
       if (!activeServiceId) return;
       const today = todayIso();
       // Editor se otevře hned s tím, co je po ruce (kopie firmy v prohlížeči);
@@ -326,11 +397,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         ticket_id: prefill?.ticketId || null,
         customer_id: prefill?.customerId || null,
         branch_id: prefill?.branchId ?? branchForNew?.id ?? null,
+        ...(souhrn?.poznamka ? { notes: souhrn.poznamka } : {}),
       };
       const items: EditorLineItem[] = prefill?.items?.length ? prefill.items.map((i) => ({ ...i })) : [emptyLineItem(sazbaNoveVPolozky)];
       setEditorInvoice(inv);
       setEditorItems(items);
       setEditorBaseline(snapshot(inv, items));
+      setEditorSouhrn(souhrn ? { vazby: souhrn.vazby, zakazky: souhrn.zakazky, ulozeno: false } : null);
       setEditingId(null);
       setShowDetail(false);
       setView("editor");
@@ -371,7 +444,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       // Rozpracované dohledání dodavatele pro nový doklad se do cizího editoru nesmí dostat.
       novyDokladTokenRef.current++;
       dodavatelNacitaniRef.current = null;
-      const { data: rows, error: rowsErr } = await typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true });
+      const [{ data: rows, error: rowsErr }, zakazkyFaktury] = await Promise.all([
+        typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order", { ascending: true }),
+        // Jednotlivá faktura má vazbu jen jako zrcadlo ticket_id; souhrnná ticket_id nemá.
+        inv.ticket_id ? Promise.resolve<ZakazkaFaktury[]>([]) : nactiZakazkyFaktury(inv.id),
+      ]);
       /* Nenačtené položky vypadají stejně jako doklad bez položek. Kdyby se
          editor otevřel prázdný, uložení by původní řádky v databázi smazalo
          (ukládá se „smaž a vlož znovu"). Radši editor neotevřít. */
@@ -390,6 +467,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       setEditorInvoice(inv);
       setEditorItems(items);
       setEditorBaseline(snapshot(inv, items));
+      setEditorSouhrn(
+        zakazkyFaktury.length > 0
+          ? { vazby: zakazkyFaktury.map((z) => ({ ticket_id: z.id, castka: z.castka })), zakazky: zakazkyFaktury, ulozeno: true }
+          : null,
+      );
       setEditingId(inv.id);
       setShowDetail(false);
       setView("editor");
@@ -400,6 +482,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
   const openDetail = useCallback(async (inv: Invoice) => {
     setDetailInvoice(inv);
     setShowDetail(true);
+    detailIdRef.current = inv.id;
+    setDetailSouhrn([]);
+    if (!inv.ticket_id) {
+      void nactiZakazkyFaktury(inv.id).then((z) => {
+        if (detailIdRef.current === inv.id) setDetailSouhrn(z);
+      });
+    }
     const vazba = inv.related_invoice_id ? `id.eq.${inv.related_invoice_id},related_invoice_id.eq.${inv.id}` : `related_invoice_id.eq.${inv.id}`;
     const [itemsRes, eventsRes, relatedRes] = await Promise.all([
       typedSupabase.from("invoice_items").select("*").eq("invoice_id", inv.id).order("sort_order"),
@@ -431,8 +520,34 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     if (!prefillFromTicket || !activeServiceId) return;
     if (zpracovanyPrefillRef.current === prefillFromTicket) return;
     zpracovanyPrefillRef.current = prefillFromTicket;
-    openNewInvoice(prefillFromTicket);
+    const prefill = prefillFromTicket;
     onPrefillConsumed?.();
+    void (async () => {
+      /* Zakázka může být na souhrnné faktuře – Zakázky ji znají jen přes
+         invoices.ticket_id, takže nabízejí „Vystavit fakturu“. Místo druhé
+         faktury se otevře ta, na které zakázka už je. Když dotaz selže
+         (např. migrace ještě neproběhla), editor se otevře jako dřív
+         a dvojí fakturu zastaví databáze. */
+      let uz: Invoice | null = null;
+      try {
+        const hit = (await aktivniFakturyZakazek([prefill.ticketId])).get(prefill.ticketId);
+        if (hit) {
+          const { data } = await typedSupabase.from("invoices").select("*").eq("id", hit.invoiceId).maybeSingle();
+          uz = data ?? null;
+        }
+      } catch (e) {
+        if (!chybiTabulka(e)) reportSilent({ code: "invoices.prefill_check_failed", error: e, source: "Invoices.prefill" });
+      }
+      // Mezitím přišel jiný prefill – tenhle už neplatí.
+      if (zpracovanyPrefillRef.current !== prefill) return;
+      if (uz) {
+        showToast(`Zakázka je už vyfakturovaná v dokladu ${uz.number}.`, "info");
+        if (uz.status === "draft") await openEditInvoice(uz);
+        else await openDetail(uz);
+        return;
+      }
+      openNewInvoice(prefill);
+    })();
     // openNewInvoice se mění s aktivním servisem; spouštět jen při novém prefillu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillFromTicket, activeServiceId]);
@@ -521,6 +636,18 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
       try {
         const kind = asKind(editorInvoice);
+        // Nová souhrnná faktura: vazby na zakázky se zapíšou hned po založení dokladu.
+        const novySouhrn = !editingId && editorSouhrn && !editorSouhrn.ulozeno && editorSouhrn.vazby.length > 0 ? editorSouhrn : null;
+        if (novySouhrn) {
+          // Kontrola dřív, než se vezme číslo z řady – zamítnutý pokus nesmí nechat díru.
+          const kolize = await aktivniFakturyZakazek(novySouhrn.vazby.map((v) => v.ticket_id));
+          const prvni = [...kolize.entries()][0];
+          if (prvni) {
+            const kod = novySouhrn.zakazky.find((z) => z.id === prvni[0])?.code ?? "";
+            showToast(`Zakázka ${kod} je mezitím vyfakturovaná v dokladu ${prvni[1].number}. Zavřete fakturu a vyberte zakázky znovu.`, "error");
+            return;
+          }
+        }
         // Každý druh má vlastní řadu (FV / ZF / DB), aby dobropisy nedělaly díry ve fakturách.
         const cislo = bezCisla ? await generateInvoiceNumber(activeServiceId, KIND_PREFIX[kind]) : editorInvoice.number!.trim();
         const faktura: Partial<Invoice> = {
@@ -585,6 +712,22 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
              a uživatel klikl na Uložit znovu, založil by se druhý doklad
              s dalším číslem z řady a v číslování by zůstala díra. */
           setEditingId(invoiceId);
+
+          if (novySouhrn) {
+            // Jedním dotazem – buď se zapíšou všechny vazby, nebo žádná.
+            const { error: vazbyErr } = await typedSupabase.from("invoice_tickets").insert(
+              novySouhrn.vazby.map((v) => ({ invoice_id: invoiceId, ticket_id: v.ticket_id, castka: v.castka, service_id: activeServiceId })),
+            );
+            if (vazbyErr) {
+              /* Faktura bez vazeb by zakázky nekryla a šly by vyfakturovat
+                 podruhé. Doklad se proto zahodí (zakázku mezitím vyfakturoval
+                 někdo jiný – databáze řekne, ve kterém dokladu). */
+              await typedSupabase.from("invoices").update({ deleted_at: new Date().toISOString() }).eq("id", invoiceId);
+              setEditingId(null);
+              throw new Error(vazbyErr.message);
+            }
+            setEditorSouhrn({ ...novySouhrn, ulozeno: true });
+          }
         }
 
         const itemsPayload = editorItems.map((it, idx) => ({
@@ -611,6 +754,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           number: cislo,
           total: totals.total_rounded,
           items_count: editorItems.length,
+          ...(novySouhrn ? { souhrnna: true, zakazek: novySouhrn.vazby.length } : {}),
         });
         if (issue && wasDraft) {
           await logEvent(invoiceId, "status_changed", { from: "draft", to: "issued" });
@@ -638,7 +782,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         setSaving(false);
       }
     },
-    [activeServiceId, saving, editorInvoiceStav, editorItems, editingId, logEvent, loadInvoices, openDetail],
+    [activeServiceId, saving, editorInvoiceStav, editorItems, editingId, editorSouhrn, logEvent, loadInvoices, openDetail],
   );
 
   const saveDraft = useCallback(() => persistEditor(false), [persistEditor]);
@@ -1172,6 +1316,42 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     }
   }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail]);
 
+  // ─── Souhrnná faktura ──────────────────────────────────────
+
+  const dphSouhrnu = useMemo(() => ({ sazba: sazbaNoveVPolozky, cenySDph: dph.pricesIncludeVat }), [sazbaNoveVPolozky, dph.pricesIncludeVat]);
+
+  /**
+   * Dialog vrátí zákazníka, položky a vazby – editor se otevře rovnou
+   * z obsluhy kliknutí, ne efektem, takže ho StrictMode nespustí dvakrát.
+   * Stejný prefill (dvojklik na Vytvořit) se navíc zpracuje jen jednou,
+   * jinak by druhé otevření smazalo, co už člověk v editoru změnil.
+   */
+  const zpracovanySouhrnRef = useRef<SouhrnnaFakturaPrefill | null>(null);
+  const otevritSouhrnnou = useCallback(
+    (p: SouhrnnaFakturaPrefill) => {
+      if (zpracovanySouhrnRef.current === p) return;
+      zpracovanySouhrnRef.current = p;
+      setSouhrnnaOpen(false);
+      const z = p.zakaznik;
+      openNewInvoice(
+        {
+          customerId: z.id,
+          // Odběratelem je firma, ne kontaktní osoba.
+          customerName: z.company || z.name,
+          customerEmail: z.email || undefined,
+          customerPhone: z.phone || undefined,
+          customerIco: z.ico || undefined,
+          customerDic: z.dic || undefined,
+          customerAddress: z.address || undefined,
+          branchId: p.branchId,
+          items: p.polozky,
+        },
+        { vazby: p.vazby, zakazky: p.zakazky, ulozeno: false, poznamka: p.poznamka },
+      );
+    },
+    [openNewInvoice],
+  );
+
   // ─── Vykreslení ────────────────────────────────────────────
 
   if (!activeServiceId) {
@@ -1214,6 +1394,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           onSave={saveDraft}
           onIssue={issueFromEditor}
           onCancel={leaveEditor}
+          souhrn={editorSouhrn}
         />
         {confirmDialog}
       </>
@@ -1233,8 +1414,17 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         onZrusit={() => setPlatbaDialog(null)}
       />
       <UzaverkaDialog open={uzaverkaOpen} onClose={() => setUzaverkaOpen(false)} invoices={invoices} />
+      <SouhrnnaFakturaDialog
+        open={souhrnnaOpen}
+        activeServiceId={activeServiceId}
+        dph={dphSouhrnu}
+        searchCustomers={searchCustomers}
+        onClose={() => setSouhrnnaOpen(false)}
+        onVytvorit={otevritSouhrnnou}
+      />
       <InvoiceList
         onUzaverka={() => setUzaverkaOpen(true)}
+        onSouhrnna={() => setSouhrnnaOpen(true)}
         invoices={activeBranchId ? invoices.filter((i) => !i.branch_id || i.branch_id === activeBranchId) : invoices}
         loading={loading}
         filter={filter}
@@ -1268,6 +1458,15 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           exportProviders={exportProviders}
           exporting={exporting}
           onExportTo={(p) => void exportTo(detailInvoice, p)}
+          souhrnZakazky={detailInvoice.ticket_id ? [] : detailSouhrn}
+          onOpenZakazka={
+            onOpenTicket
+              ? (ticketId) => {
+                  setShowDetail(false);
+                  onOpenTicket(ticketId);
+                }
+              : undefined
+          }
           onCancelInvoice={() =>
             setConfirm({
               title: `Stornovat ${KIND_ACCUSATIVE[asKind(detailInvoice)]}`,
