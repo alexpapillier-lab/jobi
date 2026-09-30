@@ -13,6 +13,7 @@ import {
 } from "../../components/icons";
 import { ApiPill, IconButton, plural } from "./shared";
 import { KIND_LABEL, type DevicesData, type NodeKind, type Selection } from "./types";
+import { zdedeneSkrytiStromu } from "./viditelnost";
 
 /** Rozbalené uzly přežijí obnovení stránky. */
 export const TREE_OPEN_KEY = "jobsheet_devices_tree_open";
@@ -41,6 +42,8 @@ type TreeNode = {
   name: string;
   parentId: string | null;
   publicVisible?: boolean;
+  /** Skryté „shora“ – název nadřazené položky, která to schovává. */
+  zdedeneSkryti: string | null;
   children: TreeNode[];
   modelCount: number;
   repairCount: number;
@@ -77,6 +80,9 @@ function buildTree(data: DevicesData): { roots: TreeNode[]; byId: Map<string, Tr
       repairsByModel.get(mid)!.add(r.id);
     }
   }
+  /* Dědění viditelnosti se počítá tady, ne v render – strom se staví jednou
+     nad daty a štítek pak jen čte hotový důvod. */
+  const zdedene = zdedeneSkrytiStromu(data);
   const modelsByCategory = new Map<string, TreeNode[]>();
   for (const m of data.models) {
     const node: TreeNode = {
@@ -85,6 +91,7 @@ function buildTree(data: DevicesData): { roots: TreeNode[]; byId: Map<string, Tr
       name: m.name,
       parentId: m.categoryId,
       publicVisible: m.publicVisible,
+      zdedeneSkryti: zdedene.modely.get(m.id) ?? null,
       children: [],
       modelCount: 0,
       repairCount: repairsByModel.get(m.id)?.size ?? 0,
@@ -106,6 +113,7 @@ function buildTree(data: DevicesData): { roots: TreeNode[]; byId: Map<string, Tr
       name: c.name,
       parentId: c.brandId,
       publicVisible: c.publicVisible,
+      zdedeneSkryti: zdedene.kategorie.get(c.id) ?? null,
       children,
       modelCount: children.length,
       repairCount: set.size,
@@ -128,6 +136,7 @@ function buildTree(data: DevicesData): { roots: TreeNode[]; byId: Map<string, Tr
       name: b.name,
       parentId: null,
       publicVisible: b.publicVisible,
+      zdedeneSkryti: null,
       children,
       modelCount,
       repairCount: set.size,
@@ -531,6 +540,7 @@ export function DeviceTree({
                 <ApiPill
                   hidden={node.publicVisible === false}
                   cascade={node.kind !== "model"}
+                  zdedeno={node.zdedeneSkryti}
                   onToggle={() => onTogglePublic(sel)}
                 />
               )}

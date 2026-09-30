@@ -74,7 +74,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   const [slug, setSlug] = useState<string | null>(null);
   const [rezim, setRezim] = useState<Rezim>("boolean");
   const [nacitam, setNacitam] = useState(true);
-  const [test, setTest] = useState<{ kde: "cenik" | "sklad"; stav: number; telo: string } | null>(null);
+  const [test, setTest] = useState<{ kde: "cenik" | "sklad"; stav: number; telo: string; zCache: boolean } | null>(null);
   const [testuji, setTestuji] = useState<"cenik" | "sklad" | null>(null);
   const [tokeny, setTokeny] = useState<TokenRadek[]>([]);
   const [novyNazev, setNovyNazev] = useState("");
@@ -121,14 +121,19 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   const adresaCenik = slug ? `${VEREJNE_API}/catalog?service=${slug}` : null;
   const adresaSklad = slug ? `${VEREJNE_API}/inventory?service=${slug}` : null;
 
+  /* Zkouší se vždy čerstvě. Odpověď má max-age=300, takže obyčejný fetch
+     by po skrytí modelu ještě pět minut ukazoval starý ceník z paměti
+     prohlížeče – a uživatel by měl za to, že přepínač nefunguje. `reload`
+     obejde paměť prohlížeče a pošle Cache-Control: no-cache, na který
+     Worker odpoví z původu a uloženou odpověď nahradí. */
   const vyzkousej = useCallback(async (adresa: string, kde: "cenik" | "sklad") => {
     setTestuji(kde);
     try {
-      const r = await fetch(adresa);
+      const r = await fetch(adresa, { cache: "reload" });
       const t = await r.text();
-      setTest({ kde, stav: r.status, telo: t.slice(0, 1200) });
+      setTest({ kde, stav: r.status, telo: t.slice(0, 1200), zCache: r.headers.get("x-jobi-cache") === "HIT" });
     } catch (e) {
-      setTest({ kde, stav: 0, telo: String(e) });
+      setTest({ kde, stav: 0, telo: String(e), zCache: false });
     } finally {
       setTestuji(null);
     }
@@ -308,6 +313,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
               <div style={{ fontSize: 12, color: test.stav === 200 ? "var(--accent)" : "rgba(239,68,68,0.95)", marginBottom: 4 }}>
                 Odpověď {test.stav}
                 {test.stav === 404 && " – servis s touhle adresou nemá zapnutý modul, nebo adresa nesedí"}
+                {test.zCache && " – z mezipaměti, změny z posledních minut v ní ještě nemusí být"}
               </div>
               <pre style={{ ...kod, maxHeight: 220, overflowY: "auto" }}>{test.telo}</pre>
             </div>
@@ -343,7 +349,9 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
   });`}</pre>
           <p style={{ ...popis, marginTop: 10 }}>
             Odpověď se cachuje na 5 minut a posílá ETag, takže opakované dotazy web
-            nezdržují. Ceník se mění zřídka, tomu to odpovídá.
+            nezdržují. Po uložení změny v Zařízení nebo ve Skladu si aplikace
+            cache do několika sekund sama obnoví; web, který má ceník ještě
+            v paměti prohlížeče, ho stáhne znovu nejpozději za 5 minut.
           </p>
         </>
       )}
@@ -368,6 +376,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
               <div style={{ fontSize: 12, color: test.stav === 200 ? "var(--accent)" : "rgba(239,68,68,0.95)", marginBottom: 4 }}>
                 Odpověď {test.stav}
                 {test.stav === 404 && " – servis s touhle adresou nemá zapnutý modul skladu, nebo adresa nesedí"}
+                {test.zCache && " – z mezipaměti, změny z posledních minut v ní ještě nemusí být"}
               </div>
               <pre style={{ ...kod, maxHeight: 220, overflowY: "auto" }}>{test.telo}</pre>
             </div>

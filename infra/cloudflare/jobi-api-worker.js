@@ -66,7 +66,7 @@ const STRANKA_DOKUMENTACE = `<!doctype html>
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, idempotency-key, if-none-match",
+  "Access-Control-Allow-Headers": "authorization, content-type, idempotency-key, if-none-match, cache-control, pragma",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
   "Access-Control-Expose-Headers": "etag, retry-after, idempotency-replayed, x-jobi-cache",
 };
@@ -121,8 +121,17 @@ export default {
     // Hlavičky klienta se do klíče neberou, jinak by se cache tříštila.
     const klic = new Request(url.toString(), { method: "GET" });
 
+    // „Cache-Control: no-cache“ v požadavku (posílá ho prohlížeč při tvrdém
+    // obnovení, tlačítko Vyzkoušet v aplikaci a public-webhook-ping po
+    // uložení ceníku) znamená: nečíst z paměti, dojít k původu a uloženou
+    // odpověď nahradit. Bez toho se skrytý model držel v cache až pět minut
+    // a vypadalo to, že vypnutí nefunguje. Obnovení prochází stejným
+    // limitem jako každé jiné čtení, takže se s ním nedá cache shazovat.
+    const rezimKlienta = `${request.headers.get("Cache-Control") ?? ""} ${request.headers.get("Pragma") ?? ""}`;
+    const obnovit = /no-cache|no-store/i.test(rezimKlienta);
+
     let potiz = "";
-    let odpoved = await cache.match(klic);
+    let odpoved = obnovit ? undefined : await cache.match(klic);
     // cf-cache-status na to nestačí – ten mluví o edge cache Cloudflare,
     // ne o téhle. Vlastní hlavička je jediný způsob, jak zvenku poznat,
     // jestli Worker odpověděl z paměti, nebo si došel k původu.
@@ -173,15 +182,15 @@ export default {
           ...CORS,
           ETag: etag,
           "Cache-Control": odpoved.headers.get("Cache-Control") ?? "",
-          "X-Jobi-Cache": zCache ? "HIT" : "MISS",
+          "X-Jobi-Cache": zCache ? "HIT" : obnovit ? "REFRESH" : "MISS",
         },
       });
     }
 
     const hlavicky = new Headers(odpoved.headers);
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
-    hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "6");
+    hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : obnovit ? "REFRESH" : "MISS");
+    hlavicky.set("X-Jobi-Verze", "7");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {

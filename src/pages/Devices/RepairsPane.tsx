@@ -3,6 +3,7 @@ import { Button, Card, Input, Label } from "../../components/ui";
 import { ChevronDownIcon, EditIcon, PlusIcon, SearchIcon, TrashIcon, WrenchIcon, XIcon } from "../../components/icons";
 import { ApiPill, IconButton, formatKc, formatMinutes, plural } from "./shared";
 import { KIND_LABEL, type DevicesData, type InventoryProduct, type Repair, type RepairDraft, type Selection } from "./types";
+import { duvodSkrytiOpravy, duvodZdedenehoSkryti, ucinneSkryteModely } from "./viditelnost";
 
 /**
  * Pravý panel: hlavička vybraného uzlu (drobečky, akce) a opravy pod ním.
@@ -82,6 +83,10 @@ export function RepairsPane(p: RepairsPaneProps) {
   const parents = crumbs.slice(0, -1);
   const productsById = useMemo(() => new Map(p.products.map((x) => [x.id, x])), [p.products]);
   const modelsById = useMemo(() => new Map(data.models.map((m) => [m.id, m])), [data.models]);
+  /* Co se do ceníku doopravdy nedostane, i když má vlastní štítek zapnutý. */
+  const skryteModely = useMemo(() => (p.showPublic ? ucinneSkryteModely(data) : new Map()), [data, p.showPublic]);
+  const nazvyModelu = useMemo(() => new Map(data.models.map((m) => [m.id, m.name])), [data.models]);
+  const zdedenoUzlu = current && p.showPublic ? duvodZdedenehoSkryti(data, current.sel) : null;
 
   const emptyText = (() => {
     if (p.search.trim()) return "Žádné opravy neodpovídají hledání.";
@@ -139,6 +144,7 @@ export function RepairsPane(p: RepairsPaneProps) {
                   size="md"
                   hidden={current.publicVisible === false}
                   cascade={current.sel.kind !== "model"}
+                  zdedeno={zdedenoUzlu}
                   onToggle={() => p.onToggleNodePublic(current.sel)}
                 />
               )}
@@ -233,7 +239,11 @@ export function RepairsPane(p: RepairsPaneProps) {
                         {r.name}
                       </span>
                       {p.showPublic && (
-                        <ApiPill hidden={r.publicVisible === false} onToggle={() => p.onToggleRepairPublic(r.id)} />
+                        <ApiPill
+                          hidden={r.publicVisible === false}
+                          zdedeno={duvodSkrytiOpravy(r, selection, skryteModely, nazvyModelu)}
+                          onToggle={() => p.onToggleRepairPublic(r.id)}
+                        />
                       )}
                     </div>
                     {showModels && repairModels.length > 0 && (

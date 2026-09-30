@@ -44,11 +44,22 @@ Očekává se `571 oprav`.
 
 ```bash
 for i in 1 2; do
-  curl -sI "https://api.appjobi.com/v1/catalog?service=iswap-praha" | grep -i "cf-cache-status"
+  curl -sI "https://api.appjobi.com/v1/catalog?service=iswap-praha" | grep -i "x-jobi-cache"
 done
 ```
 
 Podruhé musí být `HIT`. Dvakrát `MISS` = cache nechytá.
+
+Obnovení na požádání (Worker od verze 7, hlavička `X-Jobi-Verze`):
+
+```bash
+curl -sI -H "Cache-Control: no-cache" "https://api.appjobi.com/v1/catalog?service=iswap-praha" | grep -i "x-jobi-cache"
+```
+
+Očekává se `REFRESH` – Worker došel k původu a uloženou odpověď nahradil.
+Tohle posílá tlačítko Vyzkoušet v aplikaci a funkce `public-webhook-ping`
+po každém uložení ceníku nebo skladu; bez nasazeného Workeru 7 se skrytá
+položka drží v cache celých pět minut.
 
 ## 5. Podmíněný dotaz
 
