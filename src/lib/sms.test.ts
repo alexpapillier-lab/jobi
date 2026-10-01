@@ -416,6 +416,8 @@ type VstupSms = {
   posli: PoskytovatelSms;
   /** Zápis do sms_messages; chyba = zpráva odešla, ale neuložila se. */
   ulozZpravu?: (body: string) => Promise<{ chyba: string | null }>;
+  /** „Teď“ pro měsíční balíček – pevné, ať test nepadá s přechodem měsíce. */
+  ted?: Date;
 };
 
 /**
@@ -440,7 +442,7 @@ async function odesliSms(v: VstupSms): Promise<OdpovedSms> {
   }
   const text = textProSms(v.body);
   const potreba = segmentu(text);
-  const balicek = await zkontrolujBalicek(v.klient, v.serviceId, potreba);
+  const balicek = await zkontrolujBalicek(v.klient, v.serviceId, potreba, v.ted);
   if (balicek.prekroceno) {
     return {
       status: 402,
@@ -467,6 +469,10 @@ describe("sms-send: co se smí dostat k poskytovateli", () => {
     const vstup: VstupSms = {
       serviceId: SERVIS,
       to: "777123456",
+      /* Fixtury z `odeslana` jsou ze září 2026. Bez pevného „teď“ test
+         1. října přestal padat na 402 – zprávy z minulého měsíce se do
+         balíčku správně nepočítají, jen to test nezamýšlel. */
+      ted: new Date("2026-09-15T12:00:00.000Z"),
       body: "Vaše zakázka je hotová",
       cisloServisu: { twilio_number: "+420700000000" },
       narokNaModul: true,
