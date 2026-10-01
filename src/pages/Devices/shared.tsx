@@ -70,16 +70,28 @@ export function ApiPill({
   onToggle,
   cascade = false,
   size = "sm",
+  zdedeno = null,
 }: {
   hidden: boolean;
   onToggle: () => void;
   /** Skrytí se dědí dolů (značka schová i kategorie a modely). */
   cascade?: boolean;
   size?: "sm" | "md";
+  /**
+   * Vlastní přepínač je zapnutý, ale položka se stejně neposílá – něco nad
+   * ní (nebo u opravy všechny její modely) je skryté. Text je důvod do
+   * titulku. Štítek pak vypadá jako „mimo API“, jen s přerušovaným rámem,
+   * ať uživatel nehledá položku v odpovědi zbytečně.
+   */
+  zdedeno?: string | null;
 }) {
+  const zdedene = !hidden && !!zdedeno;
   const title = hidden
     ? `Neposílá se do veřejného ceníku${cascade ? ", včetně všeho pod tím" : ""}. Kliknutím zařadíte.`
-    : `Ve veřejném ceníku. Kliknutím vyřadíte${cascade ? " i všechno pod tím" : ""}.`;
+    : zdedene
+      ? `Neposílá se do veřejného ceníku – ${zdedeno}. Vlastní štítek je zapnutý; kliknutím ho vypnete.`
+      : `Ve veřejném ceníku. Kliknutím vyřadíte${cascade ? " i všechno pod tím" : ""}.`;
+  const jakoSkryte = hidden || zdedene;
   return (
     <button
       type="button"
@@ -89,9 +101,10 @@ export function ApiPill({
       }}
       title={title}
       aria-pressed={!hidden}
+      data-zdedeno={zdedene ? "1" : undefined}
       style={{
         flexShrink: 0,
-        border: `1px solid ${hidden ? "var(--warning)" : "var(--border)"}`,
+        border: `1px ${zdedene ? "dashed" : "solid"} ${jakoSkryte ? "var(--warning)" : "var(--border)"}`,
         background: hidden ? "var(--warning-soft)" : "var(--panel-2)",
         borderRadius: "var(--radius-pill)",
         padding: size === "md" ? "3px var(--space-2)" : "1px var(--space-2)",
@@ -100,11 +113,11 @@ export function ApiPill({
         lineHeight: 1.5,
         cursor: "pointer",
         fontFamily: "inherit",
-        color: hidden ? "var(--warning-text)" : "var(--muted)",
+        color: jakoSkryte ? "var(--warning-text)" : "var(--muted)",
         whiteSpace: "nowrap",
       }}
     >
-      {hidden ? "mimo API" : "v API"}
+      {jakoSkryte ? "mimo API" : "v API"}
     </button>
   );
 }

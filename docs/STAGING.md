@@ -32,7 +32,13 @@ npm run dev:web:staging                               # http://localhost:1432, �
 # 4) produkce
 npx supabase db push --dry-run                        # musí ukázat TYTÉŽ migrace jako krok 2
 npm run db:migrate
+npx supabase functions deploy <jméno>                 # změněné edge funkce
 ```
+
+Edge funkce jdou na produkci i bez terminálu: GitHub → Actions → **Nasazení
+edge funkcí na produkci** → Run workflow, do pole funkce `jmeno1,jmeno2`
+nebo `vse`, do potvrzení `produkce`. Bere stejný `SUPABASE_ACCESS_TOKEN`
+jako staging. Migrace tudy nejdou – ty zůstávají na `npm run db:migrate`.
 
 Kdy se staging obnovuje z produkce (`npm run staging:obnov`):
 

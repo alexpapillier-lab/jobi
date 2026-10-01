@@ -1,0 +1,110 @@
+name: Nasazení edge funkcí na produkci
+
+# Čtvrtý krok postupu „migrace → staging → kouřová zkouška → produkce“
+# (docs/STAGING.md), jen pro edge funkce a bez terminálu – spouští se
+# tlačítkem Run workflow, třeba z iPadu. Migrace tudy nejdou: ty mají
+# `npm run db:migrate` a kontrolu `--dry-run` proti stagingu.
+#
+# Jde to bez přihlášení i bez Dockeru stejně jako u stagingu:
+# `supabase functions deploy --project-ref … --use-api` s tokenem
+# v SUPABASE_ACCESS_TOKEN (CLI ji čte samo). verify_jwt se bere ze
+# supabase/config.toml, takže se nasadí přesně to, co je ve větvi.
+#
+# Potřebné secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN   osobní token (Dashboard → Account → Access Tokens);
+#                           je společný se staging-migrace.yml
+#
+# Ref produkce není tajný (je i v infra/cloudflare/jobi-api-worker.js),
+# proto je tady natvrdo a ne v secrets – ať se nedá omylem nasadit jinam.
+
+on:
+  workflow_dispatch:
+    inputs:
+      funkce:
+        description: "Které funkce: jmeno1,jmeno2 nebo vse"
+        type: string
+        required: true
+      potvrzeni:
+        description: "Napiš produkce – nasazuje se na ostrý projekt"
+        type: string
+        required: true
+
+# Dva běhy naráz by se předháněly o tutéž funkci.
+concurrency:
+  group: produkce-funkce
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PROD_REF: ijtvcgolsdsrquqbvjrz
+
+jobs:
+  nasazeni:
+    name: functions deploy na produkci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Kontrola vstupů a secrets
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          POTVRZENI: ${{ github.event.inputs.potvrzeni }}
+          FUNKCE: ${{ github.event.inputs.funkce }}
+        run: |
+          if [ "$POTVRZENI" != "produkce" ]; then
+            echo "::error::Do pole potvrzení napiš přesně „produkce“."
+            exit 1
+          fi
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Chybí secret SUPABASE_ACCESS_TOKEN. Postup je v docs/STAGING.md."
+            exit 1
+          fi
+          if [ -z "$FUNKCE" ]; then
+            echo "::error::Zadej jména funkcí oddělená čárkou, nebo vse."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Seznam funkcí
+        id: seznam
+        env:
+          FUNKCE: ${{ github.event.inputs.funkce }}
+        run: |
+          set -euo pipefail
+          if [ "$FUNKCE" = "vse" ]; then
+            seznam=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name _shared -printf '%f\n' | sort)
+          else
+            seznam=$(echo "$FUNKCE" | tr ',' '\n' | tr -d ' ' | grep -v '^$')
+          fi
+          for f in $seznam; do
+            if [ ! -f "supabase/functions/$f/index.ts" ]; then
+              echo "::error::Funkce „$f“ v supabase/functions není."
+              exit 1
+            fi
+          done
+          echo "Nasadí se:"
+          echo "$seznam" | sed 's/^/  /'
+          {
+            echo "seznam<<EOF"
+            echo "$seznam"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Nasazení
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SEZNAM: ${{ steps.seznam.outputs.seznam }}
+        run: |
+          set -euo pipefail
+          for f in $SEZNAM; do
+            echo "::group::$f"
+            # --use-api: balí server Supabase, Docker není potřeba.
+            supabase functions deploy "$f" --project-ref "$PROD_REF" --use-api
+            echo "::endgroup::"
+          done

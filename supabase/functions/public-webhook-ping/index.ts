@@ -11,8 +11,37 @@ import { zkontrolujWebhook } from "../_shared/webhook.ts";
  * přegenerování. Adresa se kontroluje znovu tady, ne jen při ukládání –
  * do sloupce se dá zapsat i přímo přes REST.
  *
+ * Zároveň se obnoví cache Workeru na api.appjobi.com: ceník i sklad se
+ * tam drží pět minut a bez tohohle by skrytý model nebo nová cena po
+ * uložení dál chodily ven staré. Obnovení běží vždy, i bez webhooku.
+ *
  * Zadání: docs/ZADANI_API.md, kapitola 6.
  */
+
+const VEREJNE_API = "https://api.appjobi.com/v1";
+
+/**
+ * Obnoví uloženou odpověď ve Workeru: GET s Cache-Control: no-cache Worker
+ * nečte z paměti, dojde k původu a novou odpověď uloží místo staré. Nejlepší
+ * snaha – 404 (modul vypnutý) i výpadek jsou v pořádku, uložení tím nepadá.
+ */
+async function obnovCacheVerejnehoApi(slug: string): Promise<Record<string, number>> {
+  const vysledek: Record<string, number> = {};
+  await Promise.all((["catalog", "inventory"] as const).map(async (endpoint) => {
+    try {
+      const r = await fetch(`${VEREJNE_API}/${endpoint}?service=${encodeURIComponent(slug)}`, {
+        headers: { "Cache-Control": "no-cache", "User-Agent": "Jobi-Webhook/1" },
+        signal: AbortSignal.timeout(8000),
+      });
+      // Tělo se nečte – stačí, že Worker odpověď uložil.
+      await r.body?.cancel();
+      vysledek[endpoint] = r.status;
+    } catch {
+      vysledek[endpoint] = 0;
+    }
+  }));
+  return vysledek;
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -60,8 +89,11 @@ serve(async (req) => {
     .eq("id", serviceId)
     .maybeSingle();
 
+  // Cache se obnovuje před webhookem: cizí build si pak stáhne už nový ceník.
+  const obnoveno = servis?.public_slug ? await obnovCacheVerejnehoApi(servis.public_slug) : null;
+
   const kontrola = zkontrolujWebhook(servis?.public_webhook_url);
-  if (!kontrola.ok) return json({ skipped: true, reason: kontrola.duvod });
+  if (!kontrola.ok) return json({ skipped: true, reason: kontrola.duvod, refreshed: obnoveno });
 
   let stav = 0;
   let chyba: string | null = null;
@@ -92,5 +124,5 @@ serve(async (req) => {
     })
     .eq("id", serviceId);
 
-  return json({ ok: stav >= 200 && stav < 300, status: stav, error: chyba });
+  return json({ ok: stav >= 200 && stav < 300, status: stav, error: chyba, refreshed: obnoveno });
 });

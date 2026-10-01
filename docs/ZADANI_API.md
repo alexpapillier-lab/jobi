@@ -251,8 +251,17 @@ nevztahují. Dvě věci, o které to při zprovoznění zakoplo a stojí za zapa
 - Supabase sám běží za Cloudflare, takže jeho odpovědi nesou cookie `__cf_bm`,
   a odpověď se `Set-Cookie` Cache API mlčky neuloží – hlavička se proto zahazuje
 
-Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS`. Bez ní se to
+Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS | REFRESH`. Bez ní se to
 ladilo naslepo, `cf-cache-status` o téhle vrstvě nic neříká.
+
+**Obnovení po změně.** Pět minut staré odpovědi vadily hlavně při skrývání:
+uživatel vypnul model, klikl na Vyzkoušet a model tam pořád byl – z paměti
+prohlížeče i z Workeru. Od verze 7 Worker na `Cache-Control: no-cache`
+v požadavku odpoví z původu a uloženou odpověď nahradí (`REFRESH`). Posílá
+to tlačítko Vyzkoušet (`fetch` s `cache: "reload"`) a `public-webhook-ping`,
+který aplikace volá deset sekund po každém uložení ceníku nebo skladu –
+obnovení běží i bez nastaveného webhooku. Obnovení prochází běžným limitem
+čtení, takže se s ním cache shazovat nedá.
 
 **Úklid starých záznamů.** Hotovo, ověřeno 3. 9. 2026. Migrace
 `20260903180000_api_uklid_plan.sql` naplánovala `api_uklid_starych_zaznamu()`
@@ -369,8 +378,17 @@ nevztahují. Dvě věci, o které to při zprovoznění zakoplo a stojí za zapa
 - Supabase sám běží za Cloudflare, takže jeho odpovědi nesou cookie `__cf_bm`,
   a odpověď se `Set-Cookie` Cache API mlčky neuloží – hlavička se proto zahazuje
 
-Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS`. Bez ní se to
+Stav cache je vidět v odpovědi jako `X-Jobi-Cache: HIT | MISS | REFRESH`. Bez ní se to
 ladilo naslepo, `cf-cache-status` o téhle vrstvě nic neříká.
+
+**Obnovení po změně.** Pět minut staré odpovědi vadily hlavně při skrývání:
+uživatel vypnul model, klikl na Vyzkoušet a model tam pořád byl – z paměti
+prohlížeče i z Workeru. Od verze 7 Worker na `Cache-Control: no-cache`
+v požadavku odpoví z původu a uloženou odpověď nahradí (`REFRESH`). Posílá
+to tlačítko Vyzkoušet (`fetch` s `cache: "reload"`) a `public-webhook-ping`,
+který aplikace volá deset sekund po každém uložení ceníku nebo skladu –
+obnovení běží i bez nastaveného webhooku. Obnovení prochází běžným limitem
+čtení, takže se s ním cache shazovat nedá.
 
 **Úklid starých záznamů.** Migrace `20260903180000_api_uklid_plan.sql` plánuje
 `api_uklid_starych_zaznamu()` na 3:20 denně, ale sama se přeskočí, když projekt
