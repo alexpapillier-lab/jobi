@@ -57,6 +57,7 @@ describe("tisk z prohlížeče", () => {
   // a podpisy skončí na druhé, jinak prázdné stránce.
   it("předává rendereru browserPrint", () => {
     const zdroj = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "webPrint.ts"), "utf8");
-    expect(zdroj, "bez browserPrint spadnou podpisy na iOS na druhou stránku").toContain("browserPrint: true");
+    // Výchozí musí být zapnuto; vypíná se jen výslovně pro PDF ze serveru (headless Chromium).
+    expect(zdroj, "bez browserPrint spadnou podpisy na iOS na druhou stránku").toContain("browserPrint: volby.browserPrint !== false");
   });
 });

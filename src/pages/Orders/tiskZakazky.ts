@@ -10,6 +10,7 @@ import { fotkyDoDokumentu } from "../../lib/podepsaneFotky";
 import { isWeb } from "../../lib/platform";
 import { companyDataForBranch, getCachedBranch } from "../../lib/branches";
 import { printDocumentInBrowser, type WebPrintDocType } from "../../lib/webPrint";
+import { stahnoutDokumentJakoPdf } from "../../lib/pdfServer";
 import { spustDesktopovyDokument, spustWebovyDokument, type ZavislostiDokumentu } from "../../lib/tiskDokumentu";
 import { safeLoadCompanyData } from "../../lib/companyData";
 import { trackDocumentAction } from "../../lib/documentTelemetry";
@@ -56,6 +57,7 @@ export const zavislostiDokumentu: ZavislostiDokumentu = {
     });
   },
   tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
+  exportPdfVProhlizeci: (docType, sid, data) => stahnoutDokumentJakoPdf(docType as WebPrintDocType, sid, data),
   pripravFotky: async (data) => {
     if (!data.photos || data.photos.length === 0) return data;
     return { ...data, photos: await fotkyDoDokumentu(supabase, data.photos) };

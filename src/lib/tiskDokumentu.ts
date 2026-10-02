@@ -42,6 +42,13 @@ export type ZavislostiDokumentu = {
   /** Tisk v prohlížeči (webová větev). */
   tiskVProhlizeci: (docType: DocTypeForPrint, serviceId: string, data: DocumentData) => Promise<void>;
   /**
+   * PDF ze serveru bez tiskového dialogu (webová větev, jen export).
+   * `nedostupne` = funkce není zřízená nebo selhala; pak se jde do dialogu.
+   */
+  exportPdfVProhlizeci?: (docType: DocTypeForPrint, serviceId: string, data: DocumentData) => Promise<
+    { stav: "hotovo"; nazev: string } | { stav: "nedostupne"; duvod?: string }
+  >;
+  /**
    * Vloží fotky do dokumentu jako data (obrázek uvnitř místo odkazu).
    *
    * Fotky leží v neveřejném úložišti a odkaz na ně platí jen krátce. Dokument
@@ -169,9 +176,12 @@ async function jeJobiDocsSpusteny(z: ZavislostiDokumentu, rezim: RezimDokumentu)
 }
 
 /**
- * Webová větev: tiskový dialog prohlížeče.
+ * Webová větev: PDF ze serveru, jinak tiskový dialog prohlížeče.
  *
- * Export je tady jen jiná volba cíle v témže dialogu, proto ta hláška navíc.
+ * Export zkusí nejdřív server (document-pdf) – soubor se rovnou stáhne.
+ * Když server není zřízený nebo selže, je export jen jiná volba cíle
+ * v témže dialogu, proto ta hláška navíc. Selhání serveru se uživateli
+ * řekne, ale nezastaví ho: k PDF se dostane dialogem.
  */
 export async function spustWebovyDokument(
   rezim: RezimDokumentu,
@@ -182,8 +192,18 @@ export async function spustWebovyDokument(
 ): Promise<void> {
   const zacatek = z.ted();
   try {
+    const sFotkami = await z.pripravFotky(data);
+    if (rezim === "export" && z.exportPdfVProhlizeci) {
+      const v = await z.exportPdfVProhlizeci(docType, serviceId, sFotkami);
+      if (v.stav === "hotovo") {
+        z.telemetrie({ action: "export", docType, result: "success", durationMs: Math.round(z.ted() - zacatek) });
+        z.hotovyExport(v.nazev);
+        return;
+      }
+      if (v.duvod) z.hlaska(`PDF ze serveru se nepovedlo (${v.duvod}), otevírám tiskový dialog.`, "info");
+    }
     if (rezim === "export") z.hlaska("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-    await z.tiskVProhlizeci(docType, serviceId, await z.pripravFotky(data));
+    await z.tiskVProhlizeci(docType, serviceId, sFotkami);
     z.telemetrie({ action: rezim, docType, result: "success", durationMs: Math.round(z.ted() - zacatek) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
