@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useEntitlements } from "../hooks/useEntitlements";
 import { Button, Card, PageHeader } from "../components/ui";
-import { DeviceIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
+import { DeviceIcon, DownloadIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
+import { vytvorXlsx, XLSX_MIME } from "../lib/xlsx";
+import { stahnoutSoubor } from "../lib/stahnoutSoubor";
+import { listCeniku, nazevSouboruCeniku } from "./Devices/exportCeniku";
+import { AktualizaceZXlsx } from "./Devices/AktualizaceZXlsx";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { showToast } from "../components/Toast";
 import { nahlasCekani, jeTrvalaChyba } from "../lib/frontaZapisu";
@@ -1127,6 +1131,34 @@ DETALY: Výměna opotřebované baterie
     setImportPreview(null);
   };
 
+  /* Celý ceník do Excelu – hlavně kvůli doplňování nákladů, které se po
+     jedné opravě v aplikaci doplňují špatně. Co a v jakém pořadí, řeší
+     exportCeniku.ts. */
+  const exportovatCenik = () => {
+    try {
+      stahnoutSoubor(vytvorXlsx(listCeniku(data)), nazevSouboruCeniku(), XLSX_MIME);
+      showToast(`Ceník exportován: ${data.repairs.length} ${plural(data.repairs.length, ["oprava", "opravy", "oprav"])}`, "success");
+    } catch (e) {
+      showToast("Export se nepodařil: " + (e instanceof Error ? e.message : String(e)), "error");
+    }
+  };
+
+  /* Upravený sešit zpátky do ceníku. Ukládá se hned jako u importu –
+     uživatel po potvrzení typicky stránku zavře. */
+  const aplikovatAktualizaciZXlsx = (nova: DevicesData, pocetOprav: number) => {
+    if (!activeServiceId) return;
+    setData(nova);
+    loadedEmptyRef.current = false;
+    saveDevicesToDb(activeServiceId, nova).then((r) => {
+      if (!r.error) return;
+      showToast("Chyba uložení ceníku: " + r.error + " Zkouším dál.", "error");
+      nahlasCekani(`zarizeni:${activeServiceId}`, "Ceník a zařízení · neuložené změny", r.error);
+      if (!jeTrvalaChyba(r.error)) naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+    });
+    showToast(`Ceník aktualizován: ${pocetOprav} ${plural(pocetOprav, ["oprava", "opravy", "oprav"])}`, "success");
+    setShowImport(false);
+  };
+
   /* Odklikat stovku oprav po jedné nikdo nebude. Působí jen na to, co je
      zrovna vidět podle filtrů – „zveřejnit vše“ napříč celým servisem by
      byl moc velký kanón na omylem stisknuté tlačítko. */
@@ -1184,7 +1216,7 @@ DETALY: Výměna opotřebované baterie
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <PageHeader
           title="Import zařízení a oprav"
-          subtitle="Importujte značky, kategorie, modely a opravy z TXT souboru."
+          subtitle="Nový ceník z TXT souboru, nebo aktualizace cen a nákladů z upraveného XLSX."
           actions={
             <Button variant="soft" onClick={() => setShowImport(false)}>
               Zpět na správu
@@ -1335,6 +1367,8 @@ DETALY: Výměna opotřebované baterie
             </Button>
           </div>
         )}
+
+        <AktualizaceZXlsx data={data} onAplikovat={aplikovatAktualizaciZXlsx} card={card} inputStyle={inputStyle} />
       </div>
     );
   }
@@ -1456,9 +1490,20 @@ DETALY: Výměna opotřebované baterie
         title="Zařízení a opravy"
         subtitle={subtitle}
         actions={
-          <Button data-tour="devices-import" variant="primary" onClick={() => setShowImport(true)}>
-            Import
-          </Button>
+          <>
+            <Button
+              variant="soft"
+              icon={<DownloadIcon size={14} />}
+              disabled={data.repairs.length === 0}
+              title="Stáhne ceník oprav s cenami a náklady jako sešit Excelu"
+              onClick={exportovatCenik}
+            >
+              Export XLSX
+            </Button>
+            <Button data-tour="devices-import" variant="primary" onClick={() => setShowImport(true)}>
+              Import
+            </Button>
+          </>
         }
       />
 
