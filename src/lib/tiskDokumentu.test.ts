@@ -146,6 +146,53 @@ describe("webová větev dělá totéž co desktopová", () => {
     expect(zaznamy.hlasky[0]).toEqual({ text: "V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", druh: "info" });
   });
 
+  it("export s PDF ze serveru soubor stáhne a dialog neotevře", async () => {
+    const tiskVProhlizeci = vi.fn<ZavislostiDokumentu["tiskVProhlizeci"]>(async () => {});
+    const exportPdf = vi.fn<NonNullable<ZavislostiDokumentu["exportPdfVProhlizeci"]>>(async () => ({ stav: "hotovo", nazev: "zarucni-list-Z-1.pdf" }));
+    const { z, zaznamy } = zavislosti({
+      tiskVProhlizeci,
+      exportPdfVProhlizeci: exportPdf,
+      pripravFotky: async (data) => ({ ...data, photos: ["data:image/jpeg;base64,AAAA"] }),
+    });
+    await spustWebovyDokument("export", "zarucni_list", SERVIS, DATA, z);
+    expect(tiskVProhlizeci).not.toHaveBeenCalled();
+    // fotky se vkládají před odesláním na server – ten k úložišti nemá relaci
+    expect(exportPdf.mock.calls[0][2].photos).toEqual(["data:image/jpeg;base64,AAAA"]);
+    expect(zaznamy.exporty).toEqual(["zarucni-list-Z-1.pdf"]);
+    expect(zaznamy.hlasky).toEqual([]);
+    expect(zaznamy.telemetrie[0]).toMatchObject({ action: "export", docType: "zarucni_list", result: "success" });
+  });
+
+  it("nezřízený server tiše spadne na tiskový dialog", async () => {
+    const tiskVProhlizeci = vi.fn<ZavislostiDokumentu["tiskVProhlizeci"]>(async () => {});
+    const { z, zaznamy } = zavislosti({ tiskVProhlizeci, exportPdfVProhlizeci: async () => ({ stav: "nedostupne" }) });
+    await spustWebovyDokument("export", "faktura", SERVIS, DATA, z);
+    expect(tiskVProhlizeci).toHaveBeenCalledTimes(1);
+    expect(zaznamy.hlasky).toEqual([{ text: "V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", druh: "info" }]);
+    expect(zaznamy.exporty).toEqual([]);
+  });
+
+  it("selhání serveru řekne proč a stejně otevře dialog", async () => {
+    const tiskVProhlizeci = vi.fn<ZavislostiDokumentu["tiskVProhlizeci"]>(async () => {});
+    const { z, zaznamy } = zavislosti({
+      tiskVProhlizeci,
+      exportPdfVProhlizeci: async () => ({ stav: "nedostupne", duvod: "Server odpověděl 502" }),
+    });
+    await spustWebovyDokument("export", "faktura", SERVIS, DATA, z);
+    expect(tiskVProhlizeci).toHaveBeenCalledTimes(1);
+    expect(zaznamy.hlasky[0].text).toContain("Server odpověděl 502");
+    expect(zaznamy.hlasky[0].druh).toBe("info");
+  });
+
+  it("tisk server nepoužívá, i když je k dispozici", async () => {
+    const exportPdf = vi.fn<NonNullable<ZavislostiDokumentu["exportPdfVProhlizeci"]>>(async () => ({ stav: "hotovo", nazev: "x.pdf" }));
+    const tiskVProhlizeci = vi.fn<ZavislostiDokumentu["tiskVProhlizeci"]>(async () => {});
+    const { z } = zavislosti({ tiskVProhlizeci, exportPdfVProhlizeci: exportPdf });
+    await spustWebovyDokument("print", "zakazkovy_list", SERVIS, DATA, z);
+    expect(exportPdf).not.toHaveBeenCalled();
+    expect(tiskVProhlizeci).toHaveBeenCalledTimes(1);
+  });
+
   it("selhání tiskového dialogu prohlížeče uživatel uvidí", async () => {
     const { z, zaznamy } = zavislosti({
       tiskVProhlizeci: async () => {
