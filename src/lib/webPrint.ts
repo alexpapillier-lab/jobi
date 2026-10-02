@@ -17,6 +17,7 @@
 import { documentsFromConfig, normalizeDocuments, renderDocument, templateFor, type DocType, type DocumentsV2 } from "../../jobidocs/core/index";
 import { loadDocumentsConfigRawFromDB } from "./documentSettings";
 import type { DocumentData } from "./documentData";
+import { nazevPdfProTisk } from "./nazevPdf";
 
 export type WebPrintDocType = DocType;
 
@@ -93,8 +94,14 @@ function ziskatTiskovyIframe(): { iframe: HTMLIFrameElement; novy: boolean } {
  *
  * Tiskne se ze skrytého iframu, aby uživatel nepřišel o rozdělanou práci
  * ve stránce. Iframe zůstává i po zavření dialogu – viz komentář výš.
+ *
+ * `nazevSouboru` se po dobu dialogu nastaví jako titulek stránky, protože
+ * z něj prohlížeč bere název PDF při „Uložit jako PDF“ (viz nazevPdf.ts).
+ * Chrome čte titulek při otevření dialogu a `print()` mezitím blokuje,
+ * Safari ho čte při otevření sheetu a vrací se hned; v obou případech
+ * stačí titulek vrátit hned po návratu z `print()`.
  */
-export async function printHtmlInBrowser(html: string): Promise<void> {
+export async function printHtmlInBrowser(html: string, nazevSouboru?: string): Promise<void> {
   const { iframe, novy } = ziskatTiskovyIframe();
 
   const loaded = new Promise<void>((resolve) => {
@@ -124,14 +131,23 @@ export async function printHtmlInBrowser(html: string): Promise<void> {
 
   await waitForDocument(doc);
 
-  win.focus();
-  win.print();
+  const puvodniTitulek = document.title;
+  if (nazevSouboru) {
+    document.title = nazevSouboru;
+    doc.title = nazevSouboru;
+  }
+  try {
+    win.focus();
+    win.print();
+  } finally {
+    if (nazevSouboru) document.title = puvodniTitulek;
+  }
 }
 
 /** Sestaví dokument a rovnou otevře tiskový dialog. */
 export async function printDocumentInBrowser(docType: WebPrintDocType, serviceId: string | null, data: DocumentData): Promise<void> {
   const html = await buildDocumentHtmlForWeb(docType, serviceId, data);
-  await printHtmlInBrowser(html);
+  await printHtmlInBrowser(html, nazevPdfProTisk(docType, data));
 }
 
 /**
