@@ -5,6 +5,7 @@ import { DeviceIcon, DownloadIcon, FolderIcon, WarningIcon, WrenchIcon } from ".
 import { vytvorXlsx, XLSX_MIME } from "../lib/xlsx";
 import { stahnoutSoubor } from "../lib/stahnoutSoubor";
 import { listCeniku, nazevSouboruCeniku } from "./Devices/exportCeniku";
+import { AktualizaceZXlsx } from "./Devices/AktualizaceZXlsx";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { showToast } from "../components/Toast";
 import { nahlasCekani, jeTrvalaChyba } from "../lib/frontaZapisu";
@@ -1142,6 +1143,22 @@ DETALY: Výměna opotřebované baterie
     }
   };
 
+  /* Upravený sešit zpátky do ceníku. Ukládá se hned jako u importu –
+     uživatel po potvrzení typicky stránku zavře. */
+  const aplikovatAktualizaciZXlsx = (nova: DevicesData, pocetOprav: number) => {
+    if (!activeServiceId) return;
+    setData(nova);
+    loadedEmptyRef.current = false;
+    saveDevicesToDb(activeServiceId, nova).then((r) => {
+      if (!r.error) return;
+      showToast("Chyba uložení ceníku: " + r.error + " Zkouším dál.", "error");
+      nahlasCekani(`zarizeni:${activeServiceId}`, "Ceník a zařízení · neuložené změny", r.error);
+      if (!jeTrvalaChyba(r.error)) naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+    });
+    showToast(`Ceník aktualizován: ${pocetOprav} ${plural(pocetOprav, ["oprava", "opravy", "oprav"])}`, "success");
+    setShowImport(false);
+  };
+
   /* Odklikat stovku oprav po jedné nikdo nebude. Působí jen na to, co je
      zrovna vidět podle filtrů – „zveřejnit vše“ napříč celým servisem by
      byl moc velký kanón na omylem stisknuté tlačítko. */
@@ -1199,7 +1216,7 @@ DETALY: Výměna opotřebované baterie
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <PageHeader
           title="Import zařízení a oprav"
-          subtitle="Importujte značky, kategorie, modely a opravy z TXT souboru."
+          subtitle="Nový ceník z TXT souboru, nebo aktualizace cen a nákladů z upraveného XLSX."
           actions={
             <Button variant="soft" onClick={() => setShowImport(false)}>
               Zpět na správu
@@ -1350,6 +1367,8 @@ DETALY: Výměna opotřebované baterie
             </Button>
           </div>
         )}
+
+        <AktualizaceZXlsx data={data} onAplikovat={aplikovatAktualizaciZXlsx} card={card} inputStyle={inputStyle} />
       </div>
     );
   }
