@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { denAHodina, popisHodiny, rozlozeniHodin, rozsahHodin, shrnutiHodin } from "./hodiny";
+import { NEUVEDENO, denAHodina, podleZpusobu, popisHodiny, rozlozeniHodin, rozsahHodin, shrnutiHodin, zpusobUdalosti, zpusobyPredani } from "./hodiny";
 
 describe("denAHodina", () => {
   it("převádí UTC do pražského času včetně letního", () => {
@@ -73,6 +73,36 @@ describe("shrnutiHodin", () => {
     ];
     const s = shrnutiHodin(rozlozeniHodin(zakazky, "prijem"), "prijem");
     expect(s).toBe("Nejvíc příjmů je v úterý (90 %). Nejsilnější hodiny jsou 9–12 h, připadá na ně 90 % příjmů.");
+  });
+});
+
+describe("způsob předání", () => {
+  const zakazky = [
+    { createdAt: "2026-07-06T08:30:00.000Z", prevzeti: "Osobně", predani: "Poštou" },
+    { createdAt: "2026-07-06T08:30:00.000Z", prevzeti: "Osobně", predani: "Osobně" },
+    { createdAt: "2026-07-06T08:30:00.000Z", prevzeti: "Poštou", predani: " " },
+    { createdAt: "2026-07-06T08:30:00.000Z", prevzeti: null, predani: "Kurýr" },
+  ];
+
+  it("u příjmu bere převzetí, u výdeje předání zpět, prázdné je neuvedeno", () => {
+    expect(zpusobUdalosti(zakazky[2], "prijem")).toBe("Poštou");
+    expect(zpusobUdalosti(zakazky[2], "vydej")).toBe(NEUVEDENO);
+    expect(zpusobUdalosti(zakazky[3], "prijem")).toBe(NEUVEDENO);
+  });
+
+  it("nabídka je od nejčastějšího, neuvedeno poslední", () => {
+    expect(zpusobyPredani(zakazky, "prijem")).toEqual([
+      { zpusob: "Osobně", pocet: 2 },
+      { zpusob: "Poštou", pocet: 1 },
+      { zpusob: NEUVEDENO, pocet: 1 },
+    ]);
+    expect(zpusobyPredani(zakazky, "vydej").map((x) => x.zpusob)).toEqual(["Kurýr", "Osobně", "Poštou", NEUVEDENO]);
+  });
+
+  it("filtr vybere jen daný způsob; null = vše", () => {
+    expect(podleZpusobu(zakazky, "prijem", "Osobně")).toHaveLength(2);
+    expect(podleZpusobu(zakazky, "vydej", NEUVEDENO)).toHaveLength(1);
+    expect(podleZpusobu(zakazky, "prijem", null)).toHaveLength(4);
   });
 });
 

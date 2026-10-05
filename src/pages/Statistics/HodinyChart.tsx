@@ -4,10 +4,13 @@ import { celeCislo, zakazky } from "./format";
 import {
   DNY_DLOUZE,
   DNY_KRATCE,
+  NEUVEDENO,
+  podleZpusobu,
   popisHodiny,
   rozlozeniHodin,
   rozsahHodin,
   shrnutiHodin,
+  zpusobyPredani,
   type Udalost,
   type ZakazkaProHodiny,
 } from "./hodiny";
@@ -32,12 +35,20 @@ export function HodinyChart({
   jeStorno: (status: string) => boolean;
 }) {
   const [udalost, setUdalost] = useState<Udalost>("prijem");
+  /* Způsob převzetí / předání: „Osobně“ ukáže, kdy lidé chodí na pobočku,
+     „Poštou“ kdy přijíždí kurýr. Null = vše. */
+  const [zpusob, setZpusob] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState<{ den: number; hodina: number } | null>(null);
 
+  const zdroj = udalost === "prijem" ? prijate : vydane;
+  const zpusoby = useMemo(() => zpusobyPredani(zdroj, udalost), [zdroj, udalost]);
+  // Po přepnutí události nemusí vybraný způsob existovat – pak zpátky na vše.
+  const zpusobPlatny = zpusob !== null && zpusoby.some((z) => z.zpusob === zpusob) ? zpusob : null;
+
   const r = useMemo(
-    () => rozlozeniHodin(udalost === "prijem" ? prijate : vydane, udalost, { jeStorno }),
-    [udalost, prijate, vydane, jeStorno],
+    () => rozlozeniHodin(podleZpusobu(zdroj, udalost, zpusobPlatny), udalost, { jeStorno }),
+    [zdroj, udalost, zpusobPlatny, jeStorno],
   );
   const { od, do: doH } = rozsahHodin(r);
   const hodiny = Array.from({ length: doH - od + 1 }, (_, i) => od + i);
@@ -45,10 +56,19 @@ export function HodinyChart({
   const shrnuti = shrnutiHodin(r, udalost);
   const slovo = udalost === "prijem" ? "příjmů" : "výdejů";
 
+  const ovladani = (
+    <>
+      <Prepinac udalost={udalost} onChange={setUdalost} />
+      {zpusoby.length > 1 && (
+        <VyberZpusobu udalost={udalost} zpusoby={zpusoby} vybrany={zpusobPlatny} onChange={setZpusob} />
+      )}
+    </>
+  );
+
   if (r.celkem === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-        <Prepinac udalost={udalost} onChange={setUdalost} />
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>{ovladani}</div>
         <div style={{ color: "var(--muted)", fontSize: "var(--text-base)" }}>
           {udalost === "prijem" ? "V období nebyla přijata žádná zakázka." : "V období nebyla vydána žádná zakázka."}
         </div>
@@ -71,9 +91,9 @@ export function HodinyChart({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-        <Prepinac udalost={udalost} onChange={setUdalost} />
+        {ovladani}
         <span style={{ fontSize: "var(--text-sm)", color: "var(--muted)" }}>
-          {zakazky(r.celkem)} · čas servisu (Praha)
+          {zakazky(r.celkem)}{zpusobPlatny ? ` z ${celeCislo(zdroj.length)}` : ""} · čas servisu (Praha)
         </span>
         <span style={{ marginLeft: "auto" }}>
           <Button variant="ghost" size="sm" onClick={() => setShowTable((v) => !v)} aria-expanded={showTable}>
@@ -170,6 +190,58 @@ function Prepinac({ udalost, onChange }: { udalost: Udalost; onChange: (u: Udalo
         { value: "vydej", label: "Výdej", title: "Kdy si je berou (přepnutí do koncového stavu)" },
       ]}
     />
+  );
+}
+
+/**
+ * Filtr způsobu převzetí / předání. Do čtyř hodnot přepínač vedle
+ * události, víc hodnot (servis píše vlastní texty) už je na roletku.
+ */
+function VyberZpusobu({
+  udalost,
+  zpusoby,
+  vybrany,
+  onChange,
+}: {
+  udalost: Udalost;
+  zpusoby: Array<{ zpusob: string; pocet: number }>;
+  vybrany: string | null;
+  onChange: (z: string | null) => void;
+}) {
+  const popisek = udalost === "prijem" ? "Způsob převzetí" : "Způsob předání";
+  const nazev = (z: string) => (z === NEUVEDENO ? "Neuvedeno" : z);
+  const VSE = "\u0000vse";
+  if (zpusoby.length <= 4) {
+    return (
+      <Segmented<string>
+        ariaLabel={popisek}
+        size="sm"
+        value={vybrany ?? VSE}
+        onChange={(v) => onChange(v === VSE ? null : v)}
+        options={[
+          { value: VSE, label: "Vše" },
+          ...zpusoby.map((z) => ({ value: z.zpusob, label: nazev(z.zpusob), title: `${nazev(z.zpusob)}: ${zakazky(z.pocet)}` })),
+        ]}
+      />
+    );
+  }
+  return (
+    <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+      {popisek}
+      <select
+        value={vybrany ?? VSE}
+        onChange={(e) => onChange(e.target.value === VSE ? null : e.target.value)}
+        style={{
+          padding: "6px 10px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border)",
+          background: "var(--panel)", color: "var(--text)", font: "inherit",
+        }}
+      >
+        <option value={VSE}>Vše</option>
+        {zpusoby.map((z) => (
+          <option key={z.zpusob} value={z.zpusob}>{nazev(z.zpusob)} ({z.pocet})</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

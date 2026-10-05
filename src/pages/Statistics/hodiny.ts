@@ -16,9 +16,47 @@ export type ZakazkaProHodiny = {
   createdAt: string;
   completedAt?: string | null;
   status?: string;
+  /** Způsob převzetí (handoff_method) – „Osobně“, „Poštou“, vlastní text. */
+  prevzeti?: string | null;
+  /** Způsob předání zpět (handback_method). */
+  predani?: string | null;
 };
 
 export type Udalost = "prijem" | "vydej";
+
+/** Hodnota filtru pro zakázky bez vyplněného způsobu. */
+export const NEUVEDENO = "—";
+
+/**
+ * Způsob předání, který se k události vztahuje: u příjmu převzetí,
+ * u výdeje předání zpět. Prázdné = NEUVEDENO, ať jde filtrovat i to.
+ */
+export function zpusobUdalosti(z: ZakazkaProHodiny, udalost: Udalost): string {
+  const s = (udalost === "prijem" ? z.prevzeti : z.predani)?.trim();
+  return s || NEUVEDENO;
+}
+
+/** Způsoby, které se v datech vyskytují, od nejčastějšího; „neuvedeno“ vždy poslední. */
+export function zpusobyPredani(zakazky: ZakazkaProHodiny[], udalost: Udalost): Array<{ zpusob: string; pocet: number }> {
+  const pocty = new Map<string, number>();
+  for (const z of zakazky) {
+    const s = zpusobUdalosti(z, udalost);
+    pocty.set(s, (pocty.get(s) ?? 0) + 1);
+  }
+  const porovnej = new Intl.Collator("cs").compare;
+  return [...pocty.entries()]
+    .map(([zpusob, pocet]) => ({ zpusob, pocet }))
+    .sort((a, b) => {
+      if (a.zpusob === NEUVEDENO) return 1;
+      if (b.zpusob === NEUVEDENO) return -1;
+      return b.pocet - a.pocet || porovnej(a.zpusob, b.zpusob);
+    });
+}
+
+export function podleZpusobu(zakazky: ZakazkaProHodiny[], udalost: Udalost, zpusob: string | null): ZakazkaProHodiny[] {
+  if (!zpusob) return zakazky;
+  return zakazky.filter((z) => zpusobUdalosti(z, udalost) === zpusob);
+}
 
 export type RozlozeniHodin = {
   /** [den 0–6 od pondělí][hodina 0–23] */

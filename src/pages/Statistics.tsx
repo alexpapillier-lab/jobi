@@ -274,7 +274,15 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
    * neznají a tahat kvůli nim celé zakázky (opravy, fotky, poznámky) by
    * bylo zbytečné – stačí pět sloupců. Stahují se jen v grafech.
    */
-  type CasZakazky = { id: string; status: string; created_at: string; completed_at: string | null; branch_id: string | null };
+  type CasZakazky = {
+    id: string;
+    status: string;
+    created_at: string;
+    completed_at: string | null;
+    branch_id: string | null;
+    handoff_method: string | null;
+    handback_method: string | null;
+  };
   const [casyZakazek, setCasyZakazek] = useState<CasZakazky[]>([]);
   const [casyNacitam, setCasyNacitam] = useState(false);
   const [casyChyba, setCasyChyba] = useState<string | null>(null);
@@ -288,7 +296,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       const { data, error } = await fetchAllPages<CasZakazky>((from, to) =>
         client
           .from("tickets")
-          .select("id, status, created_at, completed_at, branch_id")
+          .select("id, status, created_at, completed_at, branch_id, handoff_method, handback_method")
           .in("service_id", idsServisu)
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
@@ -499,12 +507,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   // Totéž pravidlo pro lehké řádky grafu hodin: přijaté podle created_at,
   // vydané podle completed_at v koncovém stavu; pobočka z lišty.
   const casyVObdobi = useMemo(() => {
-    const prijate: Array<{ createdAt: string; completedAt: string | null; status: string }> = [];
+    const prijate: Array<{ createdAt: string; completedAt: string | null; status: string; prevzeti: string | null; predani: string | null }> = [];
     const vydane: typeof prijate = [];
     for (const t of casyZakazek) {
       // Jako filterByBranch: zakázka bez pobočky patří do každé.
       if (activeBranchId && t.branch_id && t.branch_id !== activeBranchId) continue;
-      const z = { createdAt: t.created_at, completedAt: t.completed_at, status: t.status };
+      const z = { createdAt: t.created_at, completedAt: t.completed_at, status: t.status, prevzeti: t.handoff_method, predani: t.handback_method };
       if (!obdobi || vObdobi(t.created_at, obdobi)) prijate.push(z);
       if (t.completed_at && isFinal(t.status ?? "") && (!obdobi || vObdobi(t.completed_at, obdobi))) vydane.push(z);
     }
