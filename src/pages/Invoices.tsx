@@ -18,6 +18,7 @@ import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobi
 import { spojCestu, vychoziSlozkaProExport } from "../lib/tiskDokumentu";
 import { isWeb } from "../lib/platform";
 import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
+import { stahnoutDokumentJakoPdf } from "../lib/pdfServer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
 import { InvoiceList } from "./Invoices/InvoiceList";
@@ -1149,8 +1150,18 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     async (inv: Invoice) => {
       if (isWeb()) {
         try {
+          const data = await dataProTisk(inv);
+          // Nejdřív PDF ze serveru (rovnou se stáhne); bez něj tiskový dialog.
+          if (activeServiceId) {
+            const v = await stahnoutDokumentJakoPdf("faktura", activeServiceId, data);
+            if (v.stav === "hotovo") {
+              showToast(`PDF uložen: ${v.nazev}`, "success");
+              return;
+            }
+            if (v.duvod) showToast(`PDF ze serveru se nepovedlo (${v.duvod}), otevírám tiskový dialog.`, "info");
+          }
           showToast("V tiskovém dialogu zvolte cíl „Uložit jako PDF“.", "info");
-          await printDocumentInBrowser("faktura", activeServiceId, await dataProTisk(inv));
+          await printDocumentInBrowser("faktura", activeServiceId, data);
         } catch (err) {
           reportError({
             code: "invoices.handle_export_failed",

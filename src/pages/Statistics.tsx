@@ -21,6 +21,7 @@ import { mapSupabaseTicketToTicketEx, type TicketEx } from "./Orders";
 import { useStatuses } from "../state/StatusesStore";
 import { KpiTile, KpiTileSkeleton } from "./Statistics/KpiTile";
 import { MonthlyChart, type MonthStat } from "./Statistics/MonthlyChart";
+import { HodinyChart } from "./Statistics/HodinyChart";
 import { RankList } from "./Statistics/RankList";
 import { StatusBars } from "./Statistics/StatusBars";
 import { MarginList } from "./Statistics/MarginList";
@@ -43,6 +44,7 @@ import {
   COMPARABLE_PERIODS,
   periodRange,
   previousPeriodRange,
+  vObdobi,
   type DateRange,
   type PeriodType,
 } from "./Statistics/obdobi";
@@ -267,6 +269,50 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
    */
   const potrebujeZakazky = viewMode === "table" || serverNedostupny;
 
+  /**
+   * Časy zakázek pro graf „Kdy lidé chodí“. Serverové agregace hodiny
+   * neznají a tahat kvůli nim celé zakázky (opravy, fotky, poznámky) by
+   * bylo zbytečné – stačí pět sloupců. Stahují se jen v grafech.
+   */
+  type CasZakazky = {
+    id: string;
+    status: string;
+    created_at: string;
+    completed_at: string | null;
+    branch_id: string | null;
+    handoff_method: string | null;
+    handback_method: string | null;
+  };
+  const [casyZakazek, setCasyZakazek] = useState<CasZakazky[]>([]);
+  const [casyNacitam, setCasyNacitam] = useState(false);
+  const [casyChyba, setCasyChyba] = useState<string | null>(null);
+  useEffect(() => {
+    const client = supabase;
+    if (!client || idsServisu.length === 0 || viewMode !== "charts") return;
+    let cancelled = false;
+    setCasyNacitam(true);
+    setCasyChyba(null);
+    (async () => {
+      const { data, error } = await fetchAllPages<CasZakazky>((from, to) =>
+        client
+          .from("tickets")
+          .select("id, status, created_at, completed_at, branch_id, handoff_method, handback_method")
+          .in("service_id", idsServisu)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to)
+      );
+      if (cancelled) return;
+      if (error) setCasyChyba((error as { message?: string }).message ?? String(error));
+      else setCasyZakazek(data);
+      setCasyNacitam(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idsServisu, viewMode, reloadToken]);
+
   useEffect(() => {
     if (!activeServiceId || !supabase) {
       setAllTickets([]);
@@ -457,6 +503,21 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     () => rozdelPodleObdobi(branchTickets, obdobi, jeKoncovyZakazky, jeStornoZakazky),
     [branchTickets, obdobi, jeKoncovyZakazky, jeStornoZakazky]
   );
+
+  // Totéž pravidlo pro lehké řádky grafu hodin: přijaté podle created_at,
+  // vydané podle completed_at v koncovém stavu; pobočka z lišty.
+  const casyVObdobi = useMemo(() => {
+    const prijate: Array<{ createdAt: string; completedAt: string | null; status: string; prevzeti: string | null; predani: string | null }> = [];
+    const vydane: typeof prijate = [];
+    for (const t of casyZakazek) {
+      // Jako filterByBranch: zakázka bez pobočky patří do každé.
+      if (activeBranchId && t.branch_id && t.branch_id !== activeBranchId) continue;
+      const z = { createdAt: t.created_at, completedAt: t.completed_at, status: t.status, prevzeti: t.handoff_method, predani: t.handback_method };
+      if (!obdobi || vObdobi(t.created_at, obdobi)) prijate.push(z);
+      if (t.completed_at && isFinal(t.status ?? "") && (!obdobi || vObdobi(t.completed_at, obdobi))) vydane.push(z);
+    }
+    return { prijate, vydane };
+  }, [casyZakazek, activeBranchId, obdobi, isFinal]);
   // Předchozí období (jen pro porovnání)
   const skupinyPredchozi = useMemo(
     () => (predchoziObdobi ? rozdelPodleObdobi(branchTickets, predchoziObdobi, jeKoncovyZakazky, jeStornoZakazky) : null),
@@ -894,6 +955,22 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     return parts.join(" ");
   })();
 
+  /* Kdy lidé chodí: přijaté podle založení, vydané podle přepnutí do
+     koncového stavu – stejné pravidlo jako u skupin výš, jen nad lehkými
+     řádky, které se pro grafy stahují zvlášť. */
+  const hodinySection = (
+    <Card data-tour="statistics-hodiny" style={{ padding: "var(--pad-24)" }}>
+      <SectionHeading icon={<ClockIcon size={18} />}>Kdy lidé chodí</SectionHeading>
+      {casyChyba ? (
+        <div style={{ color: "var(--danger-text)", fontSize: "var(--text-base)" }}>Rozložení po hodinách se nepodařilo načíst: {casyChyba}</div>
+      ) : casyNacitam ? (
+        <div style={{ color: "var(--muted)", fontSize: "var(--text-base)" }}>Načítám časy zakázek…</div>
+      ) : (
+        <HodinyChart prijate={casyVObdobi.prijate} vydane={casyVObdobi.vydane} jeStorno={jeStornoStatus} />
+      )}
+    </Card>
+  );
+
   const monthlySection = (
     <Card style={{ padding: "var(--pad-24)" }}>
       <SectionHeading icon={<TrendIcon size={18} />}>Měsíční přehled</SectionHeading>
@@ -1236,6 +1313,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
           {viewMode === "charts" && (
             <>
               {monthlySection}
+              {hodinySection}
               {statusSection}
               {rankSection}
               {marginSection}

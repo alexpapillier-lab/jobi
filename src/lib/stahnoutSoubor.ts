@@ -5,8 +5,8 @@
  * používá protokol inventury a export statistik, tady je jen na jednom
  * místě pro nové exporty.
  */
-export function stahnoutSoubor(obsah: Uint8Array | string, nazev: string, mime: string): void {
-  const blob = new Blob([obsah as BlobPart], { type: mime });
+export function stahnoutSoubor(obsah: Uint8Array | string | Blob, nazev: string, mime: string): void {
+  const blob = obsah instanceof Blob ? obsah : new Blob([obsah as BlobPart], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
