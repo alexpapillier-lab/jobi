@@ -272,7 +272,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   /**
    * Časy zakázek pro graf „Kdy lidé chodí“. Serverové agregace hodiny
    * neznají a tahat kvůli nim celé zakázky (opravy, fotky, poznámky) by
-   * bylo zbytečné – stačí pět sloupců. Stahují se jen v grafech.
+   * bylo zbytečné – stačí pár sloupců. Stahují se v kartách i grafech,
+   * v tabulce graf není.
    */
   type CasZakazky = {
     id: string;
@@ -288,7 +289,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const [casyChyba, setCasyChyba] = useState<string | null>(null);
   useEffect(() => {
     const client = supabase;
-    if (!client || idsServisu.length === 0 || viewMode !== "charts") return;
+    if (!client || idsServisu.length === 0 || viewMode === "table") return;
     let cancelled = false;
     setCasyNacitam(true);
     setCasyChyba(null);
@@ -1307,6 +1308,7 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
               {rankSection}
               {marginSection}
               {monthlySection}
+              {hodinySection}
             </>
           )}
 
