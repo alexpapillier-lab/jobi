@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { Card } from "../../lib/settingsUi";
 import { showToast } from "../../components/Toast";
@@ -7,6 +7,7 @@ import { CopyButton } from "../../components/CopyButton";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { radkyZCsv, type RadekImportuProvizi } from "../../lib/provizeImport";
 import { seznamVyloucenych, textVyloucenych } from "../../lib/provizeVylouceneOpravy";
+import { maNejasneOpravy, prectiCastku, rozhodnuti, type RozhodnutiProvize } from "../../lib/provizeKontrola";
 import { useAuth } from "../../auth/AuthProvider";
 import { ProvizeStatistiky } from "./ProvizeStatistiky";
 
@@ -50,6 +51,15 @@ type Polozka = {
   vyuctovani_id: number | null;
   vyrazeno: boolean;
   importovano: boolean;
+  /** Vyloučená položka obsahuje i jinou práci – čeká na rozhodnutí a do vyúčtování nejde. */
+  ke_kontrole: boolean;
+  nejasne_opravy: string[] | null;
+  rucni_zaklad: number | null;
+  zkontrolovano_at: string | null;
+  /** Základ bez vyloučených položek (jen u zakázek s nejasnými položkami). */
+  zaklad_auto: number | null;
+  /** Rozpis oprav (jen u zakázek s nejasnými položkami). */
+  opravy: Array<{ nazev: string | null; cena: number | string | null; pocita: boolean; nejasna: boolean }> | null;
 };
 
 type Vyuctovani = {
@@ -82,7 +92,12 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   const [data, setData] = useState<Prehled | null>(null);
   const [nacitam, setNacitam] = useState(false);
   const [pracuji, setPracuji] = useState(false);
-  const [filtr, setFiltr] = useState<"nevyuctovane" | "vse" | "vyloucene" | number>("nevyuctovane");
+  const [filtr, setFiltr] = useState<"nevyuctovane" | "vse" | "vyloucene" | "kontrola" | number>("nevyuctovane");
+  /** Rozhodnuté nejasné zakázky, u kterých majitel otevřel „Změnit“. */
+  const [otevrene, setOtevrene] = useState<Set<number>>(new Set());
+  /** Rozepsané vlastní částky podle id řádku. */
+  const [castky, setCastky] = useState<Record<number, string>>({});
+  const [rozhoduji, setRozhoduji] = useState<number | null>(null);
   const [hledat, setHledat] = useState("");
   const [vse, setVse] = useState(false);
   const [oznaceni, setOznaceni] = useState("");
@@ -151,9 +166,13 @@ export function ProvizePanel({ services }: { services: Service[] }) {
   }, [serviceId, nacti]);
 
   const nevyuctovane = useMemo(() => (data?.polozky ?? []).filter((p) => p.vyuctovani_id === null), [data]);
-  const kVyuctovani = useMemo(() => nevyuctovane.filter((p) => !p.vyrazeno), [nevyuctovane]);
+  /** Ke kontrole: do vyúčtování nejdou, dokud o nich majitel nerozhodne (stejně jako provize_vyuctuj). */
+  const keKontrole = useMemo(() => nevyuctovane.filter((p) => p.ke_kontrole), [nevyuctovane]);
+  const kVyuctovani = useMemo(() => nevyuctovane.filter((p) => !p.vyrazeno && !p.ke_kontrole), [nevyuctovane]);
   /** Zakázky, kde vyloučené opravy sebraly celý základ – a ty, kde majitel vyloučení přebil. */
-  const jeVyloucena = (p: Polozka) => p.poradi === 0 && (p.poznamka === "jen vyloučené opravy" || p.pocitat_vse);
+  const jeVyloucena = (p: Polozka) =>
+    // `!= null`: před nasazením migrace pole v přehledu chybí (undefined).
+    p.poradi === 0 && (p.poznamka === "jen vyloučené opravy" || p.pocitat_vse || p.rucni_zaklad != null);
   const vyloucene = useMemo(() => (data?.polozky ?? []).filter(jeVyloucena), [data]);
   const soucetZaklad = kVyuctovani.reduce((s, p) => s + Number(p.zaklad), 0);
   const soucetProvize = kVyuctovani.reduce((s, p) => s + Number(p.provize), 0);
@@ -165,6 +184,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
     return (data?.polozky ?? []).filter((p) => {
       if (filtr === "nevyuctovane" && p.vyuctovani_id !== null) return false;
       if (filtr === "vyloucene" && !jeVyloucena(p)) return false;
+      if (filtr === "kontrola" && !(p.ke_kontrole && p.vyuctovani_id === null)) return false;
       if (typeof filtr === "number" && p.vyuctovani_id !== filtr) return false;
       return !q || p.kod.toLowerCase().includes(q);
     });
@@ -206,10 +226,11 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       showToast(`Vyúčtování selhalo: ${error.message}`, "error");
       return;
     }
+    const ceka = Number(r?.ceka_na_kontrolu ?? 0);
     if (!r?.pocet) {
-      showToast("Není co vyúčtovat.", "info");
+      showToast(ceka ? `Není co vyúčtovat – ${ceka} zakázek čeká na kontrolu.` : "Není co vyúčtovat.", "info");
     } else {
-      setVysledek(`Vyúčtování ${r.oznaceni}\nPočet zakázek: ${r.pocet}\nSoučet cen: ${kc(r.soucet_zaklad)}\nSoučet provizí: ${kc(r.soucet_provize)}`);
+      setVysledek(`Vyúčtování ${r.oznaceni}\nPočet zakázek: ${r.pocet}\nSoučet cen: ${kc(r.soucet_zaklad)}\nSoučet provizí: ${kc(r.soucet_provize)}` + (ceka ? `\nČeká na kontrolu (nevyúčtováno): ${ceka}` : ""));
       setOznaceni("");
       if (r.id) void posliMail(r.id);
     }
@@ -277,6 +298,36 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       return;
     }
     showToast(zapnout ? `${p.kod}: počítá se plná cena ${kc(p.zaklad_plny ?? 0)}` : `${p.kod}: vyloučené opravy se zase nepočítají`, "success");
+    await nacti(serviceId, false);
+  };
+
+  /** Rozhodnutí u nejasné zakázky: bez vyloučených položek, plně, nebo vlastní částkou. */
+  const rozhodni = async (p: Polozka, volba: Exclude<RozhodnutiProvize, "ceka">) => {
+    if (!db) return;
+    let castka: number | null = null;
+    if (volba === "castka") {
+      const v = prectiCastku(castky[p.id] ?? "", p.zaklad_plny === null ? null : Number(p.zaklad_plny));
+      if (!v.ok) {
+        showToast(`${p.kod}: ${v.chyba}`, "error");
+        return;
+      }
+      castka = v.castka;
+    }
+    setRozhoduji(p.id);
+    const { error } = await db.rpc("provize_rozhodni", { p_id: p.id, p_volba: volba, p_zaklad: castka });
+    setRozhoduji(null);
+    if (error) {
+      showToast(`Rozhodnutí se nepodařilo uložit: ${error.message}`, "error");
+      return;
+    }
+    const popis =
+      volba === "plne" ? `plná cena ${kc(p.zaklad_plny ?? 0)}` : volba === "castka" ? `vlastní základ ${kc(castka ?? 0)}` : `bez vyloučených položek ${kc(p.zaklad_auto ?? 0)}`;
+    showToast(`${p.kod}: ${popis}`, "success");
+    setOtevrene((prev) => {
+      const s = new Set(prev);
+      s.delete(p.id);
+      return s;
+    });
     await nacti(serviceId, false);
   };
 
@@ -425,12 +476,40 @@ export function ProvizePanel({ services }: { services: Service[] }) {
 
           {n && (
             <>
+              {keKontrole.length > 0 && (
+                <div
+                  role="alert"
+                  data-tour="provize-ke-kontrole"
+                  style={{ marginBottom: 16, padding: 12, borderRadius: 12, border: "1px solid var(--warning, #f59e0b)", background: "var(--warning-soft, rgba(245,158,11,0.12))", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
+                >
+                  <div style={{ flex: "1 1 280px", fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>
+                    <strong>
+                      {keKontrole.length === 1 ? "1 zakázka čeká" : `${keKontrole.length} ${keKontrole.length < 5 ? "zakázky čekají" : "zakázek čeká"}`} na kontrolu.
+                    </strong>{" "}
+                    Vyloučené slovo sedí na položku, ve které je i jiná práce (např. „baterie + servisní čištění“), takže nejde poznat, kolik z ceny se má počítat.
+                    Rozhodněte u každé, jak ji započítat – do té doby se nevyúčtuje.
+                  </div>
+                  <button
+                    type="button"
+                    style={primarni}
+                    onClick={() => {
+                      setFiltr("kontrola");
+                      setVse(false);
+                      seznamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  >
+                    Zkontrolovat
+                  </button>
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                 <div style={dlazdice}>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>K vyúčtování</div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>{kc(soucetProvize)}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>
                     {kVyuctovani.length} řádků · základ {kc(soucetZaklad)}
+                    {keKontrole.length > 0 && ` · ${keKontrole.length} čeká na kontrolu`}
                   </div>
                 </div>
                 <div style={dlazdice}>
@@ -477,11 +556,12 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                   value={String(filtr)}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setFiltr(v === "nevyuctovane" || v === "vse" || v === "vyloucene" ? v : Number(v));
+                    setFiltr(v === "nevyuctovane" || v === "vse" || v === "vyloucene" || v === "kontrola" ? v : Number(v));
                     setVse(false);
                   }}
                   style={pole}
                 >
+                  {(keKontrole.length > 0 || filtr === "kontrola") && <option value="kontrola">Ke kontrole ({keKontrole.length})</option>}
                   <option value="nevyuctovane">Nevyúčtované ({nevyuctovane.length})</option>
                   <option value="vse">Vše ({data.polozky.length})</option>
                   {(vyloucene.length > 0 || n.filtr) && <option value="vyloucene">Vyloučené opravami ({vyloucene.length})</option>}
@@ -511,11 +591,19 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {(vse ? zobrazene : zobrazene.slice(0, 100)).map((p) => (
-                      <tr key={p.id} style={{ opacity: p.vyrazeno ? 0.5 : 1 }}>
-                        <td style={{ padding: "7px 10px", borderBottom: border, fontWeight: 700, whiteSpace: "nowrap" }}>
+                    {(vse ? zobrazene : zobrazene.slice(0, 100)).map((p) => {
+                      const nejasna = p.poradi === 0 && p.vyuctovani_id === null && maNejasneOpravy(p);
+                      const stav = rozhodnuti(p);
+                      const rozbaleno = nejasna && (stav === "ceka" || otevrene.has(p.id));
+                      return (
+                      <Fragment key={p.id}>
+                      <tr style={{ opacity: p.vyrazeno && !p.ke_kontrole ? 0.5 : 1, background: p.ke_kontrole ? "var(--warning-soft, rgba(245,158,11,0.08))" : undefined }}>
+                        <td style={{ padding: "7px 10px", borderBottom: rozbaleno ? "none" : border, fontWeight: 700, whiteSpace: "nowrap" }}>
                           {p.kod}
                           {p.poradi > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>doplatek</span>}
+                          {p.ke_kontrole && p.vyuctovani_id === null && (
+                            <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--warning-text, #b45309)" }}>ke kontrole</span>
+                          )}
                         </td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.zarizeni ?? undefined}>{p.zarizeni ?? "—"}</td>
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)" }}>{p.stav_ted ?? p.status ?? "—"}</td>
@@ -530,10 +618,28 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                         <td style={{ padding: "7px 10px", borderBottom: border, color: "var(--muted)", whiteSpace: "nowrap" }}>
                           {p.vyuctovani_id !== null ? oznaceniPodleId.get(p.vyuctovani_id) ?? "ano" : p.vyrazeno ? `vyřazeno${p.poznamka ? ` (${p.poznamka})` : ""}` : "—"}
                         </td>
-                        <td style={{ padding: "7px 10px", borderBottom: border, textAlign: "right" }}>
+                        <td style={{ padding: "7px 10px", borderBottom: rozbaleno ? "none" : border, textAlign: "right" }}>
                           {p.vyuctovani_id === null && (
                             <span style={{ display: "inline-flex", gap: 6 }}>
-                              {jeVyloucena(p) && (
+                              {nejasna && stav !== "ceka" && (
+                                <button
+                                  type="button"
+                                  style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }}
+                                  aria-expanded={otevrene.has(p.id)}
+                                  title="Změnit, jak se zakázka započítá"
+                                  onClick={() =>
+                                    setOtevrene((prev) => {
+                                      const s = new Set(prev);
+                                      if (s.has(p.id)) s.delete(p.id);
+                                      else s.add(p.id);
+                                      return s;
+                                    })
+                                  }
+                                >
+                                  {otevrene.has(p.id) ? "Zavřít" : "Změnit"}
+                                </button>
+                              )}
+                              {jeVyloucena(p) && !nejasna && (
                                 <button
                                   type="button"
                                   style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }}
@@ -543,7 +649,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                                   {p.pocitat_vse ? "Zase vyloučit" : "Započítat plně"}
                                 </button>
                               )}
-                              {!jeVyloucena(p) && (
+                              {!jeVyloucena(p) && !nejasna && (
                                 <button type="button" style={{ ...tlacitko, padding: "3px 9px", fontSize: 12, fontWeight: 600 }} onClick={() => prepniVyrazeni(p)}>
                                   {p.vyrazeno ? "Vrátit" : "Vyřadit"}
                                 </button>
@@ -552,7 +658,25 @@ export function ProvizePanel({ services }: { services: Service[] }) {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      {rozbaleno && (
+                        <tr style={{ background: p.ke_kontrole ? "var(--warning-soft, rgba(245,158,11,0.08))" : "var(--panel-2)" }}>
+                          <td colSpan={8} style={{ padding: "4px 10px 12px", borderBottom: border }}>
+                            <RozhodnutiZakazky
+                              p={p}
+                              stav={stav}
+                              castka={castky[p.id] ?? (p.rucni_zaklad != null ? String(p.rucni_zaklad).replace(".", ",") : "")}
+                              onCastka={(v) => setCastky((prev) => ({ ...prev, [p.id]: v }))}
+                              pracuji={rozhoduji === p.id}
+                              onRozhodni={(volba) => void rozhodni(p, volba)}
+                              tlacitko={tlacitko}
+                              pole={pole}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
+                      );
+                    })}
                     {zobrazene.length === 0 && (
                       <tr>
                         <td colSpan={8} style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
@@ -576,7 +700,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       <ConfirmDialog
         open={potvrditVyuctovani}
         title="Vyúčtovat provize"
-        message={`Uzavřít ${kVyuctovani.length} řádků pod označením „${oznaceni.trim() || "dnešní datum"}“?\nVyúčtuje se vše, co od minulého vyúčtování přibylo.\nZáklad ${kc(soucetZaklad)}, provize ${kc(soucetProvize)}.\nVyúčtované řádky se už nemění – pozdější zdražení půjde do doplatku.`}
+        message={`Uzavřít ${kVyuctovani.length} řádků pod označením „${oznaceni.trim() || "dnešní datum"}“?\nVyúčtuje se vše, co od minulého vyúčtování přibylo.\nZáklad ${kc(soucetZaklad)}, provize ${kc(soucetProvize)}.\nVyúčtované řádky se už nemění – pozdější zdražení půjde do doplatku.` + (keKontrole.length > 0 ? `\n\n${keKontrole.length} zakázek čeká na kontrolu – do tohoto vyúčtování nepůjdou, dokud o nich nerozhodnete.` : "")}
         confirmLabel="Vyúčtovat"
         onConfirm={vyuctuj}
         onCancel={() => setPotvrditVyuctovani(false)}
@@ -607,5 +731,86 @@ export function ProvizePanel({ services }: { services: Service[] }) {
         onCancel={() => setImportRadky(null)}
       />
     </Card>
+  );
+}
+
+/**
+ * Rozpis nejasné zakázky a volba, jak ji započítat. Tři možnosti, protože
+ * u „Výměna baterie + servisní čištění“ za 2 000 Kč jde buď o díl (bez),
+ * nebo o práci (plně), nebo se cena dá rozdělit ručně (vlastní částka).
+ */
+function RozhodnutiZakazky({
+  p,
+  stav,
+  castka,
+  onCastka,
+  pracuji,
+  onRozhodni,
+  tlacitko,
+  pole,
+}: {
+  p: Polozka;
+  stav: RozhodnutiProvize;
+  castka: string;
+  onCastka: (v: string) => void;
+  pracuji: boolean;
+  onRozhodni: (volba: Exclude<RozhodnutiProvize, "ceka">) => void;
+  tlacitko: React.CSSProperties;
+  pole: React.CSSProperties;
+}) {
+  const volba = (aktivni: boolean): React.CSSProperties => ({
+    ...tlacitko,
+    padding: "5px 10px",
+    fontSize: 12,
+    fontWeight: aktivni ? 800 : 600,
+    background: aktivni ? "var(--accent-soft)" : "var(--panel)",
+    borderColor: aktivni ? "var(--accent)" : "var(--border)",
+  });
+  return (
+    <div style={{ display: "grid", gap: 8, fontSize: 12 }}>
+      <div style={{ color: "var(--muted)" }}>
+        {stav === "ceka"
+          ? "Vyloučené slovo sedí na položku, ve které je i jiná práce. Jak zakázku započítat?"
+          : `Rozhodnuto${p.zkontrolovano_at ? ` ${new Date(p.zkontrolovano_at).toLocaleDateString("cs-CZ")}` : ""}. Když se nejasné položky na zakázce změní, objeví se tu znovu.`}
+      </div>
+      {p.opravy && p.opravy.length > 0 && (
+        <div style={{ display: "grid", gap: 2 }}>
+          {p.opravy.map((o, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ flex: "1 1 auto", minWidth: 0, color: "var(--text)", fontWeight: o.nejasna ? 700 : 400 }}>{o.nazev || "—"}</span>
+              <span style={{ whiteSpace: "nowrap", color: "var(--text)" }}>{kc(Number(o.cena) || 0)}</span>
+              <span style={{ whiteSpace: "nowrap", minWidth: 110, textAlign: "right", color: o.nejasna ? "var(--warning-text, #b45309)" : "var(--muted)" }}>
+                {o.nejasna ? "nejasné" : o.pocita ? "počítá se" : "nepočítá se"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" style={volba(stav === "bez")} disabled={pracuji} onClick={() => onRozhodni("bez")} title="Nejasné položky se nepočítají – jako by to byl jen díl">
+          Bez nich · {kc(p.zaklad_auto ?? 0)}
+        </button>
+        <button type="button" style={volba(stav === "plne")} disabled={pracuji} onClick={() => onRozhodni("plne")} title="Počítá se celá cena zakázky včetně vyloučených položek">
+          Plně · {kc(p.zaklad_plny ?? 0)}
+        </button>
+        <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <input
+            value={castka}
+            onChange={(e) => onCastka(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onRozhodni("castka");
+            }}
+            placeholder="vlastní základ"
+            inputMode="decimal"
+            aria-label={`Vlastní základ pro ${p.kod}`}
+            style={{ ...pole, width: 120, padding: "5px 8px", fontSize: 12 }}
+          />
+          <button type="button" style={volba(stav === "castka")} disabled={pracuji || !castka.trim()} onClick={() => onRozhodni("castka")}>
+            Použít částku
+          </button>
+        </span>
+        {pracuji && <span style={{ color: "var(--muted)" }}>Ukládám…</span>}
+      </div>
+    </div>
   );
 }
