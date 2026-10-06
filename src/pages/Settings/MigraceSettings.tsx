@@ -7,6 +7,7 @@ import { normalizePhone } from "../../lib/phone";
 import { ImportZakazniku } from "../Customers/ImportZakazniku";
 import { ImportZakazek } from "../../components/ImportZakazek";
 import { ImportCeniku } from "../../components/ImportCeniku";
+import { ImportKomentaru } from "../../components/ImportKomentaru";
 
 /**
  * Nastavení → Migrace z jiného systému: zákazníci, zakázky a ceník z CSV
@@ -15,7 +16,7 @@ import { ImportCeniku } from "../../components/ImportCeniku";
  * i na stránce Zákazníci).
  */
 export function MigraceSettings({ activeServiceId }: { activeServiceId: string | null }) {
-  const [otevreno, setOtevreno] = useState<"zakaznici" | "zakazky" | "cenik" | null>(null);
+  const [otevreno, setOtevreno] = useState<"zakaznici" | "zakazky" | "cenik" | "komentare" | null>(null);
   const [telefony, setTelefony] = useState<Set<string>>(new Set());
   const [nacitam, setNacitam] = useState(false);
 
@@ -66,6 +67,11 @@ export function MigraceSettings({ activeServiceId }: { activeServiceId: string |
             <div style={text}>Značka, kategorie, model, oprava, cena, náklady, čas – jeden řádek na opravu u modelu. Doplní katalog na stránce Zařízení.</div>
             <div><Button variant="soft" size="sm" onClick={() => setOtevreno("cenik")} disabled={!activeServiceId}>Importovat ceník</Button></div>
           </div>
+          <div style={krok}>
+            <div style={nadpis}>4. Komentáře</div>
+            <div style={text}>Interní komentáře k zakázkám a reklamacím (číslo, druh, autor, datum, text) – až po zakázkách. Komentář reklamace se připojí k zakázce, ze které reklamace vznikla; co už v zakázce je, se přeskočí.</div>
+            <div><Button variant="soft" size="sm" onClick={() => setOtevreno("komentare")} disabled={!activeServiceId}>Importovat komentáře</Button></div>
+          </div>
         </div>
       </Card>
 
@@ -77,7 +83,7 @@ export function MigraceSettings({ activeServiceId }: { activeServiceId: string |
           <div style={krok}>
             <div style={nadpis}>Zakázkový list</div>
             <div style={text}>
-              Zakázkový list export zakázek nemá. Připravili jsme nástroj, který se za vás přihlásí do Zakázkového listu na vašem počítači, projde všechny zakázky a reklamace a vyrobí soubory zakazky.csv, zakaznici.csv a cenik.csv přesně pro tenhle import – i s historií stavů a provedenými opravami. Přihlašovací údaje ani data nikam neodchází. Napište nám v Nastavení → Nápověda a podpora → Nahlásit chybu a nástroj vám pošleme i s návodem krok za krokem, nebo migraci spustíme s vámi. Pak stačí soubory nahrát tady v pořadí zákazníci, zakázky, ceník.
+              Zakázkový list export zakázek nemá. Připravili jsme nástroj, který se za vás přihlásí do Zakázkového listu na vašem počítači, projde všechny zakázky a reklamace a vyrobí soubory zakazky.csv, zakaznici.csv, cenik.csv a komentare.csv přesně pro tenhle import – i s historií stavů, provedenými opravami a komentáři. Přihlašovací údaje ani data nikam neodchází. Napište nám v Nastavení → Nápověda a podpora → Nahlásit chybu a nástroj vám pošleme i s návodem krok za krokem, nebo migraci spustíme s vámi. Pak stačí soubory nahrát tady v pořadí zákazníci, zakázky, ceník.
             </div>
             <div style={text}>
               Předvolba „Zakázkový list“ v importu zakázek počítá s názvy z detailu zakázky: „Přijetí zařízení do opravy“, „Zakázka vydána“, „Jméno a příjmení“, „Telefonní číslo“, „Zařízení“, „Sériové číslo“, „IMEI“, „Požadovaná oprava“, „Popis stavu zařízení“, „Položky opravy“, „Historie stavů“. Když máte soubor odjinud a sloupce se jmenují jinak, přiřaďte je ručně.
@@ -95,7 +101,7 @@ export function MigraceSettings({ activeServiceId }: { activeServiceId: string |
               Uložte tabulku jako CSV (UTF-8) s hlavičkou v prvním řádku a zvolte předvolbu „Vlastní“. Provedené opravy jdou zapsat do jednoho sloupce jako „název;cena;náklady|další oprava;cena;náklady“, nebo do samostatných sloupců Oprava / Cena opravy / Náklady (jedna oprava na řádek). Datum ve tvaru 8.12.2022 09:51 nebo 2022-12-08.
             </div>
           </div>
-          <div style={text}>Doporučené pořadí: nejdřív zákazníci, pak zakázky, nakonec ceník. Zakázky si zákazníka nesou jménem a telefonem, takže pořadí není povinné.</div>
+          <div style={text}>Doporučené pořadí: nejdřív zákazníci, pak zakázky, pak ceník a nakonec komentáře. Zakázky si zákazníka nesou jménem a telefonem, takže pořadí není povinné – jen komentáře potřebují zakázky už v Jobi.</div>
         </div>
       </Card>
 
@@ -117,6 +123,12 @@ export function MigraceSettings({ activeServiceId }: { activeServiceId: string |
         onClose={() => setOtevreno(null)}
         activeServiceId={activeServiceId}
         onHotovo={(v) => showToast(v.chyby.length > 0 ? "Import ceníku skončil s chybou" : `Ceník doplněn: ${v.oprav} oprav, ${v.modelu} modelů`, v.chyby.length > 0 ? "error" : "success")}
+      />
+      <ImportKomentaru
+        open={otevreno === "komentare"}
+        onClose={() => setOtevreno(null)}
+        activeServiceId={activeServiceId}
+        onHotovo={(v) => showToast(v.zapsano > 0 ? `Zapsáno ${v.zapsano} komentářů` : "Žádný nový komentář", v.chyb > 0 ? "error" : "success")}
       />
     </>
   );

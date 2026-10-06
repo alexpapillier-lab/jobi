@@ -173,8 +173,10 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
     exportu iSwapu (3 671 zakázek a 1 352 řádků ceníku projdou importem bez chyby)
     a proti atrapě ZL na localhostu; ostrý běh proti ZL zatím neproběhl.
     Zbývá: ostrý běh, ověřit export zákazníků ze ZL (adresa a tlačítko jsou odhad),
-    import komentářů a reklamací (dnes jen archivní CSV), ověřit proti skutečnému
-    CSV exportu z MyRepair (nemáme).
+    import reklamací (dnes jen archivní CSV), ověřit proti skutečnému
+    CSV exportu z MyRepair (nemáme). Import komentářů hotový (6. 10. 2026):
+    Migrace → 4. Komentáře bere `komentare.csv`, komentáře reklamací jdou na
+    zakázku, ze které reklamace vznikla (detail reklamace je ukazuje).
 
 První tři měsíce: body 1, 2, 4.
 

@@ -549,8 +549,9 @@ export function cenikZeZakazek(zaznamy: ZlZaznam[]): { radky: string[][]; souhrn
   };
 }
 
-// ── Archivní soubory (Jobi je zatím neimportuje) ────────────────────────────
+// ── Komentáře (Migrace → 4. Komentáře) a archiv reklamací ───────────────────
 
+/** Sloupce, které import komentářů v Jobi (`src/lib/importKomentaru.ts`) pozná sám. */
 export const HLAVICKA_KOMENTARU = ["Kód", "Druh", "Autor", "Datum", "Text"];
 export function radkyKomentaru(zaznamy: ZlZaznam[]): string[][] {
   const out: string[][] = [];
@@ -684,7 +685,7 @@ export function preved(vstup: VstupPrevodu): VystupPrevodu {
   r.push(`| zakazky.csv | ${zakazky.length} | Nastavení → Firma → Migrace → 2. Zakázky (předvolba „Zakázkový list“) |`);
   r.push(`| zakaznici.csv | ${zakSJmenem.length} | Migrace → 1. Zákazníci |`);
   r.push(cenik ? `| cenik.csv | ${cenik.radky.length} | Migrace → 3. Ceník oprav (zdroj: ${zdrojCeniku}) |` : "| cenik.csv | – | nevznikl – viz „Ceník“ níže |");
-  if (komentare.length > 0) r.push(`| komentare.csv | ${komentare.length} | jen archiv, Jobi je zatím neimportuje |`);
+  if (komentare.length > 0) r.push(`| komentare.csv | ${komentare.length} | Migrace → 4. Komentáře (až po zakázkách; komentáře reklamací jdou na jejich zakázku) |`);
   if (reklamace.length > 0) r.push(`| reklamace.csv | ${reklamace.length} | jen archiv, Jobi reklamace z CSV zatím neimportuje |`);
   r.push("");
 
@@ -725,8 +726,7 @@ export function preved(vstup: VstupPrevodu): VystupPrevodu {
   r.push("");
 
   r.push("## Co se nepřeneslo", "");
-  r.push(`- **Komentáře** (${komentaruZakazek} u zakázek, ${komentaruReklamaci} u reklamací) – import v Jobi je zatím neumí, jsou v komentare.csv.`);
-  r.push(`- **Reklamace** (${reklamace.length}) – import v Jobi reklamace nemá, jsou v reklamace.csv.`);
+  r.push(`- **Reklamace** (${reklamace.length}) – import v Jobi reklamace nemá, jsou v reklamace.csv. Jejich komentáře (${komentaruReklamaci}; u zakázek ${komentaruZakazek}) se importují přes komentare.csv na zakázku, ze které reklamace vznikla – v Jobi musí reklamace na tu zakázku odkazovat.`);
   r.push(`- **Technici** („Přijal“, „Opravoval“, „Vydal“) a jména v historii stavů – v Jobi nejsou stejní uživatelé; historie ukáže „Systém“.`);
   r.push(`- **Způsob převzetí a předání**, **Maximální cena**, **Závada pro průvodní dopis** (vyplněna u ${kv("Závada pro průvodní dopis")} zakázek) – Jobi je v importu nemá.`);
   r.push(sHesly
