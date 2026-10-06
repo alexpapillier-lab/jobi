@@ -153,16 +153,11 @@ symetricky šifrované AES-256.
 chatu) zálohuje samostatný workflow `backup-storage.yml` do Cloudflare R2,
 denně a inkrementálně – **kapitola 7**.
 
-> **Stará týdenní záloha souborů v tomhle workflow nefunguje.** Krok
-> „Soubory ve Storage" (neděle, artefakt `zaloha-storage-RRRRMMDD.tar.gz.gpg`)
-> stahuje soubory přes veřejné adresy a u neveřejného bucketu schválně
-> skončí chybou. Od chatu týmu existuje neveřejný bucket `chat-prilohy`,
-> takže krok každou neděli padá (běh 20. 9. 2026: „Bucket(y) chat-prilohy
-> nejsou veřejné"). Dump databáze a jeho artefakt to neohrozí – nahrávají
-> se dřív –, ale **použitelná záloha souborů z něj nevzniká.** Po přepnutí
-> `diagnostic-photos` na neveřejný (docs/BEZPECNOST_FOTKY.md) by nefungoval
-> ani bez chatu. Až poběží zelená záloha do R2, má se ten krok
-> z `backup-db.yml` odebrat (i s odstavcem v `CO_CHYBI.md`).
+> **Soubory tenhle workflow nezálohuje** (jen jejich seznam). Dřívější
+> nedělní krok „Soubory ve Storage" stahoval soubory přes veřejné adresy,
+> od vzniku neveřejného bucketu `chat-prilohy` padal a 6. 10. 2026 byl
+> odebrán. Soubory kryje denní `backup-storage.yml` do R2 (kapitola 7),
+> poprvé ověřený naostro 6. 10. 2026.
 
 ### Zkouška obnovy
 
