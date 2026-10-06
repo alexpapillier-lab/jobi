@@ -78,6 +78,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Kontrola secrets
+        id: secrets
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -106,14 +107,18 @@ jobs:
             chybi="$chybi SUPABASE_S3_ACCESS_KEY+SUPABASE_S3_SECRET_KEY (nebo náhradně SUPABASE_SERVICE_ROLE_KEY)"
           fi
           if [ -n "$chybi" ]; then
-            echo "::error::Chybí secrets:$chybi. Nastav je v Settings → Secrets and variables → Actions. Postup je v docs/ZALOHY_DATABAZE.md, kapitola 7."
-            exit 1
+            # Dokud majitel klíče nenastaví, běh jen upozorní a skončí zeleně –
+            # denní červený e-mail nic nepřidá, úkol je v docs/UKOLY_MAJITELE.md.
+            echo "::warning::Záloha souborů se přeskočila, chybí secrets:$chybi. Nastav je v Settings → Secrets and variables → Actions. Postup je v docs/ZALOHY_DATABAZE.md, kapitola 7."
+            echo "preskocit=1" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "$REZIM" = auto ] && [ "$s3" = 0 ]; then
             echo "::warning::S3 klíče Storage nejsou nastavené, záloha půjde náhradní cestou přes REST API."
           fi
 
       - name: Nástroje (psql, rclone)
+        if: steps.secrets.outputs.preskocit != '1'
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -128,6 +133,7 @@ jobs:
           psql --version
 
       - name: Záloha a ověření
+        if: steps.secrets.outputs.preskocit != '1'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}

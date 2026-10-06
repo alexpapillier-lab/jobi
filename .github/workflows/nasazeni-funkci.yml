@@ -69,7 +69,9 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pevná verze: „latest“ se hledá přes GitHub API a to má limit – 6. 10. 2026
+          # kvůli němu spadla denní záloha (rate limit exceeded).
+          version: 2.119.0
 
       - name: Seznam funkcí
         id: seznam
