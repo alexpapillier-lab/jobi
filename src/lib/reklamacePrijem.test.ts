@@ -7,6 +7,7 @@ import {
   duvodBlokace,
   fotkyReklamace,
   jeKonceptRozepsany,
+  komentareProPrevod,
   konceptNaReklamaci,
   lzePrevestNaZakazku,
   nactiKoncept,
@@ -261,6 +262,18 @@ describe("převod reklamace na zakázku", () => {
     expect(text).toContain("Diagnostika ze zakázky SRV26000042 (reklamace R26000007):\nVadný konektor");
     expect(diagnostikaZReklamace("R1", {})).toBe("");
     expect(reklamaceNaZakazku(reklamace(), { zdrojDiagnostika: "X" }).diagnosticText).toContain("Diagnostika původní zakázky (reklamace R26000007)");
+  });
+
+  it("komentáře zdrojové zakázky se zkopírují do nové s autorem, datem, připnutím a předponou", () => {
+    const k = (content: string, extra: Partial<Parameters<typeof komentareProPrevod>[0][number]> = {}) => ({
+      author: "Jakub", author_id: "u-1", author_nickname: "jakub", author_avatar_url: null, content, pinned: false, created_at: "2026-10-01T10:00:00+00:00", ...extra,
+    });
+    const radky = komentareProPrevod([k("Volat paní Novákové 777 000 111", { pinned: true }), k("   "), k("Díl objednán", { author_id: null, author: "Servis" })], "R26000007", "svc", "t-new");
+    expect(radky).toEqual([
+      { ticket_id: "t-new", service_id: "svc", author: "Jakub", author_id: "u-1", author_nickname: "jakub", author_avatar_url: null, content: "[Z reklamace R26000007] Volat paní Novákové 777 000 111", pinned: true, created_at: "2026-10-01T10:00:00+00:00" },
+      { ticket_id: "t-new", service_id: "svc", author: "Servis", author_id: null, author_nickname: "jakub", author_avatar_url: null, content: "[Z reklamace R26000007] Díl objednán", pinned: false, created_at: "2026-10-01T10:00:00+00:00" },
+    ]);
+    expect(komentareProPrevod([], "R1", "svc", "t")).toEqual([]);
   });
 
   it("reklamované opravy a fotky ze starého řádku (bez sloupců) jsou prázdné", () => {

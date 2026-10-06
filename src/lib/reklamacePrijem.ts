@@ -394,6 +394,40 @@ export function diagnostikaZReklamace(claimCode: string, p: PodkladyPrevodu): st
   return casti.join("\n\n");
 }
 
+/** Řádek `ticket_comments` tak, jak ho převod čte ze zdrojové zakázky. */
+export type KomentarKPrevodu = {
+  author: string;
+  author_id: string | null;
+  author_nickname: string | null;
+  author_avatar_url: string | null;
+  content: string;
+  pinned: boolean;
+  created_at: string;
+};
+
+/**
+ * Komentáře k nové zakázce vzniklé převodem reklamace: kopie komentářů
+ * zakázky, ze které reklamace vznikla (detail reklamace ukazuje právě je –
+ * bývá v nich třeba kontakt, s kým se komunikuje). Autor, datum i připnutí
+ * zůstávají, text dostane předponu s kódem reklamace, ať je v nové zakázce
+ * poznat, odkud komentář je. Prázdné texty se vynechají.
+ */
+export function komentareProPrevod(komentare: KomentarKPrevodu[], claimCode: string, serviceId: string, cilTicketId: string) {
+  return komentare
+    .filter((k) => k.content.trim())
+    .map((k) => ({
+      ticket_id: cilTicketId,
+      service_id: serviceId,
+      author: k.author,
+      author_id: k.author_id,
+      author_nickname: k.author_nickname,
+      author_avatar_url: k.author_avatar_url,
+      content: `[Z reklamace ${claimCode}] ${k.content}`,
+      pinned: k.pinned,
+      created_at: k.created_at,
+    }));
+}
+
 /** Koncept zakázky vzniklé převodem reklamace – navíc text diagnostiky a hotové fotky. */
 export type KonceptZakazkyZReklamace = NewOrderDraft & {
   /** Jde do tickets.diagnostic_text (createTicket čte newDraft.diagnosticText). */

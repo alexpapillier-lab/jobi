@@ -211,7 +211,7 @@ export default function Orders({
     togglePin,
     handleCommentDraftChange,
   } = useKomentare({ activeServiceId, session, userProfile });
-  const { updateClaimStatus, updateClaim, deleteClaim, oznacPrevedeni } = useWarrantyClaims(activeServiceId);
+  const { updateClaimStatus, updateClaim, deleteClaim, oznacPrevedeni, prekopirujKomentare } = useWarrantyClaims(activeServiceId);
 
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -1863,6 +1863,8 @@ export default function Orders({
             return;
           }
           const uzavrena = await oznacPrevedeni(claim, t);
+          // Komentáře jen při prvním (úspěšném) převodu – druhý člověk v souběhu by je zdvojil.
+          if (uzavrena) await prekopirujKomentare(claim, t.id);
           prevadimReklamaciRef.current = false;
           if (uzavrena) setCloudClaims((p) => p.map((c) => (c.id === claim.id ? uzavrena : c)));
           void refetchClaims();
@@ -2415,7 +2417,7 @@ export default function Orders({
         open={!!prevodReklamace}
         title="Není to reklamace – založit zakázku?"
         message={prevodReklamace
-          ? `Z reklamace ${prevodReklamace.code} vznikne nová zakázka ve stavu Přijato se zákazníkem, zařízením, popisem závady, stavem zařízení, příslušenstvím, přijímacími fotkami a diagnostikou. Reklamace se uzavře stavem „Převedeno na zakázku“ a odkáže na novou zakázku. Převod nejde vrátit ani zopakovat.`
+          ? `Z reklamace ${prevodReklamace.code} vznikne nová zakázka ve stavu Přijato se zákazníkem, zařízením, popisem závady, stavem zařízení, příslušenstvím, přijímacími fotkami, diagnostikou a komentáři. Reklamace se uzavře stavem „Převedeno na zakázku“ a odkáže na novou zakázku. Převod nejde vrátit ani zopakovat.`
           : ""}
         confirmLabel="Založit zakázku"
         cancelLabel="Zrušit"
