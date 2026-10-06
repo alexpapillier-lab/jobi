@@ -12,9 +12,12 @@ krok v záloze databáze je odebraný.
 
 ### 2. Staging projekt Supabase
 Migrace dnes jdou rovnou do produkce. Skripty `scripts/staging/` jsou hotové.
+Jde to zdarma: databáze má 90 MB a soubory 120 MB, Free plán má 500 MB / 1 GB.
 
-1. Supabase Dashboard → **New project**: organizace stejná, název `jobi-staging`,
-   region **EU West (Ireland)**, nejmenší výkon. Heslo k databázi ulož do správce hesel.
+1. Supabase Dashboard → přepínač organizace vlevo nahoře → **New organization**
+   (plán Free, jinak se projekt účtuje v placené organizaci) → v ní **New project**
+   `jobi-staging`, region **EU West (Ireland)**. Heslo k databázi ulož do správce hesel.
+   Free projekt se po týdnu nečinnosti pozastaví; před použitím ho v Dashboardu probudíš.
 2. V novém projektu → Authentication → URL Configuration: Site URL
    `http://localhost:1432`, Redirect URLs `http://localhost:1432/**` a `http://localhost:1422/**`.
    SMTP nenastavovat.
@@ -42,16 +45,14 @@ Migrace dnes jdou rovnou do produkce. Skripty `scripts/staging/` jsou hotové.
 
 Cena: na plánu Pro zhruba 10 USD měsíčně, projekt jde pozastavit. Podrobně: `docs/STAGING.md`.
 
-### 3. E-mail z hlídače dostupnosti
-Uptime workflow běží každých 10 minut, ale e-mail posílá jen se secrets:
-`RESEND_API_KEY` (stejný klíč, jaký mají edge funkce v Supabase) a `ALERT_EMAIL`
-(kam poslat). Bez nich chodí jen e-mail od GitHubu o spadlém workflow.
-GitHub → Settings → Notifications: zkontroluj, že máš zapnuté e-maily pro Actions.
+### 3. E-mail z hlídače dostupnosti – HOTOVO 6. 10. 2026
+Secrets `RESEND_API_KEY`, `ALERT_EMAIL` a `RESEND_FROM_EMAIL` (`Jobi <hlidac@appjobi.com>`)
+jsou v GitHubu, zkušební e-mail dorazil. Ruční spuštění workflow „Dostupnost
+zvenčí“ má přepínač „zkušební e-mail“ pro ověření kdykoli později.
 
-### 4. DMARC
-Na doméně appjobi.com je DMARC `p=none`. Až budou e-maily z Resendu chodit bez
-problémů aspoň měsíc, přepni v DNS na `p=quarantine`. Postup je v
-`docs/DOMENA_PRO_RESEND_CHATGPT.md`.
+### 4. DMARC – HOTOVO 6. 10. 2026
+`_dmarc.appjobi.com` = `v=DMARC1; p=quarantine; rua=mailto:alex.papillier@icloud.com; pct=100`.
+Hlášení chodí na tvůj e-mail; po měsíci bez problémů jde zpřísnit na `p=reject`.
 
 ## B. Vydání pro uživatele
 
