@@ -8,13 +8,32 @@
  *  - ověření povinných polí (stejná pravidla jako u příjmu zakázky tam,
  *    kde pole existuje i u reklamace) a krátký důvod k tlačítku,
  *  - zákonná lhůta 30 dní na vyřízení (§ 2173 OZ / § 19 ZOS) jako výchozí termín,
- *  - převod konceptu na řádek warranty_claims.
+ *  - převod konceptu na řádek warranty_claims,
+ *  - převod reklamace na koncept zakázky („Není to reklamace → založit zakázku“).
+ *
+ * Systémový stav STAV_PREVEDENO není ve stavech servisu (service_statuses
+ * jsou sdílené se zakázkami – nový stav by se nabízel i u zakázek). Detail
+ * a seznam ho znají přes META_PREVEDENO; viz Orders.tsx (getByKey / isFinal).
  */
+import type { StatusMeta } from "../state/StatusesStore";
 import type { WarrantyClaimInsert, WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
+import type { DeviceRow, NewOrderDraft } from "../pages/Orders/typy";
+import type { ClaimResolutionItem } from "../pages/Orders/reklamaceZakroky";
 import { isEmailValid, isIcoValid, isPhoneValid, isZipValid } from "../pages/Orders/formatovani";
 
 /** Zákonná lhůta na vyřízení reklamace spotřebitele (dny). */
 export const LHUTA_VYRIZENI_DNI = 30;
+
+/** Systémový koncový stav reklamace převedené na zakázku. */
+export const STAV_PREVEDENO = "prevedeno_na_zakazku";
+
+export const META_PREVEDENO: StatusMeta = {
+  key: STAV_PREVEDENO,
+  label: "Převedeno na zakázku",
+  bg: "#64748b",
+  fg: "#ffffff",
+  isFinal: true,
+};
 
 /** Klíč konceptu v localStorage (jiný než u zakázky, ať se nepřepisují). */
 export const NOVA_REKLAMACE_KONCEPT_KEY = "jobi_nova_reklamace_koncept_v1";
@@ -334,4 +353,97 @@ export function reklamovaneOpravyReklamace(claim: Pick<WarrantyClaimRow, "claime
 export function fotkyReklamace(claim: Partial<WarrantyClaimRow>): string[] {
   const raw = (claim as { intake_photos?: unknown }).intake_photos;
   return Array.isArray(raw) ? raw.filter((u): u is string => typeof u === "string" && !!u.trim()) : [];
+}
+
+/** Lze reklamaci převést na zakázku? Jen jednou a jen z neuzavřené. */
+export function lzePrevestNaZakazku(
+  claim: Pick<WarrantyClaimRow, "status"> & { converted_ticket_id?: string | null },
+  isFinal: (key: string) => boolean,
+): { ok: true } | { ok: false; duvod: string } {
+  if (claim.converted_ticket_id || claim.status === STAV_PREVEDENO) return { ok: false, duvod: "Reklamace už je převedená na zakázku." };
+  if (claim.status && isFinal(claim.status)) return { ok: false, duvod: "Uzavřenou reklamaci nejde převést na zakázku." };
+  return { ok: true };
+}
+
+export type PodkladyPrevodu = {
+  /** Výchozí způsoby převzetí / předání (Nastavení → Zakázky). */
+  handoffDefault?: string;
+  handbackDefault?: string;
+  /** Kód zdrojové zakázky a její diagnostika (diagnostika reklamace se píše do ní). */
+  zdrojKod?: string | null;
+  zdrojDiagnostika?: string | null;
+  /** Zákroky zapsané v reklamaci (resolution_summary). */
+  zakroky?: ClaimResolutionItem[];
+};
+
+/** Text diagnostiky nové zakázky: zákroky z reklamace a diagnostika zdrojové zakázky. */
+export function diagnostikaZReklamace(claimCode: string, p: PodkladyPrevodu): string {
+  const casti: string[] = [];
+  const zakroky = (p.zakroky ?? []).filter((z) => z.name.trim());
+  if (zakroky.length > 0) {
+    casti.push(
+      `Zákroky v reklamaci ${claimCode}:\n` +
+        zakroky.map((z) => `- ${z.name.trim()}${typeof z.price === "number" ? ` (${z.price} Kč)` : ""}${z.description?.trim() ? ` – ${z.description.trim()}` : ""}`).join("\n"),
+    );
+  }
+  const diag = (p.zdrojDiagnostika ?? "").trim();
+  if (diag) {
+    const odkud = p.zdrojKod?.trim() ? `Diagnostika ze zakázky ${p.zdrojKod.trim()}` : "Diagnostika původní zakázky";
+    casti.push(`${odkud} (reklamace ${claimCode}):\n${diag}`);
+  }
+  return casti.join("\n\n");
+}
+
+/** Koncept zakázky vzniklé převodem reklamace – navíc text diagnostiky a hotové fotky. */
+export type KonceptZakazkyZReklamace = NewOrderDraft & {
+  /** Jde do tickets.diagnostic_text (createTicket čte newDraft.diagnosticText). */
+  diagnosticText: string;
+  /** Už nahrané přijímací fotky (odkazy), jdou rovnou do diagnostic_photos_before. */
+  hotoveFotkyPred: string[];
+};
+
+/**
+ * Reklamace → koncept nové zakázky (cesta useOrderActions.createTicket):
+ * zákazník, zařízení, SN/IMEI, popis závady jako požadovaná oprava, stav
+ * a příslušenství, poznámka pro technika s odkazem na reklamaci, přijímací
+ * fotky, diagnostika (zákroky + diagnostika zdrojové zakázky) a pobočka.
+ * Cena a opravy se nepřebírají – zakázka se teprve nacení.
+ */
+export function reklamaceNaZakazku(claim: WarrantyClaimRow, p: PodkladyPrevodu = {}): KonceptZakazkyZReklamace {
+  const s = (v: string | null | undefined) => (v ?? "").trim();
+  const nazev = s(claim.device_label) || [s(claim.device_brand), s(claim.device_model)].filter(Boolean).join(" ") || "Zařízení z reklamace";
+  const zarizeni: DeviceRow = {
+    deviceLabel: nazev,
+    serialOrImei: s(claim.device_serial) || s(claim.device_imei),
+    devicePasscode: s(claim.device_passcode),
+    deviceCondition: s(claim.device_condition),
+    deviceAccessories: s(claim.device_accessories),
+    warrantyClaim: false,
+    purchaseDate: "",
+    purchaseProof: "",
+    findMyOff: false,
+    requestedRepair: s(claim.notes),
+    handoffMethod: s((claim as { handoff_method?: string | null }).handoff_method) || (p.handoffDefault ?? ""),
+    handbackMethod: p.handbackDefault ?? "",
+    deviceNote: [s(claim.device_note), `Převedeno z reklamace ${claim.code} – nejde o reklamaci.`].filter(Boolean).join("\n"),
+    externalId: "",
+    estimatedPrice: undefined,
+    expectedCompletionAt: undefined,
+  };
+  return {
+    customerId: claim.customer_id ?? undefined,
+    customerName: s(claim.customer_name),
+    customerPhone: s(claim.customer_phone),
+    customerEmail: s(claim.customer_email),
+    addressStreet: s(claim.customer_address_street),
+    addressCity: s(claim.customer_address_city),
+    addressZip: s(claim.customer_address_zip).replace(/\D/g, ""),
+    company: s(claim.customer_company),
+    ico: s(claim.customer_ico).replace(/\D/g, ""),
+    customerInfo: s(claim.customer_info),
+    devices: [zarizeni],
+    branchId: claim.branch_id ?? null,
+    diagnosticText: diagnostikaZReklamace(claim.code, p),
+    hotoveFotkyPred: fotkyReklamace(claim),
+  };
 }

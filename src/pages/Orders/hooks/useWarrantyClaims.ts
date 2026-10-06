@@ -5,7 +5,7 @@ import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { showToast } from "../../../components/Toast";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
-import { NOVE_SLOUPCE_REKLAMACE } from "../../../lib/reklamacePrijem";
+import { NOVE_SLOUPCE_REKLAMACE, STAV_PREVEDENO } from "../../../lib/reklamacePrijem";
 import type { Database } from "../../../types/supabase";
 
 export type WarrantyClaimRow = Database["public"]["Tables"]["warranty_claims"]["Row"];
@@ -171,6 +171,71 @@ export function useWarrantyClaims(activeServiceId: string | null) {
     [activeServiceId]
   );
 
+  /** Historie nové zakázky: „Vzniklo z reklamace R…“ (historii reklamace píše trigger). */
+  const zapisHistoriiPrevodu = useCallback(
+    async (claim: WarrantyClaimRow, ticketId: string) => {
+      if (!supabase || !activeServiceId) return;
+      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+      const { error } = await (supabase.from("ticket_history") as any).insert({
+        ticket_id: ticketId,
+        service_id: activeServiceId,
+        action: "created_from_warranty_claim",
+        changed_by: uid,
+        details: { warranty_claim_id: claim.id, warranty_claim_code: claim.code },
+      });
+      if (error) reportSilent({ code: "claims.convert_history_failed", error, source: "useWarrantyClaims.oznacPrevedeni" });
+    },
+    [activeServiceId]
+  );
+
+  /**
+   * Reklamace převedená na zakázku: systémový koncový stav, odkaz na zakázku.
+   * Zapíše se jen tehdy, když reklamace ještě převedená není (souběh dvou lidí
+   * – druhý dostane null a hlášku). Historii reklamace zapíše trigger.
+   * Bez sloupce converted_ticket_id (stará databáze) se uloží jen stav
+   * a odkaz na zakázku do poznámky.
+   */
+  const oznacPrevedeni = useCallback(
+    async (claim: WarrantyClaimRow, ticket: { id: string; code?: string | null }): Promise<WarrantyClaimRow | null> => {
+      if (!supabase) {
+        showToast("Chybí připojení.", "error");
+        return null;
+      }
+      const ted = new Date().toISOString();
+      const { data, error } = await (supabase.from("warranty_claims") as any)
+        .update({ status: STAV_PREVEDENO, converted_ticket_id: ticket.id, converted_at: ted, completed_at: ted })
+        .eq("id", claim.id)
+        .is("converted_ticket_id", null)
+        .select()
+        .maybeSingle();
+      if (error && chybiSloupec(error)) {
+        const poznamka = [claim.notes?.trim(), `Převedeno na zakázku ${ticket.code ?? ""}`.trim()].filter(Boolean).join("\n\n");
+        const druhy = await (supabase.from("warranty_claims") as any)
+          .update({ status: STAV_PREVEDENO, completed_at: ted, notes: poznamka })
+          .eq("id", claim.id)
+          .select()
+          .maybeSingle();
+        if (druhy.error || !druhy.data) {
+          showToast(`Zakázka je založená, ale reklamaci se nepodařilo uzavřít: ${druhy.error?.message ?? "neznámá chyba"}`, "error");
+          return null;
+        }
+        await zapisHistoriiPrevodu(claim, ticket.id);
+        return druhy.data as WarrantyClaimRow;
+      }
+      if (error) {
+        showToast(`Zakázka je založená, ale reklamaci se nepodařilo uzavřít: ${error.message}`, "error");
+        return null;
+      }
+      if (!data) {
+        showToast("Reklamaci mezitím převedl někdo jiný. Nově založenou zakázku zkontrolujte, ať není dvakrát.", "error");
+        return null;
+      }
+      await zapisHistoriiPrevodu(claim, ticket.id);
+      return data as WarrantyClaimRow;
+    },
+    [zapisHistoriiPrevodu]
+  );
+
   const updateClaimStatus = useCallback(
     async (claimId: string, newStatusKey: string, completedAt?: string | null, popis?: string): Promise<boolean> => {
       if (!supabase) {
@@ -267,5 +332,5 @@ export function useWarrantyClaims(activeServiceId: string | null) {
     []
   );
 
-  return { zalozReklamaci, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
+  return { zalozReklamaci, oznacPrevedeni, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
 }

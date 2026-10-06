@@ -21,6 +21,7 @@ import type { TicketViewer } from "../../lib/presence";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { ClaimsSubGroup, GroupKey, TicketEx, UIConfig } from "./typy";
 import { inputStyle } from "./styly";
+import { META_PREVEDENO, STAV_PREVEDENO } from "../../lib/reklamacePrijem";
 
 /** Řádek smíšeného seznamu (Vše / Dokončené se zapnutým míšením reklamací). */
 export type RadekSeznamu =
@@ -159,6 +160,14 @@ export function SeznamZakazek({
   detailId,
   smsUnreadByTicketId,
 }: Props) {
+  /* Seskupení reklamací podle stavu zná i systémový stav „Převedeno na
+     zakázku“ – mezi stavy servisu není, a reklamace by jinak spadly do
+     „Bez statusu“. Do přepínačů stavu se schválně nedává. */
+  const statusyReklamaci = useMemo(() => [...statuses, META_PREVEDENO], [statuses]);
+  const poradiReklamaci = useMemo(
+    () => (ordersCfg.statusGroupedOrder && ordersCfg.statusGroupedOrder.length > 0 ? [...ordersCfg.statusGroupedOrder, STAV_PREVEDENO] : ordersCfg.statusGroupedOrder),
+    [ordersCfg.statusGroupedOrder]
+  );
   const groupLabel = (label: string, count: number) => (
     <>
       {label}
@@ -486,7 +495,7 @@ export function SeznamZakazek({
             <CombinedStatusGrouped
               tickets={combinedList.filter((r) => r.type === "ticket").map((r) => toCardData((r as { type: "ticket"; data: TicketEx }).data))}
               claims={combinedList.filter((r) => r.type === "claim").map((r) => (r as { type: "claim"; data: WarrantyClaimRow }).data)}
-              statuses={statuses as any}
+              statuses={statusyReklamaci as any}
               normalizeStatus={normalizeStatus}
               onClickTicket={(id) => { setDetailId(id); setDetailClaimId(null); }}
               onClickClaim={(id) => { setDetailClaimId(id); setDetailId(null); }}
@@ -494,7 +503,7 @@ export function SeznamZakazek({
               statusPickerForClaim={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
               printButtonForTicket={(t) => renderPrintButton(t, true)}
               printButtonForClaim={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
-              customOrder={ordersCfg.statusGroupedOrder}
+              customOrder={poradiReklamaci}
               smsUnreadByTicketId={smsUnreadByTicketIdDisplay}
               zvyrazneni={ordersCfg.zvyrazneniStavu}
             />
@@ -515,12 +524,12 @@ export function SeznamZakazek({
         {activeGroup === "reklamace" && ordersCfg.displayMode === "status-grouped" && (
           <ClaimStatusGrouped
             claims={paginatedClaims}
-            statuses={statuses as any}
+            statuses={statusyReklamaci as any}
             normalizeStatus={normalizeStatus}
             onClickDetail={(id) => { setDetailClaimId(id); setDetailId(null); }}
             statusPickerFor={(c) => <StatusPicker value={c.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(c.id, next)} size="sm" />}
             printButtonFor={(c) => renderPrintButton({ id: c.id, code: c.code, customerName: c.customer_name ?? "—", deviceLabel: c.device_label ?? "—", issueShort: c.notes ?? "", createdAt: c.created_at ?? "", status: c.status }, true)}
-            customOrder={ordersCfg.statusGroupedOrder}
+            customOrder={poradiReklamaci}
             zvyrazneni={ordersCfg.zvyrazneniStavu}
           />
         )}

@@ -2,7 +2,7 @@
  * Tělo detailu reklamace: zákazník, zařízení, poznámka, provedené zákroky,
  * stav, a u napojené zakázky její diagnostika (zapisuje se rovnou do ní)
  * a komentáře. Z příjmu reklamace navíc reklamované opravy, poznámka pro
- * technika, způsob převzetí a přijímací fotky.
+ * technika, způsob převzetí, přijímací fotky a štítek převodu na zakázku.
  */
 import type React from "react";
 import { Button } from "../../components/ui";
@@ -26,7 +26,7 @@ import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
 import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
 import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
-import { fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
+import { META_PREVEDENO, STAV_PREVEDENO, fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
 
 type Props = {
@@ -60,6 +60,8 @@ type Props = {
   editComment: (ticketId: string, commentId: string, text: string) => Promise<void>;
   currentUserId: string | null;
   commentAuthorProfiles: Record<string, { nickname: string | null; avatarUrl: string | null }>;
+  /** Otevře zakázku (proklik „Převedeno na zakázku …“). */
+  otevritZakazku: (ticketId: string) => void;
 };
 
 export function DetailReklamace({
@@ -93,6 +95,7 @@ export function DetailReklamace({
   editComment,
   currentUserId,
   commentAuthorProfiles,
+  otevritZakazku,
 }: Props) {
   const c = { ...detailedClaim, ...editedClaim };
   /* Diagnostika napojené zakázky se odsud rovnou zapisuje, takže se
@@ -101,10 +104,27 @@ export function DetailReklamace({
   const zdrojZeSeznamu = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
   const sourceTicket = zdrojZeSeznamu?.uplna ? zdrojZeSeznamu : undefined;
   const zdrojSeNacita = !!zdrojZeSeznamu && !sourceTicket;
+  const prevedenaNa = detailedClaim.converted_ticket_id ?? null;
+  const prevedenaKod = prevedenaNa ? (cloudTickets.find((t) => t.id === prevedenaNa)?.code ?? null) : null;
   const reklamovane = reklamovaneOpravyReklamace(detailedClaim);
   const prijimaciFotky = fotkyReklamace(detailedClaim);
   return (
   <>
+  {/* Reklamace se ukázala jako běžná oprava a žije dál jako zakázka. */}
+  {(prevedenaNa || detailedClaim.status === STAV_PREVEDENO) && (
+    <div role="status" style={{ ...card, marginTop: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", border: "1px solid color-mix(in srgb, var(--accent) 45%, transparent)", background: "var(--accent-soft)" }}>
+      <span style={{ fontSize: 13, color: "var(--text)" }}>
+        <strong>Převedeno na zakázku{prevedenaKod ? ` ${prevedenaKod}` : ""}</strong>
+        {detailedClaim.converted_at ? <span style={{ color: "var(--muted)" }}> · {formatCZ(detailedClaim.converted_at)}</span> : null}
+        <span style={{ color: "var(--muted)" }}> – nešlo o reklamaci, oprava pokračuje jako zakázka.</span>
+      </span>
+      {prevedenaNa && (
+        <Button variant="soft" size="sm" onClick={() => otevritZakazku(prevedenaNa)} title="Otevřít zakázku vzniklou z reklamace">
+          Otevřít zakázku{prevedenaKod ? ` ${prevedenaKod}` : ""}
+        </Button>
+      )}
+    </div>
+  )}
   <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
     <div style={{ ...card, ...stylSekce("zakaznik") }}>
       <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
@@ -338,7 +358,7 @@ export function DetailReklamace({
         {isEditingClaim ? (
           <StatusPicker value={c.status ?? "received"} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setEditedClaim((p) => ({ ...p, status: next }))} size="sm" actionsByStatus={statusActionsMap} />
         ) : (
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{getByKey(String(c.status ?? ""))?.label ?? "—"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{getByKey(String(c.status ?? ""))?.label ?? (c.status === STAV_PREVEDENO ? META_PREVEDENO.label : "—")}</span>
         )}
       </div>
       <span style={{ fontSize: 12, color: "var(--muted)" }}>Vytvořeno: {formatCZ(c.created_at)}</span>

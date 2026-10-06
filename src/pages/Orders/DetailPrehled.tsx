@@ -191,6 +191,25 @@ export function DetailPrehled({
         </div>
 
         {(() => {
+          // Zakázka vznikla převodem reklamace („Není to reklamace“).
+          const zReklamace = cloudClaims.find((c) => c.converted_ticket_id === detailedTicket.id);
+          if (!zReklamace) return null;
+          return (
+            <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span>Vzniklo z reklamace</span>
+              <button
+                type="button"
+                onClick={() => { setDetailClaimId(zReklamace.id); setDetailId(null); }}
+                title="Otevřít původní reklamaci"
+                style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(13,148,136,0.45)", background: "rgba(20,184,166,0.1)", color: "var(--text)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+              >
+                {zReklamace.code}
+              </button>
+            </div>
+          );
+        })()}
+
+        {(() => {
           const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
           return claimsForTicket.length > 0 ? (
             <div style={{ gridColumn: "1 / -1", ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>

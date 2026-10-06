@@ -21,6 +21,8 @@ import { useStatusActionsMap, runStatusChangeAutomations, runTicketCreatedAutoma
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
 import { NovaReklamacePanel } from "./Orders/NovaReklamacePanel";
 import { useNovaReklamaceKoncept } from "./Orders/hooks/useNovaReklamaceKoncept";
+import { META_PREVEDENO, STAV_PREVEDENO, lzePrevestNaZakazku, reklamaceNaZakazku } from "../lib/reklamacePrijem";
+import { getHandoffOptions } from "../lib/handoffOptions";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
@@ -142,7 +144,11 @@ export default function Orders({
 }: OrdersProps) {
   const isNarrow = useIsNarrow();
   const naTelefonu = useFoceniNaTelefonu();
-  const { statuses, loading: statusesLoading, error: statusesError, getByKey, isFinal, fallbackKey } = useStatuses();
+  const { statuses, loading: statusesLoading, error: statusesError, getByKey: getByKeyServisu, isFinal: isFinalServisu, fallbackKey } = useStatuses();
+  /* Reklamace převedená na zakázku má systémový koncový stav, který mezi
+     stavy servisu není (ty jsou sdílené se zakázkami) – viz lib/reklamacePrijem. */
+  const getByKey = useCallback((key: string) => (key === STAV_PREVEDENO ? META_PREVEDENO : getByKeyServisu(key)), [getByKeyServisu]);
+  const isFinal = useCallback((key: string) => key === STAV_PREVEDENO || isFinalServisu(key), [isFinalServisu]);
   const dph = useServiceVat(activeServiceId);
   const { session } = useAuth();
   const mojeId = session?.user?.id ?? null;
@@ -205,7 +211,7 @@ export default function Orders({
     togglePin,
     handleCommentDraftChange,
   } = useKomentare({ activeServiceId, session, userProfile });
-  const { updateClaimStatus, updateClaim, deleteClaim } = useWarrantyClaims(activeServiceId);
+  const { updateClaimStatus, updateClaim, deleteClaim, oznacPrevedeni } = useWarrantyClaims(activeServiceId);
 
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -395,6 +401,8 @@ export default function Orders({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTicketId, setDeleteTicketId] = useState<string | null>(null);
   const [ticketHistoryModalOpen, setTicketHistoryModalOpen] = useState(false);
+  /** Reklamace čekající na potvrzení převodu na zakázku („Není to reklamace“). */
+  const [prevodReklamace, setPrevodReklamace] = useState<WarrantyClaimRow | null>(null);
   /** Zásilky otevřené zakázky (dodá karta Kde je zakázka) – pro kroky v Postupu zakázky. */
   const [historieZasilek, setHistorieZasilek] = useState<{ ticketId: string; zasilky: Zasilka[] } | null>(null);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
@@ -711,6 +719,7 @@ export default function Orders({
       if (statusesLoading || statuses.length === 0) {
         return null;
       }
+      if (key === STAV_PREVEDENO) return key;
       return statusKeysSet.has(key) ? key : fallbackKey;
     },
     [statusKeysSet, fallbackKey, statusesLoading, statuses.length]
@@ -1072,11 +1081,15 @@ export default function Orders({
   });
 
   const setClaimStatus = async (claimId: string, next: string) => {
+    const prev = cloudClaims.find((c) => c.id === claimId);
+    if (prev && (prev.converted_ticket_id || prev.status === STAV_PREVEDENO)) {
+      showToast("Reklamace je převedená na zakázku – stav už nejde měnit.", "info");
+      return;
+    }
     if (!statusKeysSet.has(next)) {
       showToast("Neplatný status pro tento servis (obnovte statusy).", "error");
       return;
     }
-    const prev = cloudClaims.find((c) => c.id === claimId);
     const completedAt = isFinal(next) ? new Date().toISOString() : null;
     setCloudClaims((p) =>
       p.map((c) =>
@@ -1809,6 +1822,67 @@ export default function Orders({
 
   createTicketRef.current = createTicket;
 
+  /**
+   * „Není to reklamace → založit zakázku“: nová zakázka (Přijato) stejnou
+   * cestou jako příjem (useOrderActions.createTicket – číslo z
+   * dalsi_cislo_zakazky, zákazník, přijímací fotky), reklamace se uzavře
+   * systémovým stavem Převedeno na zakázku s odkazem na zakázku.
+   */
+  const prevadimReklamaciRef = useRef(false);
+  const prevedReklamaciNaZakazku = async (claim: WarrantyClaimRow) => {
+    const lze = lzePrevestNaZakazku(claim, isFinal);
+    if (!lze.ok) {
+      showToast(lze.duvod, "error");
+      return;
+    }
+    // Dvojklik / druhé potvrzení během zakládání by udělalo dvě zakázky.
+    if (prevadimReklamaciRef.current) return;
+    prevadimReklamaciRef.current = true;
+    // Pojistka se uvolní až po uzavření reklamace (onSuccess běží po návratu createTicket).
+    let zalozeno = false;
+    try {
+      const zdroj = claim.source_ticket_id ? await zajistiPlnouZakazku(claim.source_ticket_id) : null;
+      const handoff = getHandoffOptions();
+      const draft = reklamaceNaZakazku(claim, {
+        handoffDefault: handoff.receiveMethods.includes("Osobně") ? "Osobně" : "",
+        handbackDefault: handoff.returnMethods.includes("Osobně") ? "Osobně" : "",
+        zdrojKod: zdroj?.code ?? null,
+        // Diagnostika reklamace se píše do zdrojové zakázky (DetailReklamace).
+        zdrojDiagnostika: zdroj?.uplna ? (zdroj.diagnosticText ?? null) : null,
+        zakroky: parseClaimResolutionItems(claim.resolution_summary ?? null),
+      });
+      const pobocka = branchById(claim.branch_id) ?? branchForNew;
+      zalozeno = await createTicketAction({
+        newDraft: draft,
+        branch: pobocka ? { id: pobocka.id, code: pobocka.code } : null,
+        customerMatchDecision: claim.customer_id ? "accepted" : "undecided",
+        onSuccess: async (tickets) => {
+          const t = tickets[0];
+          if (!t) {
+            prevadimReklamaciRef.current = false;
+            return;
+          }
+          const uzavrena = await oznacPrevedeni(claim, t);
+          prevadimReklamaciRef.current = false;
+          if (uzavrena) setCloudClaims((p) => p.map((c) => (c.id === claim.id ? uzavrena : c)));
+          void refetchClaims();
+          setIsEditingClaim(false);
+          setEditedClaim({});
+          setDetailClaimId(null);
+          setDetailId(t.id);
+          if (uzavrena) showToast(`Reklamace ${claim.code} je převedená na zakázku ${t.code ?? ""}`, "success");
+          const config = await loadDocumentsConfigFromDB(activeServiceId);
+          if (config?.autoPrint?.ticketListOnCreate) printTicket(t, activeServiceId).then(() => {});
+          if (activeServiceId) void runTicketCreatedAutomations(activeServiceId, t.id);
+        },
+      });
+    } finally {
+      if (!zalozeno) prevadimReklamaciRef.current = false;
+    }
+  };
+  const muzePrevestReklamaci =
+    !!detailedClaim && hasCapability("can_manage_tickets_basic") && lzePrevestNaZakazku(detailedClaim, isFinal).ok;
+
   /** Tisk / export dokumentu „Přijetí reklamace“ z hlavičky detailu reklamace. */
   const runClaimDocument = async (action: DocMode) => {
     if (!detailedClaim) return;
@@ -2056,6 +2130,7 @@ export default function Orders({
             dph={dph}
             setTicketHistoryModalOpen={setTicketHistoryModalOpen}
             onNovaReklamaceZeZakazky={(t) => novaReklamace.otevri(t)}
+            onPrevestNaZakazku={detailedClaim && muzePrevestReklamaci ? () => setPrevodReklamace(detailedClaim) : undefined}
             chatZapnuty={chatZapnuty}
             setDeleteTicketId={setDeleteTicketId}
             setDeleteDialogOpen={setDeleteDialogOpen}
@@ -2094,6 +2169,7 @@ export default function Orders({
             editComment={editComment}
             currentUserId={session?.user?.id ?? null}
             commentAuthorProfiles={commentAuthorProfiles}
+            otevritZakazku={(id) => { setDetailClaimId(null); setDetailId(id); }}
           />
         )}
         prehled={detailedTicket && (
@@ -2333,6 +2409,22 @@ export default function Orders({
           // Místo reklamace placená oprava: rozepsaná reklamace se zahodí.
           if (zalozitPlacenouOpravu(t)) novaReklamace.zrusitBezDotazu();
         }}
+      />
+
+      <ConfirmDialog
+        open={!!prevodReklamace}
+        title="Není to reklamace – založit zakázku?"
+        message={prevodReklamace
+          ? `Z reklamace ${prevodReklamace.code} vznikne nová zakázka ve stavu Přijato se zákazníkem, zařízením, popisem závady, stavem zařízení, příslušenstvím, přijímacími fotkami a diagnostikou. Reklamace se uzavře stavem „Převedeno na zakázku“ a odkáže na novou zakázku. Převod nejde vrátit ani zopakovat.`
+          : ""}
+        confirmLabel="Založit zakázku"
+        cancelLabel="Zrušit"
+        onConfirm={async () => {
+          const claim = prevodReklamace;
+          setPrevodReklamace(null);
+          if (claim) await prevedReklamaciNaZakazku(claim);
+        }}
+        onCancel={() => setPrevodReklamace(null)}
       />
 
       {/* Ticket history modal */}

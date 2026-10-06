@@ -30,6 +30,7 @@ import {
   type MainView,
   type TimelineView,
 } from "./Calendar/model";
+import { STAV_PREVEDENO } from "../lib/reklamacePrijem";
 
 /**
  * Kalendář – kontejner.
@@ -260,6 +261,8 @@ export default function Calendar({ activeServiceId, onOpenTicket, onOpenClaim, o
     }
 
     for (const c of claims) {
+      // Reklamace převedená na zakázku (lib/reklamacePrijem) je v kalendáři jako ta zakázka.
+      if (c.converted_ticket_id || c.status === STAV_PREVEDENO) continue;
       const st = normalizeStatus((c.status as string) ?? "");
       const meta = st !== null ? getByKey(st) : undefined;
       out.push({

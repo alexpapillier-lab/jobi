@@ -195,7 +195,7 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
             return (
               <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {entries.map((e) => {
-                  const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action;
+                  const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "updated" ? "Upravena" : e.action === "deleted" ? "Smazána" : e.action === "restored" ? "Obnovena" : e.action === "cancel_reason" ? "Důvod storna" : e.action === "warranty_claim_created" ? "Založena reklamace" : e.action === "created_from_warranty_claim" ? "Vzniklo z reklamace" : e.action;
                   const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
                   const changes = e.action === "updated" && e.details ? getHistoryChanges(e.details) : [];
                   const statusChange = changes.find((c) => c.label === "Stav");
@@ -213,6 +213,9 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
                             )}
                           </div>
                           <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
+                          {(e.action === "warranty_claim_created" || e.action === "created_from_warranty_claim") && (e.details as Record<string, unknown>)?.warranty_claim_code != null && (
+                            <div style={{ marginTop: 4 }}>Reklamace {String((e.details as Record<string, unknown>).warranty_claim_code)}</div>
+                          )}
                           {e.action === "cancel_reason" && (
                             <div style={{ marginTop: 4 }}>
                               {String((e.details as Record<string, unknown>)?.duvod ?? "")}
