@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku, vyplnReklamaci } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku, vyplnReklamaci, SERVIS } from "./pomocnici";
 
 /**
  * Reklamace: kód přiděluje databáze (funkce dalsi_cislo_reklamace) a je
@@ -121,4 +121,55 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   // Karta Diagnostika je v detailu sbalená a textové pole se vykreslí až po rozbalení.
   await rozbalSekci(page, "Diagnostika");
   await expect(page.getByPlaceholder("Zadejte výsledky diagnostiky zařízení...").first()).toHaveValue(text, { timeout: 30_000 });
+});
+
+test("reklamace, která není reklamací, se převede na zakázku – jednou a s odkazy oběma směry", async ({ page }) => {
+  test.setTimeout(240_000);
+  await prihlasSe(page, "owner");
+
+  const zakaznik = testovaciJmeno("Reklamace převod");
+  const kod = await zalozZakazku(page, { zakaznik, zarizeni: "Telefon (převod reklamace)" });
+
+  await page.getByRole("button", { name: "+ Nová reklamace" }).click();
+  await page.getByPlaceholder("Vyhledat zakázku (kód, zákazník, SN, telefon…)").fill(kod);
+  await page.getByRole("button", { name: new RegExp(kod) }).first().click();
+  await expect(page.getByPlaceholder("např. iPhone 13, notebook")).toHaveValue("Telefon (převod reklamace)", { timeout: 30_000 });
+  const popis = `Zákazník polil telefon ${Date.now().toString(36)}`;
+  await vyplnReklamaci(page, { popis });
+  await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
+
+  // Detail reklamace se otevře sám. Číslo R… se čte z hlavičky detailu (řádek se
+  // stavem), ne ze seznamu za ním – tam jsou reklamace z minulých běhů.
+  const prevest = page.locator('[data-tour="reklamace-prevest"]:visible');
+  await expect(prevest).toBeVisible({ timeout: 30_000 });
+  const radekCisla = page.locator('[data-tour="reklamace-stav"]:visible').first().locator("xpath=..");
+  const kodReklamace = ((await radekCisla.innerText()).match(/R\d{8}/) ?? [])[0] ?? "";
+  expect(kodReklamace).toMatch(/^R\d{8}$/);
+
+  await prevest.click();
+  await expect(page.getByText("Není to reklamace – založit zakázku?")).toBeVisible();
+  await page.getByRole("button", { name: "Založit zakázku" }).click();
+
+  // Otevře se nová zakázka s jiným číslem, převzatým popisem a odkazem na reklamaci.
+  const podnadpis = page.getByText(new RegExp(`^${zakaznik} · `)).first();
+  await expect(podnadpis).toBeVisible({ timeout: 30_000 });
+  const hlavicka = podnadpis.locator("xpath=..");
+  await expect(hlavicka).toContainText(new RegExp(`${SERVIS.zkratka}\\d{6,}`), { timeout: 15_000 });
+  const novyKod = ((await hlavicka.innerText()).match(new RegExp(`${SERVIS.zkratka}\\d{6,}`)) ?? [])[0];
+  expect(novyKod).toBeTruthy();
+  expect(novyKod).not.toBe(kod);
+  await expect(page.getByText(popis).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Vzniklo z reklamace").first()).toBeVisible({ timeout: 30_000 });
+
+  // Zpět do reklamace: je uzavřená, odkazuje na zakázku a podruhé převést nejde.
+  await page.getByRole("button", { name: kodReklamace, exact: true }).first().click();
+  await expect(page.getByText(`Převedeno na zakázku ${novyKod}`).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-tour="reklamace-prevest"]:visible')).toHaveCount(0);
+
+  // Po přenačtení drží odkaz databáze, ne paměť okna.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await vidZakazku(page, novyKod!).first().click();
+  await expect(page.getByText("Vzniklo z reklamace").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: kodReklamace, exact: true }).first()).toBeVisible();
 });

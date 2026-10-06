@@ -195,6 +195,16 @@ describe("příjemka a výdejka reklamace", () => {
     expect(d.note).toBe("Reklamace uznána, displej vyměněn.");
   });
 
+  it("z příjmu reklamace jde na doklad způsob převzetí a reklamované opravy", () => {
+    const d = claimDocumentData(reklamace({ handoff_method: "Poštou", claimed_repairs: [{ id: "r1", name: "Výměna displeje" }, { id: "r2", name: "Baterie" }] }), firma());
+    expect(d.handoff?.receive).toBe("Poštou");
+    expect(d.extra?.reklamovaneOpravy).toBe("Výměna displeje, Baterie");
+    // Starší reklamace bez nových sloupců: prázdné, ne chyba.
+    const stara = claimDocumentData(reklamace(), firma());
+    expect(stara.handoff?.receive).toBeUndefined();
+    expect(stara.extra?.reklamovaneOpravy).toBe("");
+  });
+
   it("na příjemce je datum převzetí, ne datum založení záznamu", () => {
     const d = claimDocumentData(reklamace({ received_at: "2026-09-05T08:00:00.000Z" }), firma());
     expect(d.dates?.received).toBe("2026-09-05T08:00:00.000Z");
