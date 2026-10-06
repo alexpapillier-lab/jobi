@@ -22,11 +22,6 @@ on:
     # 02:30 UTC = 04:30 v létě, 03:30 v zimě – v tu dobu nikdo nepracuje.
     - cron: "30 2 * * *"
   workflow_dispatch:
-    inputs:
-      soubory:
-        description: "Zálohovat i soubory ve Storage (jinak jen v neděli)"
-        type: boolean
-        default: false
 
 concurrency:
   group: zaloha-db
@@ -188,81 +183,5 @@ jobs:
         with:
           name: zaloha-db-${{ env.DATUM }}
           path: zaloha-*.tar.gz.gpg
-          retention-days: 90
-          if-no-files-found: error
-
-      # --- Soubory ve Storage ------------------------------------------------
-      # Fotky z diagnostiky a podpisy v dumpu databáze nejsou; po havárii by
-      # zakázky zůstaly bez příloh. Stahují se jednou týdně (v neděli), aby
-      # artefakty nezabraly zbytečně moc místa – denní kopie by byla skoro
-      # totožná. Ručně se dá vynutit vstupem „soubory".
-      # Nahrazuje ho backup-storage.yml (R2); tenhle krok bere jen veřejné
-      # buckety – viz docs/ZALOHY_DATABAZE.md, kapitola 6.
-      - name: Je čas na soubory?
-        id: kdy
-        run: |
-          if [ "${{ github.event.inputs.soubory }}" = "true" ] || [ "$(date -u +%u)" = "7" ]; then
-            echo "ano=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "ano=0" >> "$GITHUB_OUTPUT"
-            echo "Soubory ve Storage se zálohují v neděli, nebo ručním spuštěním se zapnutým vstupem soubory."
-          fi
-
-      - name: Soubory ve Storage
-        if: steps.kdy.outputs.ano == '1'
-        env:
-          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          HESLO: ${{ secrets.BACKUP_PASSPHRASE }}
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-        run: |
-          set -euo pipefail
-          if [ -z "$SUPABASE_URL" ]; then
-            echo "::error::Chybí secret VITE_SUPABASE_URL, bez adresy projektu se soubory stáhnout nedají."
-            exit 1
-          fi
-          mkdir -p soubory
-          # Neveřejný bucket přes veřejnou adresu stáhnout nejde (400). Dřív to
-          # shodilo celý krok, i když byl bucket prázdný (chat-prilohy od 20. 9.),
-          # a fotky se nezálohovaly vůbec. Teď se neveřejné buckety přeskočí
-          # s varováním a zálohují se aspoň veřejné; neveřejné kryje
-          # backup-storage.yml přes S3 klíče.
-          neverejne=$(psql "$DB_URL" -At -c "select string_agg(b.id || ' (' || coalesce(o.n, 0) || ' souborů)', ', ') from storage.buckets b left join (select bucket_id, count(*) n from storage.objects group by bucket_id) o on o.bucket_id = b.id where not b.public")
-          if [ -n "$neverejne" ]; then
-            echo "::warning::Neveřejné buckety se přes veřejnou adresu nestahují: $neverejne. Kryje je backup-storage.yml (R2)."
-          fi
-          # Seznam se bere z databáze s oddělovačem tabulátorem: v názvu souboru
-          # může být čárka i mezera, z CSV by se pak četla nesmyslná cesta.
-          psql "$DB_URL" -At -F "$(printf '\t')" -c \
-            "select o.bucket_id, o.name from storage.objects o join storage.buckets b on b.id = o.bucket_id where b.public order by 1, 2" > /tmp/soubory.txt
-          chyby=0
-          pocet=0
-          while IFS="$(printf '\t')" read -r bucket nazev; do
-            [ -z "${bucket:-}" ] && continue
-            cil="soubory/$bucket/$nazev"
-            mkdir -p "$(dirname "$cil")"
-            if curl -sfL --retry 3 -o "$cil" \
-                 "$SUPABASE_URL/storage/v1/object/public/$bucket/$nazev"; then
-              pocet=$((pocet + 1))
-            else
-              echo "nestaženo: $bucket/$nazev"
-              chyby=$((chyby + 1))
-            fi
-          done < /tmp/soubory.txt
-          echo "staženo $pocet souborů, nestaženo $chyby"
-          if [ "$chyby" -gt 0 ]; then
-            echo "::error::Nepodařilo se stáhnout $chyby souborů ze Storage – záloha příloh je neúplná."
-            exit 1
-          fi
-          tar -czf soubory.tar.gz soubory
-          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$HESLO" \
-              -o "zaloha-storage-$DATUM.tar.gz.gpg" soubory.tar.gz
-          rm -rf soubory soubory.tar.gz
-          ls -lh "zaloha-storage-$DATUM.tar.gz.gpg"
-
-      - uses: actions/upload-artifact@v4
-        if: steps.kdy.outputs.ano == '1'
-        with:
-          name: zaloha-storage-${{ env.DATUM }}
-          path: zaloha-storage-*.tar.gz.gpg
           retention-days: 90
           if-no-files-found: error

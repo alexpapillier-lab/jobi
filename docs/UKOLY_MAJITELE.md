@@ -5,33 +5,10 @@ Seřazeno podle toho, co nejvíc chrání provoz. Odškrtávej a mazej hotové.
 
 ## A. Ochrana provozu (nejdřív)
 
-### 1. Záloha fotek a podpisů do Cloudflare R2
-Dnes se zálohuje jen databáze; fotky zakázek a podpisy ne (545 souborů, 101 MB).
-Workflow `.github/workflows/backup-storage.yml` je hotový, chybí účty a klíče.
-
-1. Cloudflare → R2 → **Create bucket** `jobi-zaloha-storage` (neveřejný, region EU).
-2. V bucketu → Settings → **Object lifecycle rules**: dvě pravidla, prefix `smazane/`
-   a prefix `denik/`, obě „Delete objects after 30 days“.
-3. R2 → **Manage R2 API Tokens** → Create token, Object Read & Write, jen tento
-   bucket. Opiš *Access Key ID* a *Secret Access Key*. *Account ID* je na přehledu R2 vpravo.
-4. Supabase → projekt `ijtvcgolsdsrquqbvjrz` → Storage → Settings → zapnout
-   **S3 protocol** → **New access key**. Opiš Access key ID a Secret access key.
-5. GitHub → repo `jobi` → Settings → Secrets and variables → Actions → New repository secret:
-
-   | Secret | Hodnota |
-   |---|---|
-   | `R2_ACCOUNT_ID` | Account ID z kroku 3 |
-   | `R2_ACCESS_KEY_ID` | z kroku 3 |
-   | `R2_SECRET_ACCESS_KEY` | z kroku 3 |
-   | `SUPABASE_S3_ACCESS_KEY` | z kroku 4 |
-   | `SUPABASE_S3_SECRET_KEY` | z kroku 4 |
-
-6. GitHub → Actions → **Záloha souborů (Storage)** → Run workflow, zapnout „nanečisto“.
-   Když projde, spustit ještě jednou naostro. Pak jede denně ve 4:15 UTC.
-7. Až proběhne první zelený ostrý běh, řekni mi to: odeberu starý nedělní krok
-   z `backup-db.yml`.
-
-Podrobně: `docs/ZALOHY_DATABAZE.md`, kapitola 7.
+### 1. Záloha fotek a podpisů do Cloudflare R2 – HOTOVO 6. 10. 2026
+Secrets nastavené, první ostrý běh prošel (687 souborů, počty sedí s databází).
+Jede denně ve 4:15 UTC, workflow „Záloha souborů (Storage)“. Starý nedělní
+krok v záloze databáze je odebraný.
 
 ### 2. Staging projekt Supabase
 Migrace dnes jdou rovnou do produkce. Skripty `scripts/staging/` jsou hotové.
