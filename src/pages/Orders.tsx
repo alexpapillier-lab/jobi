@@ -2417,7 +2417,7 @@ export default function Orders({
         open={!!prevodReklamace}
         title="Není to reklamace – založit zakázku?"
         message={prevodReklamace
-          ? `Z reklamace ${prevodReklamace.code} vznikne nová zakázka ve stavu Přijato se zákazníkem, zařízením, popisem závady, stavem zařízení, příslušenstvím, přijímacími fotkami, diagnostikou a komentáři. Reklamace se uzavře stavem „Převedeno na zakázku“ a odkáže na novou zakázku. Převod nejde vrátit ani zopakovat.`
+          ? `Z reklamace ${prevodReklamace.code} vznikne nová zakázka ve stavu Přijato s datem přijetí reklamace, zákazníkem, zařízením (včetně IMEI, značky a modelu), popisem závady, stavem zařízení, příslušenstvím, přijímacími fotkami, reklamovanými opravami v diagnostice a komentáři. Reklamace se uzavře stavem „Převedeno na zakázku“ a odkáže na novou zakázku. Převod nejde vrátit ani zopakovat.`
           : ""}
         confirmLabel="Založit zakázku"
         cancelLabel="Zrušit"

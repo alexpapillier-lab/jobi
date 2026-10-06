@@ -243,6 +243,18 @@ describe("převod reklamace na zakázku", () => {
     expect(d.deviceNote).toContain("R26000007");
     expect(d.plannedRepairs).toBeUndefined();
     expect(z.hotoveFotkyPred).toEqual(fotkyReklamace(reklamace()));
+    // Reklamované opravy jdou do diagnostiky, datum přijetí reklamace je datem zakázky.
+    expect(z.diagnosticText).toContain("Reklamované opravy v reklamaci R26000007:\n- Výměna displeje (3500 Kč)");
+    expect(z.sloupceNavic).toEqual({ device_imei: null, device_brand: null, device_model: null, created_at: "2026-10-01T09:00:00.000Z" });
+  });
+
+  it("IMEI vedle sériového čísla, značka a model zvlášť, bez received_at datum založení", () => {
+    const z = reklamaceNaZakazku(reklamace({ device_brand: "Apple", device_model: "iPhone 13", device_imei: "350000000000001", received_at: null }));
+    expect(z.devices[0].serialOrImei).toBe("356789012345678");
+    expect(z.sloupceNavic).toEqual({ device_imei: "350000000000001", device_brand: "Apple", device_model: "iPhone 13", created_at: "2026-10-01T09:00:00.000Z" });
+    // Bez SN jde IMEI do pole SN/IMEI a zvlášť se neopakuje.
+    expect(reklamaceNaZakazku(reklamace({ device_serial: null, device_imei: "35000" })).sloupceNavic.device_imei).toBeNull();
+    expect(reklamaceNaZakazku(reklamace({ claimed_repairs: [] })).diagnosticText).not.toContain("Reklamované opravy");
   });
 
   it("bez názvu zařízení složí značku a model, bez SN vezme IMEI", () => {

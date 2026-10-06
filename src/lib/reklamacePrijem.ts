@@ -374,11 +374,20 @@ export type PodkladyPrevodu = {
   zdrojDiagnostika?: string | null;
   /** Zákroky zapsané v reklamaci (resolution_summary). */
   zakroky?: ClaimResolutionItem[];
+  /** Opravy, které zákazník reklamoval (claimed_repairs) – reklamaceNaZakazku je doplní samo. */
+  reklamovane?: ReklamovanaOprava[];
 };
 
-/** Text diagnostiky nové zakázky: zákroky z reklamace a diagnostika zdrojové zakázky. */
+/** Text diagnostiky nové zakázky: reklamované opravy, zákroky z reklamace a diagnostika zdrojové zakázky. */
 export function diagnostikaZReklamace(claimCode: string, p: PodkladyPrevodu): string {
   const casti: string[] = [];
+  const reklamovane = (p.reklamovane ?? []).filter((r) => r.name.trim());
+  if (reklamovane.length > 0) {
+    casti.push(
+      `Reklamované opravy v reklamaci ${claimCode}:\n` +
+        reklamovane.map((r) => `- ${r.name.trim()}${typeof r.price === "number" ? ` (${r.price} Kč)` : ""}`).join("\n"),
+    );
+  }
   const zakroky = (p.zakroky ?? []).filter((z) => z.name.trim());
   if (zakroky.length > 0) {
     casti.push(
@@ -434,6 +443,13 @@ export type KonceptZakazkyZReklamace = NewOrderDraft & {
   diagnosticText: string;
   /** Už nahrané přijímací fotky (odkazy), jdou rovnou do diagnostic_photos_before. */
   hotoveFotkyPred: string[];
+  /**
+   * Sloupce zakázky, které formulář příjmu nemá, ale reklamace ano: IMEI
+   * (když je i sériové číslo), značka a model zvlášť a datum přijetí –
+   * zakázka má začínat dnem, kdy zákazník zařízení přinesl, ne dnem převodu.
+   * createTicket je zapíše k první zakázce.
+   */
+  sloupceNavic: { device_imei: string | null; device_brand: string | null; device_model: string | null; created_at: string | null };
 };
 
 /**
@@ -477,7 +493,14 @@ export function reklamaceNaZakazku(claim: WarrantyClaimRow, p: PodkladyPrevodu =
     customerInfo: s(claim.customer_info),
     devices: [zarizeni],
     branchId: claim.branch_id ?? null,
-    diagnosticText: diagnostikaZReklamace(claim.code, p),
+    diagnosticText: diagnostikaZReklamace(claim.code, { ...p, reklamovane: p.reklamovane ?? reklamovaneOpravyReklamace(claim) }),
     hotoveFotkyPred: fotkyReklamace(claim),
+    sloupceNavic: {
+      // IMEI zvlášť jen tehdy, když do pole SN/IMEI šlo sériové číslo.
+      device_imei: s(claim.device_serial) && s(claim.device_imei) ? s(claim.device_imei) : null,
+      device_brand: s(claim.device_brand) || null,
+      device_model: s(claim.device_model) || null,
+      created_at: claim.received_at || claim.created_at || null,
+    },
   };
 }
