@@ -374,11 +374,20 @@ export type PodkladyPrevodu = {
   zdrojDiagnostika?: string | null;
   /** Zákroky zapsané v reklamaci (resolution_summary). */
   zakroky?: ClaimResolutionItem[];
+  /** Opravy, které zákazník reklamoval (claimed_repairs) – reklamaceNaZakazku je doplní samo. */
+  reklamovane?: ReklamovanaOprava[];
 };
 
-/** Text diagnostiky nové zakázky: zákroky z reklamace a diagnostika zdrojové zakázky. */
+/** Text diagnostiky nové zakázky: reklamované opravy, zákroky z reklamace a diagnostika zdrojové zakázky. */
 export function diagnostikaZReklamace(claimCode: string, p: PodkladyPrevodu): string {
   const casti: string[] = [];
+  const reklamovane = (p.reklamovane ?? []).filter((r) => r.name.trim());
+  if (reklamovane.length > 0) {
+    casti.push(
+      `Reklamované opravy v reklamaci ${claimCode}:\n` +
+        reklamovane.map((r) => `- ${r.name.trim()}${typeof r.price === "number" ? ` (${r.price} Kč)` : ""}`).join("\n"),
+    );
+  }
   const zakroky = (p.zakroky ?? []).filter((z) => z.name.trim());
   if (zakroky.length > 0) {
     casti.push(
@@ -394,12 +403,53 @@ export function diagnostikaZReklamace(claimCode: string, p: PodkladyPrevodu): st
   return casti.join("\n\n");
 }
 
+/** Řádek `ticket_comments` tak, jak ho převod čte ze zdrojové zakázky. */
+export type KomentarKPrevodu = {
+  author: string;
+  author_id: string | null;
+  author_nickname: string | null;
+  author_avatar_url: string | null;
+  content: string;
+  pinned: boolean;
+  created_at: string;
+};
+
+/**
+ * Komentáře k nové zakázce vzniklé převodem reklamace: kopie komentářů
+ * zakázky, ze které reklamace vznikla (detail reklamace ukazuje právě je –
+ * bývá v nich třeba kontakt, s kým se komunikuje). Autor, datum i připnutí
+ * zůstávají, text dostane předponu s kódem reklamace, ať je v nové zakázce
+ * poznat, odkud komentář je. Prázdné texty se vynechají.
+ */
+export function komentareProPrevod(komentare: KomentarKPrevodu[], claimCode: string, serviceId: string, cilTicketId: string) {
+  return komentare
+    .filter((k) => k.content.trim())
+    .map((k) => ({
+      ticket_id: cilTicketId,
+      service_id: serviceId,
+      author: k.author,
+      author_id: k.author_id,
+      author_nickname: k.author_nickname,
+      author_avatar_url: k.author_avatar_url,
+      content: `[Z reklamace ${claimCode}] ${k.content}`,
+      pinned: k.pinned,
+      created_at: k.created_at,
+    }));
+}
+
 /** Koncept zakázky vzniklé převodem reklamace – navíc text diagnostiky a hotové fotky. */
 export type KonceptZakazkyZReklamace = NewOrderDraft & {
   /** Jde do tickets.diagnostic_text (createTicket čte newDraft.diagnosticText). */
   diagnosticText: string;
   /** Už nahrané přijímací fotky (odkazy), jdou rovnou do diagnostic_photos_before. */
   hotoveFotkyPred: string[];
+  /**
+   * Sloupce zakázky, které formulář příjmu nemá, ale reklamace ano: IMEI
+   * (když je i sériové číslo), značka a model zvlášť a datum přijetí –
+   * zakázka má začínat dnem, kdy zákazník zařízení přinesl, ne dnem převodu.
+   * createTicket je zapíše k první zakázce.
+   */
+  sloupceNavic: { device_imei: string | null; device_brand: string | null; device_model: string | null; created_at: string | null };
 };
 
 /**
@@ -443,7 +493,14 @@ export function reklamaceNaZakazku(claim: WarrantyClaimRow, p: PodkladyPrevodu =
     customerInfo: s(claim.customer_info),
     devices: [zarizeni],
     branchId: claim.branch_id ?? null,
-    diagnosticText: diagnostikaZReklamace(claim.code, p),
+    diagnosticText: diagnostikaZReklamace(claim.code, { ...p, reklamovane: p.reklamovane ?? reklamovaneOpravyReklamace(claim) }),
     hotoveFotkyPred: fotkyReklamace(claim),
+    sloupceNavic: {
+      // IMEI zvlášť jen tehdy, když do pole SN/IMEI šlo sériové číslo.
+      device_imei: s(claim.device_serial) && s(claim.device_imei) ? s(claim.device_imei) : null,
+      device_brand: s(claim.device_brand) || null,
+      device_model: s(claim.device_model) || null,
+      created_at: claim.received_at || claim.created_at || null,
+    },
   };
 }
