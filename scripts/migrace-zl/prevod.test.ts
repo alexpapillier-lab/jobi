@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { odhadniMapovani, parseCsv } from "../../src/lib/csv";
 import { odhadniMapovaniCeniku, pripravCenik } from "../../src/lib/importCeniku";
+import { odhadniMapovaniKomentaru, pripravKomentare } from "../../src/lib/importKomentaru";
 import { odhadniMapovaniZakazek, pripravZakazky, radkyHistorie, type StavServisu } from "../../src/lib/importZakazek";
 import {
   castka,
@@ -202,6 +203,25 @@ describe("migrace-zl – zákazníci", () => {
     const t = parseCsv(v.soubory["zakaznici.csv"]);
     expect(odhadniMapovani(t.hlavicka)).toEqual(["name", "phone", "email", "company", "ico", "dic", "note"]);
     expect(t.radky[1]).toEqual(["Testovací s.r.o. (B2B)", "777 000 222", "fakturace@example.cz", "Testovací s.r.o.", "12345678", "CZ12345678", "Zakázkový list: TSTC2400002"]);
+  });
+});
+
+describe("migrace-zl – komentare.csv projde importem komentářů v Jobi", () => {
+  it("komentáře zakázek na zakázku, komentáře reklamací na zakázku reklamace", () => {
+    const v = preved({ zakazky: ZAKAZKY, reklamace: REKLAMACE });
+    const t = parseCsv(v.soubory["komentare.csv"]);
+    const m = odhadniMapovaniKomentaru(t.hlavicka);
+    expect(m).toEqual(["code", "kind", "author", "date", "text"]);
+    const plan = pripravKomentare(t, m, {
+      zakazky: new Map(ZAKAZKY.map((z) => [z.code, `t-${z.code}`])),
+      reklamace: new Map(REKLAMACE.map((r) => [r.code, { id: `r-${r.code}`, sourceTicketId: r.sourceOrderCode ? `t-${r.sourceOrderCode}` : null }])),
+      existujici: new Set(),
+    });
+    expect(plan.chyby).toEqual([]);
+    expect(plan.radky.length).toBe(t.radky.length);
+    expect([plan.zakazek, plan.reklamaci]).toEqual([1, 1]);
+    const rek = plan.radky.find((r) => r.content.startsWith("[Reklamace "));
+    expect(rek).toMatchObject({ ticket_id: "t-TSTZ2400001", author: "Technik B", content: "[Reklamace TSTR2400001] Uznáno, výměna zdarma.", created_at: new Date(2024, 1, 2, 9, 0).toISOString() });
   });
 });
 

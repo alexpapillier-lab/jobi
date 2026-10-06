@@ -70,13 +70,15 @@ Výsledek je ve složce `migrace-zl-vystup/` (jde změnit přes `--vystup`):
 | `zakaznici.csv` | Migrace → 1. Importovat zákazníky |
 | `zakazky.csv` | Migrace → 2. Importovat zakázky, předvolba „Zakázkový list“ |
 | `cenik.csv` | Migrace → 3. Importovat ceník (jen když byl zdroj ceníku, viz níže) |
-| `komentare.csv`, `reklamace.csv` | archiv – Jobi je zatím neimportuje |
+| `komentare.csv` | Migrace → 4. Importovat komentáře (až po zakázkách) |
+| `reklamace.csv` | archiv – Jobi reklamace z CSV neimportuje |
 | `zakazky.ndjson`, `reklamace.ndjson`, `seznam-*.json`, `stahovani.log` | surová stažená data a stav stahování |
 
 ### 4. Import v Jobi
 
-1. Nejdřív zákazníci, pak zakázky, nakonec ceník. Duplicity se přeskakují
-   (telefon, číslo zakázky, oprava u modelu), import jde pustit znovu.
+1. Nejdřív zákazníci, pak zakázky, ceník a nakonec komentáře. Duplicity se
+   přeskakují (telefon, číslo zakázky, oprava u modelu, komentář se stejným
+   datem a textem), import jde pustit znovu.
 2. U zakázek zkontrolujte tabulku **Stavy ze souboru → stavy servisu**. Servis,
    který si v Jobi založil stejné stavy jako v ZL, dostane přiřazení 1:1.
 3. Po kontrole složku s výstupem smažte.
@@ -123,6 +125,8 @@ kde jsou `orders_export.ndjson` a `claims_export.ndjson`).
 | Předpokládaná cena, Externí identifikace | stejná pole |
 | Položky opravy (název, náklady, cena) | provedené opravy |
 | Ceník z API ZL | značky, kategorie, modely a opravy s cenou a časem |
+| Komentáře u zakázek (autor, datum, text) | interní komentáře zakázky s původním datem; autor jen jako jméno |
+| Komentáře u reklamací | komentáře zakázky, ze které reklamace vznikla, s předponou „[Reklamace KÓD]“ – reklamace v Jobi musí na tu zakázku odkazovat |
 
 Zákazníci se skládají z údajů na zakázkách (totožnost podle kódu zákazníka
 v ZL, jinak podle telefonu). Skript zkusí stáhnout i export zákazníků ze ZL
@@ -132,8 +136,9 @@ když se nepovede, stačí export stáhnout v ZL ručně a přidat `--zakaznici-
 
 ## Co se nepřenáší
 
-- **Komentáře** – import v Jobi je nemá; jsou v `komentare.csv`.
-- **Reklamace** – import v Jobi je nemá; jsou v `reklamace.csv`.
+- **Reklamace** – import v Jobi je nemá; jsou v `reklamace.csv`. Jejich
+  komentáře se přenesou jen tam, kde reklamace v Jobi existuje a odkazuje na
+  svou zakázku (komentář jde na zakázku).
 - **Kdo co dělal** (Přijal, Opravoval, Vydal, jména v historii) – lidé ze ZL
   nejsou uživatelé Jobi. Historie ukáže „Systém“, statistiky techniků tyhle
   záznamy nepočítají. Jméno je uložené v `ticket_history.details.import`.
