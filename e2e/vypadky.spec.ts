@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { SERVIS, heslo, prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
+import { SERVIS, heslo, prihlasSe, rozbalSekci, testovaciJmeno, vidZakazku, vyplnReklamaci, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
  * Výpadky spojení na cestách, které je dosud neměly otestované.
@@ -312,12 +312,11 @@ test("reklamace rozepsaná při výpadku se doplní sama", async ({ page }) => {
   const jmeno = testovaciJmeno("Reklamace výpadek");
   await page.getByRole("button", { name: "+ Nová reklamace" }).click();
   await page.getByRole("button", { name: "Reklamace bez propojení na zakázku" }).click();
-  await page.getByPlaceholder("Jméno zákazníka").fill(jmeno);
-  await page.getByPlaceholder("např. iPhone 13, notebook").fill("Tablet (výpadek)");
+  await vyplnReklamaci(page, { zakaznik: jmeno, zarizeni: "Tablet (výpadek)" });
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
   await expect(page.getByText(jmeno).first()).toBeVisible({ timeout: 30_000 });
 
-  await page.getByText(jmeno).first().click();
+  // Po vytvoření se detail reklamace otevře sám.
   await page.locator('button[title="Upravit reklamaci"]:visible').first().click();
   const duvod = page.getByPlaceholder("Poznámka / důvod reklamace");
   await expect(duvod).toBeVisible({ timeout: 20_000 });

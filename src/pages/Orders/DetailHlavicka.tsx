@@ -80,8 +80,8 @@ type Props = {
   invoiceIdByTicketId: Record<string, string>;
   dph: ServiceVat;
   setTicketHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setClaimSourceTicket: React.Dispatch<React.SetStateAction<TicketEx | null>>;
-  setCreateClaimModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Otevře okno Nová reklamace předvyplněné touto zakázkou. */
+  onNovaReklamaceZeZakazky: (ticket: TicketEx) => void;
   chatZapnuty: boolean;
   setDeleteTicketId: React.Dispatch<React.SetStateAction<string | null>>;
   setDeleteDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -134,8 +134,7 @@ export function DetailHlavicka({
   invoiceIdByTicketId,
   dph,
   setTicketHistoryModalOpen,
-  setClaimSourceTicket,
-  setCreateClaimModalOpen,
+  onNovaReklamaceZeZakazky,
   chatZapnuty,
   setDeleteTicketId,
   setDeleteDialogOpen,
@@ -470,10 +469,7 @@ export function DetailHlavicka({
                   {
                     label: "Založit reklamaci z této zakázky",
                     icon: <InboxIcon size={14} />,
-                    onSelect: () => {
-                      setClaimSourceTicket(detailedTicket);
-                      setCreateClaimModalOpen(true);
-                    },
+                    onSelect: () => onNovaReklamaceZeZakazky(detailedTicket),
                   },
                   ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
                   // Karta zakázky do chatu místo opisování čísla – nejčastější důvod, proč si lidé v servisu píšou.

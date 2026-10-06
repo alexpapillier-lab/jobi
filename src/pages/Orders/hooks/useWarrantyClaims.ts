@@ -3,7 +3,9 @@ import { reportSilent } from "../../../lib/reportError";
 import { supabase } from "../../../lib/supabaseClient";
 import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { showToast } from "../../../components/Toast";
-import type { TicketEx } from "../../Orders";
+import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
+import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
+import { NOVE_SLOUPCE_REKLAMACE } from "../../../lib/reklamacePrijem";
 import type { Database } from "../../../types/supabase";
 
 export type WarrantyClaimRow = Database["public"]["Tables"]["warranty_claims"]["Row"];
@@ -61,119 +63,110 @@ async function makeWarrantyClaimCode(
   return `${prefix}${String(next).padStart(6, "0")}`;
 }
 
-/** Copy ticket customer/device fields into warranty claim payload */
-function ticketToClaimPayload(
-  ticket: TicketEx,
-  serviceId: string,
-  code: string,
-  status: string,
-  notes: string
-): WarrantyClaimInsert {
-  return {
-    service_id: serviceId,
-    source_ticket_id: ticket.id,
-    code,
-    status,
-    notes: notes.trim() || "",
-    customer_id: ticket.customerId ?? null,
-    customer_name: ticket.customerName ?? null,
-    customer_phone: ticket.customerPhone ?? null,
-    customer_email: ticket.customerEmail ?? null,
-    customer_address_street: ticket.customerAddressStreet ?? null,
-    customer_address_city: ticket.customerAddressCity ?? null,
-    customer_address_zip: ticket.customerAddressZip ?? null,
-    customer_address_country: (ticket as any).customerAddressCountry ?? null,
-    customer_company: ticket.customerCompany ?? null,
-    customer_ico: ticket.customerIco ?? null,
-    customer_info: ticket.customerInfo ?? null,
-    device_condition: ticket.deviceCondition ?? null,
-    device_accessories: ticket.deviceAccessories ?? null,
-    device_note: ticket.deviceNote ?? null,
-    device_label: ticket.deviceLabel ?? null,
-    device_brand: (ticket as any).deviceBrand ?? null,
-    device_model: (ticket as any).deviceModel ?? null,
-    device_serial: ticket.serialOrImei ?? null,
-    device_imei: (ticket as any).deviceImei ?? null,
-    device_passcode: ticket.devicePasscode ?? null,
-    // Reklamace zůstává na pobočce původní zakázky.
-    ...(ticket.branchId ? { branch_id: ticket.branchId } : {}),
-  } as WarrantyClaimInsert;
+/** Chyba „sloupec neexistuje“ – databáze ještě nemá migraci 20261006100000. */
+function chybiSloupec(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  if (err.code === "42703" || err.code === "PGRST204") return true;
+  const m = (err.message ?? "").toLowerCase();
+  return m.includes("does not exist") || m.includes("schema cache") || m.includes("could not find the");
 }
 
-export function useWarrantyClaims(activeServiceId: string | null) {
-  const createFromTicket = useCallback(
-    async (
-      ticket: TicketEx,
-      statusKey: string,
-      notes: string,
-      existingClaims: { code: string | null }[],
-      overrides?: Partial<WarrantyClaimInsert>
-    ): Promise<WarrantyClaimRow | null> => {
-      if (!activeServiceId || !supabase) {
-        showToast("Chybí aktivní servis nebo připojení.", "error");
-        return null;
-      }
-      const code = await makeWarrantyClaimCode(existingClaims, activeServiceId);
-      const base = ticketToClaimPayload(ticket, activeServiceId, code, statusKey, notes);
-      const payload: WarrantyClaimInsert = { ...base, ...overrides };
-      const { data, error } = await (supabase.from("warranty_claims") as any)
-        .insert(payload)
-        .select()
-        .single();
-      if (error) {
-        showToast(`Chyba při vytváření reklamace: ${error.message}`, "error");
-        return null;
-      }
-      // Log to ticket_history so original ticket shows "založena reklamace R-xxx" (only if we still have source_ticket_id)
-      const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
-      if (ticket.id) {
-        // Chyba se vrací, nevyhazuje. Bez záznamu v historii nikdo nepozná,
-        // že k zakázce vznikla reklamace – proto se aspoň zaloguje.
-        const { error: histErr } = await (supabase.from("ticket_history") as any).insert({
-        ticket_id: ticket.id,
-        service_id: activeServiceId,
-        action: "warranty_claim_created",
-        changed_by: uid,
-        details: { warranty_claim_id: data.id, warranty_claim_code: data.code },
-        });
-        if (histErr) reportSilent({ code: "claims.history_insert_failed", error: histErr, source: "useWarrantyClaims.createFromTicket" });
-      }
-      showToast(`Reklamace ${data.code} vytvořena`, "success");
-      return data as WarrantyClaimRow;
-    },
-    [activeServiceId]
-  );
+function bezNovychSloupcu<T extends Record<string, unknown>>(row: T): T {
+  const kopie: Record<string, unknown> = { ...row };
+  for (const s of NOVE_SLOUPCE_REKLAMACE) delete kopie[s];
+  return kopie as T;
+}
 
-  const createWithoutTicket = useCallback(
-    async (
-      statusKey: string,
-      notes: string,
-      customerDevice: Partial<WarrantyClaimInsert>,
-      existingClaims: { code: string | null }[]
-    ): Promise<WarrantyClaimRow | null> => {
+export type ZalozeniReklamace = {
+  /** Řádek reklamace bez service_id a kódu (lib/reklamacePrijem → konceptNaReklamaci). */
+  payload: Omit<WarrantyClaimInsert, "service_id" | "code">;
+  statusKey: string;
+  existingClaims: { code: string | null }[];
+  /** Přijímací fotky jako data URL – nahrají se s vodoznakem po založení. */
+  fotkyDataUrl?: string[];
+  /** Už nahrané fotky (focení přes QR ke konceptu) – jdou rovnou do intake_photos. */
+  fotkyHotove?: string[];
+  /** Název servisu do vodoznaku. */
+  serviceName?: string | null;
+};
+
+export function useWarrantyClaims(activeServiceId: string | null) {
+  /**
+   * Založí reklamaci (se zdrojovou zakázkou i bez ní). U zakázky zapíše do
+   * její historie „založena reklamace“. Na databázi bez nových sloupců
+   * (claimed_repairs, intake_photos, handoff_method) se založí bez nich –
+   * klient může jít ven dřív než migrace a příjem reklamací nesmí přestat jít.
+   */
+  const zalozReklamaci = useCallback(
+    async ({ payload, statusKey, existingClaims, fotkyDataUrl = [], fotkyHotove = [], serviceName = null }: ZalozeniReklamace): Promise<WarrantyClaimRow | null> => {
       if (!activeServiceId || !supabase) {
         showToast("Chybí aktivní servis nebo připojení.", "error");
         return null;
       }
       const code = await makeWarrantyClaimCode(existingClaims, activeServiceId);
-      const payload: WarrantyClaimInsert = {
+      const radek: WarrantyClaimInsert = {
+        ...payload,
         service_id: activeServiceId,
-        source_ticket_id: null,
         code,
         status: statusKey,
-        notes: notes.trim() || "",
-        ...customerDevice,
+        notes: (payload.notes ?? "").trim(),
+        intake_photos: fotkyHotove,
       };
-      const { data, error } = await (supabase.from("warranty_claims") as any)
-        .insert(payload)
-        .select()
-        .single();
-      if (error) {
-        showToast(`Chyba při vytváření reklamace: ${error.message}`, "error");
+      let novaDb = true;
+      let { data, error } = await (supabase.from("warranty_claims") as any).insert(radek).select().single();
+      if (error && chybiSloupec(error)) {
+        novaDb = false;
+        ({ data, error } = await (supabase.from("warranty_claims") as any).insert(bezNovychSloupcu(radek)).select().single());
+      }
+      if (error || !data) {
+        showToast(`Chyba při vytváření reklamace: ${error?.message ?? "neznámá chyba"}`, "error");
         return null;
       }
-      showToast(`Reklamace ${data.code} vytvořena`, "success");
-      return data as WarrantyClaimRow;
+      let claim = data as WarrantyClaimRow;
+
+      if (claim.source_ticket_id) {
+        // Chyba se vrací, nevyhazuje. Bez záznamu v historii nikdo nepozná,
+        // že k zakázce vznikla reklamace – proto se aspoň zaloguje.
+        const uid = (await supabase.auth.getUser()).data.user?.id ?? null;
+        const { error: histErr } = await (supabase.from("ticket_history") as any).insert({
+          ticket_id: claim.source_ticket_id,
+          service_id: activeServiceId,
+          action: "warranty_claim_created",
+          changed_by: uid,
+          details: { warranty_claim_id: claim.id, warranty_claim_code: claim.code },
+        });
+        if (histErr) reportSilent({ code: "claims.history_insert_failed", error: histErr, source: "useWarrantyClaims.zalozReklamaci" });
+      }
+
+      // Přijímací fotky: nahrávají se až s id reklamace (složka <servis>/<reklamace>/).
+      if (fotkyDataUrl.length > 0) {
+        if (!novaDb) {
+          showToast("Přijímací fotky se neuložily – databáze ještě nemá sloupec pro fotky reklamace.", "info");
+        } else {
+          try {
+            const urls: string[] = [];
+            for (const dataUrl of fotkyDataUrl) {
+              const blob = await addWatermarkToImageBlob(dataUrl, { cislo: claim.code, servis: serviceName });
+              const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+              urls.push(await uploadDiagnosticPhoto(supabase, activeServiceId, claim.id, file));
+            }
+            const vsechny = [...fotkyHotove, ...urls];
+            const { data: upd, error: updErr } = await (supabase.from("warranty_claims") as any)
+              .update({ intake_photos: vsechny })
+              .eq("id", claim.id)
+              .select()
+              .single();
+            if (updErr) throw updErr;
+            if (upd) claim = upd as WarrantyClaimRow;
+          } catch (err) {
+            reportSilent({ code: "claims.intake_photos_failed", error: err, source: "useWarrantyClaims.zalozReklamaci" });
+            showToast("Reklamace je založená, ale přijímací fotky se nepodařilo nahrát. Přidejte je v detailu znovu.", "error");
+          }
+        }
+      }
+
+      showToast(`Reklamace ${claim.code} vytvořena`, "success");
+      return claim;
     },
     [activeServiceId]
   );
@@ -274,5 +267,5 @@ export function useWarrantyClaims(activeServiceId: string | null) {
     []
   );
 
-  return { createFromTicket, createWithoutTicket, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
+  return { zalozReklamaci, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
 }

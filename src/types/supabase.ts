@@ -276,6 +276,11 @@ export type Database = {
           device_passcode: string | null
           expected_completion_at: string | null
           completed_at: string | null
+          claimed_repairs: Json
+          intake_photos: Json
+          handoff_method: string | null
+          converted_ticket_id: string | null
+          converted_at: string | null
         }
         Insert: {
           id?: string
@@ -312,6 +317,11 @@ export type Database = {
           device_passcode?: string | null
           expected_completion_at?: string | null
           completed_at?: string | null
+          claimed_repairs?: Json
+          intake_photos?: Json
+          handoff_method?: string | null
+          converted_ticket_id?: string | null
+          converted_at?: string | null
         }
         Update: {
           id?: string
@@ -345,6 +355,13 @@ export type Database = {
           device_serial?: string | null
           device_imei?: string | null
           device_passcode?: string | null
+          expected_completion_at?: string | null
+          completed_at?: string | null
+          claimed_repairs?: Json
+          intake_photos?: Json
+          handoff_method?: string | null
+          converted_ticket_id?: string | null
+          converted_at?: string | null
         }
         Relationships: []
       }

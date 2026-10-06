@@ -19,7 +19,8 @@ import { STORAGE_KEYS } from "../constants/storageKeys";
 import { useOrderActions } from "./Orders/hooks/useOrderActions";
 import { useStatusActionsMap, runStatusChangeAutomations, runTicketCreatedAutomations } from "./Orders/hooks/useAutomations";
 import { type WarrantyClaimRow, useWarrantyClaims } from "./Orders/hooks/useWarrantyClaims";
-import { CreateWarrantyClaimModal } from "./Orders/components/CreateWarrantyClaimModal";
+import { NovaReklamacePanel } from "./Orders/NovaReklamacePanel";
+import { useNovaReklamaceKoncept } from "./Orders/hooks/useNovaReklamaceKoncept";
 import { useAuth } from "../auth/AuthProvider";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { isWeb } from "../lib/platform";
@@ -290,8 +291,9 @@ export default function Orders({
    * do document.body, tomu skrytí unikne a zůstane viset nad další stránkou.
    * Ověřeno: detail → Historie → Sklad, i tisková nabídka na řádku seznamu.
    *
-   * Modaly vykreslené vevnitř (např. CreateWarrantyClaimModal) se schovají
-   * samy a rozepsaná data v nich zůstanou – ty tu proto schválně nejsou.
+   * Modaly vykreslené vevnitř se schovají samy a rozepsaná data v nich
+   * zůstanou – ty tu proto schválně nejsou. Okno Nová reklamace zavírá
+   * vlastní efekt u useNovaReklamaceKoncept (koncept zůstává v localStorage).
    */
   useEffect(() => {
     if (closeDetailWhen) {
@@ -393,9 +395,6 @@ export default function Orders({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTicketId, setDeleteTicketId] = useState<string | null>(null);
   const [ticketHistoryModalOpen, setTicketHistoryModalOpen] = useState(false);
-  const [createClaimModalOpen, setCreateClaimModalOpen] = useState(false);
-  /** Zakázka, ze které se reklamace zakládá (z nabídky „…“ v detailu); null = výběr hledáním. */
-  const [claimSourceTicket, setClaimSourceTicket] = useState<TicketEx | null>(null);
   /** Zásilky otevřené zakázky (dodá karta Kde je zakázka) – pro kroky v Postupu zakázky. */
   const [historieZasilek, setHistorieZasilek] = useState<{ ticketId: string; zasilky: Zasilka[] } | null>(null);
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
@@ -605,8 +604,8 @@ export default function Orders({
    * Reklamace po záruce → placená oprava: příjem předvyplněný zákazníkem
    * a zařízením původní zakázky (z okna Vytvořit reklamaci).
    */
-  const zalozitPlacenouOpravu = (t: TicketEx) => {
-    if (isDraftDirty(newDraft) && !window.confirm(`Máte rozepsanou novou zakázku. Nahradit ji údaji ze zakázky ${t.code ?? ""}?`)) return;
+  const zalozitPlacenouOpravu = (t: TicketEx): boolean => {
+    if (isDraftDirty(newDraft) && !window.confirm(`Máte rozepsanou novou zakázku. Nahradit ji údaji ze zakázky ${t.code ?? ""}?`)) return false;
     setNewDraft((prev) => ({
       ...defaultDraft(),
       branchId: prev.branchId,
@@ -629,6 +628,7 @@ export default function Orders({
       }],
     }));
     openNewOrder();
+    return true;
   };
 
   // Lookup customer by phone or name (for Edit mode)
@@ -840,6 +840,40 @@ export default function Orders({
     (mistni: TicketEx, zDb: TicketEx) => sloucSRozepsanym(mistni, zDb, evidenceZapisu(), zDb.id, dirtyFlagsRef.current),
     [evidenceZapisu]
   );
+
+  /** Okno Nová reklamace (koncept v localStorage, jako příjem zakázky). */
+  const novaReklamace = useNovaReklamaceKoncept({
+    activeServiceId,
+    serviceName: serviceName ?? null,
+    customerPhoneRequired: uiCfg.orders.customerPhoneRequired,
+    statusKey: statusKeysSet.has("received") ? "received" : statuses[0]?.key ?? "received",
+    existingClaimCodes: cloudClaims,
+    nactiPlnouZakazku: zajistiPlnouZakazku,
+    onCreated: async (claim) => {
+      // Po založení rovnou detail reklamace – jako detail zakázky po příjmu.
+      setCloudClaims((p) => [claim, ...p.filter((c) => c.id !== claim.id)]);
+      void refetchClaims();
+      setActiveGroup("reklamace");
+      setDetailId(null);
+      setDetailClaimId(claim.id);
+      // Protokol o přijetí reklamace podle Nastavení → Dokumenty → Automatický
+      // tisk (stejně jako zakázkový list po založení zakázky).
+      const config = await loadDocumentsConfigFromDB(activeServiceId);
+      if (config?.autoPrint?.prijetiReklamaceOnCreate && activeServiceId) {
+        const zdrojKod = claim.source_ticket_id ? (cloudTicketsRef.current.find((t) => t.id === claim.source_ticket_id)?.code ?? "") : "";
+        const data = claimDocumentData(claim, safeLoadCompanyData(), zdrojKod);
+        if (isWeb()) await runWebDocument("print", "prijemka_reklamace", activeServiceId, data);
+        else await runDesktopDocument("print", "prijemka_reklamace", activeServiceId, data, `prijemka-reklamace-${claim.code}.pdf`);
+      }
+    },
+  });
+
+  const { otevreno: novaReklamaceOtevrena, zavri: zavriNovouReklamaci } = novaReklamace;
+  // Okno je portál do body – při odchodu na jinou stránku se musí zavřít samo
+  // (viz efekt s closeDetailWhen výš). Koncept zůstává uložený.
+  useEffect(() => {
+    if (closeDetailWhen) zavriNovouReklamaci();
+  }, [closeDetailWhen, zavriNovouReklamaci]);
 
   const { createTicket: createTicketAction, saveTicketChanges: saveTicketChangesAction } = useOrderActions({
     activeServiceId,
@@ -1490,7 +1524,7 @@ export default function Orders({
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      const hasSomethingToClose = !!photoLightbox || smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || !!detailId || !!detailClaimId || isNewOpen;
+      const hasSomethingToClose = !!photoLightbox || smsPanelOpen || ticketHistoryModalOpen || claimHistoryModalOpen || novaReklamaceOtevrena || !!detailId || !!detailClaimId || isNewOpen;
       if (!hasSomethingToClose) return;
       /* Zvětšená fotka leží nade vším (portál, z-index 10002). Dřív ji tenhle
          handler neznal: v capture fázi zastavil událost dřív, než k ní došla,
@@ -1517,6 +1551,11 @@ export default function Orders({
         setClaimHistoryModalOpen(false);
         return;
       }
+      // Nová reklamace leží i nad detailem (zakládá se z jeho nabídky „…“).
+      if (novaReklamaceOtevrena) {
+        zavriNovouReklamaci();
+        return;
+      }
       if (detailId || detailClaimId) {
         await handleCloseDetail();
       } else if (isNewOpen) {
@@ -1536,7 +1575,7 @@ export default function Orders({
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [photoLightbox, smsPanelOpen, detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail]);
+  }, [photoLightbox, smsPanelOpen, detailId, detailClaimId, isNewOpen, ticketHistoryModalOpen, claimHistoryModalOpen, handleCloseDetail, novaReklamaceOtevrena, zavriNovouReklamaci]);
 
   // Zamykání scrollu za modalem – body i hlavní oblast (main) scrollují, obě musí být zamčené
   useEffect(() => {
@@ -1834,7 +1873,7 @@ export default function Orders({
         query={query}
         setQuery={setQuery}
         openNewOrder={openNewOrder}
-        onNovaReklamace={() => { setClaimSourceTicket(null); setCreateClaimModalOpen(true); }}
+        onNovaReklamace={() => novaReklamace.otevri(null)}
         activeGroup={activeGroup}
         setActiveGroup={setActiveGroup}
         groupCounts={groupCounts}
@@ -2016,8 +2055,7 @@ export default function Orders({
             invoiceIdByTicketId={invoiceIdByTicketId}
             dph={dph}
             setTicketHistoryModalOpen={setTicketHistoryModalOpen}
-            setClaimSourceTicket={setClaimSourceTicket}
-            setCreateClaimModalOpen={setCreateClaimModalOpen}
+            onNovaReklamaceZeZakazky={(t) => novaReklamace.otevri(t)}
             chatZapnuty={chatZapnuty}
             setDeleteTicketId={setDeleteTicketId}
             setDeleteDialogOpen={setDeleteDialogOpen}
@@ -2279,28 +2317,21 @@ export default function Orders({
         }}
       />
 
-      <CreateWarrantyClaimModal
-        open={createClaimModalOpen}
-        onClose={() => { setCreateClaimModalOpen(false); setClaimSourceTicket(null); }}
-        activeServiceId={activeServiceId}
-        tickets={cloudTickets}
-        initialTicket={claimSourceTicket}
-        nactiPlnouZakazku={zajistiPlnouZakazku}
-        existingClaimCodes={cloudClaims.map((c) => ({ code: c.code }))}
-        onPlacenaOprava={zalozitPlacenouOpravu}
-        onCreated={async (_claimCode, claim) => {
-          setCreateClaimModalOpen(false);
-          setClaimSourceTicket(null);
-          refetchClaims();
-          setActiveGroup("reklamace");
-          if (claim) {
-            const config = await loadDocumentsConfigFromDB(activeServiceId);
-            if (config?.autoPrint?.prijetiReklamaceOnCreate && activeServiceId) {
-              const data = claimDocumentData(claim, safeLoadCompanyData(), "");
-              if (isWeb()) await runWebDocument("print", "prijemka_reklamace", activeServiceId, data);
-              else await runDesktopDocument("print", "prijemka_reklamace", activeServiceId, data, `prijemka-reklamace-${claim.code}.pdf`);
-            }
-          }
+      <NovaReklamacePanel
+        r={novaReklamace}
+        isNarrow={isNarrow}
+        naTelefonu={naTelefonu}
+        hasBranches={hasBranches}
+        branches={branches}
+        branchForNew={branchForNew}
+        cloudTickets={cloudTickets}
+        searchCustomers={searchCustomers}
+        customerPhoneRequired={uiCfg.orders.customerPhoneRequired}
+        onPlacenaOprava={async (ticketId) => {
+          const t = (await zajistiPlnouZakazku(ticketId)) ?? cloudTickets.find((x) => x.id === ticketId);
+          if (!t) return;
+          // Místo reklamace placená oprava: rozepsaná reklamace se zahodí.
+          if (zalozitPlacenouOpravu(t)) novaReklamace.zrusitBezDotazu();
         }}
       />
 

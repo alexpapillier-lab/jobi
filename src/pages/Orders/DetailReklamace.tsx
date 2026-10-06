@@ -1,7 +1,8 @@
 /**
  * Tělo detailu reklamace: zákazník, zařízení, poznámka, provedené zákroky,
  * stav, a u napojené zakázky její diagnostika (zapisuje se rovnou do ní)
- * a komentáře. Vyneseno z Orders.tsx beze změny obsahu.
+ * a komentáře. Z příjmu reklamace navíc reklamované opravy, poznámka pro
+ * technika, způsob převzetí a přijímací fotky.
  */
 import type React from "react";
 import { Button } from "../../components/ui";
@@ -25,6 +26,7 @@ import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
 import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
 import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
+import { fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
 
 type Props = {
@@ -99,6 +101,8 @@ export function DetailReklamace({
   const zdrojZeSeznamu = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
   const sourceTicket = zdrojZeSeznamu?.uplna ? zdrojZeSeznamu : undefined;
   const zdrojSeNacita = !!zdrojZeSeznamu && !sourceTicket;
+  const reklamovane = reklamovaneOpravyReklamace(detailedClaim);
+  const prijimaciFotky = fotkyReklamace(detailedClaim);
   return (
   <>
   <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
@@ -163,6 +167,7 @@ export function DetailReklamace({
             <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_accessories, c.device_note].filter(Boolean).join(" · ")}</div>
           )}
           {c.device_passcode && <div style={{ fontSize: 13, color: "var(--text)" }}>Heslo/kód: {c.device_passcode}</div>}
+          {c.handoff_method && <div style={{ fontSize: 13, color: "var(--muted)" }}>Převzetí: {c.handoff_method}</div>}
           {/* Záruka na opravu napojené zakázky – jestli jde reklamace uznat.
               Rozhoduje den přijetí reklamace, ne dnešek: reklamace přijatá
               v záruce zůstává v záruce, i když se vyřizuje déle. */}
@@ -197,13 +202,50 @@ export function DetailReklamace({
       )}
     </div>
     <div style={{ ...card, gridColumn: "1 / -1" }}>
-      <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Poznámka / důvod reklamace</div>
+      <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Popis reklamované závady</div>
       {!isEditingClaim ? (
-        <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
+          {reklamovane.length > 0 && (
+            <div>
+              <div style={fieldLabel}>Reklamované opravy{sourceTicket?.code ? ` ze zakázky ${sourceTicket.code}` : ""}</div>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13, color: "var(--text)" }}>
+                {reklamovane.map((o) => (
+                  <li key={o.id}>{o.name}{typeof o.price === "number" ? <span style={{ color: "var(--muted)" }}> · {o.price.toLocaleString("cs-CZ")} Kč</span> : null}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {c.device_note && (
+            <div>
+              <div style={fieldLabel}>Poznámka pro technika</div>
+              <div style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.device_note}</div>
+            </div>
+          )}
+        </div>
       ) : (
         <textarea value={c.notes ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, notes: e.target.value }))} placeholder="Poznámka / důvod reklamace" rows={4} style={{ ...baseFieldInput, minHeight: 100 }} />
       )}
     </div>
+    {prijimaciFotky.length > 0 && (
+      <div style={{ ...card, gridColumn: "1 / -1" }}>
+        <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Přijímací fotky</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+          {prijimaciFotky.map((url, idx) => (
+            <FotkaZakazky
+              key={idx}
+              url={url}
+              alt={`Přijímací fotka ${idx + 1}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setPhotoLightbox({ urls: prijimaciFotky, index: idx, ticketCode: detailedClaim.code })}
+              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: prijimaciFotky, index: idx, ticketCode: detailedClaim.code })}
+              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
+            />
+          ))}
+        </div>
+      </div>
+    )}
     <div style={{ ...card, gridColumn: "1 / -1" }}>
       <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
       {(() => {

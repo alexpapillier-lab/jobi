@@ -210,3 +210,23 @@ export async function rozbalSekci(page: Page, nazev: "Zákaznický portál" | "D
   if ((await hlavicka.getAttribute("aria-expanded")) !== "true") await hlavicka.click();
   await expect(hlavicka).toHaveAttribute("aria-expanded", "true");
 }
+
+/**
+ * Vyplní otevřené okno „Nová reklamace“ (případně s už vybranou zdrojovou
+ * zakázkou). Popis reklamované závady je povinný vždy; telefon, když ho má
+ * testovací servis v Povinných polích – proto se u reklamace bez zakázky
+ * vyplní pokaždé (u zakázky přijde z ní).
+ */
+export async function vyplnReklamaci(
+  page: Page,
+  udaje: { zakaznik?: string; zarizeni?: string; telefon?: string; popis?: string },
+): Promise<void> {
+  if (udaje.zakaznik !== undefined) await page.getByPlaceholder("Jméno zákazníka").fill(udaje.zakaznik);
+  if (udaje.zakaznik !== undefined || udaje.telefon !== undefined) {
+    await page.getByPlaceholder("+420 600 000 000").fill(udaje.telefon ?? nahodnyTelefon());
+  }
+  if (udaje.zarizeni !== undefined) await page.getByPlaceholder("např. iPhone 13, notebook").fill(udaje.zarizeni);
+  await page
+    .getByPlaceholder("Co zákazník reklamuje – projevy závady, od kdy se objevuje")
+    .fill(udaje.popis ?? "Reklamace z automatického testu");
+}

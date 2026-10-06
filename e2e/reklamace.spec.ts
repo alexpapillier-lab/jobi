@@ -1,11 +1,16 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku, vyplnReklamaci } from "./pomocnici";
 
 /**
  * Reklamace: kód přiděluje databáze (funkce dalsi_cislo_reklamace) a je
  * unikátní. Dřív si ho počítal klient jako „nejvyšší + 1“, takže dvě
  * reklamace založené naráz dostaly stejný kód. Teď by druhou z nich odmítl
  * unikátní index – test proto zakládá obě ve stejnou chvíli a chce vidět obě.
+ *
+ * Od 6. 10. je „+ Nová reklamace“ plný příjem (okno jako Nová zakázka):
+ * popis reklamované závady je povinný a po vytvoření se rovnou otevře detail
+ * reklamace. Zakázky a reklamace z testů se nemažou (viz e2e/README.md,
+ * Data po testech); rozepsaný koncept žije jen v localStorage kontextu.
  */
 
 async function druhyClovek(browser: Browser): Promise<Page> {
@@ -15,12 +20,11 @@ async function druhyClovek(browser: Browser): Promise<Page> {
   return page;
 }
 
-/** Založí reklamaci bez zakázky a počká, až se objeví v seznamu reklamací. */
+/** Založí reklamaci bez zakázky a počká na její detail (otevře se sám). */
 async function zalozReklamaci(page: Page, zakaznik: string, zarizeni: string) {
   await page.getByRole("button", { name: "+ Nová reklamace" }).click();
   await page.getByRole("button", { name: "Reklamace bez propojení na zakázku" }).click();
-  await page.getByPlaceholder("Jméno zákazníka").fill(zakaznik);
-  await page.getByPlaceholder("např. iPhone 13, notebook").fill(zarizeni);
+  await vyplnReklamaci(page, { zakaznik, zarizeni });
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
   await expect(page.getByText(zakaznik).first()).toBeVisible({ timeout: 30_000 });
 }
@@ -70,12 +74,12 @@ test("neuložená reklamace zůstane ve formuláři, nezmizí", async ({ page })
 
   await page.getByRole("button", { name: "+ Nová reklamace" }).click();
   await page.getByRole("button", { name: "Reklamace bez propojení na zakázku" }).click();
-  await page.getByPlaceholder("Jméno zákazníka").fill(jmeno);
-  await page.getByPlaceholder("např. iPhone 13, notebook").fill("Tablet (bez zápisu)");
+  await vyplnReklamaci(page, { zakaznik: jmeno, zarizeni: "Tablet (bez zápisu)" });
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
 
   await expect(page.getByText(/Chyba při vytváření reklamace/).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByPlaceholder("Jméno zákazníka")).toHaveValue(jmeno);
+  await expect(page.getByPlaceholder("Co zákazník reklamuje – projevy závady, od kdy se objevuje")).not.toHaveValue("");
 
   await page.unroute(/\/rest\/v1\/warranty_claims/);
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
@@ -93,20 +97,14 @@ test("diagnostika psaná v reklamaci se uloží do napojené zakázky", async ({
   await page.getByRole("button", { name: "+ Nová reklamace" }).click();
   await page.getByPlaceholder("Vyhledat zakázku (kód, zákazník, SN, telefon…)").fill(kod);
   await page.getByRole("button", { name: new RegExp(kod) }).first().click();
+  // Zákazník a zařízení se převezmou ze zakázky; popis závady je povinný.
+  await expect(page.getByPlaceholder("např. iPhone 13, notebook")).toHaveValue("Notebook (reklamace)", { timeout: 30_000 });
+  await vyplnReklamaci(page, { popis: "Po opravě nejde nabíjet" });
   await page.getByRole("button", { name: "Vytvořit reklamaci" }).click();
 
-  /* Seznam se po založení přepne na Reklamace. Do detailu se jde přes jméno
-     zákazníka, protože je pro tenhle běh unikátní: reklamací je v ostrém
-     servisu spousta z minulých běhů a „první R…“ v seznamu klidně patří
-     jiné – a na reklamaci bez zakázky se diagnostika neukazuje vůbec.
-     Čekání na jméno zároveň nahrazuje dřívější kontrolu čísla zakázky, která
-     stihla projít ještě na zavírajícím se okně, a tím netvrdila nic. */
-  // Řádek reklamace nese „R… · datum · Reklamace · zařízení · zákazník“ v jednom
-  // textu; karta zdrojové zakázky má stejné jméno, ale „Reklamace ·“ v ní není.
-  await page.getByRole("button", { name: /^Reklamace\s*\d*$/ }).first().click();
-  const naseReklamace = page.locator(`:text-is("${zakaznik}"):visible`).first();
-  await expect(naseReklamace).toBeVisible({ timeout: 30_000 });
-  await naseReklamace.click();
+  /* Po založení se rovnou otevře detail nové reklamace (jako u zakázky) –
+     do seznamu se nejde. Dřív se reklamace hledala v seznamu podle jména
+     zákazníka, protože „první R…“ klidně patřilo reklamaci z minulého běhu. */
 
   // Detail reklamace ukazuje diagnostiku zakázky; dřív se odtud neukládala vůbec.
   // Zakázka se k reklamaci dotahuje celá, což chvíli trvá.
