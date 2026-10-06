@@ -62,7 +62,7 @@ export function HistorieReklamaceModal({ entries, loading, error, onClose, getBy
           {!loading && !error && entries.length > 0 && (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {entries.map((e) => {
-                const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "status_changed" ? "Změna stavu" : e.action === "updated" ? "Upravena" : e.action;
+                const actionLabel = e.action === "created" ? "Vytvořena" : e.action === "status_changed" ? "Změna stavu" : e.action === "updated" ? "Upravena" : e.action === "converted_to_ticket" ? "Převedena na zakázku" : e.action;
                 const who = e.nickname || (e.changed_by ? "Kolega bez přezdívky" : "Systém");
                 const details = (e.details || {}) as Record<string, unknown>;
                 const statusOld = details.status_old;
@@ -74,6 +74,9 @@ export function HistorieReklamaceModal({ entries, loading, error, onClose, getBy
                       <div style={{ fontWeight: 600, color: "var(--muted)", marginTop: 4 }}>
                         Stav: {getByKey(String(statusOld))?.label ?? String(statusOld)} → {getByKey(String(statusNew))?.label ?? String(statusNew)}
                       </div>
+                    )}
+                    {e.action === "converted_to_ticket" && details.ticket_code != null && (
+                      <div style={{ fontWeight: 600, color: "var(--muted)", marginTop: 4 }}>Zakázka {String(details.ticket_code)} – nešlo o reklamaci</div>
                     )}
                     <div style={{ color: "var(--muted)", marginTop: 2 }}>{formatCZ(e.created_at)} · {who}</div>
                   </li>

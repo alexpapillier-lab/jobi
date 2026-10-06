@@ -1,7 +1,8 @@
 /**
  * Tělo detailu reklamace: zákazník, zařízení, poznámka, provedené zákroky,
  * stav, a u napojené zakázky její diagnostika (zapisuje se rovnou do ní)
- * a komentáře. Vyneseno z Orders.tsx beze změny obsahu.
+ * a komentáře. Z příjmu reklamace navíc reklamované opravy, poznámka pro
+ * technika, způsob převzetí, přijímací fotky a štítek převodu na zakázku.
  */
 import type React from "react";
 import { Button } from "../../components/ui";
@@ -25,6 +26,7 @@ import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
 import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
 import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
+import { META_PREVEDENO, STAV_PREVEDENO, fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
 
 type Props = {
@@ -58,6 +60,8 @@ type Props = {
   editComment: (ticketId: string, commentId: string, text: string) => Promise<void>;
   currentUserId: string | null;
   commentAuthorProfiles: Record<string, { nickname: string | null; avatarUrl: string | null }>;
+  /** Otevře zakázku (proklik „Převedeno na zakázku …“). */
+  otevritZakazku: (ticketId: string) => void;
 };
 
 export function DetailReklamace({
@@ -91,6 +95,7 @@ export function DetailReklamace({
   editComment,
   currentUserId,
   commentAuthorProfiles,
+  otevritZakazku,
 }: Props) {
   const c = { ...detailedClaim, ...editedClaim };
   /* Diagnostika napojené zakázky se odsud rovnou zapisuje, takže se
@@ -99,8 +104,27 @@ export function DetailReklamace({
   const zdrojZeSeznamu = detailedClaim.source_ticket_id ? cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) : undefined;
   const sourceTicket = zdrojZeSeznamu?.uplna ? zdrojZeSeznamu : undefined;
   const zdrojSeNacita = !!zdrojZeSeznamu && !sourceTicket;
+  const prevedenaNa = detailedClaim.converted_ticket_id ?? null;
+  const prevedenaKod = prevedenaNa ? (cloudTickets.find((t) => t.id === prevedenaNa)?.code ?? null) : null;
+  const reklamovane = reklamovaneOpravyReklamace(detailedClaim);
+  const prijimaciFotky = fotkyReklamace(detailedClaim);
   return (
   <>
+  {/* Reklamace se ukázala jako běžná oprava a žije dál jako zakázka. */}
+  {(prevedenaNa || detailedClaim.status === STAV_PREVEDENO) && (
+    <div role="status" style={{ ...card, marginTop: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", border: "1px solid color-mix(in srgb, var(--accent) 45%, transparent)", background: "var(--accent-soft)" }}>
+      <span style={{ fontSize: 13, color: "var(--text)" }}>
+        <strong>Převedeno na zakázku{prevedenaKod ? ` ${prevedenaKod}` : ""}</strong>
+        {detailedClaim.converted_at ? <span style={{ color: "var(--muted)" }}> · {formatCZ(detailedClaim.converted_at)}</span> : null}
+        <span style={{ color: "var(--muted)" }}> – nešlo o reklamaci, oprava pokračuje jako zakázka.</span>
+      </span>
+      {prevedenaNa && (
+        <Button variant="soft" size="sm" onClick={() => otevritZakazku(prevedenaNa)} title="Otevřít zakázku vzniklou z reklamace">
+          Otevřít zakázku{prevedenaKod ? ` ${prevedenaKod}` : ""}
+        </Button>
+      )}
+    </div>
+  )}
   <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
     <div style={{ ...card, ...stylSekce("zakaznik") }}>
       <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
@@ -163,6 +187,7 @@ export function DetailReklamace({
             <div style={{ fontSize: 13, color: "var(--text)" }}>{[c.device_accessories, c.device_note].filter(Boolean).join(" · ")}</div>
           )}
           {c.device_passcode && <div style={{ fontSize: 13, color: "var(--text)" }}>Heslo/kód: {c.device_passcode}</div>}
+          {c.handoff_method && <div style={{ fontSize: 13, color: "var(--muted)" }}>Převzetí: {c.handoff_method}</div>}
           {/* Záruka na opravu napojené zakázky – jestli jde reklamace uznat.
               Rozhoduje den přijetí reklamace, ne dnešek: reklamace přijatá
               v záruce zůstává v záruce, i když se vyřizuje déle. */}
@@ -197,13 +222,50 @@ export function DetailReklamace({
       )}
     </div>
     <div style={{ ...card, gridColumn: "1 / -1" }}>
-      <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Poznámka / důvod reklamace</div>
+      <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}><NoteIcon size={14} /> Popis reklamované závady</div>
       {!isEditingClaim ? (
-        <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 14, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.notes || "—"}</div>
+          {reklamovane.length > 0 && (
+            <div>
+              <div style={fieldLabel}>Reklamované opravy{sourceTicket?.code ? ` ze zakázky ${sourceTicket.code}` : ""}</div>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13, color: "var(--text)" }}>
+                {reklamovane.map((o) => (
+                  <li key={o.id}>{o.name}{typeof o.price === "number" ? <span style={{ color: "var(--muted)" }}> · {o.price.toLocaleString("cs-CZ")} Kč</span> : null}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {c.device_note && (
+            <div>
+              <div style={fieldLabel}>Poznámka pro technika</div>
+              <div style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{c.device_note}</div>
+            </div>
+          )}
+        </div>
       ) : (
         <textarea value={c.notes ?? ""} onChange={(e) => setEditedClaim((p) => ({ ...p, notes: e.target.value }))} placeholder="Poznámka / důvod reklamace" rows={4} style={{ ...baseFieldInput, minHeight: 100 }} />
       )}
     </div>
+    {prijimaciFotky.length > 0 && (
+      <div style={{ ...card, gridColumn: "1 / -1" }}>
+        <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Přijímací fotky</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+          {prijimaciFotky.map((url, idx) => (
+            <FotkaZakazky
+              key={idx}
+              url={url}
+              alt={`Přijímací fotka ${idx + 1}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setPhotoLightbox({ urls: prijimaciFotky, index: idx, ticketCode: detailedClaim.code })}
+              onKeyDown={(e) => e.key === "Enter" && setPhotoLightbox({ urls: prijimaciFotky, index: idx, ticketCode: detailedClaim.code })}
+              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", cursor: "pointer" }}
+            />
+          ))}
+        </div>
+      </div>
+    )}
     <div style={{ ...card, gridColumn: "1 / -1" }}>
       <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
       {(() => {
@@ -296,7 +358,7 @@ export function DetailReklamace({
         {isEditingClaim ? (
           <StatusPicker value={c.status ?? "received"} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setEditedClaim((p) => ({ ...p, status: next }))} size="sm" actionsByStatus={statusActionsMap} />
         ) : (
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{getByKey(String(c.status ?? ""))?.label ?? "—"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{getByKey(String(c.status ?? ""))?.label ?? (c.status === STAV_PREVEDENO ? META_PREVEDENO.label : "—")}</span>
         )}
       </div>
       <span style={{ fontSize: 12, color: "var(--muted)" }}>Vytvořeno: {formatCZ(c.created_at)}</span>

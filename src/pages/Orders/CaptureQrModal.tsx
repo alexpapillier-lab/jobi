@@ -16,9 +16,11 @@ type Props = {
   /** Token focení ke konceptu – když je, jde o přijímací fotky před vytvořením zakázky. Čte se při každém vykreslení. */
   draftCaptureTokenRef: React.MutableRefObject<string | null>;
   draftCaptureLiveCount: number;
+  /** Kam se fotky ke konceptu načtou (text v okně); výchozí příjem zakázky. */
+  nazevKonceptu?: string;
 };
 
-export function CaptureQrModal({ items, onClose, draftCaptureTokenRef, draftCaptureLiveCount }: Props) {
+export function CaptureQrModal({ items, onClose, draftCaptureTokenRef, draftCaptureLiveCount, nazevKonceptu = "rozpracované zakázky" }: Props) {
   return createPortal(
     <div
       role="dialog"
@@ -59,7 +61,7 @@ export function CaptureQrModal({ items, onClose, draftCaptureTokenRef, draftCapt
           {/* Token se čte při vykreslení schválně (stejně jako dřív v Orders.tsx): zapisuje ho obsluha kliknutí těsně před otevřením okna. */}
           {/* eslint-disable-next-line react-hooks/refs */}
           {draftCaptureTokenRef.current
-            ? "Naskenujte QR kód mobilem. Vyfocené fotky se po zavření tohoto okna načtou do rozpracované zakázky."
+            ? `Naskenujte QR kód mobilem. Vyfocené fotky se po zavření tohoto okna načtou do ${nazevKonceptu}.`
             : items.length > 1
             ? "Naskenujte QR kód podle zařízení. Fotka se uloží k příslušné zakázce."
             : "Naskenujte QR kód mobilem. Otevře se stránka pro vyfocení diagnostiky – fotka se uloží přímo k zakázce."}

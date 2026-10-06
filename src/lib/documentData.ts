@@ -11,6 +11,7 @@ import { computeTotals } from "./invoiceMath";
 import { ibanZCislaUctu } from "./banka";
 import type { TicketEx } from "../pages/Orders";
 import type { WarrantyClaimRow } from "../pages/Orders/hooks/useWarrantyClaims";
+import { reklamovaneOpravyReklamace } from "./reklamacePrijem";
 import type { CompanyData } from "./companyData";
 import { portalUrl } from "./portal";
 import type { Database } from "../types/supabase";
@@ -206,9 +207,12 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
       completed: s(claim.completed_at),
       eta: s(claim.expected_completion_at),
     },
+    // Z příjmu reklamace (migrace 20261006100000); starší řádky je nemají.
+    handoff: { receive: s((claim as { handoff_method?: string | null }).handoff_method) },
     items,
     totals: { currency: "CZK" },
     note: items.length ? undefined : s(claim.resolution_summary),
+    extra: { reklamovaneOpravy: reklamovaneOpravyReklamace(claim).map((o) => o.name).join(", ") },
   };
 }
 

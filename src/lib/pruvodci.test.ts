@@ -133,12 +133,16 @@ describe("novinky", () => {
   });
 
   it("nově zpřístupněný průvodce (zapnutý modul) je novinka; prošlý už ne", () => {
-    const drive = { dostupneDrive: d.map((p) => p.id).filter((id) => id !== "odmeny"), posledniKontrola: "2026-09-27", videno: {}, neprosle: [] };
-    const r = zjistiNovinky(d, drive, new Date("2026-09-28"));
+    // Poslední kontrola až po všech novinkaOd v katalogu – jinak by se do
+    // výsledku přimíchaly průvodci přidaní později (novinka podle data).
+    const posledni = d.map((p) => p.novinkaOd ?? "").sort().at(-1) || "2026-09-27";
+    const den = new Date(new Date(`${posledni}T12:00:00Z`).getTime() + 86_400_000);
+    const drive = { dostupneDrive: d.map((p) => p.id).filter((id) => id !== "odmeny"), posledniKontrola: posledni, videno: {}, neprosle: [] };
+    const r = zjistiNovinky(d, drive, den);
     expect(r.novinky.map((p) => p.id)).toEqual(["odmeny"]);
     expect(r.ulozit.neprosle).toContain("odmeny");
-    const uzProsel = { ...drive, videno: { odmeny: "2026-09-27" } };
-    expect(zjistiNovinky(d, uzProsel, new Date("2026-09-28")).novinky).toEqual([]);
+    const uzProsel = { ...drive, videno: { odmeny: posledni } };
+    expect(zjistiNovinky(d, uzProsel, den).novinky).toEqual([]);
   });
 
   it("průvodce s novinkaOd po poslední kontrole je novinka i pro známou stránku", () => {

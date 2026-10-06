@@ -390,6 +390,9 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
 
       const devices = Array.isArray(newDraft.devices) ? newDraft.devices : [{ deviceLabel: newDraft.deviceLabel, serialOrImei: newDraft.serialOrImei, devicePasscode: newDraft.devicePasscode, deviceCondition: newDraft.deviceCondition, deviceAccessories: newDraft.deviceAccessories, requestedRepair: newDraft.requestedRepair, handoffMethod: newDraft.handoffMethod, handbackMethod: newDraft.handbackMethod, deviceNote: newDraft.deviceNote, externalId: newDraft.externalId, estimatedPrice: newDraft.estimatedPrice }];
       const photosBefore = (newDraft as any).diagnosticPhotosBefore as string[] | undefined;
+      /* Už nahrané přijímací fotky (odkazy do úložiště) – např. zakázka
+         vzniklá převodem reklamace (lib/reklamacePrijem). Jdou k první zakázce. */
+      const hotoveFotkyPred = ((newDraft as any).hotoveFotkyPred as string[] | undefined)?.filter((u) => typeof u === "string" && u) ?? [];
 
       let accumulatedTickets = [...cloudTickets];
       const createdTickets: TicketEx[] = [];
@@ -437,7 +440,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
             : ((newDraft as any).performedRepairs ?? []),
           diagnostic_text: (newDraft as any).diagnosticText?.trim() || "",
           diagnostic_photos: (newDraft as any).diagnosticPhotos ?? [],
-          diagnostic_photos_before: [] as string[],
+          diagnostic_photos_before: i === 0 ? hotoveFotkyPred : ([] as string[]),
           expected_completion_at: (dev.expectedCompletionAt ?? newDraft.devices[0]?.expectedCompletionAt) || null,
           // Sleva zadaná u zařízení při příjmu (DeviceRow.discountType); starší koncept ji měl na celé zakázce.
           discount_type: dev.discountType ?? (newDraft as any).discountType ?? null,
@@ -469,7 +472,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
             }
             if (urls.length > 0) {
               const { data: updated, error: updErr } = await (supabase.from("tickets") as any)
-                .update({ diagnostic_photos_before: urls })
+                .update({ diagnostic_photos_before: [...hotoveFotkyPred, ...urls] })
                 .eq("id", ticket.id)
                 .select()
                 .single();

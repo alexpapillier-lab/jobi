@@ -20,6 +20,7 @@ import type { Branch } from "../../lib/branches";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { OrdersProps, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
+import { META_PREVEDENO, STAV_PREVEDENO } from "../../lib/reklamacePrijem";
 import {
   type DocMode,
   exportTicketToPDF,
@@ -80,8 +81,10 @@ type Props = {
   invoiceIdByTicketId: Record<string, string>;
   dph: ServiceVat;
   setTicketHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setClaimSourceTicket: React.Dispatch<React.SetStateAction<TicketEx | null>>;
-  setCreateClaimModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Otevře okno Nová reklamace předvyplněné touto zakázkou. */
+  onNovaReklamaceZeZakazky: (ticket: TicketEx) => void;
+  /** „Není to reklamace → založit zakázku“; bez propu (bez práva, uzavřená, převedená) se tlačítko neukáže. */
+  onPrevestNaZakazku?: () => void;
   chatZapnuty: boolean;
   setDeleteTicketId: React.Dispatch<React.SetStateAction<string | null>>;
   setDeleteDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -134,8 +137,8 @@ export function DetailHlavicka({
   invoiceIdByTicketId,
   dph,
   setTicketHistoryModalOpen,
-  setClaimSourceTicket,
-  setCreateClaimModalOpen,
+  onNovaReklamaceZeZakazky,
+  onPrevestNaZakazku,
   chatZapnuty,
   setDeleteTicketId,
   setDeleteDialogOpen,
@@ -152,9 +155,16 @@ export function DetailHlavicka({
           {detailedClaim && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 8, background: "linear-gradient(180deg, rgba(20,184,166,0.4) 0%, rgba(15,118,110,0.3) 100%)", color: "#134e4a", fontWeight: 800, border: "1px solid rgba(13,148,136,0.5)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>Reklamace</span>}
           {/* Stav přímo v hlavičce – pilulka je zároveň přepínač stavu. */}
           {detailedClaim && !isEditingClaim && (
-            <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
-              <StatusPicker value={detailedClaim.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(detailedClaim.id, next)} size="sm" actionsByStatus={statusActionsMap} />
-            </span>
+            detailedClaim.converted_ticket_id || detailedClaim.status === STAV_PREVEDENO ? (
+              // Převedená reklamace je uzavřená napořád – stav se nepřepíná.
+              <span data-tour="reklamace-stav" title="Reklamace se převedla na zakázku; stav už nejde měnit." style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: META_PREVEDENO.bg, color: META_PREVEDENO.fg }}>
+                {META_PREVEDENO.label}
+              </span>
+            ) : (
+              <span data-tour="reklamace-stav" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
+                <StatusPicker value={detailedClaim.status ?? ""} statuses={statuses as any} getByKey={getByKey as any} onChange={(next) => setClaimStatus(detailedClaim.id, next)} size="sm" actionsByStatus={statusActionsMap} />
+              </span>
+            )
           )}
           {!detailedClaim && detailedTicket && !isEditing && (() => {
             const detailStatus = normalizeStatus((detailedTicket.status as any) ?? statusById[detailedTicket.id]);
@@ -283,6 +293,7 @@ export function DetailHlavicka({
               </Button>
               {canPrintExport && (
                 <PrintMenu
+                  dataTour="reklamace-tisk"
                   rows={[
                     {
                       key: "prijemka_reklamace",
@@ -304,10 +315,22 @@ export function DetailHlavicka({
                   Otevřít zakázku
                 </Button>
               )}
+              {onPrevestNaZakazku && (
+                <Button
+                  variant="soft"
+                  onClick={onPrevestNaZakazku}
+                  title="Zjistilo se, že nejde o reklamaci: založí se z ní běžná zakázka (Přijato) a reklamace se uzavře."
+                  data-tour="reklamace-prevest"
+                  icon={<InboxIcon size={14} />}
+                >
+                  Není to reklamace
+                </Button>
+              )}
               <OverflowMenu
                 ariaLabel="Další akce"
                 items={[
                   { label: "Historie", icon: <HistoryIcon size={14} />, onSelect: () => setClaimHistoryModalOpen(true) },
+                  ...(onPrevestNaZakazku ? [{ label: "Není to reklamace → založit zakázku", icon: <InboxIcon size={14} />, onSelect: onPrevestNaZakazku }] : []),
                   {
                     label: "Smazat reklamaci",
                     icon: <TrashIcon size={14} />,
@@ -470,10 +493,7 @@ export function DetailHlavicka({
                   {
                     label: "Založit reklamaci z této zakázky",
                     icon: <InboxIcon size={14} />,
-                    onSelect: () => {
-                      setClaimSourceTicket(detailedTicket);
-                      setCreateClaimModalOpen(true);
-                    },
+                    onSelect: () => onNovaReklamaceZeZakazky(detailedTicket),
                   },
                   ...(hasBranches ? [{ label: "Přesunout na pobočku…", icon: <PinIcon size={14} />, onSelect: () => setMoveBranchOpen(true) }] : []),
                   // Karta zakázky do chatu místo opisování čísla – nejčastější důvod, proč si lidé v servisu píšou.
