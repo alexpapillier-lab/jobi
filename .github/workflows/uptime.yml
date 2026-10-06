@@ -61,6 +61,11 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+    inputs:
+      zkusebni_email:
+        description: "Poslat zkušební e-mail, i když všechno odpovídá (ověření Resend + ALERT_EMAIL)"
+        type: boolean
+        default: false
 
 concurrency:
   # Opožděný běh se nemá potkat s dalším – nemíchaly by se záznamy tlumení.
@@ -200,7 +205,7 @@ jobs:
 
       - name: E-mail přes Resend
         id: email
-        if: steps.vysledek.outputs.selhalo != ''
+        if: steps.vysledek.outputs.selhalo != '' || github.event.inputs.zkusebni_email == 'true'
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
@@ -208,6 +213,7 @@ jobs:
           SELHALO: ${{ steps.vysledek.outputs.selhalo }}
           BEH: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TLUMENI_S: "7200"
+          ZKUSEBNI: ${{ github.event.inputs.zkusebni_email }}
         run: |
           if [ -z "$RESEND_API_KEY" ] || [ -z "$ALERT_EMAIL" ]; then
             echo "::warning::E-mail se neposílá – chybí secret RESEND_API_KEY nebo ALERT_EMAIL. O selhání dá vědět aspoň GitHub (e-mail o neúspěšném plánovaném workflow)."
@@ -216,6 +222,11 @@ jobs:
           fi
           ted=$(date +%s)
           posledni=$(cat .uptime-tlumeni/posledni-email 2>/dev/null || echo 0)
+          if [ "$ZKUSEBNI" = "true" ]; then
+            # Zkušební e-mail obchází tlumení a říká, že nejde o výpadek.
+            posledni=0
+            SELHALO="(zkušební e-mail – všechno odpovídá, jen ověření doručení)"
+          fi
           if [ $((ted - posledni)) -lt "$TLUMENI_S" ]; then
             echo "::notice::E-mail šel před $(( (ted - posledni) / 60 )) minutami, další nejdřív za 2 hodiny od něj. Selhání workflow zůstává."
             echo "odeslano=false" >> "$GITHUB_OUTPUT"
