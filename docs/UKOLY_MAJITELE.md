@@ -90,6 +90,14 @@ Web se nasazuje sám, desktop ne. Vydej 0.7.1 přes jobi-release-app
 statistiky podle vydání, odměny, Dnes, inventuru, souhrnnou fakturu, záruku,
 IMEI a Find My, migraci, zámek „upravuje kolega“.
 
+### 6b. PDF ze serveru (volitelné, z cloudové větve 2. 10.)
+Edge funkce `document-pdf` je v repu, ale **není nasazená** a bez klíčů
+Cloudflare Browser Rendering stejně vrací 503 a aplikace jde do tiskového
+dialogu jako dřív. Když to chceš: Cloudflare API token *Browser Rendering: Edit*,
+`supabase secrets set CF_ACCOUNT_ID=… CF_BROWSER_RENDERING_TOKEN=…`, pak
+Actions → „Nasazení edge funkcí na produkci“ → funkce `document-pdf`, potvrzení
+`produkce`. Postup: `docs/PDF_NA_SERVERU.md`. Účtuje se podle času prohlížeče.
+
 ## C. Rozhodnutí, na která čekám
 
 ### 7. DPH u jednotlivé faktury z detailu zakázky
