@@ -16,6 +16,8 @@ type Toast = {
   onSecondaryAction?: () => void;
   /** Druhý řádek (např. náhled SMS) */
   subtitle?: string;
+  /** Zavření křížkem u trvalého toastu (např. „novinky už nechci vidět“). */
+  onDismiss?: () => void;
   /** Klik na toast (místo jen zavření) – např. otevřít SMS chat */
   onNavigate?: () => void;
   createdAt: number;
@@ -88,7 +90,16 @@ export function showIncomingSmsToast(title: string, bodyPreview: string, onOpenC
 export function showPersistentToast(
   message: string,
   type: "success" | "error" | "info",
-  options: { actionLabel: string; onAction: () => void; secondaryLabel?: string; onSecondaryAction?: () => void; subtitle?: string; silent?: boolean }
+  options: {
+    actionLabel: string;
+    onAction: () => void;
+    secondaryLabel?: string;
+    onSecondaryAction?: () => void;
+    subtitle?: string;
+    silent?: boolean;
+    /** Volá se při zavření křížkem (ne při akci). Křížek má každý trvalý toast. */
+    onDismiss?: () => void;
+  }
 ): string {
   if (!options.silent) playToastSound(type);
   const id = `toast-${++toastId}`;
@@ -102,6 +113,7 @@ export function showPersistentToast(
     onAction: options.onAction,
     secondaryLabel: options.secondaryLabel,
     onSecondaryAction: options.onSecondaryAction,
+    onDismiss: options.onDismiss,
     createdAt: Date.now(),
     duration: 0,
   });
@@ -339,6 +351,38 @@ function ToastItem({ toast }: { toast: Toast }) {
           }}
         >
           {toast.actionLabel}
+        </button>
+      )}
+      {/* Trvalý toast se dřív dal zavřít jen akcí (nebo „Později“, když ho
+          měl) – novinky tak visely, dokud uživatel nešel do průvodce. */}
+      {isPersistent && (
+        <button
+          type="button"
+          aria-label="Zavřít"
+          title="Zavřít"
+          onClick={(e) => {
+            e.stopPropagation();
+            toast.onDismiss?.();
+            removeToast(toast.id);
+          }}
+          style={{
+            flexShrink: 0,
+            width: 28,
+            height: 28,
+            marginRight: -6,
+            display: "grid",
+            placeItems: "center",
+            borderRadius: 8,
+            border: "none",
+            background: "transparent",
+            color: "inherit",
+            fontSize: 18,
+            lineHeight: 1,
+            cursor: "pointer",
+            opacity: 0.8,
+          }}
+        >
+          ×
         </button>
       )}
     </div>

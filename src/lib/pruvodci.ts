@@ -876,6 +876,21 @@ export function oznacProsly(userId: string, id: string, dnes = new Date()): Uloz
   return next;
 }
 
+/**
+ * Uživatel novinky zavřel, aniž by průvodce prošel: zmizí z odznaku, toastu
+ * i seznamu novinek, ale průvodce se nepočítá jako prošlý (zůstává mezi
+ * všemi průvodci, jen bez štítku „Novinka“). Znovu se neobjeví – do
+ * `dostupneDrive` už patří a `posledniKontrola` je za jeho `novinkaOd`.
+ * Bez `ids` zavře všechny.
+ */
+export function zahodNovinky(userId: string, ids?: readonly string[], dnes = new Date()): UlozenyStavPruvodcu {
+  const ulozeno = nactiStavPruvodcu(userId) ?? { dostupneDrive: [], posledniKontrola: dnes.toISOString().slice(0, 10), videno: {}, neprosle: [] };
+  const pryc = ids ? new Set(ids) : null;
+  const next: UlozenyStavPruvodcu = { ...ulozeno, neprosle: pryc ? ulozeno.neprosle.filter((x) => !pryc.has(x)) : [] };
+  ulozStavPruvodcu(userId, next);
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Sdílený stav pro seznam v Nastavení → Nápověda
 // ---------------------------------------------------------------------------

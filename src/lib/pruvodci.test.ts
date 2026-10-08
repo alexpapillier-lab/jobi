@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { onboardingKroky } from "./onboardingKroky";
-import { PRUVODCI, bezDiakritiky, dostupniPruvodci, hledejVPruvodcich, pruvodceProMisto, zjistiNovinky, type KontextPruvodcu } from "./pruvodci";
+import { PRUVODCI, bezDiakritiky, dostupniPruvodci, hledejVPruvodcich, pruvodceProMisto, zjistiNovinky, zahodNovinky, ulozStavPruvodcu, nactiStavPruvodcu, type KontextPruvodcu } from "./pruvodci";
 
 /** Všechny kotvy data-tour v kódu: literály a předpony dynamických (`sidebar-nav-${…}`). */
 function kotvyVKodu(): { literaly: Set<string>; predpony: string[] } {
@@ -151,6 +151,47 @@ describe("novinky", () => {
     expect(ids).toContain("statistiky");
     expect(ids).not.toContain("uvod");
     expect(ids).not.toContain("zakazky");
+  });
+
+  describe("zavření novinek", () => {
+    const pamet = new Map<string, string>();
+    beforeEach(() => {
+      pamet.clear();
+      vi.stubGlobal("localStorage", {
+        getItem: (k: string) => pamet.get(k) ?? null,
+        setItem: (k: string, v: string) => void pamet.set(k, v),
+        removeItem: (k: string) => void pamet.delete(k),
+      });
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const uid = "u1";
+    // Poslední kontrola po všech novinkaOd v katalogu, ať do výsledku
+    // nevstupují průvodci přidaní později (novinka podle data).
+    const posledni = d.map((p) => p.novinkaOd ?? "").sort().at(-1) || "2026-09-28";
+    const ulozeny = { dostupneDrive: d.map((p) => p.id), posledniKontrola: posledni, videno: { zakazky: "2026-09-01" }, neprosle: ["odmeny", "statistiky"] };
+
+    it("zavře jednu novinku, druhá zůstane, a nic se neoznačí jako prošlé", () => {
+      ulozStavPruvodcu(uid, ulozeny);
+      const r = zahodNovinky(uid, ["odmeny"]);
+      expect(r.neprosle).toEqual(["statistiky"]);
+      expect(r.videno).toEqual({ zakazky: "2026-09-01" });
+      expect(nactiStavPruvodcu(uid)?.neprosle).toEqual(["statistiky"]);
+    });
+
+    it("bez seznamu zavře všechny", () => {
+      ulozStavPruvodcu(uid, ulozeny);
+      expect(zahodNovinky(uid).neprosle).toEqual([]);
+    });
+
+    it("zavřená novinka se při další kontrole nevrátí", () => {
+      ulozStavPruvodcu(uid, ulozeny);
+      const po = zahodNovinky(uid);
+      const r = zjistiNovinky(d, po, new Date(new Date(`${posledni}T12:00:00Z`).getTime() + 86_400_000));
+      expect(r.novinky.map((p) => p.id)).not.toContain("odmeny");
+      expect(r.novinky.map((p) => p.id)).not.toContain("statistiky");
+      expect(r.ulozit.neprosle).toEqual([]);
+    });
   });
 });
 

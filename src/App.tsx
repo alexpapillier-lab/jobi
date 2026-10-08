@@ -44,7 +44,7 @@ import { spustHlidacFronty } from "./lib/frontaZapisu";
 spustHlidacFronty();
 import { AppTourOverlay, type TourStep } from "./components/AppTourOverlay";
 import { NapovedaPanel } from "./components/NapovedaPanel";
-import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodciProMisto, ulozStavPruvodcu, useStavPruvodcu, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
+import { PRUVODCI, dostupniPruvodci, nactiStavPruvodcu, nastavStavPruvodcu, oznacProsly, pruvodciProMisto, ulozStavPruvodcu, useStavPruvodcu, zahodNovinky, zjistiNovinky, type KontextPruvodcu, type Pruvodce } from "./lib/pruvodci";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { supabase } from "./lib/supabaseClient";
 import { startServicePresence } from "./lib/presence";
@@ -542,6 +542,18 @@ export default function App() {
     [jeRootOwner, isAdmin, kontextPruvodcu]
   );
 
+  /* Zavření novinek bez projití průvodce – křížek v toastu, v sidebaru
+     a v Nápovědě. Bez `ids` zavře všechny. */
+  const zavritNovinky = useCallback(
+    (ids?: readonly string[]) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      const next = zahodNovinky(uid, ids);
+      nastavStavPruvodcu({ dostupne: pruvodciDostupni, videno: next.videno, novinky: next.neprosle });
+    },
+    [session?.user?.id, pruvodciDostupni]
+  );
+
   /* Novinky: po přihlášení (s odstupem, ať jsou načtené moduly) porovnat,
      co má uživatel k dispozici, s tím, co měl minule – nová funkce se
      oznámí jednou a nabídne průvodce. */
@@ -559,7 +571,7 @@ export default function App() {
       ulozStavPruvodcu(uid, ulozit);
       nastavStavPruvodcu({ dostupne: pruvodciDostupni, videno: ulozit.videno, novinky: ulozit.neprosle });
       if (novinky.length === 1) {
-        showPersistentToast(`Novinka: ${novinky[0].nazev}`, "info", { actionLabel: "Projít průvodce", onAction: () => spustPruvodce(novinky[0]), subtitle: novinky[0].popis, silent: true });
+        showPersistentToast(`Novinka: ${novinky[0].nazev}`, "info", { actionLabel: "Projít průvodce", onAction: () => spustPruvodce(novinky[0]), subtitle: novinky[0].popis, silent: true, onDismiss: () => zavritNovinky([novinky[0].id]) });
       } else if (novinky.length > 1) {
         showPersistentToast(`${novinky.length} novinky v Jobi`, "info", {
           actionLabel: "Zobrazit",
@@ -569,11 +581,12 @@ export default function App() {
           },
           subtitle: novinky.map((n) => n.nazev).join(", "),
           silent: true,
+          onDismiss: () => zavritNovinky(novinky.map((n) => n.id)),
         });
       }
     }, 8000);
     return () => window.clearTimeout(t);
-  }, [session?.user?.id, activeServiceId, pruvodciDostupni, spustPruvodce]);
+  }, [session?.user?.id, activeServiceId, pruvodciDostupni, spustPruvodce, zavritNovinky]);
 
   const tourOnNext = useCallback(() => {
     if (tourStep >= TOUR_STEPS.length - 1) {
@@ -1427,6 +1440,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           odmenyEnabled={odmenyVNavigaci}
           onHelp={otevriPruvodce}
           helpBadge={stavPruvodcu.novinky.length}
+          onZavritNovinky={() => zavritNovinky()}
         >
             {/*
               Tenhle obal i ty pod ním (Zákazníci, Sklad, Zařízení, Statistiky,
@@ -1856,6 +1870,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           stav={stavPruvodcu}
           kontext={kontextAgenta}
           onSpustitPruvodce={spustPruvodceId}
+          onZavritNovinky={zavritNovinky}
           onOtevritNastaveni={(sub) => {
             setOpenSettingsToSubsection({ category: "company", subsection: sub as SettingsSubsection });
             setActivePage("settings");
