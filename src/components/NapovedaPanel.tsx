@@ -52,6 +52,7 @@ export function NapovedaPanel({
   onOtevritNastaveni,
   onOtevritStranku,
   onVsichniPruvodci,
+  onZavritNovinky,
 }: {
   open: boolean;
   onClose: () => void;
@@ -67,6 +68,8 @@ export function NapovedaPanel({
   onOtevritNastaveni: (subsection: string) => void;
   onOtevritStranku: (page: string) => void;
   onVsichniPruvodci: () => void;
+  /** Zavřít novinky bez projití průvodce; bez `ids` všechny. */
+  onZavritNovinky?: (ids?: readonly string[]) => void;
 }) {
   const [zpravy, setZpravy] = useState<Zprava[]>([]);
   const [text, setText] = useState("");
@@ -273,15 +276,37 @@ export function NapovedaPanel({
           </button>
         ))}
         {!hleda && novinky.slice(0, 3).map((p) => (
-          <button key={p.id} type="button" style={{ ...tlacitko, background: "var(--accent-soft)", borderColor: "var(--accent)" }} onClick={() => { onClose(); onSpustitPruvodce(p.id); }}>
-            <span>
-              <span style={{ display: "block", fontSize: 11, color: "var(--accent)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>Novinka</span>
-              {p.nazev}
-              <span style={{ display: "block", fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{p.popis}</span>
-            </span>
-            <span style={{ color: "var(--accent)" }}>Projít ›</span>
-          </button>
+          <div key={p.id} style={{ display: "flex", alignItems: "stretch", gap: 4 }}>
+            <button type="button" style={{ ...tlacitko, flex: 1, background: "var(--accent-soft)", borderColor: "var(--accent)" }} onClick={() => { onClose(); onSpustitPruvodce(p.id); }}>
+              <span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--accent)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>Novinka</span>
+                {p.nazev}
+                <span style={{ display: "block", fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{p.popis}</span>
+              </span>
+              <span style={{ color: "var(--accent)" }}>Projít ›</span>
+            </button>
+            {onZavritNovinky && (
+              <button
+                type="button"
+                aria-label={`Zavřít novinku ${p.nazev}`}
+                title="Zavřít – průvodce zůstane mezi všemi průvodci"
+                onClick={() => onZavritNovinky([p.id])}
+                style={{ flexShrink: 0, width: 32, border, borderRadius: 12, background: "var(--panel-2)", color: "var(--muted)", fontSize: 17, lineHeight: 1, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                ×
+              </button>
+            )}
+          </div>
         ))}
+        {!hleda && novinky.length > 1 && onZavritNovinky && (
+          <button
+            type="button"
+            onClick={() => onZavritNovinky()}
+            style={{ alignSelf: "flex-end", border: "none", background: "transparent", color: "var(--muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 4px", fontFamily: "inherit" }}
+          >
+            Zavřít všechny novinky ({novinky.length})
+          </button>
+        )}
         {!hleda && (
           <button type="button" style={{ ...tlacitko, background: "transparent" }} onClick={() => { onClose(); onVsichniPruvodci(); }}>
             <span>Všichni průvodci a novinky</span>

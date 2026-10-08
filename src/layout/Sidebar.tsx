@@ -178,6 +178,8 @@ export type SidebarProps = {
   onHelp?: () => void;
   /** Neprošlé novinky – odznak u otazníku. */
   helpBadge?: number;
+  /** Zavřít novinky (křížek vedle „Průvodce · N novinky“ v rozbalené liště). */
+  onZavritNovinky?: () => void;
   onJobiDocsFirstConnect?: () => void;
   horizontal?: boolean;
   /** Strana obrazovky – určuje hranu, na které leží proužek aktivní položky. */
@@ -292,6 +294,7 @@ export function Sidebar({
   zasilkyBadge = 0,
   onHelp,
   helpBadge = 0,
+  onZavritNovinky,
   onJobiDocsFirstConnect,
   horizontal = false,
   side = "left",
@@ -1115,8 +1118,10 @@ export function Sidebar({
           gap: "var(--space-1)",
         }}
       >
-        {/* Průvodce a novinky: otazník nad Nastavením, s odznakem neprošlých novinek. */}
+        {/* Průvodce a novinky: otazník nad Nastavením, s odznakem neprošlých novinek.
+            Křížek vedle (v rozbalené liště) novinky zavře bez procházení průvodců. */}
         {onHelp && (
+          <div style={{ position: "relative" }}>
           <button
             type="button"
             data-tour="sidebar-help"
@@ -1153,11 +1158,45 @@ export function Sidebar({
               )}
             </span>
             {expanded && (
-              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: helpBadge > 0 && onZavritNovinky ? 28 : 0 }}>
                 Průvodce{helpBadge > 0 ? ` · ${helpBadge} ${helpBadge === 1 ? "novinka" : "novinky"}` : ""}
               </span>
             )}
           </button>
+          {expanded && helpBadge > 0 && onZavritNovinky && (
+            <button
+              type="button"
+              aria-label="Zavřít novinky"
+              title="Zavřít novinky – průvodci zůstanou v Nápovědě"
+              onClick={(e) => {
+                e.stopPropagation();
+                onZavritNovinky();
+              }}
+              style={{
+                position: "absolute",
+                right: 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 26,
+                height: 26,
+                display: "grid",
+                placeItems: "center",
+                border: "none",
+                borderRadius: 8,
+                background: "transparent",
+                color: "var(--muted)",
+                fontSize: 17,
+                lineHeight: 1,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--panel-2)"; e.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--muted)"; }}
+            >
+              ×
+            </button>
+          )}
+          </div>
         )}
         {renderNavButton(SETTINGS_ITEM)}
 

@@ -53,6 +53,7 @@ export function AppLayout({
   odmenyEnabled = false,
   onHelp,
   helpBadge = 0,
+  onZavritNovinky,
   sidebarPinned = false,
   onSidebarPinnedChange,
 }: {
@@ -83,6 +84,8 @@ export function AppLayout({
   onHelp?: () => void;
   /** Počet neprošlých novinek – odznak u otazníku. */
   helpBadge?: number;
+  /** Zavřít všechny novinky bez projití průvodců (křížek u odznaku). */
+  onZavritNovinky?: () => void;
   /** Výchozí hodnota z uiCfg – localStorage klíč lišty má přednost. */
   sidebarPinned?: boolean;
   onSidebarPinnedChange?: (pinned: boolean) => void;
@@ -293,6 +296,7 @@ export function AppLayout({
             zasilkyBadge,
             onHelp,
             helpBadge,
+            onZavritNovinky,
           } satisfies SidebarProps)}
         />
       </aside>
