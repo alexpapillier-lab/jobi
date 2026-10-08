@@ -40,6 +40,9 @@ import {
 } from "./Statistics/margin";
 import { PRAZDNE_KPI, computeKpisObdobi, datumVydani, rozdelPodleObdobi, spocitejRozpracovano, type JeKoncovy } from "./Statistics/kpi";
 import { celeCislo, cislo, dny, formatCurrencyRounded, monthLabelLong, zakazky } from "./Statistics/format";
+import { exportDoMarkdownu, nazevSouboruExportu, sestavExportProAi } from "./Statistics/exportProAi";
+import { stahnoutSoubor } from "../lib/stahnoutSoubor";
+import { showToast } from "../components/Toast";
 import {
   COMPARABLE_PERIODS,
   periodRange,
@@ -49,8 +52,11 @@ import {
   type PeriodType,
 } from "./Statistics/obdobi";
 
+// branch_id, handback_method a warranty_claim jsou tu kvůli exportu pro AI
+// (pobočka, způsob předání, záruční oprava); pobočku navíc potřebuje
+// filterByBranch, aby tabulka v pobočce ukazovala jen její zakázky.
 const TICKETS_SELECT =
-  "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
+  "id,service_id,code,title,status,notes,customer_id,customer_name,customer_phone,customer_email,customer_address_street,customer_address_city,customer_address_zip,customer_company,customer_ico,customer_info,device_serial,device_passcode,device_condition,device_note,external_id,handoff_method,handback_method,warranty_claim,branch_id,estimated_price,performed_repairs,diagnostic_text,diagnostic_photos,diagnostic_photos_before,discount_type,discount_value,created_at,completed_at,updated_at,version";
 
 type ViewMode = "cards" | "table" | "charts";
 
@@ -264,10 +270,22 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
   const idsServisu = useMemo(() => (klicServisu ? klicServisu.split(",") : []), [klicServisu]);
 
   /**
-   * Jednotlivé zakázky jsou potřeba jen pro tabulku a její export – a jako
-   * záloha, když serverové agregace selžou. Pro karty a grafy se nestahují.
+   * Export pro AI potřebuje jednotlivé zakázky i v kartách a grafech.
+   * `zakazkyProExport` se po prvním kliknutí už nevrací na false – jinak by
+   * se po stažení zakázky zahodily a druhé kliknutí by je tahalo znovu.
+   * `exportCeka` je formát, na který se čeká, než zakázky a ceník dorazí.
    */
-  const potrebujeZakazky = viewMode === "table" || serverNedostupny;
+  const [zakazkyProExport, setZakazkyProExport] = useState(false);
+  const [exportCeka, setExportCeka] = useState<"md" | "json" | null>(null);
+  const [costSourcesHotove, setCostSourcesHotove] = useState(false);
+
+  /**
+   * Jednotlivé zakázky jsou potřeba jen pro tabulku a její export – a jako
+   * záloha, když serverové agregace selžou. Pro karty a grafy se nestahují,
+   * dokud o ně nepožádá export pro AI.
+   */
+  const zakazkyProZobrazeni = viewMode === "table" || serverNedostupny;
+  const potrebujeZakazky = zakazkyProZobrazeni || zakazkyProExport;
 
   /**
    * Časy zakázek pro graf „Kdy lidé chodí“. Serverové agregace hodiny
@@ -368,10 +386,12 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     if (!activeServiceId || !supabase || !potrebujeZakazky) {
       setCostSources(EMPTY_COST_SOURCES);
       setCostSourcesError(null);
+      setCostSourcesHotove(false);
       return;
     }
     const client = supabase;
     let cancelled = false;
+    setCostSourcesHotove(false);
     (async () => {
       type ProductRow = { id: string; purchase_price: number | string | null };
       type RepairRow = { id: string; costs: number | string | null; product_ids: string[] | null };
@@ -410,12 +430,18 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
       }
       setCostSources({ repairs, purchasePrices, orderPrices: orderPricesRes.data });
       setCostSourcesError(null);
-    })().catch((err: unknown) => {
-      if (cancelled) return;
-      console.warn("[Statistics] Ceník/sklad se nenačetl:", err);
-      setCostSources(EMPTY_COST_SOURCES);
-      setCostSourcesError(err instanceof Error ? err.message : "Ceník a sklad se nepodařilo načíst.");
-    });
+    })()
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("[Statistics] Ceník/sklad se nenačetl:", err);
+        setCostSources(EMPTY_COST_SOURCES);
+        setCostSourcesError(err instanceof Error ? err.message : "Ceník a sklad se nepodařilo načíst.");
+      })
+      // I s chybou je „hotovo“: export pak počítá jen z nákladů u oprav a
+      // poznámka v souboru to řekne.
+      .finally(() => {
+        if (!cancelled) setCostSourcesHotove(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -591,8 +617,8 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
    * Když serverové agregace dorazí a jsme v kartách, o žádné zakázky se
    * nečeká – a chyba jejich stahování se ani nemůže objevit.
    */
-  const nacitani = serverLoading || (potrebujeZakazky && ticketsLoading);
-  const chybaNacteni = potrebujeZakazky ? ticketsError : null;
+  const nacitani = serverLoading || (zakazkyProZobrazeni && ticketsLoading);
+  const chybaNacteni = zakazkyProZobrazeni ? ticketsError : null;
 
   // Počty zakázek do popisků – ze serveru, jinak z toho, co je v paměti.
   const pocetVObdobi = serverStats ? serverStats.pocetVObdobi : skupiny.prijate.length;
@@ -768,6 +794,104 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [filteredTickets, nazevStavu, costSources, jeStornoZakazky, jeKoncovyZakazky, vydaneIds]);
 
+  /**
+   * Poznámka k nákladům pod KPI: co se do nich počítá a kolika opravám
+   * náklady chybí. Když se ceník/sklad nenačetl, řekne to rovnou – jinak by
+   * vysoká marže vypadala jako dobrá zpráva. Stejná věta jde i do exportu
+   * pro AI, proto je nad ním (a jako memo, ať export nezávisí na novém
+   * textu při každém vykreslení).
+   */
+  const costsFootnote = useMemo(() => {
+    const parts: string[] = [];
+    // Bez téhle věty si majitel porovná obrat s počtem přijatých zakázek a
+    // bude hledat chybu. Peníze jdou podle vydání, počty podle přijetí.
+    parts.push("Příjem, náklady a zisk jsou ze zakázek vydaných v období (podle data vydání), počet zakázek podle data přijetí; rozpracované zakázky do příjmu nepatří, dokud se nevydají.");
+    if (costSourcesError) {
+      parts.push("Ceník a sklad se nepodařilo načíst – náklady jsou jen z nákladů uložených u oprav, bez nákupních cen dílů.");
+    } else {
+      parts.push("Náklady = náklady oprav + nákupní ceny dílů. Nákupní cena dílu je poslední cena z přijaté objednávky u dodavatele (Sklad → Objednávky); díl bez přijaté objednávky má ruční nákupní cenu z produktu.");
+    }
+    if (kpis.entriesWithoutCost > 0) {
+      const n = kpis.entriesWithoutCost;
+      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} chybí náklady.`);
+    } else if (topRepairs.length > 0) {
+      // Na servisu bez jediné opravy je „všechny opravy mají náklady“ tvrzení
+      // o prázdné množině – nový zákazník to čte jako pochvalu za data, která
+      // nemá.
+      parts.push("Všechny provedené opravy mají náklady.");
+    }
+    if (kpis.entriesMissingPurchasePrice > 0) {
+      const n = kpis.entriesMissingPurchasePrice;
+      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} nemá některý díl nákupní cenu (počítá se jako 0 Kč).`);
+    }
+    // Peníze jsou z cen na zakázkách, ne z faktur – a stornované zakázky do
+    // nich nepatří. Bez téhle věty se čísla nedají porovnat s účetnictvím.
+    parts.push("Počítá se z cen na zakázkách (ne z faktur); stornované zakázky se počítají do počtu, ne do peněz.");
+    if (dphServisu?.platce) {
+      parts.push(dphServisu.cenySDph ? "Servis je plátce DPH a ceny oprav jsou s DPH – částky jsou včetně daně." : "Servis je plátce DPH a ceny oprav jsou bez DPH – částky jsou bez daně.");
+    }
+    return parts.join(" ");
+  }, [costSourcesError, kpis, topRepairs, dphServisu]);
+
+  /**
+   * Export pro AI: celý obraz stránky v jednom souboru, anonymně. Kliknutí
+   * jen zapne stahování zakázek (v kartách se jinak nestahují) a zapamatuje
+   * si formát; soubor se sestaví, až dorazí zakázky i ceník.
+   */
+  const zadejExportProAi = useCallback((format: "md" | "json") => {
+    setZakazkyProExport(true);
+    setExportCeka(format);
+  }, []);
+  useEffect(() => {
+    if (!exportCeka || !zakazkyProExport || ticketsLoading || !costSourcesHotove || serverLoading) return;
+    const format = exportCeka;
+    setExportCeka(null);
+    if (ticketsError) {
+      showToast(`Export se nepodařil: ${ticketsError}`, "error");
+      return;
+    }
+    const servisAktivni = mojeServisy.find((x) => x.id === activeServiceId)?.name ?? "Servis";
+    const e = sestavExportProAi({
+      servis: konsolidovane ? mojeServisy.map((x) => x.name).join(", ") : servisAktivni,
+      servisy: konsolidovane ? mojeServisy.map((x) => x.name) : undefined,
+      obdobi: { typ: periodType, od: obdobi?.start ?? null, do: obdobi?.end ?? null },
+      predchoziObdobi: predchoziObdobi ? { od: predchoziObdobi.start, do: predchoziObdobi.end } : null,
+      pobocka: activeBranchId ? branchNames.get(activeBranchId) ?? null : null,
+      zuzeni: drillLabel,
+      kpi: kpis,
+      kpiPredchozi: compareActive ? prevKpis : null,
+      rozpracovano,
+      stavy: statusItems,
+      topOpravy: topRepairs,
+      topZarizeni: topDevices,
+      marzeOpravy: marginRepairRows,
+      marzeZarizeni: marginDeviceRows,
+      marzePobocky: marginBranchRows,
+      marzeServisy: marginServiceRows,
+      mesice: monthlyStats,
+      technici,
+      skupiny: filteredSkupiny,
+      costSources,
+      jeStorno: jeStornoZakazky,
+      jeKoncovy: jeKoncovyZakazky,
+      nazevStavu,
+      nazevPobocky: (id) => branchNames.get(id) ?? "Bez pobočky",
+      poznamkaKNakladum: costsFootnote,
+    });
+    if (format === "json") {
+      stahnoutSoubor(JSON.stringify(e, null, 2), nazevSouboruExportu("json"), "application/json;charset=utf-8");
+    } else {
+      stahnoutSoubor(exportDoMarkdownu(e), nazevSouboruExportu("md"), "text/markdown;charset=utf-8");
+    }
+    showToast(`Export pro AI je stažený (${e.zakazky.length} zakázek, anonymně).`, "success");
+  }, [
+    exportCeka, zakazkyProExport, ticketsLoading, ticketsError, costSourcesHotove, serverLoading,
+    mojeServisy, activeServiceId, konsolidovane, periodType, obdobi, predchoziObdobi, activeBranchId, branchNames, drillLabel,
+    kpis, prevKpis, compareActive, rozpracovano, statusItems, topRepairs, topDevices, marginRepairRows, marginDeviceRows,
+    marginBranchRows, marginServiceRows, monthlyStats, technici, filteredSkupiny, costSources, jeStornoZakazky, jeKoncovyZakazky,
+    nazevStavu, costsFootnote,
+  ]);
+
   if (!activeServiceId) {
     return (
       <div data-tour="statistics-main" style={{ padding: "var(--pad-24)", maxWidth: 1400, margin: "0 auto" }}>
@@ -919,43 +1043,6 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
     </>
   );
 
-  /**
-   * Poznámka k nákladům pod KPI: co se do nich počítá a kolika opravám
-   * náklady chybí. Když se ceník/sklad nenačetl, řekne to rovnou – jinak by
-   * vysoká marže vypadala jako dobrá zpráva.
-   */
-  const costsFootnote = (() => {
-    const parts: string[] = [];
-    // Bez téhle věty si majitel porovná obrat s počtem přijatých zakázek a
-    // bude hledat chybu. Peníze jdou podle vydání, počty podle přijetí.
-    parts.push("Příjem, náklady a zisk jsou ze zakázek vydaných v období (podle data vydání), počet zakázek podle data přijetí; rozpracované zakázky do příjmu nepatří, dokud se nevydají.");
-    if (costSourcesError) {
-      parts.push("Ceník a sklad se nepodařilo načíst – náklady jsou jen z nákladů uložených u oprav, bez nákupních cen dílů.");
-    } else {
-      parts.push("Náklady = náklady oprav + nákupní ceny dílů. Nákupní cena dílu je poslední cena z přijaté objednávky u dodavatele (Sklad → Objednávky); díl bez přijaté objednávky má ruční nákupní cenu z produktu.");
-    }
-    if (kpis.entriesWithoutCost > 0) {
-      const n = kpis.entriesWithoutCost;
-      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} chybí náklady.`);
-    } else if (topRepairs.length > 0) {
-      // Na servisu bez jediné opravy je „všechny opravy mají náklady“ tvrzení
-      // o prázdné množině – nový zákazník to čte jako pochvalu za data, která
-      // nemá.
-      parts.push("Všechny provedené opravy mají náklady.");
-    }
-    if (kpis.entriesMissingPurchasePrice > 0) {
-      const n = kpis.entriesMissingPurchasePrice;
-      parts.push(`U ${celeCislo(n)} ${n === 1 ? "opravy" : "oprav"} nemá některý díl nákupní cenu (počítá se jako 0 Kč).`);
-    }
-    // Peníze jsou z cen na zakázkách, ne z faktur – a stornované zakázky do
-    // nich nepatří. Bez téhle věty se čísla nedají porovnat s účetnictvím.
-    parts.push("Počítá se z cen na zakázkách (ne z faktur); stornované zakázky se počítají do počtu, ne do peněz.");
-    if (dphServisu?.platce) {
-      parts.push(dphServisu.cenySDph ? "Servis je plátce DPH a ceny oprav jsou s DPH – částky jsou včetně daně." : "Servis je plátce DPH a ceny oprav jsou bez DPH – částky jsou bez daně.");
-    }
-    return parts.join(" ");
-  })();
-
   /* Kdy lidé chodí: přijaté podle založení, vydané podle přepnutí do
      koncového stavu – stejné pravidlo jako u skupin výš, jen nad lehkými
      řádky, které se pro grafy stahují zvlášť. */
@@ -1091,6 +1178,29 @@ export default function Statistics({ activeServiceId, onOpenTicket }: Statistics
         </span>
 
         <ToolbarSpacer />
+
+        {/* Export pro AI: celé statistiky anonymně v jednom souboru. */}
+        <span data-tour="statistics-export-ai" style={{ display: "inline-flex", gap: "var(--space-1)", alignItems: "center" }}>
+          <Button
+            variant="soft"
+            size="sm"
+            icon={<DownloadIcon size={14} />}
+            onClick={() => zadejExportProAi("md")}
+            disabled={exportCeka !== null || nacitani}
+            title="Stáhne všechny statistiky období jako text (Markdown) k vložení do AI – bez jmen a kontaktů zákazníků"
+          >
+            {exportCeka === "md" ? "Připravuji…" : "Export pro AI"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => zadejExportProAi("json")}
+            disabled={exportCeka !== null || nacitani}
+            title="Totéž jako JSON – pro nástroje, které si data načtou samy"
+          >
+            {exportCeka === "json" ? "Připravuji…" : "JSON"}
+          </Button>
+        </span>
 
         {drillDown && drillLabel && (
           <Pill
