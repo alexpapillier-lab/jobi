@@ -1,15 +1,15 @@
 {
-  "version": "0.7.0",
-  "notes": "- Release jobi v0.7.0\n- Motiv ZL jako nárok servisu povolovaný majitelem aplikace\n- Motiv ZL jako zapínací modul – vzhled Zakázkového listu\n- Synthwave: perspektivní mřížka, pruhované slunce, sytější obloha a neonové nápisy\n- Statusy: „Upravit“ sjede k editoru a fokusuje název; vlastní barva má kolečko\n- Motiv Synthwave – neon z osmdesátek, jen pro majitele aplikace\n- Omezené efekty: na webu zapnuté od začátku a volba se drží na zařízení\n- Přesuny mezi pobočkami: kroky v postupu, filtr Přesuny, upozornění, portál; štítky, šířka výběru stavu, nabídka poboček v Týmu\n- Zásilky: zvýraznění zakázek, které se vrací domů; příchozí zásilky; oprava pořadí statusů\n- Seznam zakázek: štítek pobočky přijetí vedle štítku místa\n- Zásilky mezi pobočkami: zapínací modul pro přesun zakázek Brno ↔ Praha\n- Tým: popisky pobočky u člena rozlišují „Výchozí“ a „Přístup“",
-  "pub_date": "2026-09-16T18:42:51Z",
+  "version": "0.8.0",
+  "notes": "- Release jobi v0.8.0\n- Majitel aplikace je pro členy servisů neviditelný\n- Odměny: přidání jedním klikem podle pravidla, poznámka nepovinná, „Vzít zpět“ do 10 minut\n- Odměny: volba, kdy se odměna za opravu připočítá\n- Odměny: ruční odměny podle pravidel se schvalováním\n- Dnes: ve výchozím stavu není v postranním panelu, přidá si ho každý sám\n- Odměny: nová oprava je nenabídnutá, „Nabídnuto navíc“ se zapíná jen ručně\n- Statistiky: export pro AI – všechna data období anonymně jako Markdown nebo JSON\n- Novinky jdou zavřít: křížek v toastu, v sidebaru a v Nápovědě\n- Reklamace: průvodci a testy příjmu a převodu na zakázku\n- Reklamace: převod na zakázku („Není to reklamace“)\n- Reklamace: příjem jako plný formulář (okno Nová reklamace)",
+  "pub_date": "2026-10-09T14:58:13Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTVaN2dMR2JiZUUvUFdOaUZvNDNEdEJhc2ptMWw2aHJTN2pLTUFHdVh4eWxHZTJKN041RmxwYTY5MUVqYWRFb2RpVmVzT2JIcVFJYitrNkYvL2hkOXc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTg0MTcxCWZpbGU6am9iaS5hcHAudGFyLmd6CkptRVdkMmtjb243V01abkRpVkdUdjdXcFlSNkFkSlFvVFJIa29SN3JtT2xTbEsvUVh1RTZUMkpKM1pabXp3WE5ObythcURwUWREN1RPYUlGc0RCZEJ3PT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.7.0/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXdPRTJuZ3luZVZ5SUFuUERuU3pPQ3NESnlCSmR5b2xmbGFJMXF3WFRQWWRYQ0Z5SUtpOHRrVklQckZEbkVkWXBtMlc2VHpTMHVmNHp2cDFtTzd6K0FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU3ODkzCWZpbGU6am9iaS5hcHAudGFyLmd6CkZteExlci9GTXJML3BGb0I1NFNwTFczSDUyWndsbTgzSGRlTk00c3lLY0tib0tEbXIwa2s1MUVTeG1UK3RVTHdwaWFuQ2RJSVcxc2syV2pnYy9idERRPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.8.0/jobi.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbTVaN2dMR2JiZUUvUFdOaUZvNDNEdEJhc2ptMWw2aHJTN2pLTUFHdVh4eWxHZTJKN041RmxwYTY5MUVqYWRFb2RpVmVzT2JIcVFJYitrNkYvL2hkOXc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTg0MTcxCWZpbGU6am9iaS5hcHAudGFyLmd6CkptRVdkMmtjb243V01abkRpVkdUdjdXcFlSNkFkSlFvVFJIa29SN3JtT2xTbEsvUVh1RTZUMkpKM1pabXp3WE5ObythcURwUWREN1RPYUlGc0RCZEJ3PT0K",
-      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.7.0/jobi.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVST05WbUlpTS9XbXdPRTJuZ3luZVZ5SUFuUERuU3pPQ3NESnlCSmR5b2xmbGFJMXF3WFRQWWRYQ0Z5SUtpOHRrVklQckZEbkVkWXBtMlc2VHpTMHVmNHp2cDFtTzd6K0FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU3ODkzCWZpbGU6am9iaS5hcHAudGFyLmd6CkZteExlci9GTXJML3BGb0I1NFNwTFczSDUyWndsbTgzSGRlTk00c3lLY0tib0tEbXIwa2s1MUVTeG1UK3RVTHdwaWFuQ2RJSVcxc2syV2pnYy9idERRPT0K",
+      "url": "https://github.com/alexpapillier-lab/jobi/releases/download/jobi-v0.8.0/jobi.app.tar.gz"
     }
   }
 }
