@@ -198,7 +198,7 @@ describe("ruční odměny", () => {
     const procento = { id: "b", nazev: "Sklo", typ: "procento" as const, hodnota: 10 };
     expect(chybaRucniOdmeny({ pravidlo: null, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/pravidlo/);
     expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/cenu/);
-    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "   ", zaklad: null, obdobi: "2026-10" })).toMatch(/Poznámka/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "   ", zaklad: null, obdobi: "2026-10" })).toBeNull();
     expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "x", zaklad: null, obdobi: "2026-13" })).toMatch(/měsíc/);
     expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "prodal sklo u pultu", zaklad: null, obdobi: "2026-10" })).toBeNull();
     expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: 390, obdobi: "2026-10" })).toBeNull();

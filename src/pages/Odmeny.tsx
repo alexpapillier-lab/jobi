@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { formatCurrency } from "../lib/invoiceMath";
 import { GiftIcon } from "../components/icons";
 import { Button } from "../components/ui";
-import { showToast } from "../components/Toast";
+import { showPersistentToast, showToast } from "../components/Toast";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { POPIS_STAVU_RUCNI, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
 import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
@@ -136,6 +136,11 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   const [ukazatNenabidnute, setUkazatNenabidnute] = useState(false);
   const { clenove } = useClenoveServisu(activeServiceId, !!data?.admin);
   const [pridavam, setPridavam] = useState(false);
+  /** Předvybrané pravidlo pro dialog (procentní pravidlo z rychlého tlačítka). */
+  const [pridavamPravidlo, setPridavamPravidlo] = useState<string | undefined>(undefined);
+  /** Rychlé přidání: komu (správce může jinému), a které pravidlo se právě ukládá. */
+  const [rychleKomu, setRychleKomu] = useState<string>("");
+  const [rychleUkladam, setRychleUkladam] = useState<string | null>(null);
   /** Ruční odměna, u které správce právě píše důvod zamítnutí. */
   const [zamitam, setZamitam] = useState<{ id: string; duvod: string } | null>(null);
 
@@ -276,6 +281,40 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   const pole: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, border, background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit" };
   const odkaz: React.CSSProperties = { background: "transparent", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 12 };
 
+  /* Rychlé přidání jedním klikem: pravidlo v Kč, bez poznámky, do měsíce na
+     stránce. Kdo se překlikne, vezme odměnu zpět z hlášky (do 10 minut smí
+     autor smazat i schválenou – politika v 20261009140000). Procentní
+     pravidlo potřebuje cenu, otevře se proto dialog s předvybraným pravidlem. */
+  const rychlePridat = useCallback(async (p: PravidloRucni) => {
+    if (!supabase || !activeServiceId || !data) return;
+    if (p.typ === "procento") { setPridavamPravidlo(p.id); setPridavam(true); return; }
+    const komu = data.admin && rychleKomu ? rychleKomu : null;
+    setRychleUkladam(p.id);
+    // deno-lint-ignore no-explicit-any
+    const { data: v, error } = await (supabase as any).rpc("odmeny_rucni_pridat", {
+      p_service_id: activeServiceId, p_pravidlo_id: p.id, p_poznamka: null, p_obdobi: mesic,
+      p_ticket_id: null, p_zaklad: null, p_user_id: komu,
+    });
+    setRychleUkladam(null);
+    if (error) { showToast(`Přidání selhalo: ${error.message}`, "error"); return; }
+    const id = typeof v?.id === "string" ? v.id : null;
+    const prijemce = komu && komu !== data.ja ? (clenove.find((c) => c.userId === komu)?.jmeno ?? "kolegovi") : null;
+    const text = `${p.nazev} · ${formatCurrency(Number(v?.castka ?? p.hodnota))}${prijemce ? ` pro ${prijemce}` : ""} – ${v?.stav === "schvaleno" ? "přidáno" : "odesláno ke schválení"}.`;
+    void nacti();
+    if (!id) { showToast(text, "success"); return; }
+    showPersistentToast(text, "success", {
+      actionLabel: "Vzít zpět",
+      onAction: () => {
+        void (async () => {
+          const { data: smazane, error: e2 } = await (supabase as any).from("odmeny_rucni").delete().eq("id", id).select("id");
+          if (e2 || !Array.isArray(smazane) || smazane.length === 0) { showToast("Odměnu už nejde vzít zpět – smažte ji v seznamu, nebo požádejte správce.", "error"); return; }
+          showToast("Odměna vzata zpět.", "success");
+          void nacti();
+        })();
+      },
+    });
+  }, [activeServiceId, data, rychleKomu, mesic, clenove, nacti]);
+
   return (
     <div style={{ display: "grid", gap: 16, padding: "0 0 24px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -292,9 +331,26 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, 1))} disabled={mesic >= tentoMesic} aria-label="Další měsíc">›</Button>
           {mesic !== tentoMesic && <Button size="sm" variant="ghost" onClick={() => setMesic(tentoMesic)}>Tento měsíc</Button>}
         </div>
-        <Button data-tour="odmeny-pridat" size="sm" variant="primary" onClick={() => setPridavam(true)} disabled={!data || data.pravidla.length === 0} title={data && data.pravidla.length === 0 ? "Servis nemá žádné aktivní pravidlo odměn" : "Přidat odměnu podle pravidla, s poznámkou"}>+ Přidat odměnu</Button>
+        <Button data-tour="odmeny-pridat" size="sm" variant="primary" onClick={() => { setPridavamPravidlo(undefined); setPridavam(true); }} disabled={!data || data.pravidla.length === 0} title={data && data.pravidla.length === 0 ? "Servis nemá žádné aktivní pravidlo odměn" : "Přidat odměnu s poznámkou nebo číslem zakázky"}>+ Přidat s poznámkou</Button>
         </div>
       </div>
+
+      {data && data.pravidla.length > 0 && (
+        <div data-tour="odmeny-rychle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)" }}>
+          <span style={{ ...popisek, fontWeight: 700 }}>Přidat odměnu jedním klikem{mesic !== tentoMesic ? ` (do ${nazevMesice(mesic)})` : ""}:</span>
+          {data.admin && clenove.length > 0 && (
+            <select value={rychleKomu} onChange={(e) => setRychleKomu(e.target.value)} aria-label="Komu odměnu přidat" style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+              <option value="">mně</option>
+              {clenove.filter((c) => c.userId !== data.ja).map((c) => <option key={c.userId} value={c.userId}>{c.jmeno}</option>)}
+            </select>
+          )}
+          {data.pravidla.map((p) => (
+            <Button key={p.id} size="sm" variant="soft" disabled={rychleUkladam !== null} onClick={() => void rychlePridat(p)} title={p.typ === "procento" ? "Odměna v procentech – zeptá se na cenu" : "Přidá odměnu hned, bez poznámky"}>
+              {rychleUkladam === p.id ? "Přidávám…" : `+ ${p.nazev} · ${p.typ === "procento" ? `${p.hodnota} %` : formatCurrency(p.hodnota)}`}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {chyba && <div style={{ padding: 16, borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", color: "var(--text)", fontSize: 13 }}>{chyba}</div>}
       {!chyba && nacitam && !data && <div style={popisek}>Načítám…</div>}
@@ -589,6 +645,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           serviceId={activeServiceId}
           pravidla={data.pravidla}
           vychoziMesic={mesic}
+          vychoziPravidloId={pridavamPravidlo}
           admin={data.admin}
           ja={data.ja}
           clenove={clenove}

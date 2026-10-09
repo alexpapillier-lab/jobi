@@ -292,7 +292,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
 
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
         Komu se odměna připíše: u „kdo opravu přidal“ ten, kdo opravu na zakázku zapsal (u starších zakázek podle historie, jinak kdo zakázku založil); u „přidělený technik“ technik z karty Technik. Na stránce Odměny jde u každého řádku příjemce změnit nebo řádek vyřadit. Sedí‑li víc pravidel, platí první v pořadí.
-        {" "}Podle stejných pravidel si zaměstnanec může na stránce Odměny přidat odměnu i ručně (tlačítko Přidat odměnu, s povinnou poznámkou a případně číslem zakázky) – do součtů se započítá, až ji majitel nebo správce schválí; vaše ruční odměny platí hned.
+        {" "}Podle stejných pravidel si zaměstnanec může na stránce Odměny přidat odměnu i ručně (jedním klikem na tlačítko s názvem pravidla, nebo s poznámkou a číslem zakázky přes Přidat s poznámkou) – do součtů se započítá, až ji majitel nebo správce schválí; vaše ruční odměny platí hned.
       </div>
 
       <AutoSchvalovani activeServiceId={activeServiceId} />

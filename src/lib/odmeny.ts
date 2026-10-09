@@ -414,7 +414,6 @@ export function prectiCenu(text: string): number | null {
 export function chybaRucniOdmeny(v: { pravidlo: PravidloRucni | null; poznamka: string; zaklad: number | null; obdobi: string }): string | null {
   if (!v.pravidlo) return "Vyberte pravidlo.";
   if (v.pravidlo.typ === "procento" && (v.zaklad === null || v.zaklad <= 0)) return "Zadejte cenu, ze které se odměna počítá.";
-  if (!v.poznamka.trim()) return "Poznámka je povinná – napište, za co odměna je.";
   if (v.poznamka.trim().length > 1000) return "Poznámka je moc dlouhá (nejvýš 1000 znaků).";
   if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(v.obdobi)) return "Vyberte měsíc.";
   return null;

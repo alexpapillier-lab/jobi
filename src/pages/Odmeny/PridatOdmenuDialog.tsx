@@ -29,6 +29,7 @@ export function PridatOdmenuDialog({
   serviceId,
   pravidla,
   vychoziMesic,
+  vychoziPravidloId,
   admin,
   ja,
   clenove,
@@ -42,6 +43,8 @@ export function PridatOdmenuDialog({
   pravidla: PravidloRucni[];
   /** Měsíc zobrazený na stránce („2026-10“). */
   vychoziMesic: string;
+  /** Předvybrané pravidlo (rychlé tlačítko u procentního pravidla potřebuje cenu). */
+  vychoziPravidloId?: string;
   admin: boolean;
   ja: string | null;
   /** Členové servisu (načtené jen pro správce). */
@@ -49,7 +52,7 @@ export function PridatOdmenuDialog({
   /** Zaměstnanci se odměny schvalují automaticky (jen text v dialogu, rozhoduje server). */
   autoSchvalovani: boolean;
 }) {
-  const [pravidloId, setPravidloId] = useState("");
+  const [pravidloId, setPravidloId] = useState(vychoziPravidloId ?? "");
   const [zakladText, setZakladText] = useState("");
   const [poznamka, setPoznamka] = useState("");
   const [obdobi, setObdobi] = useState(vychoziMesic);
@@ -116,7 +119,7 @@ export function PridatOdmenuDialog({
     const { data, error } = await (supabase as any).rpc("odmeny_rucni_pridat", {
       p_service_id: serviceId,
       p_pravidlo_id: pravidlo.id,
-      p_poznamka: poznamka.trim(),
+      p_poznamka: poznamka.trim() || null,
       p_obdobi: obdobi,
       p_ticket_id: zakazka?.id ?? null,
       p_zaklad: pravidlo.typ === "procento" ? zaklad : null,
@@ -172,7 +175,7 @@ export function PridatOdmenuDialog({
             )}
 
             <label style={popisek}>
-              Poznámka (povinná)
+              Poznámka (nepovinná)
               <textarea ref={poznamkaRef} value={poznamka} onChange={(e) => setPoznamka(e.target.value)} rows={3} maxLength={1000} placeholder="Za co odměna je – např. prodal ochranné sklo k telefonu u pultu" style={{ ...pole, resize: "vertical" }} />
             </label>
 
