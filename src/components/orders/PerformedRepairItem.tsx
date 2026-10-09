@@ -85,7 +85,7 @@ export function PerformedRepairItem({
             <button
               type="button"
               onClick={() => onUpdateFields(repair.id, { nabidnuto: !repair.nabidnuto })}
-              title={repair.nabidnuto ? "Oprava nabídnutá zákazníkovi navíc – počítá se do odměn. Kliknutím zrušíte." : "Zatím se do odměn nepočítá. Kliknutím označíte jako nabídnutou zákazníkovi navíc – odměna se připíše po vydání zakázky."}
+              title={repair.nabidnuto ? "Oprava nabídnutá zákazníkovi navíc – počítá se do odměn. Kliknutím zrušíte." : "Zatím se do odměn nepočítá. Kliknutím označíte jako nabídnutou zákazníkovi navíc – odměna se připíše podle nastavení odměn (výchozí po vydání zakázky)."}
               aria-pressed={!!repair.nabidnuto}
               style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, border: `1px solid ${repair.nabidnuto ? "var(--accent)" : "var(--border)"}`, background: repair.nabidnuto ? "var(--accent-soft)" : "transparent", color: repair.nabidnuto ? "var(--accent)" : "var(--muted)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
             >

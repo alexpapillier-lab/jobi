@@ -17,7 +17,13 @@
  * (nebo se schválí automaticky, má-li to zapnuté). Částku počítá server
  * (`odmeny_rucni_pridat`), tady je jen stejný výpočet pro náhled a čtení
  * odpovědi `odmeny_prehled` (pole `rucni`, `cekajici`, `pravidla`).
+ *
+ * Kdy se odměna připočítá (migrace 20261009120000, `config.odmeny.kdy`):
+ * po vydání zakázky (výchozí), hned po přidání opravy, nebo až zakázka
+ * poprvé dosáhne vybraného stavu. Ruční odměny se řídí svým měsícem.
  */
+
+import { jeStornoStav } from "./stornoStav";
 
 export type TypOdmeny = "castka" | "procento";
 export type KomuOdmena = "pridal" | "technik";
@@ -36,6 +42,23 @@ export type PravidloOdmeny = {
   aktivni: boolean;
 };
 
+/**
+ * Kdy se odměna za opravu připočítá (a do kterého měsíce):
+ * - vydani – zakázka vydaná (koncový stav, ne storno), měsíc vydání;
+ * - pridani – hned, jak je oprava s příznakem na zakázce, měsíc přidání;
+ * - stav – zakázka poprvé dosáhla vybraného stavu (nebo stavu dál v pořadí).
+ * Storno se nepočítá nikdy.
+ */
+export type RezimOdmen = "vydani" | "pridani" | "stav";
+
+export type KdyOdmeny = {
+  rezim: RezimOdmen;
+  /** Klíč stavu ze service_statuses – jen u režimu „stav“. */
+  stav?: string;
+};
+
+export const VYCHOZI_KDY_ODMENY: KdyOdmeny = { rezim: "vydani" };
+
 export type NastaveniOdmen = {
   pravidla: PravidloOdmeny[];
   /** Kolegové vidí i cizí odměny a žebříček (zaměstnanec měsíce). */
@@ -46,9 +69,11 @@ export type NastaveniOdmen = {
    * (třeba na zkoušku) nebo naopak schovat, i když pravidla platí.
    */
   zobrazit_v_navigaci: boolean;
+  /** Kdy se odměna připočítá; chybí = po vydání (chování do 9. 10. 2026). */
+  kdy: KdyOdmeny;
 };
 
-export const VYCHOZI_NASTAVENI_ODMEN: NastaveniOdmen = { pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false };
+export const VYCHOZI_NASTAVENI_ODMEN: NastaveniOdmen = { pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false, kdy: VYCHOZI_KDY_ODMENY };
 
 export const MAX_PRAVIDEL_ODMEN = 50;
 
@@ -56,9 +81,77 @@ export function noveIdPravidla(): string {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const textNeboNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+
 function cislo(v: unknown): number {
   const n = typeof v === "number" ? v : Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Tolerantní čtení `config.odmeny.kdy`. Neznámý režim nebo „stav“ bez klíče
+ * stavu = po vydání – stejně to vyhodnotí databáze (`odmeny_prehled`).
+ */
+export function normalizujKdy(raw: unknown): KdyOdmeny {
+  const o = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  if (o.rezim === "pridani") return { rezim: "pridani" };
+  if (o.rezim === "stav") {
+    const stav = typeof o.stav === "string" ? o.stav.trim() : "";
+    return stav ? { rezim: "stav", stav } : { rezim: "vydani" };
+  }
+  return { rezim: "vydani" };
+}
+
+/** Krátké popisky voleb v Nastavení (radio) – název a vysvětlení. */
+export const VOLBY_KDY_ODMENY: { rezim: RezimOdmen; nazev: string; popis: string }[] = [
+  { rezim: "vydani", nazev: "Po vydání zakázky", popis: "Odměna přibude, až je zakázka vydaná (koncový stav, ne storno), v měsíci vydání. Nejjistější – za nevyzvednutou nebo stornovanou zakázku nic." },
+  { rezim: "pridani", nazev: "Po přidání opravy", popis: "Odměna se počítá hned, jak je oprava s příznakem Nabídnuto navíc na zakázce, v měsíci přidání. Kdyby zakázka skončila ve stornu, odměna zmizí." },
+  { rezim: "stav", nazev: "Když zakázka dosáhne stavu", popis: "Odměna přibude, až zakázka poprvé přejde do vybraného stavu (nebo ho přeskočí do stavu dál v pořadí), v měsíci toho přechodu. Storno se nepočítá." },
+];
+
+/**
+ * Věta pod nadpisem stránky Odměny – odkud se odměny berou.
+ * `stavNazev` = název stavu u režimu „stav“ (z odpovědi serveru).
+ */
+export function vetaKdyOdmeny(rezim: RezimOdmen, stavNazev?: string | null): string {
+  if (rezim === "pridani") return "Počítá se z oprav přidaných na zakázky v měsíci; storno nic nedostane.";
+  if (rezim === "stav") {
+    const s = stavNazev?.trim();
+    return s ? `Počítá se ze zakázek, které v měsíci poprvé dosáhly stavu „${s}“ (nebo stavu dál); storno nic nedostane.` : "Počítá se ze zakázek, které v měsíci dosáhly vybraného stavu; storno nic nedostane.";
+  }
+  return "Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.";
+}
+
+type StavServisu = { key: string; label: string; isFinal: boolean };
+
+/** Stavy, které jde vybrat u režimu „stav“: všechny v pořadí servisu kromě storna. */
+export function stavyProOdmeny<T extends StavServisu>(stavy: readonly T[]): T[] {
+  return stavy.filter((s) => !jeStornoStav(s.key, s.label));
+}
+
+/**
+ * Předvybraný stav, když správce přepne na „Když zakázka dosáhne stavu“:
+ * poslední nekoncový stav v pořadí (typicky „Připraveno k vyzvednutí“),
+ * jinak první koncový, který není storno.
+ */
+export function vychoziStavOdmen(stavy: readonly StavServisu[]): string | null {
+  const mozne = stavyProOdmeny(stavy);
+  const nekoncove = mozne.filter((s) => !s.isFinal);
+  return nekoncove[nekoncove.length - 1]?.key ?? mozne[0]?.key ?? null;
+}
+
+/** Nadpis sloupce s datem, podle kterého se odměna počítá (Vydáno / Přidáno / Započteno). */
+export function sloupecKdyOdmeny(rezim: RezimOdmen): string {
+  if (rezim === "pridani") return "Přidáno";
+  if (rezim === "stav") return "Započteno";
+  return "Vydáno";
+}
+
+/** Tolerantní čtení pole `kdy` z odpovědi `odmeny_prehled` (platný režim po kontrole stavu). */
+export function normalizujKdyOdpovedi(raw: unknown): { rezim: RezimOdmen; stav: string | null; stavNazev: string | null } {
+  const o = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const rezim: RezimOdmen = o.rezim === "pridani" || o.rezim === "stav" ? o.rezim : "vydani";
+  return { rezim, stav: textNeboNull(o.stav), stavNazev: textNeboNull(o.stavNazev) };
 }
 
 /** Tolerantní čtení `service_settings.config.odmeny`. Cokoli rozbitého se přeskočí. */
@@ -87,6 +180,7 @@ export function normalizujOdmeny(raw: unknown): NastaveniOdmen {
     pravidla,
     verejny_zebricek: o.verejny_zebricek !== false,
     zobrazit_v_navigaci: typeof o.zobrazit_v_navigaci === "boolean" ? o.zobrazit_v_navigaci : maAktivni,
+    kdy: normalizujKdy(o.kdy),
   };
 }
 
@@ -228,7 +322,6 @@ export type RucniOdmena = {
   zarizeni: string | null;
 };
 
-const textNeboNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 function cisloNeboNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;

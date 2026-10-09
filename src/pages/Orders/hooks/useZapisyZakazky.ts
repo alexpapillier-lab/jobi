@@ -77,7 +77,11 @@ export function useZapisyZakazky({
       // Schválená položka z cenové nabídky = nabídnuto a přijato; příznak se
       // doplní jen tam, kde chybí a kde sedí pravidlo odměn.
       const pozadovana = cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair;
-      const repairs = repairsVstup.map((r) => {
+      // Čas přidání (odměny „po přidání opravy“) jen tam, kde chybí – položka,
+      // která na zakázce už byla, si svůj původní čas nechá.
+      const ted = new Date().toISOString();
+      const repairs = repairsVstup.map((vstup) => {
+        const r = vstup.pridanoAt ? vstup : { ...vstup, pridanoAt: ted };
         if (r.nabidnuto !== undefined) return r;
         const n = vychoziNabidnuto(r.name, pozadovana, pravidlaOdmen);
         return n === undefined ? r : { ...r, nabidnuto: n };
@@ -278,6 +282,8 @@ export function useZapisyZakazky({
         productIds: repairProductIds,
         // Odměny týmu (lib/odmeny): kdo opravu na zakázku přidal – nabídl ji zákazníkovi.
         ...(mojeId ? { pridalUserId: mojeId } : {}),
+        // …kdy (odměny v režimu „po přidání opravy“ – měsíc přidání)…
+        pridanoAt: new Date().toISOString(),
         // …a jestli ji nabídl navíc (není v požadované opravě z příjmu). Kdo přidává, může to v řádku otočit.
         ...(() => {
           const n = vychoziNabidnuto(repair.name, cloudTicketsRef.current.find((t) => t.id === ticketId)?.requestedRepair, pravidlaOdmen);

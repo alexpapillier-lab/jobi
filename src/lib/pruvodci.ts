@@ -74,7 +74,7 @@ const ODMENY: Pruvodce = {
   novinkaOd: "2026-09-26",
   dostupny: (k) => !!k.stranky.odmeny,
   kroky: [
-    { page: "odmeny", title: "K čemu to je", description: "Prémie za opravy, které tým zákazníkovi nabídl navíc – třeba servisní čištění ke svěřené opravě. Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.", selector: sel("sidebar-nav-odmeny"), icon: "team" },
+    { page: "odmeny", title: "K čemu to je", description: "Prémie za opravy, které tým zákazníkovi nabídl navíc – třeba servisní čištění ke svěřené opravě. Do měsíce se počítají podle nastavení (výchozí je vydání zakázky); storno nic nedostane.", selector: sel("sidebar-nav-odmeny"), icon: "team" },
     { page: "odmeny", title: "Vyberte měsíc", description: "Šipkami listujete po měsících, Tento měsíc vás vrátí na aktuální.", selector: sel("odmeny-mesic"), icon: "team" },
     { page: "odmeny", title: "Podívejte se na souhrn", description: "Zaměstnanec měsíce, kolik odměn je za měsíc celkem a kolik máte vy.", selector: sel("odmeny-dlazdice"), icon: "team" },
     { page: "odmeny", title: "Přidejte odměnu ručně", description: "Odměnu, která nevznikla z opravy na zakázce, přidáte tlačítkem Přidat odměnu: vyberete pravidlo z Nastavení, napíšete poznámku, za co je, a případně číslo zakázky. Vaše odměna se započítá, až ji majitel nebo správce schválí – čekající vidí nahoře v Ke schválení.", selector: sel("odmeny-pridat"), icon: "team" },
@@ -642,9 +642,10 @@ export const PRUVODCI: Pruvodce[] = [
       { ...ns("people", "service_odmeny"), title: "Vyplňte nové pravidlo", description: "Text, který je v názvu opravy (třeba „servisní čištění“), částka v Kč nebo procento z ceny a komu: kdo opravu přidal, nebo přidělený technik.", selector: sel("odmeny-nove-pravidlo"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Klikněte na Přidat pravidlo", description: "Objeví se v tabulce nahoře; tam ho upravíte, vypnete zaškrtávátkem Aktivní nebo šipkami změníte pořadí.", selector: sel("odmeny-pridat-pravidlo"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Vyzkoušejte název opravy", description: "Napište název opravy z ceníku a hned uvidíte, jestli na ni některé pravidlo sedí a kolik dává.", selector: sel("odmeny-vyzkouset"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Zvolte, kdy se odměna připočítá", description: "Po vydání zakázky (výchozí, storno nic nedostane), hned po přidání opravy, nebo až zakázka poprvé dosáhne vybraného stavu – třeba Připraveno k vyzvednutí. Podle toho se odměna počítá do měsíce.", selector: sel("settings-odmeny-kdy"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Ukažte Odměny týmu", description: "Zaškrtnutím Zobrazit Odměny v navigaci dostane stránku Odměny celý tým. Pod tím určíte, jestli kolegové vidí celý žebříček.", selector: sel("odmeny-v-navigaci"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Schvalování ručních odměn", description: "Podle stejných pravidel si tým může na stránce Odměny přidat odměnu i ručně, s poznámkou. Schvalujete ji vy; komu věříte, tomu tu zapnete automatické schvalování.", selector: sel("odmeny-auto-schvaleni"), icon: "team" },
-      { ...ns("people", "service_odmeny"), title: "Hotovo", description: "Odměna se počítá u zakázek vydaných v měsíci, jen u opravy s příznakem Nabídnuto navíc, a ze schválených ručních odměn. Přehled je na stránce Odměny.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Hotovo", description: "Odměna se počítá jen u opravy s příznakem Nabídnuto navíc – v měsíci podle zvolené volby (vydání, přidání opravy, nebo stav) – a ze schválených ručních odměn. Přehled je na stránce Odměny.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
     ],
   },
   {

@@ -5,14 +5,15 @@ import { GiftIcon } from "../components/icons";
 import { Button } from "../components/ui";
 import { showToast } from "../components/Toast";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
-import { POPIS_STAVU_RUCNI, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
+import { POPIS_STAVU_RUCNI, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
 import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
 
 /**
  * Odměny týmu – kdo má za měsíc kolik za nabídnuté opravy.
  *
  * Data dává RPC odmeny_prehled (migrace 20260926190000): řádky za měsíc
- * podle data vydání zakázky, součty na člověka, měsíční řada rok zpět a
+ * podle data vydání zakázky (nebo podle nastavení „Kdy se odměna
+ * připočítá“ – přidání opravy, dosažení stavu; migrace 20261009120000), součty na člověka, měsíční řada rok zpět a
  * vyplaceno. Pravidla se nastavují v Nastavení → Tým → Odměny za opravy.
  * Majitel a správce tu můžou u řádku změnit příjemce, řádek vyřadit a
  * zaškrtnout vyplaceno; člen vidí svoje a – při veřejném žebříčku – i
@@ -38,7 +39,10 @@ type Radek = {
   userId: string | null;
   jmeno: string | null;
   castka: number;
+  /** Skutečné datum vydání; prázdné u nevydané zakázky (režim přidání / stav). */
   vydanoAt: string;
+  /** Datum, podle kterého se odměna počítá do měsíce (podle režimu). */
+  zapocteno: string;
   vyrazeno: boolean;
   prepsano: boolean;
   poznamka: string | null;
@@ -55,6 +59,8 @@ type Clovek = ClovekOdmeny & { pocetRucnich: number };
 
 type Prehled = {
   zapnuto: boolean;
+  /** Kdy se odměna připočítá – platný režim podle serveru (neplatný stav = vydání). */
+  kdy: { rezim: RezimOdmen; stav: string | null; stavNazev: string | null };
   verejny: boolean;
   admin: boolean;
   ja: string | null;
@@ -83,6 +89,7 @@ function prevedPrehled(raw: unknown): Prehled {
   const pole = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
   return {
     zapnuto: o.zapnuto === true,
+    kdy: normalizujKdyOdpovedi(o.kdy),
     verejny: o.verejny !== false,
     admin: o.admin === true,
     ja: typeof o.ja === "string" ? o.ja : null,
@@ -101,6 +108,8 @@ function prevedPrehled(raw: unknown): Prehled {
       jmeno: typeof r.jmeno === "string" ? r.jmeno : null,
       castka: cislo(r.castka),
       vydanoAt: String(r.vydanoAt ?? ""),
+      // Starší server bez „zapocteno“ počítal podle vydání.
+      zapocteno: String(r.zapocteno ?? r.vydanoAt ?? ""),
       vyrazeno: r.vyrazeno === true,
       prepsano: r.prepsano === true,
       poznamka: typeof r.poznamka === "string" ? r.poznamka : null,
@@ -172,6 +181,12 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     [data, filtrClovek]
   );
   const autoSchvaleni = useMemo(() => new Set(data?.autoSchvaleni ?? []), [data]);
+  /** Nápověda u data v tabulce: podle čeho se odměna počítá do měsíce. */
+  const titulekZapocteno = data?.kdy.rezim === "pridani"
+    ? "Kdy byla oprava přidána na zakázku"
+    : data?.kdy.rezim === "stav"
+      ? `Kdy zakázka poprvé dosáhla stavu „${data.kdy.stavNazev ?? data.kdy.stav ?? ""}“ (nebo stavu dál)`
+      : "Kdy byla zakázka vydána";
 
   /** Síň slávy: vítěz každého měsíce z posledních 12 (podle dat, která volající smí vidět). */
   const sinSlavy = useMemo(() => {
@@ -268,7 +283,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             <GiftIcon size={22} /> Odměny
           </div>
-          <div style={{ ...popisek, marginTop: 4 }}>Prémie za opravy nabídnuté zákazníkovi navíc (ne za ty, se kterými přišel). Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.</div>
+          <div style={{ ...popisek, marginTop: 4 }}>Prémie za opravy nabídnuté zákazníkovi navíc (ne za ty, se kterými přišel).{data ? ` ${vetaKdyOdmeny(data.kdy.rezim, data.kdy.stavNazev)}` : ""}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div data-tour="odmeny-mesic" style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -431,7 +446,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Zakázka", "Vydáno", "Oprava", "Cena", "Pravidlo", "Komu", "Odměna", ...(data.admin ? [""] : [])].map((h, i) => (
+                  {["Zakázka", sloupecKdyOdmeny(data.kdy.rezim), "Oprava", "Cena", "Pravidlo", "Komu", "Odměna", ...(data.admin ? [""] : [])].map((h, i) => (
                     <th key={`${h}-${i}`} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -445,7 +460,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
                       ) : (r.kod ?? "—")}
                       <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}</div>
                     </td>
-                    <td style={{ ...td, color: "var(--muted)" }}>{r.vydanoAt ? datum(r.vydanoAt) : "—"}</td>
+                    <td style={{ ...td, color: "var(--muted)" }} title={titulekZapocteno}>{r.zapocteno ? datum(r.zapocteno) : "—"}</td>
                     <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={r.oprava}>{r.oprava}</td>
                     <td style={{ ...td, color: "var(--muted)" }}>{kc(r.cena)}</td>
                     <td style={{ ...td, color: "var(--muted)" }}>{r.pravidlo}</td>

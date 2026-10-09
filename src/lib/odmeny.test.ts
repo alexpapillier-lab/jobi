@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -22,7 +22,7 @@ describe("čtení nastavení z configu", () => {
   });
 
   it("chybějící config = žádná pravidla, ne pád", () => {
-    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
+    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false, kdy: { rezim: "vydani" } });
     expect(normalizujOdmeny({ verejny_zebricek: false }).verejny_zebricek).toBe(false);
   });
 
@@ -33,6 +33,64 @@ describe("čtení nastavení z configu", () => {
     expect(normalizujOdmeny(vypnute).zobrazit_v_navigaci).toBe(false);
     expect(normalizujOdmeny({ ...vypnute, zobrazit_v_navigaci: true }).zobrazit_v_navigaci).toBe(true);
     expect(normalizujOdmeny({ ...aktivni, zobrazit_v_navigaci: false }).zobrazit_v_navigaci).toBe(false);
+  });
+});
+
+describe("kdy se odměna připočítá", () => {
+  it("chybějící nebo rozbité nastavení = po vydání", () => {
+    expect(normalizujKdy(undefined)).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy(null)).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy("pridani")).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy(["pridani"])).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "blbost" })).toEqual({ rezim: "vydani" });
+    expect(normalizujOdmeny({ pravidla: [] }).kdy).toEqual({ rezim: "vydani" });
+  });
+
+  it("přidání a stav se přečtou; stav bez klíče = po vydání", () => {
+    expect(normalizujKdy({ rezim: "pridani", stav: "ready" })).toEqual({ rezim: "pridani" });
+    expect(normalizujKdy({ rezim: "stav", stav: " ready " })).toEqual({ rezim: "stav", stav: "ready" });
+    expect(normalizujKdy({ rezim: "stav" })).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "stav", stav: "  " })).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "stav", stav: 5 })).toEqual({ rezim: "vydani" });
+    expect(normalizujOdmeny({ kdy: { rezim: "stav", stav: "ready" } }).kdy).toEqual({ rezim: "stav", stav: "ready" });
+  });
+
+  it("každý režim má volbu s názvem a popisem", () => {
+    expect(VOLBY_KDY_ODMENY.map((v) => v.rezim)).toEqual(["vydani", "pridani", "stav"]);
+    for (const v of VOLBY_KDY_ODMENY) {
+      expect(v.nazev.length).toBeGreaterThan(0);
+      expect(v.popis.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("věta pod nadpisem a sloupec podle režimu", () => {
+    expect(vetaKdyOdmeny("vydani")).toBe("Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.");
+    expect(vetaKdyOdmeny("pridani")).toContain("přidaných");
+    expect(vetaKdyOdmeny("stav", "Připraveno")).toContain("„Připraveno“");
+    expect(vetaKdyOdmeny("stav", null)).toContain("vybraného stavu");
+    expect(sloupecKdyOdmeny("vydani")).toBe("Vydáno");
+    expect(sloupecKdyOdmeny("pridani")).toBe("Přidáno");
+    expect(sloupecKdyOdmeny("stav")).toBe("Započteno");
+  });
+
+  it("výběr stavu: bez storna, předvybraný poslední nekoncový", () => {
+    const stavy = [
+      { key: "received", label: "Přijato", isFinal: false },
+      { key: "ready", label: "Připraveno", isFinal: false },
+      { key: "issued", label: "Vydáno", isFinal: true },
+      { key: "cancelled", label: "Stornováno", isFinal: true },
+      { key: "neopr", label: "Neopraveno", isFinal: true },
+    ];
+    expect(stavyProOdmeny(stavy).map((s) => s.key)).toEqual(["received", "ready", "issued"]);
+    expect(vychoziStavOdmen(stavy)).toBe("ready");
+    expect(vychoziStavOdmen(stavy.filter((s) => s.isFinal))).toBe("issued");
+    expect(vychoziStavOdmen([])).toBeNull();
+  });
+
+  it("odpověď serveru: neznámý režim = vydání", () => {
+    expect(normalizujKdyOdpovedi(undefined)).toEqual({ rezim: "vydani", stav: null, stavNazev: null });
+    expect(normalizujKdyOdpovedi({ rezim: "stav", stav: "ready", stavNazev: "Připraveno" })).toEqual({ rezim: "stav", stav: "ready", stavNazev: "Připraveno" });
+    expect(normalizujKdyOdpovedi({ rezim: "x" }).rezim).toBe("vydani");
   });
 });
 

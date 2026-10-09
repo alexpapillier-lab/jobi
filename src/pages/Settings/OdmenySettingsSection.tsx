@@ -6,12 +6,19 @@ import { showToast } from "../../components/Toast";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { supabase } from "../../lib/supabaseClient";
 import { useClenoveServisu } from "../../hooks/useClenoveServisu";
+import { useStatuses } from "../../state/StatusesStore";
 import {
   MAX_PRAVIDEL_ODMEN,
+  VOLBY_KDY_ODMENY,
+  VYCHOZI_NASTAVENI_ODMEN,
   castkaOdmeny,
   normalizujOdmeny,
   noveIdPravidla,
+  stavyProOdmeny,
+  vychoziStavOdmen,
+  type KdyOdmeny,
   type KomuOdmena,
+  type RezimOdmen,
   type NastaveniOdmen,
   type PravidloOdmeny,
   type TypOdmeny,
@@ -37,11 +44,16 @@ const pole: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, borde
  *
  * Pravidlo = text v názvu opravy + částka (Kč nebo % z ceny) + komu
  * (kdo opravu na zakázku přidal, nebo přidělený technik). Ukládá se do
- * service_settings.config.odmeny; počítá databáze (odmeny_prehled) ze
- * zakázek vydaných v měsíci, výsledek je na stránce Odměny.
+ * service_settings.config.odmeny; počítá databáze (odmeny_prehled),
+ * výsledek je na stránce Odměny. Kdy se odměna připočítá (po vydání, po
+ * přidání opravy, nebo po dosažení stavu) určuje `odmeny.kdy` – blok
+ * „Kdy se odměna připočítá“ níž. Sekce je jen pro majitele a správce
+ * (Settings.tsx, isAdmin), stejně jako pravidla.
  */
 export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { activeServiceId: string | null; onOtevritOdmeny?: () => void }) {
-  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
+  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>(VYCHOZI_NASTAVENI_ODMEN);
+  const { statuses } = useStatuses();
+  const stavyKVyberu = stavyProOdmeny(statuses);
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
   const [chybaNacteni, setChybaNacteni] = useState(false);
   const hint = useSavedHint();
@@ -105,6 +117,19 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
     void ulozit({ ...nastaveni, pravidla: next });
   };
 
+  const nastavKdy = (kdy: KdyOdmeny) => void ulozit({ ...nastaveni, kdy });
+  const zvolRezim = (rezim: RezimOdmen) => {
+    if (rezim === "stav") {
+      const stav = nastaveni.kdy.stav ?? vychoziStavOdmen(statuses);
+      if (!stav) { showToast("Servis nemá žádný stav, který by šel vybrat.", "error"); return; }
+      nastavKdy({ rezim: "stav", stav });
+      return;
+    }
+    nastavKdy({ rezim });
+  };
+  // Uložený stav, který mezitím někdo smazal nebo přejmenoval na storno – databáze pak počítá po vydání.
+  const stavNeplatny = nastaveni.kdy.rezim === "stav" && !!nastaveni.kdy.stav && statuses.length > 0 && !stavyKVyberu.some((s) => s.key === nastaveni.kdy.stav);
+
   const zkouskaVysledek = (() => {
     const t = zkouska.trim();
     if (!t) return null;
@@ -116,7 +141,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
     <Card>
       <CardHeader
         title="Odměny za opravy"
-        description="Prémie pro tým za opravy nabídnuté zákazníkovi navíc: kdo mu prodá servisní čištění, dostane třeba 100 Kč. Když zákazník s čištěním rovnou přijde, odměna není. U opravy, na kterou sedí pravidlo, se v detailu zakázky ukáže přepínač „Nabídnuto navíc?“ – výchozí je nenabídnuto a kdo opravu zákazníkovi prodal, ho jedním klikem zapne. Odměna vzniká vydáním zakázky (storno nic nedostane); přehled i zaměstnanec měsíce jsou na stránce Odměny. Starší zakázky bez příznaku se nepočítají."
+        description="Prémie pro tým za opravy nabídnuté zákazníkovi navíc: kdo mu prodá servisní čištění, dostane třeba 100 Kč. Když zákazník s čištěním rovnou přijde, odměna není. U opravy, na kterou sedí pravidlo, se v detailu zakázky ukáže přepínač „Nabídnuto navíc?“ – výchozí je nenabídnuto a kdo opravu zákazníkovi prodal, ho jedním klikem zapne. Kdy odměna vznikne (po vydání, po přidání opravy, nebo ve vybraném stavu), nastavíte níž; storno nic nedostane. Přehled i zaměstnanec měsíce jsou na stránce Odměny. Starší zakázky bez příznaku se nepočítají."
         right={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {hint.node}
@@ -214,6 +239,39 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
       <div data-tour="odmeny-vyzkouset" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <Input value={zkouska} onChange={(e) => setZkouska(e.target.value)} placeholder="Vyzkoušet název opravy, např. Servisní čištění + výměna filtru" style={{ width: 360, maxWidth: "100%" }} />
         {zkouskaVysledek && <span style={{ fontSize: 13, color: "var(--muted)" }}>{zkouskaVysledek}</span>}
+      </div>
+
+      <div data-tour="settings-odmeny-kdy" role="radiogroup" aria-label="Kdy se odměna připočítá" style={{ marginBottom: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+        <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Kdy se odměna připočítá</div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {VOLBY_KDY_ODMENY.map((v) => (
+            <label key={v.rezim} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer" }}>
+              <input type="radio" name="odmeny-kdy" checked={nastaveni.kdy.rezim === v.rezim} onChange={() => zvolRezim(v.rezim)} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />
+              <span>
+                <b>{v.nazev}</b>
+                {v.rezim === "vydani" && <span style={{ color: "var(--muted)" }}> (výchozí)</span>}
+                <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>{v.popis}</div>
+                {v.rezim === "stav" && nastaveni.kdy.rezim === "stav" && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                    <select
+                      aria-label="Stav, ve kterém se odměna připočítá"
+                      value={nastaveni.kdy.stav ?? ""}
+                      onChange={(e) => { if (e.target.value) nastavKdy({ rezim: "stav", stav: e.target.value }); }}
+                      disabled={!nacteno || chybaNacteni}
+                      style={pole}
+                    >
+                      {stavNeplatny && <option value={nastaveni.kdy.stav}>{nastaveni.kdy.stav} (stav už neexistuje)</option>}
+                      {stavyKVyberu.map((s) => (
+                        <option key={s.key} value={s.key}>{s.label}{s.isFinal ? " (koncový)" : ""}</option>
+                      ))}
+                    </select>
+                    {stavNeplatny && <span style={{ fontSize: 12, color: "var(--muted)" }}>Vybraný stav v servisu není – dokud nevyberete jiný, počítá se po vydání.</span>}
+                  </div>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
 
       <label data-tour="odmeny-v-navigaci" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>
