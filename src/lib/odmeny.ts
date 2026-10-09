@@ -11,6 +11,12 @@
  * z configu servisu (tolerantní – config píše i starší aplikace), výpočet
  * jedné odměny pro náhled v nastavení (stejný vzorec jako v SQL) a
  * pomocníci pro měsíce a zaměstnance měsíce.
+ *
+ * Ruční odměny (migrace 20261009100000): zaměstnanec si na stránce Odměny
+ * přidá odměnu podle pravidla s poznámkou; čeká na schválení správcem
+ * (nebo se schválí automaticky, má-li to zapnuté). Částku počítá server
+ * (`odmeny_rucni_pridat`), tady je jen stejný výpočet pro náhled a čtení
+ * odpovědi `odmeny_prehled` (pole `rucni`, `cekajici`, `pravidla`).
  */
 
 export type TypOdmeny = "castka" | "procento";
@@ -91,7 +97,7 @@ export function pravidloSedi(pravidlo: PravidloOdmeny, nazevOpravy: string): boo
 }
 
 /** Odměna za jednu opravu podle pravidla; procenta z ceny opravy, na haléře. */
-export function castkaOdmeny(pravidlo: PravidloOdmeny, cenaOpravy: number): number {
+export function castkaOdmeny(pravidlo: Pick<PravidloOdmeny, "typ" | "hodnota">, cenaOpravy: number): number {
   if (pravidlo.typ === "procento") return Math.round(cenaOpravy * pravidlo.hodnota) / 100;
   return Math.round(pravidlo.hodnota * 100) / 100;
 }
@@ -178,3 +184,151 @@ export function zamestnanecMesice(lide: ClovekOdmeny[]): ClovekOdmeny[] {
   const maxPocet = Math.max(...nejvic.map((l) => l.pocet));
   return nejvic.filter((l) => l.pocet === maxPocet);
 }
+
+// ---------------------------------------------------------------------------
+// Ruční odměny
+// ---------------------------------------------------------------------------
+
+export type StavRucniOdmeny = "ceka" | "schvaleno" | "zamitnuto";
+
+/** Aktivní pravidlo, jak ho vrací `odmeny_prehled` (pole `pravidla`) – výběr v dialogu Přidat odměnu. */
+export type PravidloRucni = { id: string; nazev: string; typ: TypOdmeny; hodnota: number };
+
+export type RucniOdmena = {
+  id: string;
+  /** Příjemce. */
+  userId: string;
+  jmeno: string;
+  pravidloId: string;
+  /** Snímek názvu pravidla v okamžiku přidání. */
+  pravidlo: string;
+  /** Snímek spočtené odměny (Kč). */
+  castka: number;
+  /** U procentního pravidla cena, ze které se počítalo. */
+  zaklad: number | null;
+  poznamka: string;
+  /** „2026-10“ */
+  obdobi: string;
+  stav: StavRucniOdmeny;
+  duvodZamitnuti: string | null;
+  /** Schváleno automaticky (správce to členovi zapnul), ne ručně. */
+  automaticky: boolean;
+  vytvoril: string | null;
+  vytvorilJmeno: string | null;
+  /** Kdo schválil nebo zamítl. */
+  schvalil: string | null;
+  schvalilJmeno: string | null;
+  schvalenoAt: string | null;
+  createdAt: string;
+  /** Jen když zakázku volající vidí. */
+  ticketId: string | null;
+  kod: string | null;
+  /** Jen správci a u vlastních odměn. */
+  zakaznik: string | null;
+  zarizeni: string | null;
+};
+
+const textNeboNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+
+function cisloNeboNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Tolerantní čtení pole `rucni` / `cekajici` z odpovědi `odmeny_prehled`. Řádky bez id se zahodí. */
+export function normalizujRucni(raw: unknown): RucniOdmena[] {
+  if (!Array.isArray(raw)) return [];
+  const vysledek: RucniOdmena[] = [];
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const r = x as Record<string, unknown>;
+    const id = textNeboNull(r.id);
+    const userId = textNeboNull(r.userId);
+    if (!id || !userId) continue;
+    vysledek.push({
+      id,
+      userId,
+      jmeno: textNeboNull(r.jmeno) ?? "Kolega",
+      pravidloId: String(r.pravidloId ?? ""),
+      pravidlo: String(r.pravidlo ?? ""),
+      castka: cislo(r.castka),
+      zaklad: cisloNeboNull(r.zaklad),
+      poznamka: String(r.poznamka ?? ""),
+      obdobi: String(r.obdobi ?? ""),
+      stav: r.stav === "schvaleno" || r.stav === "zamitnuto" ? r.stav : "ceka",
+      duvodZamitnuti: textNeboNull(r.duvodZamitnuti),
+      automaticky: r.automaticky === true,
+      vytvoril: textNeboNull(r.vytvoril),
+      vytvorilJmeno: textNeboNull(r.vytvorilJmeno),
+      schvalil: textNeboNull(r.schvalil),
+      schvalilJmeno: textNeboNull(r.schvalilJmeno),
+      schvalenoAt: textNeboNull(r.schvalenoAt),
+      createdAt: String(r.createdAt ?? ""),
+      ticketId: textNeboNull(r.ticketId),
+      kod: textNeboNull(r.kod),
+      zakaznik: textNeboNull(r.zakaznik),
+      zarizeni: textNeboNull(r.zarizeni),
+    });
+  }
+  return vysledek;
+}
+
+/** Pole `pravidla` z `odmeny_prehled` (jen aktivní pravidla servisu). */
+export function normalizujPravidlaRucni(raw: unknown): PravidloRucni[] {
+  if (!Array.isArray(raw)) return [];
+  const vysledek: PravidloRucni[] = [];
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const r = x as Record<string, unknown>;
+    const id = textNeboNull(r.id);
+    if (!id) continue;
+    vysledek.push({ id, nazev: String(r.nazev ?? id), typ: r.typ === "procento" ? "procento" : "castka", hodnota: Math.max(0, cislo(r.hodnota)) });
+  }
+  return vysledek;
+}
+
+/**
+ * Náhled ruční odměny – stejný vzorec jako server (`odmeny_rucni_vypocet`).
+ * Procentní pravidlo bez kladné ceny = null (nejde spočítat).
+ */
+export function castkaRucniOdmeny(pravidlo: Pick<PravidloRucni, "typ" | "hodnota">, zaklad: number | null): number | null {
+  if (pravidlo.typ === "procento") {
+    if (zaklad === null || !Number.isFinite(zaklad) || zaklad <= 0) return null;
+    return castkaOdmeny(pravidlo, zaklad);
+  }
+  return castkaOdmeny(pravidlo, 0);
+}
+
+/** „100 Kč“ nebo „12,5 % z ceny“ – popisek pravidla v selectu. */
+export function popisPravidla(pravidlo: Pick<PravidloRucni, "typ" | "hodnota">): string {
+  const n = pravidlo.hodnota.toLocaleString("cs-CZ", { maximumFractionDigits: 2 });
+  return pravidlo.typ === "procento" ? `${n} % z ceny` : `${n} Kč`;
+}
+
+/** Cena zadaná uživatelem („1 290,50“) → číslo, prázdné nebo nesmysl = null. */
+export function prectiCenu(text: string): number | null {
+  const t = text.replace(/\s/g, "").replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Kontrola formuláře Přidat odměnu před odesláním (server kontroluje znovu).
+ * Vrací text chyby, nebo null když je vše v pořádku.
+ */
+export function chybaRucniOdmeny(v: { pravidlo: PravidloRucni | null; poznamka: string; zaklad: number | null; obdobi: string }): string | null {
+  if (!v.pravidlo) return "Vyberte pravidlo.";
+  if (v.pravidlo.typ === "procento" && (v.zaklad === null || v.zaklad <= 0)) return "Zadejte cenu, ze které se odměna počítá.";
+  if (!v.poznamka.trim()) return "Poznámka je povinná – napište, za co odměna je.";
+  if (v.poznamka.trim().length > 1000) return "Poznámka je moc dlouhá (nejvýš 1000 znaků).";
+  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(v.obdobi)) return "Vyberte měsíc.";
+  return null;
+}
+
+export const POPIS_STAVU_RUCNI: Record<StavRucniOdmeny, string> = {
+  ceka: "čeká na schválení",
+  schvaleno: "schváleno",
+  zamitnuto: "zamítnuto",
+};

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { castkaOdmeny, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -114,5 +114,57 @@ describe("zaměstnanec měsíce", () => {
       { userId: "b", jmeno: "B", pocet: 2, castka: 200 },
     ])).toHaveLength(2);
     expect(zamestnanecMesice([])).toEqual([]);
+  });
+});
+
+describe("ruční odměny", () => {
+  it("náhled částky počítá stejně jako server (procenta na haléře, bez ceny nic)", () => {
+    expect(castkaRucniOdmeny({ typ: "castka", hodnota: 100 }, null)).toBe(100);
+    expect(castkaRucniOdmeny({ typ: "castka", hodnota: 100 }, 5000)).toBe(100);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 12.5 }, 390)).toBe(48.75);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, 333.33)).toBe(33.33);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, null)).toBeNull();
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, 0)).toBeNull();
+  });
+
+  it("popisek pravidla a čtení ceny", () => {
+    expect(popisPravidla({ typ: "castka", hodnota: 100 })).toMatch(/^100\sKč$/);
+    expect(popisPravidla({ typ: "procento", hodnota: 12.5 })).toBe("12,5 % z ceny");
+    expect(prectiCenu(" 1 290,50 ")).toBe(1290.5);
+    expect(prectiCenu("")).toBeNull();
+    expect(prectiCenu("abc")).toBeNull();
+  });
+
+  it("kontrola formuláře: pravidlo, cena u procent, povinná poznámka, měsíc", () => {
+    const castka = { id: "a", nazev: "Čištění", typ: "castka" as const, hodnota: 100 };
+    const procento = { id: "b", nazev: "Sklo", typ: "procento" as const, hodnota: 10 };
+    expect(chybaRucniOdmeny({ pravidlo: null, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/pravidlo/);
+    expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/cenu/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "   ", zaklad: null, obdobi: "2026-10" })).toMatch(/Poznámka/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "x", zaklad: null, obdobi: "2026-13" })).toMatch(/měsíc/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "prodal sklo u pultu", zaklad: null, obdobi: "2026-10" })).toBeNull();
+    expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: 390, obdobi: "2026-10" })).toBeNull();
+  });
+
+  it("odpověď přehledu: rozbité řádky pryč, neznámý stav = čeká, chybějící zakázka = null", () => {
+    const r = normalizujRucni([
+      { id: "1", userId: "u", jmeno: "Terka", pravidlo: "Čištění", castka: "100.00", zaklad: null, poznamka: "u pultu", obdobi: "2026-10", stav: "schvaleno", automaticky: true, createdAt: "2026-10-09T10:00:00Z", ticketId: null },
+      { id: "2", userId: "u", castka: 48.75, zaklad: "390", stav: "nesmysl", kod: "Z-1", ticketId: "t" },
+      { userId: "u" },
+      null,
+      "x",
+    ]);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({ id: "1", castka: 100, zaklad: null, stav: "schvaleno", automaticky: true, ticketId: null, kod: null });
+    expect(r[1]).toMatchObject({ id: "2", jmeno: "Kolega", castka: 48.75, zaklad: 390, stav: "ceka", ticketId: "t", kod: "Z-1", zakaznik: null });
+    expect(normalizujRucni(undefined)).toEqual([]);
+  });
+
+  it("pravidla z přehledu", () => {
+    expect(normalizujPravidlaRucni([{ id: "a", nazev: "Čištění", typ: "castka", hodnota: "100" }, { nazev: "bez id" }, { id: "b", typ: "procento", hodnota: 12.5 }])).toEqual([
+      { id: "a", nazev: "Čištění", typ: "castka", hodnota: 100 },
+      { id: "b", nazev: "b", typ: "procento", hodnota: 12.5 },
+    ]);
+    expect(normalizujPravidlaRucni(null)).toEqual([]);
   });
 });

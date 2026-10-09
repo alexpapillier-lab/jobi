@@ -4,6 +4,8 @@ import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "
 import { useConfigNacteno } from "./useConfigNacteno";
 import { showToast } from "../../components/Toast";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { supabase } from "../../lib/supabaseClient";
+import { useClenoveServisu } from "../../hooks/useClenoveServisu";
 import {
   MAX_PRAVIDEL_ODMEN,
   castkaOdmeny,
@@ -232,7 +234,78 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
 
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
         Komu se odměna připíše: u „kdo opravu přidal“ ten, kdo opravu na zakázku zapsal (u starších zakázek podle historie, jinak kdo zakázku založil); u „přidělený technik“ technik z karty Technik. Na stránce Odměny jde u každého řádku příjemce změnit nebo řádek vyřadit. Sedí‑li víc pravidel, platí první v pořadí.
+        {" "}Podle stejných pravidel si zaměstnanec může na stránce Odměny přidat odměnu i ručně (tlačítko Přidat odměnu, s povinnou poznámkou a případně číslem zakázky) – do součtů se započítá, až ji majitel nebo správce schválí; vaše ruční odměny platí hned.
       </div>
+
+      <AutoSchvalovani activeServiceId={activeServiceId} />
     </Card>
+  );
+}
+
+/**
+ * Automatické schvalování ručních odměn (tabulka odmeny_auto_schvaleni,
+ * migrace 20261009100000). Zapnutému členovi se jeho ruční odměny na
+ * stránce Odměny uloží rovnou jako schválené. Zapisovat smí jen majitel
+ * a správce (RLS) – proto samostatná tabulka, ne klíč v configu servisu.
+ */
+function AutoSchvalovani({ activeServiceId }: { activeServiceId: string | null }) {
+  const { clenove } = useClenoveServisu(activeServiceId, !!activeServiceId);
+  const [zapnuti, setZapnuti] = useState<Set<string>>(new Set());
+  const [nacteno, setNacteno] = useState(false);
+  const [chyba, setChyba] = useState<string | null>(null);
+  const [ukladam, setUkladam] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    let zruseno = false;
+    // deno-lint-ignore no-explicit-any
+    void (supabase as any).from("odmeny_auto_schvaleni").select("user_id").eq("service_id", activeServiceId)
+      .then(({ data, error }: { data: { user_id: string }[] | null; error: { message: string } | null }) => {
+        if (zruseno) return;
+        if (error) { setChyba(error.message); setNacteno(false); return; }
+        setChyba(null);
+        setZapnuti(new Set((data ?? []).map((r) => String(r.user_id))));
+        setNacteno(true);
+      });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+
+  const prepni = async (userId: string, zapnout: boolean) => {
+    if (!activeServiceId || !supabase) return;
+    setUkladam(userId);
+    // deno-lint-ignore no-explicit-any
+    const tab = (supabase as any).from("odmeny_auto_schvaleni");
+    const { error } = zapnout
+      ? await tab.upsert({ service_id: activeServiceId, user_id: userId }, { onConflict: "service_id,user_id", ignoreDuplicates: true })
+      : await tab.delete().eq("service_id", activeServiceId).eq("user_id", userId);
+    setUkladam(null);
+    if (error) { showToast(`Uložení selhalo: ${error.message}`, "error"); return; }
+    setZapnuti((s) => {
+      const n = new Set(s);
+      if (zapnout) n.add(userId); else n.delete(userId);
+      return n;
+    });
+  };
+
+  // Majitel a správce mají své ruční odměny schválené vždy – přepínač u nich nedává smysl.
+  const clenoveBezSpravcu = clenove.filter((c) => c.role !== "owner" && c.role !== "admin");
+
+  return (
+    <div data-tour="odmeny-auto-schvaleni" style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+      <div style={{ fontWeight: 800, fontSize: 13 }}>Automatické schvalování ručních odměn</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", margin: "2px 0 8px", lineHeight: 1.5 }}>
+        Zapnutému členovi se ruční odměna uloží rovnou jako schválená (v přehledu se štítkem „schváleno automaticky“). Ostatním čeká, dokud ji neschválíte na stránce Odměny.
+      </div>
+      {chyba && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nepodařilo se načíst: {chyba}</div>}
+      {!chyba && clenoveBezSpravcu.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>V týmu zatím nejsou členové bez role správce.</div>}
+      <div style={{ display: "grid", gap: 6 }}>
+        {clenoveBezSpravcu.map((c) => (
+          <label key={c.userId} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={zapnuti.has(c.userId)} disabled={!nacteno || ukladam === c.userId} onChange={(e) => void prepni(c.userId, e.target.checked)} />
+            <span>{c.jmeno}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
