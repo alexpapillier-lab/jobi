@@ -177,7 +177,7 @@ function safeLoadUIConfig(): UIConfig {
             : d.app.reducedEffects,
         // Výchozí Zakázky – nikomu se po aktualizaci nezmění, kde začíná.
         startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
-        dnesVNavigaci: parsed?.app?.dnesVNavigaci !== false,
+        dnesVNavigaci: parsed?.app?.dnesVNavigaci === true,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -411,8 +411,11 @@ export default function App() {
   /* Zásilky mezi pobočkami: zapíná správce v Nastavení, potřebuje modul poboček. */
   const zasilkyZapnuty = useZasilkyZapnuty(activeServiceId);
   const zasilkyAvailable = zasilkyZapnuty && hasModule("branches");
-  /** Dnes si každý vypíná sám v Nastavení → Rozhraní (osobní předvolba). */
-  const dnesAvailable = uiCfg.app.dnesVNavigaci !== false;
+  /** Dnes je od 9. 10. 2026 ve výchozím stavu vypnutá; každý si ji zapne sám v Nastavení → Rozhraní (osobní předvolba). */
+  // Stránka Dnes je dostupná vždy (zkratka T, „Po přihlášení otevřít“, průvodce);
+  // v postranním panelu je jen tomu, kdo si ji v Rozhraní přidá (od 9. 10. 2026).
+  const dnesAvailable = true;
+  const dnesVPanelu = uiCfg.app.dnesVNavigaci === true;
 
   // Draft badge count (from Orders via jobsheet:draft-count)
   const [draftCount, setDraftCount] = useState(0);
@@ -858,9 +861,6 @@ export default function App() {
   useEffect(() => {
     if (!odmenyAvailable && activePage === "odmeny") setActivePage("orders");
   }, [odmenyAvailable, activePage]);
-  useEffect(() => {
-    if (!dnesAvailable && activePage === "dnes") setActivePage("orders");
-  }, [dnesAvailable, activePage]);
 
   /*
    * Stránka po přihlášení (Nastavení → Rozhraní → Po přihlášení otevřít).
@@ -873,7 +873,7 @@ export default function App() {
   const prihlasenyRef = useRef<string | null>(null);
   const prvniPrihlaseniRef = useRef(true);
   const startPoPrihlaseniRef = useRef<{ cas: number; stranka: NavKey } | null>(null);
-  const startPage: NavKey = uiCfg.app.startPage === "dnes" && dnesAvailable ? "dnes" : "orders";
+  const startPage: NavKey = uiCfg.app.startPage === "dnes" ? "dnes" : "orders";
   useEffect(() => {
     const uid = session?.user?.id ?? null;
     const predchozi = prihlasenyRef.current;
@@ -977,7 +977,6 @@ export default function App() {
         if (page === "statistics" && !canViewStatistics) return;
         if (page === "provize" && !provizeAvailable) return;
         if (page === "odmeny" && !odmenyAvailable) return;
-        if (page === "dnes" && !dnesAvailable) return;
         if (page === "zasilky" && !zasilkyAvailable) return;
         setActivePage(page);
         // Odkaz rovnou na podsekci Nastavení (první kroky, upozornění).
@@ -1435,7 +1434,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
           smsEnabled={smsEnabled}
           statisticsEnabled={canViewStatistics}
           zasilkyEnabled={zasilkyAvailable}
-          dnesEnabled={dnesAvailable}
+          dnesEnabled={dnesVPanelu}
           provizeEnabled={provizeAvailable}
           odmenyEnabled={odmenyVNavigaci}
           onHelp={otevriPruvodce}

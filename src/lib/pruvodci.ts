@@ -98,7 +98,7 @@ export const PRUVODCI: Pruvodce[] = [
     page: "dnes",
     novinkaOd: "2026-09-27",
     kroky: [
-      { page: "dnes", title: "K čemu to je", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce; kliknutím na řádek otevřete detail zakázky a po zavření jste zpátky tady.", selector: sel("sidebar-nav-dnes"), icon: "orders" },
+      { page: "dnes", title: "K čemu to je", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce; kliknutím na řádek otevřete detail zakázky a po zavření jste zpátky tady.", selector: sel("page-dnes"), icon: "orders" },
       { page: "dnes", title: "Vyberte Jen moje, nebo Celý tým", description: "Jen moje zúží všechny karty na zakázky přidělené vám; Celý tým ukáže všechno i se jménem technika. Když servis techniky nepřiděluje, přepínač tu není.", selector: sel("dnes-rozsah"), icon: "team" },
       { page: "dnes", title: "Začněte zakázkami po termínu", description: "Podle pole Předpokládaný termín dokončení; nejdéle po termínu je nahoře. Klikněte na zakázku a posuňte termín, nebo ji dodělejte.", selector: sel("dnes-po-terminu"), icon: "orders" },
       { page: "dnes", title: "Vyřiďte rezervace na dnes", description: "Zákazníci objednaní přes formulář na webu. Kliknutím rovnou založíte zakázku s údaji z rezervace.", selector: sel("dnes-rezervace"), icon: "customers" },

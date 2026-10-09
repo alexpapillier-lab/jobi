@@ -261,7 +261,7 @@ function safeLoadUIConfig(): UIConfig {
             : d.app.reducedEffects,
         postupZakazky: typeof parsed?.app?.postupZakazky === "boolean" ? parsed.app.postupZakazky : d.app.postupZakazky,
         startPage: parsed?.app?.startPage === "dnes" ? "dnes" : "orders",
-        dnesVNavigaci: parsed?.app?.dnesVNavigaci !== false,
+        dnesVNavigaci: parsed?.app?.dnesVNavigaci === true,
       },
       sidebar: {
         position: VALID_SIDEBAR_POSITIONS.includes(sidebarPos) ? sidebarPos : d.sidebar.position,
@@ -2206,23 +2206,22 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
               />
               <SettingRow
                 clickable
-                label="Stránka Dnes v navigaci"
-                description="Přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy. Vypnutím zmizí z navigace."
+                label="Dnes v postranním panelu"
+                description="Přehled na jednu obrazovku: po termínu, dnešní termíny, rezervace, k převzetí, čeká na díl, přidělené vám a nepřečtené zprávy. Ve výchozím stavu v panelu není (otevře se zkratkou T nebo po přihlášení, viz níže); zapnutím se objeví v panelu jako první."
                 control={
                   <input
                     type="checkbox"
-                    checked={uiCfg.app.dnesVNavigaci !== false}
+                    checked={uiCfg.app.dnesVNavigaci === true}
                     onChange={(e) => {
                       const zapnuto = e.target.checked;
                       updateUi(
-                        { ...uiCfg, app: { ...uiCfg.app, dnesVNavigaci: zapnuto, ...(zapnuto ? {} : { startPage: "orders" as const }) } },
+                        { ...uiCfg, app: { ...uiCfg.app, dnesVNavigaci: zapnuto } },
                         hintFab,
                       );
                     }}
                   />
                 }
               />
-              {uiCfg.app.dnesVNavigaci !== false && (
               <SettingRow
                 dataTour="settings-po-prihlaseni"
                 label="Po přihlášení otevřít"
@@ -2240,7 +2239,6 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   />
                 }
               />
-              )}
               <SettingRow
                 label="Umístění navigace"
                 control={
