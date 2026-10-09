@@ -7,6 +7,7 @@ import { showToast } from "./Toast";
 import { isDesktop } from "../lib/platform";
 import { isJobiDocsRunning, JOBIDOCS_DOWNLOAD_URL } from "../lib/jobidocs";
 import { onboardingKroky, pocetHotovych, vsePovinneHotovo as vsePovinneHotovoZ } from "../lib/onboardingKroky";
+import { rootOwnerId } from "../lib/rootOwner";
 
 /**
  * První kroky nového servisu.
@@ -57,11 +58,16 @@ export function OnboardingChecklist({ activeServiceId, ticketIds }: { activeServ
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
-    void (supabase.from("service_memberships") as any)
+    let dotaz = (supabase.from("service_memberships") as any)
       .select("user_id", { count: "exact", head: true })
       .eq("service_id", activeServiceId)
       // Skryté členství majitele aplikace se do „kolik nás tu je" nepočítá.
-      .eq("skryty", false)
+      .eq("skryty", false);
+    // Majitel aplikace se nepočítá ani tam, kde má viditelné členství
+    // (ostatním ho schová databáze, tady jde o pohled jeho samotného).
+    const root = rootOwnerId();
+    if (root) dotaz = dotaz.neq("user_id", root);
+    void dotaz
       .then(({ count }: { count: number | null }) => { if (!cancelled) setClenu(count ?? 1); }, () => {});
     return () => { cancelled = true; };
   }, [activeServiceId]);

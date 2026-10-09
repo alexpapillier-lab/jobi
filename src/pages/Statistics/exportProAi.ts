@@ -23,6 +23,7 @@ import type { MonthStat } from "./MonthlyChart";
 import type { ServerTechnik } from "../../lib/statistikyServer";
 import type { PeriodType } from "./obdobi";
 import { DNY_KRATCE, DNY_DLOUZE, rozlozeniHodin, shrnutiHodin, zpusobyPredani, type RozlozeniHodin } from "./hodiny";
+import { technikPrace } from "../../lib/rootOwner";
 
 export type VstupExportu = {
   /** Název servisu (konsolidovaně seznam servisů). */
@@ -318,7 +319,7 @@ export function sestavExportProAi(v: VstupExportu): ExportProAi {
         cena: zaokrouhli(r.price ?? 0),
         naklady: typeof r.costs === "number" ? zaokrouhli(r.costs) : null,
         ...(r.type === "hourly" && typeof r.hodiny === "number" ? { hodiny: r.hodiny } : {}),
-        ...(r.technik ? { technik: r.technik } : {}),
+        ...(technikPrace(r) ? { technik: technikPrace(r) ?? undefined } : {}),
       })),
       sleva: zaokrouhli(m.discount),
       prijem: zaokrouhli(m.revenue),

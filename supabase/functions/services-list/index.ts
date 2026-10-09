@@ -72,10 +72,13 @@ serve(async (req) => {
         // Skrytá členství (majitel aplikace kvůli podpoře) se do počtu lidí
         // v servisu nepočítají – jinak by u každého servisu přibyl člověk,
         // kterého tam nikdo nevidí.
+        // Majitel aplikace se nepočítá ani tam, kde má viditelné členství
+        // (vlastní dílny) – pro členy servisů je neviditelný.
         const { data: counts } = await svc
           .from("service_memberships")
           .select("service_id")
           .eq("skryty", false)
+          .neq("user_id", rootOwnerId!)
           .in("service_id", ids);
         const byService: Record<string, number> = {};
         for (const sid of ids) byService[sid] = 0;

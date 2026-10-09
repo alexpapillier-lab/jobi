@@ -27,6 +27,7 @@ import {
   type Zminka,
   type ZpravaChatu,
 } from "../lib/chat";
+import { JMENO_PODPORA, bezRootOwnera, skrytyRootOwner } from "../lib/rootOwner";
 import { maUpozornit, oknoMaFokus, upozorniNaZpravu, zacinkej } from "../lib/chatUpozorneni";
 import { useClenoveServisu } from "./useClenoveServisu";
 
@@ -77,7 +78,15 @@ export type UseChatVstup = {
 
 export function useChat({ serviceId, userId, zapnuto, otevreno }: UseChatVstup) {
   const aktivni = !!serviceId && !!userId && zapnuto;
-  const { clenove, jmeno } = useClenoveServisu(serviceId, aktivni);
+  const { clenove, jmeno: jmenoClena } = useClenoveServisu(serviceId, aktivni);
+  /* Majitel aplikace se v chatu ostatním neukazuje (není mezi lidmi ani
+     v soukromých zprávách – to hlídá databáze). Když napíše do kanálu
+     servisu nebo pobočky, zpráva je podepsaná „Podpora Jobi“: bez autora by
+     konverzace nedávala smysl a „Systém“ by vypadal jako automat. */
+  const jmeno = useCallback(
+    (id: string | null | undefined): string | null => (skrytyRootOwner(id, userId) ? JMENO_PODPORA : jmenoClena(id)),
+    [jmenoClena, userId]
+  );
   const clenPodleId = useMemo(() => new Map(clenove.map((c) => [c.userId, c])), [clenove]);
   const clen = useCallback((id: string | null | undefined) => (id ? clenPodleId.get(id) ?? null : null), [clenPodleId]);
 
@@ -134,8 +143,11 @@ export function useChat({ serviceId, userId, zapnuto, otevreno }: UseChatVstup) 
     }
     let zivy = true;
     void nactiKanaly(serviceId)
-      .then((k) => {
+      .then((nactene) => {
         if (!zivy) return;
+        // Pojistka pro databázi bez migrace 20261009160000: soukromá zpráva
+        // s majitelem aplikace se v seznamu lidí neukáže.
+        const k = bezRootOwnera(nactene, (x) => (x.typ === "dm" ? x.id : null), userId);
         setKanaly(k);
         // Uložený kanál může být pobočka, ke které už nemám přístup.
         setAktivniKanalState((cur) => (k.some((x) => x.kanal === cur) ? cur : KANAL_SERVIS));
@@ -147,7 +159,7 @@ export function useChat({ serviceId, userId, zapnuto, otevreno }: UseChatVstup) 
     return () => {
       zivy = false;
     };
-  }, [aktivni, serviceId, otevreno, nactiSouhrn]);
+  }, [aktivni, serviceId, userId, otevreno, nactiSouhrn]);
 
   // Změna servisu → kanál z paměti zařízení.
   useEffect(() => {

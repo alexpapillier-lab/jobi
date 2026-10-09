@@ -4,9 +4,13 @@
  */
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import { useAuth } from "../../../auth/AuthProvider";
+import { autorProOstatni } from "../../../lib/rootOwner";
 import type { ZaznamHistorie } from "../HistorieZakazkyModal";
 
 export function useHistorieZakazky(ticketHistoryModalOpen: boolean, detailId: string | null, activeServiceId: string | null) {
+  const { session } = useAuth();
+  const mojeId = session?.user?.id ?? null;
   const [ticketHistoryEntries, setTicketHistoryEntries] = useState<ZaznamHistorie[]>([]);
   const [ticketHistoryLoading, setTicketHistoryLoading] = useState(false);
   const [ticketHistoryError, setTicketHistoryError] = useState<string | null>(null);
@@ -32,7 +36,9 @@ export function useHistorieZakazky(ticketHistoryModalOpen: boolean, detailId: st
           .eq("ticket_id", ticketId)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        const entries = (rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>;
+        // Změna od majitele aplikace se ostatním ukáže jako „Systém“ (bez autora).
+        const entries = ((rows || []) as Array<{ id: string; action: string; changed_by: string | null; created_at: string; details: Record<string, unknown> }>)
+          .map((e) => ({ ...e, changed_by: autorProOstatni(e.changed_by, mojeId) }));
         const userIds = [...new Set(entries.map((e) => e.changed_by).filter(Boolean))] as string[];
         const nicknames: Record<string, string> = {};
         if (userIds.length > 0) {
@@ -58,7 +64,7 @@ export function useHistorieZakazky(ticketHistoryModalOpen: boolean, detailId: st
         setTicketHistoryLoading(false);
       }
     })();
-  }, [ticketHistoryModalOpen, detailId, activeServiceId, supabase]);
+  }, [ticketHistoryModalOpen, detailId, activeServiceId, supabase, mojeId]);
 
   return { ticketHistoryEntries, ticketHistoryLoading, ticketHistoryError, ticketHistoryExpandedId, setTicketHistoryExpandedId };
 }

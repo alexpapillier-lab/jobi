@@ -4,6 +4,7 @@ import { showToast } from "../../components/Toast";
 import { delkaSekund, formatDelka, nactiPrezdivky, nactiUseky, sledujUseky, smazUsek, spustPraci, zastavPraci, type UsekPrace } from "../../lib/casNaOprave";
 import { MAX_OTEVRENY_USEK_HODIN, VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE, castkaZaCas, hodinyKUctovani, jeZapomenuty, nejvytizenejsi, sekundyCelkem } from "../../lib/usekyPrace";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { JMENO_SYSTEM, jeRootOwnerId, skrytyRootOwner } from "../../lib/rootOwner";
 
 /**
  * Karta „Čas na opravě“ v detailu zakázky (jen když to servis zapnul).
@@ -88,7 +89,8 @@ export function CasNaOprave({
   // za práci, která trvala hodinu. Odpočet u tlačítka Zastavit tiká dál.
   const celkem = sekundyCelkem(useky, null, null, ted);
   const zapomenute = useky.filter((u) => jeZapomenuty(u, ted));
-  const jmeno = (id: string) => jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega");
+  // Úsek majitele aplikace je pro ostatní práce „systému“ (majitel je neviditelný).
+  const jmeno = (id: string) => (skrytyRootOwner(id, userId) ? JMENO_SYSTEM : jmena[id] ?? prezdivky[id] ?? (id === userId ? "Já" : "Kolega"));
   const maSazbu = typeof sazba === "number" && sazba > 0;
   const castka = maSazbu && celkem > 0 ? castkaZaCas(celkem, sazba) : null;
   const hodiny = hodinyKUctovani(celkem, zaokrouhleniMinut);
@@ -96,7 +98,10 @@ export function CasNaOprave({
 
   const pridatHodinovouPraci = () => {
     if (!onPridatHodinovouPraci || !maSazbu || hodiny <= 0) return;
-    const technikUserId = nejvytizenejsi(useky, ted) ?? undefined;
+    // Majitel aplikace se jako technik do provedených oprav (a tím na doklad
+    // pro zákazníka) nezapisuje – práce zůstane bez jména.
+    const nejvic = nejvytizenejsi(useky, ted);
+    const technikUserId = nejvic && !jeRootOwnerId(nejvic) ? nejvic : undefined;
     const technik = technikUserId ? jmeno(technikUserId) : undefined;
     onPridatHodinovouPraci({ hodiny, sazba, technik, technikUserId });
     showToast(`Přidána hodinová práce ${hodiny.toLocaleString("cs-CZ")} h × ${formatCurrency(sazba)}.`, "success");

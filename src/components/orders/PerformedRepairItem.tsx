@@ -4,6 +4,7 @@ import { showToast } from "../Toast";
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { type DevicesData, type InventoryData, safeLoadDevicesData } from "../../lib/catalogStorage";
 import { type PerformedRepair } from "./types";
+import { technikPrace } from "../../lib/rootOwner";
 
 export function PerformedRepairItem({
   repair,
@@ -77,7 +78,7 @@ export function PerformedRepairItem({
           {repair.type === "hourly" && (
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
               Hodinová práce · {(repair.hodiny ?? 0).toLocaleString("cs-CZ")} h × {(repair.sazba ?? 0).toLocaleString("cs-CZ")} Kč/h
-              {repair.technik ? ` · ${repair.technik}` : ""}
+              {technikPrace(repair) ? ` · ${technikPrace(repair)}` : ""}
             </div>
           )}
           {/* Odměny týmu: prémie je jen za opravu nabídnutou navíc, ne za tu, se kterou zákazník přišel. */}

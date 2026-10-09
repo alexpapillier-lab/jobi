@@ -119,6 +119,35 @@ async function fetchByParents(
   return out;
 }
 
+/** Id majitele aplikace malými písmeny (porovnání), nebo null. */
+function rootOwnerIdMalym(): string | null {
+  return Deno.env.get("ROOT_OWNER_ID")?.trim().toLowerCase() || null;
+}
+
+/**
+ * Majitel aplikace je pro zákazníka neviditelný a export se předává
+ * zákazníkovi. Každá hodnota rovná jeho id se nahradí null (stejně jako
+ * u změn od automatiky), u hodinové práce, kterou zapsal, zmizí i jméno.
+ */
+function bezRootOwnera(hodnota: unknown, root: string): unknown {
+  if (typeof hodnota === "string") return hodnota.toLowerCase() === root ? null : hodnota;
+  if (Array.isArray(hodnota)) return hodnota.map((x) => bezRootOwnera(x, root));
+  if (hodnota && typeof hodnota === "object") {
+    const o = hodnota as Record<string, unknown>;
+    const jehoPrace = typeof o.technikUserId === "string" && o.technikUserId.toLowerCase() === root;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) out[k] = jehoPrace && k === "technik" ? null : bezRootOwnera(v, root);
+    return out;
+  }
+  return hodnota;
+}
+
+/** Komentář majitele aplikace nese v textu i jeho přezdívku a fotku – ven jako „Systém“. */
+function komentarBezRootOwnera(r: Record<string, unknown>, root: string): Record<string, unknown> {
+  if (typeof r.author_id !== "string" || r.author_id.toLowerCase() !== root) return r;
+  return { ...r, author: "Systém", author_nickname: null, author_avatar_url: null };
+}
+
 /** Kompletní obsah servisu jako jeden JSON – přenositelnost dat podle GDPR. */
 async function exportService(svc: ReturnType<typeof createClient>, serviceId: string) {
   const tabulky: Record<string, Record<string, unknown>[]> = {};
@@ -135,7 +164,11 @@ async function exportService(svc: ReturnType<typeof createClient>, serviceId: st
   // Skryté členství (majitel aplikace kvůli podpoře) se do exportu nedává.
   // Export se předává zákazníkovi, takže by to bylo nejjednodušší místo, kde
   // se o něm dozví – a rozhodnutí je, že vidět nemá. Zbytek týmu zůstává.
-  tabulky.service_memberships = (tabulky.service_memberships ?? []).filter((r) => r.skryty !== true);
+  // Majitel aplikace vypadne i tam, kde má viditelné členství (vlastní dílny).
+  const root = rootOwnerIdMalym();
+  tabulky.service_memberships = (tabulky.service_memberships ?? []).filter(
+    (r) => r.skryty !== true && !(root && String(r.user_id).toLowerCase() === root),
+  );
 
   // Podřízené tabulky bez service_id se dotahují přes rodiče.
   const idsFaktur = (tabulky.invoices ?? []).map((r) => String(r.id));
@@ -155,6 +188,14 @@ async function exportService(svc: ReturnType<typeof createClient>, serviceId: st
 
   // K souborům se přikládá jen seznam s odkazy; binárky by JSON nafoukly.
   const soubory = await listServiceFiles(svc, serviceId, true);
+
+  // Stopy majitele aplikace v datech (autor změny, komentáře, úseky práce,
+  // přidělená zakázka, hodinová práce) – jako u automatiky bez autora.
+  if (root) {
+    for (const [k, radky] of Object.entries(tabulky)) {
+      tabulky[k] = radky.map((r) => bezRootOwnera(k === "ticket_comments" ? komentarBezRootOwnera(r, root) : r, root) as Record<string, unknown>);
+    }
+  }
 
   const pocty: Record<string, number> = {};
   for (const [k, v] of Object.entries(tabulky)) pocty[k] = v.length;
