@@ -79,7 +79,7 @@ const ODMENY: Pruvodce = {
     { page: "odmeny", title: "Podívejte se na souhrn", description: "Zaměstnanec měsíce, kolik odměn je za měsíc celkem a kolik máte vy.", selector: sel("odmeny-dlazdice"), icon: "team" },
     { page: "odmeny", title: "Klikněte na člověka v žebříčku", description: "Seznam oprav dole se zúží jen na jeho odměny. Majitel tu zaškrtnutím Vyplaceno zapíše, že odměnu předal.", selector: sel("odmeny-zebricek"), icon: "team" },
     { page: "odmeny", title: "Zkontrolujte jednotlivé opravy", description: "Každý řádek je oprava s odměnou. Majitel může změnit, komu se připíše, přepnout Nabídnuto navíc / Nenabídnuto nebo řádek vyřadit.", selector: sel("odmeny-radky"), icon: "team" },
-    { page: "odmeny", title: "Hotovo", description: "Odměna vzniká jen u opravy s příznakem Nabídnuto navíc – Jobi ho předvyplní podle pravidla a v detailu zakázky ho přepnete jedním klikem. Pravidla nastaví majitel tlačítkem Pravidla.", selector: sel("odmeny-filtr"), icon: "team" },
+    { page: "odmeny", title: "Hotovo", description: "Odměna vzniká jen u opravy s příznakem Nabídnuto navíc – nová oprava ho nemá, v detailu zakázky ho zapnete jedním klikem. Do odměn se pak počítá v měsíci, kdy se zakázka vydá. Pravidla nastaví majitel tlačítkem Pravidla.", selector: sel("odmeny-filtr"), icon: "team" },
   ],
 };
 

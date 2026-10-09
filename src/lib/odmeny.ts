@@ -114,13 +114,18 @@ export function opravaVPozadavku(pozadovana: string | null | undefined, nazevOpr
 /**
  * Výchozí příznak „nabídnuto navíc“ pro opravu přidávanou na zakázku:
  * undefined = žádné pravidlo odměn na ni nesedí (příznak se neukazuje),
- * true = sedí a zákazník s ní nepřišel (není v požadované opravě),
- * false = sedí, ale je v požadované opravě – přišel s ní.
+ * false = sedí – oprava se ukáže s přepínačem „Nabídnuto navíc?“ a čeká,
+ * až ho technik ručně zapne.
+ *
+ * Do 9. 10. 2026 se příznak odhadoval z požadované opravy z příjmu (není-li
+ * v ní, bylo to nabídnuté). Majitel chce rozhodovat ručně: odhad dával
+ * odměny i za čištění, o které si zákazník řekl jen ústně. Parametr
+ * `pozadovana` zůstává kvůli volajícím, odhad dělá dál `opravaVPozadavku`.
  */
-export function vychoziNabidnuto(nazevOpravy: string, pozadovana: string | null | undefined, pravidla: PravidloOdmeny[]): boolean | undefined {
+export function vychoziNabidnuto(nazevOpravy: string, _pozadovana: string | null | undefined, pravidla: PravidloOdmeny[]): boolean | undefined {
   const p = najdiPravidlo(pravidla, nazevOpravy);
   if (!p) return undefined;
-  return !opravaVPozadavku(pozadovana, nazevOpravy, p);
+  return false;
 }
 
 // ---------------------------------------------------------------------------

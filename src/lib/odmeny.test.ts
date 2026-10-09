@@ -67,14 +67,14 @@ describe("nabídnuto navíc", () => {
     expect(vychoziNabidnuto("Výměna displeje", "Výměna displeje", pravidla)).toBeUndefined();
   });
 
-  it("oprava podle pravidla, se kterou zákazník nepřišel, je nabídnutá", () => {
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Nefunguje, nejde zapnout", pravidla)).toBe(true);
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "", pravidla)).toBe(true);
+  it("oprava podle pravidla začíná jako nenabídnutá – přepíná se ručně", () => {
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Nefunguje, nejde zapnout", pravidla)).toBe(false);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "", pravidla)).toBe(false);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "chce servisní čištění", pravidla)).toBe(false);
   });
 
-  it("oprava, kterou zákazník požadoval (název nebo text pravidla), nabídnutá není", () => {
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Servisní čištění + výměna filtru", pravidla)).toBe(false);
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "chce servisní čištění", pravidla)).toBe(false);
+  it("opravaVPozadavku pozná opravu v požadavku z příjmu", () => {
+    expect(opravaVPozadavku("chce servisní čištění", "Servisní čištění + výměna filtru", pravidla[0])).toBe(true);
     expect(opravaVPozadavku("Servisní čištění", "Servisní čištění + výměna filtru", null)).toBe(false);
   });
 });
