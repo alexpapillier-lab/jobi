@@ -37,7 +37,7 @@ import { useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { dniBezZmenyJinde, stitekUmisteni, umisteniZakazky, type Zasilka } from "../lib/zasilky";
 import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { setTicketBranch, type Branch } from "../lib/branches";
+import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
 import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
 import {
   reserveForRepair,
@@ -870,7 +870,7 @@ export default function Orders({
       const config = await loadDocumentsConfigFromDB(activeServiceId);
       if (config?.autoPrint?.prijetiReklamaceOnCreate && activeServiceId) {
         const zdrojKod = claim.source_ticket_id ? (cloudTicketsRef.current.find((t) => t.id === claim.source_ticket_id)?.code ?? "") : "";
-        const data = claimDocumentData(claim, safeLoadCompanyData(), zdrojKod);
+        const data = claimDocumentData(claim, companyDataForBranch(safeLoadCompanyData(), getCachedBranch(activeServiceId, claim.branch_id)), zdrojKod);
         if (isWeb()) await runWebDocument("print", "prijemka_reklamace", activeServiceId, data);
         else await runDesktopDocument("print", "prijemka_reklamace", activeServiceId, data, `prijemka-reklamace-${claim.code}.pdf`);
       }
@@ -1892,7 +1892,8 @@ export default function Orders({
       return;
     }
     const original = cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx | undefined;
-    const data = claimDocumentData(detailedClaim, safeLoadCompanyData(), original?.code ?? "");
+    // Údaje pobočky reklamace mají přednost (stejně jako u zakázkových dokladů).
+    const data = claimDocumentData(detailedClaim, companyDataForBranch(safeLoadCompanyData(), getCachedBranch(sid, detailedClaim.branch_id)), original?.code ?? "");
     if (isWeb()) {
       await runWebDocument(action, "prijemka_reklamace", sid, data);
       return;

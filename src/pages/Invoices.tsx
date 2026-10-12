@@ -4,6 +4,7 @@ import { Button, Input, Label } from "../components/ui";
 import { XIcon } from "../components/icons";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
+import { companyDataForBranch, getCachedBranch } from "../lib/branches";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
@@ -373,7 +374,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       // chybějící dodavatel se doplní z databáze na pozadí. Dřív se čekalo na
       // databázi a dvě volání za sebou (např. dvakrát spuštěný efekt) po
       // dokončení smazala rozepsané položky.
-      const cd = safeLoadCompanyData();
+      // Dodavatel = firma, přepsaná údaji pobočky, pro kterou se faktura vystavuje
+      // (samostatná pobočka má vlastní název, IČO, DIČ a účet). Stejně jako
+      // zakázkové doklady (companyDataForBranch v tiskZakazky.ts).
+      const pobockaFaktury = getCachedBranch(activeServiceId, prefill?.branchId ?? branchForNew?.id ?? null);
+      const cd = companyDataForBranch(safeLoadCompanyData(), pobockaFaktury);
       const token = ++novyDokladTokenRef.current;
 
       // Číslo se přiděluje až při prvním uložení – rozpracovaná a zavřená
@@ -411,7 +416,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
       dodavatelNacitaniRef.current = null;
       if (!(cd.name && companyCacheBelongsTo(activeServiceId))) {
-        const nacitani = nactiFirmuServisu(activeServiceId).then((firma) => dodavatelZFirmy(firma));
+        const nacitani = nactiFirmuServisu(activeServiceId).then((firma) => dodavatelZFirmy(companyDataForBranch(firma, pobockaFaktury)));
         dodavatelNacitaniRef.current = nacitani;
         void nacitani.then((dodavatel) => {
           if (novyDokladTokenRef.current !== token) return;
