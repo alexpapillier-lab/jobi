@@ -12,7 +12,9 @@ import { SERVIS, TECHNIK, heslo, prihlasSe } from "./pomocnici";
  * se přihlásí heslem a první zůstane přihlášený na pozadí, špatný PIN
  * neprojde a odpočítá pokus, správný přepne zpět. Účet bez PINu se otevře
  * heslem a PIN si nastaví až po přihlášení – kdo PIN má, o něj nepřijde.
- * Zámek obrazovky nejde zavřít jinak než PINem.
+ * Zámek obrazovky nejde zavřít jinak než PINem – ani obnovením stránky
+ * nebo novou záložkou – a přepnutý účet po obnovení stránky platí (i ve
+ * druhé záložce, která se sama znovu načte).
  *
  * Jede proti ostrému Supabase s testovacími účty; PINy se na konci zase
  * zruší, aby stav účtů nezůstal změněný.
@@ -242,5 +244,117 @@ test("zámek obrazovky nejde zavřít jinak než PINem", async ({ page }) => {
   await pin.fill(PIN);
   await expect(zamek).toBeHidden({ timeout: 15_000 });
 
+  await zrusPin(page);
+});
+
+/*
+ * Hlášení majitele (říjen 2026): „Když je k napsání kód k účtu a refreshne
+ * se stránka, automaticky se přihlásí.“ Zámek žil jen ve stavu Reactu.
+ */
+test("zámek přežije obnovení stránky i novou záložku; odemkne ho jen PIN", async ({ page, context }) => {
+  test.setTimeout(180_000);
+  await prihlasSe(page);
+  await nastavPin(page, PIN);
+
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobi:zamknout")));
+  const zamek = page.getByRole("dialog", { name: "Obrazovka je zamčená" });
+  await expect(zamek).toBeVisible();
+
+  await page.reload();
+  await expect(zamek).toBeVisible({ timeout: 60_000 });
+  // Aplikace pod zámkem je vykreslená, ale nedá se ovládat (inert, mimo strom přístupnosti).
+  await expect(page.locator("button", { hasText: "+ Nová zakázka" })).toBeAttached({ timeout: 60_000 });
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toHaveCount(0);
+  expect(await prihlasenyEmail(page)).toBe(SERVIS.email);
+
+  // Nová záložka sdílí úložiště – naběhne taky zamčená.
+  const druha = await context.newPage();
+  await druha.goto("/");
+  const zamek2 = druha.getByRole("dialog", { name: "Obrazovka je zamčená" });
+  await expect(zamek2).toBeVisible({ timeout: 60_000 });
+
+  // Špatný PIN nepomůže ani obnovením stránky; správný ve druhé záložce odemkne obě.
+  await zamek2.getByRole("button", { name: new RegExp(SERVIS.email) }).click();
+  await zamek2.getByLabel("PIN", { exact: true }).fill("9999");
+  await expect(zamek2.getByRole("alert")).toContainText("Nesprávný PIN");
+  await druha.reload();
+  await expect(zamek2).toBeVisible({ timeout: 60_000 });
+  await zamek2.getByRole("button", { name: new RegExp(SERVIS.email) }).click();
+  await zamek2.getByLabel("PIN", { exact: true }).fill(PIN);
+  await expect(zamek2).toBeHidden({ timeout: 15_000 });
+  await expect(zamek).toBeHidden({ timeout: 15_000 });
+  await druha.close();
+
+  // Odemčeno – obnovení stránky už nezamyká.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 60_000 });
+  await expect(zamek).toHaveCount(0);
+
+  await zrusPin(page);
+});
+
+/*
+ * Hlášení majitele (říjen 2026): „Kolega se přihlásil místo prvního a
+ * stejně ho to dalo na toho prvního.“ Přihlášení heslem zapisovalo relaci
+ * mimo zámek supabase-js a souběžná obnova tokenu ji přepsala zpět.
+ */
+test("po přepnutí na technika je technik i po obnovení stránky a ve druhé záložce", async ({ page, context }) => {
+  test.setTimeout(300_000);
+  await prihlasSe(page);
+  await nastavPin(page, PIN);
+  await page.evaluate(() => localStorage.removeItem("jobi_zaparkovane_ucty_v1"));
+
+  // Druhá záložka s majitelem – po přepnutí v první se musí sama znovu načíst jako technik.
+  const druha = await context.newPage();
+  await druha.goto("/");
+  await expect(druha.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 60_000 });
+  await druha.evaluate(() => { (window as unknown as { __predPrepnutim?: boolean }).__predPrepnutim = true; });
+
+  const dialog = await otevriPrepinac(page);
+  await dialog.getByRole("button", { name: "Přidat účet…" }).click();
+  await dialog.getByLabel("E-mail").fill(TECHNIK.email);
+  await dialog.getByLabel("Heslo").fill(heslo("technik"));
+  await dialog.getByRole("button", { name: "Přihlásit a přepnout" }).click();
+  const krokPinu = dialog.getByText("Nastavte si PIN");
+  if (await krokPinu.waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false)) {
+    await dialog.getByLabel("Nový PIN", { exact: true }).fill(PIN_TECHNIK);
+    await dialog.getByLabel("Nový PIN znovu").fill(PIN_TECHNIK);
+    await dialog.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
+  }
+  await cekejNaPrihlaseni(page, TECHNIK.email);
+  expect(await zaparkovane(page)).toEqual([SERVIS.email]);
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 60_000 });
+  expect(await prihlasenyEmail(page)).toBe(TECHNIK.email);
+
+  await cekejNaPrihlaseni(druha, TECHNIK.email);
+  await druha.close();
+  await nastavPin(page, PIN_TECHNIK);
+
+  // Ze zámku technika přepne majitel svým PINem – po obnovení stránky je to majitel a nic není zamčené.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobi:zamknout")));
+  const zamek = page.getByRole("dialog", { name: "Obrazovka je zamčená" });
+  await expect(zamek).toBeVisible();
+  await page.evaluate(() => { (window as unknown as { __predPrepnutim?: boolean }).__predPrepnutim = true; });
+  await zamek.getByRole("button", { name: new RegExp(SERVIS.email) }).click();
+  await zamek.getByLabel("PIN", { exact: true }).fill(PIN);
+  await cekejNaPrihlaseni(page, SERVIS.email);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 60_000 });
+  expect(await prihlasenyEmail(page)).toBe(SERVIS.email);
+  await expect(zamek).toHaveCount(0);
+  expect(await zaparkovane(page)).toEqual([TECHNIK.email]);
+
+  // Úklid: oba bez PINu.
+  const dialog2 = await otevriPrepinac(page);
+  await dialog2.getByRole("button", { name: new RegExp(TECHNIK.email) }).click();
+  await dialog2.getByLabel("PIN", { exact: true }).fill(PIN_TECHNIK);
+  await cekejNaPrihlaseni(page, TECHNIK.email);
+  await zrusPin(page);
+  const dialog3 = await otevriPrepinac(page);
+  await dialog3.getByRole("button", { name: new RegExp(SERVIS.email) }).click();
+  await dialog3.getByLabel("PIN", { exact: true }).fill(PIN);
+  await cekejNaPrihlaseni(page, SERVIS.email);
   await zrusPin(page);
 });

@@ -4,10 +4,12 @@ import { Button } from "./ui";
 import { showToast } from "./Toast";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import {
-  UDALOST_OTEVRIT_PREPINAC, UDALOST_PIN_ZMENEN, UDALOST_ZAMEK_ZMENEN, UDALOST_ZAMKNOUT, UDALOST_ZAPARKOVANE,
-  dokonciPrepnuti, jePlatnyPin, maPin, nactiZaparkovane, nastavPin, odeberZaparkovanyUcet, odemkniAktualni, prepniNaUcet, pridejUcetHeslem,
-  zamekPoMinutach, type ZaparkovanyUcet,
+  KLIC_ZAMCENO, UDALOST_OTEVRIT_PREPINAC, UDALOST_PIN_ZMENEN, UDALOST_ZAMCENI, UDALOST_ZAMEK_ZMENEN, UDALOST_ZAMKNOUT, UDALOST_ZAPARKOVANE,
+  cekaNaPin, dokonciPrepnuti, jePlatnyPin, jinyClovekVUlozisti, maPin, nactiZaparkovane, nastavPin, odeberZaparkovanyUcet, odemkniAktualni,
+  prepniNaUcet, pridejUcetHeslem, zahodCekaniNaPin, zamcenaObrazovka, zamekPoMinutach, zamkniObrazovku, type ZaparkovanyUcet,
 } from "../lib/prepinaniUctu";
+import { klicRelace, supabase } from "../lib/supabaseClient";
+import { clearOnSignOut } from "../lib/storageInvalidation";
 
 /**
  * Přepínač účtů a zámek obrazovky na sdíleném počítači.
@@ -23,6 +25,13 @@ import {
  * Zámek po nečinnosti se hlídá tady, ne v App: potřebuje vědět, jestli má
  * přihlášený PIN. Bez PINu se nezamyká – zamčená obrazovka bez cesty ven
  * by byla horší než žádný zámek.
+ *
+ * Zamčení se drží v localStorage (`zamcenaObrazovka`, pro každého
+ * přihlášeného zvlášť), ne ve stavu: F5, zavření okna ani nová záložka
+ * zámek nezruší a záložky téhož člověka se zamykají a odemykají spolu
+ * (událost `storage`). Ven vede jen PIN, přihlášení heslem (i pro
+ * přihlášeného, který PIN nemá nebo zapomněl), přepnutí na kolegu, nebo
+ * odhlášení – a po něm zámek padne až s přihlášením heslem.
  */
 type Rezim = "dialog" | "zamek";
 type Heslem = { email: string; userId?: string; duvod?: string; vzdyNovyPin?: boolean };
@@ -34,7 +43,12 @@ export function PrepinacUctu({ userId, email, profil }: {
   email: string | null;
   profil: { nickname: string | null; avatarUrl: string | null } | null;
 }) {
-  const [rezim, setRezim] = useState<Rezim | null>(null);
+  /* Kdo se přihlásil heslem a před nastavením PINu obnovil stránku, dostane krok znovu. */
+  const [cekaNaPinPoNacteni] = useState(() => !zamcenaObrazovka(userId) && cekaNaPin() === userId);
+  /* Jen dialog; zamčení se čte z úložiště (viz `aktivniRezim`). */
+  const [rezim, setRezim] = useState<Rezim | null>(() => (cekaNaPinPoNacteni ? "dialog" : null));
+  /* Překreslení, když se zámek změní (tady nebo v jiné záložce). */
+  const [, setVerzeZamku] = useState(0);
   const [zaparkovane, setZaparkovane] = useState<ZaparkovanyUcet[]>(() => nactiZaparkovane());
   const [mamPin, setMamPin] = useState<boolean | null>(null);
   const [vybrany, setVybrany] = useState<ZaparkovanyUcet | "ja" | null>(null);
@@ -47,7 +61,8 @@ export function PrepinacUctu({ userId, email, profil }: {
   const [novyEmail, setNovyEmail] = useState("");
   const [noveHeslo, setNoveHeslo] = useState("");
   /* Krok po přihlášení heslem, když účet PIN ještě nemá (nebo ho člověk zapomněl). */
-  const [pinKrok, setPinKrok] = useState<{ jmeno: string } | null>(null);
+  const [pinKrok, setPinKrok] = useState<{ jmeno: string } | null>(() =>
+    cekaNaPinPoNacteni ? { jmeno: profil?.nickname?.trim() || email?.split("@")[0] || "účet" } : null);
   const [novyPin, setNovyPin] = useState("");
   const [novyPinZnovu, setNovyPinZnovu] = useState("");
   const pinRef = useRef<HTMLInputElement>(null);
@@ -60,11 +75,63 @@ export function PrepinacUctu({ userId, email, profil }: {
 
   const vynuluj = () => { setVybrany(null); setPin(""); setChyba(null); setHeslem(null); setPinKrok(null); };
 
+  /* Zamčení je jen v úložišti, ne ve stavu: dokud tam záznam pro tohoto
+     člověka leží, obrazovka je zamčená – po F5, v nové záložce i kdyby
+     cokoli ve stavu spadlo na „nic“. */
+  const aktivniRezim: Rezim | null = zamcenaObrazovka(userId) ? "zamek" : rezim;
+
+  /* Krok „Nastavte si PIN“ čekající na jiného člověka už neplatí. */
+  useEffect(() => {
+    const ceka = cekaNaPin();
+    if (ceka && ceka !== userId) zahodCekaniNaPin();
+  }, [userId]);
+
+  /* Přihlášený se změnil pod rukama (druhá záložka přepnula účet nebo se
+     v ní přihlásil někdo jiný): záložka se musí znovu načíst, jinak by
+     ukazovala jednoho člověka a zapisovala pod druhým. */
+  const puvodniUzivatel = useRef(userId);
+  useEffect(() => {
+    if (puvodniUzivatel.current !== userId) window.location.reload();
+  }, [userId]);
+
+  useEffect(() => {
+    const naUloziste = (e: StorageEvent) => {
+      if (e.key === KLIC_ZAMCENO) {
+        // Zamčeno / odemčeno v jiné záložce (stejný člověk, sdílené úložiště).
+        if (zamcenaObrazovka(userId)) { vynuluj(); setRezim(null); }
+        setVerzeZamku((v) => v + 1);
+        return;
+      }
+      if (e.key != null && e.key === klicRelace() && jinyClovekVUlozisti(e.newValue, userId)) window.location.reload();
+    };
+    const naZamceni = () => setVerzeZamku((v) => v + 1);
+    window.addEventListener("storage", naUloziste);
+    window.addEventListener(UDALOST_ZAMCENI, naZamceni);
+    return () => {
+      window.removeEventListener("storage", naUloziste);
+      window.removeEventListener(UDALOST_ZAMCENI, naZamceni);
+    };
+  }, [userId]);
+
+  /* Pod zámkem nesmí jít nic ovládat klávesnicí (Tab do aplikace pod ním)
+     ani číst čtečkou – zámek je v portálu mimo #root. */
+  useEffect(() => {
+    if (aktivniRezim !== "zamek") return;
+    const root = document.getElementById("root");
+    if (!root) return;
+    root.setAttribute("inert", "");
+    root.setAttribute("aria-hidden", "true");
+    return () => { root.removeAttribute("inert"); root.removeAttribute("aria-hidden"); };
+  }, [aktivniRezim]);
+
   useEffect(() => {
     nactiPin();
     const naZaparkovane = () => setZaparkovane(nactiZaparkovane());
-    const otevri = () => { setRezim("dialog"); vynuluj(); };
+    // Přepínač přes zámek neotevře nic – zámek by tím zmizel.
+    const otevri = () => { if (zamcenaObrazovka(userId)) return; setRezim("dialog"); vynuluj(); };
     const zamkni = () => {
+      // Už zamčeno (časovač nečinnosti běží i nad zámkem) – nerozbíjet rozepsaný PIN/heslo.
+      if (zamcenaObrazovka(userId)) return;
       // Stav PINu se po jeho uložení teprve dotahuje ze serveru; kdo klepne
       // na „Zamknout“ hned po nastavení, nesmí dostat „nejdřív nastavte PIN“.
       const rozhodni = (ma: boolean) => {
@@ -73,7 +140,9 @@ export function PrepinacUctu({ userId, email, profil }: {
           showToast("Nejdřív si v Nastavení → Můj účet nastavte PIN, jinak by obrazovka nešla odemknout.", "info");
           return;
         }
-        setRezim("zamek"); vynuluj();
+        vynuluj();
+        setRezim(null);
+        zamkniObrazovku(userId);
       };
       if (mamPin === true) rozhodni(true);
       else maPin(userId).then(rozhodni).catch(() => showToast("Stav PINu se nepodařilo ověřit – zkuste to znovu.", "error"));
@@ -128,17 +197,17 @@ export function PrepinacUctu({ userId, email, profil }: {
   const zavri = useCallback(() => {
     // Zámek nejde zavřít; a po přihlášení heslem už je relace přepnutá –
     // zavření by nechalo aplikaci v půli cesty, tak se místo toho dokončí.
-    if (rezim === "zamek") return;
+    if (aktivniRezim === "zamek") return;
     if (pinKrok) { dokonciPrepnuti(); return; }
     setRezim(null);
-  }, [rezim, pinKrok]);
+  }, [aktivniRezim, pinKrok]);
 
   useEffect(() => {
-    if (!rezim) return;
+    if (!aktivniRezim) return;
     const naKlavesu = (e: KeyboardEvent) => { if (e.key === "Escape") zavri(); };
     window.addEventListener("keydown", naKlavesu);
     return () => window.removeEventListener("keydown", naKlavesu);
-  }, [rezim, zavri]);
+  }, [aktivniRezim, zavri]);
 
   const otevriHeslem = (cil: Heslem) => {
     setHeslem(cil);
@@ -160,13 +229,14 @@ export function PrepinacUctu({ userId, email, profil }: {
         await odemkniAktualni(userId, hodnota);
         setRezim(null);
       } else {
-        await prepniNaUcet(vybrany, hodnota, profil);
+        await prepniNaUcet(vybrany, hodnota, profil, userId);
         // Stránka se znovu načítá – nic dalšího.
       }
     } catch (e) {
       const zprava = e instanceof Error ? e.message : String(e);
-      if (vybrany !== "ja" && zprava.includes("nemá nastavený PIN")) {
-        otevriHeslem({ email: vybrany.email ?? "", userId: vybrany.userId, duvod: BEZ_PINU });
+      if (zprava.includes("nemá nastavený PIN")) {
+        // I přihlášený bez PINu (třeba si ho mezitím zrušil) se ze zámku dostane heslem.
+        otevriHeslem(vybrany === "ja" ? { email: email ?? "", userId, duvod: BEZ_PINU } : { email: vybrany.email ?? "", userId: vybrany.userId, duvod: BEZ_PINU });
         return;
       }
       setChyba(zprava);
@@ -175,7 +245,7 @@ export function PrepinacUctu({ userId, email, profil }: {
     } finally {
       setPracuje(false);
     }
-  }, [vybrany, pracuje, userId, profil]);
+  }, [vybrany, pracuje, userId, profil, email]);
 
   const naZmenuPinu = (hodnota: string) => {
     const cisla = hodnota.replace(/\D/g, "").slice(0, 4);
@@ -200,6 +270,8 @@ export function PrepinacUctu({ userId, email, profil }: {
     try {
       const { potrebujePin } = await pridejUcetHeslem(novyEmail, noveHeslo, profil, heslem.userId, heslem.vzdyNovyPin);
       if (potrebujePin) {
+        // Ze zámku (přihlášený sám za sebe heslem) se zámek právě zrušil – krok s PINem jde do dialogu.
+        setRezim("dialog");
         setPinKrok({ jmeno: novyEmail.split("@")[0] });
         setHeslem(null);
         setNovyPin("");
@@ -229,10 +301,25 @@ export function PrepinacUctu({ userId, email, profil }: {
     }
   };
 
-  if (!rezim) return null;
+  /* Ven ze zámku i bez PINu a hesla: odhlásit (jen na tomhle počítači).
+     Zámek tím nepadá – zruší ho až přihlášení heslem. */
+  const odhlasit = async () => {
+    if (pracuje) return;
+    setPracuje(true);
+    try {
+      clearOnSignOut();
+      await supabase?.auth.signOut({ scope: "local" });
+    } catch (err) {
+      setChyba(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPracuje(false);
+    }
+  };
+
+  if (!aktivniRezim) return null;
 
   const jmeno = profil?.nickname?.trim() || email?.split("@")[0] || "Já";
-  const zamek = rezim === "zamek";
+  const zamek = aktivniRezim === "zamek";
   // width + box-sizing: bez nich vstupy v Safari přetečou kartu (výchozí šířka inputu je „size“, ne rodič).
   const poleStyl = { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel-2)", color: "var(--text)", font: "inherit" } as const;
 
@@ -311,7 +398,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       role="dialog"
       aria-modal="true"
       aria-label={zamek ? "Obrazovka je zamčená" : "Přepnout účet"}
-      data-prepinac-uctu={rezim}
+      data-prepinac-uctu={aktivniRezim}
       onClick={(e) => { if (e.target === e.currentTarget) zavri(); }}
       style={{
         position: "fixed", inset: 0, zIndex: 5000, display: "grid", placeItems: "center", padding: 16,
@@ -333,6 +420,9 @@ export function PrepinacUctu({ userId, email, profil }: {
             <Button variant="soft" onClick={() => otevriHeslem({ email: "" })}>Přidat účet…</Button>
             {mamPin === false && !zamek && (
               <div style={{ fontSize: 12, color: "var(--muted)" }}>Bez PINu se k vašemu účtu na tomto počítači vrátíte jen heslem – nastavte si ho v Nastavení → Můj účet.</div>
+            )}
+            {zamek && (
+              <Button variant="ghost" size="sm" onClick={() => { void odhlasit(); }} disabled={pracuje}>Odhlásit se</Button>
             )}
           </div>
         )}
@@ -362,8 +452,10 @@ export function PrepinacUctu({ userId, email, profil }: {
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
               <Button variant="ghost" size="sm" onClick={() => { setVybrany(null); setPin(""); setChyba(null); }} disabled={pracuje}>Zpět</Button>
-              {vybrany !== "ja" && (
-                <button type="button" disabled={pracuje} onClick={() => otevriHeslem({ email: vybrany.email ?? "", userId: vybrany.userId, duvod: "Přihlaste se heslem a nastavte si nový PIN.", vzdyNovyPin: true })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, textDecoration: "underline", font: "inherit" }}>
+              {(vybrany !== "ja" || zamek) && (
+                <button type="button" disabled={pracuje} onClick={() => otevriHeslem(vybrany === "ja"
+                  ? { email: email ?? "", userId, duvod: "Přihlaste se heslem a nastavte si nový PIN.", vzdyNovyPin: true }
+                  : { email: vybrany.email ?? "", userId: vybrany.userId, duvod: "Přihlaste se heslem a nastavte si nový PIN.", vzdyNovyPin: true })} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, textDecoration: "underline", font: "inherit" }}>
                   Nevíte PIN? Přihlásit heslem
                 </button>
               )}
