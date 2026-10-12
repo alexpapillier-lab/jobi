@@ -60,7 +60,8 @@ npx supabase secrets set STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whs
 
 Víc není potřeba. Funkce `billing-checkout`, `billing-portal`,
 `billing-prices` a `billing-webhook` jsou nasazené a do té doby vracejí
-„Platby zatím nejsou spuštěné“, takže nic nespadne.
+„Platby zatím nejsou spuštěné“ (`billing-prices` odpoví 200 s
+`configured: false` a prázdným ceníkem), takže nic nespadne.
 
 ## 3. Vyzkoušení (test režim)
 

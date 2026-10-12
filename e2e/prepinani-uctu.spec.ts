@@ -66,11 +66,19 @@ async function prihlasenyEmail(page: Page): Promise<string> {
   });
 }
 
-async function otevriPrepinac(page: Page): Promise<Locator> {
-  // Značka na staré stránce: po přepnutí se aplikace celá znovu načte a
-  // značka zmizí. Podle e-mailu v úložišti se reload poznat nedá – relace
-  // se přepne dřív, než stránka odejde.
+/**
+ * Značka na staré stránce: po přepnutí se aplikace celá znovu načte a
+ * značka zmizí. Podle e-mailu v úložišti se reload poznat nedá – relace
+ * se přepne dřív, než stránka odejde. Přihlášení heslem účtu bez PINu
+ * načítá stránku dvakrát (před krokem „Nastavte si PIN“ a po něm), proto
+ * se značka před „Uložit PIN a pokračovat“ dává znovu.
+ */
+async function oznacPredPrepnutim(page: Page): Promise<void> {
   await page.evaluate(() => { (window as unknown as { __predPrepnutim?: boolean }).__predPrepnutim = true; });
+}
+
+async function otevriPrepinac(page: Page): Promise<Locator> {
+  await oznacPredPrepnutim(page);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("jobi:prepnout-ucet")));
   const dialog = page.getByRole("dialog", { name: "Přepnout účet" });
   await expect(dialog).toBeVisible();
@@ -107,12 +115,13 @@ test("druhý účet se přidá heslem, PIN si nastaví až po přihlášení a p
   // přijde krok „Nastavte si PIN“, s ním se rovnou přepne. Oba případy jsou
   // správně; deterministicky to ověřuje až druhý test.
   const krokPinu = dialog.getByText("Nastavte si PIN");
-  if (await krokPinu.waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false)) {
+  if (await krokPinu.waitFor({ state: "visible", timeout: 30_000 }).then(() => true).catch(() => false)) {
     await dialog.getByLabel("Nový PIN", { exact: true }).fill(PIN_TECHNIK);
     await dialog.getByLabel("Nový PIN znovu").fill("0000");
     await dialog.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
     await expect(dialog.getByRole("alert")).toContainText("neshoduje");
     await dialog.getByLabel("Nový PIN znovu").fill(PIN_TECHNIK);
+    await oznacPredPrepnutim(page);
     await dialog.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
   }
   await cekejNaPrihlaseni(page, TECHNIK.email);
@@ -181,6 +190,7 @@ test("účet na pozadí bez PINu se otevře heslem; zapomenutý PIN jde nahradit
   await expect(dialog.getByText("Nastavte si PIN")).toBeVisible({ timeout: 30_000 });
   await dialog.getByLabel("Nový PIN", { exact: true }).fill(PIN_TECHNIK);
   await dialog.getByLabel("Nový PIN znovu").fill(PIN_TECHNIK);
+  await oznacPredPrepnutim(page);
   await dialog.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
   await cekejNaPrihlaseni(page, TECHNIK.email);
   await zrusPin(page);
@@ -199,6 +209,7 @@ test("účet na pozadí bez PINu se otevře heslem; zapomenutý PIN jde nahradit
   await expect(dialog3.getByText("Nastavte si PIN")).toBeVisible({ timeout: 30_000 });
   await dialog3.getByLabel("Nový PIN", { exact: true }).fill(PIN_TECHNIK);
   await dialog3.getByLabel("Nový PIN znovu").fill(PIN_TECHNIK);
+  await oznacPredPrepnutim(page);
   await dialog3.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
   await cekejNaPrihlaseni(page, TECHNIK.email);
   expect(await zaparkovane(page)).toEqual([SERVIS.email]);
@@ -213,6 +224,7 @@ test("účet na pozadí bez PINu se otevře heslem; zapomenutý PIN jde nahradit
   await expect(dialog4.getByText("Nastavte si PIN")).toBeVisible({ timeout: 30_000 });
   await dialog4.getByLabel("Nový PIN", { exact: true }).fill("1111");
   await dialog4.getByLabel("Nový PIN znovu").fill("1111");
+  await oznacPredPrepnutim(page);
   await dialog4.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
   await cekejNaPrihlaseni(page, SERVIS.email);
 
@@ -316,9 +328,10 @@ test("po přepnutí na technika je technik i po obnovení stránky a ve druhé z
   await dialog.getByLabel("Heslo").fill(heslo("technik"));
   await dialog.getByRole("button", { name: "Přihlásit a přepnout" }).click();
   const krokPinu = dialog.getByText("Nastavte si PIN");
-  if (await krokPinu.waitFor({ state: "visible", timeout: 15_000 }).then(() => true).catch(() => false)) {
+  if (await krokPinu.waitFor({ state: "visible", timeout: 30_000 }).then(() => true).catch(() => false)) {
     await dialog.getByLabel("Nový PIN", { exact: true }).fill(PIN_TECHNIK);
     await dialog.getByLabel("Nový PIN znovu").fill(PIN_TECHNIK);
+    await oznacPredPrepnutim(page);
     await dialog.getByRole("button", { name: "Uložit PIN a pokračovat" }).click();
   }
   await cekejNaPrihlaseni(page, TECHNIK.email);

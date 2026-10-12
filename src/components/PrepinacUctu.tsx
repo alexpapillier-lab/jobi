@@ -268,19 +268,12 @@ export function PrepinacUctu({ userId, email, profil }: {
     setPracuje(true);
     setChyba(null);
     try {
-      const { potrebujePin } = await pridejUcetHeslem(novyEmail, noveHeslo, profil, heslem.userId, heslem.vzdyNovyPin);
-      if (potrebujePin) {
-        // Ze zámku (přihlášený sám za sebe heslem) se zámek právě zrušil – krok s PINem jde do dialogu.
-        setRezim("dialog");
-        setPinKrok({ jmeno: novyEmail.split("@")[0] });
-        setHeslem(null);
-        setNovyPin("");
-        setNovyPinZnovu("");
-      }
-      // Jinak se stránka znovu načítá.
+      /* Po úspěchu se stránka vždy znovu načítá; krok „Nastavte si PIN“
+         (účet bez PINu) otevře až načtená stránka – viz pridejUcetHeslem.
+         Do té doby zůstává formulář „pracuje“, ať se nedá odeslat znovu. */
+      await pridejUcetHeslem(novyEmail, noveHeslo, profil, heslem.userId, heslem.vzdyNovyPin);
     } catch (err) {
       setChyba(err instanceof Error ? err.message : String(err));
-    } finally {
       setPracuje(false);
     }
   };

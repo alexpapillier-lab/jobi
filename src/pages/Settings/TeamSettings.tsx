@@ -181,13 +181,52 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     window.addEventListener("scroll", onScroll, true);
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", onScroll, true); };
   }, [branchMenuFor]);
+  /**
+   * Rozepsané zápisy poboček po členech. Zaškrtnutí několika poboček rychle
+   * za sebou dřív poslalo několik zápisů naráz: do databáze mohly dorazit
+   * v jiném pořadí (vyhrál starší výběr) a chyba kteréhokoli vrátila celý
+   * seznam na stav z doby jeho kliknutí – mezitím zaškrtnutá pobočka
+   * zmizela (E2E „správce vybere technikovi Brno a Ostravu“ občas skončil
+   * jen s Brnem). Teď jde za člena vždy jen jeden zápis a po něm případně
+   * ještě jeden s posledním výběrem; při chybě se vrací stav, který
+   * databáze naposledy potvrdila.
+   */
+  const zapisyPobocekRef = useRef(new Map<string, {
+    chtene: string[] | null;
+    maChtene: boolean;
+    potvrzeno: { branch_ids: string[] | null; home_branch_id: string | null };
+  }>());
   const changeMemberBranches = async (member: { user_id: string; service_id: string; branch_ids?: string[] | null; home_branch_id?: string | null }, ids: string[] | null) => {
-    const prev = teamMembers;
     setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, branch_ids: ids, home_branch_id: ids && m.home_branch_id && !ids.includes(m.home_branch_id) ? ids[0] : m.home_branch_id } : m)));
-    const res = await setMemberBranches(member.service_id, member.user_id, ids);
-    if (res.error) {
-      setTeamMembers(prev);
-      showToast(`Pobočky se nepodařilo uložit: ${res.error}`, "error");
+    const fronty = zapisyPobocekRef.current;
+    const bezi = fronty.get(member.user_id);
+    if (bezi) {
+      bezi.chtene = ids;
+      bezi.maChtene = true;
+      return;
+    }
+    const fronta = {
+      chtene: ids,
+      maChtene: true,
+      potvrzeno: { branch_ids: member.branch_ids ?? null, home_branch_id: member.home_branch_id ?? null },
+    };
+    fronty.set(member.user_id, fronta);
+    try {
+      while (fronta.maChtene) {
+        const cil = fronta.chtene;
+        fronta.maChtene = false;
+        const res = await setMemberBranches(member.service_id, member.user_id, cil);
+        if (res.error) {
+          const zpet = fronta.potvrzeno;
+          setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, ...zpet } : m)));
+          showToast(`Pobočky se nepodařilo uložit: ${res.error}`, "error");
+          return;
+        }
+        const home = fronta.potvrzeno.home_branch_id;
+        fronta.potvrzeno = { branch_ids: cil, home_branch_id: cil && home && !cil.includes(home) ? cil[0] : home };
+      }
+    } finally {
+      fronty.delete(member.user_id);
     }
   };
   /** Domovská pobočka člena: výchozí filtr a výchozí pobočka nové zakázky. */

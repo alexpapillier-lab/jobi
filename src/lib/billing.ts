@@ -64,6 +64,7 @@ export async function loadCenik(): Promise<Cenik | null> {
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (data.configured === false) return null;
     return { plans: data.plans ?? [], addons: data.addons ?? [] };
   } catch {
     return null;

@@ -436,8 +436,16 @@ export async function pridejUcetHeslem(
     vycistiProNovehoClovekaAZnovuNacti();
     return { potrebujePin: false };
   }
-  // F5 v kroku „Nastavte si PIN“ krok nezahodí – PrepinacUctu ho po načtení otevře znovu.
+  /* Krok „Nastavte si PIN“ se ukáže až na znovu načtené stránce (PrepinacUctu
+     ho otevře podle `cekaNaPin`), ne tady. Stránka v tu chvíli pořád patří
+     odchozímu člověku, a jakmile se o novém přihlášeném dozví – druhá záložka
+     se znovu načte a ohlásí ho, supabase-js obnoví relaci z úložiště –,
+     sama se znovu načte. Dřív se to stalo uprostřed psaní PINu: rozepsaný PIN
+     zmizel a krok naběhl prázdný (E2E „po přepnutí na technika…“ na tom
+     visel do timeoutu). Načtením hned je stránka od začátku nového člověka
+     a žádné další znovunačtení už nepřijde. */
   nastavCekaNaPin(novy);
+  window.location.reload();
   return { potrebujePin: true };
 }
 

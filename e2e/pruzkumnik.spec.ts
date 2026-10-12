@@ -72,10 +72,11 @@ test("průzkumník projde aplikaci a nic nespadne", async ({ page }) => {
     const t = m.text();
     // Chyby, které nejsou o aplikaci: zablokované zdroje, chybějící favicon.
     if (/favicon|net::ERR_|Failed to load resource/i.test(t)) return;
-    // „Failed to fetch“ = požadavek přerušený přechodem stránky nebo výpadkem
-    // sítě v CI (od 10. 10. chodilo na Zařízeních a Statistikách); aplikace
-    // má pro to záložní cestu a ukáže hlášku – není to pád obrazovky.
-    if (/TypeError: Failed to fetch/i.test(t)) return;
+    // „Failed to fetch“ se tu NEPROMÍJÍ. Od 10. 10. chodil na Zařízeních
+    // a Statistikách a nebyl to přerušený požadavek, ale záplava: Sklad při
+    // každé realtime události z ceníku hned načítal celý katalog, jedno
+    // uložení ceníku tak spustilo tisíce dotazů a prohlížeč pak odmítal
+    // všechny (net::ERR_INSUFFICIENT_RESOURCES). Výjimka by to schovala.
     nalezy.push({ kde, co: "chyba v konzoli", detail: t.slice(0, 300) });
   });
   page.on("response", (r) => {

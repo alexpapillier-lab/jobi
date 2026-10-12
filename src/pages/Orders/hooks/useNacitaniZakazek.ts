@@ -3,7 +3,7 @@
  * reklamací) a zakázky mimo React (cloudTicketsRef) pro okamžité zápisy.
  * Vyneseno z Orders.tsx beze změny obsahu; názvy stavů zůstávají.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { fetchAllPages } from "../../../lib/fetchAllPages";
 import { normalizeError } from "../../../utils/errorNormalizer";
@@ -22,8 +22,35 @@ import type { WarrantyClaimRow } from "./useWarrantyClaims";
  */
 const PRVNI_DAVKA_ZAKAZEK = 200;
 
+/**
+ * Seznam bez dvou řádků se stejným id (vyhrává první výskyt). Když se nic
+ * neopakuje, vrací se tentýž seznam, ať se zbytečně nepřekresluje.
+ *
+ * Zakázka se do seznamu dostávala dvakrát: ozvěna z realtime a odpověď
+ * na založení se potkaly, nebo se při dotahování dalších stránek seznam
+ * posunul o nově založené zakázky (stránkuje se offsetem). React pak
+ * hlásil „two children with the same key“ a po smazání takové zakázky
+ * nechal v seznamu viset její kartu – smazaná zakázka „nezmizela“
+ * (E2E kos.spec a api-automatizace.spec padaly nahodile).
+ */
+export function bezDuplicitnichZakazek(seznam: TicketEx[]): TicketEx[] {
+  const videno = new Set<string>();
+  let duplicita = false;
+  for (const t of seznam) {
+    if (videno.has(t.id)) { duplicita = true; break; }
+    videno.add(t.id);
+  }
+  if (!duplicita) return seznam;
+  videno.clear();
+  return seznam.filter((t) => (videno.has(t.id) ? false : (videno.add(t.id), true)));
+}
+
 export function useNacitaniZakazek(activeServiceId: string | null) {
-  const [cloudTickets, setCloudTickets] = useState<TicketEx[]>([]);
+  const [cloudTickets, setCloudTicketsSurove] = useState<TicketEx[]>([]);
+  /* Každá změna seznamu – odkudkoli – projde kontrolou duplicit. */
+  const setCloudTickets = useCallback<Dispatch<SetStateAction<TicketEx[]>>>((akce) => {
+    setCloudTicketsSurove((prev) => bezDuplicitnichZakazek(typeof akce === "function" ? akce(prev) : akce));
+  }, []);
   /**
    * Aktuální zakázky mimo React – pro úpravy provedených oprav, které se
    * ukládají hned do databáze. Několik změn za sebou v jednom kliknutí

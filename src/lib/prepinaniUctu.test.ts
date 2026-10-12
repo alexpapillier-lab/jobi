@@ -282,10 +282,12 @@ describe("chyba 2: kolega se přihlásí, ale aplikace naběhne zase s prvním",
     // zůstává jeho: k němu se dá vrátit zase jen PINem nebo heslem.
     expect(P.zamcenaObrazovka("technik")).toBe(false);
     expect(P.zamcenaObrazovka("majitel")).toBe(true);
-    expect(reload).not.toHaveBeenCalled();
+    // Stránka se znovu načte hned a krok s PINem ukáže až ta načtená –
+    // jinak by ho pozdější znovunačtení (druhá záložka) smazalo uprostřed psaní.
+    expect(reload).toHaveBeenCalledTimes(1);
     P.dokonciPrepnuti();
     expect(P.cekaNaPin()).toBeNull();
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(2);
   });
 
   it("přihlášený se na zámku přihlásí heslem sám za sebe – nezaparkuje se", async () => {

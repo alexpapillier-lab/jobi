@@ -1221,7 +1221,20 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
         });
       }, 800);
     };
-    const reloadDevices = () => loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) setDevicesData(r.data); });
+    /* Katalog zařízení taky s odkladem. Uložení ceníku zapisuje celý snímek,
+       takže jedno uložení pošle realtime událost za každou značku, model
+       i opravu – u servisu s tisíci řádky tisíce událostí. Bez odkladu
+       z každé vzešlo vlastní načtení celého katalogu (čtyři dotazy), prohlížeč
+       je nestíhal (net::ERR_INSUFFICIENT_RESOURCES) a padaly i úplně cizí
+       požadavky, třeba statistiky („Failed to fetch“, průzkumník v E2E). */
+    let devicesReloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const reloadDevices = () => {
+      if (devicesReloadTimer) clearTimeout(devicesReloadTimer);
+      devicesReloadTimer = setTimeout(() => {
+        devicesReloadTimer = null;
+        void loadDevicesFromDb(activeServiceId).then((r) => { if (!r.error) setDevicesData(r.data); });
+      }, 800);
+    };
     const channel = supabase
       .channel(topic)
       .on(
@@ -1257,6 +1270,7 @@ export default function Inventory({ activeServiceId }: InventoryProps) {
       .subscribe();
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
+      if (devicesReloadTimer) clearTimeout(devicesReloadTimer);
       if (supabase) supabase.removeChannel(channel);
     };
   }, [activeServiceId]);
