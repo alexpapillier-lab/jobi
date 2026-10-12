@@ -5,7 +5,8 @@ import { ulozNaPozdeji, jeTrvalaChyba } from "../../../lib/frontaZapisu";
 import { showToast } from "../../../components/Toast";
 import { addWatermarkToImageBlob } from "../../../lib/diagnosticPhotoWatermark";
 import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
-import { NOVE_SLOUPCE_REKLAMACE, STAV_PREVEDENO } from "../../../lib/reklamacePrijem";
+import { NOVE_SLOUPCE_REKLAMACE, STAV_PREVEDENO, komentareProPrevod, type KomentarKPrevodu } from "../../../lib/reklamacePrijem";
+import { fetchAllPages } from "../../../lib/fetchAllPages";
 import type { Database } from "../../../types/supabase";
 
 export type WarrantyClaimRow = Database["public"]["Tables"]["warranty_claims"]["Row"];
@@ -189,6 +190,42 @@ export function useWarrantyClaims(activeServiceId: string | null) {
   );
 
   /**
+   * Komentáře zakázky, ze které reklamace vznikla, se zkopírují do nové
+   * zakázky (s předponou „[Z reklamace R…]“). Bez nich by se při převodu
+   * ztratilo, co si technici k reklamaci psali – třeba kontakt, s kým
+   * komunikovat. Vrací počet zkopírovaných; chyba jen hlásí, zakázka stojí.
+   */
+  const prekopirujKomentare = useCallback(
+    async (claim: WarrantyClaimRow, ticketId: string): Promise<number> => {
+      if (!supabase || !activeServiceId || !claim.source_ticket_id) return 0;
+      const sid = activeServiceId;
+      const zdroj = await fetchAllPages<KomentarKPrevodu>((from, to) =>
+        (supabase!.from("ticket_comments") as any)
+          .select("author,author_id,author_nickname,author_avatar_url,content,pinned,created_at")
+          .eq("service_id", sid)
+          .eq("ticket_id", claim.source_ticket_id)
+          .order("created_at", { ascending: true })
+          .range(from, to),
+      );
+      if (zdroj.error) {
+        reportSilent({ code: "claims.convert_comments_load_failed", error: zdroj.error, source: "useWarrantyClaims.prekopirujKomentare" });
+        showToast("Zakázka je založená, ale komentáře reklamace se nepodařilo načíst – najdete je u původní zakázky.", "error");
+        return 0;
+      }
+      const radky = komentareProPrevod(zdroj.data, claim.code, sid, ticketId);
+      if (radky.length === 0) return 0;
+      const { error } = await (supabase.from("ticket_comments") as any).insert(radky);
+      if (error) {
+        reportSilent({ code: "claims.convert_comments_failed", error, source: "useWarrantyClaims.prekopirujKomentare" });
+        showToast("Zakázka je založená, ale komentáře reklamace se nepodařilo zkopírovat – najdete je u původní zakázky.", "error");
+        return 0;
+      }
+      return radky.length;
+    },
+    [activeServiceId]
+  );
+
+  /**
    * Reklamace převedená na zakázku: systémový koncový stav, odkaz na zakázku.
    * Zapíše se jen tehdy, když reklamace ještě převedená není (souběh dvou lidí
    * – druhý dostane null a hlášku). Historii reklamace zapíše trigger.
@@ -332,5 +369,5 @@ export function useWarrantyClaims(activeServiceId: string | null) {
     []
   );
 
-  return { zalozReklamaci, oznacPrevedeni, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
+  return { zalozReklamaci, oznacPrevedeni, prekopirujKomentare, makeWarrantyClaimCode, updateClaimStatus, updateClaim, deleteClaim };
 }

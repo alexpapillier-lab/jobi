@@ -393,6 +393,11 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
       /* Už nahrané přijímací fotky (odkazy do úložiště) – např. zakázka
          vzniklá převodem reklamace (lib/reklamacePrijem). Jdou k první zakázce. */
       const hotoveFotkyPred = ((newDraft as any).hotoveFotkyPred as string[] | undefined)?.filter((u) => typeof u === "string" && u) ?? [];
+      /* Sloupce, které formulář nemá (IMEI vedle SN, značka, model, datum přijetí) –
+         převod reklamace je dává do sloupceNavic; prázdné hodnoty se neposílají. */
+      const sloupceNavic = Object.fromEntries(
+        Object.entries(((newDraft as any).sloupceNavic as Record<string, string | null> | undefined) ?? {}).filter(([, v]) => typeof v === "string" && v.trim()),
+      );
 
       let accumulatedTickets = [...cloudTickets];
       const createdTickets: TicketEx[] = [];
@@ -445,6 +450,7 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           // Sleva zadaná u zařízení při příjmu (DeviceRow.discountType); starší koncept ji měl na celé zakázce.
           discount_type: dev.discountType ?? (newDraft as any).discountType ?? null,
           discount_value: dev.discountType ? (dev.discountValue ?? null) : ((newDraft as any).discountValue ?? null),
+          ...(i === 0 ? sloupceNavic : {}),
         };
 
         const { data, error } = await (supabase

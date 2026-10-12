@@ -146,6 +146,12 @@ test("reklamace, která není reklamací, se převede na zakázku – jednou a s
   const kodReklamace = ((await radekCisla.innerText()).match(/R\d{8}/) ?? [])[0] ?? "";
   expect(kodReklamace).toMatch(/^R\d{8}$/);
 
+  // Komentář napsaný v reklamaci (jde na zdrojovou zakázku) se má při převodu přenést.
+  const komentar = `Volat paní Novákové ${Date.now().toString(36)}`;
+  await page.getByPlaceholder("Napiš interní komentář k zakázce…").fill(komentar);
+  await page.getByRole("button", { name: "Přidat komentář" }).click();
+  await expect(page.getByText(komentar).first()).toBeVisible({ timeout: 20_000 });
+
   await prevest.click();
   await expect(page.getByText("Není to reklamace – založit zakázku?")).toBeVisible();
   await page.getByRole("button", { name: "Založit zakázku" }).click();
@@ -160,6 +166,7 @@ test("reklamace, která není reklamací, se převede na zakázku – jednou a s
   expect(novyKod).not.toBe(kod);
   await expect(page.getByText(popis).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Vzniklo z reklamace").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(`[Z reklamace ${kodReklamace}] ${komentar}`).first()).toBeVisible({ timeout: 30_000 });
 
   // Zpět do reklamace: je uzavřená, odkazuje na zakázku a podruhé převést nejde.
   await page.getByRole("button", { name: kodReklamace, exact: true }).first().click();
