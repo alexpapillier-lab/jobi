@@ -57,6 +57,8 @@ export function Outline({ template, selection, onSelect, onMoveBlock, onAddBlock
             if (nested) return;
             setDragId(b.id);
             e.dataTransfer.effectAllowed = "move";
+            // Firefox bez dat v dataTransfer tažení vůbec nezačne.
+            e.dataTransfer.setData("text/plain", b.id);
           }}
           onDragOver={(e) => {
             if (!dragId || nested) return;

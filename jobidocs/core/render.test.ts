@@ -225,3 +225,17 @@ describe("migrace", () => {
     expect(desktop).not.toContain(".items tbody tr,.bottom");
   });
 });
+
+describe("skripty editoru", () => {
+  /* Skripty v iframu editoru jsou text v šabloně – překlep v nich TypeScript
+     nepozná a editor by v prohlížeči tiše přestal reagovat na klikání. */
+  it("jsou syntakticky platné a úchyt pro tažení není <button> (Firefox z něj tažení nespustí)", () => {
+    const html = renderDocument({ template: defaultTemplate("zakazkovy_list"), data: sampleData("zakazkovy_list"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "editor" } });
+    const skripty = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    expect(skripty.length).toBeGreaterThanOrEqual(2);
+    for (const kod of skripty) expect(() => new Function(kod)).not.toThrow();
+    expect(html).toContain("g=document.createElement('span');g.className='grip'");
+    // Při psaní se přetahování vypíná (Safari a Firefox jinak nedovolí umístit kurzor).
+    expect(html).toContain("dragOffFor(el)");
+  });
+});

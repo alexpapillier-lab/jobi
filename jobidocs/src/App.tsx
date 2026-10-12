@@ -162,7 +162,7 @@ export default function App() {
 
         {tab === "znacka" &&
           (docsState.docs ? (
-            <BrandPage docs={docsState.docs} setDocs={docsState.setDocs} dirty={docsState.dirty} save={docsState.save} onSave={() => docsState.persist()} canManage={context?.canManageDocuments !== false} companyData={context?.companyData ?? null} />
+            <BrandPage docs={docsState.docs} setDocs={docsState.setDocs} dirty={docsState.dirty} save={docsState.save} onSave={docsState.persist} onReload={docsState.reload} canManage={context?.canManageDocuments !== false} companyData={context?.companyData ?? null} />
           ) : (
             <div className="glass-panel">Vyberte servis.</div>
           ))}
