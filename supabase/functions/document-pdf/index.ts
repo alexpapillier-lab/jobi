@@ -94,7 +94,7 @@ serve(async (req) => {
         // na síť nestačí – fotky jsou data:, ty se nestahují.
         waitForSelector: { selector: 'html[data-fit="done"]', timeout: 10000 },
         gotoOptions: { waitUntil: "networkidle0", timeout: 20000 },
-        pdfOptions: { format: "A4", printBackground: true, preferCSSPageSize: true },
+        pdfOptions: { format: "a4", printBackground: true, preferCSSPageSize: true },
       }),
       signal: AbortSignal.timeout(40000),
     });
