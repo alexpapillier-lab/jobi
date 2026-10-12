@@ -11,5 +11,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["electron/**/*", "api/**/*", "core/**/*", "src/documentToHtml.ts", "src/documentDesign.ts", "src/qr.ts", "src/richText.ts"]
+  "include": ["electron/**/*", "api/**/*", "core/**/*", "src/documentToHtml.ts", "src/documentDesign.ts", "src/qr.ts", "src/richText.ts"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }
