@@ -1280,6 +1280,8 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       <ThemeProvider>
         <OnlineGate>
           <NeulozeneZmeny />
+          {/* Zamčená obrazovka (i po F5) platí i tady, ne jen v aplikaci. */}
+          <PrepinacUctu userId={session.user.id} email={session.user.email ?? null} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} />
           <FirstServiceSetup
             email={session.user?.email ?? null}
             onCreated={(serviceId) => {
@@ -1324,6 +1326,7 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       <ThemeProvider>
         <OnlineGate>
           <NeulozeneZmeny />
+          <PrepinacUctu userId={session.user.id} email={session.user.email ?? null} profil={userProfile ? { nickname: userProfile.nickname, avatarUrl: userProfile.avatarUrl } : null} />
           <TrialEnded
             serviceId={activeServiceId}
             serviceName={aktivni?.service_name ?? "Servis"}

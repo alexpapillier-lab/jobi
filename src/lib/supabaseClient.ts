@@ -249,3 +249,47 @@ export { supabase, supabaseUrl, supabaseAnonKey };
 export function getSupabaseClient() {
   return supabase;
 }
+
+/** Klíč, pod kterým supabase-js drží relaci (`sb-<ref>-auth-token`). */
+export function klicRelace(): string | null {
+  const k = (supabase?.auth as unknown as { storageKey?: unknown } | undefined)?.storageKey;
+  return typeof k === "string" && k ? k : null;
+}
+
+/**
+ * Spustí `fn` pod stejným zámkem, pod kterým supabase-js obnovuje a ukládá
+ * relaci (`lock:<klíč relace>`, Web Locks – platí i napříč záložkami).
+ *
+ * Přepnutí účtu zapisuje relaci přímo do úložiště; bez zámku by ho mohla
+ * přepsat obnova tokenu odcházejícího člověka, která zrovna běžela
+ * (viz prepinaniUctu.ts). Uvnitř `fn` se nesmí volat nic, co samo sahá
+ * po relaci klienta (getSession, rpc, from…) – čekalo by to na tenhle zámek.
+ */
+export function vZamkuRelace<R>(fn: () => Promise<R>): Promise<R> {
+  const klic = klicRelace();
+  if (!klic) return fn();
+  return zamekRelace(`lock:${klic}`, -1, fn);
+}
+
+let docasnychKlientu = 0;
+
+/**
+ * Samostatný auth klient jen v paměti – nic neukládá, nic neobnovuje a
+ * neposílá zprávy ostatním záložkám. Přepnutí účtu v něm přihlásí cílového
+ * člověka (heslem nebo zaparkovanými tokeny) a hotovou relaci pak zapíše
+ * pod zámkem do sdíleného úložiště. Každé volání má vlastní klíč, ať
+ * supabase-js nehlásí „Multiple GoTrueClient instances“.
+ */
+export function docasnyAuthKlient() {
+  if (!supabaseUrl || !supabaseAnonKey) throw new Error("Supabase není k dispozici.");
+  docasnychKlientu += 1;
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: { fetch: supabaseFetch },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: `jobi-prepinani-${docasnychKlientu}-${Date.now().toString(36)}`,
+    },
+  }).auth;
+}
