@@ -1,0 +1,136 @@
+/*
+ * Editor šablon JobiDocs ve webové verzi Jobi (EditorSablonWeb.tsx).
+ *
+ * Třídy editoru (ed-, ol-, cv-, in-, br-, …) se berou ze sdíleného
+ * jobidocs/src/styles/editorPanels.css. Obecné ovládací prvky JobiDocs
+ * (.ui-btn-primary, .ui-select, .doc-type-tabs…) definuje v JobiDocs jeho
+ * theme.css, který se do Jobi načíst nesmí – přepsal by tokeny a vzhled celé
+ * aplikace. Tady jsou proto jen pod .jd-web a na tokenech Jobi (fungují
+ * i v tmavém motivu).
+ */
+
+.jd-web {
+  position: fixed;
+  inset: 0;
+  /* Nad plovoucím chatem (1150), pod hláškami (10000) a průvodcem (9999).
+     Dialogy editoru (.dlg-backdrop) mají 2000, takže jsou nad editorem. */
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-base);
+  /* Token, který JobiDocs má a Jobi ne (editor z něj počítá výšku). */
+  --spacing-page: 16px;
+}
+
+.jd-web-hlavicka {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.jd-web-nazev { display: flex; flex-direction: column; line-height: 1.2; }
+.jd-web-nazev b { font-size: var(--text-lg); font-weight: 900; }
+.jd-web-nazev span { font-size: var(--text-sm); color: var(--muted); }
+.jd-web-zalozky { display: flex; gap: 4px; margin-left: var(--space-3); }
+.jd-web-zalozky button {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.jd-web-zalozky button[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.jd-web-hlavicka .spacer { flex: 1; }
+.jd-web-pozn { font-size: var(--text-xs); color: var(--muted); max-width: 360px; }
+
+.jd-web-obsah {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 16px;
+}
+.jd-web .ed-root { height: auto; flex: 1; min-height: 0; }
+.jd-web-znacka { flex: 1; min-height: 0; overflow: auto; }
+.jd-web-zprava {
+  margin: 40px auto;
+  max-width: 520px;
+  text-align: center;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  line-height: 1.5;
+}
+.jd-web-zprava p { color: var(--muted); margin: 8px 0 16px; }
+
+/* ---- Ovládací prvky JobiDocs, jen uvnitř editoru ---- */
+
+.jd-web .ui-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+}
+.jd-web .ui-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.jd-web .ui-btn-sm { padding: 5px 10px; font-size: var(--text-sm); }
+.jd-web .ui-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.jd-web .ui-btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+.jd-web .ui-btn-ghost { background: transparent; border-color: transparent; }
+.jd-web .ui-btn-danger { background: transparent; border-color: var(--danger); color: var(--danger-text); }
+.jd-web .ui-btn-danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); color: var(--danger-text); }
+
+.jd-web .ui-input,
+.jd-web .ui-select,
+.jd-web .ui-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-base);
+  font-family: inherit;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.jd-web .ui-textarea { min-height: 90px; resize: vertical; line-height: 1.4; }
+.jd-web .ui-input:focus,
+.jd-web .ui-select:focus,
+.jd-web .ui-textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.jd-web .fr-row .ui-input { padding: 6px 8px; font-size: var(--text-sm); }
+
+.jd-web .doc-type-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--border);
+}
+.jd-web .doc-type-tabs button {
+  padding: 9px 14px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+.jd-web .doc-type-tabs button:hover { background: var(--accent-soft); color: var(--accent); }
+.jd-web .doc-type-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-soft); }
+
+.jd-web button { font-family: inherit; }
+.jd-web .icon-btn, .jd-web .ol-add, .jd-web .ab-item, .jd-web .vp-item, .jd-web .th-card, .jd-web .swatch { cursor: pointer; }

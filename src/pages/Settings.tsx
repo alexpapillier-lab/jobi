@@ -20,6 +20,7 @@ import { OwnerSettings } from "./Settings/OwnerSettings";
 import { Card, FieldLabel, TextInput, LanguagePicker } from "../lib/settingsUi";
 import { nastaveniZarukyZConfigu, normalizujMesice, VYCHOZI_ZARUKA_FIRMA, VYCHOZI_ZARUKA_SPOTREBITEL } from "../lib/zarukaOpravy";
 import { DphNastaveni } from "./Settings/DphNastaveni";
+import { SablonyDokumentuSection } from "./Settings/SablonyDokumentuSection";
 import { IntegrationsSettings } from "./Settings/IntegrationsSettings";
 import { HelpSupportSettings } from "./Settings/HelpSupportSettings";
 import { MigraceSettings } from "./Settings/MigraceSettings";
@@ -72,6 +73,7 @@ export type SettingsCategory = "company" | "orders" | "documents" | "communicati
 export type SettingsSubsection = 
   | "service_basic" | "service_contact" | "service_billing" | "service_subscription" | "service_branches" | "service_migrace" | "service_gdpr" | "service_sms" | "service_team" | "service_odmeny" | "service_owner" | "service_api"
   | "communication_automations" | "communication_chat" | "communication_report"
+  | "documents_sablony"
   | "orders_statuses" | "orders_filters" | "orders_required_fields" | "orders_tisk_dokumentu" | "orders_reklamace" | "orders_deleted" | "orders_device_options" | "orders_handoff_options" | "orders_prace" | "orders_kontrola" | "orders_nahradni" | "orders_rezervace" | "orders_slevy" | "orders_detail" | "orders_zasilky"
   | "appearance_theme" | "appearance_ui" | "appearance_shortcuts" | "appearance_modules"
   | "profile_me"
@@ -88,7 +90,7 @@ const SUBSECTION_CATEGORY: Record<SettingsSubsection, SettingsCategory> = {
   orders_statuses: "orders", orders_required_fields: "orders", orders_device_options: "orders", orders_handoff_options: "orders",
   orders_reklamace: "orders", orders_filters: "orders", orders_deleted: "orders", orders_prace: "orders", orders_kontrola: "orders", orders_nahradni: "orders", orders_rezervace: "orders",
   orders_slevy: "orders", orders_detail: "orders", orders_zasilky: "orders",
-  orders_tisk_dokumentu: "documents",
+  orders_tisk_dokumentu: "documents", documents_sablony: "documents",
   service_sms: "communication", communication_automations: "communication", communication_chat: "communication", communication_report: "communication",
   service_team: "people", service_odmeny: "people", service_api: "people",
   appearance_ui: "app", appearance_theme: "app", appearance_shortcuts: "app", appearance_modules: "app", about_updates: "app", about_app: "app", about_help: "app",
@@ -1054,6 +1056,8 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </svg>
       ),
       subsections: [
+        // Editor šablon ve webu; desktop má na šablony JobiDocs.
+        ...(!isDesktop() ? [{ key: "documents_sablony" as const, label: "Šablony dokumentů", keywords: ["šablony", "šablona", "dokumenty", "editor", "logo", "razítko", "podpis", "značka", "barva", "písmo", "zakázkový list", "záruční list", "faktura", "protokol", "vzhled dokumentů", "jobidocs", "hlavičkový papír"] }] : []),
         { key: "orders_tisk_dokumentu", label: "JobiDocs a automatický tisk", keywords: ["tisk", "tiskárna", "jobidocs", "automaticky", "automatický tisk", "záruční list", "zakázkový list", "šablony", "dokumenty", "reklamační protokol", "přijetí reklamace", "vydání reklamace"] },
       ],
     },
@@ -1135,6 +1139,11 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
       setSection(sectionFor("service_basic"));
     }
   }, [section.subsection, isRootOwner]);
+
+  // Šablony dokumentů jsou jen ve webu – hluboký odkaz na desktopu vede do JobiDocs a tisku.
+  useEffect(() => {
+    if (isDesktop() && section.subsection === "documents_sablony") setSection(sectionFor("orders_tisk_dokumentu"));
+  }, [section.subsection]);
 
   // Bez can_manage_documents skrýt Kontaktní údaje – při přepnutí role přesměruj
   useEffect(() => {
@@ -2748,6 +2757,15 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
         </Card>
       )}
 
+      {/* DOKUMENTY A TISK - ŠABLONY (jen web, editor JobiDocs v prohlížeči) */}
+      {section.subsection === "documents_sablony" && !isDesktop() && (
+        <SablonyDokumentuSection
+          serviceId={activeServiceId}
+          serviceName={services.find((s) => s.service_id === activeServiceId)?.service_name ?? ""}
+          canManage={!!canManageDocuments}
+        />
+      )}
+
       {/* DOKUMENTY A TISK - JOBIDOCS + AUTOMATICKÝ TISK */}
       {section.subsection === "orders_tisk_dokumentu" && (
         <>
@@ -2760,10 +2778,17 @@ export default function Settings({ activeServiceId, setActiveServiceId, services
                   Vzhled dokumentů (rozvržení, sekce, logo, razítko, design a vlastní texty) se upravuje v aplikaci <strong>JobiDocs</strong>.
                   {isDesktop()
                     ? " Zde v Nastavení se nastavuje jen automatický tisk."
-                    : " Ve webové verzi se tiskne přímo z prohlížeče a nastavený vzhled se použije; upravit ho jde v JobiDocs na počítači."}
+                    : " Ve webové verzi se tiskne přímo z prohlížeče a nastavený vzhled se použije; upravit ho jde tady v části Šablony dokumentů nebo v JobiDocs na počítači."}
                 </>
               }
             />
+            {!isDesktop() && (
+              <div>
+                <Button variant="primary" onClick={() => requestSection(sectionFor("documents_sablony"))}>
+                  Upravit šablony dokumentů
+                </Button>
+              </div>
+            )}
             {/* Spuštění JobiDocs má smysl jen na desktopu – ve webu tam není co spouštět. */}
             {isDesktop() && (
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
