@@ -25,6 +25,8 @@ function kotvyVKodu(): { literaly: Set<string>; predpony: string[] } {
     }
   };
   projdi(koren);
+  // Editor šablon JobiDocs je sdílený kód a ve webové verzi je součástí Jobi.
+  projdi(path.resolve(koren, "../jobidocs/src"));
   return { literaly, predpony };
 }
 

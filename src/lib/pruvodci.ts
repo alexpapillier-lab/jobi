@@ -563,10 +563,29 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "orders_tisk_dokumentu",
     kroky: [
       { ...ns("documents", "orders_tisk_dokumentu"), title: "K čemu to je", description: "Zakázkový list, záruční list a protokoly se tisknou jedním kliknutím. Tady určíte, kdy se tisk nabídne sám; vzhled dokumentů je v JobiDocs.", selector: sel("settings-sub-orders_tisk_dokumentu"), icon: "jobidocs" },
-      { ...ns("documents", "orders_tisk_dokumentu"), title: "Otevřete JobiDocs", description: "Na desktopu klikněte na tlačítko JobiDocs – upravíte v něm rozvržení, logo, razítko a vlastní texty. Tečka vedle ukazuje, jestli je připojené; na webu se tiskne z prohlížeče.", selector: sel("settings-tisk-jobidocs"), icon: "jobidocs" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Otevřete JobiDocs", description: "Na desktopu klikněte na tlačítko JobiDocs – upravíte v něm rozvržení, logo, razítko a vlastní texty. Tečka vedle ukazuje, jestli je připojené. Na webu se tiskne z prohlížeče a šablony upravíte v části Šablony dokumentů.", selector: sel("settings-tisk-jobidocs"), icon: "jobidocs" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Zapněte automatický tisk", description: "Zaškrtněte Tisknout při vytvoření zakázky, nebo vyberte stav, při jehož přepnutí se dialog tisku otevře sám. Zvlášť pro zakázkový a záruční list; ukládá se hned.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Tisk u reklamací", description: "Protokol o přijetí reklamace se může tisknout při jejím vytvoření nebo přepnutí do stavu, protokol o vydání při přepnutí do stavu, který vyberete.", selector: sel("settings-tisk-reklamace"), icon: "doc" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Hotovo", description: "Při dalším příjmu nebo přepnutí stavu se tisk nabídne sám. Ručně tisknete v detailu zakázky tlačítkem Tisk.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
+    ],
+  },
+  {
+    id: "nastaveni-sablony",
+    nazev: "Šablony dokumentů",
+    popis: "Zakázkový a záruční list, protokoly, faktura a smlouva přímo v prohlížeči: texty, bloky, logo, razítko a barvy.",
+    page: "settings",
+    settingsSubsection: "documents_sablony",
+    novinkaOd: "2026-10-12",
+    // Jen webová verze – na desktopu jsou šablony v JobiDocs.
+    dostupny: (k) => k.web,
+    kroky: [
+      { ...ns("documents", "documents_sablony"), title: "K čemu to je", description: "Vzhled všech dokumentů servisu bez instalace JobiDocs. Je to tentýž editor a ukládá do stejného místa: co změníte tady, platí i pro tisk z JobiDocs na počítači a naopak.", selector: sel("settings-sub-documents_sablony"), icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Klikněte na Otevřít editor šablon", description: "Editor se otevře přes celé okno, potřebuje vedle sebe osnovu, dokument a vlastnosti. Na telefonu se neotevře – šablony upravujte na počítači nebo tabletu.", selector: sel("settings-sablony-otevrit"), icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Vyberte dokument", description: "Záložky nahoře přepínají zakázkový list, záruční list, protokoly, fakturu a smlouvu o zápůjčce. Tečka u názvu znamená, že šablona je upravená.", selector: sel("sablony-typy"), klik: ["settings-sablony-otevrit"], icon: "doc" },
+      { ...ns("documents", "documents_sablony"), title: "Upravujte přímo v dokumentu", description: "Klikem vyberete blok, dalším klikem do něj píšete. Za ⋮⋮ blok přetáhnete jinam, „+“ mezi bloky vloží nový, vlastnosti vybraného prvku jsou vpravo. Náhled ukazuje ukázkovou nebo skutečnou zakázku.", selector: sel("sablony-nahled"), klik: ["settings-sablony-otevrit"], icon: "doc" },
+      { ...ns("documents", "documents_sablony"), title: "Klikněte na Uložit", description: "Uloží šablony pro celý servis (⌘/Ctrl+S). Když je mezitím uložil někdo jiný – na webu nebo v JobiDocs – zeptá se, jestli načíst jeho verzi, nebo ji přepsat.", selector: sel("sablony-ulozit"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Logo, razítko a barvy na záložce Značka", description: "Nahrajte logo a razítko z počítače (velký obrázek se sám zmenší) a vyberte vzhled, barvu a písmo – platí pro všechny dokumenty. Ukládá se stejným tlačítkem Uložit.", selector: sel("sablony-zalozka-znacka"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Hotovo", description: "Zkušební tisk otevře tiskový dialog s ukázkou. Tisk ze zakázky použije novou šablonu hned; tisk bez dialogu rovnou na tiskárnu umí jen JobiDocs na počítači.", selector: sel("sablony-zavrit"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
     ],
   },
   {

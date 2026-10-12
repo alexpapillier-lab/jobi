@@ -341,6 +341,19 @@ První tři měsíce: body 1, 2, 4.
 - `[x]` Onboarding připomíná JobiDocs: karta První kroky má krok „Nainstalujte
   JobiDocs pro tisk dokumentů" – na desktopu se odškrtne sám, když JobiDocs
   běží, v prohlížeči vede ke stažení aplikace a je nepovinný.
+- `[~]` Editor šablon ve webové verzi (12. 10. 2026): Nastavení → Dokumenty
+  a tisk → Šablony dokumentů otevře přes celé okno tentýž editor jako JobiDocs
+  (sdílený `jobidocs/src/editor`, Dokumenty + Značka). Data jdou přes rozhraní
+  úložiště (`jobidocs/src/storage`): desktop dál přes místní server, web přímo
+  do Supabase (`src/lib/sablonyDokumentuWeb.ts`) se zápisem jen při shodné
+  verzi; konflikt „Šablonu mezitím změnil někdo jiný (web nebo JobiDocs)“
+  nabídne Načíst jeho verzi / Přepsat, nově i na Značce v JobiDocs. Výběr
+  tiskárny, profily, automatický tisk a Aktivity ve webu nejsou; Zkušební tisk
+  = dialog prohlížeče, Uložit PDF = PDF ze serveru. Zbývá: nasadit migraci
+  `20261012100000_dokumenty_bucket.sql` (bucket `service-document-assets` v
+  produkci nikdy nevznikl, logo a razítko jsou v configu jako data: URL – bez
+  migrace to tak zůstane a funguje) a vyzkoušet v Safari a Firefoxu
+  (psaní v dokumentu, tažení bloků, nahrání loga).
 - `[~]` Windows build (workflow existuje) – otestovat instalaci, tisk přes
   JobiDocs a aktualizace na Windows.
 - `[~]` Verze pro tablet / telefon – celé flow příjmu projito na 375 px
