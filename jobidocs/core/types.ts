@@ -11,6 +11,9 @@
  *  - Brand / Theme … vzhled společný pro všechny dokumenty servisu
  */
 
+/** Velikost textu názvu dokumentu („Zakázkový list“); číslo dokumentu se nemění. Bez hodnoty = střední. */
+export type TitleSize = "s" | "m" | "l" | "xl";
+
 export type DocType =
   | "zakazkovy_list"
   | "zarucni_list"
@@ -196,7 +199,7 @@ export type BlockType = Block["type"];
 
 /** Prvek ve slotu (hlavička / spodek stránky). */
 export type SlotItem =
-  | { id: string; type: "title"; text?: string; style?: "box" | "plain"; showNumber?: boolean; showDate?: boolean }
+  | { id: string; type: "title"; text?: string; style?: "box" | "plain"; showNumber?: boolean; showDate?: boolean; size?: TitleSize }
   | { id: string; type: "brand"; showContact?: boolean }
   | { id: string; type: "logo"; height?: number }
   | { id: string; type: "stamp"; label?: string; height?: number }

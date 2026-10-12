@@ -335,7 +335,7 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
       const showNumber = item.showNumber !== false && !titleOverride;
       const showDate = item.showDate === true && !titleOverride;
       return wrapItem(
-        `<div class="doc-title ${item.style === "box" ? "boxed" : ""}"><div class="doc-kind"${editable(ctx, `item:${item.id}:text`, item.text ?? "")}>${escapeHtml(kind)}</div>${showNumber && number ? `<div class="doc-number">${escapeHtml(number)}</div>` : ""}${showDate && date ? `<div class="doc-date">${escapeHtml(date)}</div>` : ""}</div>`
+        `<div class="doc-title ${item.style === "box" ? "boxed" : ""}${item.size && item.size !== "m" ? ` size-${item.size}` : ""}"><div class="doc-kind"${editable(ctx, `item:${item.id}:text`, item.text ?? "")}>${escapeHtml(kind)}</div>${showNumber && number ? `<div class="doc-number">${escapeHtml(number)}</div>` : ""}${showDate && date ? `<div class="doc-date">${escapeHtml(date)}</div>` : ""}</div>`
       );
     }
     case "brand": {
@@ -481,6 +481,9 @@ ${theme.color === "bw" ? "img{filter:grayscale(1)}" : ""}
 .slot.b-right{align-items:flex-end;text-align:right}
 .doc-title{display:flex;flex-direction:column;align-items:flex-end}
 .doc-kind{font-size:0.85em;font-weight:700;text-transform:uppercase;letter-spacing:0.12em}
+.doc-title.size-s .doc-kind{font-size:0.7em}
+.doc-title.size-l .doc-kind{font-size:1.3em;letter-spacing:0.08em}
+.doc-title.size-xl .doc-kind{font-size:1.9em;letter-spacing:0.05em;line-height:1.1}
 .doc-number{font-size:2.3em;font-weight:800;line-height:1.05;letter-spacing:-0.01em;font-variant-numeric:tabular-nums}
 .doc-date{font-size:0.85em;color:var(--muted);margin-top:0.6mm}
 .brand-name{font-weight:800;font-size:1.55em;letter-spacing:-0.01em;line-height:1.1}

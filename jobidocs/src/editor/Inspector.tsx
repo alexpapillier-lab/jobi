@@ -4,7 +4,7 @@
  * vykreslí na ploše.
  */
 import { useRef, type ReactNode } from "react";
-import { DOC_TYPE_LABELS, SLOT_LABELS, SLOT_NAMES, type Block, type BlockWhen, type FieldRow, type ItemsColumn, type SlotItem, type SlotName, type Template } from "../../core/index";
+import { DOC_TYPE_LABELS, SLOT_LABELS, SLOT_NAMES, type Block, type BlockWhen, type FieldRow, type ItemsColumn, type SlotItem, type SlotName, type Template, type TitleSize } from "../../core/index";
 import { newId } from "../../core/index";
 import type { Selection } from "./Canvas";
 import { BLOCK_TYPE_LABELS, SLOT_ITEM_LABELS, fieldRowFromVariable, findBlock, findSlotItem } from "./templateOps";
@@ -457,6 +457,14 @@ function SlotItemPanel(p: Props & { item: SlotItem; slot: SlotName }) {
               <select className="ui-select" value={item.style ?? "plain"} onChange={(e) => upd({ style: e.target.value as "box" | "plain" })}>
                 <option value="plain">Bez rámečku</option>
                 <option value="box">V rámečku</option>
+              </select>
+            </Row>
+            <Row label="Velikost názvu" hint="Jen text názvu (např. Zakázkový list); číslo dokumentu zůstává stejně velké.">
+              <select className="ui-select" value={item.size ?? "m"} onChange={(e) => upd({ size: e.target.value as TitleSize })}>
+                <option value="s">Malý</option>
+                <option value="m">Střední (výchozí)</option>
+                <option value="l">Velký</option>
+                <option value="xl">Extra velký</option>
               </select>
             </Row>
             <Row label="Číslo dokumentu" hint="Číslo zakázky, reklamace nebo faktury z Jobi, velkým písmem.">

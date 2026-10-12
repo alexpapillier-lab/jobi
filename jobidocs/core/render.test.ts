@@ -47,6 +47,20 @@ describe("render", () => {
     expect(dobropis).toContain("<title>Dobropis");
   });
 
+  it("velikost názvu dokumentu: třída na nadpisu, výchozí beze změny", () => {
+    const tpl = defaultTemplate("zakazkovy_list");
+    const args = { brand: DEFAULT_BRAND, theme: DEFAULT_THEME, data: sampleData("zakazkovy_list"), options: { mode: "print" as const } };
+    const sNazvem = (size?: "s" | "m" | "l" | "xl") => ({
+      ...tpl,
+      slots: Object.fromEntries(Object.entries(tpl.slots).map(([k, v]) => [k, (v ?? []).map((it) => (it.type === "title" ? { ...it, size } : it))])),
+    }) as typeof tpl;
+    expect(JSON.stringify(tpl)).toContain('"type":"title"');
+    expect(renderDocument({ ...args, template: sNazvem() })).not.toMatch(/class="doc-title[^"]*size-/);
+    expect(renderDocument({ ...args, template: sNazvem("m") })).not.toMatch(/class="doc-title[^"]*size-/);
+    expect(renderDocument({ ...args, template: sNazvem("xl") })).toMatch(/class="doc-title[^"]*size-xl"/);
+    expect(renderDocument({ ...args, template: sNazvem("l") })).toContain(".doc-title.size-l .doc-kind{font-size:1.3em");
+  });
+
   it("prázdná data skryjí řádky bez hodnot a bloky s when=notEmpty", () => {
     const html = renderDocument({ template: defaultTemplate("zarucni_list"), data: sampleData("zarucni_list", "empty"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" } });
     expect(html).not.toContain("Provedená oprava");
