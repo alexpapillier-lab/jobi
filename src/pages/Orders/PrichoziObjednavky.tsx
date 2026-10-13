@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Segmented, type SegmentedOption } from "../../components/ui";
+import { Button, Input, Segmented, type SegmentedOption } from "../../components/ui";
 import { showToast } from "../../components/Toast";
 import { useBranches } from "../../context/BranchContext";
 import { otevriVProhlizeci } from "../../lib/platform";
@@ -9,6 +9,7 @@ import {
   nactiObjednavky,
   objednavkaZakazky,
   nastavStavObjednavky,
+  odpovidaHledani,
   sledovaciOdkazy,
   sledujObjednavky,
   type StavObjednavky,
@@ -181,6 +182,7 @@ export function PrichoziObjednavky({
   const vychoziPobocka = branches.find((b) => b.isDefault)?.id ?? null;
   const [filtr, setFiltr] = useState<FiltrObjednavek>("vse");
   const [vse, setVse] = useState(false);
+  const [hledat, setHledat] = useState("");
   const [sbaleno, setSbalenoStav] = useState(nactiSbaleno);
   const setSbaleno = (v: boolean) => {
     setSbalenoStav(v);
@@ -206,7 +208,11 @@ export function PrichoziObjednavky({
   const zdroje = new Set(viditelne.map((o) => o.zdroj).filter(Boolean));
   const jedenZdroj = zdroje.size === 1 ? [...zdroje][0] : null;
 
-  const seznam = filtr === "vyrizene" ? vyrizene : filtr === "vse" ? otevrene : otevrene.filter((o) => o.stav === filtr);
+  // Hledání jde přes všechny objednávky (i vyřízené), filtr stavu se při něm neuplatní.
+  const hleda = hledat.trim().length > 0;
+  const seznam = hleda
+    ? [...otevrene, ...vyrizene].filter((o) => odpovidaHledani(o, hledat))
+    : filtr === "vyrizene" ? vyrizene : filtr === "vse" ? otevrene : otevrene.filter((o) => o.stav === filtr);
   const ukazane = vse ? seznam : seznam.slice(0, LIMIT);
 
   const volby: SegmentedOption<FiltrObjednavek>[] = [
@@ -291,22 +297,33 @@ export function PrichoziObjednavky({
             {(["dorazilo", "nova", "na_ceste"] as const).filter((st) => pocty[st] > 0).map((st) => `${POPIS_STAVU[st]} ${pocty[st]}`).join(" · ")}
           </span>
         ) : (
-          volby.length > 2 && (
-            <Segmented
-              size="sm"
-              ariaLabel="Filtr objednávek"
-              value={filtr}
-              options={volby}
-              onChange={(v) => { setFiltr(v); setVse(false); }}
+          <div className="po-ovladani">
+            <Input
+              type="search"
+              className="po-hledat"
+              value={hledat}
+              onChange={(e) => { setHledat(e.target.value); setVse(false); }}
+              onKeyDown={(e) => { if (e.key === "Escape") setHledat(""); }}
+              placeholder="Hledat číslo, jméno, telefon, zařízení…"
+              aria-label="Hledat v příchozích objednávkách"
             />
-          )
+            {!hleda && volby.length > 2 && (
+              <Segmented
+                size="sm"
+                ariaLabel="Filtr objednávek"
+                value={filtr}
+                options={volby}
+                onChange={(v) => { setFiltr(v); setVse(false); }}
+              />
+            )}
+          </div>
         )}
       </div>
       {!sbaleno && (
         <>
           {seznam.length === 0 ? (
             <div className="po-tlumene" style={{ fontSize: 13, padding: "6px 2px" }}>
-              {filtr === "vyrizene" ? "Žádná vyřízená objednávka." : "Žádná nevyřízená objednávka."}
+              {hleda ? `Nic neodpovídá „${hledat.trim()}“.` : filtr === "vyrizene" ? "Žádná vyřízená objednávka." : "Žádná nevyřízená objednávka."}
             </div>
           ) : (
             <ul className="po-seznam">{ukazane.map(radek)}</ul>
@@ -352,6 +369,8 @@ const STYL = `
 .po-pocet{min-width:20px;padding:1px 7px;border-radius:999px;background:var(--accent);color:var(--accent-contrast,#fff);font-size:11px;font-weight:800;text-align:center}
 .po-zdroj{font-weight:500;font-size:12px}
 .po-souhrn{font-size:12px}
+.po-ovladani{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.po-hledat{width:260px;max-width:100%;height:30px;font-size:13px}
 .po-tlumene{color:var(--muted)}
 .po-silne{font-weight:700;color:var(--text)}
 .po-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:12px}
@@ -371,6 +390,7 @@ const STYL = `
   .po-doprava{display:none}
 }
 @media (max-width:760px){
+  .po-ovladani,.po-hledat{width:100%}
   .po-radek{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"cislo cislo" "zak zak" "zar zar" "akce akce";gap:6px}
   .po-cislo{grid-area:cislo;display:flex;gap:8px;align-items:center}
   .po-zakaznik{grid-area:zak;display:flex;flex-wrap:wrap;gap:0 8px}

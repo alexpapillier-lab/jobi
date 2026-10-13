@@ -33,7 +33,7 @@ import {
 import { detailSouhlasu, mapujPodpisPrevzeti, obrazekPodpisuPrevzeti, textSouhlasu } from "./souhlasPrevzeti";
 import { ticketDocumentData } from "./documentData";
 import { modulProRozsah, ocistiRozsahy } from "../../supabase/functions/_shared/tokeny";
-import { nazevModelu, objednavkaNaKoncept, popisDopravy, sledovaciOdkazy, type WebObjednavka } from "./objednavky";
+import { nazevModelu, objednavkaNaKoncept, odpovidaHledani, popisDopravy, sledovaciOdkazy, type WebObjednavka } from "./objednavky";
 
 const ok = (v: unknown) => {
   const r = overObjednavku(v, "orders[0]");
@@ -461,5 +461,25 @@ describe("vložitelný formulář Jobi", () => {
     expect(novyKodObjednavky(ted)).toMatch(/^JOBI-261013-[2-9A-HJ-NP-Z]{6}$/);
     expect(nastaveniFormulare({ zapnuto: true, uvod: " Ahoj ", podminkyUrl: "javascript:alert(1)" })).toEqual({ zapnuto: true, uvod: "Ahoj", podminkyUrl: null });
     expect(nastaveniFormulare(undefined)).toEqual({ zapnuto: false, uvod: "", podminkyUrl: null });
+  });
+});
+
+describe("odpovidaHledani", () => {
+  const o = {
+    externi_cislo: "SRV-2026-0353", zakaznik_jmeno: "Martina Mašanská", zakaznik_telefon: "+420 736 773 155", zakaznik_email: "m@example.cz",
+    zakaznik_firma: null, zarizeni: "Dyson V12", sn_imei: "ZE7-EU-RDJ1433A", popis_zavady: "Nesvítí laser", pozadovana_oprava: null,
+    sledovaci_cisla: [{ dopravce: "dpd", cislo: "13836603263934", smer: "tam", url: null }],
+  } as unknown as WebObjednavka;
+  it("najde podle jména bez diakritiky, čísla, telefonu i zásilky", () => {
+    expect(odpovidaHledani(o, "")).toBe(true);
+    expect(odpovidaHledani(o, "masanska")).toBe(true);
+    expect(odpovidaHledani(o, "0353")).toBe(true);
+    expect(odpovidaHledani(o, "736 773")).toBe(true);
+    expect(odpovidaHledani(o, "736773155")).toBe(true);
+    expect(odpovidaHledani(o, "13836603")).toBe(true);
+    expect(odpovidaHledani(o, "v12 laser")).toBe(true);
+    expect(odpovidaHledani(o, "rdj1433a")).toBe(true);
+    expect(odpovidaHledani(o, "v15")).toBe(false);
+    expect(odpovidaHledani(o, "martina novak")).toBe(false);
   });
 });

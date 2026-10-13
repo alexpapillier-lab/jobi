@@ -259,3 +259,27 @@ export function objednavkaNaKoncept(o: WebObjednavka, p: PodkladyPrijmu = {}): N
     objednavkaId: o.id,
   };
 }
+
+const bezDiakritiky = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Hledání v příchozích objednávkách: číslo, zákazník (jméno, telefon,
+ * e-mail, firma), zařízení, SN/IMEI, závada a sledovací čísla. Bez
+ * diakritiky a velikosti písmen, každé slovo dotazu musí někde sedět.
+ * Telefon a čísla se porovnávají i bez mezer („777 123“ najde +420777123…).
+ */
+export function odpovidaHledani(o: WebObjednavka, dotaz: string): boolean {
+  const slova = bezDiakritiky(dotaz).split(/\s+/).filter(Boolean);
+  if (slova.length === 0) return true;
+  const text = bezDiakritiky(
+    [
+      o.externi_cislo, o.zakaznik_jmeno, o.zakaznik_telefon, o.zakaznik_email, o.zakaznik_firma,
+      o.zarizeni, o.sn_imei, o.popis_zavady, o.pozadovana_oprava,
+      ...(o.sledovaci_cisla ?? []).map((s) => s.cislo),
+    ].filter(Boolean).join(" "),
+  );
+  const bezMezer = text.replace(/[\s\-+]/g, "");
+  const cisloDotazu = bezDiakritiky(dotaz).replace(/[\s\-+]/g, "");
+  if (/^\d{4,}$/.test(cisloDotazu) && bezMezer.includes(cisloDotazu)) return true;
+  return slova.every((w) => text.includes(w) || bezMezer.includes(w.replace(/[-+]/g, "")));
+}
