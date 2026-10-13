@@ -177,13 +177,15 @@ export function PrichoziObjednavky({
   onOpenTicket: (ticketId: string) => void;
 }) {
   const { objednavky, setObjednavky, nacti } = useObjednavky(activeServiceId, true);
-  const { activeBranchId } = useBranches();
+  const { activeBranchId, branches } = useBranches();
+  // Objednávka bez pobočky (smazaná pobočka) patří do výchozí, ne do všech.
+  const vychoziPobocka = branches.find((b) => b.isDefault)?.id ?? null;
   const [zobrazitVyrizene, setZobrazitVyrizene] = useState(false);
   const [sbaleno, setSbaleno] = useState(false);
 
   const viditelne = useMemo(
-    () => objednavky.filter((o) => !activeBranchId || !o.branch_id || o.branch_id === activeBranchId),
-    [objednavky, activeBranchId],
+    () => objednavky.filter((o) => !activeBranchId || (o.branch_id ?? vychoziPobocka ?? activeBranchId) === activeBranchId),
+    [objednavky, activeBranchId, vychoziPobocka],
   );
   const otevrene = viditelne.filter((o) => jeOtevrena(o.stav));
   const vyrizene = viditelne.filter((o) => !jeOtevrena(o.stav)).slice(0, 10);
