@@ -10,6 +10,9 @@
  *      se pravidla téhle zóny nevztahují. Proto Cache API přímo tady.
  *
  * Zápis (/v1/write) se nikdy necachuje a jde rovnou dál i s tokenem.
+ * Objednávky (/v1/orders) taky ne – ani GET: odpověď patří tokenu
+ * z hlavičky Authorization, kterou cache nerozlišuje. Uložená odpověď by
+ * se pak vrátila komukoli, kdo zná external_id.
  */
 
 const PUVOD = "https://ijtvcgolsdsrquqbvjrz.supabase.co";
@@ -21,8 +24,14 @@ const MAPA = {
   "/v1/booking": "/functions/v1/public-booking",
   "/v1/booking.js": "/functions/v1/public-booking/embed.js",
   "/v1/write": "/functions/v1/api-write",
+  "/v1/orders": "/functions/v1/api-orders",
+  "/v1/order-form": "/functions/v1/public-order-form",
+  "/v1/order-form.js": "/functions/v1/public-order-form/embed.js",
   "/v1/openapi.json": "/functions/v1/public-docs",
 };
+
+/** Cesty, které jdou na původ vždy přímo, i s GET a hlavičkou Authorization. */
+const BEZ_CACHE = new Set(["/v1/orders"]);
 
 /**
  * Vykreslená dokumentace. Servíruje ji Worker, ne edge funkce: Supabase
@@ -104,6 +113,16 @@ export default {
 
     const adresa = new URL(PUVOD + cil);
     adresa.search = url.search;
+
+    // Objednávky: vždy na původ (i GET), i s hlavičkou Authorization.
+    if (BEZ_CACHE.has(cesta)) {
+      const odpoved = await fetch(new Request(adresa.toString(), request));
+      const hlavicky = new Headers(odpoved.headers);
+      for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
+      hlavicky.set("Cache-Control", "no-store");
+      hlavicky.set("X-Jobi-Cache", "BYPASS");
+      return new Response(odpoved.body, { status: odpoved.status, headers: hlavicky });
+    }
 
     // Zápis: proxy beze změny, i s hlavičkami Authorization a Idempotency-Key.
     if (request.method === "POST") {
@@ -190,7 +209,7 @@ export default {
     const hlavicky = new Headers(odpoved.headers);
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : obnovit ? "REFRESH" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "7");
+    hlavicky.set("X-Jobi-Verze", "8");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {

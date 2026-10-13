@@ -436,6 +436,22 @@ verify_jwt = false
 [functions.api-write]
 verify_jwt = false
 
+# Objednávky z webu servisu: ověřuje se tokenem API (Bearer jobi_…, scope
+# orders), ne přihlášením do aplikace. Viz docs/API_OBJEDNAVKY.md.
+[functions.api-orders]
+verify_jwt = false
+
+# Odesílání webhooků objednávek: volá ho pg_cron (tajemství z Vaultu v těle)
+# i aplikace s tokenem člena (zkušební webhook, „pošli hned“) – identitu
+# ověřuje sama uvnitř.
+[functions.api-webhooks]
+verify_jwt = false
+
+# Vložitelný formulář objednávky opravy – veřejný jako rezervace, chrání ho
+# limit na adresu a servis.
+[functions.public-order-form]
+verify_jwt = false
+
 [functions.public-embed]
 verify_jwt = false
 
