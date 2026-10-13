@@ -172,6 +172,15 @@ export default {
       // na cizí web není v pořádku ani tak.
       const hlavickyPuvodu = new Headers(puvodni.headers);
       hlavickyPuvodu.delete("Set-Cookie");
+      // Tělo z fetch je už rozbalené, ale hlavička Content-Encoding: gzip
+      // z původu zůstává. Kdyby šla dál, runtime by tělo znovu zabalil
+      // a hrana Cloudflare by ho pro klienta bez komprese (curl bez
+      // --compressed, jiní integrátoři) zase rozbalovala – po dávkách
+      // s pauzami, 358 kB ceníku pak teklo 10–55 s místo 1 s. Bez hlavičky
+      // Worker posílá holé tělo a kompresi pro gzip/br klienty si udělá
+      // hrana sama. Content-Length patří k zabalenému tělu, takže taky pryč.
+      hlavickyPuvodu.delete("Content-Encoding");
+      hlavickyPuvodu.delete("Content-Length");
       odpoved = new Response(puvodni.body, {
         status: puvodni.status,
         statusText: puvodni.statusText,
@@ -207,9 +216,13 @@ export default {
     }
 
     const hlavicky = new Headers(odpoved.headers);
+    // Odpovědi uložené verzí 8 a starší ještě nesou Content-Encoding
+    // z původu – viz výše. Mazat i tady, ať je rychlé i to, co v cache už je.
+    hlavicky.delete("Content-Encoding");
+    hlavicky.delete("Content-Length");
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : obnovit ? "REFRESH" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "8");
+    hlavicky.set("X-Jobi-Verze", "9");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {
