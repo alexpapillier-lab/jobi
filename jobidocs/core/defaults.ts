@@ -82,8 +82,8 @@ function stampSlot(label = "Razítko a podpis servisu"): SlotItem {
   return { id: id("s"), type: "stamp", label, height: 20 };
 }
 
-function signatureSlot(label: string): SlotItem {
-  return { id: id("s"), type: "signature", label, width: 55 };
+function signatureSlot(label: string, source?: "intake"): SlotItem {
+  return { id: id("s"), type: "signature", label, width: 55, ...(source ? { source } : {}) };
 }
 
 const DEFAULT_MARGINS = { top: 12, right: 14, bottom: 12, left: 14 };
@@ -120,7 +120,8 @@ function zakazkovyList(): Template {
     fields([row("Přijato", "{{dates.received}}"), row("Předpokládané dokončení", "{{dates.eta}}"), row("Odhad ceny", "{{totals.estimated}}"), row("Způsob vrácení", "{{handoff.return}}")], "Zakázka"),
     text(LEGAL_TEXTS.zakazkovy_list!, { size: "small", align: "justify", columns: 2 }),
   ];
-  t.slots.bottomLeft = [signatureSlot("Zákazník – předání do opravy")];
+  // Nad čarou se vytiskne podpis zákazníka nebo elektronické odsouhlasení z webu.
+  t.slots.bottomLeft = [signatureSlot("Zákazník – předání do opravy", "intake")];
   t.slots.bottomCenter = [stampSlot("Za servis převzal")];
   t.slots.bottomRight = [signatureSlot("Zákazník – vyzvednutí z opravy")];
   return t;

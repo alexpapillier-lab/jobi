@@ -1802,10 +1802,16 @@ export default function Orders({
         if (first && objednavkaId) {
           const sid = activeServiceId;
           prevedObjednavku(objednavkaId, first.id)
-            .then((zmeneno) => {
+            .then(async (zmeneno) => {
               if (!zmeneno) showToast("Objednávku mezitím někdo vyřídil; zakázka je založená.", "info");
               window.dispatchEvent(new CustomEvent("jobsheet:objednavky-zmena"));
               if (zmeneno && sid) void odesliWebhookyHned(sid);
+              // Převod mohl na zakázku zapsat elektronický souhlas (a zvednout
+              // verzi) – bez znovunačtení by první uložení detailu hlásilo konflikt.
+              if (zmeneno) {
+                const plna = await refetchTicketById(first.id);
+                if (plna) setCloudTickets((prev) => prev.map((t) => (t.id === plna.id ? sloucZakazkuZDb(t, plna, evidenceZapisu(), plna.id, ["performedRepairs"]) : t)));
+              }
             })
             .catch((e) => {
               devLog("[objednavky] převod selhal", e);

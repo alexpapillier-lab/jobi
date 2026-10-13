@@ -16,6 +16,7 @@ import type { CompanyData } from "./companyData";
 import { portalUrl } from "./portal";
 import type { Database } from "../types/supabase";
 import { technikPrace } from "./rootOwner";
+import { obrazekPodpisuPrevzeti, souhlasDoDokumentu, type PodpisPrevzeti } from "./souhlasPrevzeti";
 
 export type { DocumentData } from "../../jobidocs/core/types";
 
@@ -102,6 +103,9 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     else if (warrantyDays) warrantyUntil = pridejDny(new Date(completed), warrantyDays).toISOString();
   }
   const portalToken = (ticket as TicketEx & { portalToken?: string | null }).portalToken;
+  // Podpis převzetí a elektronické odsouhlasení z webu (lib/souhlasPrevzeti):
+  // dotahuje je tisk zvlášť, tady se jen převedou do dat dokumentu.
+  const podpis: PodpisPrevzeti = { intakeSignatureUrl: s(ticket.intakeSignatureUrl), intakeConsent: (ticket as TicketEx & { intakeConsent?: PodpisPrevzeti["intakeConsent"] }).intakeConsent };
   return {
     number: ticket.code ?? undefined,
     // Odkaz na zákaznický portál – tiskne se jako QR, když si to servis v JobiDocs zapne.
@@ -164,6 +168,8 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     // Záruka na provedenou opravu, jak ji databáze zapsala při vydání ({{ticket.warrantyUntil}}).
     ticket: { warrantyUntil: s(ticket.warrantyUntil) },
     extra: { external_id: ticket.externalId ?? "" },
+    intakeSignature: obrazekPodpisuPrevzeti(podpis),
+    consent: souhlasDoDokumentu(podpis.intakeConsent),
   };
 }
 

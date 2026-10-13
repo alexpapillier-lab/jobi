@@ -54,10 +54,11 @@ insert into public.tickets (id, service_id, branch_id, title, status, code, perf
   ('d1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000002', null, 'Cizí', 'received', 'B-1', '[]', null, null);
 
 -- Objednávky zapisuje server (tady superuživatel = service_role).
-insert into public.web_objednavky (id, service_id, branch_id, externi_cislo, zdroj, zakaznik_jmeno, zarizeni) values
-  ('e1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'SRV-2026-0001', 'web', 'Jan Novák', 'iPhone 13'),
-  ('e1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000001', null, 'SRV-2026-0002', 'web', 'Eva', 'Pixel'),
-  ('e1000000-0000-4000-8000-000000000003', 'b1000000-0000-4000-8000-000000000002', null, 'X-1', 'web', 'Cizí', 'Nokia');
+insert into public.web_objednavky (id, service_id, branch_id, externi_cislo, zdroj, zakaznik_jmeno, zarizeni, souhlas) values
+  ('e1000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'SRV-2026-0001', 'web', 'Jan Novák', 'iPhone 13',
+   '{"id":"CONS-1","signed_at":"2026-10-13T12:32:00Z","method":"checkbox","ip":"203.0.113.7"}'),
+  ('e1000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000001', null, 'SRV-2026-0002', 'web', 'Eva', 'Pixel', null),
+  ('e1000000-0000-4000-8000-000000000003', 'b1000000-0000-4000-8000-000000000002', null, 'X-1', 'web', 'Cizí', 'Nokia', null);
 
 create or replace function pg_temp.jako(p_user uuid) returns void language plpgsql as $$
 begin
@@ -173,6 +174,21 @@ begin
   end if;
   select count(*) into n from public.api_webhook_doruceni where udalost = 'order.cancelled';
   if n <> 1 then raise exception 'order.cancelled ve frontě %×', n; end if;
+
+  -- ── souhlas z webu na zakázce ──────────────────────────────────────────
+  select intake_consent into v from public.tickets where id = 'd1000000-0000-4000-8000-000000000001';
+  if v ->> 'id' <> 'CONS-1' or v ->> 'external_id' <> 'SRV-2026-0001' or v ->> 'ip' <> '203.0.113.7' or v ->> 'transferred_at' is null then
+    raise exception 'souhlas se nepřenesl: %', v;
+  end if;
+  perform pg_temp.jako('a1000000-0000-4000-8000-000000000001');
+  perform pg_temp.ocekavej_chybu($q$update public.tickets set intake_consent = '{"id":"PODVRH"}' where id = 'd1000000-0000-4000-8000-000000000001'$q$, 'majitel přepíše souhlas');
+  perform pg_temp.ocekavej_chybu($q$update public.tickets set intake_consent = null where id = 'd1000000-0000-4000-8000-000000000001'$q$, 'majitel smaže souhlas');
+  perform pg_temp.ocekavej_chybu($q$insert into public.tickets (service_id, title, status, intake_consent) values ('b1000000-0000-4000-8000-000000000001', 'x', 'received', '{"id":"PODVRH"}')$q$, 'zakázka s podvrženým souhlasem');
+  -- Běžná úprava zakázky souhlas nechá být.
+  update public.tickets set title = 'iPhone 13 Pro' where id = 'd1000000-0000-4000-8000-000000000001';
+  perform pg_temp.server();
+  select intake_consent into v from public.tickets where id = 'd1000000-0000-4000-8000-000000000001';
+  if v ->> 'id' <> 'CONS-1' then raise exception 'úprava zakázky smazala souhlas: %', v; end if;
 
   -- ── trigger na zakázce ─────────────────────────────────────────────────
   perform pg_temp.jako('a1000000-0000-4000-8000-000000000002');

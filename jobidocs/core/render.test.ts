@@ -1,6 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { DOC_TYPES, defaultTemplate, renderDocument, sampleData, DEFAULT_BRAND, DEFAULT_THEME, variablesToDocumentData, migrateV1Config, substitute, isEmptyAfterSubstitution, formatMoney, formatDate, monthsText } from "./index.js";
 
+describe("podpis a elektronické odsouhlasení při převzetí", () => {
+  const args = { template: defaultTemplate("zakazkovy_list"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+  const consent = { id: "ABC123", signedAt: "2026-10-13T12:32:00Z", method: "checkbox", source: "servis.iswap.cz", ip: "203.0.113.7", termsVersion: "v3" };
+
+  it("bez obrázku vytiskne text odsouhlasení s ID, časem v Praze a formulářem, IP malým písmem", () => {
+    const html = renderDocument({ ...args, data: { ...sampleData("zakazkovy_list"), consent } });
+    expect(html).toContain("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");
+    expect(html).toMatch(/sig-consent-detail">IP 203\.0\.113\.7 · podmínky v3</);
+    // Jen v kolonce převzetí, ne u vyzvednutí z opravy.
+    expect(html.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+  });
+
+  it("s obrázkem podpisu vytiskne obrázek nad čarou", () => {
+    const podpis = "data:image/png;base64,iVBORw0KGgo=";
+    const html = renderDocument({ ...args, data: { ...sampleData("zakazkovy_list"), intakeSignature: podpis } });
+    expect(html).toContain(`<img src="${podpis}" alt="Podpis zákazníka"`);
+    expect(html).not.toContain("Elektronicky odsouhlaseno");
+  });
+
+  it("bez podpisu i souhlasu zůstane prázdná kolonka", () => {
+    const html = renderDocument({ ...args, data: sampleData("zakazkovy_list") });
+    expect(html).not.toContain(`class="sig-consent"`);
+    expect(html).not.toContain("Podpis zákazníka");
+  });
+
+  it("starší šablona bez volby source: kolonka se pozná podle popisku", () => {
+    const tpl = defaultTemplate("zakazkovy_list");
+    const bezVolby = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník – předání do opravy", width: 55 }] } };
+    const html = renderDocument({ ...args, template: bezVolby, data: { ...sampleData("zakazkovy_list"), consent } });
+    expect(html).toContain("ID ABC123");
+    // Výslovné „none“ kolonku nechá prázdnou.
+    const prazdna = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník – předání do opravy", source: "none" as const }] } };
+    expect(renderDocument({ ...args, template: prazdna, data: { ...sampleData("zakazkovy_list"), consent } })).not.toContain("ID ABC123");
+  });
+
+  it("proměnné consent.* jdou použít v libovolném textu", () => {
+    const data = { ...sampleData("zakazkovy_list"), consent: { ...consent, method: "sms_code" } };
+    expect(substitute("{{consent.text}}", data)).toBe("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");
+    expect(substitute("{{consent.method}} / {{consent.signedAt}} / {{consent.id}}", data)).toBe("kódem z SMS / 13. 10. 2026 14:32 / ABC123");
+    expect(substitute("{{consent.text}}", sampleData("zakazkovy_list"))).toBe("");
+    expect(substitute("{{consent.text}}", { ...data, consent: { ...consent, source: "formulář Jobi" } })).toContain("· formulář Jobi");
+    // Ukázková data v editoru odsouhlasení mají (dlouhá varianta).
+    expect(substitute("{{consent.id}}", sampleData("zakazkovy_list", "long"))).toBe("ABC123");
+  });
+});
+
 describe("render", () => {
   for (const docType of DOC_TYPES) {
     it(`vyrenderuje ${docType} s krátkými i dlouhými daty`, () => {

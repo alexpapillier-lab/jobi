@@ -1,11 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { NAZEV_MODULU, modulProRozsah, otisk, PREFIX, type Rozsah } from "../_shared/tokeny.ts";
+import { zkontrolujWebhook } from "../_shared/webhook.ts";
 import {
   MAX_OBJEDNAVEK,
+  MAX_PODPIS_BAJTU,
   MAX_TELO_BAJTU,
   STAV_API,
   lisiSe,
+  slucSouhlas,
+  typObrazku,
+  type ObrazekPodpisu,
+  type Souhlas,
   objednavkaProApi,
   overObjednavku,
   povoleneZmeny,
@@ -40,6 +46,12 @@ import {
  * Limit 60 požadavků za minutu na token (GET i POST), nejvýš 50 objednávek
  * v jednom požadavku a 512 kB těla.
  *
+ * Elektronické odsouhlasení zakázkového listu (`consent`) se uloží do
+ * web_objednavky.souhlas; obrázek podpisu (data URL nebo https odkaz, max
+ * 200 kB) se nahraje do bucketu diagnostic-photos pod <service_id>/objednavky/
+ * – čtou ho jen členové servisu přes podepsaný odkaz (docs/BEZPECNOST_FOTKY.md).
+ * Při převodu na zakázku se souhlas zkopíruje do tickets.intake_consent.
+ *
  * Dokumentace: docs/API_OBJEDNAVKY.md, docs/api/openapi.yaml.
  * Logika položek: _shared/objednavky.ts (testy src/lib/objednavky.test.ts).
  */
@@ -58,17 +70,64 @@ const json = (telo: unknown, status = 200, extra: Record<string, string> = {}) =
   });
 
 const LIMIT_ZA_MINUTU = 60;
+const BUCKET = "diagnostic-photos";
 const ROZSAH: Rozsah = "orders";
 
 type Svc = ReturnType<typeof createClient>;
 
-const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, poznamka, data, ticket_id, created_at, updated_at, dorazilo_at, prevedeno_at";
+const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, souhlas, poznamka, data, ticket_id, created_at, updated_at, dorazilo_at, prevedeno_at";
 
 async function zakazka(svc: Svc, ticketId: string | null): Promise<ZakazkaApi> {
   if (!ticketId) return null;
   const { data, error } = await svc.rpc("web_objednavka_zakazka_json", { p_ticket_id: ticketId });
   if (error) console.error("[api-orders] zakázka:", error.message);
   return (data as ZakazkaApi) ?? null;
+}
+
+/**
+ * Nahraje obrázek podpisu objednávky. Odkaz se stáhne ze serveru – proto
+ * stejná kontrola adresy jako u webhooku (jen https, žádná vnitřní síť,
+ * bez přesměrování) a strop velikosti. Vrací identifikátor (veřejný tvar
+ * URL, bucket je soukromý) nebo text chyby.
+ */
+async function nahrajPodpis(svc: Svc, sid: string, objednavkaId: string, podpis: ObrazekPodpisu): Promise<{ url: string } | { chyba: string }> {
+  let bajty: Uint8Array;
+  if (podpis.typ === "data") {
+    bajty = podpis.bajty;
+  } else {
+    const kontrola = zkontrolujWebhook(podpis.url);
+    if (!kontrola.ok) return { chyba: `signature_image: ${kontrola.duvod}` };
+    try {
+      const r = await fetch(kontrola.url, { redirect: "error", signal: AbortSignal.timeout(10_000), headers: { "User-Agent": "Jobi-Api/1" } });
+      if (!r.ok) return { chyba: `signature_image: odkaz vrátil HTTP ${r.status}` };
+      if (Number(r.headers.get("Content-Length") ?? "0") > MAX_PODPIS_BAJTU) return { chyba: "signature_image je větší než 200 kB" };
+      const buf = new Uint8Array(await r.arrayBuffer());
+      if (buf.length > MAX_PODPIS_BAJTU) return { chyba: "signature_image je větší než 200 kB" };
+      bajty = buf;
+    } catch (e) {
+      return { chyba: `signature_image se nepodařilo stáhnout (${e instanceof Error ? e.message.slice(0, 80) : "chyba"})` };
+    }
+  }
+  const mime = typObrazku(bajty);
+  if (!mime) return { chyba: "signature_image musí být PNG nebo JPEG" };
+  const cesta = `${sid}/objednavky/${objednavkaId}-${Date.now()}.${mime === "image/png" ? "png" : "jpg"}`;
+  const { error } = await svc.storage.from(BUCKET).upload(cesta, bajty, { contentType: mime, cacheControl: "31536000", upsert: false });
+  if (error) {
+    console.error("[api-orders] podpis:", error.message);
+    return { chyba: "podpis se nepodařilo uložit" };
+  }
+  return { url: svc.storage.from(BUCKET).getPublicUrl(cesta).data.publicUrl };
+}
+
+/**
+ * Souhlas k zápisu: sloučí se s uloženým (stejné ID = stejný souhlas,
+ * obrázek se nenahrává znovu). Vrací, jestli je potřeba nahrát podpis.
+ */
+function pripravSouhlas(hodnoty: Record<string, unknown>, ulozeny: unknown, podpis: ObrazekPodpisu | undefined): ObrazekPodpisu | undefined {
+  if (!("souhlas" in hodnoty) || hodnoty.souhlas === null) return undefined;
+  const { souhlas, stejny } = slucSouhlas(ulozeny, hodnoty.souhlas as Souhlas);
+  hodnoty.souhlas = souhlas;
+  return podpis && !(stejny && souhlas.signature_url) ? podpis : undefined;
 }
 
 serve(async (req) => {
@@ -179,10 +238,23 @@ serve(async (req) => {
     const { data: stavajici, error: chybaCteni } = await svc.from("web_objednavky").select(SLOUPCE).eq("service_id", sid).eq("externi_cislo", p.externiCislo).maybeSingle();
     if (chybaCteni) { chyby.push(`${prefix}: ${chybaCteni.message}`); continue; }
 
+    /** Po zápisu: nahrát podpis a doplnit jeho odkaz do souhlasu. Chyba podpisu = chyba položky, zbytek zůstává uložený. */
+    const doplnPodpis = async (objednavkaId: string, podpis: ObrazekPodpisu | undefined, souhlas: unknown) => {
+      if (!podpis || !souhlas) return;
+      const v = await nahrajPodpis(svc, sid, objednavkaId, podpis);
+      if ("chyba" in v) { chyby.push(`${prefix}: consent.${v.chyba}`); return; }
+      const { error } = await svc.from("web_objednavky").update({ souhlas: { ...(souhlas as Souhlas), signature_url: v.url } }).eq("id", objednavkaId);
+      if (error) chyby.push(`${prefix}: consent: ${error.message}`);
+    };
+
     if (!stavajici) {
       const stav: StavDb = p.stav ?? "nova";
+      const noveId = crypto.randomUUID();
+      const hodnotyNove = { ...p.hodnoty };
+      const podpisNove = pripravSouhlas(hodnotyNove, null, p.podpis);
       const radek = {
-        ...p.hodnoty,
+        ...hodnotyNove,
+        id: noveId,
         service_id: sid,
         externi_cislo: p.externiCislo,
         zdroj: (p.hodnoty.zdroj as string | null) ?? zaznam.name ?? "api",
@@ -192,6 +264,7 @@ serve(async (req) => {
       };
       const { error } = await svc.from("web_objednavky").insert(radek);
       if (!error) {
+        await doplnPodpis(noveId, podpisNove, hodnotyNove.souhlas);
         vysledky.push({ index: i, external_id: p.externiCislo, result: "created", status: STAV_API[stav], ticket_code: null });
         continue;
       }
@@ -209,12 +282,14 @@ serve(async (req) => {
     const z = povoleneZmeny(a.stav, p);
     if (z.chyba) { chyby.push(`${prefix}: ${z.chyba}`); continue; }
     const zmena: Record<string, unknown> = { ...z.hodnoty };
+    // Souhlas jen u otevřené objednávky (povoleneZmeny ho jinak vypustí).
+    const podpis = pripravSouhlas(zmena, a.souhlas, p.podpis);
     if (z.stav && z.stav !== a.stav && a.stav !== "prevedeno") {
       zmena.stav = z.stav;
       if (z.stav === "dorazilo" && !a.dorazilo_at) zmena.dorazilo_at = new Date().toISOString();
     }
     const zt = await zakazka(svc, a.ticket_id);
-    if (!lisiSe(a, zmena)) {
+    if (!lisiSe(a, zmena) && !podpis) {
       vysledky.push({ index: i, external_id: p.externiCislo, result: "unchanged", status: STAV_API[a.stav as StavDb] ?? a.stav, ticket_code: zt?.code ?? null });
       continue;
     }
@@ -223,6 +298,7 @@ serve(async (req) => {
     const { data: zmeneno, error } = await svc.from("web_objednavky").update(zmena).eq("id", a.id).eq("stav", a.stav).select("stav");
     if (error) { chyby.push(`${prefix}: ${error.message}`); continue; }
     if (!zmeneno || zmeneno.length === 0) { chyby.push(`${prefix}: objednávku mezitím změnil servis, pošlete ji znovu`); continue; }
+    await doplnPodpis(a.id, podpis, zmena.souhlas);
     const novy = (zmeneno[0] as { stav: string }).stav as StavDb;
     vysledky.push({ index: i, external_id: p.externiCislo, result: "updated", status: STAV_API[novy] ?? novy, ticket_code: zt?.code ?? null });
   }

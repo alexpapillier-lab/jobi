@@ -15,6 +15,7 @@ import {
   type StavObjednavky,
   type WebObjednavka,
 } from "../../lib/objednavky";
+import { detailSouhlasu, nactiPodpisPrevzeti, textSouhlasu, type PodpisPrevzeti, type SouhlasZakazky } from "../../lib/souhlasPrevzeti";
 
 /** Příjem předvyplněný z objednávky – App poslouchá a otevře Novou zakázku. */
 export function zalozitZakazkuZObjednavky(objednavka: WebObjednavka) {
@@ -65,19 +66,57 @@ export function useObjednavky(activeServiceId: string | null, upozornitNaNove = 
   return { objednavky, setObjednavky, nacteno, nacti };
 }
 
-/** Detail zakázky: „Z objednávky SRV-2026-0123 (servis.iswap.cz)“. */
+/**
+ * Detail zakázky: „Z objednávky SRV-2026-0123 (servis.iswap.cz)“ a pod tím
+ * „Elektronicky odsouhlaseno … (ID …)“ s rozbalitelným detailem (čas,
+ * metoda, IP, prohlížeč, verze podmínek). Nic z toho = nic se neukáže.
+ */
 export function ZObjednavky({ ticketId }: { ticketId: string }) {
   const [o, setO] = useState<{ externi_cislo: string; zdroj: string } | null>(null);
+  const [souhlas, setSouhlas] = useState<SouhlasZakazky | null>(null);
+  const [otevreno, setOtevreno] = useState(false);
   useEffect(() => {
     let zruseno = false;
-    setO(null);
-    void objednavkaZakazky(ticketId).then((x) => { if (!zruseno) setO(x); });
+    void Promise.all([objednavkaZakazky(ticketId), nactiPodpisPrevzeti(ticketId).catch(() => ({}) as PodpisPrevzeti)]).then(([x, p]) => {
+      if (zruseno) return;
+      setO(x);
+      setSouhlas(p.intakeConsent ?? null);
+      setOtevreno(false);
+    });
     return () => { zruseno = true; };
   }, [ticketId]);
-  if (!o) return null;
+  if (!o && !souhlas) return null;
   return (
-    <div data-tour="detail-z-objednavky" style={{ fontSize: 12, color: "var(--muted)" }}>
-      Z objednávky <strong style={{ color: "var(--text)" }}>{o.externi_cislo}</strong>{o.zdroj ? ` (${o.zdroj})` : ""}
+    <div data-tour="detail-z-objednavky" style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)", flexBasis: "100%" }}>
+      {o && (
+        <div>
+          Z objednávky <strong style={{ color: "var(--text)" }}>{o.externi_cislo}</strong>{o.zdroj ? ` (${o.zdroj})` : ""}
+        </div>
+      )}
+      {souhlas && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setOtevreno((v) => !v)}
+            aria-expanded={otevreno}
+            title="Zobrazit detail elektronického odsouhlasení"
+            style={{ border: "none", background: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", textAlign: "left" }}
+          >
+            {otevreno ? "▾" : "▸"} {textSouhlasu(souhlas)}
+            {souhlas.signature_url ? " · s podpisem" : ""}
+          </button>
+          {otevreno && (
+            <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 10px", margin: "6px 0 0", padding: 8, borderRadius: 8, background: "var(--panel-2)" }}>
+              {detailSouhlasu(souhlas).map(([k, v]) => (
+                <div key={k} style={{ display: "contents" }}>
+                  <dt style={{ color: "var(--muted)" }}>{k}</dt>
+                  <dd style={{ margin: 0, color: "var(--text)", overflowWrap: "anywhere" }}>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
     </div>
   );
 }

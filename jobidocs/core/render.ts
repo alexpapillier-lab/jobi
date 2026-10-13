@@ -12,8 +12,8 @@
  */
 import { qrDataUrl } from "../src/qr.js";
 import { ROBOTO_FONT_FACES } from "./fonts.js";
-import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
-import { VARIABLES, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, vatRozpis, warrantyDurationText } from "./variables.js";
+import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SignatureSource, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
+import { VARIABLES, consentDetailText, consentText, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, vatRozpis, warrantyDurationText } from "./variables.js";
 
 export type RenderInput = {
   template: Template;
@@ -211,9 +211,39 @@ function renderText(ctx: Ctx, block: Extract<Block, { type: "text" }>): string {
   return wrap(ctx, block, `${blockTitle(ctx, block, block.title)}<div class="${cls}"${editable(ctx, `block:${block.id}:content`, block.content, true)}>${inner}</div>`);
 }
 
+/**
+ * Patří do kolonky podpis zákazníka při převzetí do opravy? Výslovně
+ * (`source`), jinak podle popisku u zakázkového listu – šablony uložené
+ * před zavedením volby ji nemají, a „Zákazník – předání do opravy“ je
+ * právě ta kolonka. Vyzvednutí z opravy se tím nemyslí.
+ */
+export function jePodpisPrevzeti(docType: string, label: string, source?: SignatureSource): boolean {
+  if (source) return source === "intake";
+  if (docType !== "zakazkovy_list") return false;
+  const l = label.toLowerCase();
+  if (/vyzved|vydán|vrácen/.test(l)) return false;
+  return /předání do opravy|předání do servisu|převzetí do opravy|příjem|přijetí|předal/.test(l);
+}
+
+/**
+ * Obsah nad čarou podpisu převzetí: obrázek podpisu, když je; jinak
+ * a navíc text elektronického odsouhlasení z webu (ID, čas, formulář)
+ * s IP malým písmem. Bez podpisu i souhlasu prázdné místo k ručnímu podpisu.
+ */
+function obsahPodpisuPrevzeti(ctx: Ctx): string {
+  if (ctx.placeholders) return `<div class="sig-consent muted">⟨Podpis nebo elektronické odsouhlasení zákazníka⟩</div>`;
+  const obr = ctx.data.intakeSignature;
+  const text = consentText(ctx.data);
+  const detail = consentDetailText(ctx.data);
+  const img = obr ? `<div class="sig-img"><img src="${attr(obr)}" alt="Podpis zákazníka" onerror="this.style.display='none'"></div>` : "";
+  const souhlas = text ? `<div class="sig-consent">${escapeHtml(text)}${detail ? `<div class="sig-consent-detail">${escapeHtml(detail)}</div>` : ""}</div>` : "";
+  return img + souhlas;
+}
+
 function renderSignature(ctx: Ctx, block: Extract<Block, { type: "signature" }>): string {
   const w = block.width ?? 55;
-  return wrap(ctx, block, `<div class="sig-row ${block.align ?? "left"}"><div class="sig" style="width:${mm(w)}"><div class="line"></div><div class="label"${editable(ctx, `block:${block.id}:label`, block.label)}>${escapeHtml(sub(ctx, block.label))}</div></div></div>`);
+  const nad = jePodpisPrevzeti(ctx.template.docType, block.label, block.source) ? obsahPodpisuPrevzeti(ctx) : "";
+  return wrap(ctx, block, `<div class="sig-row ${block.align ?? "left"}"><div class="sig${nad ? " signed" : ""}" style="width:${mm(w)}">${nad}<div class="line"></div><div class="label"${editable(ctx, `block:${block.id}:label`, block.label)}>${escapeHtml(sub(ctx, block.label))}</div></div></div>`);
 }
 
 function renderWarranty(ctx: Ctx, block: Extract<Block, { type: "warranty" }>): string {
@@ -379,7 +409,8 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
     }
     case "signature": {
       const w = item.width ?? 55;
-      return wrapItem(`<div class="sig" style="width:${mm(w)}"><div class="line"></div><div class="label"${editable(ctx, `item:${item.id}:label`, item.label)}>${escapeHtml(sub(ctx, item.label))}</div></div>`);
+      const nad = jePodpisPrevzeti(ctx.template.docType, item.label, item.source) ? obsahPodpisuPrevzeti(ctx) : "";
+      return wrapItem(`<div class="sig${nad ? " signed" : ""}" style="width:${mm(w)}">${nad}<div class="line"></div><div class="label"${editable(ctx, `item:${item.id}:label`, item.label)}>${escapeHtml(sub(ctx, item.label))}</div></div>`);
     }
     case "text":
       return wrapItem(`<div class="text ${item.size === "small" ? "small" : ""}"${editable(ctx, `item:${item.id}:content`, item.content, true)}>${richText(sub(ctx, item.content)) || (ctx.editor ? `<p class="ph">Text – klikněte a pište</p>` : "")}</div>`);
@@ -451,6 +482,7 @@ function css(t: Template, theme: Theme, editor: boolean, browserPrint: boolean):
 .items thead th{border:0.3mm solid var(--text);background:#f3f4f6}
 .items td{border:0.3mm solid var(--text)}
 .sig{border:0.3mm solid var(--text);padding:14mm 2mm 1.5mm;text-align:left}
+.sig.signed{padding-top:2mm}
 .sig .line{display:none}
 .stamp{border:0.3mm solid var(--text);padding:2mm}
 .stamp .line{border-top:none}
@@ -524,6 +556,10 @@ hr.divider{border:0;border-top:0.25mm solid var(--line);margin:0;width:100%}
 .sig{display:inline-block;text-align:center}
 .sig .line{border-top:0.35mm solid var(--text);margin-bottom:1mm}
 .sig .label{font-size:0.82em;color:var(--muted)}
+.sig .sig-img{height:14mm;display:flex;align-items:flex-end;justify-content:center;margin-bottom:0.5mm}
+.sig .sig-img img{max-height:14mm;max-width:100%;object-fit:contain}
+.sig .sig-consent{font-size:0.72em;line-height:1.3;text-align:left;margin-bottom:1mm;overflow-wrap:anywhere}
+.sig .sig-consent-detail{font-size:0.88em;color:var(--muted)}
 table.items{width:100%;border-collapse:collapse}
 .items th{text-align:left;font-weight:700;padding:calc(1.6mm*var(--sp)) 2mm;font-size:0.85em;text-transform:uppercase;letter-spacing:0.05em}
 .items td{padding:calc(1.6mm*var(--sp)) 2mm;border-bottom:0.2mm solid var(--line);vertical-align:top}

@@ -160,6 +160,33 @@ export type DocumentData = {
   /** Náhradní zařízení půjčené zákazníkovi na dobu opravy (smlouva o zápůjčce). */
   loaner?: { name?: string; serial?: string; accessories?: string; deposit?: number; lentAt?: string; returnedAt?: string; note?: string };
   payment?: { account?: string; iban?: string; swift?: string; vs?: string; spayd?: string };
+  /**
+   * Podpis zákazníka při převzetí zařízení do opravy (data URL – Jobi ho
+   * před tiskem stáhne a vloží, odkaz by v PDF nevydržel). Ruční podpis
+   * z dílny / portálu, jinak obrázek z elektronického odsouhlasení na webu.
+   * Tiskne se v kolonce podpisu „předání do opravy“.
+   */
+  intakeSignature?: string;
+  /**
+   * Elektronické odsouhlasení zakázkového listu na webu servisu (objednávka
+   * přes API Jobi). Bez obrázku podpisu se v kolonce podpisu vytiskne text
+   * „Elektronicky odsouhlaseno … · ID … · formulář …“.
+   */
+  consent?: {
+    id?: string;
+    /** ISO čas odsouhlasení. */
+    signedAt?: string;
+    /** checkbox | drawn | sms_code | email_code | bankid | other */
+    method?: string;
+    /** Odkud souhlas přišel (web, formulář) – zdroj objednávky. */
+    source?: string;
+    signerName?: string;
+    ip?: string;
+    userAgent?: string;
+    termsVersion?: string;
+    /** Číslo objednávky v systému webu. */
+    orderNumber?: string;
+  };
   /** Cokoli dalšího, na co se dá v textu odkázat přes {{extra.klic}}. */
   extra?: Record<string, string>;
 };
@@ -189,13 +216,22 @@ export type Block =
   | { id: string; type: "divider" }
   | { id: string; type: "spacer"; height: number }
   | { id: string; type: "columns"; left: Block[]; right: Block[] }
-  | { id: string; type: "signature"; label: string; align?: "left" | "center" | "right"; width?: number }
+  | { id: string; type: "signature"; label: string; align?: "left" | "center" | "right"; width?: number; source?: SignatureSource }
   | { id: string; type: "photos"; title?: string; mode: "pages" | "grid"; when?: BlockWhen }
   | { id: string; type: "warranty"; title?: string; when?: BlockWhen }
   | { id: string; type: "vatSummary"; when?: BlockWhen }
   | { id: string; type: "payment"; title?: string; showQr?: boolean; when?: BlockWhen };
 
 export type BlockType = Block["type"];
+
+/**
+ * Co se tiskne nad čarou podpisu: `intake` = podpis / elektronické
+ * odsouhlasení zákazníka při převzetí do opravy (DocumentData.intakeSignature
+ * a consent), `none` = prázdná kolonka k ručnímu podpisu. Bez hodnoty se to
+ * u zakázkového listu pozná z popisku („předání do opravy“, „převzetí“) –
+ * tak to funguje i v šablonách uložených před zavedením volby.
+ */
+export type SignatureSource = "intake" | "none";
 
 /** Prvek ve slotu (hlavička / spodek stránky). */
 export type SlotItem =
@@ -205,7 +241,7 @@ export type SlotItem =
   | { id: string; type: "stamp"; label?: string; height?: number }
   /** QR kód: `review` = odkaz na hodnocení ze Značky, `portal` = odkaz na stav zakázky online (z dat dokumentu). */
   | { id: string; type: "qr"; source?: "review" | "portal"; text?: string; size?: number }
-  | { id: string; type: "signature"; label: string; width?: number }
+  | { id: string; type: "signature"; label: string; width?: number; source?: SignatureSource }
   | { id: string; type: "text"; content: string; size?: "normal" | "small" }
   | { id: string; type: "contact" }
   | { id: string; type: "pageNumber" };

@@ -204,7 +204,145 @@ export type PolozkaObjednavky = {
   hodnoty: Record<string, unknown>;
   /** Požadovaný stav, když ho volající poslal. */
   stav?: StavDb;
+  /** Obrázek podpisu ze `consent.signature_image` – nahrává ho edge funkce do úložiště. */
+  podpis?: ObrazekPodpisu;
 };
+
+// ── Elektronické odsouhlasení (consent) ─────────────────────────────────────
+
+export const METODY_SOUHLASU = ["checkbox", "drawn", "sms_code", "email_code", "bankid", "other"] as const;
+export type MetodaSouhlasu = (typeof METODY_SOUHLASU)[number];
+
+/** Jak zákazník souhlas projevil – do tisku a detailu zakázky. */
+export const POPIS_METODY: Record<MetodaSouhlasu, string> = {
+  checkbox: "zaškrtnutím souhlasu",
+  drawn: "podpisem na displeji",
+  sms_code: "kódem z SMS",
+  email_code: "kódem z e-mailu",
+  bankid: "přes BankID",
+  other: "jiným způsobem",
+};
+
+export const MAX_PODPIS_BAJTU = 200 * 1024;
+
+export type ObrazekPodpisu =
+  | { typ: "data"; bajty: Uint8Array; mime: "image/png" | "image/jpeg" }
+  | { typ: "url"; url: string };
+
+/** Souhlas tak, jak se ukládá do web_objednavky.souhlas (a kopíruje na zakázku). */
+export type Souhlas = {
+  id: string;
+  signed_at: string;
+  method: MetodaSouhlasu;
+  signer_name?: string;
+  ip?: string;
+  user_agent?: string;
+  terms_version?: string;
+  document_version?: string;
+  text_hash?: string;
+  terms_url?: string;
+  /** Kdy souhlas přišel do Jobi (server). */
+  received_at?: string;
+  /** Identifikátor obrázku podpisu v úložišti (veřejný tvar URL, čte se přes podepsaný odkaz). */
+  signature_url?: string;
+};
+
+/** PNG / JPEG podle prvních bajtů – přípona ani hlavička se nedají věřit. */
+export function typObrazku(b: Uint8Array): "image/png" | "image/jpeg" | null {
+  if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  return null;
+}
+
+function base64NaBajty(b64: string): Uint8Array | null {
+  try {
+    const bin = atob(b64.replace(/\s+/g, ""));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+const JE_IP = /^[0-9a-fA-F:.]{2,64}$/;
+
+/**
+ * Ověří `consent` z API. Vrací očištěný souhlas a případný obrázek podpisu,
+ * nebo text chyby. Povinné je `id` (vaše ID odsouhlasení) a `signed_at`.
+ */
+export function overSouhlas(vstup: unknown, ted: Date = new Date()): { souhlas: Souhlas; podpis?: ObrazekPodpisu } | string {
+  if (!jeObjekt(vstup)) return "musí být objekt";
+  const c = vstup;
+  const t = (klic: string, max: number): string | undefined | null => {
+    const v = c[klic];
+    if (v === undefined || v === null || v === "") return undefined;
+    if (typeof v !== "string" && typeof v !== "number") return null;
+    const s = String(v).trim();
+    if (!s) return undefined;
+    if (s.length > max || RIDICI.test(s)) return null;
+    return s;
+  };
+  const id = t("id", 100);
+  if (id === null) return "id je delší než 100 znaků nebo obsahuje neplatné znaky";
+  if (!id) return "chybí id (vaše ID odsouhlasení)";
+  const kdyText = t("signed_at", 40);
+  if (!kdyText) return "chybí signed_at (čas odsouhlasení, ISO 8601)";
+  const kdy = new Date(kdyText);
+  if (Number.isNaN(kdy.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(kdyText)) return "signed_at musí být čas ve formátu ISO 8601";
+  if (kdy.getTime() > ted.getTime() + 24 * 3600_000) return "signed_at je v budoucnosti";
+
+  let metoda: MetodaSouhlasu;
+  const m = t("method", 30);
+  if (m === null) return "method není platná";
+  if (m) {
+    if (!(METODY_SOUHLASU as readonly string[]).includes(m)) return `method musí být ${METODY_SOUHLASU.join(", ")}`;
+    metoda = m as MetodaSouhlasu;
+  } else {
+    metoda = c.signature_image ? "drawn" : "checkbox";
+  }
+
+  const souhlas: Souhlas = { id, signed_at: kdy.toISOString(), method: metoda };
+  for (const [klic, max] of [["signer_name", 200], ["user_agent", 500], ["terms_version", 100], ["document_version", 100], ["text_hash", 200]] as const) {
+    const v = t(klic, max);
+    if (v === null) return `${klic} je delší než ${max} znaků nebo obsahuje neplatné znaky`;
+    if (v) souhlas[klic] = v;
+  }
+  const ip = t("ip", 64);
+  if (ip === null || (ip && !JE_IP.test(ip))) return "ip musí být adresa IPv4 nebo IPv6";
+  if (ip) souhlas.ip = ip;
+  const odkaz = t("terms_url", 500);
+  if (odkaz === null || (odkaz && !/^https:\/\/\S+$/i.test(odkaz))) return "terms_url musí být https odkaz";
+  if (odkaz) souhlas.terms_url = odkaz;
+
+  const obr = c.signature_image;
+  if (obr === undefined || obr === null || obr === "") return { souhlas };
+  if (typeof obr !== "string") return "signature_image musí být data URL nebo https odkaz";
+  const data = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=\s]+)$/.exec(obr);
+  if (data) {
+    const bajty = base64NaBajty(data[2]);
+    if (!bajty) return "signature_image nejde přečíst (base64)";
+    if (bajty.length > MAX_PODPIS_BAJTU) return `signature_image má ${Math.round(bajty.length / 1024)} kB, limit je 200 kB`;
+    const mime = typObrazku(bajty);
+    if (!mime) return "signature_image musí být PNG nebo JPEG";
+    return { souhlas, podpis: { typ: "data", bajty, mime } };
+  }
+  if (/^https:\/\/\S+$/i.test(obr) && obr.length <= 1000) return { souhlas, podpis: { typ: "url", url: obr } };
+  return "signature_image musí být data:image/png;base64,… / data:image/jpeg;base64,… nebo https odkaz";
+}
+
+/**
+ * Souhlas k uložení vedle toho, co už objednávka má. Stejné ID = stejný
+ * souhlas: zůstane čas přijetí i nahraný obrázek (opakované odeslání nic
+ * nemění a obrázek se nenahrává znovu). Jiné ID = nový souhlas.
+ */
+export function slucSouhlas(stavajici: unknown, novy: Souhlas, ted: Date = new Date()): { souhlas: Souhlas; stejny: boolean } {
+  const s = jeObjekt(stavajici) ? (stavajici as Souhlas) : null;
+  if (s && s.id === novy.id) {
+    return { souhlas: { ...novy, received_at: s.received_at ?? ted.toISOString(), ...(s.signature_url ? { signature_url: s.signature_url } : {}) }, stejny: true };
+  }
+  return { souhlas: { ...novy, received_at: ted.toISOString() }, stejny: false };
+}
 
 export type VysledekOvereni = { ok: true; polozka: PolozkaObjednavky } | { ok: false; chyba: string };
 
@@ -325,6 +463,19 @@ export function overObjednavku(vstup: unknown, prefix: string): VysledekOvereni 
     }
   }
 
+  let podpis: ObrazekPodpisu | undefined;
+  if ("consent" in r) {
+    if (r.consent === null) h.souhlas = null;
+    else {
+      const v = overSouhlas(r.consent);
+      if (typeof v === "string") fail(`consent: ${v}`);
+      else {
+        h.souhlas = v.souhlas;
+        podpis = v.podpis;
+      }
+    }
+  }
+
   if ("data" in r) {
     if (r.data === null) h.data = {};
     else if (!jeObjekt(r.data)) fail("data musí být objekt");
@@ -337,7 +488,7 @@ export function overObjednavku(vstup: unknown, prefix: string): VysledekOvereni 
 
   if (chyba) return { ok: false, chyba };
   const stav = typeof r.status === "string" ? STAV_Z_API[r.status.trim()] : undefined;
-  return { ok: true, polozka: { externiCislo: ext, hodnoty: h, ...(stav ? { stav } : {}) } };
+  return { ok: true, polozka: { externiCislo: ext, hodnoty: h, ...(stav ? { stav } : {}), ...(podpis ? { podpis } : {}) } };
 }
 
 /**
@@ -385,6 +536,7 @@ export type RadekObjednavky = {
   updated_at: string;
   dorazilo_at?: string | null;
   prevedeno_at?: string | null;
+  souhlas?: unknown;
 };
 
 export type ZakazkaApi = {
@@ -413,6 +565,9 @@ export function objednavkaProApi(o: RadekObjednavky, zakazka: ZakazkaApi) {
     updated_at: o.updated_at,
     arrived_at: o.dorazilo_at ?? null,
     converted_at: o.prevedeno_at ?? null,
+    consent: jeObjekt(o.souhlas)
+      ? { id: (o.souhlas as Souhlas).id, signed_at: (o.souhlas as Souhlas).signed_at, method: (o.souhlas as Souhlas).method, has_signature_image: !!(o.souhlas as Souhlas).signature_url }
+      : null,
     ticket_code: zakazka?.code ?? null,
     ticket: zakazka
       ? { code: zakazka.code, status: zakazka.status, total: zakazka.total === null ? null : Number(zakazka.total), updated_at: zakazka.updated_at }

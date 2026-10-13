@@ -27,6 +27,7 @@ const G = {
   price: "Ceny",
   other: "Ostatní",
   invoice: "Faktura",
+  consent: "Podpis a souhlas",
 };
 
 export const VARIABLES: VariableDef[] = [
@@ -106,6 +107,17 @@ export const VARIABLES: VariableDef[] = [
   { key: "warranty.duration", label: "Záruční doba", group: G.other, sample: "12 měsíců" },
   { key: "warranty.until", label: "Záruka do", group: G.other, sample: "3. 9. 2027" },
   { key: "warranty.text", label: "Text záruky", group: G.other, sample: "" },
+
+  { key: "consent.text", label: "Elektronické odsouhlasení – celý řádek", group: G.consent, sample: "Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz" },
+  { key: "consent.detail", label: "Elektronické odsouhlasení – IP a podmínky", group: G.consent, sample: "IP 203.0.113.7 · podmínky v3" },
+  { key: "consent.id", label: "ID odsouhlasení", group: G.consent, sample: "ABC123" },
+  { key: "consent.signedAt", label: "Odsouhlaseno (datum a čas)", group: G.consent, sample: "13. 10. 2026 14:32" },
+  { key: "consent.method", label: "Způsob odsouhlasení", group: G.consent, sample: "zaškrtnutím souhlasu" },
+  { key: "consent.source", label: "Odkud souhlas přišel", group: G.consent, sample: "servis.iswap.cz" },
+  { key: "consent.signerName", label: "Kdo odsouhlasil", group: G.consent, sample: "Jan Novák" },
+  { key: "consent.ip", label: "IP adresa při odsouhlasení", group: G.consent, sample: "203.0.113.7" },
+  { key: "consent.termsVersion", label: "Verze podmínek", group: G.consent, sample: "v3" },
+  { key: "consent.orderNumber", label: "Číslo objednávky z webu", group: G.consent, sample: "SRV-2026-0123" },
 
   { key: "payment.account", label: "Číslo účtu", group: G.invoice, sample: "19-2000145399/0800" },
   { key: "payment.iban", label: "IBAN", group: G.invoice, sample: "CZ65 0800 0000 1920 0014 5399" },
@@ -225,6 +237,58 @@ export function formatMoney(value: number | undefined | null, currency = "CZK"):
        zatímco aplikace psala „1 234,50 CZZ“. */
     return `${new Intl.NumberFormat("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)} ${currency}`;
   }
+}
+
+/**
+ * ISO čas → „13. 10. 2026 14:32“ v pražském čase. Pevná časová zóna:
+ * stejný doklad musí vyjít stejně z JobiDocs, z prohlížeče i ze serveru.
+ */
+export function formatDateTime(value: string | undefined | null): string {
+  if (!value) return "";
+  const s = String(value).trim();
+  if (!ISO_DATE.test(s) || !/[T ]\d{2}:\d{2}/.test(s)) return formatDate(s);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const casti: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d)) casti[p.type] = p.value;
+  return `${casti.day}. ${casti.month}. ${casti.year} ${casti.hour}:${casti.minute}`;
+}
+
+/** Způsob odsouhlasení slovy (zrcadlo POPIS_METODY v Jobi). */
+const CONSENT_METHODS: Record<string, string> = {
+  checkbox: "zaškrtnutím souhlasu",
+  drawn: "podpisem na displeji",
+  sms_code: "kódem z SMS",
+  email_code: "kódem z e-mailu",
+  bankid: "přes BankID",
+  other: "jiným způsobem",
+};
+
+/** „Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz“. */
+export function consentText(data: DocumentData): string {
+  const c = data.consent;
+  if (!c || (!c.id && !c.signedAt)) return "";
+  const zdroj = (c.source ?? "").trim();
+  return joinPartsExport([
+    `Elektronicky odsouhlaseno${c.signedAt ? ` ${formatDateTime(c.signedAt)}` : ""}`,
+    c.id ? `ID ${c.id}` : undefined,
+    zdroj ? (/^(formulář|web)/i.test(zdroj) ? zdroj : `formulář ${zdroj}`) : undefined,
+  ], " · ");
+}
+
+/** Doplňující řádek malým písmem: IP, verze podmínek, kdo odsouhlasil. */
+export function consentDetailText(data: DocumentData): string {
+  const c = data.consent;
+  if (!c) return "";
+  return joinPartsExport([
+    c.signerName,
+    c.ip ? `IP ${c.ip}` : undefined,
+    c.termsVersion ? `podmínky ${c.termsVersion}` : undefined,
+  ], " · ");
+}
+
+function joinPartsExport(parts: Array<string | undefined>, sep: string): string {
+  return parts.map((p) => (p ?? "").trim()).filter(Boolean).join(sep);
 }
 
 export function formatQty(value: number | undefined | null): string {
@@ -418,6 +482,10 @@ export function resolveVariable(key: string, data: DocumentData): string {
         .join("\n");
     }
     case "note": return data.note ?? "";
+    case "consent.text": return consentText(data);
+    case "consent.detail": return consentDetailText(data);
+    case "consent.signedAt": return formatDateTime(data.consent?.signedAt);
+    case "consent.method": return data.consent?.method ? CONSENT_METHODS[data.consent.method] ?? data.consent.method : "";
   }
   if (k.startsWith("dates.")) {
     const field = k.slice(6) as keyof NonNullable<DocumentData["dates"]>;

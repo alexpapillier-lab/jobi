@@ -184,8 +184,8 @@ export function DetailDalsiKarty({
                   <LinkIcon size={14} /> Ext: {detailedTicket.externalId}
                 </div>
               )}
-              {/* Objednávka z webu má číslo v Externí identifikaci – jen tehdy se ptáme. */}
-              {detailedTicket.externalId && <ZObjednavky ticketId={detailedTicket.id} />}
+              {/* Objednávka z webu a elektronické odsouhlasení zakázkového listu. */}
+              <ZObjednavky ticketId={detailedTicket.id} />
             </div>
           </div>
         </div>

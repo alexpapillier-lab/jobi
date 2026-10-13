@@ -16,6 +16,7 @@ import { safeLoadCompanyData } from "../../lib/companyData";
 import { trackDocumentAction } from "../../lib/documentTelemetry";
 import { ensurePortalToken } from "../../lib/portal";
 import { zarucniDobaProTisk } from "../../lib/documentHelpers";
+import { nactiPodpisPrevzeti } from "../../lib/souhlasPrevzeti";
 import type { TicketEx } from "./typy";
 
 import { textChyby } from "../../utils/errorNormalizer";
@@ -60,8 +61,15 @@ export const zavislostiDokumentu: ZavislostiDokumentu = {
   tiskVProhlizeci: (docType, sid, data) => printDocumentInBrowser(docType as WebPrintDocType, sid, data),
   exportPdfVProhlizeci: (docType, sid, data) => stahnoutDokumentJakoPdf(docType as WebPrintDocType, sid, data),
   pripravFotky: async (data) => {
-    if (!data.photos || data.photos.length === 0) return data;
-    return { ...data, photos: await fotkyDoDokumentu(supabase, data.photos) };
+    let out = data;
+    if (data.photos && data.photos.length > 0) out = { ...out, photos: await fotkyDoDokumentu(supabase, data.photos) };
+    // Podpis převzetí jde do dokumentu jako data URL stejně jako fotky; když
+    // se stáhnout nepovede, kolonka zůstane bez obrázku (text souhlasu ano).
+    if (data.intakeSignature) {
+      const [podpis] = await fotkyDoDokumentu(supabase, [data.intakeSignature]);
+      out = { ...out, intakeSignature: podpis };
+    }
+    return out;
   },
   hlaska: showToast,
   hotovyExport: showExportSuccessToast,
@@ -99,6 +107,15 @@ export async function runTicketDocument(mode: DocMode, docType: DocTypeForPrint,
       withToken = { ...ticket, portalToken: token };
     } catch {
       /* bez portálu */
+    }
+  }
+  // Zakázkový list: podpis zákazníka a elektronické odsouhlasení z webu do
+  // kolonky převzetí. Čte se zvlášť – v seznamu ani v detailu nejsou.
+  if (docType === "zakazkovy_list") {
+    try {
+      withToken = { ...withToken, ...(await nactiPodpisPrevzeti(ticket.id)) };
+    } catch {
+      /* tiskne se bez podpisu */
     }
   }
   const data = ticketDocData(withToken, docType);

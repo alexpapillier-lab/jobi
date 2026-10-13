@@ -109,6 +109,11 @@ export function sampleData(docType: DocType, kind: SampleKind = "short", service
     // Na zakázkovém listu ještě nejsou provedené opravy.
     common.items = [];
     common.totals = { estimated: long ? 12000 : 6000, currency: "CZK" };
+    // Dlouhá ukázka: zakázka z objednávky na webu, zákazník list odsouhlasil
+    // online – v kolonce podpisu převzetí je vidět, jak se to vytiskne.
+    if (long) {
+      common.consent = { id: "ABC123", signedAt: "2026-10-13T12:32:00Z", method: "checkbox", source: "servis.iswap.cz", signerName: "Jan Novák", ip: "203.0.113.7", termsVersion: "v3", orderNumber: "SRV-2026-0123" };
+    }
   }
   return common;
 }

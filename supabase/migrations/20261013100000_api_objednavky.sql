@@ -29,6 +29,13 @@
 --     vzor platby_tick. Neúspěch se opakuje 3× s rostoucí pauzou (plán
 --     počítá edge funkce, viz _shared/objednavky.ts).
 --
+-- Elektronické odsouhlasení: objednávka může nést souhlas zákazníka se
+-- zakázkovým listem (ID, čas, metoda, IP, prohlížeč, verze podmínek, případně
+-- obrázek podpisu). Při převodu na zakázku se zkopíruje do nového sloupce
+-- tickets.intake_consent – vedle podpisu převzetí (intake_signature_url),
+-- ne do něj: ruční podpis v dílně nebo na portálu ho tak nepřepíše a oba
+-- záznamy zůstanou. Sloupec mění jen převod (klient ho měnit nesmí, trigger).
+--
 -- Moduly: objednávky patří k veřejnému API – brána je nárok `api_catalog`
 -- (stejně jako ceník ve formuláři rezervací). RPC i edge funkce ho ověřují.
 --
@@ -82,6 +89,12 @@ create table if not exists public.web_objednavky (
     check (jsonb_typeof(sledovaci_cisla) = 'array' and octet_length(sledovaci_cisla::text) <= 8000),
 
   poznamka text check (length(poznamka) <= 4000),
+  -- Elektronické odsouhlasení zakázkového listu na webu (API pole `consent`):
+  -- { id, signed_at, method, signer_name, ip, user_agent, terms_version,
+  --   document_version, text_hash, terms_url, received_at, signature_url }.
+  -- Obrázek podpisu není v řádku – leží v bucketu diagnostic-photos
+  -- (<service_id>/objednavky/…), signature_url je jeho identifikátor.
+  souhlas jsonb check (souhlas is null or (jsonb_typeof(souhlas) = 'object' and octet_length(souhlas::text) <= 8000)),
   -- Cokoli dalšího od odesílatele (cena dopravy, číslo platby…), max ~20 kB.
   data jsonb not null default '{}'::jsonb
     check (jsonb_typeof(data) = 'object' and octet_length(data::text) <= 20480),
@@ -95,6 +108,10 @@ create table if not exists public.web_objednavky (
   prevedeno_at timestamptz,
   unique (service_id, externi_cislo)
 );
+
+-- Pro databáze, kde tabulka vznikla dřív bez sloupce (vývoj, staging).
+alter table public.web_objednavky add column if not exists souhlas jsonb
+  check (souhlas is null or (jsonb_typeof(souhlas) = 'object' and octet_length(souhlas::text) <= 8000));
 
 create index if not exists web_objednavky_service_stav_idx on public.web_objednavky (service_id, stav, created_at desc);
 create index if not exists web_objednavky_ticket_idx on public.web_objednavky (ticket_id) where ticket_id is not null;
@@ -253,6 +270,42 @@ begin
   end if;
 end
 $$;
+
+-- Souhlas z webu na zakázce (kopie web_objednavky.souhlas + odkud přišel).
+alter table public.tickets add column if not exists intake_consent jsonb;
+comment on column public.tickets.intake_consent is
+  'Elektronické odsouhlasení zakázkového listu na webu servisu (z objednávky přes API): { id, signed_at, method, signer_name, ip, user_agent, terms_version, document_version, text_hash, terms_url, signature_url, order_id, external_id, source, transferred_at }. Zapisuje jen web_objednavka_prevest; ruční podpis převzetí je dál v intake_signature_url.';
+
+-- Klient souhlas nezaloží ani nezmění – jinak by si servis mohl „odsouhlasení
+-- zákazníkem“ dopsat sám. Pustí ho jen převod objednávky (značka transakce).
+create or replace function public.tickets_intake_consent_ochrana()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    return new; -- service_role, migrace
+  end if;
+  if current_setting('app.souhlas_ticket', true) is not distinct from new.id::text then
+    return new;
+  end if;
+  if tg_op = 'INSERT' and new.intake_consent is not null then
+    raise exception 'Elektronický souhlas se na zakázku přenáší jen z objednávky.' using errcode = '42501';
+  end if;
+  if tg_op = 'UPDATE' and new.intake_consent is distinct from old.intake_consent then
+    raise exception 'Elektronický souhlas se na zakázce nemění.' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.tickets_intake_consent_ochrana() from public, anon, authenticated;
+
+drop trigger if exists tickets_intake_consent_ochrana on public.tickets;
+create trigger tickets_intake_consent_ochrana
+  before insert or update of intake_consent on public.tickets
+  for each row execute function public.tickets_intake_consent_ochrana();
 
 -- ---------------------------------------------------------------------------
 -- 3) Pomocné funkce: stav pro API a obsah webhooku
@@ -440,6 +493,16 @@ begin
      set stav = 'prevedeno', ticket_id = p_ticket_id, prevedeno_at = now(),
          dorazilo_at = coalesce(dorazilo_at, now())
    where id = p_id;
+  -- Souhlas z webu na zakázku. Jen když tam ještě žádný není – zakázka
+  -- založená z jiné objednávky si svůj nechá.
+  if v_o.souhlas is not null then
+    perform set_config('app.souhlas_ticket', p_ticket_id::text, true);
+    update public.tickets
+       set intake_consent = v_o.souhlas || jsonb_build_object(
+             'order_id', v_o.id, 'external_id', v_o.externi_cislo, 'source', v_o.zdroj, 'transferred_at', now())
+     where id = p_ticket_id and intake_consent is null;
+    perform set_config('app.souhlas_ticket', '', true);
+  end if;
   perform public.api_webhook_zarad(p_id, 'order.converted');
   return true;
 end;

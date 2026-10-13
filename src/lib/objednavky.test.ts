@@ -21,9 +21,14 @@ import {
   overSledovaciCisla,
   podpisWebhooku,
   povoleneZmeny,
+  overSouhlas,
+  slucSouhlas,
+  typObrazku,
   udalostiZmenyStavu,
   type PolozkaObjednavky,
 } from "../../supabase/functions/_shared/objednavky";
+import { detailSouhlasu, mapujPodpisPrevzeti, obrazekPodpisuPrevzeti, textSouhlasu } from "./souhlasPrevzeti";
+import { ticketDocumentData } from "./documentData";
 import { modulProRozsah, ocistiRozsahy } from "../../supabase/functions/_shared/tokeny";
 import { nazevModelu, objednavkaNaKoncept, popisDopravy, sledovaciOdkazy, type WebObjednavka } from "./objednavky";
 
@@ -341,5 +346,84 @@ describe("objednávka → příjem zakázky", () => {
     expect(popisDopravy({ stav: "dorazilo", doprava_tam: "DPD" })).toBe("Dorazilo");
     expect(sledovaciOdkazy(o)).toEqual([{ text: "DPD 139", url: "https://tracking.dpd.de/status/cs_CZ/parcel/139", smer: "tam" }]);
     expect(sledovaciOdkazy({ sledovaci_cisla: null })).toEqual([]);
+  });
+});
+
+describe("elektronické odsouhlasení (consent)", () => {
+  const ted = new Date("2026-10-13T13:00:00Z");
+  // 1×1 PNG
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+  it("očistí souhlas, metodu odvodí, obrázek dekóduje a pozná podle bajtů", () => {
+    const v = overSouhlas({ id: " ABC123 ", signed_at: "2026-10-13T14:32:00+02:00", ip: "203.0.113.7", user_agent: "Mozilla/5.0", terms_version: "v3", signature_image: PNG, nesmysl: "x" }, ted);
+    if (typeof v === "string") throw new Error(v);
+    expect(v.souhlas).toEqual({ id: "ABC123", signed_at: "2026-10-13T12:32:00.000Z", method: "drawn", ip: "203.0.113.7", user_agent: "Mozilla/5.0", terms_version: "v3" });
+    expect(v.podpis?.typ).toBe("data");
+    expect(v.podpis && v.podpis.typ === "data" ? v.podpis.mime : null).toBe("image/png");
+    const bezObrazku = overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z" }, ted);
+    expect(typeof bezObrazku !== "string" && bezObrazku.souhlas.method).toBe("checkbox");
+    const odkaz = overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", signature_image: "https://web.cz/podpis/1.png" }, ted);
+    expect(typeof odkaz !== "string" && odkaz.podpis).toEqual({ typ: "url", url: "https://web.cz/podpis/1.png" });
+  });
+
+  it("odmítne chybějící ID a čas, nesmyslnou metodu, IP, obrázek a velikost", () => {
+    expect(overSouhlas({ signed_at: "2026-10-13T10:00:00Z" }, ted)).toMatch(/chybí id/);
+    expect(overSouhlas({ id: "X" }, ted)).toMatch(/chybí signed_at/);
+    expect(overSouhlas({ id: "X", signed_at: "13. 10. 2026" }, ted)).toMatch(/ISO 8601/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-12-24T10:00:00Z" }, ted)).toMatch(/budoucnosti/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", method: "telepatie" }, ted)).toMatch(/method musí být/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", ip: "<script>" }, ted)).toMatch(/ip/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", signature_image: "data:image/gif;base64,R0lGOD" }, ted)).toMatch(/signature_image musí být/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", signature_image: "data:image/png;base64,QUJD" }, ted)).toMatch(/PNG nebo JPEG/);
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", signature_image: "http://web.cz/p.png" }, ted)).toMatch(/signature_image/);
+    const velky = "data:image/png;base64," + btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47) + "x".repeat(210 * 1024));
+    expect(overSouhlas({ id: "X", signed_at: "2026-10-13T10:00:00Z", signature_image: velky }, ted)).toMatch(/limit je 200 kB/);
+    expect(overSouhlas("ano", ted)).toMatch(/objekt/);
+  });
+
+  it("jde v objednávce jako pole consent; null souhlas smaže", () => {
+    const p = ok({ external_id: "a", consent: { id: "C1", signed_at: "2026-10-13T10:00:00Z", signature_image: PNG } });
+    expect((p.hodnoty.souhlas as { id: string }).id).toBe("C1");
+    expect(p.podpis?.typ).toBe("data");
+    expect(ok({ external_id: "a", consent: null }).hodnoty).toEqual({ souhlas: null });
+    expect(chyba({ external_id: "a", consent: { id: "C1" } })).toMatch(/consent: chybí signed_at/);
+  });
+
+  it("stejné ID = stejný souhlas: obrázek ani čas přijetí se nemění; jiné ID = nový", () => {
+    const ulozeny = { id: "C1", signed_at: "x", method: "drawn", received_at: "2026-10-01T00:00:00Z", signature_url: "https://x/podpis.png" };
+    const stejny = slucSouhlas(ulozeny, { id: "C1", signed_at: "x", method: "drawn" }, ted);
+    expect(stejny).toEqual({ stejny: true, souhlas: { id: "C1", signed_at: "x", method: "drawn", received_at: "2026-10-01T00:00:00Z", signature_url: "https://x/podpis.png" } });
+    const novy = slucSouhlas(ulozeny, { id: "C2", signed_at: "y", method: "checkbox" }, ted);
+    expect(novy).toEqual({ stejny: false, souhlas: { id: "C2", signed_at: "y", method: "checkbox", received_at: ted.toISOString() } });
+    expect(slucSouhlas(null, { id: "C3", signed_at: "z", method: "checkbox" }, ted).stejny).toBe(false);
+  });
+
+  it("u převedené objednávky se souhlas už nemění", () => {
+    const p: PolozkaObjednavky = { externiCislo: "a", hodnoty: { souhlas: { id: "C9" }, poznamka: "p" } };
+    expect(povoleneZmeny("prevedeno", p).hodnoty).toEqual({ poznamka: "p" });
+  });
+
+  it("API vrací jen shrnutí souhlasu", () => {
+    const o = objednavkaProApi({ externi_cislo: "x", stav: "nova", zdroj: "web", created_at: "", updated_at: "", souhlas: { id: "C1", signed_at: "s", method: "drawn", ip: "1.2.3.4", signature_url: "https://x" } }, null);
+    expect(o.consent).toEqual({ id: "C1", signed_at: "s", method: "drawn", has_signature_image: true });
+    expect(typObrazku(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
+  });
+
+  it("přenos na zakázku: data dokumentu mají souhlas a podpis do kolonky převzetí", () => {
+    const souhlas = { id: "ABC123", signed_at: "2026-10-13T12:32:00Z", method: "checkbox" as const, ip: "203.0.113.7", terms_version: "v3", external_id: "SRV-2026-0123", source: "servis.iswap.cz", signature_url: "https://x.supabase.co/storage/v1/object/public/diagnostic-photos/s1/objednavky/o1.png" };
+    const zakazka = { id: "t1", code: "A-1", customerName: "Jan", createdAt: "2026-10-13T12:40:00Z", performedRepairs: [], intakeConsent: souhlas } as unknown as Parameters<typeof ticketDocumentData>[0];
+    const d = ticketDocumentData(zakazka, {});
+    expect(d.consent).toMatchObject({ id: "ABC123", signedAt: "2026-10-13T12:32:00Z", source: "servis.iswap.cz", ip: "203.0.113.7", termsVersion: "v3", orderNumber: "SRV-2026-0123" });
+    expect(d.intakeSignature).toBe(souhlas.signature_url);
+    // Ruční podpis z dílny / portálu má přednost, souhlas zůstává.
+    const sRucnim = ticketDocumentData({ ...zakazka, intakeSignatureUrl: "https://x/rucni.png" } as typeof zakazka, {});
+    expect(sRucnim.intakeSignature).toBe("https://x/rucni.png");
+    expect(sRucnim.consent?.id).toBe("ABC123");
+    expect(ticketDocumentData({ ...zakazka, intakeConsent: undefined } as typeof zakazka, {}).consent).toBeUndefined();
+    expect(textSouhlasu(souhlas)).toBe("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");
+    expect(detailSouhlasu(souhlas)).toContainEqual(["IP adresa", "203.0.113.7"]);
+    expect(detailSouhlasu(souhlas)).toContainEqual(["Způsob", "zaškrtnutím souhlasu"]);
+    expect(mapujPodpisPrevzeti({ intake_signature_url: "", intake_consent: { bez: "id" } })).toEqual({});
+    expect(obrazekPodpisuPrevzeti({})).toBeUndefined();
   });
 });
