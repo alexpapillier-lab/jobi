@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { kodPozvanky } from "../_shared/pozvanka.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -205,7 +206,15 @@ serve(async (req) => {
       targetServiceId = serviceId;
     }
 
-    const inviteToken = generateToken();
+    // Pozvánka je jedna na dvojici (servis, e-mail). Čekající pozvánka si kód nechává,
+    // jinak by každé další kliknutí na „Pozvat“ zneplatnilo kód z předchozího e-mailu.
+    const { data: existujici } = await svc
+      .from("service_invites")
+      .select("id, token, expires_at, accepted_at")
+      .eq("service_id", targetServiceId)
+      .eq("email", emailTrim.toLowerCase())
+      .maybeSingle();
+    const { token: inviteToken } = kodPozvanky(existujici, emailTrim, new Date(), generateToken);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 14);
     const expiresAtISO = expiresAt.toISOString();
@@ -216,12 +225,7 @@ serve(async (req) => {
     // jako obsazené místo – jinak jde limit obejít tím, že se nechají viset.
     // Opakovaná pozvánka na stejný e-mail (upsert níž) nové místo nezabírá.
     {
-      const { data: opakovana } = await svc
-        .from("service_invites")
-        .select("id")
-        .eq("service_id", targetServiceId)
-        .eq("email", emailTrim.toLowerCase())
-        .maybeSingle();
+      const opakovana = existujici;
       if (!opakovana) {
         const [{ data: limitRes }, { data: seatsRes }] = await Promise.all([
           svc.rpc("members_allowed", { p_service_id: targetServiceId }),

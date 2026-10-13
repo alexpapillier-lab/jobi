@@ -247,6 +247,12 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
   // Invite dialog states
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  /* Odesílání pozvánky trvá (vytvoření, e-mail, znovunačtení týmu) a dialog se
+     při něm nijak neměnil, takže se na „Pozvat“ klikalo znovu. Ref je zámek,
+     který platí hned (stav by dvě rychlá kliknutí v jednom ticku nezachytil),
+     stav jen mění vzhled tlačítka. */
+  const inviteSendingRef = useRef(false);
+  const [inviteSending, setInviteSending] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [_inviteMode, setInviteMode] = useState<"stock" | "custom">("stock");
@@ -585,6 +591,9 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       return;
     }
 
+    if (inviteSendingRef.current) return;
+    inviteSendingRef.current = true;
+    setInviteSending(true);
     try {
       const accessToken = session?.access_token;
       const { data, error } = await supabase.functions.invoke("invite_create", {
@@ -658,6 +667,9 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     } catch (err: any) {
       console.error("[TeamSettings] Error sending invite:", err);
       showToast(`Chyba při posílání pozvánky: ${normalizeError(err)}`, "error");
+    } finally {
+      inviteSendingRef.current = false;
+      setInviteSending(false);
     }
   };
 
@@ -1459,6 +1471,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               </button>
               <button
                 onClick={handleSendInvite}
+                disabled={inviteSending}
                 style={{
                   padding: "10px 16px",
                   borderRadius: 12,
@@ -1466,11 +1479,12 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   background: "var(--accent)",
                   color: "white",
                   fontWeight: 900,
-                  cursor: "pointer",
+                  cursor: inviteSending ? "wait" : "pointer",
+                  opacity: inviteSending ? 0.6 : 1,
                   fontSize: 13,
                 }}
               >
-                Pozvat
+                {inviteSending ? "Odesílám…" : "Pozvat"}
               </button>
             </div>
           </div>
