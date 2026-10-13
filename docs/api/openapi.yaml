@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Jobi – veřejné API servisu
-  version: "1.0.0"
+  version: "1.1.0"
   license:
     name: Proprietární – součást aplikace Jobi
   description: |
@@ -12,6 +12,10 @@ info:
     v parametru `service`.
 
     Zápis token vyžaduje (`Authorization: Bearer jobi_…`).
+
+    Objednávky oprav z webu (`/orders`) taky – token se scope `orders`.
+    Servis se o nich dozví v Jobi a web dostává zpět webhooky o zakázce
+    (viz sekce Webhooks). Česky podrobně: docs/API_OBJEDNAVKY.md.
 
     Ceník a sklad jsou samostatné moduly. Servis, který má zapnutý jen
     jeden z nich, dostane u druhého 404 – stejně jako když slug neexistuje.
@@ -122,8 +126,8 @@ paths:
                 email: { type: string, format: email }
                 device: { type: string, maxLength: 160, description: Zařízení (např. iPhone 13) }
                 repair: { type: string, maxLength: 200, description: Co je potřeba opravit (volný text) }
-                repair_id: { type: string, format: uuid, description: Oprava z ceníku (`/catalog` → repairs[].id); název a cena se berou z ceníku }
-                model_id: { type: string, format: uuid, description: Model z ceníku (`/catalog` → models[].id) }
+                repair_id: { type: string, format: uuid, description: "Oprava z ceníku (`/catalog` → repairs[].id); název a cena se berou z ceníku" }
+                model_id: { type: string, format: uuid, description: "Model z ceníku (`/catalog` → models[].id)" }
                 preferred_at: { type: string, format: date-time, description: Přání termínu; prázdné = kdykoliv }
                 note: { type: string, maxLength: 1000 }
                 web: { type: string, description: Skryté pole proti robotům – nechte prázdné }
@@ -212,6 +216,181 @@ paths:
           description: Překročen limit zápisů
           headers:
             Retry-After: { schema: { type: string }, description: Za kolik sekund to zkusit znovu }
+
+  /orders:
+    post:
+      summary: Poslat nebo aktualizovat objednávky opravy
+      description: |
+        Objednávka opravy z formuláře na webu nebo z e-shopu („Pošlete nám
+        zařízení“). V Jobi se objeví v Zakázkách → Příchozí objednávky
+        a na stránce Dnes; když zařízení dorazí, servis z ní jedním
+        kliknutím založí zakázku a web dostane webhook `order.converted`.
+
+        **Idempotence:** `external_id` je v servisu jedinečné. Stejné číslo
+        poslané znovu objednávku jen aktualizuje (PATCH – mění se jen
+        poslaná pole, `null` hodnotu smaže). Když se nic nezměnilo, výsledek
+        je `unchanged`. Opakovat požadavek po výpadku sítě je tedy bezpečné.
+
+        **Stav:** `new` → `in_transit` (předáno dopravci) → `arrived`; zrušit
+        jde `cancelled`. `converted` nastavuje jen Jobi (vznik zakázky); pak
+        jde měnit už jen `shipping.tracking`, `note` a `data`.
+
+        Limit 60 požadavků za minutu na token, nejvýš 50 objednávek
+        v požadavku, tělo do 512 kB.
+
+        ```bash
+        curl -X POST https://api.appjobi.com/v1/orders \
+          -H "Authorization: Bearer jobi_…" \
+          -H "Content-Type: application/json" \
+          -d '{"orders":[{"external_id":"SRV-2026-0123","customer":{"name":"Jan Novák","phone":"+420777123456"},"device":{"name":"iPhone 13"},"issue":"Prasklý displej","shipping":{"inbound":"DPD","outbound":"Zásilkovna"}}]}'
+        ```
+      security: [{ TokenApi: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orders]
+              properties:
+                orders:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items: { $ref: "#/components/schemas/Objednavka" }
+            examples:
+              nova:
+                summary: Nová objednávka z formuláře „Zaslat zařízení“
+                value:
+                  orders:
+                    - external_id: SRV-2026-0123
+                      source: servis.iswap.cz
+                      customer: { name: Jan Novák, phone: "+420777123456", email: jan@example.cz, address: { street: Dlouhá 1, city: Praha, zip: "110 00" } }
+                      device: { name: iPhone 13, serial: "356789123456789", passcode: "1234", accessories: obal }
+                      issue: Prasklý displej, nereaguje dotyk
+                      requested_repair: Výměna displeje
+                      shipping: { inbound: DPD, outbound: Zásilkovna, pickup_point: { id: "1234", name: Z-BOX Praha 7 } }
+                      consent: { id: "c-7f3a9e21", signed_at: "2026-10-13T14:32:05+02:00", method: checkbox, signer_name: Jan Novák, ip: 203.0.113.7, user_agent: "Mozilla/5.0 …", terms_version: "2026-09", text_hash: "sha256:9f86d0…" }
+              na_ceste:
+                summary: Zákazník předal balík dopravci
+                value: { orders: [{ external_id: SRV-2026-0123, status: in_transit, shipping: { tracking: [{ carrier: dpd, number: "13912345678901", direction: inbound }] } }] }
+              zruseni:
+                summary: Zákazník objednávku zrušil
+                value: { orders: [{ external_id: SRV-2026-0123, status: cancelled }] }
+      responses:
+        "200":
+          description: Vše uloženo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VysledekObjednavek" }
+        "207":
+          description: Některé položky mají chybu (`errors`), ostatní jsou uložené
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VysledekObjednavek" }
+        "400": { description: Tělo není JSON, chybí `orders` nebo je jich víc než 50 }
+        "401": { description: Chybějící, neplatný nebo odvolaný token }
+        "403": { description: Token nemá scope `orders`, nebo servis nemá veřejné API }
+        "413": { description: Tělo je větší než 512 kB }
+        "429":
+          description: Překročen limit 60 požadavků za minutu
+          headers:
+            Retry-After: { schema: { type: string } }
+    get:
+      summary: Stav objednávky a zakázky v Jobi
+      description: |
+        ```bash
+        curl "https://api.appjobi.com/v1/orders?external_id=SRV-2026-0123" -H "Authorization: Bearer jobi_…"
+        ```
+        Odpověď se necachuje.
+      security: [{ TokenApi: [] }]
+      parameters:
+        - name: external_id
+          in: query
+          required: true
+          schema: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Objednávka
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/StavObjednavky" }
+        "400": { description: Chybí external_id }
+        "401": { description: Neplatný token }
+        "403": { description: Token nemá scope `orders` }
+        "404": { description: Objednávka s tímhle číslem v servisu není }
+
+  /order-form:
+    get:
+      summary: Nastavení vložitelného formuláře objednávky
+      description: 404, když servis formulář nemá zapnutý (Nastavení → API → Objednávky z webu) nebo nemá veřejné API.
+      parameters:
+        - $ref: "#/components/parameters/Service"
+      responses:
+        "200":
+          description: Nastavení
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: { type: string }
+                  uvod: { type: string }
+                  podminky: { type: [string, "null"], description: Odkaz na obchodní podmínky }
+        "404": { $ref: "#/components/responses/Nedostupne" }
+    post:
+      summary: Objednávka opravy z formuláře Jobi
+      description: |
+        Bez tokenu, pro servisy bez vlastního formuláře. Objednávka vznikne se zdrojem
+        „formulář Jobi“ a číslem JOBI-RRMMDD-XXXXXX; zaškrtnutý souhlas (`consent: true`)
+        se uloží jako elektronické odsouhlasení (čas, IP, prohlížeč). Limit 10 objednávek
+        za hodinu z jedné adresy a 60 na servis (429), skryté pole `web` musí zůstat prázdné.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service, name, phone, device, issue, consent]
+              properties:
+                service: { type: string }
+                name: { type: string, maxLength: 200 }
+                phone: { type: string, maxLength: 40 }
+                email: { type: string, format: email }
+                device: { type: string, maxLength: 200 }
+                serial: { type: string, maxLength: 100 }
+                issue: { type: string, maxLength: 4000 }
+                model_id: { type: string, format: uuid }
+                repair_id: { type: string, format: uuid }
+                handoff: { type: string, enum: [osobne, postou] }
+                street: { type: string, description: "Adresa pro vrácení (povinná při handoff: postou)" }
+                city: { type: string }
+                zip: { type: string }
+                note: { type: string, maxLength: 4000 }
+                consent: { type: boolean, description: Souhlas se zakázkovým listem a podmínkami – musí být true }
+                web: { type: string, description: Skryté pole proti robotům – nechte prázdné }
+      responses:
+        "201": { description: "Přijato – { ok: true, number: \"JOBI-261013-7KQ2MX\" }" }
+        "400": { description: Chybí nebo je špatně vyplněné pole }
+        "404": { $ref: "#/components/responses/Nedostupne" }
+        "429": { description: Příliš mnoho objednávek; hlavička Retry-After }
+
+  /order-form.js:
+    get:
+      summary: Hotový formulář objednávky k vložení na web
+      description: |
+        `<div id="jobi-objednavka"></div>` a `<script src="…/order-form.js?service=slug"></script>`.
+        Barvu přebijete CSS proměnnou `--jobi-akcent` na `.jobi-obj`.
+      parameters:
+        - $ref: "#/components/parameters/Service"
+      responses:
+        "200":
+          description: JavaScript
+          content:
+            application/javascript: { schema: { type: string } }
 
 components:
   securitySchemes:
@@ -479,3 +658,213 @@ components:
           description: |
             Položky, které v tomhle servisu nejsou. Cizí id se chová stejně
             jako neexistující – přes API nejde zjišťovat cizí data.
+
+    Objednavka:
+      type: object
+      required: [external_id]
+      description: |
+        Mění se jen poslaná pole. Text se ořízne o mezery; prázdný text = smazat.
+        Vazby (`branch_id`, `device.model_id`, `repair_id`) se přijmou jen na
+        záznamy tohoto servisu – cizí id se vynechá a ohlásí v `errors`.
+      properties:
+        external_id: { type: string, maxLength: 100, description: Číslo objednávky ve vašem systému (SRV-2026-0123). Jedinečné v servisu. }
+        status: { type: string, enum: [new, in_transit, arrived, cancelled] }
+        source: { type: string, maxLength: 80, description: "Odkud objednávka je (web, e-shop). Bez něj název tokenu." }
+        branch_id: { type: [string, "null"], format: uuid, description: "Pobočka servisu, kam zařízení jede." }
+        customer:
+          type: object
+          properties:
+            name: { type: string, maxLength: 200 }
+            phone: { type: string, maxLength: 40 }
+            email: { type: string, format: email, maxLength: 200 }
+            company: { type: string, maxLength: 200 }
+            ico: { type: string, maxLength: 20 }
+            dic: { type: string, maxLength: 20 }
+            address:
+              oneOf:
+                - type: string
+                - type: object
+                  properties:
+                    street: { type: string, maxLength: 200 }
+                    city: { type: string, maxLength: 120 }
+                    zip: { type: string, maxLength: 20 }
+        device:
+          oneOf:
+            - type: string
+            - type: object
+              properties:
+                name: { type: string, maxLength: 200, description: "Zařízení (model) tak, jak ho zadal zákazník" }
+                model_id: { type: string, format: uuid, description: "Model z ceníku (`/catalog` → models[].id) – má přednost při příjmu" }
+                serial: { type: string, maxLength: 100, description: Sériové číslo nebo IMEI (jde i jako `imei`) }
+                passcode: { type: string, maxLength: 100, description: Heslo / kód obrazovky }
+                accessories: { type: string, maxLength: 500 }
+        issue: { type: string, maxLength: 4000, description: Popis závady }
+        requested_repair: { type: string, maxLength: 1000, description: Požadovaná oprava }
+        repair_id: { type: string, format: uuid, description: Oprava z ceníku – při příjmu se přidá i s cenou }
+        shipping:
+          type: object
+          properties:
+            inbound: { type: string, maxLength: 100, description: "Doprava do servisu (DPD, Zásilkovna, osobně)" }
+            outbound: { type: string, maxLength: 100, description: Doprava zpět }
+            pickup_point:
+              description: Výdejní místo pro vrácení (text nebo objekt id/name/street/city/zip)
+              oneOf: [{ type: string, maxLength: 500 }, { type: object }]
+            return_address:
+              oneOf: [{ type: string, maxLength: 500 }, { type: object }]
+            tracking:
+              type: array
+              maxItems: 20
+              description: Celý seznam sledovacích čísel (nahradí uložený). Bez `carrier` se dopravce odhadne z `inbound`/`outbound`.
+              items:
+                oneOf:
+                  - type: string
+                  - type: object
+                    required: [number]
+                    properties:
+                      carrier: { type: string, description: "dpd, zasilkovna, ppl, gls, ceska_posta, balikovna – nebo název" }
+                      number: { type: string, maxLength: 60 }
+                      direction: { type: string, enum: [inbound, outbound] }
+                      url: { type: string, description: Vlastní odkaz na sledování (https); jinak ho Jobi sestaví podle dopravce }
+        consent: { $ref: "#/components/schemas/Souhlas" }
+        note: { type: string, maxLength: 4000 }
+        data: { type: object, description: "Cokoli dalšího (cena dopravy, číslo platby…), nejvýš 20 kB. Jobi to jen uloží." }
+
+    Souhlas:
+      type: [object, "null"]
+      required: [id, signed_at]
+      description: |
+        Elektronické odsouhlasení zakázkového listu zákazníkem na vašem webu.
+        Při založení zakázky se přenese na zakázku a vytiskne se na zakázkovém
+        listu v kolonce podpisu převzetí: s obrázkem podpisu obrázek, jinak
+        „Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID … · formulář …“.
+        Jobi je jen kopie – důkaz (přesné znění, které zákazník viděl, a log
+        odsouhlasení) si uchovejte u sebe, viz docs/API_OBJEDNAVKY.md.
+        Stejné `id` poslané znovu nic nemění (ani obrázek se nenahraje znovu).
+      properties:
+        id: { type: string, maxLength: 100, description: "Vaše ID odsouhlasení – jedinečné, náhodné (UUID), ne pořadové číslo" }
+        signed_at: { type: string, format: date-time, description: Kdy zákazník odsouhlasil (ISO 8601 s časovou zónou) }
+        method: { type: string, enum: [checkbox, drawn, sms_code, email_code, bankid, other], description: "Bez hodnoty: drawn, když je obrázek, jinak checkbox" }
+        signer_name: { type: string, maxLength: 200 }
+        ip: { type: string, maxLength: 64, description: IP adresa zákazníka (IPv4/IPv6) }
+        user_agent: { type: string, maxLength: 500 }
+        terms_version: { type: string, maxLength: 100, description: Verze obchodních podmínek / reklamačního řádu }
+        document_version: { type: string, maxLength: 100, description: Verze textu zakázkového listu }
+        text_hash: { type: string, maxLength: 200, description: "Otisk přesného textu, který zákazník odsouhlasil (např. sha256:…)" }
+        terms_url: { type: string, description: Odkaz na znění podmínek (https) }
+        signature_image:
+          type: string
+          description: |
+            Podpis nakreslený na displeji: `data:image/png;base64,…` (nebo jpeg), nejvýš 200 kB,
+            nebo https odkaz, odkud si ho Jobi stáhne. Uloží se do soukromého úložiště servisu.
+
+    VysledekObjednavek:
+      type: object
+      properties:
+        ok: { type: boolean }
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer, description: Pořadí v požadavku }
+              external_id: { type: string }
+              result: { type: string, enum: [created, updated, unchanged] }
+              status: { type: string, enum: [new, in_transit, arrived, converted, cancelled] }
+              ticket_code: { type: [string, "null"] }
+        errors:
+          type: array
+          items: { type: string }
+          description: "Chyby po položkách („orders[1]: customer.email nevypadá platně“). Odpověď má pak stav 207."
+
+    StavObjednavky:
+      type: object
+      properties:
+        external_id: { type: string }
+        status: { type: string, enum: [new, in_transit, arrived, converted, cancelled] }
+        source: { type: [string, "null"] }
+        customer: { type: object, properties: { name: { type: [string, "null"] } } }
+        device: { type: object, properties: { name: { type: [string, "null"] } } }
+        tracking:
+          type: array
+          items:
+            type: object
+            properties:
+              carrier: { type: string }
+              number: { type: string }
+              direction: { type: [string, "null"], enum: [inbound, outbound, null] }
+              url: { type: [string, "null"] }
+        consent:
+          type: [object, "null"]
+          properties:
+            id: { type: string }
+            signed_at: { type: string }
+            method: { type: string }
+            has_signature_image: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        arrived_at: { type: [string, "null"], format: date-time }
+        converted_at: { type: [string, "null"], format: date-time }
+        ticket_code: { type: [string, "null"] }
+        ticket: { $ref: "#/components/schemas/ZakazkaVeWebhooku" }
+
+    ZakazkaVeWebhooku:
+      type: [object, "null"]
+      description: Zakázka v Jobi, která z objednávky vznikla.
+      properties:
+        code: { type: string, example: IRPAZ2601527 }
+        status:
+          type: object
+          properties:
+            key: { type: string, example: in_progress }
+            label: { type: string, example: V opravě }
+            is_final: { type: boolean, description: "Koncový stav (vydáno, nevyzvednuto…)" }
+        total: { type: number, description: Cena zakázky v Kč (provedené opravy po slevě) }
+        updated_at: { type: string, format: date-time }
+
+    Webhook:
+      type: object
+      properties:
+        event: { type: string, enum: [order.converted, ticket.status_changed, ticket.completed, order.cancelled, ping] }
+        external_id: { type: string }
+        source: { type: [string, "null"] }
+        order_status: { type: string, enum: [new, in_transit, arrived, converted, cancelled] }
+        ticket_code: { type: [string, "null"] }
+        status:
+          type: [object, "null"]
+          properties:
+            key: { type: string }
+            label: { type: string }
+            is_final: { type: boolean }
+        total: { type: [number, "null"] }
+        updated_at: { type: string, format: date-time }
+        test: { type: boolean, description: Jen u zkušebního webhooku (event ping) }
+
+webhooks:
+  objednavka:
+    post:
+      summary: Oznámení o objednávce a zakázce (POST na adresu z Nastavení → API)
+      description: |
+        Události: `order.converted` (z objednávky vznikla zakázka),
+        `ticket.status_changed` (zakázka změnila stav), `ticket.completed`
+        (zakázka přešla do koncového stavu), `order.cancelled` (servis
+        objednávku zrušil v Jobi), `ping` (tlačítko Poslat zkušební webhook).
+
+        Hlavičky: `X-Jobi-Event`, `X-Jobi-Delivery` (id doručení – stejné při
+        opakování, podle něj poznáte duplicitu) a `X-Jobi-Signature:
+        sha256=<hex HMAC-SHA256 surového těla tajemstvím webhooku>`.
+
+        Ověření v Node.js:
+        ```js
+        import crypto from "node:crypto";
+        const ocekavany = "sha256=" + crypto.createHmac("sha256", process.env.JOBI_WEBHOOK_SECRET).update(surovéTělo).digest("hex");
+        const ok = ocekavany.length === podpis.length && crypto.timingSafeEqual(Buffer.from(ocekavany), Buffer.from(podpis));
+        ```
+
+        Odpovězte 2xx do 10 s. Výpadek, 5xx, 408 a 429 Jobi zkusí znovu
+        3× (po 1, 5 a 30 minutách); ostatní 4xx neopakuje.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Webhook" }
+      responses:
+        "200": { description: Přijato }

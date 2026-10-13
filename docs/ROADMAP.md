@@ -91,6 +91,29 @@ Seřazeno podle toho, kolik času a peněz to servisu ušetří.
    Zbývá: SMS zákazníkovi,
    volitelně cesty `/v1/booking` ve Workeru (`infra/cloudflare/jobi-api-worker.js`
    je připravený, stačí znovu vložit do Cloudflare).
+6b. `[~]` **API Objednávky – objednávky oprav z webu a webhooky zpět** (13. 10.,
+   větev `api-objednavky`, migrace 20261013100000, edge funkce `api-orders`,
+   `api-webhooks`, `public-order-form`; dokumentace `docs/API_OBJEDNAVKY.md`).
+   Web servisu (první servis.iswap.cz, objednávky SRV-RRRR-NNNN) pošle
+   `POST /v1/orders` s tokenem se scope `orders` (modul `api_catalog`);
+   upsert podle `external_id`, stavy new / in_transit / arrived / cancelled,
+   sledovací čísla DPD/Zásilkovna s odkazy, `GET ?external_id=` vrátí i stav
+   zakázky. V Jobi panel **Příchozí objednávky** v Zakázkách a karta na Dnes,
+   „Založit zakázku“ předvyplní příjem (Externí identifikace = číslo objednávky)
+   a objednávku převede. Webhooky `order.converted`, `ticket.status_changed`,
+   `ticket.completed`, `order.cancelled` s HMAC podpisem (`X-Jobi-Signature`),
+   fronta s 3 opakováními (pg_cron každou minutu + Vault), log a zkušební
+   webhook v Nastavení → API. **Elektronické odsouhlasení zakázkového listu**
+   (`consent` – ID, čas, metoda, IP, prohlížeč, verze podmínek, obrázek podpisu
+   do 200 kB v soukromém úložišti) se při převodu přenese do
+   `tickets.intake_consent` a vytiskne v kolonce podpisu převzetí (obrázek,
+   jinak „Elektronicky odsouhlaseno … · ID …“; proměnné `consent.*` v JobiDocs).
+   Vložitelný **formulář Jobi** pro servisy bez vlastního formuláře.
+   Zbývá: nasadit (migrace, 3 edge funkce, Worker, nový build JobiDocs pro
+   desktopový tisk), sondy 1700+ proti TEST2, ověřit v běžící aplikaci;
+   GDPR anonymizace zatím objednávky a `intake_consent` nemaže; e-mail servisu
+   o nové objednávce; volba „podpis převzetí“ v editoru šablon JobiDocs
+   (dnes se kolonka pozná podle popisku).
 7. `[~]` **Účetnictví a pokladna** (5. 9.: iDoklad i Fakturoid – Nastavení →
    Fakturace a DPH → Propojení, tlačítko Odeslat v detailu faktury; edge funkce
    `invoice-export`, tabulka `service_integrations`, placený modul `accounting`)
