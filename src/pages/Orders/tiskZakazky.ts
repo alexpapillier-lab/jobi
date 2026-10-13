@@ -18,6 +18,7 @@ import { ensurePortalToken } from "../../lib/portal";
 import { zarucniDobaProTisk } from "../../lib/documentHelpers";
 import type { TicketEx } from "./typy";
 
+import { textChyby } from "../../utils/errorNormalizer";
 // Tisk a export PDF probíhají přes JobiDocs (localhost:3847); ve webové verzi přes tiskový dialog prohlížeče.
 // Jobi posílá typovaná data dokumentu, šablonu i formátování drží JobiDocs.
 
@@ -151,7 +152,7 @@ export function showExportSuccessToast(filePath: string) {
         const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
         await revealItemInDir(filePath);
       } catch (err) {
-        showToast("Nelze otevřít složku: " + (err instanceof Error ? err.message : String(err)), "error");
+        showToast("Nelze otevřít složku: " + (textChyby(err)), "error");
       }
     },
   });

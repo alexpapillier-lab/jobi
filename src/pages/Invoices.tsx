@@ -48,6 +48,7 @@ import {
   type ListFilter,
 } from "./Invoices/types";
 
+import { textChyby } from "../utils/errorNormalizer";
 /** Název souboru PDF bez diakritiky – Downloads na cizím počítači ji nemusí unést. */
 const KIND_FILENAME: Record<InvoiceKind, string> = { invoice: "Faktura", proforma: "Zalohova_faktura", credit_note: "Dobropis" };
 
@@ -781,7 +782,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.save_failed",
           error: err,
-          userMessage: "Fakturu se nepodařilo uložit: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Fakturu se nepodařilo uložit: " + (textChyby(err)),
           source: "Invoices.persistEditor",
         });
       } finally {
@@ -883,7 +884,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.update_status_failed",
           error: err,
-          userMessage: "Stav se nepodařilo změnit: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Stav se nepodařilo změnit: " + (textChyby(err)),
           source: "Invoices.updateStatus",
         });
       }
@@ -917,7 +918,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.delete_invoice_failed",
           error: err,
-          userMessage: "Fakturu se nepodařilo smazat: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Fakturu se nepodařilo smazat: " + (textChyby(err)),
           source: "Invoices.deleteInvoice",
         });
       }
@@ -1006,7 +1007,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           ...volby.chyba,
           error: err,
-          userMessage: volby.chyba.userMessage + ": " + (err instanceof Error ? err.message : String(err)),
+          userMessage: volby.chyba.userMessage + ": " + (textChyby(err)),
         });
       }
     },
@@ -1111,7 +1112,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.handle_print_failed",
             error: err,
-            userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba tisku: " + (textChyby(err)),
             source: "Invoices.handlePrint",
           });
         }
@@ -1143,7 +1144,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.result_failed",
           error: err,
-          userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba tisku: " + (textChyby(err)),
           source: "Invoices.printOrExport",
         });
       }
@@ -1171,7 +1172,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.handle_export_failed",
             error: err,
-            userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba exportu: " + (textChyby(err)),
             source: "Invoices.handleExport",
           });
         }
@@ -1209,7 +1210,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.result_failed",
           error: err,
-          userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba exportu: " + (textChyby(err)),
           source: "Invoices.printOrExport",
         });
       }
@@ -1237,7 +1238,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.url_failed",
             error: err,
-            userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba náhledu: " + (textChyby(err)),
             source: "Invoices.previewInvoice",
           });
         }
@@ -1270,7 +1271,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.url_failed",
           error: err,
-          userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba náhledu: " + (textChyby(err)),
           source: "Invoices.previewInvoice",
         });
       }
@@ -1324,7 +1325,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       reportError({
         code: "invoices.send_email_failed",
         error: err,
-        userMessage: "Chyba odesílání: " + (err instanceof Error ? err.message : String(err)),
+        userMessage: "Chyba odesílání: " + (textChyby(err)),
         source: "Invoices.handleSendEmail",
       });
     } finally {

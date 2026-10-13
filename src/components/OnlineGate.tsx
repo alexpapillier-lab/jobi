@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState, msSinceSupabaseResponse } from "../lib/supabaseClient";
 
+import { textChyby } from "../utils/errorNormalizer";
 type OnlineGateProps = {
   children: React.ReactNode;
 };
 
 /** Vrátí uživatelsky srozumitelnou chybovou zprávu podle typu chyby */
 function getConnectionErrorMessage(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = textChyby(err);
   const lower = msg.toLowerCase();
 
   if (

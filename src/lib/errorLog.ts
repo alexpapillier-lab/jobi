@@ -13,6 +13,7 @@
  */
 
 import { getSupabaseClient } from "./supabaseClient";
+import { textChyby } from "../utils/errorNormalizer";
 
 /**
  * ID běhu aplikace. Vzniká jednou při načtení a drží se do zavření okna.
@@ -117,7 +118,8 @@ export async function logError({ code, error, source, serviceId, context }: LogE
   try {
     if (!allowedByRateLimit()) return;
 
-    const rawMessage = error instanceof Error ? error.message : String(error ?? "");
+    // Supabase vrací chybu jako obyčejný objekt – String() z něj dělal „[object Object]“.
+    const rawMessage = error == null ? "" : textChyby(error);
     const message = scrubPII(rawMessage) || "(bez hlášky)";
 
     const dedupeKey = `${code}|${message}`;
@@ -136,10 +138,21 @@ export async function logError({ code, error, source, serviceId, context }: LogE
 
     lastSentByKey.set(dedupeKey, Date.now());
 
+    // Servis: když ho volající nepředal, vezme se aktivní z prohlížeče – bez
+    // něj se v Owner → Chyby nedá filtrovat, komu co padá.
+    let servis = serviceId ?? null;
+    if (!servis) {
+      try { servis = localStorage.getItem("jobsheet_active_service_id_v1"); } catch { /* bez úložiště */ }
+    }
+    // Automatické testy (Playwright nastaví navigator.webdriver) chyby
+    // vyvolávají schválně – výpadek sítě, odmítnutý zápis. Označí se, aby je
+    // přehled chyb ani hlídač provozu nebral jako skutečné.
+    const automat = typeof navigator !== "undefined" && navigator.webdriver === true;
+
     await (client.from("error_logs") as unknown as {
       insert: (v: Record<string, unknown>) => Promise<unknown>;
     }).insert({
-      service_id: serviceId ?? null,
+      service_id: servis,
       user_id: userId,
       code,
       message,
@@ -148,7 +161,7 @@ export async function logError({ code, error, source, serviceId, context }: LogE
       // Vývojový server sype chyby, které zákazník nikdy neuvidí (hlavně
       // „Should have a queue“ po hot reloadu). Nemažou se, jen se označí,
       // aby je hlídač provozu nebral jako výpadek.
-      context: { ...(context ?? {}), session_id: SESSION_ID, ...(import.meta.env.DEV ? { dev: true } : {}) },
+      context: { ...(context ?? {}), session_id: SESSION_ID, ...(import.meta.env.DEV ? { dev: true } : {}), ...(automat ? { automat: true } : {}) },
       app_version: import.meta.env.VITE_APP_VERSION ?? null,
       platform: detectPlatform(),
     });

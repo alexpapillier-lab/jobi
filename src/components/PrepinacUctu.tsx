@@ -11,6 +11,7 @@ import {
 import { klicRelace, supabase } from "../lib/supabaseClient";
 import { clearOnSignOut } from "../lib/storageInvalidation";
 
+import { textChyby } from "../utils/errorNormalizer";
 /**
  * Přepínač účtů a zámek obrazovky na sdíleném počítači.
  *
@@ -233,7 +234,7 @@ export function PrepinacUctu({ userId, email, profil }: {
         // Stránka se znovu načítá – nic dalšího.
       }
     } catch (e) {
-      const zprava = e instanceof Error ? e.message : String(e);
+      const zprava = textChyby(e);
       if (zprava.includes("nemá nastavený PIN")) {
         // I přihlášený bez PINu (třeba si ho mezitím zrušil) se ze zámku dostane heslem.
         otevriHeslem(vybrany === "ja" ? { email: email ?? "", userId, duvod: BEZ_PINU } : { email: vybrany.email ?? "", userId: vybrany.userId, duvod: BEZ_PINU });
@@ -273,7 +274,7 @@ export function PrepinacUctu({ userId, email, profil }: {
          Do té doby zůstává formulář „pracuje“, ať se nedá odeslat znovu. */
       await pridejUcetHeslem(novyEmail, noveHeslo, profil, heslem.userId, heslem.vzdyNovyPin);
     } catch (err) {
-      setChyba(err instanceof Error ? err.message : String(err));
+      setChyba(textChyby(err));
       setPracuje(false);
     }
   };
@@ -289,7 +290,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       await nastavPin(novyPin);
       dokonciPrepnuti();
     } catch (err) {
-      setChyba(err instanceof Error ? err.message : String(err));
+      setChyba(textChyby(err));
       setPracuje(false);
     }
   };
@@ -303,7 +304,7 @@ export function PrepinacUctu({ userId, email, profil }: {
       clearOnSignOut();
       await supabase?.auth.signOut({ scope: "local" });
     } catch (err) {
-      setChyba(err instanceof Error ? err.message : String(err));
+      setChyba(textChyby(err));
     } finally {
       setPracuje(false);
     }

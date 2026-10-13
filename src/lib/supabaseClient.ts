@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { devLog, devWarn } from "./devLog";
 import { authStorage } from "./authStorage";
 
+import { textChyby } from "../utils/errorNormalizer";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -37,7 +38,7 @@ function overNativniFetch(): Promise<NativniStav> {
       const r = await window.fetch(`${supabaseUrl}/auth/v1/health`, { headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : undefined });
       nativniFetchStav = r.status > 0 ? "ano" : "ne";
     } catch (e) {
-      devWarn(`${LOG} nativní fetch ve webview neprošel, zůstává HTTP plugin:`, e instanceof Error ? e.message : String(e));
+      devWarn(`${LOG} nativní fetch ve webview neprošel, zůstává HTTP plugin:`, textChyby(e));
       nativniFetchStav = "ne";
     }
     devLog(`${LOG} nativní fetch: ${nativniFetchStav}`);

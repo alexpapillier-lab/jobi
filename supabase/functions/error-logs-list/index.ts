@@ -11,6 +11,7 @@
  *     sinceHours?: number, limit?: number }
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { TESTOVACI_UCTY } from "../_shared/testovaciUcty.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -81,6 +82,14 @@ serve(async (req) => {
     if (typeof body?.serviceId === "string" && body.serviceId) q = q.eq("service_id", body.serviceId);
     if (typeof body?.code === "string" && body.code) q = q.eq("code", body.code);
     if (typeof body?.platform === "string" && body.platform) q = q.eq("platform", body.platform);
+    // Chyby z E2E testů a vývojového serveru jsou schválně vyvolané – bez
+    // výslovného „vcetneTestu“ se neukazují (viz _shared/testovaciUcty.ts).
+    if (body?.vcetneTestu !== true) {
+      q = q
+        .not("user_id", "in", `(${TESTOVACI_UCTY.join(",")})`)
+        .or("context->>dev.is.null,context->>dev.neq.true")
+        .or("context->>automat.is.null,context->>automat.neq.true");
+    }
 
     const { data: logs, error: logsErr } = await q;
     if (logsErr) {

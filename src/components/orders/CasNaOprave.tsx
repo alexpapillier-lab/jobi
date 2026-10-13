@@ -6,6 +6,7 @@ import { MAX_OTEVRENY_USEK_HODIN, VYCHOZI_ZAOKROUHLENI_PRACE, ZAOKROUHLENI_PRACE
 import { formatCurrency } from "../../lib/invoiceMath";
 import { JMENO_SYSTEM, jeRootOwnerId, skrytyRootOwner } from "../../lib/rootOwner";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Karta „Čas na opravě“ v detailu zakázky (jen když to servis zapnul).
  *
@@ -114,7 +115,7 @@ export function CasNaOprave({
       await spustPraci(serviceId, ticketId);
       await nacti();
     } catch (e) {
-      showToast("Práci se nepodařilo spustit: " + (e instanceof Error ? e.message : String(e)), "error");
+      showToast("Práci se nepodařilo spustit: " + (textChyby(e)), "error");
     } finally {
       setCeka(false);
     }

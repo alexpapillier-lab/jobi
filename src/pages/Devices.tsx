@@ -35,6 +35,7 @@ import {
   type Selection,
 } from "./Devices/types";
 
+import { textChyby } from "../utils/errorNormalizer";
 /**
  * Zařízení a opravy.
  *
@@ -1139,7 +1140,7 @@ DETALY: Výměna opotřebované baterie
       stahnoutSoubor(vytvorXlsx(listCeniku(data)), nazevSouboruCeniku(), XLSX_MIME);
       showToast(`Ceník exportován: ${data.repairs.length} ${plural(data.repairs.length, ["oprava", "opravy", "oprav"])}`, "success");
     } catch (e) {
-      showToast("Export se nepodařil: " + (e instanceof Error ? e.message : String(e)), "error");
+      showToast("Export se nepodařil: " + (textChyby(e)), "error");
     }
   };
 

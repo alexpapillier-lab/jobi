@@ -11,6 +11,7 @@ import { maNejasneOpravy, prectiCastku, rozhodnuti, type RozhodnutiProvize } fro
 import { useAuth } from "../../auth/AuthProvider";
 import { ProvizeStatistiky } from "./ProvizeStatistiky";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Provize majitele aplikace ze zakázek servisu. Jen pro root ownera – data
  * drží tabulky provize_*, které RLS pouští jen jemu (ani vlastník servisu je
@@ -245,7 +246,7 @@ export function ProvizePanel({ services }: { services: Service[] }) {
       if (error || r?.error) throw new Error(r?.error ?? error?.message ?? "neznámá chyba");
       showToast(`Souhrn vyúčtování odeslán na ${r.prijemce}`, "success");
     } catch (e) {
-      showToast(`E-mail se nepodařilo odeslat: ${e instanceof Error ? e.message : String(e)}`, "error");
+      showToast(`E-mail se nepodařilo odeslat: ${textChyby(e)}`, "error");
     } finally {
       setPosilamMail(null);
     }

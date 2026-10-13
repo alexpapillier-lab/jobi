@@ -5,6 +5,7 @@ import { normalizujOdmeny } from "../lib/odmeny";
 import { SearchIcon, XIcon } from "./icons";
 import { MIN_DELKA_DOTAZU, hledejVPruvodcich, type Pruvodce, type StavPruvodcu } from "../lib/pruvodci";
 
+import { textChyby } from "../utils/errorNormalizer";
 /**
  * Panel nápovědy (otazník v postranním panelu).
  *
@@ -180,7 +181,7 @@ export function NapovedaPanel({
       setZpravy((z) => [...z, { role: "assistant", content: String(d.odpoved ?? ""), akce }]);
       provedAkce(akce);
     } catch (e) {
-      setZpravy((z) => [...z, { role: "assistant", content: `Nepodařilo se odpovědět: ${e instanceof Error ? e.message : String(e)}` }]);
+      setZpravy((z) => [...z, { role: "assistant", content: `Nepodařilo se odpovědět: ${textChyby(e)}` }]);
     } finally {
       setPosilam(false);
     }

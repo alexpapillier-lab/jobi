@@ -10,7 +10,7 @@ function getErrorCode(error: unknown): string | undefined {
  * ne instanci Error – `String(err)` z něj udělá „[object Object]“ a přesně to
  * uživatel viděl místo hlášky, proč se něco neuložilo.
  */
-function textChyby(error: unknown): string {
+export function textChyby(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {

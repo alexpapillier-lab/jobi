@@ -14,7 +14,7 @@ import { showToast } from "../../components/Toast";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../../lib/supabaseClient";
 import { uploadDiagnosticPhotoWithWatermark, deleteDiagnosticPhotoFromStorage, isDiagnosticPhotoStorageUrl } from "../../lib/diagnosticPhotosStorage";
 import { reportSilent } from "../../lib/reportError";
-import { normalizeError } from "../../utils/errorNormalizer";
+import { textChyby, normalizeError } from "../../utils/errorNormalizer";
 import { popisDoOdkazu } from "../../lib/diagnosticPhotoWatermark";
 import { BARVA_SEKCE, stylSekce } from "../../lib/sekceDetailu";
 import type { DirtyFlags, FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
@@ -192,7 +192,7 @@ export function DetailDiagnostika({
                       return;
                     } catch (err) {
                       lastErr = err;
-                      const msg = err instanceof Error ? err.message : String(err);
+                      const msg = textChyby(err);
                       if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
                         resetTauriFetchState();
                         continue;
@@ -355,7 +355,7 @@ export function DetailDiagnostika({
                     return;
                   } catch (err) {
                     lastErr = err;
-                    const msg = err instanceof Error ? err.message : String(err);
+                    const msg = textChyby(err);
                     if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
                       resetTauriFetchState();
                       continue;
