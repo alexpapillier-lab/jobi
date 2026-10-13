@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { showToast } from "../../components/Toast";
 import { POPIS_UDALOSTI, UDALOSTI, type Udalost } from "../../lib/objednavky";
+import { mergeServiceConfig, nactiServiceConfig } from "../../lib/serviceSettingsSync";
+import { nastaveniFormulare, type NastaveniFormulare } from "../../../supabase/functions/_shared/objednavky";
 
 const VEREJNE_API = "https://api.appjobi.com/v1";
 
@@ -51,7 +53,8 @@ function kdy(x: string | null) {
  * zkušební webhook) a log posledních doručení. Webhook nastavuje jen
  * majitel/správce – RPC api_webhook_* to hlídají i na serveru.
  */
-export function ApiObjednavkyNastaveni({ activeServiceId, tokeny }: { activeServiceId: string | null; tokeny: TokenRadek[] }) {
+export function ApiObjednavkyNastaveni({ activeServiceId, tokeny, slug }: { activeServiceId: string | null; tokeny: TokenRadek[]; slug: string | null }) {
+  const [formular, setFormular] = useState<NastaveniFormulare | null>(null);
   const [webhook, setWebhook] = useState<Webhook | null>(null);
   const [url, setUrl] = useState("");
   const [udalosti, setUdalosti] = useState<Udalost[]>([...UDALOSTI]);
@@ -86,6 +89,31 @@ export function ApiObjednavkyNastaveni({ activeServiceId, tokeny }: { activeServ
   }, [activeServiceId]);
 
   useEffect(() => { void nacti(); }, [nacti]);
+
+  /* Vložitelný formulář Jobi: service_settings.config.objednavky.formular.
+     Bez načteného nastavení se nic neukládá (přepsalo by úvodní text). */
+  useEffect(() => {
+    if (!activeServiceId) return;
+    let zruseno = false;
+    void nactiServiceConfig(activeServiceId).then((n) => {
+      if (zruseno) return;
+      if (n.stav === "chyba") { setFormular(null); return; }
+      const cfg = n.stav === "ok" ? (n.config as Record<string, unknown>) : {};
+      setFormular(nastaveniFormulare((cfg.objednavky as Record<string, unknown> | undefined)?.formular));
+    });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+
+  const ulozFormular = useCallback(async (dalsi: NastaveniFormulare) => {
+    if (!activeServiceId) return;
+    if (dalsi.podminkyUrl && !/^https:\/\/\S+$/i.test(dalsi.podminkyUrl)) {
+      showToast("Odkaz na podmínky musí začínat https://", "error");
+      return;
+    }
+    setFormular(dalsi);
+    const r = await mergeServiceConfig(activeServiceId, { objednavky: { formular: dalsi } } as never);
+    if (r.error) showToast(`Nastavení formuláře se nepodařilo uložit: ${r.error}`, "error");
+  }, [activeServiceId]);
 
   const uloz = useCallback(async () => {
     if (!activeServiceId || !supabase) return;
@@ -267,6 +295,52 @@ export function ApiObjednavkyNastaveni({ activeServiceId, tokeny }: { activeServ
           </p>
         </div>
       )}
+
+      <div data-tour="api-objednavky-formular">
+        <div style={nadpis}>Formulář Jobi pro váš web</div>
+        <p style={popis}>
+          Nemáte na webu vlastní formulář? Vložte tenhle. Zákazník vyplní kontakt, zařízení
+          (s výběrem z vašeho ceníku), závadu a jestli zařízení přinese osobně, nebo pošle.
+          Zaškrtnutý souhlas s podmínkami se uloží jako elektronické odsouhlasení a vytiskne
+          se na zakázkovém listu. Objednávka přijde do Příchozích objednávek jako „formulář Jobi“.
+        </p>
+        {formular ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={formular.zapnuto} onChange={(e) => void ulozFormular({ ...formular, zapnuto: e.target.checked })} />
+              <span style={{ color: "var(--text)" }}>Formulář je zapnutý</span>
+            </label>
+            <textarea
+              placeholder="Úvodní text nad formulářem (nepovinné)"
+              defaultValue={formular.uvod}
+              maxLength={400}
+              onBlur={(e) => { if (e.target.value.trim() !== formular.uvod) void ulozFormular({ ...formular, uvod: e.target.value.trim() }); }}
+              style={{ ...vstup, minHeight: 60, fontFamily: "inherit" }}
+            />
+            <input
+              placeholder="Odkaz na obchodní podmínky (https://…, nepovinné)"
+              defaultValue={formular.podminkyUrl ?? ""}
+              maxLength={500}
+              onBlur={(e) => { const v = e.target.value.trim() || null; if (v !== formular.podminkyUrl) void ulozFormular({ ...formular, podminkyUrl: v }); }}
+              style={vstup}
+            />
+            {formular.zapnuto && slug && (
+              <>
+                <pre style={kod}>{`<div id="jobi-objednavka"></div>
+<script src="${supabaseUrl}/functions/v1/public-order-form/embed.js?service=${slug}"></script>`}</pre>
+                <div>
+                  <Tlacitko onClick={() => void zkopiruj(`<div id="jobi-objednavka"></div>\n<script src="${supabaseUrl}/functions/v1/public-order-form/embed.js?service=${slug}"></script>`)}>Kopírovat kód</Tlacitko>
+                </div>
+              </>
+            )}
+            {formular.zapnuto && !slug && (
+              <p style={{ ...popis, color: "rgba(239,68,68,0.95)" }}>Formulář potřebuje adresu servisu – vyplňte ji v Základních údajích.</p>
+            )}
+          </div>
+        ) : (
+          <p style={popis}>Nastavení formuláře se nepodařilo načíst.</p>
+        )}
+      </div>
 
       <div data-tour="api-objednavky-log">
         <div style={nadpis}>Poslední doručení</div>

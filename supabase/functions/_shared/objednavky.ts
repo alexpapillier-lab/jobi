@@ -611,3 +611,92 @@ function stabilniJson(v: unknown): string {
   }
   return JSON.stringify(v);
 }
+
+// ── Vložitelný formulář Jobi (public-order-form) ────────────────────────────
+
+/** Nastavení formuláře v service_settings.config.objednavky.formular. */
+export type NastaveniFormulare = { zapnuto: boolean; uvod: string; podminkyUrl: string | null };
+
+export function nastaveniFormulare(raw: unknown): NastaveniFormulare {
+  const r = jeObjekt(raw) ? raw : {};
+  const url = typeof r.podminkyUrl === "string" && /^https:\/\/\S+$/i.test(r.podminkyUrl.trim()) ? r.podminkyUrl.trim().slice(0, 500) : null;
+  return {
+    zapnuto: r.zapnuto === true,
+    uvod: typeof r.uvod === "string" ? r.uvod.trim().slice(0, 400) : "",
+    podminkyUrl: url,
+  };
+}
+
+/** Číslo objednávky z formuláře: JOBI-RRMMDD-XXXXXX (bez 0/O/1/I, ať se dá nadiktovat). */
+export function novyKodObjednavky(ted: Date = new Date()): string {
+  const abeceda = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const bajty = new Uint8Array(6);
+  crypto.getRandomValues(bajty);
+  const nahodne = [...bajty].map((b) => abeceda[b % abeceda.length]).join("");
+  const d = ted.toISOString().slice(2, 10).replace(/-/g, "");
+  return `JOBI-${d}-${nahodne}`;
+}
+
+/**
+ * Tělo formuláře → sloupce web_objednavky (bez service_id a čísla).
+ * Povinné: jméno, telefon, zařízení, závada a zaškrtnutý souhlas; při
+ * předání poštou i adresa pro vrácení. Souhlas se uloží jako elektronické
+ * odsouhlasení (checkbox, čas, IP, prohlížeč, odkaz na podmínky).
+ */
+export function formularNaObjednavku(
+  telo: Record<string, unknown>,
+  kontext: { ip: string; userAgent: string; podminkyUrl: string | null },
+  ted: Date = new Date(),
+): { hodnoty: Record<string, unknown> } | string {
+  const t = (k: string, max: number) => (typeof telo[k] === "string" ? (telo[k] as string).replace(new RegExp(RIDICI.source, "g"), "").trim().slice(0, max) : "");
+  const jmeno = t("name", 200);
+  const telefon = t("phone", 40);
+  const email = t("email", 200);
+  const zarizeni = t("device", 200);
+  const zavada = t("issue", 4000);
+  if (jmeno.length < 2) return "Vyplňte jméno";
+  if (telefon.replace(/\D/g, "").length < 9) return "Vyplňte platný telefon";
+  if (email && !JE_EMAIL.test(email)) return "E-mail nevypadá platně";
+  if (zarizeni.length < 2) return "Vyplňte zařízení";
+  if (zavada.length < 2) return "Popište, co je potřeba opravit";
+  if (telo.consent !== true) return "Bez souhlasu s podmínkami objednávku odeslat nejde";
+  const postou = telo.handoff === "postou";
+  const ulice = t("street", 200);
+  const mesto = t("city", 120);
+  const psc = t("zip", 20);
+  if (postou && (!ulice || !mesto)) return "Vyplňte adresu pro vrácení";
+  const uuid = (k: string) => (typeof telo[k] === "string" && JE_UUID.test(telo[k] as string) ? (telo[k] as string).toLowerCase() : null);
+  const adresa = [ulice, [psc, mesto].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const ip = JE_IP.test(kontext.ip) ? kontext.ip : undefined;
+  const souhlas: Souhlas = {
+    id: "", // doplní edge funkce podle čísla objednávky
+    signed_at: ted.toISOString(),
+    method: "checkbox",
+    signer_name: jmeno,
+    ...(ip ? { ip } : {}),
+    ...(kontext.userAgent ? { user_agent: kontext.userAgent.slice(0, 500) } : {}),
+    ...(kontext.podminkyUrl ? { terms_url: kontext.podminkyUrl } : {}),
+    document_version: "formulář Jobi",
+    received_at: ted.toISOString(),
+  };
+  return {
+    hodnoty: {
+      zakaznik_jmeno: jmeno,
+      zakaznik_telefon: telefon,
+      zakaznik_email: email || null,
+      zakaznik_ulice: postou ? ulice : null,
+      zakaznik_mesto: postou ? mesto : null,
+      zakaznik_psc: postou ? psc || null : null,
+      zarizeni,
+      sn_imei: t("serial", 100) || null,
+      popis_zavady: zavada,
+      model_id: uuid("model_id"),
+      repair_id: uuid("repair_id"),
+      doprava_tam: postou ? "Poštou" : "Osobně",
+      doprava_zpet: postou ? "Poštou" : "Osobně",
+      adresa_zpet: postou ? adresa : null,
+      poznamka: t("note", 4000) || null,
+      souhlas,
+    },
+  };
+}

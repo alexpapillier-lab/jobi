@@ -635,7 +635,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         ať je dohledatelné, co se kdy dělo.
       </p>
 
-      {maCenik && <ApiObjednavkyNastaveni activeServiceId={activeServiceId} tokeny={tokeny} />}
+      {maCenik && <ApiObjednavkyNastaveni activeServiceId={activeServiceId} tokeny={tokeny} slug={slug} />}
     </div>
   );
 }

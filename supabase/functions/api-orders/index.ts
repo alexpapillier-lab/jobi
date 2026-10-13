@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { NAZEV_MODULU, modulProRozsah, otisk, PREFIX, type Rozsah } from "../_shared/tokeny.ts";
 import { zkontrolujWebhook } from "../_shared/webhook.ts";
 import {
@@ -73,7 +73,8 @@ const LIMIT_ZA_MINUTU = 60;
 const BUCKET = "diagnostic-photos";
 const ROZSAH: Rozsah = "orders";
 
-type Svc = ReturnType<typeof createClient>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- tabulky nejsou v typech klienta
+type Svc = SupabaseClient<any, any, any>;
 
 const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, souhlas, poznamka, data, ticket_id, created_at, updated_at, dorazilo_at, prevedeno_at";
 
@@ -139,7 +140,7 @@ serve(async (req) => {
     return json({ error: "Chybí token. Posílá se jako Authorization: Bearer jobi_…" }, 401);
   }
 
-  const svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const svc: Svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   const { data: zaznam } = await svc
     .from("api_tokens")

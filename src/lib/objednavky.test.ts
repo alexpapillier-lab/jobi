@@ -23,6 +23,9 @@ import {
   povoleneZmeny,
   overSouhlas,
   slucSouhlas,
+  formularNaObjednavku,
+  nastaveniFormulare,
+  novyKodObjednavky,
   typObrazku,
   udalostiZmenyStavu,
   type PolozkaObjednavky,
@@ -425,5 +428,38 @@ describe("elektronické odsouhlasení (consent)", () => {
     expect(detailSouhlasu(souhlas)).toContainEqual(["Způsob", "zaškrtnutím souhlasu"]);
     expect(mapujPodpisPrevzeti({ intake_signature_url: "", intake_consent: { bez: "id" } })).toEqual({});
     expect(obrazekPodpisuPrevzeti({})).toBeUndefined();
+  });
+});
+
+describe("vložitelný formulář Jobi", () => {
+  const kontext = { ip: "203.0.113.7", userAgent: "Mozilla/5.0", podminkyUrl: "https://servis.cz/podminky" };
+  const ted = new Date("2026-10-13T12:00:00Z");
+  const zaklad = { name: "Jan Novák", phone: "777 123 456", device: "iPhone 13", issue: "Prasklý displej", consent: true };
+
+  it("osobní předání: sloupce objednávky a souhlas zaškrtnutím s IP a prohlížečem", () => {
+    const v = formularNaObjednavku({ ...zaklad, model_id: "0A7587F1-1111-4222-8333-444455556666", repair_id: "nesmysl", handoff: "osobne", street: "Ignoruje se" }, kontext, ted);
+    if (typeof v === "string") throw new Error(v);
+    expect(v.hodnoty).toMatchObject({
+      zakaznik_jmeno: "Jan Novák", zarizeni: "iPhone 13", popis_zavady: "Prasklý displej", doprava_tam: "Osobně", doprava_zpet: "Osobně",
+      zakaznik_ulice: null, adresa_zpet: null, model_id: "0a7587f1-1111-4222-8333-444455556666", repair_id: null,
+    });
+    expect(v.hodnoty.souhlas).toMatchObject({ method: "checkbox", signed_at: ted.toISOString(), ip: "203.0.113.7", user_agent: "Mozilla/5.0", terms_url: "https://servis.cz/podminky", signer_name: "Jan Novák" });
+  });
+
+  it("poštou chce adresu pro vrácení; bez souhlasu, jména nebo závady neprojde", () => {
+    expect(formularNaObjednavku({ ...zaklad, handoff: "postou" }, kontext, ted)).toMatch(/adresu/);
+    const v = formularNaObjednavku({ ...zaklad, handoff: "postou", street: "Dlouhá 1", city: "Praha", zip: "11000" }, kontext, ted);
+    expect(typeof v !== "string" && v.hodnoty).toMatchObject({ doprava_tam: "Poštou", adresa_zpet: "Dlouhá 1, 11000 Praha", zakaznik_mesto: "Praha" });
+    expect(formularNaObjednavku({ ...zaklad, consent: false }, kontext, ted)).toMatch(/souhlasu/);
+    expect(formularNaObjednavku({ ...zaklad, consent: "true" }, kontext, ted)).toMatch(/souhlasu/);
+    expect(formularNaObjednavku({ ...zaklad, name: "J" }, kontext, ted)).toMatch(/jméno/);
+    expect(formularNaObjednavku({ ...zaklad, issue: "" }, kontext, ted)).toMatch(/opravit/);
+    expect(formularNaObjednavku({ ...zaklad, email: "x@" }, kontext, ted)).toMatch(/E-mail/);
+  });
+
+  it("číslo objednávky a nastavení formuláře", () => {
+    expect(novyKodObjednavky(ted)).toMatch(/^JOBI-261013-[2-9A-HJ-NP-Z]{6}$/);
+    expect(nastaveniFormulare({ zapnuto: true, uvod: " Ahoj ", podminkyUrl: "javascript:alert(1)" })).toEqual({ zapnuto: true, uvod: "Ahoj", podminkyUrl: null });
+    expect(nastaveniFormulare(undefined)).toEqual({ zapnuto: false, uvod: "", podminkyUrl: null });
   });
 });
