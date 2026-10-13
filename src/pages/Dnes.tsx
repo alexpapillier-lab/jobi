@@ -21,6 +21,8 @@ import {
 import { RadekSekce, SekceKarta, type TonSekce } from "./Dnes/SekceKarta";
 import { useDnesData, usePridelovaniTechnika } from "./Dnes/useDnesData";
 import { nactiRozsahDnes, ulozRozsahDnes } from "./Dnes/predvolby";
+import { useObjednavky, zalozitZakazkuZObjednavky, StitekObjednavky } from "./Orders/PrichoziObjednavky";
+import { jeOtevrena, popisDopravy, sledovaciOdkazy } from "../lib/objednavky";
 
 /**
  * Dnes – jedna obrazovka pro technika bez klikání.
@@ -125,6 +127,17 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
     ulozRozsahDnes(r);
   }, []);
 
+  /* Objednávky z webu (API, formulář): co dorazilo nahoře, pak co je na cestě. */
+  const { objednavky, nacteno: objednavkyNacteny } = useObjednavky(activeServiceId);
+  const objednavkyKVyrizeni = useMemo(() => {
+    const poradi: Record<string, number> = { dorazilo: 0, na_ceste: 1, nova: 2 };
+    return objednavky
+      .filter((o) => jeOtevrena(o.stav) && (!activeBranchId || !o.branch_id || o.branch_id === activeBranchId))
+      .sort((a, b) => (poradi[a.stav] ?? 9) - (poradi[b.stav] ?? 9) || b.created_at.localeCompare(a.created_at));
+  }, [objednavky, activeBranchId]);
+  const pocetDorazilo = objednavkyKVyrizeni.filter((o) => o.stav === "dorazilo").length;
+  const pocetNaCeste = objednavkyKVyrizeni.filter((o) => o.stav === "na_ceste").length;
+
   const rezervaceDnes = useMemo(() => rezervace.map((r) => mapujRezervaciDnes(r as unknown as Record<string, unknown>)), [rezervace]);
   const sekce = useMemo(
     () => roztridDnes({ zakazky, stavy: statuses, zakazkySDilemNaCeste: dilNaCeste, rezervace: rezervaceDnes, mujId, jenMoje: rozsah === "moje", ted }),
@@ -170,6 +183,7 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
     sekce.dnes_termin.length > 0 ? `${sekce.dnes_termin.length} dnes dokončit` : null,
     sekce.rezervace.length > 0 ? `${sekce.rezervace.length} ${sekce.rezervace.length === 1 ? "rezervace" : sekce.rezervace.length <= 4 ? "rezervace" : "rezervací"}` : null,
     sekce.k_prevzeti.length > 0 ? `${sekce.k_prevzeti.length} k převzetí` : null,
+    pocetDorazilo > 0 ? `${pocetDorazilo} ${pocetDorazilo === 1 ? "zásilka dorazila" : pocetDorazilo <= 4 ? "zásilky dorazily" : "zásilek dorazilo"}` : null,
   ].filter(Boolean).join(" · ");
   const pobockaText = isMulti && activeBranch ? ` · ${activeBranch.name}` : "";
 
@@ -271,6 +285,36 @@ export default function Dnes({ activeServiceId, onZalozitZakazku }: Props) {
             );
           })}
         </SekceKarta>
+
+        {/* Jen servisům, kterým objednávky z webu chodí – jinak by karta byla jen prázdné místo. */}
+        {objednavkyNacteny && objednavky.length > 0 && (
+          <SekceKarta
+            dataTour="dnes-objednavky"
+            titulek="Objednávky z webu"
+            popis={`Zařízení poslaná přes web. Dorazilo ${pocetDorazilo}, na cestě ${pocetNaCeste}.`}
+            pocet={objednavkyKVyrizeni.length}
+            ton="info"
+            prazdno="Žádná objednávka nečeká. Vyřízené najdete v Zakázkách nahoře v Příchozích objednávkách."
+            akce={<Button variant="ghost" size="sm" onClick={() => otevriStranku("orders")}>Zakázky</Button>}
+          >
+            {objednavkyKVyrizeni.map((o) => {
+              const zasilka = sledovaciOdkazy(o).find((x) => x.smer !== "zpet");
+              return (
+                <RadekSekce
+                  key={o.id}
+                  onClick={() => zalozitZakazkuZObjednavky(o)}
+                  kod={o.externi_cislo}
+                  titulek={o.zakaznik_jmeno || "Zákazník"}
+                  podtitulek={[o.zarizeni, o.pozadovana_oprava || o.popis_zavady].filter(Boolean).join(" · ")}
+                  poznamka={[popisDopravy(o), zasilka?.text].filter(Boolean).join(" · ")}
+                  poznamkaTon={o.stav === "dorazilo" ? "success" : "info"}
+                  vpravo={<StitekObjednavky stav={o.stav} />}
+                  title="Založit zakázku s údaji z objednávky"
+                />
+              );
+            })}
+          </SekceKarta>
+        )}
 
         <SekceKarta
           dataTour="dnes-k-prevzeti"

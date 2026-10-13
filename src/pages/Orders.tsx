@@ -30,6 +30,7 @@ import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
+import { odesliWebhookyHned, prevedObjednavku } from "../lib/objednavky";
 import { sloucZakazkuZDb, zapisZakazkyBezi } from "../lib/slouceniZakazky";
 import { drzeneKlice, poleZFormulare, sloucSRozepsanym, type PoleZakazky } from "../lib/editaceZamek";
 import { sjetNaKartu } from "../components/orders/PostupZakazky";
@@ -114,6 +115,7 @@ import { UpravaZakazky } from "./Orders/UpravaZakazky";
 import { DetailDalsiKarty } from "./Orders/DetailDalsiKarty";
 import { DetailOpravy } from "./Orders/DetailOpravy";
 import { DetailDiagnostika } from "./Orders/DetailDiagnostika";
+import { PrichoziObjednavky } from "./Orders/PrichoziObjednavky";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
@@ -1763,6 +1765,7 @@ export default function Orders({
 
     const chosenBranch = branchById(newDraft.branchId) ?? branchForNew;
     const rezervaceId = newDraft.rezervaceId;
+    const objednavkaId = newDraft.objednavkaId;
     createTicketAction({
       newDraft,
       branch: chosenBranch ? { id: chosenBranch.id, code: chosenBranch.code } : null,
@@ -1793,6 +1796,21 @@ export default function Orders({
               window.dispatchEvent(new CustomEvent("jobsheet:rezervace-zmena"));
             })
             .catch((e) => devLog("[rezervace] označení převedené selhalo", e));
+        }
+        // Objednávka z webu → převedená; web dostane webhook order.converted
+        // (posílá se hned, jinak do minuty cronem).
+        if (first && objednavkaId) {
+          const sid = activeServiceId;
+          prevedObjednavku(objednavkaId, first.id)
+            .then((zmeneno) => {
+              if (!zmeneno) showToast("Objednávku mezitím někdo vyřídil; zakázka je založená.", "info");
+              window.dispatchEvent(new CustomEvent("jobsheet:objednavky-zmena"));
+              if (zmeneno && sid) void odesliWebhookyHned(sid);
+            })
+            .catch((e) => {
+              devLog("[objednavky] převod selhal", e);
+              showToast("Zakázka je založená, ale objednávku se nepodařilo označit jako převedenou.", "error");
+            });
         }
         const config = await loadDocumentsConfigFromDB(activeServiceId);
         if (first && config?.autoPrint?.ticketListOnCreate) {
@@ -1940,6 +1958,8 @@ export default function Orders({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Objednávky z webu (API, formulář) – bez objednávek se neukazuje. */}
+      <PrichoziObjednavky activeServiceId={activeServiceId} onOpenTicket={(id) => setDetailId(id)} />
       <SeznamZakazek
         activeServiceId={activeServiceId}
         isAdmin={isAdmin}

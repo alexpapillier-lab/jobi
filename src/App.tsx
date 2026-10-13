@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Rezervace } from "./lib/rezervace";
+import type { WebObjednavka } from "./lib/objednavky";
 import { useIsNarrow } from "./hooks/useIsNarrow";
 import { createPortal } from "react-dom";
 import Orders from "./pages/Orders";
@@ -387,7 +388,7 @@ export default function App() {
   const [openCustomerIntent, setOpenCustomerIntent] = useState<OpenCustomerIntent | null>(null);
 
   // create new order intent (prefill)
-  const [newOrderPrefill, setNewOrderPrefill] = useState<{ customerId?: string; rezervace?: Rezervace } | null>(null);
+  const [newOrderPrefill, setNewOrderPrefill] = useState<{ customerId?: string; rezervace?: Rezervace; objednavka?: WebObjednavka } | null>(null);
   const [invoicePrefill, setInvoicePrefill] = useState<any>(null);
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
 
@@ -1031,6 +1032,18 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
     window.addEventListener("jobsheet:request-new-order" as any, onReq);
     return () => window.removeEventListener("jobsheet:request-new-order" as any, onReq);
   }, [activePage]);
+
+  // Objednávka z webu (Zakázky → Příchozí objednávky, Dnes) → příjem předvyplněný z objednávky.
+  useEffect(() => {
+    const onObjednavka = (e: Event) => {
+      const objednavka = (e as CustomEvent<{ objednavka?: WebObjednavka }>).detail?.objednavka;
+      if (!objednavka) return;
+      setNewOrderPrefill({ objednavka });
+      setActivePage("orders");
+    };
+    window.addEventListener("jobsheet:zalozit-z-objednavky", onObjednavka);
+    return () => window.removeEventListener("jobsheet:zalozit-z-objednavky", onObjednavka);
+  }, []);
 
   // Po přihlášení: pokud je uložený invite token, nejdřív vyřídit pozvánku; při chybě automatický retry + refresh
   useEffect(() => {
