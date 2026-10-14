@@ -21,6 +21,7 @@ import {
   type ZakazkaProZebricek,
 } from "../_shared/statistikyReport.ts";
 import { vykresliReportPdf, type KpiReportu, type Pisma, type ReportData } from "./pdf.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * Report statistik e-mailem (PDF v příloze).
@@ -548,7 +549,7 @@ async function odeslatEmail(prijemci: string[], report: SestavenyReport, zkusebn
     "Celý report je v PDF v příloze.",
   ].join("\n");
 
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await resendFetch({
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({

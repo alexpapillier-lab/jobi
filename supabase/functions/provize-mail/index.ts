@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { escapeHtml } from "../_shared/html.ts";
 import { formatujCastku, formatujDatum } from "../_shared/penize.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * E-mail se souhrnem vyúčtování provizí – to, co dřív posílal Apps Script nad
@@ -105,7 +106,7 @@ serve(async (req) => {
       ...polozky.map((p) => `${p.zakazka_kod}${p.poradi > 0 ? " (doplatek)" : ""}  ${kc(p.zaklad)}  →  ${kc(p.provize)}`),
     ].join("\n");
 
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await resendFetch({
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({ from, to: [prijemce], subject: predmet, text, html }),

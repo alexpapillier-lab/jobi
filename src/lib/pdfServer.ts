@@ -131,12 +131,32 @@ export async function vytvorPdfNaServeru(serviceId: string, html: string, nazev:
  * Fotky už musí být v `data` vložené (pripravFotky) – server k úložišti nemá relaci.
  */
 export async function stahnoutDokumentJakoPdf(docType: WebPrintDocType, serviceId: string, data: DocumentData): Promise<VysledekPdfZeServeru> {
+  const nazev = `${nazevPdfProTisk(docType, data)}.pdf`;
+  const v = await pdfDokumentuNaServeru(docType, serviceId, data);
+  if (!v.ok) return { stav: "nedostupne", duvod: v.duvod };
+  stahnoutSoubor(v.pdf, nazev, "application/pdf");
+  return { stav: "hotovo", nazev };
+}
+
+/**
+ * PDF dokladu ze serveru jako Blob – pro tisk (stažení) i pro přílohu
+ * e-mailu (faktura). Fotky už musí být v `data` vložené.
+ */
+export async function pdfDokumentuNaServeru(docType: WebPrintDocType, serviceId: string, data: DocumentData): Promise<{ ok: true; pdf: Blob; nazev: string } | { ok: false; duvod?: string }> {
   // browserPrint vypnuté: stránku tu kreslí headless Chromium jako na
   // desktopu, ne Safari na iOS, takže platí pevný rámec A4.
   const html = await buildDocumentHtmlForWeb(docType, serviceId, data, { browserPrint: false });
   const nazev = `${nazevPdfProTisk(docType, data)}.pdf`;
   const v = await vytvorPdfNaServeru(serviceId, html, nazev);
-  if (!v.ok) return { stav: "nedostupne", duvod: v.duvod };
-  stahnoutSoubor(v.pdf, nazev, "application/pdf");
-  return { stav: "hotovo", nazev };
+  return v.ok ? { ok: true, pdf: v.pdf, nazev } : v;
+}
+
+/** Blob → base64 bez prefixu data URL (příloha e-mailu). */
+export function blobNaBase64(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ""));
+    r.onerror = () => reject(r.error ?? new Error("Čtení PDF selhalo"));
+    r.readAsDataURL(b);
+  });
 }

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resendFetch } from "../_shared/resend.ts";
 
 /** Stejná odpověď pro neexistující účet i pro překročený limit – nejde enumerovat. */
 const GENERIC_OK_MESSAGE =
@@ -157,7 +158,7 @@ serve(async (req) => {
         "<p style=\"text-align:center;margin-top:20px;font-size:12px;color:#9ca3af\">Jobi – správa zakázek</p>",
         "</td></tr></table></body></html>",
       ].join("");
-      await fetch("https://api.resend.com/emails", {
+      await resendFetch({
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
         body: JSON.stringify({

@@ -19,7 +19,7 @@ import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobi
 import { spojCestu, vychoziSlozkaProExport } from "../lib/tiskDokumentu";
 import { isWeb } from "../lib/platform";
 import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
-import { stahnoutDokumentJakoPdf } from "../lib/pdfServer";
+import { blobNaBase64, pdfDokumentuNaServeru, stahnoutDokumentJakoPdf } from "../lib/pdfServer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
 import { InvoiceList } from "./Invoices/InvoiceList";
@@ -1293,10 +1293,32 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     [companyData],
   );
 
+  /**
+   * PDF faktury do přílohy e-mailu – stejná šablona jako tisk. Server
+   * (document-pdf), na desktopu záložně spuštěný JobiDocs. Bez PDF vrací důvod.
+   */
+  const pdfFakturyProEmail = useCallback(async (inv: Invoice): Promise<{ base64: string | null; duvod?: string }> => {
+    if (!activeServiceId) return { base64: null, duvod: "Není vybraný servis" };
+    try {
+      const data = await dataProTisk(inv);
+      const v = await pdfDokumentuNaServeru("faktura", activeServiceId, data);
+      if (v.ok) return { base64: await blobNaBase64(v.pdf) };
+      if (!isWeb() && (await isJobiDocsRunning())) {
+        const r = await renderPdf("faktura", activeServiceId, data);
+        if (r.ok && r.data) return { base64: await blobNaBase64(new Blob([r.data], { type: "application/pdf" })) };
+      }
+      return { base64: null, duvod: v.duvod };
+    } catch (e) {
+      return { base64: null, duvod: textChyby(e) };
+    }
+  }, [activeServiceId, dataProTisk]);
+
   const handleSendEmail = useCallback(async () => {
     if (!detailInvoice || !supabase || sending) return;
     setSending(true);
     try {
+      const pdf = await pdfFakturyProEmail(detailInvoice);
+      if (!pdf.base64 && !window.confirm(`PDF faktury se nepodařilo vytvořit${pdf.duvod ? ` (${pdf.duvod})` : ""}. Odeslat e-mail bez přílohy?`)) return;
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       const { data, error } = await supabase.functions.invoke("invoice-send-email", {
@@ -1307,12 +1329,14 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           subject: sendSubject,
           body: sendBody,
           service_id: activeServiceId,
+          ...(pdf.base64 ? { pdf_base64: pdf.base64 } : {}),
         },
       });
       if (error) throw error;
       const fnError = (data as { error?: string } | null)?.error;
       if (fnError) throw new Error(fnError);
-      showToast("Faktura odeslána e-mailem", "success");
+      if ((data as { priloha?: boolean } | null)?.priloha === false) showToast("Faktura odeslána e-mailem, ale bez PDF přílohy", "info");
+      else showToast("Faktura odeslána e-mailem", "success");
       setSendModalOpen(false);
       await logEvent(detailInvoice.id, "sent", { recipient: sendEmail });
       if (detailInvoice.status === "issued") {
@@ -1331,7 +1355,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     } finally {
       setSending(false);
     }
-  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail]);
+  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail, pdfFakturyProEmail]);
 
   // ─── Souhrnná faktura ──────────────────────────────────────
 

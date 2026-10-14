@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { jeTestovaciZaznam } from "../_shared/testovaciUcty.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { podnetyZHlidace, type SelhaniKontroly } from "../_shared/hlidac.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * Hlídač provozu. Jednou za hodinu se podívá, jestli se něco neděje, a když
@@ -263,7 +264,7 @@ ${telo}
 <p style="margin:24px 0 0;color:#666;font-size:12px">Podrobnosti jsou v aplikaci v Nastavení → Owner → Chyby.</p>
 </div>`;
 
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await resendFetch({
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ from, to: [komu], subject: `Jobi: ${nadpis}`, html }),

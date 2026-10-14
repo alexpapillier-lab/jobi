@@ -3,6 +3,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { escapeHtml } from "../_shared/html.ts";
 import { formatujCastku, formatujDatum } from "../_shared/penize.ts";
 import { buildSpayd } from "../_shared/spayd.ts";
+import { resendFetch } from "../_shared/resend.ts";
+
+/** PDF z aplikace (base64). Kontroluje se velikost a hlavička %PDF-, nic víc. */
+const MAX_PDF_BAJTU = 8 * 1024 * 1024;
+function overenePdf(v: unknown): string | null {
+  if (typeof v !== "string" || !v) return null;
+  const b64 = v.replace(/^data:application\/pdf;base64,/, "").replace(/\s/g, "");
+  if (b64.length > Math.ceil((MAX_PDF_BAJTU * 4) / 3) + 4) return null;
+  try {
+    return atob(b64.slice(0, 12)).startsWith("%PDF-") ? b64 : null;
+  } catch {
+    return null;
+  }
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -140,11 +154,14 @@ serve(async (req) => {
       .eq("invoice_id", invoice_id)
       .order("sort_order");
 
-    // Generate PDF via JobiDocs
-    const jobiDocsUrl = Deno.env.get("JOBIDOCS_API_URL") || "http://127.0.0.1:3847";
-    let pdfBase64: string | null = null;
+    // PDF faktury: hotové PDF z aplikace (stejná šablona jako tisk, vytvořené
+    // přes document-pdf nebo JobiDocs u uživatele). Záložně JobiDocs na serveru,
+    // ale jen když je nastavený JOBIDOCS_API_URL – výchozí 127.0.0.1 ze serveru
+    // nikdy nefungoval a faktury tiše odcházely bez přílohy.
+    let pdfBase64: string | null = overenePdf(body.pdf_base64);
+    const jobiDocsUrl = Deno.env.get("JOBIDOCS_API_URL")?.trim() || null;
 
-    try {
+    if (!pdfBase64 && jobiDocsUrl) try {
       const variables: Record<string, string> = {};
       variables.inv_number = inv.number || "";
       // Nadpis dokladu podle druhu; u běžné faktury se nechá výchozí text šablony.
@@ -297,7 +314,7 @@ serve(async (req) => {
       ];
     }
 
-    const resendRes = await fetch("https://api.resend.com/emails", {
+    const resendRes = await resendFetch({
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
       body: JSON.stringify(resendPayload),
@@ -343,6 +360,9 @@ serve(async (req) => {
           ok: true,
           email_sent: true,
           message_id: messageId,
+          // Bez přílohy to aplikace řekne – dřív zákazník dostal e-mail
+          // „v příloze zasíláme“ a v příloze nic.
+          priloha: !!pdfBase64,
           ...(chybaStavu ? { varovani: "E-mail odešel, ale stav faktury se neuložil. Zkontrolujte ji." } : {}),
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

@@ -13,6 +13,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resendFetch } from "../_shared/resend.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +67,7 @@ async function odeslat(prijemce: string, dluzi: Array<Radek & { dni: number }>, 
   const predmet = `${zkusebni ? "[Zkušební] " : ""}${dluzi.length === 0 ? "Platby servisů: nikdo nedluží" : `Platby servisů: ${dluzi.length === 1 ? "1 servis má zaplatit" : `${dluzi.length} servisů má zaplatit`} (${kc(celkem)})`}`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f1f5f9;padding:24px"><table cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:20px 24px"><tr><td><div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#64748b">JOBI · PLATBY SERVISŮ</div><div style="font-size:20px;font-weight:800;margin:4px 0 12px">${esc(obdobi)}</div>${dluzi.length === 0 ? '<p style="margin:0;color:#334155">Za tento měsíc nikdo nedluží.</p>' : `<table width="100%" style="border-collapse:collapse">${radky}</table><p style="margin:12px 0 0;color:#64748b;font-size:12px">Zaplacení zapište v Jobi → Nastavení → Owner → Platby servisů. Připomínka chodí v den platby a pak každé 3 dny.</p>`}</td></tr></table></body></html>`;
   const text = [`Platby servisů ${obdobi}`, ...dluzi.map((d) => `${d.nazev}: ${kc(d.cenaMesicne)} (${d.dni === 0 ? "dnes" : `${d.dni} dní po splatnosti`})`), dluzi.length === 0 ? "Nikdo nedluží." : ""].join("\n");
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await resendFetch({
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ from, to: [prijemce], subject: predmet, text, html }),

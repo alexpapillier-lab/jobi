@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { otiskKlienta } from "../_shared/limity.ts";
 import { mailServisuHtml, mailZakaznikoviHtml, predmetServisu, predmetZakaznikovi, type RezervaceMail } from "../_shared/bookingMail.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * Online rezervace z webu servisu.
@@ -105,7 +106,7 @@ async function oznamServisu(servis: Servis, r: RezervaceMail) {
   if (!key || !servis.email) return;
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
   try {
-    const odp = await fetch("https://api.resend.com/emails", {
+    const odp = await resendFetch({
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: [servis.email], subject: predmetServisu(r), html: mailServisuHtml(r) }),
@@ -122,7 +123,7 @@ async function potvrdZakaznikovi(servis: Servis, r: RezervaceMail) {
   if (!key || !r.customer_email) return;
   const from = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
   try {
-    const odp = await fetch("https://api.resend.com/emails", {
+    const odp = await resendFetch({
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({

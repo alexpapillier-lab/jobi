@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { kodPozvanky } from "../_shared/pozvanka.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -349,7 +350,7 @@ serve(async (req) => {
           "</td></tr></table></body></html>",
         ].join("");
         const fromEmail = Deno.env.get("RESEND_FROM_EMAIL")?.trim() || "Jobi <onboarding@resend.dev>";
-        const res = await fetch("https://api.resend.com/emails", {
+        const res = await resendFetch({
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
           body: JSON.stringify({
