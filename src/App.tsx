@@ -1041,8 +1041,15 @@ window.removeEventListener("jobsheet:navigate" as any, onNav);
       setNewOrderPrefill({ objednavka });
       setActivePage("orders");
     };
+    // Reklamace z objednávky otevírá okno přímo stránka Zakázky (je pořád
+    // připojená); tady jen přepnout, když se kliklo odjinud.
+    const onReklamace = () => setActivePage("orders");
     window.addEventListener("jobsheet:zalozit-z-objednavky", onObjednavka);
-    return () => window.removeEventListener("jobsheet:zalozit-z-objednavky", onObjednavka);
+    window.addEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+    return () => {
+      window.removeEventListener("jobsheet:zalozit-z-objednavky", onObjednavka);
+      window.removeEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+    };
   }, []);
 
   // Po přihlášení: pokud je uložený invite token, nejdřív vyřídit pozvánku; při chybě automatický retry + refresh

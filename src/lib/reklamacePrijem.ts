@@ -86,7 +86,12 @@ export type KonceptReklamace = {
   reklamovaneOpravy: string[];
   /** Přijímací fotky jako data URL – nahrají se po založení reklamace. */
   fotky: string[];
+  /** Objednávka z webu, ze které reklamace vzniká – po založení se převede. */
+  objednavka: ObjednavkaReklamace | null;
 };
+
+/** Odkaz na objednávku z webu (Zakázky → Příchozí objednávky → Reklamace). */
+export type ObjednavkaReklamace = { id: string; cislo: string; zdroj: string | null };
 
 export function vychoziKoncept(handoffMethod = ""): KonceptReklamace {
   return {
@@ -114,6 +119,7 @@ export function vychoziKoncept(handoffMethod = ""): KonceptReklamace {
     terminVyrizeni: null,
     reklamovaneOpravy: [],
     fotky: [],
+    objednavka: null,
   };
 }
 
@@ -151,13 +157,16 @@ export function nactiKoncept(raw: unknown, handoffMethod = ""): KonceptReklamace
     terminVyrizeni: typeof r.terminVyrizeni === "string" ? r.terminVyrizeni : null,
     reklamovaneOpravy: Array.isArray(r.reklamovaneOpravy) ? r.reklamovaneOpravy.filter((x): x is string => typeof x === "string") : [],
     fotky: Array.isArray(r.fotky) ? r.fotky.filter((x): x is string => typeof x === "string") : [],
+    objednavka: r.objednavka && typeof r.objednavka === "object" && typeof r.objednavka.id === "string" && typeof r.objednavka.cislo === "string"
+      ? { id: r.objednavka.id, cislo: r.objednavka.cislo, zdroj: typeof r.objednavka.zdroj === "string" ? r.objednavka.zdroj : null }
+      : null,
   };
 }
 
 /** Je v konceptu něco rozepsaného? (Výchozí způsob převzetí se nepočítá.) */
 export function jeKonceptRozepsany(k: KonceptReklamace): boolean {
   const v = vychoziKoncept(k.handoffMethod);
-  if (k.zdroj || k.bezZakazky || k.customerId || k.fotky.length > 0 || k.terminVyrizeni || k.reklamovaneOpravy.length > 0) return true;
+  if (k.zdroj || k.bezZakazky || k.customerId || k.objednavka || k.fotky.length > 0 || k.terminVyrizeni || k.reklamovaneOpravy.length > 0) return true;
   const pole: (keyof KonceptReklamace)[] = [
     "customerName", "customerPhone", "customerEmail", "addressStreet", "addressCity", "addressZip", "company", "ico", "customerInfo",
     "deviceLabel", "serialOrImei", "devicePasscode", "deviceCondition", "deviceAccessories", "popisZavady", "poznamkaTechnik",

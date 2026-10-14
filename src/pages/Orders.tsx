@@ -30,7 +30,7 @@ import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
-import { odesliWebhookyHned, prevedObjednavku } from "../lib/objednavky";
+import { navrhPuvodniZakazky, odesliWebhookyHned, prevedObjednavku, type WebObjednavka } from "../lib/objednavky";
 import { sloucZakazkuZDb, zapisZakazkyBezi } from "../lib/slouceniZakazky";
 import { drzeneKlice, poleZFormulare, sloucSRozepsanym, type PoleZakazky } from "../lib/editaceZamek";
 import { sjetNaKartu } from "../components/orders/PostupZakazky";
@@ -882,6 +882,22 @@ export default function Orders({
   });
 
   const { otevreno: novaReklamaceOtevrena, zavri: zavriNovouReklamaci } = novaReklamace;
+
+  // Příchozí objednávky → Reklamace: okno s údaji z objednávky a navrženou
+  // původní zakázkou (shoda SN / telefonu). Na Zakázky přepne App.
+  const otevriReklamaciZObjednavkyRef = useRef(novaReklamace.otevriZObjednavky);
+  otevriReklamaciZObjednavkyRef.current = novaReklamace.otevriZObjednavky;
+  useEffect(() => {
+    const onReklamace = (e: Event) => {
+      const o = (e as CustomEvent<{ objednavka?: WebObjednavka }>).detail?.objednavka;
+      if (!o || o.service_id !== activeServiceId) return;
+      setDetailId(null);
+      setDetailClaimId(null);
+      otevriReklamaciZObjednavkyRef.current(o, navrhPuvodniZakazky(o, cloudTicketsRef.current), branchForNew?.id ?? null);
+    };
+    window.addEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+    return () => window.removeEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+  }, [activeServiceId, branchForNew, cloudTicketsRef]);
   // Okno je portál do body – při odchodu na jinou stránku se musí zavřít samo
   // (viz efekt s closeDetailWhen výš). Koncept zůstává uložený.
   useEffect(() => {
@@ -1967,7 +1983,11 @@ export default function Orders({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Objednávky z webu (API, formulář) – bez objednávek se neukazuje. */}
-      <PrichoziObjednavky activeServiceId={activeServiceId} onOpenTicket={(id) => setDetailId(id)} />
+      <PrichoziObjednavky
+        activeServiceId={activeServiceId}
+        onOpenTicket={(id) => setDetailId(id)}
+        onOpenClaim={(id) => { setDetailId(null); setDetailClaimId(id); }}
+      />
       <SeznamZakazek
         activeServiceId={activeServiceId}
         isAdmin={isAdmin}

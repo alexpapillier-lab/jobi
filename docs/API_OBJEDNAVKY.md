@@ -153,6 +153,12 @@ Authorization: Bearer jobi_…
 } }
 ```
 
+Servis může objednávku převést i na **reklamaci** (zařízení je u něj v záruce
+z dřívější opravy). Pak je `converted_to: "claim"`, `ticket` je `null`,
+`claim: { "code": "IRPR26000012" }` a `ticket_code` nese kód reklamace – web
+ho může ukazovat jako „kód v Jobi“ stejně jako u zakázky. U zakázky je
+`converted_to: "ticket"`, u nepřevedené objednávky `null`.
+
 ---
 
 ## 4. Elektronické odsouhlasení zakázkového listu (`consent`)
@@ -233,7 +239,7 @@ Jobi pošle `POST` s JSONem:
 
 | Událost | Kdy |
 |---|---|
-| `order.converted` | Servis z objednávky založil zakázku (`ticket_code` je vyplněné). |
+| `order.converted` | Servis z objednávky založil zakázku, nebo reklamaci (`converted_to`: `ticket` / `claim`; `ticket_code` je kód zakázky, u reklamace kód reklamace a navíc `claim_code`). Stav reklamace se webhookem zatím neposílá. |
 | `ticket.status_changed` | Zakázka z objednávky změnila stav. |
 | `ticket.completed` | Zakázka přešla do koncového stavu (vydáno apod.; `is_final: true`). Chodí navíc k `ticket.status_changed`. |
 | `order.cancelled` | Servis objednávku zrušil v Jobi. |

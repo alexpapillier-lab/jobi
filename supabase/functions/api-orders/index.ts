@@ -16,6 +16,7 @@ import {
   overObjednavku,
   povoleneZmeny,
   type StavDb,
+  type ReklamaceApi,
   type ZakazkaApi,
 } from "../_shared/objednavky.ts";
 
@@ -76,7 +77,15 @@ const ROZSAH: Rozsah = "orders";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tabulky nejsou v typech klienta
 type Svc = SupabaseClient<any, any, any>;
 
-const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, souhlas, poznamka, data, ticket_id, created_at, updated_at, dorazilo_at, prevedeno_at";
+const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, souhlas, poznamka, data, ticket_id, claim_id, created_at, updated_at, dorazilo_at, prevedeno_at";
+
+/** Reklamace, na kterou servis objednávku převedl (místo zakázky). */
+async function reklamace(svc: Svc, claimId: string | null): Promise<ReklamaceApi> {
+  if (!claimId) return null;
+  const { data, error } = await svc.from("warranty_claims").select("code").eq("id", claimId).maybeSingle();
+  if (error) console.error("[api-orders] reklamace:", error.message);
+  return data ? { code: (data as { code: string | null }).code ?? null } : null;
+}
 
 async function zakazka(svc: Svc, ticketId: string | null): Promise<ZakazkaApi> {
   if (!ticketId) return null;
@@ -179,7 +188,8 @@ serve(async (req) => {
       return json({ error: "Objednávku se nepodařilo načíst" }, 500);
     }
     if (!o) return json({ error: "Objednávka neexistuje" }, 404);
-    return json({ order: objednavkaProApi(o as never, await zakazka(svc, (o as { ticket_id: string | null }).ticket_id)) });
+    const r = o as { ticket_id: string | null; claim_id: string | null };
+    return json({ order: objednavkaProApi(o as never, await zakazka(svc, r.ticket_id), await reklamace(svc, r.claim_id)) });
   }
 
   // ── POST: upsert objednávek ───────────────────────────────────────────────
@@ -278,7 +288,7 @@ serve(async (req) => {
       ? { data: stavajici }
       : await svc.from("web_objednavky").select(SLOUPCE).eq("service_id", sid).eq("externi_cislo", p.externiCislo).maybeSingle();
     if (!aktualni) { chyby.push(`${prefix}: objednávku se nepodařilo uložit`); continue; }
-    const a = aktualni as Record<string, unknown> & { id: string; stav: string; ticket_id: string | null };
+    const a = aktualni as Record<string, unknown> & { id: string; stav: string; ticket_id: string | null; claim_id: string | null };
 
     const z = povoleneZmeny(a.stav, p);
     if (z.chyba) { chyby.push(`${prefix}: ${z.chyba}`); continue; }
@@ -290,8 +300,10 @@ serve(async (req) => {
       if (z.stav === "dorazilo" && !a.dorazilo_at) zmena.dorazilo_at = new Date().toISOString();
     }
     const zt = await zakazka(svc, a.ticket_id);
+    // Kód v Jobi: zakázka, nebo reklamace, když se objednávka převedla na ni.
+    const kod = zt?.code ?? (await reklamace(svc, a.claim_id))?.code ?? null;
     if (!lisiSe(a, zmena) && !podpis) {
-      vysledky.push({ index: i, external_id: p.externiCislo, result: "unchanged", status: STAV_API[a.stav as StavDb] ?? a.stav, ticket_code: zt?.code ?? null });
+      vysledky.push({ index: i, external_id: p.externiCislo, result: "unchanged", status: STAV_API[a.stav as StavDb] ?? a.stav, ticket_code: kod });
       continue;
     }
     // Stav se mění jen u objednávky, která je pořád v tom stavu, jak jsme ji
@@ -301,7 +313,7 @@ serve(async (req) => {
     if (!zmeneno || zmeneno.length === 0) { chyby.push(`${prefix}: objednávku mezitím změnil servis, pošlete ji znovu`); continue; }
     await doplnPodpis(a.id, podpis, zmena.souhlas);
     const novy = (zmeneno[0] as { stav: string }).stav as StavDb;
-    vysledky.push({ index: i, external_id: p.externiCislo, result: "updated", status: STAV_API[novy] ?? novy, ticket_code: zt?.code ?? null });
+    vysledky.push({ index: i, external_id: p.externiCislo, result: "updated", status: STAV_API[novy] ?? novy, ticket_code: kod });
   }
 
   const odpoved = { ok: chyby.length === 0, orders: vysledky, ...(chyby.length ? { errors: chyby } : {}) };

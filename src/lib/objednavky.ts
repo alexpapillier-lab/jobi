@@ -1,7 +1,8 @@
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "./supabaseClient";
 import type { DevicesData } from "./catalogStorage";
 import type { PerformedRepair } from "../components/orders/types";
-import type { DeviceRow, NewOrderDraft } from "../pages/Orders/typy";
+import type { DeviceRow, NewOrderDraft, TicketEx } from "../pages/Orders/typy";
+import type { KonceptReklamace } from "./reklamacePrijem";
 import {
   NAZEV_DOPRAVCE,
   POPIS_STAVU,
@@ -64,13 +65,15 @@ export type WebObjednavka = {
   sledovaci_cisla: SledovaciCislo[] | null;
   poznamka: string | null;
   ticket_id: string | null;
+  /** Reklamace, na kterou se objednávka převedla (místo zakázky). */
+  claim_id: string | null;
   created_at: string;
   updated_at: string;
   dorazilo_at: string | null;
 };
 
 const SLOUPCE =
-  "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, poznamka, ticket_id, created_at, updated_at, dorazilo_at";
+  "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, poznamka, ticket_id, claim_id, created_at, updated_at, dorazilo_at";
 
 /** Nevyřízené objednávky všechny, vyřízené (převedené, zrušené) jen posledních 20. */
 export async function nactiObjednavky(serviceId: string): Promise<WebObjednavka[]> {
@@ -109,6 +112,14 @@ export async function nastavStavObjednavky(id: string, stav: "nova" | "na_ceste"
 export async function prevedObjednavku(id: string, ticketId: string): Promise<boolean> {
   if (!supabase) return false;
   const { data, error } = await (supabase as any).rpc("web_objednavka_prevest", { p_id: id, p_ticket_id: ticketId });
+  if (error) throw error;
+  return data === true;
+}
+
+/** Po založení reklamace z objednávky: objednávka → převedená (na reklamaci) + webhook. */
+export async function prevedObjednavkuNaReklamaci(id: string, claimId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await (supabase as any).rpc("web_objednavka_prevest_reklamaci", { p_id: id, p_claim_id: claimId });
   if (error) throw error;
   return data === true;
 }
@@ -282,4 +293,67 @@ export function odpovidaHledani(o: WebObjednavka, dotaz: string): boolean {
   const cisloDotazu = bezDiakritiky(dotaz).replace(/[\s\-+]/g, "");
   if (/^\d{4,}$/.test(cisloDotazu) && bezMezer.includes(cisloDotazu)) return true;
   return slova.every((w) => text.includes(w) || bezMezer.includes(w.replace(/[-+]/g, "")));
+}
+
+/**
+ * Objednávka → koncept nové reklamace (Příchozí objednávky → Reklamace):
+ * zákazník a zařízení (dokud se nevybere původní zakázka, která je
+ * přepíše svými), popis závady, doprava jako způsob převzetí a do poznámky
+ * pro technika číslo objednávky, výdejní místo, adresa zpět a zásilky.
+ */
+export function objednavkaNaKonceptReklamace(o: WebObjednavka, k: KonceptReklamace, branchIdDefault: string | null = null): KonceptReklamace {
+  const s = (v: string | null | undefined) => (v ?? "").trim();
+  const zavada = s(o.popis_zavady);
+  const pozadovano = s(o.pozadovana_oprava);
+  const sc = sledovaciOdkazy(o);
+  const poznamka = [
+    `Z objednávky ${o.externi_cislo}${s(o.zdroj) ? ` (${s(o.zdroj)})` : ""}`,
+    s(o.vydejni_misto) ? `Výdejní místo: ${s(o.vydejni_misto)}` : "",
+    s(o.adresa_zpet) ? `Adresa pro vrácení: ${s(o.adresa_zpet)}` : "",
+    s(o.doprava_zpet) ? `Doprava zpět: ${s(o.doprava_zpet)}` : "",
+    sc.length ? `Zásilky: ${sc.map((x) => x.text).join(", ")}` : "",
+    s(o.poznamka),
+  ].filter(Boolean).join("\n");
+  const dic = s(o.zakaznik_dic);
+  return {
+    ...k,
+    branchId: o.branch_id ?? branchIdDefault ?? k.branchId,
+    customerName: s(o.zakaznik_jmeno),
+    customerPhone: s(o.zakaznik_telefon),
+    customerEmail: s(o.zakaznik_email),
+    addressStreet: s(o.zakaznik_ulice),
+    addressCity: s(o.zakaznik_mesto),
+    addressZip: s(o.zakaznik_psc).replace(/\D/g, ""),
+    company: s(o.zakaznik_firma),
+    ico: s(o.zakaznik_ico).replace(/\D/g, ""),
+    customerInfo: dic ? `DIČ: ${dic}` : "",
+    deviceLabel: s(o.zarizeni),
+    serialOrImei: s(o.sn_imei),
+    devicePasscode: s(o.heslo_zarizeni),
+    deviceAccessories: s(o.prislusenstvi),
+    handoffMethod: s(o.doprava_tam) ? `Poštou – ${s(o.doprava_tam)}` : k.handoffMethod,
+    popisZavady: [pozadovano, zavada && zavada !== pozadovano ? zavada : ""].filter(Boolean).join(" – "),
+    poznamkaTechnik: poznamka,
+    objednavka: { id: o.id, cislo: o.externi_cislo, zdroj: s(o.zdroj) || null },
+  };
+}
+
+const jenZnaky = (v: string | null | undefined) => (v ?? "").replace(/[^0-9a-z]/gi, "").toUpperCase();
+const telefon9 = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "").slice(-9);
+
+/**
+ * Původní zakázky, na které se reklamace z objednávky nejspíš vztahuje:
+ * nejdřív shoda SN/IMEI, pak telefon (posledních 9 číslic). Nejnovější první.
+ * `jista` = jediná shoda podle SN, nebo jediná zakázka podle telefonu –
+ * tu okno rovnou vybere.
+ */
+export function navrhPuvodniZakazky(o: Pick<WebObjednavka, "sn_imei" | "zakaznik_telefon">, zakazky: TicketEx[]): { kandidati: TicketEx[]; jista: TicketEx | null } {
+  const sn = jenZnaky(o.sn_imei);
+  const tel = telefon9(o.zakaznik_telefon);
+  const novejsi = (a: TicketEx, b: TicketEx) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""));
+  const podleSn = sn.length >= 5 ? zakazky.filter((t) => jenZnaky(t.serialOrImei) === sn).sort(novejsi) : [];
+  const podleTel = tel.length === 9 ? zakazky.filter((t) => telefon9(t.customerPhone) === tel && !podleSn.includes(t)).sort(novejsi) : [];
+  const kandidati = [...podleSn, ...podleTel].slice(0, 8);
+  const jista = podleSn.length === 1 ? podleSn[0] : podleSn.length === 0 && podleTel.length === 1 ? podleTel[0] : null;
+  return { kandidati, jista };
 }

@@ -33,7 +33,9 @@ import {
 import { detailSouhlasu, mapujPodpisPrevzeti, obrazekPodpisuPrevzeti, textSouhlasu } from "./souhlasPrevzeti";
 import { ticketDocumentData } from "./documentData";
 import { modulProRozsah, ocistiRozsahy } from "../../supabase/functions/_shared/tokeny";
-import { nazevModelu, objednavkaNaKoncept, odpovidaHledani, popisDopravy, sledovaciOdkazy, type WebObjednavka } from "./objednavky";
+import { navrhPuvodniZakazky, nazevModelu, objednavkaNaKoncept, objednavkaNaKonceptReklamace, odpovidaHledani, popisDopravy, sledovaciOdkazy, type WebObjednavka } from "./objednavky";
+import { nactiKoncept } from "./reklamacePrijem";
+import type { TicketEx } from "../pages/Orders/typy";
 
 const ok = (v: unknown) => {
   const r = overObjednavku(v, "orders[0]");
@@ -279,7 +281,7 @@ describe("objednávka → příjem zakázky", () => {
     popis_zavady: "Prasklý displej", pozadovana_oprava: "Výměna displeje", repair_id: "r1",
     doprava_tam: "DPD", doprava_zpet: "Zásilkovna", vydejni_misto: "Z-BOX Praha 7", adresa_zpet: null,
     sledovaci_cisla: [{ dopravce: "dpd", cislo: "139", smer: "tam", url: null }], poznamka: "Spěchá",
-    ticket_id: null, created_at: "2026-10-01T10:00:00Z", updated_at: "2026-10-01T10:00:00Z", dorazilo_at: null,
+    ticket_id: null, claim_id: null, created_at: "2026-10-01T10:00:00Z", updated_at: "2026-10-01T10:00:00Z", dorazilo_at: null,
   };
 
   it("předvyplní zákazníka, zařízení, závadu, dopravu, externí číslo a pobočku", () => {
@@ -481,5 +483,44 @@ describe("odpovidaHledani", () => {
     expect(odpovidaHledani(o, "rdj1433a")).toBe(true);
     expect(odpovidaHledani(o, "v15")).toBe(false);
     expect(odpovidaHledani(o, "martina novak")).toBe(false);
+  });
+});
+
+describe("objednávka → reklamace", () => {
+  const o = {
+    id: "o9", service_id: "s1", branch_id: null, externi_cislo: "SRV-2026-0400", zdroj: "servis.iswap.cz", stav: "dorazilo",
+    zakaznik_jmeno: "Jan Novák", zakaznik_telefon: "+420 777 123 456", zakaznik_email: "jan@example.cz", zakaznik_firma: null,
+    zakaznik_ico: null, zakaznik_dic: null, zakaznik_ulice: "Dlouhá 1", zakaznik_mesto: "Praha", zakaznik_psc: "110 00",
+    zarizeni: "Dyson V15", model_id: null, sn_imei: "ze7-eu-rdj1433a", heslo_zarizeni: null, prislusenstvi: null,
+    popis_zavady: "Po opravě zase nejde", pozadovana_oprava: null, repair_id: null,
+    doprava_tam: "DPD – svoz kurýrem", doprava_zpet: "Zásilkovna", vydejni_misto: null, adresa_zpet: null,
+    sledovaci_cisla: null, poznamka: null, ticket_id: null, claim_id: null,
+    created_at: "2026-10-13T10:00:00Z", updated_at: "2026-10-13T10:00:00Z", dorazilo_at: null,
+  } as unknown as WebObjednavka;
+
+  it("předvyplní koncept a pamatuje si objednávku", () => {
+    const k = objednavkaNaKonceptReklamace(o, nactiKoncept({}, "Osobně")!, "b1");
+    expect(k).toMatchObject({
+      branchId: "b1", customerName: "Jan Novák", deviceLabel: "Dyson V15", serialOrImei: "ze7-eu-rdj1433a",
+      handoffMethod: "Poštou – DPD – svoz kurýrem", popisZavady: "Po opravě zase nejde", addressZip: "11000",
+      objednavka: { id: "o9", cislo: "SRV-2026-0400", zdroj: "servis.iswap.cz" },
+    });
+    expect(k.poznamkaTechnik).toContain("Z objednávky SRV-2026-0400 (servis.iswap.cz)");
+    expect(k.poznamkaTechnik).toContain("Doprava zpět: Zásilkovna");
+    // Objednávka přežije uložení konceptu do localStorage.
+    expect(nactiKoncept(JSON.parse(JSON.stringify(k)))?.objednavka).toEqual(k.objednavka);
+  });
+
+  it("najde původní zakázku podle SN, jinak podle telefonu", () => {
+    const t = (id: string, sn: string, tel: string, createdAt: string) => ({ id, serialOrImei: sn, customerPhone: tel, createdAt }) as unknown as TicketEx;
+    const a = t("a", "ZE7-EU-RDJ1433A", "777000000", "2026-05-01");
+    const b = t("b", "JINE", "+420777123456", "2026-06-01");
+    const c = t("c", "DALSI", "777 123 456", "2026-07-01");
+    expect(navrhPuvodniZakazky(o, [a, b, c])).toMatchObject({ jista: a });
+    expect(navrhPuvodniZakazky(o, [a, b, c]).kandidati.map((x) => x.id)).toEqual(["a", "c", "b"]);
+    const bezSn = { ...o, sn_imei: null } as WebObjednavka;
+    expect(navrhPuvodniZakazky(bezSn, [b, c]).jista).toBeNull();
+    expect(navrhPuvodniZakazky(bezSn, [b]).jista).toBe(b);
+    expect(navrhPuvodniZakazky(bezSn, []).kandidati).toEqual([]);
   });
 });

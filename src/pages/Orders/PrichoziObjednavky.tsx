@@ -22,6 +22,15 @@ export function zalozitZakazkuZObjednavky(objednavka: WebObjednavka) {
   window.dispatchEvent(new CustomEvent("jobsheet:zalozit-z-objednavky", { detail: { objednavka } }));
 }
 
+/**
+ * Reklamace z objednávky – zařízení je u servisu v záruce (oprava dřív).
+ * Zakázky otevřou okno Nová reklamace s údaji z objednávky a nabídnou
+ * původní zakázku; App přepne na Zakázky.
+ */
+export function zalozitReklamaciZObjednavky(objednavka: WebObjednavka) {
+  window.dispatchEvent(new CustomEvent("jobsheet:reklamace-z-objednavky", { detail: { objednavka } }));
+}
+
 /** Načtení + realtime + pojistky (návrat do okna, minutový interval) – sdílí Zakázky i Dnes. */
 export function useObjednavky(activeServiceId: string | null, upozornitNaNove = false) {
   const [objednavky, setObjednavky] = useState<WebObjednavka[]>([]);
@@ -172,9 +181,11 @@ export function SledovaciCisla({ objednavka }: { objednavka: Pick<WebObjednavka,
 export function PrichoziObjednavky({
   activeServiceId,
   onOpenTicket,
+  onOpenClaim,
 }: {
   activeServiceId: string | null;
   onOpenTicket: (ticketId: string) => void;
+  onOpenClaim?: (claimId: string) => void;
 }) {
   const { objednavky, setObjednavky, nacti } = useObjednavky(activeServiceId, true);
   const { activeBranchId, branches } = useBranches();
@@ -270,12 +281,16 @@ export function PrichoziObjednavky({
           {otevrena && (
             <>
               <Button size="sm" variant="primary" onClick={() => zalozitZakazkuZObjednavky(o)}>Založit zakázku</Button>
+              <Button size="sm" variant="soft" onClick={() => zalozitReklamaciZObjednavky(o)} title="Zařízení je v záruce – založit reklamaci k původní zakázce">Reklamace</Button>
               {o.stav !== "dorazilo" && <Button size="sm" variant="soft" onClick={() => void zmenStav(o, "dorazilo")}>Dorazilo</Button>}
               <Button size="sm" variant="ghost" onClick={() => void zmenStav(o, "zrusena")} title="Zrušit objednávku">Zrušit</Button>
             </>
           )}
           {o.stav === "prevedeno" && o.ticket_id && (
             <Button size="sm" variant="soft" onClick={() => onOpenTicket(o.ticket_id!)}>Otevřít zakázku</Button>
+          )}
+          {o.stav === "prevedeno" && !o.ticket_id && o.claim_id && onOpenClaim && (
+            <Button size="sm" variant="soft" onClick={() => onOpenClaim(o.claim_id!)}>Otevřít reklamaci</Button>
           )}
         </div>
       </li>

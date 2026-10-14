@@ -546,8 +546,11 @@ export type ZakazkaApi = {
   updated_at: string;
 } | null;
 
+/** Reklamace, na kterou se objednávka převedla (místo zakázky). */
+export type ReklamaceApi = { code: string | null } | null;
+
 /** Objednávka tak, jak ji vrací `GET /v1/orders`. */
-export function objednavkaProApi(o: RadekObjednavky, zakazka: ZakazkaApi) {
+export function objednavkaProApi(o: RadekObjednavky, zakazka: ZakazkaApi, reklamace: ReklamaceApi = null) {
   const sc = Array.isArray(o.sledovaci_cisla) ? (o.sledovaci_cisla as SledovaciCislo[]) : [];
   return {
     external_id: o.externi_cislo,
@@ -568,7 +571,10 @@ export function objednavkaProApi(o: RadekObjednavky, zakazka: ZakazkaApi) {
     consent: jeObjekt(o.souhlas)
       ? { id: (o.souhlas as Souhlas).id, signed_at: (o.souhlas as Souhlas).signed_at, method: (o.souhlas as Souhlas).method, has_signature_image: !!(o.souhlas as Souhlas).signature_url }
       : null,
-    ticket_code: zakazka?.code ?? null,
+    converted_to: zakazka ? "ticket" : reklamace ? "claim" : null,
+    // Kód v Jobi – zakázky, nebo reklamace, když se objednávka převedla na ni.
+    ticket_code: zakazka?.code ?? reklamace?.code ?? null,
+    claim: reklamace ? { code: reklamace.code } : null,
     ticket: zakazka
       ? { code: zakazka.code, status: zakazka.status, total: zakazka.total === null ? null : Number(zakazka.total), updated_at: zakazka.updated_at }
       : null,

@@ -66,7 +66,11 @@ export function NovaReklamacePanel({ r, isNarrow, naTelefonu, hasBranches, branc
   const [dotaz, setDotaz] = useState("");
   const k = r.koncept;
   const set = <K extends keyof KonceptReklamace>(pole: K, hodnota: KonceptReklamace[K]) => r.setKoncept((p) => ({ ...p, [pole]: hodnota }));
-  const nalezene = useMemo(() => najdiZakazky(cloudTickets, dotaz), [cloudTickets, dotaz]);
+  // U reklamace z objednávky jsou bez hledání nahoře navržené zakázky (shoda SN/telefonu).
+  const nalezene = useMemo(
+    () => (r.koncept.objednavka && !dotaz.trim() && r.navrhy.length > 0 ? r.navrhy : najdiZakazky(cloudTickets, dotaz)),
+    [cloudTickets, dotaz, r.koncept.objednavka, r.navrhy],
+  );
   const handoff = getHandoffOptions();
   const err = (pole: string) => (r.ukazChybu(pole) ? <div style={fieldHint}>{r.chyby[pole]}</div> : null);
   const ramecek = (pole: string) => (r.ukazChybu(pole) ? borderError : border);
@@ -136,6 +140,21 @@ export function NovaReklamacePanel({ r, isNarrow, naTelefonu, hasBranches, branc
         </div>
 
         <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
+          {k.objednavka && (
+            <div role="status" data-tour="nova-reklamace-objednavka" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: "var(--accent-soft)", border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)" }}>
+              <span>
+                Z objednávky <strong>{k.objednavka.cislo}</strong>{k.objednavka.zdroj ? ` (${k.objednavka.zdroj})` : ""} – po založení reklamace se objednávka vyřídí.
+              </span>
+              <button
+                type="button"
+                onClick={() => set("objednavka", null)}
+                title="Reklamace se založí, objednávka zůstane v příchozích"
+                style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 4, fontWeight: 700 }}
+              >
+                Odpojit objednávku
+              </button>
+            </div>
+          )}
           {/* ===== ZDROJOVÁ ZAKÁZKA ===== */}
           <div data-tour="nova-reklamace-zdroj" style={{ ...card, ...stylSekce("opravy") }}>
             <SectionHeading icon={<InboxIcon size={16} />} size="sm" barva={BARVA_SEKCE.opravy}>Zdrojová zakázka</SectionHeading>
@@ -215,6 +234,9 @@ export function NovaReklamacePanel({ r, isNarrow, naTelefonu, hasBranches, branc
                   onChange={(e) => setDotaz(e.target.value)}
                   style={{ ...baseFieldInput, marginBottom: 10 }}
                 />
+                {k.objednavka && !dotaz.trim() && r.navrhy.length > 0 && (
+                  <div style={{ ...subHeading, marginTop: 0 }}>Navrženo podle SN a telefonu z objednávky</div>
+                )}
                 <div style={{ maxHeight: 240, overflowY: "auto", display: "grid", gap: 6, marginBottom: 10 }}>
                   {nalezene.length === 0 ? (
                     <div style={{ padding: 12, color: "var(--muted)", fontSize: 13 }}>
