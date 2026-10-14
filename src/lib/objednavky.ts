@@ -89,6 +89,18 @@ export async function nactiObjednavky(serviceId: string): Promise<WebObjednavka[
 }
 
 /** Objednávka, ze které zakázka vznikla (řádek v detailu zakázky). */
+/** Objednávka z webu, ze které vznikla reklamace (detail reklamace). */
+export async function objednavkaReklamace(claimId: string): Promise<Pick<WebObjednavka, "id" | "externi_cislo" | "zdroj"> | null> {
+  if (!supabase) return null;
+  const { data, error } = await (supabase.from("web_objednavky" as never) as any)
+    .select("id, externi_cislo, zdroj")
+    .eq("claim_id", claimId)
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data as Pick<WebObjednavka, "id" | "externi_cislo" | "zdroj"> | null) ?? null;
+}
+
 export async function objednavkaZakazky(ticketId: string): Promise<Pick<WebObjednavka, "id" | "externi_cislo" | "zdroj"> | null> {
   if (!supabase) return null;
   const { data, error } = await (supabase.from("web_objednavky" as never) as any)

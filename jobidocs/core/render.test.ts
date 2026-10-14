@@ -36,6 +36,16 @@ describe("podpis a elektronické odsouhlasení při převzetí", () => {
     expect(renderDocument({ ...args, template: prazdna, data: { ...sampleData("zakazkovy_list"), consent } })).not.toContain("ID ABC123");
   });
 
+  it("příjemka reklamace: souhlas v kolonce zákazníka, i ve starší šabloně bez volby", () => {
+    const rk = { ...args, template: defaultTemplate("prijemka_reklamace") };
+    const html = renderDocument({ ...rk, data: { ...sampleData("prijemka_reklamace"), consent } });
+    expect(html.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+    const tpl = defaultTemplate("prijemka_reklamace");
+    const stara = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník", width: 55 }] } };
+    const stary = renderDocument({ ...rk, template: stara, data: { ...sampleData("prijemka_reklamace"), consent } });
+    expect(stary.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+  });
+
   it("proměnné consent.* jdou použít v libovolném textu", () => {
     const data = { ...sampleData("zakazkovy_list"), consent: { ...consent, method: "sms_code" } };
     expect(substitute("{{consent.text}}", data)).toBe("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");

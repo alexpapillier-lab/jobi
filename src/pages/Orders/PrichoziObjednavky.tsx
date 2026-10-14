@@ -7,6 +7,7 @@ import {
   POPIS_STAVU,
   jeOtevrena,
   nactiObjednavky,
+  objednavkaReklamace,
   objednavkaZakazky,
   nastavStavObjednavky,
   odpovidaHledani,
@@ -15,7 +16,7 @@ import {
   type StavObjednavky,
   type WebObjednavka,
 } from "../../lib/objednavky";
-import { detailSouhlasu, nactiPodpisPrevzeti, textSouhlasu, type PodpisPrevzeti, type SouhlasZakazky } from "../../lib/souhlasPrevzeti";
+import { detailSouhlasu, mapujPodpisPrevzeti, nactiPodpisPrevzeti, textSouhlasu, type PodpisPrevzeti, type SouhlasZakazky } from "../../lib/souhlasPrevzeti";
 
 /** Příjem předvyplněný z objednávky – App poslouchá a otevře Novou zakázku. */
 export function zalozitZakazkuZObjednavky(objednavka: WebObjednavka) {
@@ -80,12 +81,24 @@ export function useObjednavky(activeServiceId: string | null, upozornitNaNove = 
  * „Elektronicky odsouhlaseno … (ID …)“ s rozbalitelným detailem (čas,
  * metoda, IP, prohlížeč, verze podmínek). Nic z toho = nic se neukáže.
  */
-export function ZObjednavky({ ticketId }: { ticketId: string }) {
+export function ZObjednavky({ ticketId, claim }: { ticketId?: string; claim?: { id: string; intake_consent?: unknown } }) {
   const [o, setO] = useState<{ externi_cislo: string; zdroj: string } | null>(null);
   const [souhlas, setSouhlas] = useState<SouhlasZakazky | null>(null);
   const [otevreno, setOtevreno] = useState(false);
+  const claimId = claim?.id;
+  // U reklamace je souhlas přímo na řádku reklamace, u zakázky se dotahuje.
+  const souhlasReklamace = claim ? (mapujPodpisPrevzeti({ intake_consent: claim.intake_consent }).intakeConsent ?? null) : null;
   useEffect(() => {
     let zruseno = false;
+    if (claimId) {
+      void objednavkaReklamace(claimId).then((x) => {
+        if (zruseno) return;
+        setO(x);
+        setOtevreno(false);
+      });
+      return () => { zruseno = true; };
+    }
+    if (!ticketId) return;
     void Promise.all([objednavkaZakazky(ticketId), nactiPodpisPrevzeti(ticketId).catch(() => ({}) as PodpisPrevzeti)]).then(([x, p]) => {
       if (zruseno) return;
       setO(x);
@@ -93,16 +106,17 @@ export function ZObjednavky({ ticketId }: { ticketId: string }) {
       setOtevreno(false);
     });
     return () => { zruseno = true; };
-  }, [ticketId]);
-  if (!o && !souhlas) return null;
+  }, [ticketId, claimId]);
+  const zobrazSouhlas = claim ? souhlasReklamace : souhlas;
+  if (!o && !zobrazSouhlas) return null;
   return (
-    <div data-tour="detail-z-objednavky" style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)", flexBasis: "100%" }}>
+    <div data-tour="detail-z-objednavky" style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--muted)", flexBasis: "100%", ...(claim ? { marginTop: 12 } : {}) }}>
       {o && (
         <div>
           Z objednávky <strong style={{ color: "var(--text)" }}>{o.externi_cislo}</strong>{o.zdroj ? ` (${o.zdroj})` : ""}
         </div>
       )}
-      {souhlas && (
+      {zobrazSouhlas && (
         <div>
           <button
             type="button"
@@ -111,12 +125,12 @@ export function ZObjednavky({ ticketId }: { ticketId: string }) {
             title="Zobrazit detail elektronického odsouhlasení"
             style={{ border: "none", background: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", textAlign: "left" }}
           >
-            {otevreno ? "▾" : "▸"} {textSouhlasu(souhlas)}
-            {souhlas.signature_url ? " · s podpisem" : ""}
+            {otevreno ? "▾" : "▸"} {textSouhlasu(zobrazSouhlas)}
+            {zobrazSouhlas.signature_url ? " · s podpisem" : ""}
           </button>
           {otevreno && (
             <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 10px", margin: "6px 0 0", padding: 8, borderRadius: 8, background: "var(--panel-2)" }}>
-              {detailSouhlasu(souhlas).map(([k, v]) => (
+              {detailSouhlasu(zobrazSouhlas).map(([k, v]) => (
                 <div key={k} style={{ display: "contents" }}>
                   <dt style={{ color: "var(--muted)" }}>{k}</dt>
                   <dd style={{ margin: 0, color: "var(--text)", overflowWrap: "anywhere" }}>{v}</dd>

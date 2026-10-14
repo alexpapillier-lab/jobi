@@ -159,7 +159,8 @@ function prijemka(): Template {
     fields([row("Zařízení", "{{device.name}}"), row("Sériové číslo / IMEI", "{{device.serialOrImei}}"), row("Stav při převzetí", "{{device.condition}}"), row("Reklamovaná závada", "{{device.issue}}"), row("Přijato k reklamaci", "{{dates.received}}")], "Reklamace"),
     text(LEGAL_TEXTS.prijemka_reklamace!, { size: "small", align: "justify" }),
   ];
-  t.slots.bottomLeft = [signatureSlot("Zákazník")];
+  // Nad čarou se vytiskne elektronické odsouhlasení z webu (reklamace z objednávky).
+  t.slots.bottomLeft = [signatureSlot("Zákazník", "intake")];
   t.slots.bottomRight = [signatureSlot("Za servis převzal")];
   return t;
 }

@@ -16,7 +16,7 @@ import type { CompanyData } from "./companyData";
 import { portalUrl } from "./portal";
 import type { Database } from "../types/supabase";
 import { technikPrace } from "./rootOwner";
-import { obrazekPodpisuPrevzeti, souhlasDoDokumentu, type PodpisPrevzeti } from "./souhlasPrevzeti";
+import { mapujPodpisPrevzeti, obrazekPodpisuPrevzeti, souhlasDoDokumentu, type PodpisPrevzeti } from "./souhlasPrevzeti";
 
 export type { DocumentData } from "../../jobidocs/core/types";
 
@@ -220,7 +220,16 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     totals: { currency: "CZK" },
     note: items.length ? undefined : s(claim.resolution_summary),
     extra: { reklamovaneOpravy: reklamovaneOpravyReklamace(claim).map((o) => o.name).join(", ") },
+    // Elektronický souhlas z webu u reklamace z objednávky (stejné podmínky
+    // jako zakázkový list) – tiskne se v kolonce podpisu zákazníka.
+    ...podpisReklamace(claim),
   };
+}
+
+function podpisReklamace(claim: WarrantyClaimRow): Pick<DocumentData, "consent" | "intakeSignature"> {
+  const podpis = mapujPodpisPrevzeti({ intake_consent: (claim as { intake_consent?: unknown }).intake_consent });
+  if (!podpis.intakeConsent) return {};
+  return { consent: souhlasDoDokumentu(podpis.intakeConsent), intakeSignature: obrazekPodpisuPrevzeti(podpis) };
 }
 
 type InvoiceKind = "invoice" | "proforma" | "credit_note";

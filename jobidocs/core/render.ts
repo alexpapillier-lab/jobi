@@ -219,8 +219,11 @@ function renderText(ctx: Ctx, block: Extract<Block, { type: "text" }>): string {
  */
 export function jePodpisPrevzeti(docType: string, label: string, source?: SignatureSource): boolean {
   if (source) return source === "intake";
-  if (docType !== "zakazkovy_list") return false;
   const l = label.toLowerCase();
+  // Příjemka reklamace: kolonka zákazníka (ne „Za servis převzal“) – reklamace
+  // z objednávky nese stejný elektronický souhlas jako zakázkový list.
+  if (docType === "prijemka_reklamace") return /zákazník/.test(l) && !/servis|vyzved|vydán|vrácen/.test(l);
+  if (docType !== "zakazkovy_list") return false;
   if (/vyzved|vydán|vrácen/.test(l)) return false;
   return /předání do opravy|předání do servisu|převzetí do opravy|příjem|přijetí|předal/.test(l);
 }

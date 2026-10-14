@@ -28,6 +28,7 @@ import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
 import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
 import { META_PREVEDENO, STAV_PREVEDENO, fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
+import { ZObjednavky } from "./PrichoziObjednavky";
 
 type Props = {
   detailedClaim: WarrantyClaimRow;
@@ -125,6 +126,8 @@ export function DetailReklamace({
       )}
     </div>
   )}
+  {/* Reklamace z objednávky z webu a elektronické odsouhlasení (stejné podmínky jako zakázkový list). */}
+  <ZObjednavky claim={detailedClaim as { id: string; intake_consent?: unknown }} />
   <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
     <div style={{ ...card, ...stylSekce("zakaznik") }}>
       <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
