@@ -172,8 +172,9 @@ export function TicketFaktura({ cislo }: { cislo?: string | null }) {
  */
 export function TicketUmisteni({ label, varovani }: { label?: string | null; varovani?: number | null }) {
   if (!label) return null;
-  const naCeste = label.startsWith("→");
-  const zaklad = naCeste ? `Na cestě: ${label.slice(1).trim()}` : `Fyzicky na pobočce ${label}`;
+  // „Brno → Hlavní pobočka“ (odkud → kam), bez známé odchozí pobočky „→ Hlavní pobočka“.
+  const naCeste = label.includes("→");
+  const zaklad = naCeste ? `Na cestě: ${label.replace(/^→\s*/, "")}` : `Fyzicky na pobočce ${label}`;
   const barva = varovani ? "var(--danger)" : "var(--warning)";
   return (
     <span
@@ -210,4 +211,21 @@ export function TicketRepair({ text }: { text?: string | null }) {
 /** Tečka mezi údaji. */
 export function MetaSeparator() {
   return <span style={{ color: "var(--border)", flexShrink: 0 }}>·</span>;
+}
+
+/**
+ * Štítky řádku: technik, pobočka přijetí, umístění/přesun, faktura. Stejná
+ * sada pro všechna zobrazení seznamu – dřív je časová osa a seskupení podle
+ * stavu neukazovaly, takže přesuny mezi pobočkami v nich nebyly vidět.
+ */
+export function TicketStitky({ t }: { t: { technik?: string | null; pobocka?: string | null; umisteni?: string | null; umisteniVaruje?: number | null; faktura?: string | null } }) {
+  if (!t.technik && !t.pobocka && !t.umisteni && !t.faktura) return null;
+  return (
+    <>
+      <TicketTechnik name={t.technik} />
+      <TicketPobocka label={t.pobocka} />
+      <TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
+      <TicketFaktura cislo={t.faktura} />
+    </>
+  );
 }

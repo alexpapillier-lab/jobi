@@ -104,6 +104,7 @@ import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
 import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
 import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
 import { useFakturyZakazek } from "./Orders/hooks/useFakturyZakazek";
+import { useOdkudCestuji } from "./Orders/hooks/useOdkudCestuji";
 import { stitekFaktury } from "../lib/fakturyZakazek";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
 import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
@@ -535,6 +536,7 @@ export default function Orders({
      z invoice_tickets, takže platí i pro souhrnnou fakturu za víc zakázek;
      záloha dál přes invoices.ticket_id (viz lib/fakturyZakazek). */
   const fakturaByTicketId = useFakturyZakazek(activeServiceId, !!(onCreateInvoice || onOpenInvoice), !closeDetailWhen);
+  const odkudCestuji = useOdkudCestuji(activeServiceId, zasilkyZapnuty && hasBranches);
   const invoiceIdByTicketId = useMemo(() => {
     const m: Record<string, string> = {};
     for (const [ticketId, f] of Object.entries(fakturaByTicketId)) m[ticketId] = f.id;
@@ -1949,7 +1951,7 @@ export default function Orders({
     // Šedý štítek: odkud zakázka je, když to není vybraná pobočka (v pohledu
     // „Všechny pobočky“ vždy). Oranžový: kde fyzicky je, když ne doma.
     pobocka: hasBranches && t.branchId && t.branchId !== activeBranchId ? (branchById(t.branchId)?.name ?? null) : null,
-    umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka") : null,
+    umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka", (z) => odkudCestuji.get(z)) : null,
     umisteniVaruje: zasilkyZapnuty && hasBranches ? dniBezZmenyJinde(t, nastaveniZasilek.upozorneniDni) : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
@@ -1960,7 +1962,7 @@ export default function Orders({
     expectedDoneAt: t.expectedDoneAt,
     // Číslo faktury, která zakázku kryje (i souhrnná); záloha štítek nemá.
     faktura: stitekFaktury(fakturaByTicketId[t.id]),
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId, odkudCestuji]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

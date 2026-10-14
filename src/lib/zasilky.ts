@@ -59,10 +59,17 @@ export function umisteniZakazky(t: { branchId?: string | null; locationBranchId?
   return { druh: "doma" };
 }
 
-/** Krátký štítek do seznamu: „Praha“, „→ Praha“; doma nic. */
-export function stitekUmisteni(u: UmisteniZakazky, nazevPobocky: (id: string) => string): string | null {
+/**
+ * Krátký štítek do seznamu: „Praha“ (fyzicky jinde), „Brno → Praha“ (na
+ * cestě; `odkud` = pobočka odeslání zásilky), bez známého odkud „→ Praha“;
+ * doma nic.
+ */
+export function stitekUmisteni(u: UmisteniZakazky, nazevPobocky: (id: string) => string, odkud?: (shipmentId: string) => string | null | undefined): string | null {
   if (u.druh === "doma") return null;
-  if (u.druh === "na_ceste") return `→ ${nazevPobocky(u.doBranchId)}`;
+  if (u.druh === "na_ceste") {
+    const z = odkud?.(u.shipmentId);
+    return z ? `${nazevPobocky(z)} → ${nazevPobocky(u.doBranchId)}` : `→ ${nazevPobocky(u.doBranchId)}`;
+  }
   return nazevPobocky(u.branchId);
 }
 
@@ -133,6 +140,18 @@ export async function nactiZasilky(serviceId: string): Promise<Zasilka[]> {
     .limit(500);
   if (error) throw new Error(error.message);
   return ((data ?? []) as Record<string, unknown>[]).map(mapZasilka);
+}
+
+/** Zásilky na cestě: id zásilky → pobočka, odkud vyjela (štítek „Brno → Praha“ v seznamu). */
+export async function nactiOdkudCestuji(serviceId: string): Promise<Map<string, string>> {
+  if (!supabase) return new Map();
+  const { data, error } = await (supabase.from("ticket_shipments") as any)
+    .select("id, from_branch_id")
+    .eq("service_id", serviceId)
+    .eq("status", "sent")
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return new Map(((data ?? []) as { id: string; from_branch_id: string }[]).map((r) => [r.id, r.from_branch_id]));
 }
 
 export async function nactiZasilku(id: string): Promise<Zasilka | null> {

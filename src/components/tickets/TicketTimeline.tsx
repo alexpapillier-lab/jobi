@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketCustomer } from "./fields";
+import { TicketCode, TicketCustomer, TicketStitky } from "./fields";
 import { DeviceIcon, WrenchIcon } from "./icons";
 import { CheckIcon } from "../icons";
 import { promenneRadku, stylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
@@ -148,6 +148,7 @@ export function TicketTimeline({ tickets, getByKey, normalizeStatus, onClickDeta
                   </div>
 
                   <TicketCustomer name={t.customerName} />
+                  <TicketStitky t={t} />
 
                   {(t.requestedRepair || t.issueShort) && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>

@@ -17,6 +17,9 @@ describe("umístění zakázky", () => {
     expect(umisteniZakazky({ branchId: "b", locationBranchId: null, transitShipmentId: "z2" })).toEqual({ druh: "na_ceste", doBranchId: "b", shipmentId: "z2" });
     expect(stitekUmisteni({ druh: "jinde", branchId: "p" }, nazev)).toBe("Praha");
     expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "z" }, nazev)).toBe("→ Brno");
+    // Se známou pobočkou odeslání: odkud → kam.
+    expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "z" }, nazev, (z) => (z === "z" ? "p" : null))).toBe("Praha → Brno");
+    expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "jina" }, nazev, (z) => (z === "z" ? "p" : null))).toBe("→ Brno");
     expect(popisUmisteni({ druh: "na_ceste", doBranchId: "p", shipmentId: "z" }, nazev, "Brno")).toBe("Na cestě do pobočky Praha");
     expect(popisUmisteni({ druh: "doma" }, nazev, "Brno")).toBe("Na své pobočce (Brno)");
   });
