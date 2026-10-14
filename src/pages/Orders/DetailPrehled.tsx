@@ -190,49 +190,6 @@ export function DetailPrehled({
           </div>
         </div>
 
-        {(() => {
-          // Zakázka vznikla převodem reklamace („Není to reklamace“).
-          const zReklamace = cloudClaims.find((c) => c.converted_ticket_id === detailedTicket.id);
-          if (!zReklamace) return null;
-          return (
-            <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span>Vzniklo z reklamace</span>
-              <button
-                type="button"
-                onClick={() => { setDetailClaimId(zReklamace.id); setDetailId(null); }}
-                title="Otevřít původní reklamaci"
-                style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(13,148,136,0.45)", background: "rgba(20,184,166,0.1)", color: "var(--text)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
-              >
-                {zReklamace.code}
-              </button>
-            </div>
-          );
-        })()}
-
-        {(() => {
-          const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
-          return claimsForTicket.length > 0 ? (
-            <div style={{ gridColumn: "1 / -1", ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {claimsForTicket.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-                    style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
-                  >
-                    <span style={{ fontWeight: 800 }}>{c.code}</span>
-                    <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null;
-        })()}
-
         <div style={{ ...card, ...stylSekce("zarizeni") }}>
           <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
           <div style={{ display: "grid", gap: 8 }}>
@@ -335,6 +292,51 @@ export function DetailPrehled({
           </div>
         </div>
       </div>
+      {/* Reklamace mimo mřížku Zákazník/Zařízení: karta přes celou šíři v
+          mřížce s auto-fit by roztáhla mřížku na pět sloupců a obě karty
+          zúžila na pětinu. */}
+      {(() => {
+        // Zakázka vznikla převodem reklamace („Není to reklamace“).
+        const zReklamace = cloudClaims.find((c) => c.converted_ticket_id === detailedTicket.id);
+        if (!zReklamace) return null;
+        return (
+          <div style={{ marginTop: 16, fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>Vzniklo z reklamace</span>
+            <button
+              type="button"
+              onClick={() => { setDetailClaimId(zReklamace.id); setDetailId(null); }}
+              title="Otevřít původní reklamaci"
+              style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(13,148,136,0.45)", background: "rgba(20,184,166,0.1)", color: "var(--text)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+            >
+              {zReklamace.code}
+            </button>
+          </div>
+        );
+      })()}
+
+      {(() => {
+        const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
+        return claimsForTicket.length > 0 ? (
+          <div style={{ marginTop: 16, ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
+            <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {claimsForTicket.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+                  style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
+                >
+                  <span style={{ fontWeight: 800 }}>{c.code}</span>
+                  <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
     </>
   );
 }
