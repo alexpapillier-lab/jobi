@@ -16,7 +16,7 @@
  */
 import { supabase } from "./supabaseClient";
 
-export type StavZasilky = "draft" | "sent" | "received";
+export type StavZasilky = "draft" | "sent" | "received" | "cancelled";
 
 export type Zasilka = {
   id: string;
@@ -34,6 +34,8 @@ export type Zasilka = {
   sentAt: string | null;
   receivedBy: string | null;
   receivedAt: string | null;
+  /** Stornovaná zásilka (na cestě zrušená, zakázky se vrátily). */
+  cancelledAt: string | null;
   polozky: ZasilkaPolozka[];
 };
 
@@ -81,7 +83,7 @@ export function popisUmisteni(u: UmisteniZakazky, nazevPobocky: (id: string) => 
 }
 
 export function stavZasilkyText(s: StavZasilky): string {
-  return s === "draft" ? "Koncept" : s === "sent" ? "Na cestě" : "Převzato";
+  return s === "draft" ? "Koncept" : s === "sent" ? "Na cestě" : s === "cancelled" ? "Stornováno" : "Převzato";
 }
 
 export function cisloZasilky(z: Pick<Zasilka, "cislo">): string {
@@ -90,7 +92,7 @@ export function cisloZasilky(z: Pick<Zasilka, "cislo">): string {
 
 /** Kolik položek zásilky chybí (odeslána, ale nepřevzatá). */
 export function nepreveztePolozky(z: Zasilka): ZasilkaPolozka[] {
-  return z.status === "draft" ? [] : z.polozky.filter((p) => !p.receivedAt);
+  return z.status === "draft" || z.status === "cancelled" ? [] : z.polozky.filter((p) => !p.receivedAt);
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -115,7 +117,7 @@ export function mapZasilka(r: Record<string, unknown>): Zasilka {
     cislo: typeof r.cislo === "number" ? r.cislo : Number(r.cislo) || 0,
     fromBranchId: str(r.from_branch_id),
     toBranchId: str(r.to_branch_id),
-    status: r.status === "sent" || r.status === "received" ? r.status : "draft",
+    status: r.status === "sent" || r.status === "received" || r.status === "cancelled" ? r.status : "draft",
     carrier: str(r.carrier),
     trackingNumber: str(r.tracking_number),
     note: str(r.note),
@@ -125,11 +127,12 @@ export function mapZasilka(r: Record<string, unknown>): Zasilka {
     sentAt: typeof r.sent_at === "string" ? r.sent_at : null,
     receivedBy: typeof r.received_by === "string" ? r.received_by : null,
     receivedAt: typeof r.received_at === "string" ? r.received_at : null,
+    cancelledAt: typeof r.cancelled_at === "string" ? r.cancelled_at : null,
     polozky,
   };
 }
 
-const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, ticket_shipment_items(id, shipment_id, ticket_id, added_at, received_at, note)";
+const SELECT = "id, service_id, cislo, from_branch_id, to_branch_id, status, carrier, tracking_number, note, created_by, created_at, sent_by, sent_at, received_by, received_at, cancelled_at, ticket_shipment_items(id, shipment_id, ticket_id, added_at, received_at, note)";
 
 export async function nactiZasilky(serviceId: string): Promise<Zasilka[]> {
   if (!supabase) return [];
@@ -212,6 +215,17 @@ export async function smazKoncept(id: string): Promise<void> {
 export async function odesliZasilku(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase není k dispozici");
   const { error } = await (supabase as any).rpc("zasilka_odeslat", { p_shipment_id: id });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Storno zásilky na cestě: nepřevzaté zakázky se vrátí na pobočku odeslání,
+ * zásilka zůstane v přehledu jako stornovaná. Dělá databáze (RPC), stejně
+ * jako odeslání a převzetí.
+ */
+export async function stornujZasilku(id: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await (supabase as any).rpc("zasilka_stornovat", { p_shipment_id: id });
   if (error) throw new Error(error.message);
 }
 
@@ -351,7 +365,8 @@ export function krokyPresunu(
 ): { predOpravou: KrokPresunu[]; poOprave: KrokPresunu[] } {
   const home = t.branchId ?? null;
   const u = umisteniZakazky(t);
-  const serazene = [...historie].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // Stornovaná zásilka se nepočítá – zakázka se s ní nikam nepřesunula.
+  const serazene = historie.filter((z) => z.status !== "cancelled").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const tam = serazene.find((z) => z.toBranchId !== home) ?? null;
   const zpet = [...serazene].reverse().find((z) => z.toBranchId === home && (!tam || z.createdAt >= tam.createdAt)) ?? null;
   if (!tam && u.druh === "doma") return { predOpravou: [], poOprave: [] };

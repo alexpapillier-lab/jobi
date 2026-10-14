@@ -21,6 +21,7 @@ import {
   prevezmiZasilku,
   pridejDoZasilky,
   smazKoncept,
+  stornujZasilku,
   stavZasilkyText,
   subscribeZasilky,
   ulozHlavickuZasilky,
@@ -92,6 +93,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   const [iHotove, setIHotove] = useState(false);
   const [zauzlovano, setZauzlovano] = useState(false);
   const [potvrditSmazani, setPotvrditSmazani] = useState(false);
+  const [potvrditStorno, setPotvrditStorno] = useState(false);
   const [vybraneKPrevzeti, setVybraneKPrevzeti] = useState<Set<string>>(new Set());
 
   /* Nová zásilka: odkud = aktivní pobočka (jinak pobočka pro novou zakázku),
@@ -155,6 +157,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
     draft: zasilky.filter((z) => z.status === "draft").length,
     sent: zasilky.filter((z) => z.status === "sent").length,
     received: zasilky.filter((z) => z.status === "received").length,
+    cancelled: zasilky.filter((z) => z.status === "cancelled").length,
   }), [zasilky]);
 
   /* Zakázky, které jdou do konceptu: fyzicky na pobočce odeslání, necestují,
@@ -301,13 +304,15 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                 { value: "draft", label: `Koncepty (${pocty.draft})`, dataTour: "zasilky-zalozka-koncepty" },
                 { value: "sent", label: `Na cestě (${pocty.sent})`, dataTour: "zasilky-zalozka-na-ceste" },
                 { value: "received", label: `Převzaté (${pocty.received})`, dataTour: "zasilky-zalozka-prevzate" },
+                // Stornované jen když nějaké jsou – běžně se nestornuje.
+                ...(pocty.cancelled > 0 || zalozka === "cancelled" ? [{ value: "cancelled" as Zalozka, label: `Stornované (${pocty.cancelled})` }] : []),
               ]}
             />
             {nacitam ? (
               <div style={{ color: "var(--muted)", fontSize: 13 }}>Načítám…</div>
             ) : vZalozce.length === 0 ? (
               <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                {zalozka === "draft" ? "Žádný koncept. Založte novou zásilku tlačítkem nahoře." : zalozka === "sent" ? "Nic není na cestě." : "Zatím žádná převzatá zásilka."}
+                {zalozka === "draft" ? "Žádný koncept. Založte novou zásilku tlačítkem nahoře." : zalozka === "sent" ? "Nic není na cestě." : zalozka === "cancelled" ? "Žádná stornovaná zásilka." : "Zatím žádná převzatá zásilka."}
               </div>
             ) : (
               <div data-tour="zasilky-seznam" style={{ display: "grid", gap: 6 }}>
@@ -336,7 +341,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                         <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{z.polozky.length} {z.polozky.length === 1 ? "zakázka" : z.polozky.length < 5 ? "zakázky" : "zakázek"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {z.status === "draft" ? `založeno ${datum(z.createdAt)}` : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : `převzato ${datum(z.receivedAt)}`}
+                        {z.status === "draft" ? `založeno ${datum(z.createdAt)}` : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : z.status === "cancelled" ? `stornováno ${datum(z.cancelledAt)}` : `převzato ${datum(z.receivedAt)}`}
                         {z.trackingNumber ? ` · ${z.trackingNumber}` : ""}
                         {chybi > 0 ? ` · chybí ${chybi}` : ""}
                       </div>
@@ -362,10 +367,16 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                     <Pill>{stavZasilkyText(otevrena.status)}</Pill>
                     {otevrena.sentAt ? ` odesláno ${datum(otevrena.sentAt)}` : ""}
                     {otevrena.receivedAt ? ` · převzato ${datum(otevrena.receivedAt)}` : ""}
+                    {otevrena.cancelledAt ? ` · stornováno ${datum(otevrena.cancelledAt)}` : ""}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <Button data-tour="zasilky-protokol" size="sm" variant="soft" onClick={() => void tiskProtokolu(otevrena)} disabled={otevrena.polozky.length === 0}>Předávací protokol</Button>
+                  {otevrena.status === "sent" && (
+                    <Button size="sm" variant="ghost" onClick={() => setPotvrditStorno(true)} disabled={zauzlovano} title="Zásilka nikam nejede – nepřevzaté zakázky se vrátí na pobočku odeslání">
+                      Stornovat
+                    </Button>
+                  )}
                   {otevrena.status === "draft" && (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setPotvrditSmazani(true)} disabled={zauzlovano}>Smazat koncept</Button>
@@ -503,6 +514,21 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
           if (!otevrena) return;
           await akce(() => smazKoncept(otevrena.id), "Koncept smazán.");
           setOtevrenaId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={potvrditStorno}
+        title={otevrena ? `Stornovat zásilku ${cisloZasilky(otevrena)}?` : "Stornovat zásilku?"}
+        message={otevrena
+          ? `Nepřevzaté zakázky (${nepreveztePolozky(otevrena).length}) se vrátí na pobočku ${nazevPobocky(otevrena.fromBranchId)}, odkud zásilka vyjela. Už převzaté zůstanou, kde jsou. Zásilka zůstane v přehledu jako stornovaná.`
+          : ""}
+        confirmLabel="Stornovat"
+        onCancel={() => setPotvrditStorno(false)}
+        onConfirm={async () => {
+          setPotvrditStorno(false);
+          if (!otevrena) return;
+          await akce(() => stornujZasilku(otevrena.id), "Zásilka stornována.");
+          setZalozka("cancelled");
         }}
       />
     </div>
