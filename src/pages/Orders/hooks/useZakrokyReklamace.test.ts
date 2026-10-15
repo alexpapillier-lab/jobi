@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { zakrokyDoSloupce } from "./useZakrokyReklamace";
-import { parseClaimResolutionItems } from "../reklamaceZakroky";
+import { parseClaimResolutionItems, zakrokZCeniku } from "../reklamaceZakroky";
 import { claimDocumentData } from "../../../lib/documentData";
 import type { WarrantyClaimRow } from "./useWarrantyClaims";
 
@@ -29,6 +29,18 @@ describe("zákroky reklamace → databáze → výdejka", () => {
     expect(doklad.items?.map((i) => [i.name, i.total])).toEqual([
       ["Výměna konektoru", 490],
       ["Kontrola", 0],
+    ]);
+  });
+
+  it("oprava z ceníku jde do zákroků s názvem z ceníku a cenou 0; cenu jde přepsat", () => {
+    const z = zakrokZCeniku({ name: "Výměna displeje" });
+    expect(z).toMatchObject({ name: "Výměna displeje", price: 0 });
+    expect(z.id).toBeTruthy();
+    expect(zakrokZCeniku({ name: "Výměna displeje" }).id).not.toBe(z.id);
+    const sloupec = zakrokyDoSloupce([z, { ...zakrokZCeniku({ name: "Baterie" }), price: 800 }]);
+    expect(parseClaimResolutionItems(sloupec).map((x) => [x.name, x.price])).toEqual([
+      ["Výměna displeje", 0],
+      ["Baterie", 800],
     ]);
   });
 });

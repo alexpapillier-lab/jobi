@@ -30,3 +30,11 @@ export function serializeClaimResolutionItems(items: ClaimResolutionItem[]): str
   if (items.length === 0) return "";
   return JSON.stringify(items);
 }
+
+/**
+ * Zákrok vybraný z ceníku: název z ceníku, cena 0 – u reklamace se oprava
+ * zákazníkovi neúčtuje. Cenu jde v detailu přepsat (neuznaná reklamace).
+ */
+export function zakrokZCeniku(oprava: { name: string }): ClaimResolutionItem {
+  return { id: (crypto as any).randomUUID?.() ?? `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: oprava.name, price: 0 };
+}

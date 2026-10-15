@@ -1017,6 +1017,14 @@ export default function Orders({
     () => (detailClaimId ? cloudClaims.find((c) => c.id === detailClaimId) : undefined),
     [detailClaimId, cloudClaims]
   );
+  /** Opravy z ceníku k zařízení reklamace – do zákroků se přidávají za 0 Kč. */
+  const opravyReklamace = useMemo(
+    () =>
+      repairsForDeviceLabel(
+        detailedClaim?.device_label || [detailedClaim?.device_brand, detailedClaim?.device_model].filter(Boolean).join(" ")
+      ),
+    [detailedClaim?.device_label, detailedClaim?.device_brand, detailedClaim?.device_model, repairsForDeviceLabel]
+  );
 
   /**
    * Komentáře se dotahují k tomu, co je zrovna otevřené: k detailu zakázky
@@ -2209,6 +2217,7 @@ export default function Orders({
             zmenZakroky={zmenZakroky}
             ulozZakrokyHned={ulozZakrokyHned}
             zakrokyNeulozene={zakrokyNeulozene}
+            opravyZCeniku={opravyReklamace}
             statuses={statuses}
             getByKey={getByKey}
             statusActionsMap={statusActionsMap}

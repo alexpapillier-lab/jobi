@@ -10,6 +10,7 @@ import { SectionHeading } from "../../components/SectionHeading";
 import { DateTimePicker } from "../../components/DateTimePicker";
 import { DeviceIcon, HashIcon, MailIcon, NoteIcon, PhoneIcon, PinIcon, SearchIcon, UserIcon } from "../../components/icons";
 import { StatusPicker } from "../../components/orders";
+import { RepairPicker } from "../../components/orders/RepairPicker";
 import { TicketComments, formatCZ, type TicketComment } from "../../components/tickets";
 import { FotkaZakazky } from "../../components/FotkaZakazky";
 import { VyberFotek } from "../../components/orders/VyberFotek";
@@ -25,7 +26,8 @@ import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
 import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
-import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
+import { type ClaimResolutionItem, parseClaimResolutionItems, zakrokZCeniku } from "./reklamaceZakroky";
+import type { DeviceRepair } from "../../lib/catalogStorage";
 import { META_PREVEDENO, STAV_PREVEDENO, fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
 import { ZObjednavky } from "./PrichoziObjednavky";
@@ -43,6 +45,8 @@ type Props = {
   zmenZakroky: (items: ClaimResolutionItem[]) => void;
   ulozZakrokyHned: () => Promise<boolean>;
   zakrokyNeulozene: boolean;
+  /** Opravy z ceníku pro zařízení reklamace (stejné párování jako u zakázky). */
+  opravyZCeniku: DeviceRepair[];
   statuses: StatusMeta[];
   getByKey: (key: string) => StatusMeta | undefined;
   statusActionsMap: Record<string, string[]>;
@@ -79,6 +83,7 @@ export function DetailReklamace({
   zmenZakroky,
   ulozZakrokyHned,
   zakrokyNeulozene,
+  opravyZCeniku,
   statuses,
   getByKey,
   statusActionsMap,
@@ -333,6 +338,20 @@ export function DetailReklamace({
                 title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}>
                 <span>+</span> Přidat zákrok
               </Button>
+              {/* Z ceníku jako u zakázky, ale za 0 Kč – reklamace se neúčtuje. */}
+              {opravyZCeniku.length > 0 && (
+                <div style={{ minWidth: 240, flex: "0 1 320px" }} data-zakrok-z-ceniku>
+                  <RepairPicker
+                    value=""
+                    repairs={opravyZCeniku.map((r) => ({ id: r.id, name: r.name, price: r.price || 0 }))}
+                    placeholder="Přidat z ceníku…"
+                    onChange={(repairId) => {
+                      const oprava = opravyZCeniku.find((r) => r.id === repairId);
+                      if (oprava) setResolutionItems([...resolutionItems, zakrokZCeniku(oprava)]);
+                    }}
+                  />
+                </div>
+              )}
               {/* Zákroky se ukládají samy; tlačítko jen zapíše hned, dokud změna čeká. */}
               {zakrokyNeulozene ? (
                 <Button variant="primary"

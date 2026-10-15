@@ -265,3 +265,55 @@ test("provedený zákrok u reklamace se uloží sám a vytiskne se na výdejce r
   await expect(page.getByPlaceholder("Název zákroku / opravy").first()).toHaveValue(zakrok, { timeout: 30_000 });
   await expect(page.getByPlaceholder("Název zákroku / opravy").nth(1)).toHaveValue(druhy);
 });
+
+test("zákrok u reklamace jde přidat z ceníku – s cenou 0, kterou jde přepsat", async ({ page }) => {
+  /*
+   * „Ať jde u reklamací přidávat i opravy z ceníku, asi normálně s cenou 0“
+   * (majitel, 15. 10. 2026). Výběr je stejný jako u zakázky (párování podle
+   * názvu zařízení), jen se oprava u reklamace zákazníkovi neúčtuje.
+   *
+   * Model s opravou se nevybírá podle jména – ceník testovacího servisu
+   * mění i jiné testy. Vezme se první model, který nějakou opravu má.
+   */
+  test.setTimeout(180_000);
+  const relace: { url?: string; apikey?: string; token?: string } = {};
+  page.on("request", (r) => {
+    if (!r.url().includes("/rest/v1/")) return;
+    const h = r.headers();
+    if (h["apikey"]) relace.apikey = h["apikey"];
+    if (h["authorization"]?.startsWith("Bearer ")) relace.token = h["authorization"].slice(7);
+    relace.url = new URL(r.url()).origin;
+  });
+  await prihlasSe(page, "owner");
+  await expect.poll(() => (relace.token && relace.token !== relace.apikey ? "ok" : ""), { timeout: 30_000 }).toBe("ok");
+  const cti = async <T,>(cesta: string): Promise<T[]> => {
+    const o = await page.request.get(`${relace.url}/rest/v1/${cesta}`, { headers: { apikey: relace.apikey!, Authorization: `Bearer ${relace.token}` } });
+    expect(o.status(), await o.text()).toBeLessThan(300);
+    return (await o.json()) as T[];
+  };
+  const modely = await cti<{ id: string; name: string }>(`device_models?select=id,name&service_id=eq.${SERVIS.id}&order=name`);
+  const opravy = await cti<{ name: string; model_ids: string[] | null }>(`repairs?select=name,model_ids&service_id=eq.${SERVIS.id}&order=name`);
+  const model = modely.find((m) => m.name.trim().length >= 3 && opravy.some((o) => o.name.trim() && (o.model_ids ?? []).includes(m.id)));
+  expect(model, "Testovací servis nemá v ceníku žádný model s opravou.").toBeTruthy();
+  const nazevOpravy = opravy.find((o) => o.name.trim() && (o.model_ids ?? []).includes(model!.id))!.name;
+
+  const zakaznik = testovaciJmeno("Reklamace z ceníku");
+  await zalozReklamaci(page, zakaznik, model!.name);
+
+  await page.locator("[data-zakrok-z-ceniku]:visible").getByRole("button").click();
+  await page.getByRole("listbox").getByText(nazevOpravy, { exact: true }).first().click();
+  const nazvy = page.getByPlaceholder("Název zákroku / opravy");
+  await expect(nazvy.last()).toHaveValue(nazevOpravy);
+  await expect(page.getByPlaceholder("0 = zdarma").last()).toHaveValue("0");
+
+  // Ruční zákrok vedle toho dál jde a cena z ceníku se dá přepsat (neuznaná reklamace).
+  await page.getByRole("button", { name: /Přidat zákrok/ }).click();
+  await nazvy.last().fill("Ruční zákrok");
+  await page.getByPlaceholder("0 = zdarma").first().fill("350");
+
+  await zavriDetail(page);
+  await otevriReklamaciPoReloadu(page, zakaznik);
+  await expect(nazvy.first()).toHaveValue(nazevOpravy, { timeout: 30_000 });
+  await expect(page.getByPlaceholder("0 = zdarma").first()).toHaveValue("350");
+  await expect(nazvy.nth(1)).toHaveValue("Ruční zákrok");
+});
