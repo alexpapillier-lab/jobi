@@ -6,7 +6,7 @@
  * v zóně u spodního okraje. Výchozí šablona žije tady, v jádru – servis,
  * který si nic nenastavil, tiskne přesně to, co vidí v editoru.
  */
-import type { Block, Brand, DocType, DocumentsV2, FieldRow, SlotItem, Template, Theme, ThemeStyle } from "./types.js";
+import type { Block, BlockWhen, Brand, DocType, DocumentsV2, FieldRow, SlotItem, Template, Theme, ThemeStyle } from "./types.js";
 
 let seq = 0;
 /** Stabilní id pro výchozí šablony (deterministické, aby snapshoty seděly). */
@@ -58,7 +58,7 @@ function fields(rows: FieldRow[], title?: string, layout: "grid" | "table" = "gr
   return { id: id("b"), type: "fields", title, rows, layout };
 }
 
-function text(content: string, opts?: { title?: string; size?: "normal" | "small"; align?: "left" | "justify" | "center"; columns?: 1 | 2; when?: "always" | "notEmpty" }): Block {
+function text(content: string, opts?: { title?: string; size?: "normal" | "small"; align?: "left" | "justify" | "center"; columns?: 1 | 2; when?: BlockWhen }): Block {
   return { id: id("b"), type: "text", content, size: opts?.size ?? "normal", align: opts?.align ?? "left", columns: opts?.columns, title: opts?.title, when: opts?.when };
 }
 
@@ -171,6 +171,11 @@ function vydejka(): Template {
     fields([row("Jméno", "{{customer.name}}"), row("Telefon", "{{customer.phone}}"), row("Zařízení", "{{device.name}}"), row("Sériové číslo / IMEI", "{{device.serialOrImei}}"), row("Přijato k reklamaci", "{{dates.received}}"), row("Vydáno", "{{dates.released}}")], "Reklamace"),
     text("{{note}}", { title: "Výsledek reklamace", when: "notEmpty" }),
     { id: id("b"), type: "items", title: "Provedené úkony", columns: ["name", "total"], showTotal: true, when: "notEmpty" },
+    // Záruka a záruční podmínky jako na záručním listu – jen když se v rámci
+    // reklamace něco opravovalo. U zamítnuté reklamace bez úkonů by záruka
+    // na výdejce neměla na co odkazovat.
+    { id: id("b"), type: "warranty", title: "Záruka", when: "notEmpty" },
+    text(LEGAL_TEXTS.zarucni_list!, { size: "small", align: "justify", columns: 2, when: "hasItems" }),
     text(LEGAL_TEXTS.vydejka_reklamace!, { size: "small", align: "justify" }),
   ];
   t.slots.bottomLeft = [signatureSlot("Zákazník")];

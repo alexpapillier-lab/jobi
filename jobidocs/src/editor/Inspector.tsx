@@ -65,10 +65,11 @@ function TextWithVars({ value, onChange, multiline, placeholder }: { value: stri
 
 function WhenSelect({ value, onChange }: { value: BlockWhen | undefined; onChange: (v: BlockWhen) => void }) {
   return (
-    <Row label="Zobrazit" hint="„Jen když jsou data“: blok se při tisku vynechá, když k němu Jobi nepošle žádné hodnoty.">
+    <Row label="Zobrazit" hint="„Jen když jsou data“: blok se při tisku vynechá, když k němu Jobi nepošle žádné hodnoty. „Jen když jsou položky“: blok se vynechá, když doklad nemá žádné položky.">
       <select className="ui-select" value={value ?? "always"} onChange={(e) => onChange(e.target.value as BlockWhen)}>
         <option value="always">Vždy</option>
         <option value="notEmpty">Jen když jsou data</option>
+        <option value="hasItems">Jen když jsou položky</option>
       </select>
     </Row>
   );

@@ -44,7 +44,7 @@ export function Outline({ template, selection, onSelect, onMoveBlock, onAddBlock
     ));
 
   const renderBlock = (b: Block, index: number, nested = false) => {
-    const hiddenPrint = "when" in b && b.when === "notEmpty";
+    const hiddenPrint = "when" in b && (b.when === "notEmpty" || b.when === "hasItems");
     return (
       <div key={b.id}>
         <div

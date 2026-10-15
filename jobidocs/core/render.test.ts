@@ -295,3 +295,23 @@ describe("skripty editoru", () => {
     expect(html).toContain("dragOffFor(el)");
   });
 });
+
+describe("výdejka reklamace", () => {
+  const args = { template: defaultTemplate("vydejka_reklamace"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+  const zaklad = { service: { name: "Servis" }, customer: { name: "Jan Novák" }, device: { name: "iPhone 13" } };
+
+  it("s provedenými úkony tiskne záruku a záruční podmínky jako záruční list", () => {
+    const html = renderDocument({ ...args, data: { ...zaklad, items: [{ name: "Výměna displeje", qty: 1, total: 0 }], warranty: { months: 6, until: "2027-04-15" } } });
+    expect(html).toContain("Výměna displeje");
+    expect(html).toContain("Záruční doba činí");
+    expect(html).toContain("poskytuje servis záruku 6 měsíců");
+  });
+
+  it("bez úkonů (zamítnutá reklamace) záruku ani záruční podmínky netiskne", () => {
+    const html = renderDocument({ ...args, data: { ...zaklad, note: "Reklamace zamítnuta." } });
+    expect(html).toContain("Reklamace zamítnuta.");
+    expect(html).not.toContain("Záruční doba činí");
+    expect(html).not.toContain("poskytuje servis záruku");
+    expect(html).toContain("převzetí zařízení po vyřízení reklamace");
+  });
+});

@@ -206,7 +206,8 @@ export type FieldRow = {
 
 export type ItemsColumn = "name" | "qty" | "unit" | "unitPrice" | "vatRate" | "total";
 
-export type BlockWhen = "always" | "notEmpty";
+/** „hasItems“: blok se tiskne, jen když doklad má položky (např. záruční podmínky na výdejce reklamace, kde se nic neopravovalo). */
+export type BlockWhen = "always" | "notEmpty" | "hasItems";
 
 export type Block =
   | { id: string; type: "fields"; title?: string; rows: FieldRow[]; layout?: "grid" | "table"; when?: BlockWhen }

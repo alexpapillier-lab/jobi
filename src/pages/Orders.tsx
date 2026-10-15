@@ -56,6 +56,7 @@ import { safeLoadCompanyData } from "../lib/companyData";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import {
   loadDocumentsConfigFromDB,
+  zarucniDobaProTisk,
 } from "../lib/documentHelpers";
 
 import {
@@ -1936,9 +1937,15 @@ export default function Orders({
       claimResolutionDraft !== null ? { ...detailedClaim, resolution_summary: zakrokyDoSloupce(claimResolutionDraft) } : detailedClaim;
     const original = cloudTickets.find((t) => t.id === claim.source_ticket_id) as TicketEx | undefined;
     // Údaje pobočky reklamace mají přednost (stejně jako u zakázkových dokladů).
-    const data = claimDocumentData(claim, companyDataForBranch(safeLoadCompanyData(), getCachedBranch(sid, claim.branch_id)), original?.code ?? "");
-    // Výdejka se tiskne při vrácení zařízení – bez zapsaného data vydání je to dnešek.
-    if (docType === "vydejka_reklamace") data.dates = { ...data.dates, released: data.dates?.released ?? new Date().toISOString() };
+    // Výdejka se tiskne při vrácení zařízení – bez zapsaného data vydání je to
+    // dnešek. Záruka na provedené úkony má stejnou délku jako na záručním listu.
+    const zaruka = docType === "vydejka_reklamace" ? zarucniDobaProTisk(sid) : undefined;
+    const data = claimDocumentData(
+      claim,
+      companyDataForBranch(safeLoadCompanyData(), getCachedBranch(sid, claim.branch_id)),
+      original?.code ?? "",
+      docType === "vydejka_reklamace" ? { warrantyMonths: zaruka?.months, warrantyDays: zaruka?.days, releasedAt: new Date().toISOString() } : undefined
+    );
     const soubor = docType === "vydejka_reklamace" ? `vydejka-reklamace-${claim.code}.pdf` : `prijemka-reklamace-${claim.code}.pdf`;
     if (isWeb()) {
       await runWebDocument(action, docType, sid, data);

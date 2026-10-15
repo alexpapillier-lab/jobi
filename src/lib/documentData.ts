@@ -174,7 +174,12 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
 }
 
 /** Příjemka / výdejka reklamace. */
-export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Record<string, unknown>, originalTicketCode = ""): DocumentData {
+export function claimDocumentData(
+  claim: WarrantyClaimRow,
+  cd: CompanyData | Record<string, unknown>,
+  originalTicketCode = "",
+  opts?: { warrantyMonths?: number; warrantyDays?: number; releasedAt?: string }
+): DocumentData {
   let items: LineItem[] = [];
   if (claim.resolution_summary?.trim().startsWith("[")) {
     try {
@@ -183,6 +188,17 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     } catch {
       items = [];
     }
+  }
+  // Záruka na výdejce reklamace: jen když se v rámci reklamace něco
+  // opravovalo, a stejně dlouhá jako na záručním listu (nastavení dokumentů),
+  // počítaná ode dne vydání.
+  const released = s(claim.released_at) ?? opts?.releasedAt;
+  const warrantyMonths = items.length ? opts?.warrantyMonths : undefined;
+  const warrantyDays = items.length && !warrantyMonths ? opts?.warrantyDays : undefined;
+  let warrantyUntil: string | undefined;
+  if (released) {
+    if (warrantyMonths) warrantyUntil = pridejMesice(new Date(released), warrantyMonths).toISOString();
+    else if (warrantyDays) warrantyUntil = pridejDny(new Date(released), warrantyDays).toISOString();
   }
   return {
     number: claim.code,
@@ -210,7 +226,7 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     },
     dates: {
       received: s(claim.received_at) ?? claim.created_at,
-      released: s(claim.released_at),
+      released,
       completed: s(claim.completed_at),
       eta: s(claim.expected_completion_at),
     },
@@ -218,6 +234,7 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     handoff: { receive: s((claim as { handoff_method?: string | null }).handoff_method) },
     items,
     totals: { currency: "CZK" },
+    warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : warrantyDays ? { days: warrantyDays, until: warrantyUntil } : undefined,
     note: items.length ? undefined : s(claim.resolution_summary),
     extra: { reklamovaneOpravy: reklamovaneOpravyReklamace(claim).map((o) => o.name).join(", ") },
     // Elektronický souhlas z webu u reklamace z objednávky (stejné podmínky

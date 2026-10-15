@@ -97,6 +97,7 @@ function isBlockEmpty(ctx: Ctx, block: Block): boolean {
 function blockVisible(ctx: Ctx, block: Block): boolean {
   const when = "when" in block ? block.when : undefined;
   if (when === "notEmpty" && isBlockEmpty(ctx, block)) return false;
+  if (when === "hasItems" && !ctx.placeholders && !(ctx.data.items && ctx.data.items.length > 0)) return false;
   return true;
 }
 
