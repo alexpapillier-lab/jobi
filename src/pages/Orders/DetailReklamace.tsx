@@ -37,9 +37,12 @@ type Props = {
   isEditingClaim: boolean;
   cloudTickets: TicketEx[];
   setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
+  /** Zákroky na obrazovce; null = beze změny (platí resolution_summary). */
   claimResolutionDraft: ClaimResolutionItem[] | null;
-  setClaimResolutionDraft: React.Dispatch<React.SetStateAction<ClaimResolutionItem[] | null>>;
-  saveClaimResolutionItems: (claimId: string, items: ClaimResolutionItem[]) => Promise<boolean>;
+  /** Změna zákroků – uloží se sama po krátkém odkladu (useZakrokyReklamace). */
+  zmenZakroky: (items: ClaimResolutionItem[]) => void;
+  ulozZakrokyHned: () => Promise<boolean>;
+  zakrokyNeulozene: boolean;
   statuses: StatusMeta[];
   getByKey: (key: string) => StatusMeta | undefined;
   statusActionsMap: Record<string, string[]>;
@@ -73,8 +76,9 @@ export function DetailReklamace({
   cloudTickets,
   setCloudTickets,
   claimResolutionDraft,
-  setClaimResolutionDraft,
-  saveClaimResolutionItems,
+  zmenZakroky,
+  ulozZakrokyHned,
+  zakrokyNeulozene,
   statuses,
   getByKey,
   statusActionsMap,
@@ -273,7 +277,7 @@ export function DetailReklamace({
       <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
       {(() => {
         const resolutionItems = claimResolutionDraft ?? parseClaimResolutionItems(detailedClaim?.resolution_summary ?? null);
-        const setResolutionItems = (next: ClaimResolutionItem[]) => setClaimResolutionDraft(next);
+        const setResolutionItems = zmenZakroky;
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {resolutionItems.length === 0 ? (
@@ -329,15 +333,18 @@ export function DetailReklamace({
                 title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}>
                 <span>+</span> Přidat zákrok
               </Button>
-              {claimResolutionDraft !== null && (
+              {/* Zákroky se ukládají samy; tlačítko jen zapíše hned, dokud změna čeká. */}
+              {zakrokyNeulozene ? (
                 <Button variant="primary"
                   onClick={() => {
-                    saveClaimResolutionItems(detailedClaim!.id, claimResolutionDraft!).then((ok) => ok && showToast("Zákroky uloženy", "success"));
+                    ulozZakrokyHned().then((ok) => ok && showToast("Zákroky uloženy", "success"));
                   }} style={{ display: "inline-flex", alignItems: "center", gap: 8,  background: "var(--accent)", color: "var(--accent-fg)" }}
                 >
                   Uložit zákroky
                 </Button>
-              )}
+              ) : claimResolutionDraft !== null ? (
+                <span style={{ fontSize: 12, color: "var(--muted)" }} data-zakroky-ulozeno>Uloženo</span>
+              ) : null}
             </div>
             {resolutionItems.length > 0 && (() => {
               const total = resolutionItems.reduce((sum, r) => sum + (r.price || 0), 0);

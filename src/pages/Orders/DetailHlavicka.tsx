@@ -63,7 +63,7 @@ type Props = {
   setEditedClaim: React.Dispatch<React.SetStateAction<Partial<WarrantyClaimRow>>>;
   startEditingClaim: () => void;
   canPrintExport: boolean;
-  runClaimDocument: (action: DocMode) => Promise<void>;
+  runClaimDocument: (action: DocMode, docType?: "prijemka_reklamace" | "vydejka_reklamace") => Promise<void>;
   setDetailId: React.Dispatch<React.SetStateAction<string | null>>;
   setDetailClaimId: React.Dispatch<React.SetStateAction<string | null>>;
   setClaimHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -302,6 +302,13 @@ export function DetailHlavicka({
                       icon: <DocumentIcon size={14} />,
                       onPrint: () => runClaimDocument("print"),
                       onExport: () => runClaimDocument("export"),
+                    },
+                    {
+                      key: "vydejka_reklamace",
+                      label: "Výdejka reklamace",
+                      icon: <DocumentIcon size={14} />,
+                      onPrint: () => runClaimDocument("print", "vydejka_reklamace"),
+                      onExport: () => runClaimDocument("export", "vydejka_reklamace"),
                     },
                   ]}
                 />

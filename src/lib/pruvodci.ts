@@ -165,7 +165,7 @@ export const PRUVODCI: Pruvodce[] = [
     kroky: [
       { page: "orders", title: "K čemu to je", description: "V detailu reklamace zapisujete diagnostiku a zákroky, přepínáte stav a tisknete protokoly. Otevřete ji ze skupiny Reklamace v seznamu.", selector: sel("orders-groups"), icon: "reklamace" },
       { page: "orders", title: "Přepněte stav", description: "Klikněte na stav vedle čísla reklamace a vyberte nový. Koncový stav reklamaci uzavře.", selector: sel("reklamace-stav"), icon: "reklamace" },
-      { page: "orders", title: "Vytiskněte protokol", description: "Tisk → Přijetí reklamace vytiskne nebo uloží protokol o přijetí reklamace pro zákazníka.", selector: sel("reklamace-tisk"), icon: "doc" },
+      { page: "orders", title: "Vytiskněte protokol", description: "Tisk → Přijetí reklamace vytiskne protokol o přijetí pro zákazníka, Výdejka reklamace pak při vrácení zařízení doklad s provedenými zákroky a cenou. Zákroky se ukládají samy.", selector: sel("reklamace-tisk"), icon: "doc" },
       { page: "orders", title: "Není to reklamace", description: "Když se ukáže, že závadu záruka nekryje, klikněte na Není to reklamace: vznikne běžná zakázka (Přijato) se zákazníkem, zařízením, popisem, fotkami a diagnostikou a reklamace se uzavře stavem Převedeno na zakázku. Jde to jen jednou a jen u neuzavřené reklamace.", selector: sel("reklamace-prevest"), icon: "orders" },
     ],
   },
