@@ -370,6 +370,22 @@ export function UpravaZakazky({
               />
             </div>
             <div>
+              <div style={fieldLabel}>Předpokládaná cena</div>
+              <input
+                type="number"
+                value={editedTicket.estimatedPrice ?? ""}
+                onChange={(e) => {
+                  const n = e.target.value.trim() === "" ? undefined : Number(e.target.value);
+                  if (n === undefined || Number.isFinite(n)) setEditedTicket((p) => ({ ...p, estimatedPrice: n }));
+                }}
+                style={baseFieldInput}
+                placeholder="2 500"
+                min="0"
+                step="1"
+              />
+              <div style={fieldMuted}>V Kč. Cena, se kterou zákazník při příjmu souhlasil – tiskne se na zakázkový list.</div>
+            </div>
+            <div>
               <div style={fieldLabel}>Heslo/kód zařízení</div>
               <input
                 type="text"

@@ -22,6 +22,7 @@ import { skrytPostupZakazky } from "./uiConfig";
 import { formatPhoneNumber } from "./formatovani";
 import { card } from "./styly";
 import { stavZarukyOpravy, textZarukyOpravy } from "../../lib/zarukaOpravy";
+import { formatCurrency } from "../../lib/invoiceMath";
 
 type Props = {
   detailedTicket: TicketEx;
@@ -288,6 +289,12 @@ export function DetailPrehled({
               }}
             >
               <WrenchIcon size={14} /> {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
+              {/* Předpokládaná (předschválená) cena z příjmu – tiskne se na zakázkový list. */}
+              {(detailedTicket.estimatedPrice ?? 0) > 0 && (
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
+                  Předpokládaná cena: <span style={{ color: "var(--text)", fontWeight: 800 }}>{formatCurrency(detailedTicket.estimatedPrice ?? 0)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

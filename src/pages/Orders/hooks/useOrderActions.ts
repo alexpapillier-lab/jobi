@@ -631,6 +631,8 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
         handbackMethod: editedTicket.handbackMethod !== undefined ? (editedTicket.handbackMethod.trim() || undefined) : detailedTicket.handbackMethod,
         deviceNote: editedTicket.deviceNote !== undefined ? (editedTicket.deviceNote.trim() || undefined) : detailedTicket.deviceNote,
         externalId: editedTicket.externalId !== undefined ? (editedTicket.externalId.trim() || undefined) : detailedTicket.externalId,
+        // Klíč je ve formuláři vždy (i smazaná cena = undefined); jiné uložení ho nemá a cenu nechá být.
+        estimatedPrice: "estimatedPrice" in editedTicket ? editedTicket.estimatedPrice : detailedTicket.estimatedPrice,
         diagnosticText: editedTicket.diagnosticText !== undefined 
           ? (editedTicket.diagnosticText.trim() || undefined) 
           : (detailedTicket.diagnosticText?.trim() || undefined),

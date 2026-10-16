@@ -1686,6 +1686,7 @@ export default function Orders({
       handbackMethod: detailedTicket.handbackMethod || "",
       deviceNote: detailedTicket.deviceNote || "",
       externalId: detailedTicket.externalId || "",
+      estimatedPrice: detailedTicket.estimatedPrice,
       expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
     } as any);
     setIsEditing(true);
