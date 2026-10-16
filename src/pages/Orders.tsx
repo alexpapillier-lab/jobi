@@ -9,6 +9,7 @@ import { reportError } from "../lib/reportError";
 import { claimDocumentData } from "../lib/documentData";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { formularZmenen } from "../lib/formularZmeny";
 import { StornoDialog } from "../components/orders/StornoDialog";
 import { supabase } from "../lib/supabaseClient";
 import { devLog } from "../lib/devLog";
@@ -389,6 +390,9 @@ export default function Orders({
    * kliknutí na Upravit – s ní se před uložením porovná řádek z databáze.
    */
   const zakladUpravyRef = useRef<TicketEx | null>(null);
+  /** Čím se formulář Upravit naplnil – proti tomu se pozná, jestli v něm něco je změněné. */
+  const formularZakazkyRef = useRef<Record<string, unknown> | null>(null);
+  const formularReklamaceRef = useRef<Record<string, unknown> | null>(null);
   /** updated_at z odpovědí na naše uložení – takový řádek není cizí změna. */
   const naseZapisyRef = useRef<Set<string>>(new Set());
   /** Uložení narazilo na změnu od kolegy – čeká na volbu v dialogu. */
@@ -1139,7 +1143,7 @@ export default function Orders({
 
   const startEditingClaim = useCallback(() => {
     if (!detailedClaim) return;
-    setEditedClaim({
+    const formular = {
       customer_name: detailedClaim.customer_name ?? "",
       customer_phone: detailedClaim.customer_phone ?? "",
       customer_email: detailedClaim.customer_email ?? "",
@@ -1160,7 +1164,9 @@ export default function Orders({
       notes: detailedClaim.notes ?? "",
       status: detailedClaim.status,
       expected_completion_at: detailedClaim.expected_completion_at ?? null,
-    });
+    };
+    formularReklamaceRef.current = formular;
+    setEditedClaim(formular);
     setIsEditingClaim(true);
   }, [detailedClaim]);
 
@@ -1512,12 +1518,18 @@ export default function Orders({
   const handleCloseDetail = useCallback(async () => {
     devLog("[Close] clicked - about to save?");
     
-    const hasEditingChanges = isEditing && Object.keys(editedTicket).length > 0;
-    const hasEditingClaimChanges = isEditingClaim && Object.keys(editedClaim).length > 0;
-    
+    // Předvyplněný formulář Upravit bez přepsaného pole není neuložená změna.
+    const hasEditingChanges = isEditing && formularZmenen(formularZakazkyRef.current, editedTicket as Record<string, unknown>);
+    const hasEditingClaimChanges = isEditingClaim && formularZmenen(formularReklamaceRef.current, editedClaim as Record<string, unknown>);
+
     if (hasEditingChanges || hasEditingClaimChanges) {
       showToast("Máte neuložené změny. Uložte nebo zrušte úpravy.", "error");
       return;
+    }
+    if (isEditing) {
+      setIsEditing(false);
+      setEditedTicket({});
+      zakladUpravyRef.current = null;
     }
 
     // Odložený zápis oprav (cena, náklady) nesmí čekat, až se detail zavře.
@@ -1663,7 +1675,7 @@ export default function Orders({
   const naplnFormular = useCallback((detailedTicket: TicketEx) => {
     zakladUpravyRef.current = detailedTicket;
     setKonfliktUpravy(null);
-    setEditedTicket({
+    const formular = {
       customerName: detailedTicket.customerName,
       customerPhone: detailedTicket.customerPhone || "",
       customerEmail: detailedTicket.customerEmail || "",
@@ -1688,7 +1700,9 @@ export default function Orders({
       externalId: detailedTicket.externalId || "",
       estimatedPrice: detailedTicket.estimatedPrice,
       expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
-    } as any);
+    };
+    formularZakazkyRef.current = formular;
+    setEditedTicket(formular as any);
     setIsEditing(true);
   }, []);
 
