@@ -86,7 +86,7 @@ export const VARIABLES: VariableDef[] = [
   { key: "totals.total", label: "Celková cena", group: G.price, sample: "5 990,00 Kč" },
   { key: "totals.subtotal", label: "Základ daně", group: G.price, sample: "4 950,41 Kč" },
   { key: "totals.vat", label: "DPH", group: G.price, sample: "1 039,59 Kč" },
-  { key: "totals.estimated", label: "Odhadovaná cena", group: G.price, sample: "6 000,00 Kč" },
+  { key: "totals.estimated", label: "Předpokládaná cena", group: G.price, sample: "6 000,00 Kč" },
   { key: "items.summary", label: "Položky v jednom řádku", group: G.price, sample: "Výměna displeje iPhone 13 Pro – 5 990,00 Kč" },
   { key: "items.count", label: "Počet položek", group: G.price, sample: "1" },
 

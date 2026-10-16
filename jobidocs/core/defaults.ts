@@ -117,7 +117,7 @@ function zakazkovyList(): Template {
       ],
       "Zařízení"
     ),
-    fields([row("Přijato", "{{dates.received}}"), row("Předpokládané dokončení", "{{dates.eta}}"), row("Odhad ceny", "{{totals.estimated}}"), row("Způsob vrácení", "{{handoff.return}}")], "Zakázka"),
+    fields([row("Přijato", "{{dates.received}}"), row("Předpokládané dokončení", "{{dates.eta}}"), row("Předpokládaná cena", "{{totals.estimated}}"), row("Způsob vrácení", "{{handoff.return}}")], "Zakázka"),
     text(LEGAL_TEXTS.zakazkovy_list!, { size: "small", align: "justify", columns: 2 }),
   ];
   // Nad čarou se vytiskne podpis zákazníka nebo elektronické odsouhlasení z webu.

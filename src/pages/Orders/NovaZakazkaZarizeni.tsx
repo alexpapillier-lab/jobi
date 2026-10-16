@@ -306,7 +306,7 @@ export function NovaZakazkaZarizeni({
                               onChange={(type, value) =>
                                 setNewDraft((p) => ({
                                   ...p,
-                                  // Sleva se propíše i do předschválené ceny (lib/cenaPriPrijmu).
+                                  // Sleva se propíše i do předpokládané ceny (lib/cenaPriPrijmu).
                                   devices: p.devices.map((d, i) => (i === idx ? { ...d, ...poZmeneSlevy(d, soucetOprav(d.plannedRepairs), type, value) } : d)),
                                 }))
                               }
@@ -314,8 +314,8 @@ export function NovaZakazkaZarizeni({
                             {typ && hodnota > 0 && (
                               <div style={{ fontSize: 12, color: "var(--muted)" }}>
                                 {zaklad > 0
-                                  ? `Sleva −${formatCurrency(sleva)} z ${formatCurrency(zaklad)} · předschválená cena ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
-                                  : "Sleva se odečte z ceny oprav v zakázce. Zadejte předschválenou cenu nebo vyberte opravy z ceníku a propíše se hned."}
+                                  ? `Sleva −${formatCurrency(sleva)} z ${formatCurrency(zaklad)} · předpokládaná cena ${formatCurrency(konecnaCena(zaklad, typ, hodnota))}`
+                                  : "Sleva se odečte z ceny oprav v zakázce. Zadejte předpokládanou cenu nebo vyberte opravy z ceníku a propíše se hned."}
                               </div>
                             )}
                           </div>
@@ -597,7 +597,7 @@ export function NovaZakazkaZarizeni({
                   />
                 </div>
                 <div>
-                  <div style={fieldLabel}>Předschválená cena</div>
+                  <div style={fieldLabel}>Předpokládaná cena</div>
                   <input
                     type="number"
                     value={dev.estimatedPrice ?? ""}

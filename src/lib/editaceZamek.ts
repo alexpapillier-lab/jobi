@@ -69,7 +69,7 @@ export const POLE_ZAKAZKY: readonly PoleZakazky[] = [
   { popisek: "externí číslo", klice: ["externalId"], sloupce: ["external_id"] },
   { popisek: "převzetí", klice: ["handoffMethod"], sloupce: ["handoff_method"] },
   { popisek: "předání", klice: ["handbackMethod"], sloupce: ["handback_method"] },
-  { popisek: "odhadovaná cena", klice: ["estimatedPrice"], sloupce: ["estimated_price"] },
+  { popisek: "předpokládaná cena", klice: ["estimatedPrice"], sloupce: ["estimated_price"] },
   { popisek: "provedené opravy a ceny", klice: ["performedRepairs"], sloupce: ["performed_repairs"] },
   { popisek: "sleva", klice: ["discountType", "discountValue"], sloupce: ["discount"] },
   { popisek: "diagnostika", klice: ["diagnosticText"], sloupce: ["diagnostic_text"] },

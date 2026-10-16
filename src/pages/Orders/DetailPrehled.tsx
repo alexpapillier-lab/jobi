@@ -289,12 +289,26 @@ export function DetailPrehled({
               }}
             >
               <WrenchIcon size={14} /> {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
-              {/* Předpokládaná (předschválená) cena z příjmu – tiskne se na zakázkový list. */}
+              {/* Předpokládaná cena a termín z příjmu – obojí se tiskne na zakázkový list. */}
               {(detailedTicket.estimatedPrice ?? 0) > 0 && (
                 <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
                   Předpokládaná cena: <span style={{ color: "var(--text)", fontWeight: 800 }}>{formatCurrency(detailedTicket.estimatedPrice ?? 0)}</span>
                 </div>
               )}
+              {(() => {
+                // V paměti pod jménem sloupce (mapSupabaseTicketToTicketEx).
+                const termin = (detailedTicket as { expected_completion_at?: string | null }).expected_completion_at;
+                if (!termin) return null;
+                const poTerminu = !isFinal(detailedTicket.status) && new Date(termin).getTime() < Date.now();
+                return (
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
+                    Předpokládané dokončení:{" "}
+                    <span style={{ color: poTerminu ? "#b91c1c" : "var(--text)", fontWeight: 800 }}>
+                      {formatCZ(termin)}{poTerminu ? " · po termínu" : ""}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
