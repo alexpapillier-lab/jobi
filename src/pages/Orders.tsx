@@ -1097,7 +1097,6 @@ export default function Orders({
     removePerformedRepair,
     ulozZapujcku,
     ulozTechnika,
-    ulozFindMy,
     ulozKontrolu,
     ulozDiagnostikuZakazky,
   } = useZapisyZakazky({
@@ -2276,7 +2275,6 @@ export default function Orders({
             cloudTickets={cloudTickets}
             setDetailId={setDetailId}
             setDetailClaimId={setDetailClaimId}
-            ulozFindMy={ulozFindMy}
           />
         )}
         uprava={detailedTicket && (

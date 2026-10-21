@@ -13,7 +13,7 @@ import { PostupZakazky, sjetNaKartu } from "../../components/orders/PostupZakazk
 import { shrnutiKontroly } from "../../lib/kontrolniSeznamy";
 import { krokyPresunu, type NastaveniZasilek, type Zasilka } from "../../lib/zasilky";
 import { BARVA_SEKCE, stylSekce, type SkrytelnaSekce } from "../../lib/sekceDetailu";
-import { jeAppleZarizeni, najdiStejneZarizeni } from "../../lib/zarizeniHistorie";
+import { najdiStejneZarizeni } from "../../lib/zarizeniHistorie";
 import type { Branch } from "../../lib/branches";
 import type { StatusMeta } from "../../state/StatusesStore";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
@@ -43,7 +43,6 @@ type Props = {
   cloudTickets: TicketEx[];
   setDetailId: React.Dispatch<React.SetStateAction<string | null>>;
   setDetailClaimId: React.Dispatch<React.SetStateAction<string | null>>;
-  ulozFindMy: (ticketId: string, vypnuto: boolean) => Promise<void>;
 };
 
 export function DetailPrehled({
@@ -64,7 +63,6 @@ export function DetailPrehled({
   cloudTickets,
   setDetailId,
   setDetailClaimId,
-  ulozFindMy,
 }: Props) {
   return (
     <>
@@ -223,37 +221,6 @@ export function DetailPrehled({
                   title={zaruka.platna ? "Reklamace do tohoto dne je v záruce" : "Záruka na opravu už prošla"}
                 >
                   <span>{textZarukyOpravy(zaruka)}</span>
-                </div>
-              );
-            })()}
-            {/* Štítek Find My s přepnutím na klik – zákazník ho často vypne až po
-                telefonátu, tak ať to technik nemusí řešit přes úpravu zakázky. */}
-            {(detailedTicket.findMyOff != null || jeAppleZarizeni(detailedTicket.deviceLabel)) && (() => {
-              const vypnuto = detailedTicket.findMyOff === true;
-              return (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
-                  <button
-                    type="button"
-                    aria-pressed={vypnuto}
-                    title={vypnuto ? "Označit Find My jako nevypnuté" : "Označit Find My jako vypnuté"}
-                    onClick={() => void ulozFindMy(detailedTicket.id, !vypnuto)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "3px 10px",
-                      borderRadius: 999,
-                      border: `1px solid ${vypnuto ? "rgba(22,163,74,0.45)" : "rgba(220,38,38,0.45)"}`,
-                      background: vypnuto ? "rgba(22,163,74,0.12)" : "rgba(220,38,38,0.12)",
-                      color: vypnuto ? "#15803d" : "#b91c1c",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Find My {vypnuto ? "vypnuto" : "NEVYPNUTO"}
-                  </button>
-                  {!vypnuto && <span style={{ color: "var(--muted)" }}>Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů.</span>}
                 </div>
               );
             })()}
