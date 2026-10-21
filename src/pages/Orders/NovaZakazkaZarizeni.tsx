@@ -20,7 +20,7 @@ import { poRucniCene, poZmeneSlevy, soucetOprav, zakladCeny } from "../../lib/ce
 import { najdiPravidlo, type PravidloOdmeny } from "../../lib/odmeny";
 import type { PrednastavenaSleva } from "../../lib/prednastaveneSlevy";
 import { BARVA_SEKCE, stylSekce } from "../../lib/sekceDetailu";
-import { chybiPodkladZaruky, jeAppleZarizeni, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../../lib/zarizeniHistorie";
+import { chybiPodkladZaruky, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../../lib/zarizeniHistorie";
 import type { DeviceRepair } from "../../lib/catalogStorage";
 import type { ModelWithHierarchy, NewOrderDraft, TicketEx } from "./typy";
 import { defaultDeviceRow } from "./koncept";
@@ -343,10 +343,9 @@ export function NovaZakazkaZarizeni({
                     </div>
                   </div>
 
-                  {/* Záruka a Find My schválně mimo sbalené „Další údaje“: bez podkladu
-                      záruky se oprava u dodavatele neuplatní a stav Find My se má
-                      zjistit se zákazníkem u pultu, ne až u stolu. Find My se ptá
-                      jen u Apple. */}
+                  {/* Záruka schválně mimo sbalené „Další údaje“: bez podkladu záruky
+                      se oprava u dodavatele neuplatní – musí se vyřešit se zákazníkem
+                      u pultu, ne až u stolu. */}
                   <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                       <input
@@ -400,23 +399,6 @@ export function NovaZakazkaZarizeni({
                           <div style={showError(`zaruka_${idx}`) ? fieldHint : fieldMuted}>U záruční opravy vyplňte datum nákupu nebo doklad o koupi.</div>
                         )}
                       </div>
-                    )}
-                    {jeAppleZarizeni(dev.deviceLabel) && (
-                      <>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={dev.findMyOff}
-                            onChange={(e) =>
-                              setNewDraft((p) => ({
-                                ...p,
-                                devices: p.devices.map((d, i) => (i === idx ? { ...d, findMyOff: e.target.checked } : d)),
-                              }))
-                            }
-                          />
-                          <span>Find My vypnuto</span>
-                        </label>
-                      </>
                     )}
                   </div>
 

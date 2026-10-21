@@ -9,7 +9,6 @@ import { uploadDiagnosticPhoto } from "../../../lib/diagnosticPhotosStorage";
 import { mapSupabaseTicketToTicketEx, type TicketEx } from "../../Orders";
 import { zkratkaZConfigu } from "../../../lib/servisy";
 import { SLOUPCE_DETAILU } from "../../../lib/sloupceZakazky";
-import { jeAppleZarizeni } from "../../../lib/zarizeniHistorie";
 import { jeNasZapis, konfliktniPole, zmenenaPole, zmenilaSeVerze, type PoleZakazky } from "../../../lib/editaceZamek";
 
 // Helper: load service settings for code generation
@@ -424,12 +423,12 @@ export function useOrderActions(deps: UseOrderActionsDeps) {
           device_condition: (dev.deviceCondition || "").trim() || null,
           device_accessories: (dev.deviceAccessories || "").trim() || null,
           device_note: (dev.deviceNote || "").trim() || null,
-          // Záruka a Find My z příjmu. Podklad záruky se ukládá jen u záruční
-          // opravy; Find My jen u Apple (jinde null = netýká se).
+          // Záruka z příjmu. Podklad záruky se ukládá jen u záruční opravy.
+          // Find My se ručně nezadává (nedá se ověřit), proto null = neuvedeno.
           warranty_claim: !!dev.warrantyClaim,
           purchase_date: dev.warrantyClaim ? (dev.purchaseDate || null) : null,
           purchase_proof: dev.warrantyClaim ? ((dev.purchaseProof || "").trim() || null) : null,
-          find_my_off: jeAppleZarizeni(dev.deviceLabel) ? !!dev.findMyOff : null,
+          find_my_off: null,
           external_id: (dev.externalId || "").trim() || null,
           handoff_method: dev.handoffMethod || null,
           handback_method: (dev.handbackMethod || "").trim() || null,

@@ -375,34 +375,6 @@ export function useZapisyZakazky({
     showToast("Spojení vypadlo – technik se uloží, jakmile bude připojení.", "info");
   }, [activeServiceId, sOkamzitymZapisem]);
 
-  /**
-   * Štítek Find My v detailu – přepíná se jedním klikem, hned do databáze.
-   * Stejný postup jako u technika: optimisticky do paměti, při trvalé chybě
-   * zpět, při výpadku do fronty.
-   */
-  const ulozFindMy = useCallback(async (ticketId: string, vypnuto: boolean) => {
-    const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.findMyOff ?? null;
-    setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: vypnuto } : t)));
-    if (!supabase) return;
-    const { error } = await sOkamzitymZapisem<{ error: unknown }>(ticketId, () => (supabase!.from("tickets") as any).update({ find_my_off: vypnuto }).eq("id", ticketId));
-    if (!error) return;
-    devLog("[find my] zápis selhal", error);
-    if (jeTrvalaChyba(error)) {
-      setCloudTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, findMyOff: puvodni } : t)));
-      showToast("Stav Find My se nepodařilo uložit", "error");
-      return;
-    }
-    ulozNaPozdeji({
-      klic: `tickets:${ticketId}:find_my_off`,
-      tabulka: "tickets",
-      id: ticketId,
-      data: { find_my_off: vypnuto },
-      popis: "Zakázka · Find My",
-      serviceId: activeServiceId,
-      chyba: error,
-    });
-    showToast("Spojení vypadlo – stav Find My se uloží, jakmile bude připojení.", "info");
-  }, [activeServiceId, sOkamzitymZapisem]);
 
   const ulozKontrolu = useCallback(async (ticketId: string, kontrola: KontrolaPoOpraveData | null) => {
     const puvodni = cloudTicketsRef.current.find((t) => t.id === ticketId)?.testChecklist;
@@ -511,7 +483,6 @@ export function useZapisyZakazky({
     removePerformedRepair,
     ulozZapujcku,
     ulozTechnika,
-    ulozFindMy,
     ulozKontrolu,
     ulozDiagnostikuZakazky,
   };
