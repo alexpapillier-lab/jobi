@@ -253,7 +253,6 @@ export function DetailPrehled({
                   >
                     Find My {vypnuto ? "vypnuto" : "NEVYPNUTO"}
                   </button>
-                  {!vypnuto && <span style={{ color: "var(--muted)" }}>Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů.</span>}
                 </div>
               );
             })()}

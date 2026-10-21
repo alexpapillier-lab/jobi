@@ -344,9 +344,9 @@ export function NovaZakazkaZarizeni({
                   </div>
 
                   {/* Záruka a Find My schválně mimo sbalené „Další údaje“: bez podkladu
-                      záruky se oprava u dodavatele neuplatní a se zapnutým Find My se
-                      Apple u autorizovaných dílů neopraví – obojí se musí vyřešit se
-                      zákazníkem u pultu, ne až u stolu. Find My se ptá jen u Apple. */}
+                      záruky se oprava u dodavatele neuplatní a stav Find My se má
+                      zjistit se zákazníkem u pultu, ne až u stolu. Find My se ptá
+                      jen u Apple. */}
                   <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                       <input
@@ -416,11 +416,6 @@ export function NovaZakazkaZarizeni({
                           />
                           <span>Find My vypnuto</span>
                         </label>
-                        {!dev.findMyOff && (
-                          <div role="note" style={{ fontSize: 12, color: "#b45309", background: "rgba(245,158,11,0.12)", borderRadius: 8, padding: "6px 8px" }}>
-                            Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů; požádejte zákazníka o vypnutí.
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
