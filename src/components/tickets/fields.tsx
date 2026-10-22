@@ -1,5 +1,6 @@
 import { DeviceIcon, WrenchIcon } from "./icons";
 import { formatCZDate } from "./types";
+import { textTerminu, type StavTerminu } from "../../lib/terminZakazky";
 
 /**
  * Sdílené prvky karty zakázky.
@@ -181,6 +182,26 @@ export function TicketUmisteni({ label, varovani }: { label?: string | null; var
       style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "inherit", background: `color-mix(in srgb, ${barva} 28%, transparent)`, border: `1px solid ${barva}`, borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
     >
       {label}{varovani ? ` · ${varovani} d` : ""}
+    </span>
+  );
+}
+
+/**
+ * Termín dokončení, když hoří: červeně po termínu, oranžově dnes, jemně
+ * když se blíží. Vzhled jako štítek umístění – barva ze stavu termínu,
+ * písmo z řádku, aby držel i na plně obarveném stavu.
+ */
+export function TicketTermin({ stav }: { stav?: StavTerminu | null }) {
+  const text = textTerminu(stav ?? null);
+  if (!stav || !text) return null;
+  const barva = stav.druh === "po" ? "var(--danger)" : stav.druh === "dnes" ? "var(--warning)" : "var(--muted)";
+  const datum = new Date(stav.cas).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <span
+      title={`Předpokládané dokončení ${datum}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "inherit", background: `color-mix(in srgb, ${barva} ${stav.druh === "blizi" ? 14 : 28}%, transparent)`, border: `1px solid ${barva}`, borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {text}
     </span>
   );
 }

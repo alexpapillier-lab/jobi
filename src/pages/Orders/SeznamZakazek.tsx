@@ -40,7 +40,7 @@ type Props = {
   onNovaReklamace: () => void;
   activeGroup: GroupKey;
   setActiveGroup: React.Dispatch<React.SetStateAction<GroupKey>>;
-  groupCounts: { all: number; active: number; final: number; moje: number; presun: number; reklamace: number };
+  groupCounts: { all: number; active: number; final: number; moje: number; presun: number; termin: number; reklamace: number };
   pridelovaniTechnika: boolean;
   filtrPresunu: boolean;
   activeStatusKey: string | null;
@@ -382,6 +382,8 @@ export function SeznamZakazek({
             { value: "active", label: groupLabel("Aktivní", groupCounts.active) },
             ...(pridelovaniTechnika ? [{ value: "moje" as GroupKey, label: groupLabel("Moje", groupCounts.moje) }] : []),
             ...(filtrPresunu ? [{ value: "presun" as GroupKey, label: groupLabel("Přesuny", groupCounts.presun) }] : []),
+            // Termíny jen když je co hlásit – servis, který termíny nevyplňuje, záložku nepotřebuje.
+            ...(groupCounts.termin > 0 || activeGroup === "termin" ? [{ value: "termin" as GroupKey, label: groupLabel("Termíny", groupCounts.termin) }] : []),
             { value: "final", label: groupLabel("Dokončené", groupCounts.final) },
             { value: "reklamace", label: groupLabel("Reklamace", groupCounts.reklamace) },
           ]}

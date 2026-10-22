@@ -13,7 +13,7 @@ import type { PortalTicketFields } from "../../lib/portal";
 import type { ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 import type { DeviceModel } from "../../lib/catalogStorage";
 
-export type GroupKey = "all" | "active" | "final" | "reklamace" | "moje" | "presun";
+export type GroupKey = "all" | "active" | "final" | "reklamace" | "moje" | "presun" | "termin";
 export type ClaimsSubGroup = "all" | "active" | "final";
 export type DisplayMode = "list" | "grid" | "compact" | "compact-extra" | "timeline" | "stripe" | "status-grouped";
 export type UIConfig = {

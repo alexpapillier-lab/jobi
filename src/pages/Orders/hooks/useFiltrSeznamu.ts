@@ -12,6 +12,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StatusMeta } from "../../../state/StatusesStore";
 import type { StatusFilterOption } from "../../../components/orders/StatusFilter";
 import { umisteniZakazky, type NastaveniZasilek } from "../../../lib/zasilky";
+import { rozpoznejRoleStavu } from "../../../lib/dnes";
+import { hlasiTermin, podleTerminu, stavTerminu, type StavTerminu } from "../../../lib/terminZakazky";
 import type { WarrantyClaimRow } from "./useWarrantyClaims";
 import type { ClaimsSubGroup, GroupKey, TicketEx, UIConfig } from "../typy";
 
@@ -77,6 +79,30 @@ export function useFiltrSeznamu({
     setActiveStatusKey(null);
   }, [activeStatusKey, statusKeysSet]);
 
+  /**
+   * Termíny dokončení: štítek na kartě a záložka Termíny. „Teď“ se obnovuje
+   * po minutě, ať se zakázka s termínem v 16:00 o půl páté sama přebarví
+   * na „po termínu“ bez obnovení stránky. Připravené k převzetí se nehlásí
+   * – stejné pravidlo jako na Dnes.
+   */
+  const [ted, setTed] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setTed(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const kPrevzeti = useMemo(
+    () => rozpoznejRoleStavu(statuses.map((s) => ({ key: s.key, label: s.label, isFinal: s.isFinal }))).kPrevzeti,
+    [statuses],
+  );
+  const terminById = useMemo(() => {
+    const out = new Map<string, StavTerminu | null>();
+    for (const t of tickets) {
+      const st = normalizeStatus((t.status as any) ?? statusById[t.id]);
+      out.set(t.id, stavTerminu(t.expectedDoneAt, { ted, koncovy: st !== null && isFinal(st), pripraveno: st !== null && kPrevzeti.has(st) }));
+    }
+    return out;
+  }, [tickets, statusById, normalizeStatus, isFinal, kPrevzeti, ted]);
+
 
   /** Patří zakázka do zvolené záložky (Vše / Aktivní / Moje / Přesuny / Dokončené)? */
   const patriDoSkupiny = useCallback(
@@ -89,9 +115,11 @@ export function useFiltrSeznamu({
       if (activeGroup === "moje") return !!mojeId && t.assignedTo === mojeId && !isFinal(st);
       // „Přesuny“ = na cestě nebo mimo svou pobočku (zásilky mezi pobočkami).
       if (activeGroup === "presun") return umisteniZakazky(t).druh !== "doma";
+      // „Termíny“ = po termínu, termín dnes nebo se blíží (viz lib/terminZakazky).
+      if (activeGroup === "termin") return hlasiTermin(terminById.get(t.id) ?? null);
       return !isFinal(st);
     },
-    [activeGroup, mojeId, isFinal],
+    [activeGroup, mojeId, isFinal, terminById],
   );
 
   /** Nabídka filtru podle stavu: jen stavy, které ve zvolené záložce opravdu jsou, s počtem. */
@@ -152,11 +180,18 @@ export function useFiltrSeznamu({
           (t.externalId ?? "").toLowerCase().includes(q)
         );
       });
+    // V Termínech nejdřívější termín nahoře – to, co hoří nejvíc, je první.
+    if (activeGroup === "termin") {
+      return base
+        .map((t) => ({ t, termin: terminById.get(t.id) ?? null, createdAt: t.createdAt }))
+        .sort(podleTerminu)
+        .map((x) => x.t);
+    }
     // Explicitně řadit od nejnovějších, aby stránkování bylo konzistentní
     return [...base].sort(
       (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
     );
-  }, [tickets, patriDoSkupiny, query, statusById, activeStatusKey, normalizeStatus]);
+  }, [tickets, patriDoSkupiny, query, statusById, activeStatusKey, normalizeStatus, activeGroup, terminById]);
 
   /** Reklamace podle aktivní pobočky – stejné pravidlo jako u zakázek (bez pobočky = vidět všude). */
   const claimsInBranch = useMemo(
@@ -231,12 +266,14 @@ export function useFiltrSeznamu({
     let all = 0;
     let moje = 0;
     let presun = 0;
+    let termin = 0;
     for (const t of tickets) {
       const raw = (t.status as any) ?? statusById[t.id];
       const st = normalizeStatus(raw);
       if (activeStatusKey && st !== null && st !== activeStatusKey) continue;
       all += 1;
       if (umisteniZakazky(t).druh !== "doma") presun += 1;
+      if (hlasiTermin(terminById.get(t.id) ?? null)) termin += 1;
       if (st === null || !isFinal(st)) {
         active += 1;
         if (mojeId && t.assignedTo === mojeId) moje += 1;
@@ -254,8 +291,8 @@ export function useFiltrSeznamu({
         if (!aktivni) final += 1;
       }
     }
-    return { all, active, final, moje, presun, reklamace: claimsInBranch.length };
-  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId]);
+    return { all, active, final, moje, presun, termin, reklamace: claimsInBranch.length };
+  }, [tickets, statusById, normalizeStatus, isFinal, activeStatusKey, ordersShowClaimsInList, claimsInBranch, mojeId, terminById]);
 
   const filtrPresunu = zasilkyZapnuty && hasBranches && nastaveniZasilek.filtr;
 
@@ -339,6 +376,7 @@ export function useFiltrSeznamu({
     combinedList,
     groupCounts,
     filtrPresunu,
+    terminById,
     pageSize,
     listLength,
     effectivePageSize,
