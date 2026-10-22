@@ -52,6 +52,8 @@ export const SLOUPCE_SEZNAMU = [
   "location_branch_id",
   "transit_shipment_id",
   "updated_at",
+  // Štítek „po termínu / termín dnes“ na kartě a záložka Termíny.
+  "expected_completion_at",
 ].join(",");
 
 /**

@@ -762,6 +762,7 @@ export default function Orders({
     combinedList,
     groupCounts,
     filtrPresunu,
+    terminById,
     pageSize,
     listLength,
     effectivePageSize,
@@ -2009,9 +2010,10 @@ export default function Orders({
     discountValue: t.discountValue,
     performedRepairs: t.performedRepairs,
     expectedDoneAt: t.expectedDoneAt,
+    termin: terminById.get(t.id) ?? null,
     // Číslo faktury, která zakázku kryje (i souhrnná); záloha štítek nemá.
     faktura: stitekFaktury(fakturaByTicketId[t.id]),
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId, odkudCestuji]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId, odkudCestuji, terminById]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

@@ -3,6 +3,7 @@
  * k této zakázce a karta Zařízení (záruka, Find My, historie zařízení,
  * požadovaná oprava). Vyneseno z Orders.tsx beze změny obsahu.
  */
+import { useState } from "react";
 import type React from "react";
 import { SectionHeading } from "../../components/SectionHeading";
 import { CopyButton } from "../../components/CopyButton";
@@ -23,6 +24,7 @@ import { formatPhoneNumber } from "./formatovani";
 import { card } from "./styly";
 import { stavZarukyOpravy, textZarukyOpravy } from "../../lib/zarukaOpravy";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { stavTerminu, textTerminu } from "../../lib/terminZakazky";
 
 type Props = {
   detailedTicket: TicketEx;
@@ -64,6 +66,9 @@ export function DetailPrehled({
   setDetailId,
   setDetailClaimId,
 }: Props) {
+  // „Teď“ pro termín dokončení: detail se otevírá na chvíli, stačí okamžik
+  // otevření. Date.now() přímo při vykreslení lint (čistota renderu) odmítá.
+  const [ted] = useState(() => new Date());
   return (
     <>
       {/* Kde zakázka je a co je na řadě. Kroky se čtou z dat, nic se neukládá.
@@ -267,12 +272,15 @@ export function DetailPrehled({
                 // V paměti pod jménem sloupce (mapSupabaseTicketToTicketEx).
                 const termin = (detailedTicket as { expected_completion_at?: string | null }).expected_completion_at;
                 if (!termin) return null;
-                const poTerminu = !isFinal(detailedTicket.status) && new Date(termin).getTime() < Date.now();
+                // Stejné pravidlo a text jako štítek v seznamu (lib/terminZakazky).
+                const stav = stavTerminu(termin, { ted, koncovy: isFinal(detailedTicket.status) });
+                const poTerminu = stav?.druh === "po";
+                const popis = textTerminu(stav);
                 return (
                   <div style={{ marginTop: 4, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
                     Předpokládané dokončení:{" "}
                     <span style={{ color: poTerminu ? "#b91c1c" : "var(--text)", fontWeight: 800 }}>
-                      {formatCZ(termin)}{poTerminu ? " · po termínu" : ""}
+                      {formatCZ(termin)}{popis ? ` · ${popis}` : ""}
                     </span>
                   </div>
                 );

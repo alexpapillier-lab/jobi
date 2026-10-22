@@ -1,5 +1,6 @@
 import type { StatusMeta } from "../../state/StatusesStore";
 import { hrubaCena, konecnaCena } from "../../lib/slevaZakazky";
+import type { StavTerminu } from "../../lib/terminZakazky";
 
 /**
  * Formát částky na kartě zakázky – tentýž jako na dokladu.
@@ -26,6 +27,8 @@ export type TicketCardData = {
   discountValue?: number;
   performedRepairs?: { name?: string; price?: number }[];
   expectedDoneAt?: string;
+  /** Jak moc hoří termín dokončení (lib/terminZakazky); null = nic se neukazuje. */
+  termin?: StavTerminu | null;
   /** Jméno přiděleného technika; jen když má servis přidělování zapnuté. */
   technik?: string | null;
   /** Pobočka přijetí, když není ta právě vybraná (nebo je vybráno „Všechny pobočky“). */

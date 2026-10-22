@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData } from "./types";
-import { TicketCode, TicketDate } from "./fields";
+import { TicketCode, TicketDate, TicketTermin } from "./fields";
 import { DeviceIcon } from "./icons";
 
 type Props = {
@@ -61,6 +61,7 @@ function KanbanCard({
       <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {t.customerName}
       </div>
+      {t.termin && <div style={{ display: "flex" }}><TicketTermin stav={t.termin} /></div>}
     </div>
   );
 }

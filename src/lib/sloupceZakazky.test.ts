@@ -29,6 +29,7 @@ describe("sloupce zakázky", () => {
       "discount_type",
       "discount_value",
       "branch_id", // filtr poboček
+      "expected_completion_at", // štítek termínu na kartě + záložka Termíny
     ]) {
       expect(seznam, `seznam potřebuje ${s}`).toContain(s);
     }

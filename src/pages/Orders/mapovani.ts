@@ -66,6 +66,8 @@ export function mapSupabaseTicketToTicketEx(supabaseTicket: any): TicketEx {
     warrantyUntil: typeof supabaseTicket.warranty_until === "string" ? supabaseTicket.warranty_until : null,
     requestedRepair: supabaseTicket.notes || undefined,
     handoffMethod: supabaseTicket.handoff_method || undefined,
+    // Termín dokončení pro štítek na kartě; detail ho má i pod jménem sloupce níž.
+    expectedDoneAt: typeof supabaseTicket.expected_completion_at === "string" ? supabaseTicket.expected_completion_at : undefined,
     handbackMethod: (supabaseTicket as any).handback_method || undefined,
     deviceNote: supabaseTicket.device_note || undefined,
     externalId: supabaseTicket.external_id || undefined,

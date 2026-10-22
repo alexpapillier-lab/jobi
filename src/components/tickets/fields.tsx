@@ -1,5 +1,6 @@
 import { DeviceIcon, WrenchIcon } from "./icons";
 import { formatCZDate } from "./types";
+import { textTerminu, type StavTerminu } from "../../lib/terminZakazky";
 
 /**
  * Sdílené prvky karty zakázky.
@@ -186,6 +187,26 @@ export function TicketUmisteni({ label, varovani }: { label?: string | null; var
   );
 }
 
+/**
+ * Termín dokončení, když hoří: červeně po termínu, oranžově dnes, jemně
+ * když se blíží. Vzhled jako štítek umístění – barva ze stavu termínu,
+ * písmo z řádku, aby držel i na plně obarveném stavu.
+ */
+export function TicketTermin({ stav }: { stav?: StavTerminu | null }) {
+  const text = textTerminu(stav ?? null);
+  if (!stav || !text) return null;
+  const barva = stav.druh === "po" ? "var(--danger)" : stav.druh === "dnes" ? "var(--warning)" : "var(--muted)";
+  const datum = new Date(stav.cas).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <span
+      title={`Předpokládané dokončení ${datum}`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "inherit", background: `color-mix(in srgb, ${barva} ${stav.druh === "blizi" ? 14 : 28}%, transparent)`, border: `1px solid ${barva}`, borderRadius: 999, padding: "0 7px", whiteSpace: "nowrap", flexShrink: 0 }}
+    >
+      {text}
+    </span>
+  );
+}
+
 /** Požadovaná oprava nebo popis závady. */
 export function TicketRepair({ text }: { text?: string | null }) {
   if (!text) return null;
@@ -214,18 +235,19 @@ export function MetaSeparator() {
 }
 
 /**
- * Štítky řádku: technik, pobočka přijetí, umístění/přesun, faktura. Stejná
+ * Štítky řádku: technik, pobočka přijetí, umístění/přesun, faktura, termín. Stejná
  * sada pro všechna zobrazení seznamu – dřív je časová osa a seskupení podle
  * stavu neukazovaly, takže přesuny mezi pobočkami v nich nebyly vidět.
  */
-export function TicketStitky({ t }: { t: { technik?: string | null; pobocka?: string | null; umisteni?: string | null; umisteniVaruje?: number | null; faktura?: string | null } }) {
-  if (!t.technik && !t.pobocka && !t.umisteni && !t.faktura) return null;
+export function TicketStitky({ t }: { t: { technik?: string | null; pobocka?: string | null; umisteni?: string | null; umisteniVaruje?: number | null; faktura?: string | null; termin?: StavTerminu | null } }) {
+  if (!t.technik && !t.pobocka && !t.umisteni && !t.faktura && !t.termin) return null;
   return (
     <>
       <TicketTechnik name={t.technik} />
       <TicketPobocka label={t.pobocka} />
       <TicketUmisteni label={t.umisteni} varovani={t.umisteniVaruje} />
       <TicketFaktura cislo={t.faktura} />
+      <TicketTermin stav={t.termin} />
     </>
   );
 }
