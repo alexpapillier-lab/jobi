@@ -7,6 +7,7 @@ import {
   duvodBlokace,
   fotkyReklamace,
   jeKonceptRozepsany,
+  komentareProPrevod,
   konceptNaReklamaci,
   lzePrevestNaZakazku,
   nactiKoncept,
@@ -242,6 +243,18 @@ describe("převod reklamace na zakázku", () => {
     expect(d.deviceNote).toContain("R26000007");
     expect(d.plannedRepairs).toBeUndefined();
     expect(z.hotoveFotkyPred).toEqual(fotkyReklamace(reklamace()));
+    // Reklamované opravy jdou do diagnostiky, datum přijetí reklamace je datem zakázky.
+    expect(z.diagnosticText).toContain("Reklamované opravy v reklamaci R26000007:\n- Výměna displeje (3500 Kč)");
+    expect(z.sloupceNavic).toEqual({ device_imei: null, device_brand: null, device_model: null, created_at: "2026-10-01T09:00:00.000Z" });
+  });
+
+  it("IMEI vedle sériového čísla, značka a model zvlášť, bez received_at datum založení", () => {
+    const z = reklamaceNaZakazku(reklamace({ device_brand: "Apple", device_model: "iPhone 13", device_imei: "350000000000001", received_at: null }));
+    expect(z.devices[0].serialOrImei).toBe("356789012345678");
+    expect(z.sloupceNavic).toEqual({ device_imei: "350000000000001", device_brand: "Apple", device_model: "iPhone 13", created_at: "2026-10-01T09:00:00.000Z" });
+    // Bez SN jde IMEI do pole SN/IMEI a zvlášť se neopakuje.
+    expect(reklamaceNaZakazku(reklamace({ device_serial: null, device_imei: "35000" })).sloupceNavic.device_imei).toBeNull();
+    expect(reklamaceNaZakazku(reklamace({ claimed_repairs: [] })).diagnosticText).not.toContain("Reklamované opravy");
   });
 
   it("bez názvu zařízení složí značku a model, bez SN vezme IMEI", () => {
@@ -261,6 +274,18 @@ describe("převod reklamace na zakázku", () => {
     expect(text).toContain("Diagnostika ze zakázky SRV26000042 (reklamace R26000007):\nVadný konektor");
     expect(diagnostikaZReklamace("R1", {})).toBe("");
     expect(reklamaceNaZakazku(reklamace(), { zdrojDiagnostika: "X" }).diagnosticText).toContain("Diagnostika původní zakázky (reklamace R26000007)");
+  });
+
+  it("komentáře zdrojové zakázky se zkopírují do nové s autorem, datem, připnutím a předponou", () => {
+    const k = (content: string, extra: Partial<Parameters<typeof komentareProPrevod>[0][number]> = {}) => ({
+      author: "Jakub", author_id: "u-1", author_nickname: "jakub", author_avatar_url: null, content, pinned: false, created_at: "2026-10-01T10:00:00+00:00", ...extra,
+    });
+    const radky = komentareProPrevod([k("Volat paní Novákové 777 000 111", { pinned: true }), k("   "), k("Díl objednán", { author_id: null, author: "Servis" })], "R26000007", "svc", "t-new");
+    expect(radky).toEqual([
+      { ticket_id: "t-new", service_id: "svc", author: "Jakub", author_id: "u-1", author_nickname: "jakub", author_avatar_url: null, content: "[Z reklamace R26000007] Volat paní Novákové 777 000 111", pinned: true, created_at: "2026-10-01T10:00:00+00:00" },
+      { ticket_id: "t-new", service_id: "svc", author: "Servis", author_id: null, author_nickname: "jakub", author_avatar_url: null, content: "[Z reklamace R26000007] Díl objednán", pinned: false, created_at: "2026-10-01T10:00:00+00:00" },
+    ]);
+    expect(komentareProPrevod([], "R1", "svc", "t")).toEqual([]);
   });
 
   it("reklamované opravy a fotky ze starého řádku (bez sloupců) jsou prázdné", () => {
