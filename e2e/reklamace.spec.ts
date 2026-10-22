@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Browser } from "@playwright/test";
-import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku, vyplnReklamaci, SERVIS } from "./pomocnici";
+import { prihlasSe, rozbalSekci, testovaciJmeno, zalozZakazku, vidZakazku, vyplnReklamaci, zavriDetail, SERVIS } from "./pomocnici";
 
 /**
  * Reklamace: kód přiděluje databáze (funkce dalsi_cislo_reklamace) a je
@@ -172,4 +172,148 @@ test("reklamace, která není reklamací, se převede na zakázku – jednou a s
   await vidZakazku(page, novyKod!).first().click();
   await expect(page.getByText("Vzniklo z reklamace").first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: kodReklamace, exact: true }).first()).toBeVisible();
+});
+
+/**
+ * Tisk ve webové verzi jde přes skrytý iframe (src/lib/webPrint.ts). Tiskový
+ * dialog v testu nemá kdo potvrdit, takže se odchytí HTML, které by se
+ * vytisklo (stejně jako v onboarding.spec.ts).
+ */
+async function zachytavejTisk(page: Page) {
+  await page.addInitScript(() => {
+    const puvodni = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "srcdoc");
+    if (!puvodni?.set) return;
+    Object.defineProperty(HTMLIFrameElement.prototype, "srcdoc", {
+      configurable: true,
+      get() { return puvodni.get?.call(this); },
+      set(v: string) {
+        (window as unknown as { __tisk?: string }).__tisk = v;
+        this.addEventListener("load", () => {
+          try { (this as HTMLIFrameElement).contentWindow!.print = () => {}; } catch { /* jiný původ */ }
+        }, { once: true });
+        puvodni.set!.call(this, v);
+      },
+    });
+  });
+}
+
+async function vytiskniZDetailuReklamace(page: Page, dokument: string): Promise<string> {
+  await page.evaluate(() => { delete (window as unknown as { __tisk?: string }).__tisk; });
+  await page.locator('[data-tour="reklamace-tisk"]:visible').getByRole("button").click();
+  const radek = page.getByRole("menu").getByText(dokument, { exact: true }).locator("xpath=ancestor::div[1]");
+  await radek.getByRole("button", { name: "Tisk" }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __tisk?: string }).__tisk ?? ""), { timeout: 45_000 })
+    .not.toBe("");
+  const html = await page.evaluate(() => (window as unknown as { __tisk?: string }).__tisk ?? "");
+  return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+}
+
+/** Po přenačtení stránky otevře reklamaci podle jména zákazníka. */
+async function otevriReklamaciPoReloadu(page: Page, zakaznik: string) {
+  await page.reload();
+  await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+  await page.getByRole("button", { name: /^Reklamace/ }).first().click();
+  await page.getByText(zakaznik).first().click();
+  await expect(page.locator('[data-tour="reklamace-tisk"]:visible')).toBeVisible({ timeout: 30_000 });
+}
+
+test("provedený zákrok u reklamace se uloží sám a vytiskne se na výdejce reklamace", async ({ page }) => {
+  /*
+   * Hlášení ze servisu 15. 10. 2026: „nefunguje přidávání oprav do
+   * reklamaček a vytisknutí výdejky reklamace, respektive se tam neuloží ta
+   * provedená oprava“. Zákrok se dřív uložil jen tlačítkem „Uložit zákroky“
+   * – kdo detail zavřel (jako u zakázky, kde se opravy ukládají samy), o
+   * zákrok přišel bez varování. A výdejka reklamace v nabídce tisku vůbec
+   * nebyla, jen Přijetí reklamace, které zákroky netiskne.
+   */
+  test.setTimeout(240_000);
+  await zachytavejTisk(page);
+  await prihlasSe(page, "owner");
+  const zakaznik = testovaciJmeno("Reklamace zákrok");
+  await zalozReklamaci(page, zakaznik, "Telefon (zákrok)");
+
+  const zakrok = `Výměna konektoru ${Date.now().toString(36)}`;
+  await page.getByRole("button", { name: /Přidat zákrok/ }).click();
+  await page.getByPlaceholder("Název zákroku / opravy").last().fill(zakrok);
+  await page.getByPlaceholder("0 = zdarma").last().fill("490");
+
+  // Bez „Uložit zákroky“ – rovnou zavřít detail.
+  await zavriDetail(page);
+  await otevriReklamaciPoReloadu(page, zakaznik);
+  await expect(page.getByPlaceholder("Název zákroku / opravy").first()).toHaveValue(zakrok, { timeout: 30_000 });
+
+  // Výdejka reklamace se zákrokem a cenou.
+  const vydejka = await vytiskniZDetailuReklamace(page, "Výdejka reklamace");
+  expect(vydejka).toContain(zakaznik);
+  expect(vydejka).toContain(zakrok);
+  expect(vydejka).toMatch(/490/);
+  expect(vydejka, "Na výdejce je „undefined“ nebo „NaN“.").not.toMatch(/undefined|\bnull\b|NaN/);
+
+  /*
+   * Režim Upravit: „Uložit“ v hlavičce dřív posílal zákroky z chvíle, kdy se
+   * úpravy otevřely – zákrok přidaný mezitím tím přepsal zpátky.
+   */
+  const druhy = `Kalibrace ${Date.now().toString(36)}`;
+  await page.getByRole("button", { name: "Upravit", exact: true }).click();
+  await page.getByRole("button", { name: /Přidat zákrok/ }).click();
+  await page.getByPlaceholder("Název zákroku / opravy").last().fill(druhy);
+  await page.waitForTimeout(2500);
+  await page.getByRole("button", { name: "Uložit", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Upravit", exact: true })).toBeVisible({ timeout: 15_000 });
+  await otevriReklamaciPoReloadu(page, zakaznik);
+  await expect(page.getByPlaceholder("Název zákroku / opravy").first()).toHaveValue(zakrok, { timeout: 30_000 });
+  await expect(page.getByPlaceholder("Název zákroku / opravy").nth(1)).toHaveValue(druhy);
+});
+
+test("zákrok u reklamace jde přidat z ceníku – s cenou 0, kterou jde přepsat", async ({ page }) => {
+  /*
+   * „Ať jde u reklamací přidávat i opravy z ceníku, asi normálně s cenou 0“
+   * (majitel, 15. 10. 2026). Výběr je stejný jako u zakázky (párování podle
+   * názvu zařízení), jen se oprava u reklamace zákazníkovi neúčtuje.
+   *
+   * Model s opravou se nevybírá podle jména – ceník testovacího servisu
+   * mění i jiné testy. Vezme se první model, který nějakou opravu má.
+   */
+  test.setTimeout(180_000);
+  const relace: { url?: string; apikey?: string; token?: string } = {};
+  page.on("request", (r) => {
+    if (!r.url().includes("/rest/v1/")) return;
+    const h = r.headers();
+    if (h["apikey"]) relace.apikey = h["apikey"];
+    if (h["authorization"]?.startsWith("Bearer ")) relace.token = h["authorization"].slice(7);
+    relace.url = new URL(r.url()).origin;
+  });
+  await prihlasSe(page, "owner");
+  await expect.poll(() => (relace.token && relace.token !== relace.apikey ? "ok" : ""), { timeout: 30_000 }).toBe("ok");
+  const cti = async <T,>(cesta: string): Promise<T[]> => {
+    const o = await page.request.get(`${relace.url}/rest/v1/${cesta}`, { headers: { apikey: relace.apikey!, Authorization: `Bearer ${relace.token}` } });
+    expect(o.status(), await o.text()).toBeLessThan(300);
+    return (await o.json()) as T[];
+  };
+  const modely = await cti<{ id: string; name: string }>(`device_models?select=id,name&service_id=eq.${SERVIS.id}&order=name`);
+  const opravy = await cti<{ name: string; model_ids: string[] | null }>(`repairs?select=name,model_ids&service_id=eq.${SERVIS.id}&order=name`);
+  const model = modely.find((m) => m.name.trim().length >= 3 && opravy.some((o) => o.name.trim() && (o.model_ids ?? []).includes(m.id)));
+  expect(model, "Testovací servis nemá v ceníku žádný model s opravou.").toBeTruthy();
+  const nazevOpravy = opravy.find((o) => o.name.trim() && (o.model_ids ?? []).includes(model!.id))!.name;
+
+  const zakaznik = testovaciJmeno("Reklamace z ceníku");
+  await zalozReklamaci(page, zakaznik, model!.name);
+
+  await page.locator("[data-zakrok-z-ceniku]:visible").getByRole("button").click();
+  await page.getByRole("listbox").getByText(nazevOpravy, { exact: true }).first().click();
+  const nazvy = page.getByPlaceholder("Název zákroku / opravy");
+  await expect(nazvy.last()).toHaveValue(nazevOpravy);
+  await expect(page.getByPlaceholder("0 = zdarma").last()).toHaveValue("0");
+
+  // Ruční zákrok vedle toho dál jde a cena z ceníku se dá přepsat (neuznaná reklamace).
+  await page.getByRole("button", { name: /Přidat zákrok/ }).click();
+  await nazvy.last().fill("Ruční zákrok");
+  await page.getByPlaceholder("0 = zdarma").first().fill("350");
+
+  await zavriDetail(page);
+  await otevriReklamaciPoReloadu(page, zakaznik);
+  await expect(nazvy.first()).toHaveValue(nazevOpravy, { timeout: 30_000 });
+  await expect(page.getByPlaceholder("0 = zdarma").first()).toHaveValue("350");
+  await expect(nazvy.nth(1)).toHaveValue("Ruční zákrok");
 });

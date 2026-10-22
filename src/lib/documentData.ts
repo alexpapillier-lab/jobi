@@ -15,6 +15,8 @@ import { reklamovaneOpravyReklamace } from "./reklamacePrijem";
 import type { CompanyData } from "./companyData";
 import { portalUrl } from "./portal";
 import type { Database } from "../types/supabase";
+import { technikPrace } from "./rootOwner";
+import { mapujPodpisPrevzeti, obrazekPodpisuPrevzeti, souhlasDoDokumentu, type PodpisPrevzeti } from "./souhlasPrevzeti";
 
 export type { DocumentData } from "../../jobidocs/core/types";
 
@@ -59,7 +61,7 @@ function repairsToItems(ticket: TicketEx): LineItem[] {
     .map((r) =>
       // Hodinová práce: hodiny × sazba, aby zákazník viděl, za co platí.
       r.type === "hourly" && (r.hodiny ?? 0) > 0
-        ? { name: r.technik ? `${r.name} (${r.technik})` : r.name, qty: r.hodiny!, unit: "h", unitPrice: r.sazba ?? undefined, total: r.price ?? undefined }
+        ? { name: technikPrace(r) ? `${r.name} (${technikPrace(r)})` : r.name, qty: r.hodiny!, unit: "h", unitPrice: r.sazba ?? undefined, total: r.price ?? undefined }
         : { name: r.name, qty: 1, unit: "ks", unitPrice: r.price ?? undefined, total: r.price ?? undefined },
     );
 }
@@ -101,6 +103,9 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     else if (warrantyDays) warrantyUntil = pridejDny(new Date(completed), warrantyDays).toISOString();
   }
   const portalToken = (ticket as TicketEx & { portalToken?: string | null }).portalToken;
+  // Podpis převzetí a elektronické odsouhlasení z webu (lib/souhlasPrevzeti):
+  // dotahuje je tisk zvlášť, tady se jen převedou do dat dokumentu.
+  const podpis: PodpisPrevzeti = { intakeSignatureUrl: s(ticket.intakeSignatureUrl), intakeConsent: (ticket as TicketEx & { intakeConsent?: PodpisPrevzeti["intakeConsent"] }).intakeConsent };
   return {
     number: ticket.code ?? undefined,
     // Odkaz na zákaznický portál – tiskne se jako QR, když si to servis v JobiDocs zapne.
@@ -163,11 +168,18 @@ export function ticketDocumentData(ticket: TicketEx, cd: CompanyData | Record<st
     // Záruka na provedenou opravu, jak ji databáze zapsala při vydání ({{ticket.warrantyUntil}}).
     ticket: { warrantyUntil: s(ticket.warrantyUntil) },
     extra: { external_id: ticket.externalId ?? "" },
+    intakeSignature: obrazekPodpisuPrevzeti(podpis),
+    consent: souhlasDoDokumentu(podpis.intakeConsent),
   };
 }
 
 /** Příjemka / výdejka reklamace. */
-export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Record<string, unknown>, originalTicketCode = ""): DocumentData {
+export function claimDocumentData(
+  claim: WarrantyClaimRow,
+  cd: CompanyData | Record<string, unknown>,
+  originalTicketCode = "",
+  opts?: { warrantyMonths?: number; warrantyDays?: number; releasedAt?: string }
+): DocumentData {
   let items: LineItem[] = [];
   if (claim.resolution_summary?.trim().startsWith("[")) {
     try {
@@ -176,6 +188,17 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     } catch {
       items = [];
     }
+  }
+  // Záruka na výdejce reklamace: jen když se v rámci reklamace něco
+  // opravovalo, a stejně dlouhá jako na záručním listu (nastavení dokumentů),
+  // počítaná ode dne vydání.
+  const released = s(claim.released_at) ?? opts?.releasedAt;
+  const warrantyMonths = items.length ? opts?.warrantyMonths : undefined;
+  const warrantyDays = items.length && !warrantyMonths ? opts?.warrantyDays : undefined;
+  let warrantyUntil: string | undefined;
+  if (released) {
+    if (warrantyMonths) warrantyUntil = pridejMesice(new Date(released), warrantyMonths).toISOString();
+    else if (warrantyDays) warrantyUntil = pridejDny(new Date(released), warrantyDays).toISOString();
   }
   return {
     number: claim.code,
@@ -203,7 +226,7 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     },
     dates: {
       received: s(claim.received_at) ?? claim.created_at,
-      released: s(claim.released_at),
+      released,
       completed: s(claim.completed_at),
       eta: s(claim.expected_completion_at),
     },
@@ -211,9 +234,19 @@ export function claimDocumentData(claim: WarrantyClaimRow, cd: CompanyData | Rec
     handoff: { receive: s((claim as { handoff_method?: string | null }).handoff_method) },
     items,
     totals: { currency: "CZK" },
+    warranty: warrantyMonths ? { months: warrantyMonths, until: warrantyUntil } : warrantyDays ? { days: warrantyDays, until: warrantyUntil } : undefined,
     note: items.length ? undefined : s(claim.resolution_summary),
     extra: { reklamovaneOpravy: reklamovaneOpravyReklamace(claim).map((o) => o.name).join(", ") },
+    // Elektronický souhlas z webu u reklamace z objednávky (stejné podmínky
+    // jako zakázkový list) – tiskne se v kolonce podpisu zákazníka.
+    ...podpisReklamace(claim),
   };
+}
+
+function podpisReklamace(claim: WarrantyClaimRow): Pick<DocumentData, "consent" | "intakeSignature"> {
+  const podpis = mapujPodpisPrevzeti({ intake_consent: (claim as { intake_consent?: unknown }).intake_consent });
+  if (!podpis.intakeConsent) return {};
+  return { consent: souhlasDoDokumentu(podpis.intakeConsent), intakeSignature: obrazekPodpisuPrevzeti(podpis) };
 }
 
 type InvoiceKind = "invoice" | "proforma" | "credit_note";

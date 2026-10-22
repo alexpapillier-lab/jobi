@@ -5,6 +5,7 @@ import { prectiXlsx } from "../../lib/xlsxCteni";
 import { aplikujAktualizaci, naplanujAktualizaci, popisHodnoty, POPIS_POLE, type PlanAktualizace, type PoleOpravy } from "./importCeniku";
 import type { DevicesData } from "./types";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Karta „Aktualizace z XLSX“ na stránce importu: nahrát sešit stažený
  * z Exportu XLSX a upravený v Excelu, ukázat, co se změní, a potvrdit.
@@ -40,7 +41,7 @@ export function AktualizaceZXlsx({
       const radky = await prectiXlsx(new Uint8Array(await soubor.arrayBuffer()));
       setPlan(naplanujAktualizaci(data, radky));
     } catch (err) {
-      setChybaSouboru(err instanceof Error ? err.message : String(err));
+      setChybaSouboru(textChyby(err));
     } finally {
       setCtu(false);
     }

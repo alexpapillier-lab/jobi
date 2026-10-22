@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib/supabaseClient";
 import { Card } from "../../lib/settingsUi";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Přehled chyb ze všech servisů. Jen pro root ownera.
  *
@@ -45,6 +46,8 @@ export function ErrorLogsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [platform, setPlatform] = useState("");
   const [sinceHours, setSinceHours] = useState(24 * 7);
+  /** Chyby z E2E testů a vývojového serveru (schválně vyvolané) – výchozí skryté. */
+  const [vcetneTestu, setVcetneTestu] = useState(false);
 
   const load = useCallback(async () => {
     const client = supabase;
@@ -69,18 +72,18 @@ export function ErrorLogsPanel() {
           Authorization: `Bearer ${token}`,
           apikey: supabaseAnonKey,
         },
-        body: JSON.stringify({ platform: platform || undefined, sinceHours }),
+        body: JSON.stringify({ platform: platform || undefined, sinceHours, vcetneTestu }),
       });
       const raw = await res.text();
       const data = raw ? JSON.parse(raw) : {};
       if (!res.ok) throw new Error(data?.error || `Chyba ${res.status}`);
       setLogs(Array.isArray(data.logs) ? data.logs : []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(textChyby(e));
     } finally {
       setLoading(false);
     }
-  }, [platform, sinceHours]);
+  }, [platform, sinceHours, vcetneTestu]);
 
   useEffect(() => {
     void load();
@@ -134,6 +137,10 @@ export function ErrorLogsPanel() {
         <select value={sinceHours} onChange={(e) => setSinceHours(Number(e.target.value))} style={selectStyle}>
           {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--muted)" }} title="Automatické testy schválně odpojují síť a nechávají selhat zápisy; vývojový server hlásí chyby po přenačtení kódu. Skutečné chyby to nejsou.">
+          <input type="checkbox" checked={vcetneTestu} onChange={(e) => setVcetneTestu(e.target.checked)} />
+          Zobrazit i chyby z testů a vývoje
+        </label>
       </div>
 
       {error && (

@@ -5,37 +5,24 @@
  */
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_BRAND, THEME_PRESETS, defaultTemplate, renderDocument, sampleData, serviceFromCompanyData, type Brand, type DocumentsV2, type Theme } from "../../core/index";
+import { ConflictDialog } from "../editor/ConflictDialog";
 import type { SaveState } from "../state/useDocuments";
+import { useDocumentsStorage } from "../storage/context";
+import type { BrandAssetKind } from "../storage/types";
 
 type Props = {
   docs: DocumentsV2;
   setDocs: (u: (d: DocumentsV2) => DocumentsV2) => void;
   dirty: boolean;
   save: SaveState;
-  onSave: () => Promise<boolean>;
+  onSave: (opts?: { force?: boolean }) => Promise<boolean>;
+  /** Načíst šablony znovu (po konfliktu „Načíst jeho verzi“). */
+  onReload: () => Promise<void>;
   canManage: boolean;
   companyData: Record<string, unknown> | null;
 };
 
 const ACCENTS = ["#0e7c86", "#2563eb", "#1f4e79", "#3c9d40", "#7c3aed", "#db2777", "#ea580c", "#b45309", "#334155", "#111111"];
-
-async function fileToDataUrl(file: File, maxPx = 1200): Promise<string> {
-  if (file.type === "application/pdf") {
-    return new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(String(r.result));
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-  }
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/png");
-}
 
 /** Zmenšený náhled dokumentu v daném motivu (stejný renderer jako tisk). */
 function ThemeThumb({ theme, brand, companyData }: { theme: Theme; brand: Brand; companyData: Record<string, unknown> | null }) {
@@ -61,17 +48,28 @@ function ThemeThumb({ theme, brand, companyData }: { theme: Theme; brand: Brand;
   );
 }
 
-export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, companyData }: Props) {
+export function BrandPage({ docs, setDocs, dirty, save, onSave, onReload, canManage, companyData }: Props) {
   const setBrand = (patch: Partial<Brand>) => setDocs((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
   const setTheme = (patch: Partial<Theme>) => setDocs((d) => ({ ...d, theme: { ...d.theme, ...patch } }));
   const logoInput = useRef<HTMLInputElement>(null);
   const stampInput = useRef<HTMLInputElement>(null);
   const lhInput = useRef<HTMLInputElement>(null);
+  // Desktop: data: URL (do Storage je přesune server při uložení); web: zmenšený obrázek.
+  const storage = useDocumentsStorage();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const upload = async (file: File | undefined, key: keyof Brand) => {
+  const upload = async (input: HTMLInputElement, key: keyof Brand, kind: BrandAssetKind) => {
+    const file = input.files?.[0];
+    // Vynulovat, ať jde stejný soubor vybrat znovu (Safari a Firefox jinak nepošlou change).
+    input.value = "";
     if (!file) return;
-    const url = await fileToDataUrl(file);
-    setBrand({ [key]: url } as Partial<Brand>);
+    setUploadError(null);
+    try {
+      const url = await storage.prepareBrandAsset(file, kind);
+      setBrand({ [key]: url } as Partial<Brand>);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const { brand, theme } = docs;
@@ -90,6 +88,8 @@ export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, compa
         {dirty && <span className="ed-status dirty">● Neuložené změny</span>}
         {save.status === "error" && <span className="ed-status err">{save.message}</span>}
       </div>
+
+      {uploadError && <div className="ed-status err">Obrázek se nepodařilo načíst: {uploadError}</div>}
 
       <div className="br-card">
         <h3>Vzhled dokumentů</h3>
@@ -143,11 +143,11 @@ export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, compa
       </div>
 
       <div className="br-grid">
-        <div className="br-card">
+        <div className="br-card" data-tour="sablony-logo">
           <h3>Logo</h3>
           <div className="br-preview">{brand.logoUrl ? <img src={brand.logoUrl} alt="Logo" /> : <span className="none">Bez loga</span>}</div>
           <div className="in-actions">
-            <input ref={logoInput} type="file" accept="image/*" hidden onChange={(e) => void upload(e.target.files?.[0], "logoUrl")} />
+            <input ref={logoInput} type="file" accept="image/*" hidden onChange={(e) => void upload(e.currentTarget, "logoUrl", "logo")} />
             <button type="button" className="ui-btn ui-btn-sm" onClick={() => logoInput.current?.click()}>
               {brand.logoUrl ? "Změnit" : "Nahrát logo"}
             </button>
@@ -164,7 +164,7 @@ export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, compa
           <h3>Razítko / podpis</h3>
           <div className="br-preview">{brand.stampUrl ? <img src={brand.stampUrl} alt="Razítko" /> : <span className="none">Bez razítka</span>}</div>
           <div className="in-actions">
-            <input ref={stampInput} type="file" accept="image/*" hidden onChange={(e) => void upload(e.target.files?.[0], "stampUrl")} />
+            <input ref={stampInput} type="file" accept="image/*" hidden onChange={(e) => void upload(e.currentTarget, "stampUrl", "stamp")} />
             <button type="button" className="ui-btn ui-btn-sm" onClick={() => stampInput.current?.click()}>
               {brand.stampUrl ? "Změnit" : "Nahrát razítko"}
             </button>
@@ -181,7 +181,7 @@ export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, compa
           <h3>Hlavičkový papír (PDF)</h3>
           <div className="br-preview">{brand.letterheadPdfUrl ? <span>PDF nahráno ✓</span> : <span className="none">Bez předtištěného papíru</span>}</div>
           <div className="in-actions">
-            <input ref={lhInput} type="file" accept="application/pdf" hidden onChange={(e) => void upload(e.target.files?.[0], "letterheadPdfUrl")} />
+            <input ref={lhInput} type="file" accept="application/pdf" hidden onChange={(e) => void upload(e.currentTarget, "letterheadPdfUrl", "letterhead")} />
             <button type="button" className="ui-btn ui-btn-sm" onClick={() => lhInput.current?.click()}>
               {brand.letterheadPdfUrl ? "Změnit" : "Nahrát PDF"}
             </button>
@@ -239,6 +239,7 @@ export function BrandPage({ docs, setDocs, dirty, save, onSave, canManage, compa
           <span style={{ fontSize: 12, color: "var(--muted)" }}>QR kód přidáte do dokumentu prvkem „QR kód na hodnocení“.</span>
         </div>
       </div>
+      {save.status === "conflict" && <ConflictDialog onReload={onReload} onOverwrite={() => onSave({ force: true })} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * Hlášení chyby z aplikace.
@@ -106,7 +107,7 @@ ${chyby.length > 0 ? `<p style="margin:18px 0 6px;font-size:13px;color:#666">Pos
       .join("")}</ul>` : `<p style="margin:18px 0 0;font-size:12px;color:#666">V logu servisu nejsou žádné chyby.</p>`}
 </div>`;
 
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await resendFetch({
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({

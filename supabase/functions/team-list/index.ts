@@ -113,12 +113,16 @@ serve(async (req) => {
         );
       }
 
-      const res = await supabase
+      // Majitel aplikace je pro členy servisu neviditelný – ani tam, kde má
+      // viditelné členství (vlastní dílny). Databáze ho schová i sama
+      // (politika service_memberships_skryte_jen_svoje), tohle je pojistka.
+      let dotaz = supabase
         .from("service_memberships")
         .select("user_id, service_id, role, created_at, capabilities, home_branch_id")
         .eq("service_id", serviceId)
-        .eq("skryty", false)
-        .order("created_at", { ascending: true });
+        .eq("skryty", false);
+      if (rootOwnerId) dotaz = dotaz.neq("user_id", rootOwnerId);
+      const res = await dotaz.order("created_at", { ascending: true });
       memberships = res.data;
       membersError = res.error;
     }

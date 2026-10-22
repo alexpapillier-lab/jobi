@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import type { StatusMeta } from "../../state/StatusesStore";
 import { type TicketCardData, computeFinalPrice, korunami } from "./types";
-import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketTermin } from "./fields";
+import { TicketCode, TicketCustomer, TicketDate, TicketDevice, TicketStitky } from "./fields";
 import { WrenchIcon } from "./icons";
 import { promenneOvladani, promenneRadku, stylStavu, type StylStavu, type ZvyrazneniStavu } from "../../lib/zvyrazneniStavu";
 
@@ -79,7 +79,7 @@ function GroupedCard({
         <TicketDevice label={t.deviceLabel} dense iconColor={statusColor} />
       </div>
       <TicketCustomer name={t.customerName} />
-      <TicketTermin stav={t.termin} />
+      <TicketStitky t={t} />
       {(t.requestedRepair || t.issueShort) && (
         <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1, minWidth: 0, overflow: "hidden" }}>
           <WrenchIcon size={10} color="var(--muted)" />

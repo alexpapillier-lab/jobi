@@ -13,6 +13,18 @@ import { reportError } from "../../../lib/reportError";
 import type { TicketComment } from "../../../components/tickets";
 import type { UserProfile } from "../../../hooks/useUserProfile";
 import { type SupabaseTicketCommentRow, mapSupabaseCommentRow } from "../mapovani";
+import { JMENO_SYSTEM, skrytyRootOwner } from "../../../lib/rootOwner";
+
+/**
+ * Komentář majitele aplikace se ostatním ukáže jako od „Systému“ – bez
+ * přezdívky a fotky. Databáze to u nových komentářů dělá sama (trigger
+ * v 20261009160000), tohle kryje starší řádky a profil, který by se dotáhl.
+ */
+function komentarProMe(row: SupabaseTicketCommentRow, mojeId: string | null): TicketComment {
+  const c = mapSupabaseCommentRow(row);
+  if (!skrytyRootOwner(c.author_id, mojeId)) return c;
+  return { ...c, author: JMENO_SYSTEM, author_id: null, author_nickname: null, author_avatar_url: null };
+}
 
 type Vstup = {
   activeServiceId: string | null;
@@ -21,6 +33,7 @@ type Vstup = {
 };
 
 export function useKomentare({ activeServiceId, session, userProfile }: Vstup) {
+  const mojeId = session?.user?.id ?? null;
   const [commentsByTicket, setCommentsByTicket] = useState<Record<string, TicketComment[]>>({});
   /** Živé profily autorů komentářů (fotka a přezdívka) – viz TicketComments. */
   const [commentAuthorProfiles, setCommentAuthorProfiles] = useState<Record<string, { nickname: string | null; avatarUrl: string | null }>>({});
@@ -54,11 +67,11 @@ export function useKomentare({ activeServiceId, session, userProfile }: Vstup) {
     const grouped: Record<string, TicketComment[]> = {};
     for (const id of ticketIds) grouped[id] = [];
     for (const row of data) {
-      const c = mapSupabaseCommentRow(row);
+      const c = komentarProMe(row, mojeId);
       (grouped[c.ticketId] ??= []).push(c);
     }
     setCommentsByTicket((prev) => ({ ...prev, ...grouped }));
-  }, [activeServiceId, supabase]);
+  }, [activeServiceId, supabase, mojeId]);
 
   /** Zakázky, jejichž komentáře jsou zrovna na obrazovce – kvůli realtime obnově. */
   const otevreneKomentareRef = useRef<string[]>([]);

@@ -18,6 +18,7 @@
 import type { DocumentData } from "./documentData";
 import { formatJobiDocsErrorForUser, type DocTypeForPrint } from "./jobidocs";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type RezimDokumentu = "print" | "export";
 
 export type VysledekJobiDocs = { ok: boolean; error?: string };
@@ -125,7 +126,7 @@ export async function spustDesktopovyDokument(
   } catch (e) {
     // Sem spadne i selhání nativního dialogu (chybí oprávnění, plugin se
     // nenačetl). Dřív se to nedalo odlišit od zavřeného dialogu.
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = textChyby(e);
     z.telemetrie({ action: rezim, docType, result: "error", durationMs: trvani(), errorMessage: msg });
     z.hlaska(`Chyba ${nazevAkce2Pad(rezim)}: ${msg}`, "error");
   }
@@ -164,7 +165,7 @@ export async function vychoziSlozkaProExport(cesty: {
   try {
     return await cesty.desktopDir();
   } catch (e) {
-    throw new Error(`Nepodařilo se najít složku pro uložení (Stažené ani Plocha): ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`Nepodařilo se najít složku pro uložení (Stažené ani Plocha): ${textChyby(e)}`);
   }
 }
 
@@ -206,7 +207,7 @@ export async function spustWebovyDokument(
     await z.tiskVProhlizeci(docType, serviceId, sFotkami);
     z.telemetrie({ action: rezim, docType, result: "success", durationMs: Math.round(z.ted() - zacatek) });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = textChyby(e);
     z.telemetrie({ action: rezim, docType, result: "error", durationMs: Math.round(z.ted() - zacatek), errorMessage: msg });
     z.hlaska(`${nazevAkce(rezim)} se nezdařil: ${msg}`, "error");
   }

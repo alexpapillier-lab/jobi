@@ -9,6 +9,7 @@
  */
 import { supabase, getSupabaseClient, supabaseFetch } from "./supabaseClient";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type IntegrationProvider = "idoklad" | "fakturoid";
 
 export const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
@@ -110,7 +111,7 @@ async function callExport(body: Record<string, unknown>): Promise<ExportResult> 
     if (!res.ok) return { ok: false, error: data.error ?? `HTTP ${res.status}` };
     return { ...data, ok: data.ok !== false };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 

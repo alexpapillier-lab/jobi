@@ -4,6 +4,7 @@ import { zalozServis } from "../lib/servisy";
 import { ThemeLogo } from "./ThemeLogo";
 import { showToast } from "./Toast";
 
+import { textChyby } from "../utils/errorNormalizer";
 /**
  * Obrazovka po registraci, dokud člověk nemá žádný servis.
  *
@@ -63,7 +64,7 @@ export function FirstServiceSetup({ email, onCreated, onSignOut }: {
       showToast(`Servis „${nazev}“ je připravený`, "success");
       onCreated(serviceId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(textChyby(e));
     } finally {
       setBusy(false);
     }

@@ -3,6 +3,7 @@ import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib
 import { Card } from "../../lib/settingsUi";
 import { showToast } from "../../components/Toast";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Správa nároků servisů na placené moduly. Jen pro root ownera.
  *
@@ -120,7 +121,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       setIntegrations(data.integrations ?? {});
       setQuotaDraft({});
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(textChyby(e));
     } finally {
       setLoading(false);
     }
@@ -141,7 +142,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       );
       await load();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), "error");
+      showToast(textChyby(e), "error");
     } finally {
       setBusy(null);
     }
@@ -156,7 +157,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       showToast("Modul zapnutý natrvalo", "success");
       await load();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), "error");
+      showToast(textChyby(e), "error");
     } finally {
       setBusy(null);
     }
@@ -182,7 +183,7 @@ export function EntitlementsPanel({ services }: { services: Service[] }) {
       showToast(next === null ? "Limit zrušen (bez omezení)" : `Limit nastaven na ${next}`, "success");
       await load();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), "error");
+      showToast(textChyby(e), "error");
     } finally {
       setBusy(null);
     }

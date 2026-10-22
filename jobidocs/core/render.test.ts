@@ -1,6 +1,62 @@
 import { describe, expect, it } from "vitest";
 import { DOC_TYPES, defaultTemplate, renderDocument, sampleData, DEFAULT_BRAND, DEFAULT_THEME, variablesToDocumentData, migrateV1Config, substitute, isEmptyAfterSubstitution, formatMoney, formatDate, monthsText } from "./index.js";
 
+describe("podpis a elektronické odsouhlasení při převzetí", () => {
+  const args = { template: defaultTemplate("zakazkovy_list"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+  const consent = { id: "ABC123", signedAt: "2026-10-13T12:32:00Z", method: "checkbox", source: "servis.iswap.cz", ip: "203.0.113.7", termsVersion: "v3" };
+
+  it("bez obrázku vytiskne text odsouhlasení s ID, časem v Praze a formulářem, IP malým písmem", () => {
+    const html = renderDocument({ ...args, data: { ...sampleData("zakazkovy_list"), consent } });
+    expect(html).toContain("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");
+    expect(html).toMatch(/sig-consent-detail">IP 203\.0\.113\.7 · podmínky v3</);
+    // Jen v kolonce převzetí, ne u vyzvednutí z opravy.
+    expect(html.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+  });
+
+  it("s obrázkem podpisu vytiskne obrázek nad čarou", () => {
+    const podpis = "data:image/png;base64,iVBORw0KGgo=";
+    const html = renderDocument({ ...args, data: { ...sampleData("zakazkovy_list"), intakeSignature: podpis } });
+    expect(html).toContain(`<img src="${podpis}" alt="Podpis zákazníka"`);
+    expect(html).not.toContain("Elektronicky odsouhlaseno");
+  });
+
+  it("bez podpisu i souhlasu zůstane prázdná kolonka", () => {
+    const html = renderDocument({ ...args, data: sampleData("zakazkovy_list") });
+    expect(html).not.toContain(`class="sig-consent"`);
+    expect(html).not.toContain("Podpis zákazníka");
+  });
+
+  it("starší šablona bez volby source: kolonka se pozná podle popisku", () => {
+    const tpl = defaultTemplate("zakazkovy_list");
+    const bezVolby = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník – předání do opravy", width: 55 }] } };
+    const html = renderDocument({ ...args, template: bezVolby, data: { ...sampleData("zakazkovy_list"), consent } });
+    expect(html).toContain("ID ABC123");
+    // Výslovné „none“ kolonku nechá prázdnou.
+    const prazdna = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník – předání do opravy", source: "none" as const }] } };
+    expect(renderDocument({ ...args, template: prazdna, data: { ...sampleData("zakazkovy_list"), consent } })).not.toContain("ID ABC123");
+  });
+
+  it("příjemka reklamace: souhlas v kolonce zákazníka, i ve starší šabloně bez volby", () => {
+    const rk = { ...args, template: defaultTemplate("prijemka_reklamace") };
+    const html = renderDocument({ ...rk, data: { ...sampleData("prijemka_reklamace"), consent } });
+    expect(html.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+    const tpl = defaultTemplate("prijemka_reklamace");
+    const stara = { ...tpl, slots: { ...tpl.slots, bottomLeft: [{ id: "s1", type: "signature" as const, label: "Zákazník", width: 55 }] } };
+    const stary = renderDocument({ ...rk, template: stara, data: { ...sampleData("prijemka_reklamace"), consent } });
+    expect(stary.match(/Elektronicky odsouhlaseno/g)).toHaveLength(1);
+  });
+
+  it("proměnné consent.* jdou použít v libovolném textu", () => {
+    const data = { ...sampleData("zakazkovy_list"), consent: { ...consent, method: "sms_code" } };
+    expect(substitute("{{consent.text}}", data)).toBe("Elektronicky odsouhlaseno 13. 10. 2026 14:32 · ID ABC123 · formulář servis.iswap.cz");
+    expect(substitute("{{consent.method}} / {{consent.signedAt}} / {{consent.id}}", data)).toBe("kódem z SMS / 13. 10. 2026 14:32 / ABC123");
+    expect(substitute("{{consent.text}}", sampleData("zakazkovy_list"))).toBe("");
+    expect(substitute("{{consent.text}}", { ...data, consent: { ...consent, source: "formulář Jobi" } })).toContain("· formulář Jobi");
+    // Ukázková data v editoru odsouhlasení mají (dlouhá varianta).
+    expect(substitute("{{consent.id}}", sampleData("zakazkovy_list", "long"))).toBe("ABC123");
+  });
+});
+
 describe("render", () => {
   for (const docType of DOC_TYPES) {
     it(`vyrenderuje ${docType} s krátkými i dlouhými daty`, () => {
@@ -45,6 +101,20 @@ describe("render", () => {
     const dobropis = renderDocument({ ...args, data: { ...sampleData("faktura", "short"), title: "Dobropis" } });
     expect(dobropis).toContain('<div class="doc-kind">Dobropis</div>');
     expect(dobropis).toContain("<title>Dobropis");
+  });
+
+  it("velikost názvu dokumentu: třída na nadpisu, výchozí beze změny", () => {
+    const tpl = defaultTemplate("zakazkovy_list");
+    const args = { brand: DEFAULT_BRAND, theme: DEFAULT_THEME, data: sampleData("zakazkovy_list"), options: { mode: "print" as const } };
+    const sNazvem = (size?: "s" | "m" | "l" | "xl") => ({
+      ...tpl,
+      slots: Object.fromEntries(Object.entries(tpl.slots).map(([k, v]) => [k, (v ?? []).map((it) => (it.type === "title" ? { ...it, size } : it))])),
+    }) as typeof tpl;
+    expect(JSON.stringify(tpl)).toContain('"type":"title"');
+    expect(renderDocument({ ...args, template: sNazvem() })).not.toMatch(/class="doc-title[^"]*size-/);
+    expect(renderDocument({ ...args, template: sNazvem("m") })).not.toMatch(/class="doc-title[^"]*size-/);
+    expect(renderDocument({ ...args, template: sNazvem("xl") })).toMatch(/class="doc-title[^"]*size-xl"/);
+    expect(renderDocument({ ...args, template: sNazvem("l") })).toContain(".doc-title.size-l .doc-kind{font-size:1.3em");
   });
 
   it("prázdná data skryjí řádky bez hodnot a bloky s when=notEmpty", () => {
@@ -209,5 +279,39 @@ describe("migrace", () => {
     const desktop = renderDocument({ ...spolecne, options: { mode: "print" } });
     expect(desktop).not.toContain("max-height:190mm");
     expect(desktop).not.toContain(".items tbody tr,.bottom");
+  });
+});
+
+describe("skripty editoru", () => {
+  /* Skripty v iframu editoru jsou text v šabloně – překlep v nich TypeScript
+     nepozná a editor by v prohlížeči tiše přestal reagovat na klikání. */
+  it("jsou syntakticky platné a úchyt pro tažení není <button> (Firefox z něj tažení nespustí)", () => {
+    const html = renderDocument({ template: defaultTemplate("zakazkovy_list"), data: sampleData("zakazkovy_list"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "editor" } });
+    const skripty = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    expect(skripty.length).toBeGreaterThanOrEqual(2);
+    for (const kod of skripty) expect(() => new Function(kod)).not.toThrow();
+    expect(html).toContain("g=document.createElement('span');g.className='grip'");
+    // Při psaní se přetahování vypíná (Safari a Firefox jinak nedovolí umístit kurzor).
+    expect(html).toContain("dragOffFor(el)");
+  });
+});
+
+describe("výdejka reklamace", () => {
+  const args = { template: defaultTemplate("vydejka_reklamace"), brand: DEFAULT_BRAND, theme: DEFAULT_THEME, options: { mode: "print" as const } };
+  const zaklad = { service: { name: "Servis" }, customer: { name: "Jan Novák" }, device: { name: "iPhone 13" } };
+
+  it("s provedenými úkony tiskne záruku a záruční podmínky jako záruční list", () => {
+    const html = renderDocument({ ...args, data: { ...zaklad, items: [{ name: "Výměna displeje", qty: 1, total: 0 }], warranty: { months: 6, until: "2027-04-15" } } });
+    expect(html).toContain("Výměna displeje");
+    expect(html).toContain("Záruční doba činí");
+    expect(html).toContain("poskytuje servis záruku 6 měsíců");
+  });
+
+  it("bez úkonů (zamítnutá reklamace) záruku ani záruční podmínky netiskne", () => {
+    const html = renderDocument({ ...args, data: { ...zaklad, note: "Reklamace zamítnuta." } });
+    expect(html).toContain("Reklamace zamítnuta.");
+    expect(html).not.toContain("Záruční doba činí");
+    expect(html).not.toContain("poskytuje servis záruku");
+    expect(html).toContain("převzetí zařízení po vyřízení reklamace");
   });
 });

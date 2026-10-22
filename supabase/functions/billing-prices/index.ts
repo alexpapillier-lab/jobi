@@ -5,7 +5,12 @@
  * v aplikaci neopisovaly a nemohly se rozejít se skutečností.
  *
  * POST {} → { plans: [{ lookup_key, label, tier, interval, amount, currency, modules, branchesIncluded }], addons: […] }
- * Bez nastaveného Stripe vrací 503 a obrazovka ukáže tarify bez cen.
+ * Bez nastaveného Stripe vrací 200 s `configured: false` a prázdným ceníkem –
+ * obrazovka pak ukáže tarify bez cen. Dřív to byla odpověď 503: stav „platby
+ * ještě nejsou spuštěné“ je ale běžný provoz, ne výpadek, a pětistovka
+ * v síti při každém otevření Předplatného vypadala jako chyba serveru
+ * (hlídač i E2E průzkumník ji tak hlásili). Starší klienti s prázdným
+ * ceníkem zacházejí stejně jako dřív s chybou – ukážou tarify bez cen.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { stripe, stripeReady, ADDONS, PLANS } from "../_shared/stripe.ts";
@@ -23,7 +28,7 @@ function json(body: unknown, status = 200): Response {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    if (!stripeReady()) return json({ error: "Platby zatím nejsou spuštěné." }, 503);
+    if (!stripeReady()) return json({ ok: true, configured: false, plans: [], addons: [] });
 
     // Jedním dotazem všechny aktivní ceny; lookup key je náš klíč.
     const res = await stripe<{ data?: Array<{ lookup_key?: string | null; unit_amount?: number | null; currency?: string }> }>(
@@ -53,7 +58,7 @@ serve(async (req) => {
       currency: podleKlice.get(lookup_key)?.currency ?? "czk",
     }));
 
-    return json({ ok: true, plans, addons });
+    return json({ ok: true, configured: true, plans, addons });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

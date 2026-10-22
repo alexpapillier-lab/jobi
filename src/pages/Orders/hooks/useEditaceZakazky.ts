@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../../../lib/supabaseClient";
 import { devLog } from "../../../lib/devLog";
+import { autorProOstatni, jeRootOwnerId, skrytyRootOwner } from "../../../lib/rootOwner";
 import { autorZmen, kratkeJmeno, ostatniVDetailu, type AutorZmen, type PritomnostVDetailu, type ZaznamHistorieZmeny } from "../../../lib/editaceZamek";
 
 /** Skryté okno (jiná aplikace, minimalizováno) se po dvou minutách z detailu odhlásí. */
@@ -59,6 +60,8 @@ export function useEditaceZakazky({ ticketId, userId, jmeno, upravuje }: Vstup):
     const ch = channelRef.current;
     const meta = metaRef.current;
     if (!ch || !meta || !prihlasenoRef.current || skrytoRef.current) return;
+    // Majitel aplikace se kolegům jako „Otevřeno / Upravuje“ neukazuje.
+    if (jeRootOwnerId(meta.userId)) return;
     void ch.track(meta).catch(() => undefined);
   }, []);
 
@@ -92,7 +95,8 @@ export function useEditaceZakazky({ ticketId, userId, jmeno, upravuje }: Vstup):
         channelRef.current = ch;
         ch.on("presence", { event: "sync" }, () => {
           if (zruseno) return;
-          setOstatni(ostatniVDetailu(ch.presenceState<PritomnostVDetailu>(), userId));
+          // Pojistka pro starší verze, které se hlásí i za majitele aplikace.
+          setOstatni(ostatniVDetailu(ch.presenceState<PritomnostVDetailu>(), userId).filter((o) => !skrytyRootOwner(o.userId, userId)));
         });
         ch.subscribe((status) => {
           if (zruseno) return;
@@ -184,7 +188,9 @@ export async function nactiAutoraZmen(params: {
     if (od) dotaz = dotaz.gt("created_at", od);
     const { data, error } = await dotaz;
     if (error || !Array.isArray(data)) return { autor: { typ: "neznamy" }, jmena: [] };
-    const autor = autorZmen(data as ZaznamHistorieZmeny[], { mojeId, od, sloupce });
+    // Změna od majitele aplikace je pro ostatní změna „systému“ (jako import).
+    const zaznamy = (data as ZaznamHistorieZmeny[]).map((z) => ({ ...z, changed_by: autorProOstatni(z.changed_by, mojeId) }));
+    const autor = autorZmen(zaznamy, { mojeId, od, sloupce });
     if (autor.typ !== "kolega") return { autor, jmena: [] };
 
     const ids = autor.autori.filter((a): a is string => !!a);

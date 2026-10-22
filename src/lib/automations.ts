@@ -9,6 +9,7 @@
 import { supabase, getSupabaseClient } from "./supabaseClient";
 import { supabaseFetch } from "./supabaseClient";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type TriggerType = "status_change" | "status_age" | "event" | "ticket_created" | "ticket_issued";
 /**
  * Akce obecného editoru pravidel. Žádost o recenzi (`review_request`) sem
@@ -251,6 +252,6 @@ export async function runAutomations(input: {
     if (!res.ok) return { ok: false, error: data.error ?? `HTTP ${res.status}` };
     return { ok: true, ran: data.ran };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }

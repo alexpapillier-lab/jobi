@@ -21,6 +21,7 @@
 import { computeTotals, naHalere, type InvoiceLineItem, type InvoiceTotals } from "./invoiceMath";
 import { castkaSlevy, hrubaCena, konecnaCena, type TypSlevy } from "./slevaZakazky";
 import { endOfDay, parseDatum, startOfDay, vObdobi, type DateRange } from "../pages/Statistics/obdobi";
+import { technikPrace } from "./rootOwner";
 
 /** Délka názvu položky – iDoklad i Fakturoid berou 200 znaků, víc se při exportu ořízne. */
 export const MAX_NAZEV_POLOZKY = 200;
@@ -98,7 +99,8 @@ export function opravyZJsonu(json: unknown): OpravaZakazky[] {
       price: cislo(o.price),
       hodiny: cislo(o.hodiny),
       sazba: cislo(o.sazba),
-      technik: typeof o.technik === "string" ? o.technik : null,
+      // Práce majitele aplikace jde na fakturu bez jména (je neviditelný).
+      technik: typeof o.technik === "string" ? technikPrace({ technik: o.technik, technikUserId: typeof o.technikUserId === "string" ? o.technikUserId : null }) : null,
     });
   }
   return out;

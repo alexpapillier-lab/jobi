@@ -32,6 +32,7 @@ import {
   exportWarrantyToPDF,
   printWarranty,
 } from "./tiskZakazky";
+import { technikPrace } from "../../lib/rootOwner";
 
 type Props = {
   isNarrow: boolean;
@@ -62,7 +63,7 @@ type Props = {
   setEditedClaim: React.Dispatch<React.SetStateAction<Partial<WarrantyClaimRow>>>;
   startEditingClaim: () => void;
   canPrintExport: boolean;
-  runClaimDocument: (action: DocMode) => Promise<void>;
+  runClaimDocument: (action: DocMode, docType?: "prijemka_reklamace" | "vydejka_reklamace") => Promise<void>;
   setDetailId: React.Dispatch<React.SetStateAction<string | null>>;
   setDetailClaimId: React.Dispatch<React.SetStateAction<string | null>>;
   setClaimHistoryModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -302,6 +303,13 @@ export function DetailHlavicka({
                       onPrint: () => runClaimDocument("print"),
                       onExport: () => runClaimDocument("export"),
                     },
+                    {
+                      key: "vydejka_reklamace",
+                      label: "Výdejka reklamace",
+                      icon: <DocumentIcon size={14} />,
+                      onPrint: () => runClaimDocument("print", "vydejka_reklamace"),
+                      onExport: () => runClaimDocument("export", "vydejka_reklamace"),
+                    },
                   ]}
                 />
               )}
@@ -467,7 +475,7 @@ export function DetailHlavicka({
                       branchId: t.branchId ?? null,
                       items: repairs.length > 0 ? repairs.map((r) => ({
                         // Hodinová práce jde na fakturu jako hodiny × sazba, ne 1 ks.
-                        name: r.type === "hourly" && r.technik ? `${r.name} (${r.technik})` : r.name,
+                        name: r.type === "hourly" && technikPrace(r) ? `${r.name} (${technikPrace(r)})` : r.name,
                         qty: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? r.hodiny! : 1,
                         unit: r.type === "hourly" ? "h" : "ks",
                         unit_price: r.type === "hourly" && (r.hodiny ?? 0) > 0 ? (r.sazba ?? 0) : (r.price ?? 0),

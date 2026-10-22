@@ -97,6 +97,16 @@ serve(async (req) => {
       }
     }
 
+    // Majitel aplikace je pro členy servisu neviditelný: jeho členství se
+    // tváří, že neexistuje (jinak by šlo podle id z dat poznat, že tam je,
+    // a správce by mu mohl měnit roli nebo práva).
+    if (!isRootOwner && rootOwnerId && String(targetUserId).toLowerCase() === rootOwnerId.toLowerCase()) {
+      return new Response(
+        JSON.stringify({ error: "Target user is not a member of this service" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { data: targetRow, error: fetchErr } = await svc
       .from("service_memberships")
       .select("role")

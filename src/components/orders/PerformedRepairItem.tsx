@@ -4,6 +4,7 @@ import { showToast } from "../Toast";
 import { STORAGE_KEYS } from "../../constants/storageKeys";
 import { type DevicesData, type InventoryData, safeLoadDevicesData } from "../../lib/catalogStorage";
 import { type PerformedRepair } from "./types";
+import { technikPrace } from "../../lib/rootOwner";
 
 export function PerformedRepairItem({
   repair,
@@ -77,7 +78,7 @@ export function PerformedRepairItem({
           {repair.type === "hourly" && (
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
               Hodinová práce · {(repair.hodiny ?? 0).toLocaleString("cs-CZ")} h × {(repair.sazba ?? 0).toLocaleString("cs-CZ")} Kč/h
-              {repair.technik ? ` · ${repair.technik}` : ""}
+              {technikPrace(repair) ? ` · ${technikPrace(repair)}` : ""}
             </div>
           )}
           {/* Odměny týmu: prémie je jen za opravu nabídnutou navíc, ne za tu, se kterou zákazník přišel. */}
@@ -85,7 +86,7 @@ export function PerformedRepairItem({
             <button
               type="button"
               onClick={() => onUpdateFields(repair.id, { nabidnuto: !repair.nabidnuto })}
-              title={repair.nabidnuto ? "Oprava nabídnutá zákazníkovi navíc – počítá se do odměn. Kliknutím zrušíte." : "Zákazník s touto opravou přišel – odměna se nepočítá. Kliknutím označíte jako nabídnutou navíc."}
+              title={repair.nabidnuto ? "Oprava nabídnutá zákazníkovi navíc – počítá se do odměn. Kliknutím zrušíte." : "Zatím se do odměn nepočítá. Kliknutím označíte jako nabídnutou zákazníkovi navíc – odměna se připíše podle nastavení odměn (výchozí po vydání zakázky)."}
               aria-pressed={!!repair.nabidnuto}
               style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, border: `1px solid ${repair.nabidnuto ? "var(--accent)" : "var(--border)"}`, background: repair.nabidnuto ? "var(--accent-soft)" : "transparent", color: repair.nabidnuto ? "var(--accent)" : "var(--muted)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
             >

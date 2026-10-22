@@ -34,6 +34,11 @@ export async function loadDocumentsForWeb(serviceId: string | null): Promise<Doc
   return docs;
 }
 
+/** Zahodí šablony z cache – po uložení v editoru šablon se má hned tisknout nová verze. */
+export function zapomenSablonyProWeb(serviceId: string | null): void {
+  cache.delete(serviceId ?? "");
+}
+
 /**
  * Sestaví HTML dokumentu stejně, jako to dělá JobiDocs.
  *

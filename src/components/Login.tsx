@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import { setRememberSession } from "../lib/authStorage";
 import { prelozAuthChybu } from "../lib/authChyby";
 import { ThemeLogo } from "./ThemeLogo";
+import { textChybyFunkce } from "../lib/edgeFunctionError";
 
 export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
   const { signIn, signUp, configError } = useAuth();
@@ -51,7 +52,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
       if (data?.error) throw new Error(data.error);
       if (data?.email) setEmail(data.email);
     } catch (err: any) {
-      setPrefillError(err?.message || "Nepodařilo načíst pozvánku");
+      setPrefillError(await textChybyFunkce(err, "Nepodařilo načíst pozvánku"));
     } finally {
       setPrefillLoading(false);
     }
@@ -77,7 +78,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
       if (data?.error) throw new Error(data.error);
       setForgotPasswordStep("code");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Nepodařilo odeslat kód.");
+      setError(await textChybyFunkce(err, "Nepodařilo odeslat kód."));
     } finally {
       setIsLoading(false);
     }
@@ -115,7 +116,7 @@ export function Login({ onLogin: _onLogin }: { onLogin: () => void }) {
       if (data?.error) throw new Error(data.error);
       setForgotPasswordStep("done");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Nepodařilo změnit heslo.");
+      setError(await textChybyFunkce(err, "Nepodařilo změnit heslo."));
     } finally {
       setIsLoading(false);
     }

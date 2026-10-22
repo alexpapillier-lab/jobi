@@ -94,6 +94,15 @@ serve(async (req) => {
       }
     }
 
+    // Majitel aplikace je pro členy servisu neviditelný: jeho členství se
+    // tváří, že neexistuje (správce ho podle id z dat nesmí odebrat).
+    if (!isRootOwner && rootOwnerId && String(targetUserId).toLowerCase() === rootOwnerId.toLowerCase()) {
+      return new Response(
+        JSON.stringify({ error: "Target user is not a member of this service" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Check target user's current role
     const { data: targetMembership, error: targetError } = await supabase
       .from("service_memberships")

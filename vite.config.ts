@@ -17,6 +17,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   // Otisk buildu pro kontrolu nové verze webu (src/lib/aktualizaceWebu.ts).
   define: { __JOBI_BUILD__: JSON.stringify(buildId()) },
+  resolve: {
+    // Editor šablon se bere z jobidocs/src (Nastavení → Šablony dokumentů ve
+    // webu). JobiDocs má vlastní node_modules; bez tohohle by se jeho import
+    // Reactu vyřešil na druhou kopii a hooky by spadly („Invalid hook call“).
+    dedupe: ["react", "react-dom", "@supabase/supabase-js"],
+  },
   plugins: [
     react(),
     {

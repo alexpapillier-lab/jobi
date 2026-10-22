@@ -27,8 +27,13 @@ name: E2E testy
 on:
   push:
     branches: [main]
+  # PR jen se štítkem „e2e“. Běhy sdílejí jednu skupinu (společný testovací
+  # servis) a GitHub v ní drží jen jeden čekající běh – nový ho zruší. Každý
+  # push do PR tak rušil čekající běh na main a main sada (1,2 h) skoro nikdy
+  # nedoběhla (říjen 2026). Kdo chce E2E na PR, dá štítek „e2e“.
   pull_request:
     branches: [main]
+    types: [labeled, synchronize, opened, reopened]
   schedule:
     # 3:30 UTC – půl hodiny po denní záloze databáze (backup-db.yml v 2:30
     # UTC), ať noční běhy na sobě nestojí frontu na stejných útratách CI minut.
@@ -42,7 +47,8 @@ on:
 
 concurrency:
   # Testy pracují se společným testovacím servisem – dva běhy naráz by si
-  # navzájem přepisovaly data.
+  # navzájem přepisovaly data. Běžící běh se nikdy neruší; z čekajících
+  # zůstane jen nejnovější, takže main vždy otestuje svůj poslední commit.
   group: e2e
   cancel-in-progress: false
 
@@ -50,6 +56,7 @@ jobs:
   e2e:
     name: Hlavní cesty v prohlížeči
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
     # Sada roste (přes 150 testů, ~15 min); 20 minut už těsně nestačilo a job
     # zabitý timeoutem nechá v databázi rozdělaná testovací data.
     timeout-minutes: 100

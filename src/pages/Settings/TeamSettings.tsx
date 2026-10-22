@@ -181,13 +181,52 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     window.addEventListener("scroll", onScroll, true);
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", onScroll, true); };
   }, [branchMenuFor]);
+  /**
+   * Rozepsané zápisy poboček po členech. Zaškrtnutí několika poboček rychle
+   * za sebou dřív poslalo několik zápisů naráz: do databáze mohly dorazit
+   * v jiném pořadí (vyhrál starší výběr) a chyba kteréhokoli vrátila celý
+   * seznam na stav z doby jeho kliknutí – mezitím zaškrtnutá pobočka
+   * zmizela (E2E „správce vybere technikovi Brno a Ostravu“ občas skončil
+   * jen s Brnem). Teď jde za člena vždy jen jeden zápis a po něm případně
+   * ještě jeden s posledním výběrem; při chybě se vrací stav, který
+   * databáze naposledy potvrdila.
+   */
+  const zapisyPobocekRef = useRef(new Map<string, {
+    chtene: string[] | null;
+    maChtene: boolean;
+    potvrzeno: { branch_ids: string[] | null; home_branch_id: string | null };
+  }>());
   const changeMemberBranches = async (member: { user_id: string; service_id: string; branch_ids?: string[] | null; home_branch_id?: string | null }, ids: string[] | null) => {
-    const prev = teamMembers;
     setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, branch_ids: ids, home_branch_id: ids && m.home_branch_id && !ids.includes(m.home_branch_id) ? ids[0] : m.home_branch_id } : m)));
-    const res = await setMemberBranches(member.service_id, member.user_id, ids);
-    if (res.error) {
-      setTeamMembers(prev);
-      showToast(`Pobočky se nepodařilo uložit: ${res.error}`, "error");
+    const fronty = zapisyPobocekRef.current;
+    const bezi = fronty.get(member.user_id);
+    if (bezi) {
+      bezi.chtene = ids;
+      bezi.maChtene = true;
+      return;
+    }
+    const fronta = {
+      chtene: ids,
+      maChtene: true,
+      potvrzeno: { branch_ids: member.branch_ids ?? null, home_branch_id: member.home_branch_id ?? null },
+    };
+    fronty.set(member.user_id, fronta);
+    try {
+      while (fronta.maChtene) {
+        const cil = fronta.chtene;
+        fronta.maChtene = false;
+        const res = await setMemberBranches(member.service_id, member.user_id, cil);
+        if (res.error) {
+          const zpet = fronta.potvrzeno;
+          setTeamMembers((list) => list.map((m) => (m.user_id === member.user_id ? { ...m, ...zpet } : m)));
+          showToast(`Pobočky se nepodařilo uložit: ${res.error}`, "error");
+          return;
+        }
+        const home = fronta.potvrzeno.home_branch_id;
+        fronta.potvrzeno = { branch_ids: cil, home_branch_id: cil && home && !cil.includes(home) ? cil[0] : home };
+      }
+    } finally {
+      fronty.delete(member.user_id);
     }
   };
   /** Domovská pobočka člena: výchozí filtr a výchozí pobočka nové zakázky. */
@@ -208,6 +247,12 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
 
   // Invite dialog states
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  /* Odesílání pozvánky trvá (vytvoření, e-mail, znovunačtení týmu) a dialog se
+     při něm nijak neměnil, takže se na „Pozvat“ klikalo znovu. Ref je zámek,
+     který platí hned (stav by dvě rychlá kliknutí v jednom ticku nezachytil),
+     stav jen mění vzhled tlačítka. */
+  const inviteSendingRef = useRef(false);
+  const [inviteSending, setInviteSending] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [_inviteMode, setInviteMode] = useState<"stock" | "custom">("stock");
@@ -546,6 +591,9 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
       return;
     }
 
+    if (inviteSendingRef.current) return;
+    inviteSendingRef.current = true;
+    setInviteSending(true);
     try {
       const accessToken = session?.access_token;
       const { data, error } = await supabase.functions.invoke("invite_create", {
@@ -619,6 +667,9 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
     } catch (err: any) {
       console.error("[TeamSettings] Error sending invite:", err);
       showToast(`Chyba při posílání pozvánky: ${normalizeError(err)}`, "error");
+    } finally {
+      inviteSendingRef.current = false;
+      setInviteSending(false);
     }
   };
 
@@ -1420,6 +1471,7 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
               </button>
               <button
                 onClick={handleSendInvite}
+                disabled={inviteSending}
                 style={{
                   padding: "10px 16px",
                   borderRadius: 12,
@@ -1427,11 +1479,12 @@ export function TeamSettings({ activeServiceId, setActiveServiceId, services }: 
                   background: "var(--accent)",
                   color: "white",
                   fontWeight: 900,
-                  cursor: "pointer",
+                  cursor: inviteSending ? "wait" : "pointer",
+                  opacity: inviteSending ? 0.6 : 1,
                   fontSize: 13,
                 }}
               >
-                Pozvat
+                {inviteSending ? "Odesílám…" : "Pozvat"}
               </button>
             </div>
           </div>

@@ -10,6 +10,7 @@
  */
 import { supabase, supabaseUrl, supabaseFetch } from "./supabaseClient";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type BillingRow = {
   service_id: string;
   stripe_customer_id: string | null;
@@ -64,6 +65,7 @@ export async function loadCenik(): Promise<Cenik | null> {
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (data.configured === false) return null;
     return { plans: data.plans ?? [], addons: data.addons ?? [] };
   } catch {
     return null;
@@ -93,7 +95,7 @@ async function volat(fn: "billing-checkout" | "billing-portal", body: Record<str
     if (!res.ok) return { error: data?.error ?? `Chyba ${res.status}` };
     return { url: data?.url as string | undefined };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
+    return { error: textChyby(e) };
   }
 }
 

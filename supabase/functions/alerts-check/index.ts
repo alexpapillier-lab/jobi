@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { jeTestovaciZaznam } from "../_shared/testovaciUcty.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { podnetyZHlidace, type SelhaniKontroly } from "../_shared/hlidac.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 /**
  * Hlídač provozu. Jednou za hodinu se podívá, jestli se něco neděje, a když
@@ -162,14 +164,16 @@ async function zjistitPodnety(
 
   const { data: chyby, error } = await svc
     .from("error_logs")
-    .select("code,message,service_id,app_version,created_at,context")
+    .select("code,message,service_id,user_id,app_version,created_at,context")
     .gte("created_at", od)
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) throw new Error(`error_logs: ${error.message}`);
-  type Radek = { code: string; message: string | null; service_id: string | null; app_version: string | null; context: Record<string, unknown> | null };
+  type Radek = { code: string; message: string | null; service_id: string | null; user_id: string | null; app_version: string | null; context: Record<string, unknown> | null };
   // Chyby z vývojového serveru (hot reload) se zákazníka netýkají.
-  const radky = ((chyby ?? []) as Radek[]).filter((r) => r.context?.dev !== true);
+  // Vývoj (context.dev), automatické testy (context.automat) a testovací účty
+  // chyby vyvolávají schválně – nejsou to výpadky.
+  const radky = ((chyby ?? []) as Radek[]).filter((r) => !jeTestovaciZaznam(r));
 
   const pady = radky.filter((r) => r.code === "react.render_crash");
   if (pady.length >= PRAH_PADU) {
@@ -260,7 +264,7 @@ ${telo}
 <p style="margin:24px 0 0;color:#666;font-size:12px">Podrobnosti jsou v aplikaci v Nastavení → Owner → Chyby.</p>
 </div>`;
 
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await resendFetch({
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({ from, to: [komu], subject: `Jobi: ${nadpis}`, html }),

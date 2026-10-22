@@ -4,6 +4,7 @@ import { showToast } from "../../components/Toast";
 import { supabase } from "../../lib/supabaseClient";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Card } from "../../lib/settingsUi";
+import { JMENO_SYSTEM, skrytyRootOwner } from "../../lib/rootOwner";
 
 type DeletedTicketsSettingsProps = {
   activeServiceId: string | null;
@@ -79,7 +80,12 @@ export function DeletedTicketsSettings({ activeServiceId }: DeletedTicketsSettin
 
         const map: Record<string, string | null> = {};
         for (const r of historyRows || []) {
-          map[r.ticket_id] = (r.changed_by && nicknames[r.changed_by]) || r.changed_by ? `${String(r.changed_by).slice(0, 8)}…` : null;
+          // Dřív tu přednost operátorů vracela vždycky začátek id místo
+          // přezdívky. Smazání od majitele aplikace je pro ostatní „Systém“.
+          const kdo = r.changed_by ? String(r.changed_by) : null;
+          map[r.ticket_id] = !kdo
+            ? null
+            : skrytyRootOwner(kdo, session?.user?.id) ? JMENO_SYSTEM : nicknames[kdo] ?? `${kdo.slice(0, 8)}…`;
         }
         setDeletedByMap(map);
       } catch (err) {

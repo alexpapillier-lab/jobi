@@ -18,6 +18,8 @@ export type PerformedRepair = {
   productIds?: string[]; // produkty (lze upravit)
   /** Kdo opravu na zakázku přidal (nabídl ji) – pro odměny týmu (lib/odmeny). */
   pridalUserId?: string;
+  /** Kdy byla oprava na zakázku přidána (ISO) – odměny v režimu „po přidání opravy“ (lib/odmeny). */
+  pridanoAt?: string;
   /** Nabídnuto zákazníkovi navíc (ne to, s čím přišel) – jen s tím vzniká odměna (lib/odmeny). */
   nabidnuto?: boolean;
 };

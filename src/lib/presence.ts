@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
+import { jeRootOwnerId, skrytyRootOwner } from "./rootOwner";
 
 export type TicketViewer = { userId: string; nickname: string; avatarUrl: string | null };
 
@@ -47,6 +48,10 @@ function emit() {
 
 function track(s: Store) {
   if (!s.subscribed) return;
+  // Majitel aplikace se do přítomnosti servisu nehlásí: kanál poslouchá
+  // (vidí, kdo je online), ale sám v něm není – ostatní ho nevidí online,
+  // v bublinách u zakázky ani jako „Upravuje“.
+  if (jeRootOwnerId(s.userId)) return;
   void s.channel.track({ ...s.meta, online_at: new Date().toISOString() });
 }
 
@@ -85,7 +90,7 @@ export function startServicePresence(
 
   channel.on("presence", { event: "sync" }, () => {
     if (store !== s) return;
-    s.state = channel.presenceState<PresenceMeta>() as PresenceState;
+    s.state = bezRootOwneraVStavu(channel.presenceState<PresenceMeta>() as PresenceState, userId);
     emit();
   });
 
@@ -100,6 +105,17 @@ export function startServicePresence(
   });
 
   return () => stopServicePresence(serviceId, userId);
+}
+
+/**
+ * Pojistka pro starší verze aplikace, které se do kanálu hlásí i za majitele
+ * aplikace: jeho záznam ostatní zahodí. Sám sebe vidí.
+ */
+function bezRootOwneraVStavu(stav: PresenceState, mojeId: string): PresenceState {
+  if (!Object.keys(stav).some((klic) => skrytyRootOwner(klic, mojeId))) return stav;
+  const out: PresenceState = {};
+  for (const [klic, zaznamy] of Object.entries(stav)) if (!skrytyRootOwner(klic, mojeId)) out[klic] = zaznamy;
+  return out;
 }
 
 function stopServicePresence(serviceId: string, userId: string) {

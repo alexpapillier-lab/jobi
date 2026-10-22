@@ -392,9 +392,11 @@ async function cenikZFunkce(supabaseUrl, anonKey) {
     body: "{}",
     signal: AbortSignal.timeout(20000),
   });
+  // 503 = starší verze funkce; nová vrací 200 s `configured: false`.
   if (res.status === 503) return { chybiKlic: true };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
+  if (data.configured === false) return { chybiKlic: true };
   const mapa = new Map();
   for (const p of [...(data.plans ?? []), ...(data.addons ?? [])]) {
     if (p.amount != null) mapa.set(p.lookup_key, { amount: p.amount, currency: p.currency, interval: p.interval ?? null });

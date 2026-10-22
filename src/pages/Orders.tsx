@@ -9,6 +9,7 @@ import { reportError } from "../lib/reportError";
 import { claimDocumentData } from "../lib/documentData";
 import type { NavKey } from "../layout/Sidebar";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { formularZmenen } from "../lib/formularZmeny";
 import { StornoDialog } from "../components/orders/StornoDialog";
 import { supabase } from "../lib/supabaseClient";
 import { devLog } from "../lib/devLog";
@@ -30,6 +31,7 @@ import { useFoceniNaTelefonu } from "../hooks/useFoceniNaTelefonu";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
 import { SLOUPCE_DETAILU } from "../lib/sloupceZakazky";
 import { nastavStavRezervace } from "../lib/rezervace";
+import { navrhPuvodniZakazky, odesliWebhookyHned, prevedObjednavku, type WebObjednavka } from "../lib/objednavky";
 import { sloucZakazkuZDb, zapisZakazkyBezi } from "../lib/slouceniZakazky";
 import { drzeneKlice, poleZFormulare, sloucSRozepsanym, type PoleZakazky } from "../lib/editaceZamek";
 import { sjetNaKartu } from "../components/orders/PostupZakazky";
@@ -37,7 +39,7 @@ import { useSbaleno } from "../components/orders/SbalitelnaSekce";
 import { dniBezZmenyJinde, stitekUmisteni, umisteniZakazky, type Zasilka } from "../lib/zasilky";
 import { ensurePortalToken, portalUrl } from "../lib/portal";
 import { useBranches, filterByBranch } from "../context/BranchContext";
-import { setTicketBranch, type Branch } from "../lib/branches";
+import { companyDataForBranch, getCachedBranch, setTicketBranch, type Branch } from "../lib/branches";
 import { BranchPickerDialog } from "../components/orders/BranchPickerDialog";
 import {
   reserveForRepair,
@@ -55,6 +57,7 @@ import { safeLoadCompanyData } from "../lib/companyData";
 import { useTicketViewers, useTicketViewersMap, setPresenceTicket } from "../lib/presence";
 import {
   loadDocumentsConfigFromDB,
+  zarucniDobaProTisk,
 } from "../lib/documentHelpers";
 
 import {
@@ -70,7 +73,8 @@ import {
   isDraftDirty,
 } from "./Orders/koncept";
 import { mapSupabaseTicketToTicketEx } from "./Orders/mapovani";
-import { type ClaimResolutionItem, parseClaimResolutionItems, serializeClaimResolutionItems } from "./Orders/reklamaceZakroky";
+import { parseClaimResolutionItems } from "./Orders/reklamaceZakroky";
+import { useZakrokyReklamace, zakrokyDoSloupce } from "./Orders/hooks/useZakrokyReklamace";
 import {
   type DocMode,
   runWebDocument,
@@ -103,6 +107,7 @@ import { useNovaZakazkaKoncept } from "./Orders/hooks/useNovaZakazkaKoncept";
 import { useKatalogASklad } from "./Orders/hooks/useKatalogASklad";
 import { useFiltrSeznamu } from "./Orders/hooks/useFiltrSeznamu";
 import { useFakturyZakazek } from "./Orders/hooks/useFakturyZakazek";
+import { useOdkudCestuji } from "./Orders/hooks/useOdkudCestuji";
 import { stitekFaktury } from "../lib/fakturyZakazek";
 import { SeznamZakazek } from "./Orders/SeznamZakazek";
 import { NovaZakazkaPanel } from "./Orders/NovaZakazkaPanel";
@@ -114,6 +119,7 @@ import { UpravaZakazky } from "./Orders/UpravaZakazky";
 import { DetailDalsiKarty } from "./Orders/DetailDalsiKarty";
 import { DetailOpravy } from "./Orders/DetailOpravy";
 import { DetailDiagnostika } from "./Orders/DetailDiagnostika";
+import { PrichoziObjednavky } from "./Orders/PrichoziObjednavky";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
@@ -216,6 +222,13 @@ export default function Orders({
   // State declarations (moved up to fix dependency order)
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
+  /** Provedené zákroky v detailu reklamace – ukládají se samy (useZakrokyReklamace). */
+  const {
+    koncept: claimResolutionDraft,
+    zmenZakroky,
+    ulozHned: ulozZakrokyHned,
+    neulozeno: zakrokyNeulozene,
+  } = useZakrokyReklamace({ detailClaimId, cloudClaims, setCloudClaims, updateClaim });
   const ticketViewers = useTicketViewers(activeServiceId, detailId, session?.user?.id ?? null);
   const viewersByTicket = useTicketViewersMap(activeServiceId, session?.user?.id ?? null);
   // Kolegům se ukáže, že tuhle zakázku máme otevřenou.
@@ -377,6 +390,9 @@ export default function Orders({
    * kliknutí na Upravit – s ní se před uložením porovná řádek z databáze.
    */
   const zakladUpravyRef = useRef<TicketEx | null>(null);
+  /** Čím se formulář Upravit naplnil – proti tomu se pozná, jestli v něm něco je změněné. */
+  const formularZakazkyRef = useRef<Record<string, unknown> | null>(null);
+  const formularReklamaceRef = useRef<Record<string, unknown> | null>(null);
   /** updated_at z odpovědí na naše uložení – takový řádek není cizí změna. */
   const naseZapisyRef = useRef<Set<string>>(new Set());
   /** Uložení narazilo na změnu od kolegy – čeká na volbu v dialogu. */
@@ -408,8 +424,6 @@ export default function Orders({
   const clenove = useClenoveServisu(activeServiceId, pridelovaniTechnika);
   const [isEditingClaim, setIsEditingClaim] = useState(false);
   const [editedClaim, setEditedClaim] = useState<Partial<WarrantyClaimRow>>({});
-  /** Draft zákroků v náhledu reklamace – při změně reklamace se resetuje */
-  const [claimResolutionDraft, setClaimResolutionDraft] = useState<ClaimResolutionItem[] | null>(null);
   const [claimHistoryModalOpen, setClaimHistoryModalOpen] = useState(false);
   const [deleteClaimDialogOpen, setDeleteClaimDialogOpen] = useState(false);
   const [deleteClaimId, setDeleteClaimId] = useState<string | null>(null);
@@ -533,6 +547,7 @@ export default function Orders({
      z invoice_tickets, takže platí i pro souhrnnou fakturu za víc zakázek;
      záloha dál přes invoices.ticket_id (viz lib/fakturyZakazek). */
   const fakturaByTicketId = useFakturyZakazek(activeServiceId, !!(onCreateInvoice || onOpenInvoice), !closeDetailWhen);
+  const odkudCestuji = useOdkudCestuji(activeServiceId, zasilkyZapnuty && hasBranches);
   const invoiceIdByTicketId = useMemo(() => {
     const m: Record<string, string> = {};
     for (const [ticketId, f] of Object.entries(fakturaByTicketId)) m[ticketId] = f.id;
@@ -871,7 +886,7 @@ export default function Orders({
       const config = await loadDocumentsConfigFromDB(activeServiceId);
       if (config?.autoPrint?.prijetiReklamaceOnCreate && activeServiceId) {
         const zdrojKod = claim.source_ticket_id ? (cloudTicketsRef.current.find((t) => t.id === claim.source_ticket_id)?.code ?? "") : "";
-        const data = claimDocumentData(claim, safeLoadCompanyData(), zdrojKod);
+        const data = claimDocumentData(claim, companyDataForBranch(safeLoadCompanyData(), getCachedBranch(activeServiceId, claim.branch_id)), zdrojKod);
         if (isWeb()) await runWebDocument("print", "prijemka_reklamace", activeServiceId, data);
         else await runDesktopDocument("print", "prijemka_reklamace", activeServiceId, data, `prijemka-reklamace-${claim.code}.pdf`);
       }
@@ -879,6 +894,22 @@ export default function Orders({
   });
 
   const { otevreno: novaReklamaceOtevrena, zavri: zavriNovouReklamaci } = novaReklamace;
+
+  // Příchozí objednávky → Reklamace: okno s údaji z objednávky a navrženou
+  // původní zakázkou (shoda SN / telefonu). Na Zakázky přepne App.
+  const otevriReklamaciZObjednavkyRef = useRef(novaReklamace.otevriZObjednavky);
+  otevriReklamaciZObjednavkyRef.current = novaReklamace.otevriZObjednavky;
+  useEffect(() => {
+    const onReklamace = (e: Event) => {
+      const o = (e as CustomEvent<{ objednavka?: WebObjednavka }>).detail?.objednavka;
+      if (!o || o.service_id !== activeServiceId) return;
+      setDetailId(null);
+      setDetailClaimId(null);
+      otevriReklamaciZObjednavkyRef.current(o, navrhPuvodniZakazky(o, cloudTicketsRef.current), branchForNew?.id ?? null);
+    };
+    window.addEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+    return () => window.removeEventListener("jobsheet:reklamace-z-objednavky", onReklamace);
+  }, [activeServiceId, branchForNew, cloudTicketsRef]);
   // Okno je portál do body – při odchodu na jinou stránku se musí zavřít samo
   // (viz efekt s closeDetailWhen výš). Koncept zůstává uložený.
   useEffect(() => {
@@ -991,6 +1022,14 @@ export default function Orders({
     () => (detailClaimId ? cloudClaims.find((c) => c.id === detailClaimId) : undefined),
     [detailClaimId, cloudClaims]
   );
+  /** Opravy z ceníku k zařízení reklamace – do zákroků se přidávají za 0 Kč. */
+  const opravyReklamace = useMemo(
+    () =>
+      repairsForDeviceLabel(
+        detailedClaim?.device_label || [detailedClaim?.device_brand, detailedClaim?.device_model].filter(Boolean).join(" ")
+      ),
+    [detailedClaim?.device_label, detailedClaim?.device_brand, detailedClaim?.device_model, repairsForDeviceLabel]
+  );
 
   /**
    * Komentáře se dotahují k tomu, co je zrovna otevřené: k detailu zakázky
@@ -1059,7 +1098,6 @@ export default function Orders({
     removePerformedRepair,
     ulozZapujcku,
     ulozTechnika,
-    ulozFindMy,
     ulozKontrolu,
     ulozDiagnostikuZakazky,
   } = useZapisyZakazky({
@@ -1105,7 +1143,7 @@ export default function Orders({
 
   const startEditingClaim = useCallback(() => {
     if (!detailedClaim) return;
-    setEditedClaim({
+    const formular = {
       customer_name: detailedClaim.customer_name ?? "",
       customer_phone: detailedClaim.customer_phone ?? "",
       customer_email: detailedClaim.customer_email ?? "",
@@ -1124,38 +1162,24 @@ export default function Orders({
       device_note: detailedClaim.device_note ?? "",
       device_passcode: detailedClaim.device_passcode ?? "",
       notes: detailedClaim.notes ?? "",
-      resolution_summary: detailedClaim.resolution_summary ?? "",
       status: detailedClaim.status,
       expected_completion_at: detailedClaim.expected_completion_at ?? null,
-    });
+    };
+    formularReklamaceRef.current = formular;
+    setEditedClaim(formular);
     setIsEditingClaim(true);
   }, [detailedClaim]);
 
-  /** Uložit pouze zákroky reklamace (bez přepnutí do režimu úprav) */
-  const saveClaimResolutionItems = useCallback(
-    async (claimId: string, items: ClaimResolutionItem[]): Promise<boolean> => {
-      const filtered = items.filter((x) => (x.name || "").trim());
-      const payload = { resolution_summary: filtered.length > 0 ? serializeClaimResolutionItems(filtered) : null };
-      const updated = await updateClaim(claimId, payload as any, cloudClaims.find((c) => c.id === claimId)?.code ?? undefined);
-      if (!updated) return false;
-      setCloudClaims((prev) => prev.map((cl) => (cl.id === claimId ? { ...cl, ...updated } : cl)));
-      setClaimResolutionDraft(null);
-      return true;
-    },
-    [updateClaim, cloudClaims]
-  );
-
   const saveClaimChanges = useCallback(async (): Promise<boolean> => {
     if (!detailedClaim) return false;
+    /*
+     * Zákroky se ukládají samy a zvlášť (useZakrokyReklamace). Tady se jen
+     * dopíšou rozepsané – resolution_summary do payloadu nepatří: snímek
+     * z chvíle, kdy se úpravy otevřely, by zákrok přidaný mezitím přepsal.
+     */
+    if (!(await ulozZakrokyHned())) return false;
     const payload: Record<string, unknown> = {};
     const c = { ...detailedClaim, ...editedClaim };
-    if (claimResolutionDraft !== null) {
-      const filtered = claimResolutionDraft.filter((x) => (x.name || "").trim());
-      payload.resolution_summary = filtered.length > 0 ? serializeClaimResolutionItems(filtered) : null;
-    } else if (c.resolution_summary !== undefined) {
-      const items = parseClaimResolutionItems(c.resolution_summary || null).filter((x) => (x.name || "").trim());
-      payload.resolution_summary = items.length > 0 ? serializeClaimResolutionItems(items) : null;
-    }
     if (c.customer_name !== undefined) payload.customer_name = c.customer_name || null;
     if (c.customer_phone !== undefined) payload.customer_phone = c.customer_phone || null;
     if (c.customer_email !== undefined) payload.customer_email = c.customer_email || null;
@@ -1181,9 +1205,8 @@ export default function Orders({
     setCloudClaims((prev) => prev.map((cl) => (cl.id === detailedClaim.id ? { ...cl, ...updated } : cl)));
     setIsEditingClaim(false);
     setEditedClaim({});
-    setClaimResolutionDraft(null);
     return true;
-  }, [detailedClaim, editedClaim, claimResolutionDraft, updateClaim]);
+  }, [detailedClaim, editedClaim, updateClaim, ulozZakrokyHned]);
 
   /**
    * Stav, který vypadá jako storno – servisy si stavy pojmenovávají sami,
@@ -1495,16 +1518,25 @@ export default function Orders({
   const handleCloseDetail = useCallback(async () => {
     devLog("[Close] clicked - about to save?");
     
-    const hasEditingChanges = isEditing && Object.keys(editedTicket).length > 0;
-    const hasEditingClaimChanges = isEditingClaim && Object.keys(editedClaim).length > 0;
-    
+    // Předvyplněný formulář Upravit bez přepsaného pole není neuložená změna.
+    const hasEditingChanges = isEditing && formularZmenen(formularZakazkyRef.current, editedTicket as Record<string, unknown>);
+    const hasEditingClaimChanges = isEditingClaim && formularZmenen(formularReklamaceRef.current, editedClaim as Record<string, unknown>);
+
     if (hasEditingChanges || hasEditingClaimChanges) {
       showToast("Máte neuložené změny. Uložte nebo zrušte úpravy.", "error");
       return;
     }
+    if (isEditing) {
+      setIsEditing(false);
+      setEditedTicket({});
+      zakladUpravyRef.current = null;
+    }
 
     // Odložený zápis oprav (cena, náklady) nesmí čekat, až se detail zavře.
     dokoncitOdlozeneZapisyOprav();
+    // Totéž u zákroků reklamace. Když zápis trvale selže (hlášku ukázal
+    // updateClaim), detail zůstane otevřený i se zákroky na obrazovce.
+    if (detailClaimId && !(await ulozZakrokyHned())) return;
 
     const hasDirtyAutoSave = dirtyFlags.diagnosticText || dirtyFlags.diagnosticPhotos || dirtyFlags.performedRepairs;
     if (hasDirtyAutoSave) {
@@ -1532,7 +1564,7 @@ export default function Orders({
     if (page && onReturnToPage) {
       onReturnToPage(page, customerId);
     }
-  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags, isEditing, editedTicket, isEditingClaim, editedClaim, dokoncitOdlozeneZapisyOprav]);
+  }, [saveTicketChanges, returnToPage, onReturnToPage, dirtyFlags, isEditing, editedTicket, isEditingClaim, editedClaim, dokoncitOdlozeneZapisyOprav, detailClaimId, ulozZakrokyHned]);
 
   // Escape: zavřít detail/modal; v capture phase + preventDefault, aby v fullscreen neukončil fullscreen
   useEffect(() => {
@@ -1609,10 +1641,6 @@ export default function Orders({
   }, [detailId, detailClaimId]);
 
   useEffect(() => {
-    setClaimResolutionDraft(null);
-  }, [detailClaimId]);
-
-  useEffect(() => {
     if (!detailedTicket) return;
     return registerShortcut("order_print", () => printTicket(detailedTicket, activeServiceId), { priority: 20 });
   }, [detailedTicket, activeServiceId, session?.user?.id]);
@@ -1647,7 +1675,7 @@ export default function Orders({
   const naplnFormular = useCallback((detailedTicket: TicketEx) => {
     zakladUpravyRef.current = detailedTicket;
     setKonfliktUpravy(null);
-    setEditedTicket({
+    const formular = {
       customerName: detailedTicket.customerName,
       customerPhone: detailedTicket.customerPhone || "",
       customerEmail: detailedTicket.customerEmail || "",
@@ -1670,8 +1698,11 @@ export default function Orders({
       handbackMethod: detailedTicket.handbackMethod || "",
       deviceNote: detailedTicket.deviceNote || "",
       externalId: detailedTicket.externalId || "",
+      estimatedPrice: detailedTicket.estimatedPrice,
       expectedCompletionAt: (detailedTicket as any).expected_completion_at ?? null,
-    } as any);
+    };
+    formularZakazkyRef.current = formular;
+    setEditedTicket(formular as any);
     setIsEditing(true);
   }, []);
 
@@ -1764,6 +1795,7 @@ export default function Orders({
 
     const chosenBranch = branchById(newDraft.branchId) ?? branchForNew;
     const rezervaceId = newDraft.rezervaceId;
+    const objednavkaId = newDraft.objednavkaId;
     createTicketAction({
       newDraft,
       branch: chosenBranch ? { id: chosenBranch.id, code: chosenBranch.code } : null,
@@ -1794,6 +1826,27 @@ export default function Orders({
               window.dispatchEvent(new CustomEvent("jobsheet:rezervace-zmena"));
             })
             .catch((e) => devLog("[rezervace] označení převedené selhalo", e));
+        }
+        // Objednávka z webu → převedená; web dostane webhook order.converted
+        // (posílá se hned, jinak do minuty cronem).
+        if (first && objednavkaId) {
+          const sid = activeServiceId;
+          prevedObjednavku(objednavkaId, first.id)
+            .then(async (zmeneno) => {
+              if (!zmeneno) showToast("Objednávku mezitím někdo vyřídil; zakázka je založená.", "info");
+              window.dispatchEvent(new CustomEvent("jobsheet:objednavky-zmena"));
+              if (zmeneno && sid) void odesliWebhookyHned(sid);
+              // Převod mohl na zakázku zapsat elektronický souhlas (a zvednout
+              // verzi) – bez znovunačtení by první uložení detailu hlásilo konflikt.
+              if (zmeneno) {
+                const plna = await refetchTicketById(first.id);
+                if (plna) setCloudTickets((prev) => prev.map((t) => (t.id === plna.id ? sloucZakazkuZDb(t, plna, evidenceZapisu(), plna.id, ["performedRepairs"]) : t)));
+              }
+            })
+            .catch((e) => {
+              devLog("[objednavky] převod selhal", e);
+              showToast("Zakázka je založená, ale objednávku se nepodařilo označit jako převedenou.", "error");
+            });
         }
         const config = await loadDocumentsConfigFromDB(activeServiceId);
         if (first && config?.autoPrint?.ticketListOnCreate) {
@@ -1839,6 +1892,11 @@ export default function Orders({
     // Dvojklik / druhé potvrzení během zakládání by udělalo dvě zakázky.
     if (prevadimReklamaciRef.current) return;
     prevadimReklamaciRef.current = true;
+    // Rozepsané zákroky jdou do nové zakázky – musí být v reklamaci dřív.
+    if (claim.id === detailClaimId && claimResolutionDraft !== null) {
+      await ulozZakrokyHned();
+      claim = { ...claim, resolution_summary: zakrokyDoSloupce(claimResolutionDraft) };
+    }
     // Pojistka se uvolní až po uzavření reklamace (onSuccess běží po návratu createTicket).
     let zalozeno = false;
     try {
@@ -1884,21 +1942,39 @@ export default function Orders({
   const muzePrevestReklamaci =
     !!detailedClaim && hasCapability("can_manage_tickets_basic") && lzePrevestNaZakazku(detailedClaim, isFinal).ok;
 
-  /** Tisk / export dokumentu „Přijetí reklamace“ z hlavičky detailu reklamace. */
-  const runClaimDocument = async (action: DocMode) => {
+  /**
+   * Tisk / export z hlavičky detailu reklamace: „Přijetí reklamace“ při
+   * příjmu, „Výdejka reklamace“ s provedenými zákroky při vrácení zařízení.
+   */
+  const runClaimDocument = async (action: DocMode, docType: "prijemka_reklamace" | "vydejka_reklamace" = "prijemka_reklamace") => {
     if (!detailedClaim) return;
     const sid = activeServiceId ?? undefined;
     if (!sid) {
       showToast("Vyberte servis pro tisk.", "error");
       return;
     }
-    const original = cloudTickets.find((t) => t.id === detailedClaim.source_ticket_id) as TicketEx | undefined;
-    const data = claimDocumentData(detailedClaim, safeLoadCompanyData(), original?.code ?? "");
+    // Rozepsané zákroky se před tiskem dopíšou; tiskne se to, co je na
+    // obrazovce, i kdyby zápis čekal ve frontě na spojení.
+    await ulozZakrokyHned();
+    const claim: WarrantyClaimRow =
+      claimResolutionDraft !== null ? { ...detailedClaim, resolution_summary: zakrokyDoSloupce(claimResolutionDraft) } : detailedClaim;
+    const original = cloudTickets.find((t) => t.id === claim.source_ticket_id) as TicketEx | undefined;
+    // Údaje pobočky reklamace mají přednost (stejně jako u zakázkových dokladů).
+    // Výdejka se tiskne při vrácení zařízení – bez zapsaného data vydání je to
+    // dnešek. Záruka na provedené úkony má stejnou délku jako na záručním listu.
+    const zaruka = docType === "vydejka_reklamace" ? zarucniDobaProTisk(sid) : undefined;
+    const data = claimDocumentData(
+      claim,
+      companyDataForBranch(safeLoadCompanyData(), getCachedBranch(sid, claim.branch_id)),
+      original?.code ?? "",
+      docType === "vydejka_reklamace" ? { warrantyMonths: zaruka?.months, warrantyDays: zaruka?.days, releasedAt: new Date().toISOString() } : undefined
+    );
+    const soubor = docType === "vydejka_reklamace" ? `vydejka-reklamace-${claim.code}.pdf` : `prijemka-reklamace-${claim.code}.pdf`;
     if (isWeb()) {
-      await runWebDocument(action, "prijemka_reklamace", sid, data);
+      await runWebDocument(action, docType, sid, data);
       return;
     }
-    await runDesktopDocument(action, "prijemka_reklamace", sid, data, `prijemka-reklamace-${detailedClaim.code}.pdf`);
+    await runDesktopDocument(action, docType, sid, data, soubor);
   };
 
   // ⌘/Ctrl+Enter v okně Nová zakázka = Vytvořit zakázku
@@ -1925,7 +2001,7 @@ export default function Orders({
     // Šedý štítek: odkud zakázka je, když to není vybraná pobočka (v pohledu
     // „Všechny pobočky“ vždy). Oranžový: kde fyzicky je, když ne doma.
     pobocka: hasBranches && t.branchId && t.branchId !== activeBranchId ? (branchById(t.branchId)?.name ?? null) : null,
-    umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka") : null,
+    umisteni: zasilkyZapnuty && hasBranches ? stitekUmisteni(umisteniZakazky(t), (id) => branchById(id)?.name ?? "jiná pobočka", (z) => odkudCestuji.get(z)) : null,
     umisteniVaruje: zasilkyZapnuty && hasBranches ? dniBezZmenyJinde(t, nastaveniZasilek.upozorneniDni) : null,
     requestedRepair: t.requestedRepair,
     createdAt: t.createdAt,
@@ -1937,10 +2013,16 @@ export default function Orders({
     termin: terminById.get(t.id) ?? null,
     // Číslo faktury, která zakázku kryje (i souhrnná); záloha štítek nemá.
     faktura: stitekFaktury(fakturaByTicketId[t.id]),
-  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId, terminById]);
+  }), [statusById, pridelovaniTechnika, clenove, zasilkyZapnuty, hasBranches, branchById, activeBranchId, nastaveniZasilek.upozorneniDni, fakturaByTicketId, odkudCestuji, terminById]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Objednávky z webu (API, formulář) – bez objednávek se neukazuje. */}
+      <PrichoziObjednavky
+        activeServiceId={activeServiceId}
+        onOpenTicket={(id) => setDetailId(id)}
+        onOpenClaim={(id) => { setDetailId(null); setDetailClaimId(id); }}
+      />
       <SeznamZakazek
         activeServiceId={activeServiceId}
         isAdmin={isAdmin}
@@ -2148,8 +2230,10 @@ export default function Orders({
             cloudTickets={cloudTickets}
             setCloudTickets={setCloudTickets}
             claimResolutionDraft={claimResolutionDraft}
-            setClaimResolutionDraft={setClaimResolutionDraft}
-            saveClaimResolutionItems={saveClaimResolutionItems}
+            zmenZakroky={zmenZakroky}
+            ulozZakrokyHned={ulozZakrokyHned}
+            zakrokyNeulozene={zakrokyNeulozene}
+            opravyZCeniku={opravyReklamace}
             statuses={statuses}
             getByKey={getByKey}
             statusActionsMap={statusActionsMap}
@@ -2193,7 +2277,6 @@ export default function Orders({
             cloudTickets={cloudTickets}
             setDetailId={setDetailId}
             setDetailClaimId={setDetailClaimId}
-            ulozFindMy={ulozFindMy}
           />
         )}
         uprava={detailedTicket && (

@@ -5,6 +5,7 @@
  */
 import { devLog, devWarn } from "./devLog";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type DocumentAction = "print" | "export";
 export type DocumentResult = "success" | "error" | "fallback";
 
@@ -76,7 +77,7 @@ export async function withDocumentTelemetry<T extends { ok: boolean; error?: str
     }
   } catch (e) {
     const durationMs = Math.round(performance.now() - start);
-    const errorMessage = e instanceof Error ? e.message : String(e);
+    const errorMessage = textChyby(e);
     trackDocumentAction({ action, docType, result: "error", durationMs, errorMessage });
     throw e;
   }

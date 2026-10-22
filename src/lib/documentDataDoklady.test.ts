@@ -146,6 +146,32 @@ describe("zařízení na příjemce reklamace", () => {
   });
 });
 
+// Výdejka reklamace nese záruku jako záruční list – ale jen když se
+// v rámci reklamace něco opravovalo.
+describe("záruka na výdejce reklamace", () => {
+  const zakroky = JSON.stringify([{ name: "Výměna displeje", price: 0 }]);
+
+  it("s provedenými úkony dostane záruku ze nastavení dokumentů, počítanou ode dne vydání", () => {
+    const d = claimDocumentData(reklamace({ resolution_summary: zakroky, released_at: null }), firma(), "", { warrantyMonths: 6, releasedAt: "2026-10-15T10:00:00.000Z" });
+    expect(d.items).toHaveLength(1);
+    expect(d.warranty?.months).toBe(6);
+    expect(d.warranty?.until?.slice(0, 10)).toBe("2027-04-15");
+    expect(d.dates?.released).toBe("2026-10-15T10:00:00.000Z");
+  });
+
+  it("bez úkonů (např. zamítnutá reklamace) záruku nenese", () => {
+    const d = claimDocumentData(reklamace({ resolution_summary: "Reklamace zamítnuta – mechanické poškození." }), firma(), "", { warrantyMonths: 6, releasedAt: "2026-10-15T10:00:00.000Z" });
+    expect(d.warranty).toBeUndefined();
+    expect(d.note).toBe("Reklamace zamítnuta – mechanické poškození.");
+  });
+
+  it("příjemka reklamace (bez voleb) datum vydání ani záruku nedoplňuje", () => {
+    const d = claimDocumentData(reklamace({ resolution_summary: zakroky, released_at: null }), firma());
+    expect(d.warranty).toBeUndefined();
+    expect(d.dates?.released).toBeUndefined();
+  });
+});
+
 // Sleva se na doklad tiskne jako samostatný řádek. Když se do dat dostane
 // sleva, která se nemá odečítat, zákazník uvidí slevu a zaplatí plnou cenu.
 describe("sleva zakázky", () => {

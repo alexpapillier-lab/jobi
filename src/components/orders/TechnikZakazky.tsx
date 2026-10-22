@@ -1,5 +1,6 @@
 import { Button } from "../ui";
 import type { ClenServisu } from "../../hooks/useClenoveServisu";
+import { JMENO_SYSTEM, skrytyRootOwner } from "../../lib/rootOwner";
 
 /**
  * Karta „Technik“ v detailu zakázky: kdo zakázku dělá. Výběr ze členů
@@ -25,7 +26,8 @@ export function TechnikZakazky({ clenove, hodnota, jaId, onChange }: {
           <option key={c.userId} value={c.userId}>{c.jmeno}{c.userId === jaId ? " (já)" : ""}</option>
         ))}
         {/* Technik, který už v servisu není, zůstane v historii vidět. */}
-        {hodnota && !vybrany && <option value={hodnota}>Bývalý člen</option>}
+        {/* Majitel aplikace (neviditelný) se ostatním ukáže jako „Systém“. */}
+        {hodnota && !vybrany && <option value={hodnota}>{skrytyRootOwner(hodnota, jaId) ? JMENO_SYSTEM : "Bývalý člen"}</option>}
       </select>
       {jaId && hodnota !== jaId && (
         <Button size="sm" variant="soft" onClick={() => onChange(jaId)}>Přidělit mně</Button>

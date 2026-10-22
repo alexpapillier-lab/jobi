@@ -6,9 +6,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DOC_TYPES, DOC_TYPE_LABELS, renderDocument, sampleData, serviceFromCompanyData, templateFor, VARIABLES, type Block, type DocType, type DocumentData, type DocumentsV2, type SampleKind, type SlotItem, type SlotName, type Template } from "../../core/index";
-import { api, electron } from "../api";
 import type { Draft, SaveState } from "../state/useDocuments";
+import { useDocumentsStorage } from "../storage/context";
+import type { PrintRequest, RecentItem } from "../storage/types";
 import { AddBlockDialog, AddSlotItemDialog, VariableDialog } from "./AddMenu";
+import { ConflictDialog } from "./ConflictDialog";
 import { Canvas, type CanvasEvent, type CanvasHandle, type FitInfo, type Selection, type Zoom } from "./Canvas";
 import { Inspector } from "./Inspector";
 import { Outline } from "./Outline";
@@ -35,10 +37,10 @@ type Props = {
   onDiscardDraft: () => void;
 };
 
-type RecentItem = { id: string; label: string; data: DocumentData };
-
 export function DocumentEditor(p: Props) {
   const { docs, setDocs, serviceId, companyData } = p;
+  // Kudy se čte a tiskne: místní server JobiDocs, nebo ve webu Supabase a prohlížeč.
+  const storage = useDocumentsStorage();
   const [docType, setDocType] = useState<DocType>("zakazkovy_list");
   const [sample, setSample] = useState<string>("short");
   const [recent, setRecent] = useState<RecentItem[]>([]);
@@ -73,14 +75,14 @@ export function DocumentEditor(p: Props) {
     setFit(null);
     setSample((s) => (s.startsWith("recent:") ? "short" : s));
     let alive = true;
-    api
+    storage
       .recent(serviceId, docType)
-      .then((r) => alive && setRecent(r.items))
+      .then((items) => alive && setRecent(items))
       .catch(() => alive && setRecent([]));
     return () => {
       alive = false;
     };
-  }, [docType, serviceId]);
+  }, [docType, serviceId, storage]);
 
   const previewData = useMemo<{ data: DocumentData; placeholders: boolean; sampleKind: SampleKind }>(() => {
     const service = serviceFromCompanyData(companyData);
@@ -199,13 +201,19 @@ export function DocumentEditor(p: Props) {
     setSelection({ kind: "slotItem", id: item.id });
   };
 
-  const renderBody = () => ({ service_id: serviceId, doc_type: docType, documents: docs, ...(sample.startsWith("recent:") ? { data: previewData.data } : { sample: previewData.sampleKind }) });
+  const printRequest = (): PrintRequest => ({
+    serviceId,
+    docType,
+    documents: docs,
+    previewData: previewData.data,
+    ...(sample.startsWith("recent:") ? { data: previewData.data } : { sample: previewData.sampleKind }),
+  });
 
   const testPrint = async () => {
     setBusy("print");
     try {
-      const r = await api.print(renderBody());
-      p.onToast(`Zkušební tisk odeslán na tiskárnu ${r.printer ?? ""}`.trim());
+      const msg = await storage.testPrint(printRequest());
+      if (msg) p.onToast(msg);
     } catch (e) {
       p.onToast(`Tisk se nezdařil: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -214,18 +222,10 @@ export function DocumentEditor(p: Props) {
   };
 
   const savePdf = async () => {
-    const bridge = electron();
     setBusy("pdf");
     try {
-      if (bridge) {
-        const path = await bridge.showSaveDialog(`${docType}-ukazka.pdf`);
-        if (!path) return;
-        await api.exportPdf({ ...renderBody(), target_path: path });
-        p.onToast(`PDF uloženo: ${path}`);
-      } else {
-        const blob = await api.pdf(renderBody());
-        window.open(URL.createObjectURL(blob), "_blank");
-      }
+      const msg = await storage.savePdf(printRequest());
+      if (msg) p.onToast(msg);
     } catch (e) {
       p.onToast(`PDF se nezdařilo: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -268,7 +268,7 @@ export function DocumentEditor(p: Props) {
 
   return (
     <div className="ed-root">
-      <div className="doc-type-tabs" style={{ marginBottom: 0 }}>
+      <div className="doc-type-tabs" style={{ marginBottom: 0 }} data-tour="sablony-typy">
         {DOC_TYPES.map((dt) => (
           <button key={dt} type="button" className={dt === docType ? "active" : ""} onClick={() => setDocType(dt)}>
             {DOC_TYPE_LABELS[dt]}
@@ -338,10 +338,10 @@ export function DocumentEditor(p: Props) {
         <button type="button" className="ui-btn ui-btn-sm" onClick={savePdf} disabled={busy != null}>
           {busy === "pdf" ? "Ukládám…" : "Uložit PDF"}
         </button>
-        <button type="button" className="ui-btn ui-btn-sm" onClick={testPrint} disabled={busy != null}>
+        <button type="button" className="ui-btn ui-btn-sm" onClick={testPrint} disabled={busy != null} title={storage.kind === "web" ? "Otevře tiskový dialog prohlížeče s ukázkou" : undefined}>
           {busy === "print" ? "Tisknu…" : "Zkušební tisk"}
         </button>
-        <button type="button" className={`ui-btn ${p.dirty ? "ui-btn-primary" : ""}`} onClick={() => void p.onSave()} disabled={!p.dirty || p.save.status === "saving" || !p.canManage} title={!p.canManage ? "Nemáte oprávnění měnit dokumenty" : "Uložit (⌘S)"}>
+        <button type="button" data-tour="sablony-ulozit" className={`ui-btn ${p.dirty ? "ui-btn-primary" : ""}`} onClick={() => void p.onSave()} disabled={!p.dirty || p.save.status === "saving" || !p.canManage} title={!p.canManage ? "Nemáte oprávnění měnit dokumenty" : "Uložit (⌘S)"}>
           {p.save.status === "saving" ? "Ukládám…" : "Uložit"}
         </button>
         {renderSaveStatus(p.save, p.dirty, p.lastSaved)}
@@ -360,7 +360,7 @@ export function DocumentEditor(p: Props) {
             onAddSlotItem={(s) => setAddSlotFor(s)}
           />
         )}
-        <div className="ed-pane" style={{ position: "relative" }}>
+        <div className="ed-pane" style={{ position: "relative" }} data-tour="sablony-nahled">
           <Canvas ref={canvasRef} html={html} selection={selection} zoom={zoom} onEvent={onCanvasEvent} />
           <div className="cv-hint">Klik = vybrat · další klik = psát · ⋮⋮ = táhnout · „+“ mezi bloky = vložit</div>
         </div>
@@ -430,22 +430,7 @@ export function DocumentEditor(p: Props) {
           </div>
         </div>
       )}
-      {p.save.status === "conflict" && (
-        <div className="dlg-backdrop">
-          <div className="dlg">
-            <h3>Šablonu mezitím změnil někdo jiný</h3>
-            <p>Na jiném počítači byla uložena novější verze. Můžete načíst tu novější (vaše neuložené změny se zahodí), nebo ji přepsat svou verzí.</p>
-            <div className="actions">
-              <button type="button" className="ui-btn" onClick={() => void p.onReload()}>
-                Načíst novější verzi
-              </button>
-              <button type="button" className="ui-btn ui-btn-danger" onClick={() => void p.onSave({ force: true })}>
-                Přepsat mou verzí
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {p.save.status === "conflict" && <ConflictDialog onReload={p.onReload} onOverwrite={() => p.onSave({ force: true })} />}
     </div>
   );
 }

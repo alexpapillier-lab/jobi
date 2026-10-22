@@ -44,6 +44,7 @@ import {
   stavSpoustiRecenzi,
   zacatekLimitu,
 } from "../_shared/recenze.ts";
+import { resendFetch } from "../_shared/resend.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -588,7 +589,7 @@ async function actionEmail(
   if (ctx.serviceEmail.includes("@")) payload.reply_to = ctx.serviceEmail;
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await resendFetch({
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
       body: JSON.stringify(payload),

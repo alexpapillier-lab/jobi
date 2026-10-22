@@ -4,8 +4,9 @@
  * všech typů dokumentů; editor i stránka Značka mění tenhle jeden objekt.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type LoadedDocuments } from "../api";
 import { normalizeDocuments, type DocumentsV2 } from "../../core/index";
+import { useDocumentsStorage } from "../storage/context";
+import type { LoadedDocuments } from "../storage/types";
 
 const MAX_HISTORY = 100;
 
@@ -14,6 +15,8 @@ export type Draft = { at: number; docs: DocumentsV2 };
 export type SaveState = { status: "idle" } | { status: "saving" } | { status: "saved"; at: number; to: "supabase" | "local" } | { status: "error"; message: string } | { status: "conflict"; version: number };
 
 export function useDocuments(serviceId: string | null) {
+  // Desktop (JobiDocs) nebo web (Jobi) – podle Provideru, bez něj desktop.
+  const storage = useDocumentsStorage();
   const [loaded, setLoaded] = useState<LoadedDocuments | null>(null);
   const [docs, setDocsInternal] = useState<DocumentsV2 | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,7 +34,7 @@ export function useDocuments(serviceId: string | null) {
     setLoading(true);
     setLoadError(null);
     try {
-      const l = await api.documents(serviceId);
+      const l = await storage.load(serviceId);
       const d = normalizeDocuments(l.documents);
       setLoaded(l);
       docsRef.current = d;
@@ -54,7 +57,7 @@ export function useDocuments(serviceId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [serviceId]);
+  }, [serviceId, storage]);
 
   useEffect(() => {
     void reload();
@@ -134,7 +137,7 @@ export function useDocuments(serviceId: string | null) {
       if (!serviceId || !docs) return false;
       setSave({ status: "saving" });
       try {
-        const r = await api.saveDocuments(serviceId, docs, opts?.force ? undefined : loaded?.version);
+        const r = await storage.save(serviceId, docs, opts?.force ? undefined : loaded?.version);
         const d = normalizeDocuments(r.documents);
         savedRef.current = JSON.stringify(d);
         docsRef.current = d;
@@ -155,7 +158,7 @@ export function useDocuments(serviceId: string | null) {
         return false;
       }
     },
-    [serviceId, docs, loaded?.version, draftKey]
+    [serviceId, docs, loaded?.version, draftKey, storage]
   );
 
   return {

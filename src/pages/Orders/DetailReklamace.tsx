@@ -10,6 +10,7 @@ import { SectionHeading } from "../../components/SectionHeading";
 import { DateTimePicker } from "../../components/DateTimePicker";
 import { DeviceIcon, HashIcon, MailIcon, NoteIcon, PhoneIcon, PinIcon, SearchIcon, UserIcon } from "../../components/icons";
 import { StatusPicker } from "../../components/orders";
+import { RepairPicker } from "../../components/orders/RepairPicker";
 import { TicketComments, formatCZ, type TicketComment } from "../../components/tickets";
 import { FotkaZakazky } from "../../components/FotkaZakazky";
 import { VyberFotek } from "../../components/orders/VyberFotek";
@@ -17,7 +18,7 @@ import { showToast } from "../../components/Toast";
 import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch, resetTauriFetchState } from "../../lib/supabaseClient";
 import { uploadDiagnosticPhotoWithWatermark, deleteDiagnosticPhotoFromStorage, isDiagnosticPhotoStorageUrl } from "../../lib/diagnosticPhotosStorage";
 import { reportSilent } from "../../lib/reportError";
-import { normalizeError } from "../../utils/errorNormalizer";
+import { textChyby, normalizeError } from "../../utils/errorNormalizer";
 import { popisDoOdkazu } from "../../lib/diagnosticPhotoWatermark";
 import { BARVA_SEKCE, stylSekce } from "../../lib/sekceDetailu";
 import type { StatusMeta } from "../../state/StatusesStore";
@@ -25,9 +26,11 @@ import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
 import type { FotoLightboxStav, PolozkaQrFoceni, TicketEx } from "./typy";
 import { formatPhoneNumber } from "./formatovani";
 import { stavZarukyOpravy } from "../../lib/zarukaOpravy";
-import { type ClaimResolutionItem, parseClaimResolutionItems } from "./reklamaceZakroky";
+import { type ClaimResolutionItem, parseClaimResolutionItems, zakrokZCeniku } from "./reklamaceZakroky";
+import type { DeviceRepair } from "../../lib/catalogStorage";
 import { META_PREVEDENO, STAV_PREVEDENO, fotkyReklamace, reklamovaneOpravyReklamace } from "../../lib/reklamacePrijem";
 import { card, fieldLabel, baseFieldInput, baseFieldTextArea } from "./styly";
+import { ZObjednavky } from "./PrichoziObjednavky";
 
 type Props = {
   detailedClaim: WarrantyClaimRow;
@@ -36,9 +39,14 @@ type Props = {
   isEditingClaim: boolean;
   cloudTickets: TicketEx[];
   setCloudTickets: React.Dispatch<React.SetStateAction<TicketEx[]>>;
+  /** Zákroky na obrazovce; null = beze změny (platí resolution_summary). */
   claimResolutionDraft: ClaimResolutionItem[] | null;
-  setClaimResolutionDraft: React.Dispatch<React.SetStateAction<ClaimResolutionItem[] | null>>;
-  saveClaimResolutionItems: (claimId: string, items: ClaimResolutionItem[]) => Promise<boolean>;
+  /** Změna zákroků – uloží se sama po krátkém odkladu (useZakrokyReklamace). */
+  zmenZakroky: (items: ClaimResolutionItem[]) => void;
+  ulozZakrokyHned: () => Promise<boolean>;
+  zakrokyNeulozene: boolean;
+  /** Opravy z ceníku pro zařízení reklamace (stejné párování jako u zakázky). */
+  opravyZCeniku: DeviceRepair[];
   statuses: StatusMeta[];
   getByKey: (key: string) => StatusMeta | undefined;
   statusActionsMap: Record<string, string[]>;
@@ -72,8 +80,10 @@ export function DetailReklamace({
   cloudTickets,
   setCloudTickets,
   claimResolutionDraft,
-  setClaimResolutionDraft,
-  saveClaimResolutionItems,
+  zmenZakroky,
+  ulozZakrokyHned,
+  zakrokyNeulozene,
+  opravyZCeniku,
   statuses,
   getByKey,
   statusActionsMap,
@@ -125,6 +135,8 @@ export function DetailReklamace({
       )}
     </div>
   )}
+  {/* Reklamace z objednávky z webu a elektronické odsouhlasení (stejné podmínky jako zakázkový list). */}
+  <ZObjednavky claim={detailedClaim as { id: string; intake_consent?: unknown }} />
   <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 16 }}>
     <div style={{ ...card, ...stylSekce("zakaznik") }}>
       <SectionHeading icon={<UserIcon size={16} />} barva={BARVA_SEKCE.zakaznik}>Zákazník</SectionHeading>
@@ -270,7 +282,7 @@ export function DetailReklamace({
       <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12 }}>Provedené zákroky</div>
       {(() => {
         const resolutionItems = claimResolutionDraft ?? parseClaimResolutionItems(detailedClaim?.resolution_summary ?? null);
-        const setResolutionItems = (next: ClaimResolutionItem[]) => setClaimResolutionDraft(next);
+        const setResolutionItems = zmenZakroky;
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {resolutionItems.length === 0 ? (
@@ -326,15 +338,32 @@ export function DetailReklamace({
                 title={resolutionItems.length > 0 && !resolutionItems[resolutionItems.length - 1]?.name?.trim() ? "Vyplňte název posledního zákroku" : "Přidat zákrok"}>
                 <span>+</span> Přidat zákrok
               </Button>
-              {claimResolutionDraft !== null && (
+              {/* Z ceníku jako u zakázky, ale za 0 Kč – reklamace se neúčtuje. */}
+              {opravyZCeniku.length > 0 && (
+                <div style={{ minWidth: 240, flex: "0 1 320px" }} data-zakrok-z-ceniku>
+                  <RepairPicker
+                    value=""
+                    repairs={opravyZCeniku.map((r) => ({ id: r.id, name: r.name, price: r.price || 0 }))}
+                    placeholder="Přidat z ceníku…"
+                    onChange={(repairId) => {
+                      const oprava = opravyZCeniku.find((r) => r.id === repairId);
+                      if (oprava) setResolutionItems([...resolutionItems, zakrokZCeniku(oprava)]);
+                    }}
+                  />
+                </div>
+              )}
+              {/* Zákroky se ukládají samy; tlačítko jen zapíše hned, dokud změna čeká. */}
+              {zakrokyNeulozene ? (
                 <Button variant="primary"
                   onClick={() => {
-                    saveClaimResolutionItems(detailedClaim!.id, claimResolutionDraft!).then((ok) => ok && showToast("Zákroky uloženy", "success"));
+                    ulozZakrokyHned().then((ok) => ok && showToast("Zákroky uloženy", "success"));
                   }} style={{ display: "inline-flex", alignItems: "center", gap: 8,  background: "var(--accent)", color: "var(--accent-fg)" }}
                 >
                   Uložit zákroky
                 </Button>
-              )}
+              ) : claimResolutionDraft !== null ? (
+                <span style={{ fontSize: 12, color: "var(--muted)" }} data-zakroky-ulozeno>Uloženo</span>
+              ) : null}
             </div>
             {resolutionItems.length > 0 && (() => {
               const total = resolutionItems.reduce((sum, r) => sum + (r.price || 0), 0);
@@ -543,7 +572,7 @@ export function DetailReklamace({
                       return;
                     } catch (err) {
                       lastErr = err;
-                      const msg = err instanceof Error ? err.message : String(err);
+                      const msg = textChyby(err);
                       if (attempt === 0 && (msg.includes("síťový modul") || msg.includes("Nelze načíst"))) {
                         resetTauriFetchState();
                         continue;

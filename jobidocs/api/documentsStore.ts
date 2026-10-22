@@ -108,10 +108,11 @@ export async function saveDocuments(serviceId: string, docs: DocumentsV2, ifVers
     if (row && ifVersion != null && row.version !== ifVersion) {
       return { ok: false, conflict: true, version: row.version, updated_at: row.updated_at };
     }
-    // Zachovat ostatní klíče (autoPrint z Jobi), staré v1 klíče šablon už nepotřebujeme.
-    const keep: Rec = {};
-    if (row?.config && typeof row.config.autoPrint === "object") keep.autoPrint = row.config.autoPrint;
-    const nextConfig = { ...keep, v2: documents };
+    // Zachovat všechny ostatní klíče configu – autoPrint, warrantyCertificate a
+    // další, které čte Jobi. Do 12. 10. 2026 se zachovával jen autoPrint a
+    // uložení z JobiDocs mazalo třeba nastavení záručního listu. Webový editor
+    // (src/lib/sablonyDokumentuWeb.ts, configSeSablonami) dělá totéž.
+    const nextConfig = { ...(row?.config ?? {}), v2: documents };
     const { error } = await sb.from("service_document_settings").upsert({ service_id: serviceId, config: nextConfig }, { onConflict: "service_id" });
     if (error) return { ok: false, error: error.message };
     const after = await loadRowFromSupabase(serviceId, auth);
@@ -121,7 +122,7 @@ export async function saveDocuments(serviceId: string, docs: DocumentsV2, ifVers
 
   const local = await getDocumentsConfig(serviceId).catch(() => null);
   const prev = (local?.config && typeof local.config === "object" ? local.config : {}) as Rec;
-  const nextConfig = { ...(prev.autoPrint ? { autoPrint: prev.autoPrint } : {}), v2: documents };
+  const nextConfig = { ...prev, v2: documents };
   const res = await putDocumentsConfig(serviceId, nextConfig);
   return { ok: true, version: res.version, updated_at: null, documents, savedTo: "local" };
 }

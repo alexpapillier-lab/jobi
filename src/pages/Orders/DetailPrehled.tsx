@@ -13,7 +13,7 @@ import { PostupZakazky, sjetNaKartu } from "../../components/orders/PostupZakazk
 import { shrnutiKontroly } from "../../lib/kontrolniSeznamy";
 import { krokyPresunu, type NastaveniZasilek, type Zasilka } from "../../lib/zasilky";
 import { BARVA_SEKCE, stylSekce, type SkrytelnaSekce } from "../../lib/sekceDetailu";
-import { jeAppleZarizeni, najdiStejneZarizeni } from "../../lib/zarizeniHistorie";
+import { najdiStejneZarizeni } from "../../lib/zarizeniHistorie";
 import type { Branch } from "../../lib/branches";
 import type { StatusMeta } from "../../state/StatusesStore";
 import type { WarrantyClaimRow } from "./hooks/useWarrantyClaims";
@@ -22,6 +22,7 @@ import { skrytPostupZakazky } from "./uiConfig";
 import { formatPhoneNumber } from "./formatovani";
 import { card } from "./styly";
 import { stavZarukyOpravy, textZarukyOpravy } from "../../lib/zarukaOpravy";
+import { formatCurrency } from "../../lib/invoiceMath";
 
 type Props = {
   detailedTicket: TicketEx;
@@ -42,7 +43,6 @@ type Props = {
   cloudTickets: TicketEx[];
   setDetailId: React.Dispatch<React.SetStateAction<string | null>>;
   setDetailClaimId: React.Dispatch<React.SetStateAction<string | null>>;
-  ulozFindMy: (ticketId: string, vypnuto: boolean) => Promise<void>;
 };
 
 export function DetailPrehled({
@@ -63,7 +63,6 @@ export function DetailPrehled({
   cloudTickets,
   setDetailId,
   setDetailClaimId,
-  ulozFindMy,
 }: Props) {
   return (
     <>
@@ -190,49 +189,6 @@ export function DetailPrehled({
           </div>
         </div>
 
-        {(() => {
-          // Zakázka vznikla převodem reklamace („Není to reklamace“).
-          const zReklamace = cloudClaims.find((c) => c.converted_ticket_id === detailedTicket.id);
-          if (!zReklamace) return null;
-          return (
-            <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span>Vzniklo z reklamace</span>
-              <button
-                type="button"
-                onClick={() => { setDetailClaimId(zReklamace.id); setDetailId(null); }}
-                title="Otevřít původní reklamaci"
-                style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(13,148,136,0.45)", background: "rgba(20,184,166,0.1)", color: "var(--text)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
-              >
-                {zReklamace.code}
-              </button>
-            </div>
-          );
-        })()}
-
-        {(() => {
-          const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
-          return claimsForTicket.length > 0 ? (
-            <div style={{ gridColumn: "1 / -1", ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
-              <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {claimsForTicket.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
-                    style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
-                  >
-                    <span style={{ fontWeight: 800 }}>{c.code}</span>
-                    <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null;
-        })()}
-
         <div style={{ ...card, ...stylSekce("zarizeni") }}>
           <SectionHeading icon={<DeviceIcon size={16} />} barva={BARVA_SEKCE.zarizeni}>Zařízení</SectionHeading>
           <div style={{ display: "grid", gap: 8 }}>
@@ -247,12 +203,13 @@ export function DetailPrehled({
                 <CopyButton value={detailedTicket.serialOrImei} label="sériové číslo" />
               </div>
             )}
-            {/* Záruka z příjmu; u starších zakázek (null) se řádek nevykreslí. */}
-            {detailedTicket.warrantyClaim != null && (
+            {/* Jen záruční oprava z příjmu – „pozáruční“ je výchozí stav
+                zaškrtávátka, ne zjištěný fakt, tak se nevypisuje. */}
+            {detailedTicket.warrantyClaim === true && (
               <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 600 }}>{detailedTicket.warrantyClaim ? "Záruční oprava" : "Pozáruční oprava"}</span>
-                {detailedTicket.warrantyClaim && detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
-                {detailedTicket.warrantyClaim && detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
+                <span style={{ fontWeight: 600 }}>Záruční oprava</span>
+                {detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
+                {detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
               </div>
             )}
             {/* Záruka na provedenou opravu – datum zapisuje databáze při vydání. */}
@@ -265,37 +222,6 @@ export function DetailPrehled({
                   title={zaruka.platna ? "Reklamace do tohoto dne je v záruce" : "Záruka na opravu už prošla"}
                 >
                   <span>{textZarukyOpravy(zaruka)}</span>
-                </div>
-              );
-            })()}
-            {/* Štítek Find My s přepnutím na klik – zákazník ho často vypne až po
-                telefonátu, tak ať to technik nemusí řešit přes úpravu zakázky. */}
-            {(detailedTicket.findMyOff != null || jeAppleZarizeni(detailedTicket.deviceLabel)) && (() => {
-              const vypnuto = detailedTicket.findMyOff === true;
-              return (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
-                  <button
-                    type="button"
-                    aria-pressed={vypnuto}
-                    title={vypnuto ? "Označit Find My jako nevypnuté" : "Označit Find My jako vypnuté"}
-                    onClick={() => void ulozFindMy(detailedTicket.id, !vypnuto)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "3px 10px",
-                      borderRadius: 999,
-                      border: `1px solid ${vypnuto ? "rgba(22,163,74,0.45)" : "rgba(220,38,38,0.45)"}`,
-                      background: vypnuto ? "rgba(22,163,74,0.12)" : "rgba(220,38,38,0.12)",
-                      color: vypnuto ? "#15803d" : "#b91c1c",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Find My {vypnuto ? "vypnuto" : "NEVYPNUTO"}
-                  </button>
-                  {!vypnuto && <span style={{ color: "var(--muted)" }}>Bez vypnutého Find My nelze zařízení servisovat u autorizovaných dílů.</span>}
                 </div>
               );
             })()}
@@ -331,10 +257,75 @@ export function DetailPrehled({
               }}
             >
               <WrenchIcon size={14} /> {detailedTicket.requestedRepair ?? detailedTicket.issueShort}
+              {/* Předpokládaná cena a termín z příjmu – obojí se tiskne na zakázkový list. */}
+              {(detailedTicket.estimatedPrice ?? 0) > 0 && (
+                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
+                  Předpokládaná cena: <span style={{ color: "var(--text)", fontWeight: 800 }}>{formatCurrency(detailedTicket.estimatedPrice ?? 0)}</span>
+                </div>
+              )}
+              {(() => {
+                // V paměti pod jménem sloupce (mapSupabaseTicketToTicketEx).
+                const termin = (detailedTicket as { expected_completion_at?: string | null }).expected_completion_at;
+                if (!termin) return null;
+                const poTerminu = !isFinal(detailedTicket.status) && new Date(termin).getTime() < Date.now();
+                return (
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>
+                    Předpokládané dokončení:{" "}
+                    <span style={{ color: poTerminu ? "#b91c1c" : "var(--text)", fontWeight: 800 }}>
+                      {formatCZ(termin)}{poTerminu ? " · po termínu" : ""}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
       </div>
+      {/* Reklamace mimo mřížku Zákazník/Zařízení: karta přes celou šíři v
+          mřížce s auto-fit by roztáhla mřížku na pět sloupců a obě karty
+          zúžila na pětinu. */}
+      {(() => {
+        // Zakázka vznikla převodem reklamace („Není to reklamace“).
+        const zReklamace = cloudClaims.find((c) => c.converted_ticket_id === detailedTicket.id);
+        if (!zReklamace) return null;
+        return (
+          <div style={{ marginTop: 16, fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>Vzniklo z reklamace</span>
+            <button
+              type="button"
+              onClick={() => { setDetailClaimId(zReklamace.id); setDetailId(null); }}
+              title="Otevřít původní reklamaci"
+              style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(13,148,136,0.45)", background: "rgba(20,184,166,0.1)", color: "var(--text)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+            >
+              {zReklamace.code}
+            </button>
+          </div>
+        );
+      })()}
+
+      {(() => {
+        const claimsForTicket = detailedTicket ? cloudClaims.filter((c) => c.source_ticket_id === detailedTicket.id) : [];
+        return claimsForTicket.length > 0 ? (
+          <div style={{ marginTop: 16, ...card, border: "2px solid rgba(13,148,136,0.3)", background: "linear-gradient(180deg, rgba(20,184,166,0.05) 0%, rgba(15,118,110,0.03) 100%)" }}>
+            <div style={{ fontWeight: 950, fontSize: 14, color: "var(--text)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ padding: "3px 8px", borderRadius: 6, background: "rgba(13,148,136,0.18)", color: "#134e4a", fontWeight: 800, fontSize: 12 }}>Reklamace k této zakázce</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {claimsForTicket.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { setDetailClaimId(c.id); setDetailId(null); }}
+                  style={{ textAlign: "left", padding: "12px 14px", borderRadius: 10, border: "2px solid rgba(13,148,136,0.45)", background: "linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(15,118,110,0.05) 100%)", color: "var(--text)", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 700, boxShadow: "0 1px 4px rgba(13,148,136,0.12)" }}
+                >
+                  <span style={{ fontWeight: 800 }}>{c.code}</span>
+                  <span style={{ color: "#134e4a", fontSize: 12, fontWeight: 600 }}>{getByKey(c.status)?.label ?? c.status}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
     </>
   );
 }

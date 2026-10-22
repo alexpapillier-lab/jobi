@@ -4,6 +4,7 @@ import { Button, Input, Label } from "../components/ui";
 import { XIcon } from "../components/icons";
 import { typedSupabase } from "../lib/typedSupabase";
 import { useAuth } from "../auth/AuthProvider";
+import { companyDataForBranch, getCachedBranch } from "../lib/branches";
 import { supabase } from "../lib/supabaseClient";
 import { showToast } from "../components/Toast";
 import { reportError, reportSilent } from "../lib/reportError";
@@ -18,7 +19,7 @@ import { printDocument, exportDocument, isJobiDocsRunning, renderPdf, formatJobi
 import { spojCestu, vychoziSlozkaProExport } from "../lib/tiskDokumentu";
 import { isWeb } from "../lib/platform";
 import { printDocumentInBrowser, buildDocumentPreviewUrlForWeb } from "../lib/webPrint";
-import { stahnoutDokumentJakoPdf } from "../lib/pdfServer";
+import { blobNaBase64, pdfDokumentuNaServeru, stahnoutDokumentJakoPdf } from "../lib/pdfServer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { validateInvoiceForIssue, validateInvoiceForSave } from "../lib/invoiceValidation";
 import { InvoiceList } from "./Invoices/InvoiceList";
@@ -47,6 +48,7 @@ import {
   type ListFilter,
 } from "./Invoices/types";
 
+import { textChyby } from "../utils/errorNormalizer";
 /** Název souboru PDF bez diakritiky – Downloads na cizím počítači ji nemusí unést. */
 const KIND_FILENAME: Record<InvoiceKind, string> = { invoice: "Faktura", proforma: "Zalohova_faktura", credit_note: "Dobropis" };
 
@@ -373,7 +375,11 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       // chybějící dodavatel se doplní z databáze na pozadí. Dřív se čekalo na
       // databázi a dvě volání za sebou (např. dvakrát spuštěný efekt) po
       // dokončení smazala rozepsané položky.
-      const cd = safeLoadCompanyData();
+      // Dodavatel = firma, přepsaná údaji pobočky, pro kterou se faktura vystavuje
+      // (samostatná pobočka má vlastní název, IČO, DIČ a účet). Stejně jako
+      // zakázkové doklady (companyDataForBranch v tiskZakazky.ts).
+      const pobockaFaktury = getCachedBranch(activeServiceId, prefill?.branchId ?? branchForNew?.id ?? null);
+      const cd = companyDataForBranch(safeLoadCompanyData(), pobockaFaktury);
       const token = ++novyDokladTokenRef.current;
 
       // Číslo se přiděluje až při prvním uložení – rozpracovaná a zavřená
@@ -411,7 +417,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
 
       dodavatelNacitaniRef.current = null;
       if (!(cd.name && companyCacheBelongsTo(activeServiceId))) {
-        const nacitani = nactiFirmuServisu(activeServiceId).then((firma) => dodavatelZFirmy(firma));
+        const nacitani = nactiFirmuServisu(activeServiceId).then((firma) => dodavatelZFirmy(companyDataForBranch(firma, pobockaFaktury)));
         dodavatelNacitaniRef.current = nacitani;
         void nacitani.then((dodavatel) => {
           if (novyDokladTokenRef.current !== token) return;
@@ -776,7 +782,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.save_failed",
           error: err,
-          userMessage: "Fakturu se nepodařilo uložit: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Fakturu se nepodařilo uložit: " + (textChyby(err)),
           source: "Invoices.persistEditor",
         });
       } finally {
@@ -878,7 +884,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.update_status_failed",
           error: err,
-          userMessage: "Stav se nepodařilo změnit: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Stav se nepodařilo změnit: " + (textChyby(err)),
           source: "Invoices.updateStatus",
         });
       }
@@ -912,7 +918,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.delete_invoice_failed",
           error: err,
-          userMessage: "Fakturu se nepodařilo smazat: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Fakturu se nepodařilo smazat: " + (textChyby(err)),
           source: "Invoices.deleteInvoice",
         });
       }
@@ -1001,7 +1007,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           ...volby.chyba,
           error: err,
-          userMessage: volby.chyba.userMessage + ": " + (err instanceof Error ? err.message : String(err)),
+          userMessage: volby.chyba.userMessage + ": " + (textChyby(err)),
         });
       }
     },
@@ -1106,7 +1112,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.handle_print_failed",
             error: err,
-            userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba tisku: " + (textChyby(err)),
             source: "Invoices.handlePrint",
           });
         }
@@ -1138,7 +1144,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.result_failed",
           error: err,
-          userMessage: "Chyba tisku: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba tisku: " + (textChyby(err)),
           source: "Invoices.printOrExport",
         });
       }
@@ -1166,7 +1172,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.handle_export_failed",
             error: err,
-            userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba exportu: " + (textChyby(err)),
             source: "Invoices.handleExport",
           });
         }
@@ -1204,7 +1210,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.result_failed",
           error: err,
-          userMessage: "Chyba exportu: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba exportu: " + (textChyby(err)),
           source: "Invoices.printOrExport",
         });
       }
@@ -1232,7 +1238,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           reportError({
             code: "invoices.url_failed",
             error: err,
-            userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+            userMessage: "Chyba náhledu: " + (textChyby(err)),
             source: "Invoices.previewInvoice",
           });
         }
@@ -1265,7 +1271,7 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
         reportError({
           code: "invoices.url_failed",
           error: err,
-          userMessage: "Chyba náhledu: " + (err instanceof Error ? err.message : String(err)),
+          userMessage: "Chyba náhledu: " + (textChyby(err)),
           source: "Invoices.previewInvoice",
         });
       }
@@ -1287,10 +1293,32 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
     [companyData],
   );
 
+  /**
+   * PDF faktury do přílohy e-mailu – stejná šablona jako tisk. Server
+   * (document-pdf), na desktopu záložně spuštěný JobiDocs. Bez PDF vrací důvod.
+   */
+  const pdfFakturyProEmail = useCallback(async (inv: Invoice): Promise<{ base64: string | null; duvod?: string }> => {
+    if (!activeServiceId) return { base64: null, duvod: "Není vybraný servis" };
+    try {
+      const data = await dataProTisk(inv);
+      const v = await pdfDokumentuNaServeru("faktura", activeServiceId, data);
+      if (v.ok) return { base64: await blobNaBase64(v.pdf) };
+      if (!isWeb() && (await isJobiDocsRunning())) {
+        const r = await renderPdf("faktura", activeServiceId, data);
+        if (r.ok && r.data) return { base64: await blobNaBase64(new Blob([r.data], { type: "application/pdf" })) };
+      }
+      return { base64: null, duvod: v.duvod };
+    } catch (e) {
+      return { base64: null, duvod: textChyby(e) };
+    }
+  }, [activeServiceId, dataProTisk]);
+
   const handleSendEmail = useCallback(async () => {
     if (!detailInvoice || !supabase || sending) return;
     setSending(true);
     try {
+      const pdf = await pdfFakturyProEmail(detailInvoice);
+      if (!pdf.base64 && !window.confirm(`PDF faktury se nepodařilo vytvořit${pdf.duvod ? ` (${pdf.duvod})` : ""}. Odeslat e-mail bez přílohy?`)) return;
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       const { data, error } = await supabase.functions.invoke("invoice-send-email", {
@@ -1301,12 +1329,14 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
           subject: sendSubject,
           body: sendBody,
           service_id: activeServiceId,
+          ...(pdf.base64 ? { pdf_base64: pdf.base64 } : {}),
         },
       });
       if (error) throw error;
       const fnError = (data as { error?: string } | null)?.error;
       if (fnError) throw new Error(fnError);
-      showToast("Faktura odeslána e-mailem", "success");
+      if ((data as { priloha?: boolean } | null)?.priloha === false) showToast("Faktura odeslána e-mailem, ale bez PDF přílohy", "info");
+      else showToast("Faktura odeslána e-mailem", "success");
       setSendModalOpen(false);
       await logEvent(detailInvoice.id, "sent", { recipient: sendEmail });
       if (detailInvoice.status === "issued") {
@@ -1319,13 +1349,13 @@ export default function Invoices({ activeServiceId, prefillFromTicket, onPrefill
       reportError({
         code: "invoices.send_email_failed",
         error: err,
-        userMessage: "Chyba odesílání: " + (err instanceof Error ? err.message : String(err)),
+        userMessage: "Chyba odesílání: " + (textChyby(err)),
         source: "Invoices.handleSendEmail",
       });
     } finally {
       setSending(false);
     }
-  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail]);
+  }, [detailInvoice, sending, sendEmail, sendSubject, sendBody, activeServiceId, logEvent, updateStatus, loadInvoices, showDetail, openDetail, pdfFakturyProEmail]);
 
   // ─── Souhrnná faktura ──────────────────────────────────────
 

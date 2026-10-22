@@ -12,8 +12,8 @@
  */
 import { qrDataUrl } from "../src/qr.js";
 import { ROBOTO_FONT_FACES } from "./fonts.js";
-import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
-import { VARIABLES, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, vatRozpis, warrantyDurationText } from "./variables.js";
+import { DOC_TYPE_LABELS, type Block, type Brand, type DocumentData, type RenderOptions, type SignatureSource, type SlotItem, type SlotName, type Template, type Theme } from "./types.js";
+import { VARIABLES, consentDetailText, consentText, discountAmount, formatDate, formatMoney, formatQty, isEmptyAfterSubstitution, itemsTotal, substitute, substitutePlaceholders, vatRozpis, warrantyDurationText } from "./variables.js";
 
 export type RenderInput = {
   template: Template;
@@ -97,6 +97,7 @@ function isBlockEmpty(ctx: Ctx, block: Block): boolean {
 function blockVisible(ctx: Ctx, block: Block): boolean {
   const when = "when" in block ? block.when : undefined;
   if (when === "notEmpty" && isBlockEmpty(ctx, block)) return false;
+  if (when === "hasItems" && !ctx.placeholders && !(ctx.data.items && ctx.data.items.length > 0)) return false;
   return true;
 }
 
@@ -211,9 +212,42 @@ function renderText(ctx: Ctx, block: Extract<Block, { type: "text" }>): string {
   return wrap(ctx, block, `${blockTitle(ctx, block, block.title)}<div class="${cls}"${editable(ctx, `block:${block.id}:content`, block.content, true)}>${inner}</div>`);
 }
 
+/**
+ * Patří do kolonky podpis zákazníka při převzetí do opravy? Výslovně
+ * (`source`), jinak podle popisku u zakázkového listu – šablony uložené
+ * před zavedením volby ji nemají, a „Zákazník – předání do opravy“ je
+ * právě ta kolonka. Vyzvednutí z opravy se tím nemyslí.
+ */
+export function jePodpisPrevzeti(docType: string, label: string, source?: SignatureSource): boolean {
+  if (source) return source === "intake";
+  const l = label.toLowerCase();
+  // Příjemka reklamace: kolonka zákazníka (ne „Za servis převzal“) – reklamace
+  // z objednávky nese stejný elektronický souhlas jako zakázkový list.
+  if (docType === "prijemka_reklamace") return /zákazník/.test(l) && !/servis|vyzved|vydán|vrácen/.test(l);
+  if (docType !== "zakazkovy_list") return false;
+  if (/vyzved|vydán|vrácen/.test(l)) return false;
+  return /předání do opravy|předání do servisu|převzetí do opravy|příjem|přijetí|předal/.test(l);
+}
+
+/**
+ * Obsah nad čarou podpisu převzetí: obrázek podpisu, když je; jinak
+ * a navíc text elektronického odsouhlasení z webu (ID, čas, formulář)
+ * s IP malým písmem. Bez podpisu i souhlasu prázdné místo k ručnímu podpisu.
+ */
+function obsahPodpisuPrevzeti(ctx: Ctx): string {
+  if (ctx.placeholders) return `<div class="sig-consent muted">⟨Podpis nebo elektronické odsouhlasení zákazníka⟩</div>`;
+  const obr = ctx.data.intakeSignature;
+  const text = consentText(ctx.data);
+  const detail = consentDetailText(ctx.data);
+  const img = obr ? `<div class="sig-img"><img src="${attr(obr)}" alt="Podpis zákazníka" onerror="this.style.display='none'"></div>` : "";
+  const souhlas = text ? `<div class="sig-consent">${escapeHtml(text)}${detail ? `<div class="sig-consent-detail">${escapeHtml(detail)}</div>` : ""}</div>` : "";
+  return img + souhlas;
+}
+
 function renderSignature(ctx: Ctx, block: Extract<Block, { type: "signature" }>): string {
   const w = block.width ?? 55;
-  return wrap(ctx, block, `<div class="sig-row ${block.align ?? "left"}"><div class="sig" style="width:${mm(w)}"><div class="line"></div><div class="label"${editable(ctx, `block:${block.id}:label`, block.label)}>${escapeHtml(sub(ctx, block.label))}</div></div></div>`);
+  const nad = jePodpisPrevzeti(ctx.template.docType, block.label, block.source) ? obsahPodpisuPrevzeti(ctx) : "";
+  return wrap(ctx, block, `<div class="sig-row ${block.align ?? "left"}"><div class="sig${nad ? " signed" : ""}" style="width:${mm(w)}">${nad}<div class="line"></div><div class="label"${editable(ctx, `block:${block.id}:label`, block.label)}>${escapeHtml(sub(ctx, block.label))}</div></div></div>`);
 }
 
 function renderWarranty(ctx: Ctx, block: Extract<Block, { type: "warranty" }>): string {
@@ -335,7 +369,7 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
       const showNumber = item.showNumber !== false && !titleOverride;
       const showDate = item.showDate === true && !titleOverride;
       return wrapItem(
-        `<div class="doc-title ${item.style === "box" ? "boxed" : ""}"><div class="doc-kind"${editable(ctx, `item:${item.id}:text`, item.text ?? "")}>${escapeHtml(kind)}</div>${showNumber && number ? `<div class="doc-number">${escapeHtml(number)}</div>` : ""}${showDate && date ? `<div class="doc-date">${escapeHtml(date)}</div>` : ""}</div>`
+        `<div class="doc-title ${item.style === "box" ? "boxed" : ""}${item.size && item.size !== "m" ? ` size-${item.size}` : ""}"><div class="doc-kind"${editable(ctx, `item:${item.id}:text`, item.text ?? "")}>${escapeHtml(kind)}</div>${showNumber && number ? `<div class="doc-number">${escapeHtml(number)}</div>` : ""}${showDate && date ? `<div class="doc-date">${escapeHtml(date)}</div>` : ""}</div>`
       );
     }
     case "brand": {
@@ -379,7 +413,8 @@ function renderSlotItem(ctx: Ctx, item: SlotItem, titleOverride?: string): strin
     }
     case "signature": {
       const w = item.width ?? 55;
-      return wrapItem(`<div class="sig" style="width:${mm(w)}"><div class="line"></div><div class="label"${editable(ctx, `item:${item.id}:label`, item.label)}>${escapeHtml(sub(ctx, item.label))}</div></div>`);
+      const nad = jePodpisPrevzeti(ctx.template.docType, item.label, item.source) ? obsahPodpisuPrevzeti(ctx) : "";
+      return wrapItem(`<div class="sig${nad ? " signed" : ""}" style="width:${mm(w)}">${nad}<div class="line"></div><div class="label"${editable(ctx, `item:${item.id}:label`, item.label)}>${escapeHtml(sub(ctx, item.label))}</div></div>`);
     }
     case "text":
       return wrapItem(`<div class="text ${item.size === "small" ? "small" : ""}"${editable(ctx, `item:${item.id}:content`, item.content, true)}>${richText(sub(ctx, item.content)) || (ctx.editor ? `<p class="ph">Text – klikněte a pište</p>` : "")}</div>`);
@@ -451,6 +486,7 @@ function css(t: Template, theme: Theme, editor: boolean, browserPrint: boolean):
 .items thead th{border:0.3mm solid var(--text);background:#f3f4f6}
 .items td{border:0.3mm solid var(--text)}
 .sig{border:0.3mm solid var(--text);padding:14mm 2mm 1.5mm;text-align:left}
+.sig.signed{padding-top:2mm}
 .sig .line{display:none}
 .stamp{border:0.3mm solid var(--text);padding:2mm}
 .stamp .line{border-top:none}
@@ -481,6 +517,9 @@ ${theme.color === "bw" ? "img{filter:grayscale(1)}" : ""}
 .slot.b-right{align-items:flex-end;text-align:right}
 .doc-title{display:flex;flex-direction:column;align-items:flex-end}
 .doc-kind{font-size:0.85em;font-weight:700;text-transform:uppercase;letter-spacing:0.12em}
+.doc-title.size-s .doc-kind{font-size:0.7em}
+.doc-title.size-l .doc-kind{font-size:1.3em;letter-spacing:0.08em}
+.doc-title.size-xl .doc-kind{font-size:1.9em;letter-spacing:0.05em;line-height:1.1}
 .doc-number{font-size:2.3em;font-weight:800;line-height:1.05;letter-spacing:-0.01em;font-variant-numeric:tabular-nums}
 .doc-date{font-size:0.85em;color:var(--muted);margin-top:0.6mm}
 .brand-name{font-weight:800;font-size:1.55em;letter-spacing:-0.01em;line-height:1.1}
@@ -521,6 +560,10 @@ hr.divider{border:0;border-top:0.25mm solid var(--line);margin:0;width:100%}
 .sig{display:inline-block;text-align:center}
 .sig .line{border-top:0.35mm solid var(--text);margin-bottom:1mm}
 .sig .label{font-size:0.82em;color:var(--muted)}
+.sig .sig-img{height:14mm;display:flex;align-items:flex-end;justify-content:center;margin-bottom:0.5mm}
+.sig .sig-img img{max-height:14mm;max-width:100%;object-fit:contain}
+.sig .sig-consent{font-size:0.72em;line-height:1.3;text-align:left;margin-bottom:1mm;overflow-wrap:anywhere}
+.sig .sig-consent-detail{font-size:0.88em;color:var(--muted)}
 table.items{width:100%;border-collapse:collapse}
 .items th{text-align:left;font-weight:700;padding:calc(1.6mm*var(--sp)) 2mm;font-size:0.85em;text-transform:uppercase;letter-spacing:0.05em}
 .items td{padding:calc(1.6mm*var(--sp)) 2mm;border-bottom:0.2mm solid var(--line);vertical-align:top}
@@ -599,7 +642,8 @@ body{background:#e6eaee;padding:8mm 0}
 .etb{position:absolute;z-index:20;display:flex;gap:0.5mm;background:#1f2937;border-radius:1.5mm;padding:0.8mm;box-shadow:0 2px 8px rgba(0,0,0,.3);font-style:normal}
 .etb button{border:0;background:transparent;color:#fff;width:6mm;height:6mm;border-radius:1mm;font-size:3.4mm;line-height:6mm;cursor:pointer;padding:0;font-family:inherit}
 .etb button:hover{background:rgba(255,255,255,.18)}
-.etb button.grip{cursor:grab}
+.etb .grip{display:inline-block;color:#fff;width:6mm;height:6mm;border-radius:1mm;font-size:3.4mm;line-height:6mm;text-align:center;cursor:grab;user-select:none;-webkit-user-select:none}
+.etb .grip:hover{background:rgba(255,255,255,.18)}
 .etb button.danger:hover{background:#dc2626}
 .etb .sep{width:0.3mm;background:rgba(255,255,255,.25);margin:1mm 0.5mm}
 .etb.edit{background:#2563eb}
@@ -656,7 +700,7 @@ function editorScript(): string {
   return `<script>
 (function(){
   var VARS=${variableLabelsJson()};
-  var selected=null,editing=null,editOrig='',dragging=null,savedRange=null,toolbar=null;
+  var selected=null,editing=null,editOrig='',dragging=null,savedRange=null,toolbar=null,dragOff=[];
   function post(m){m.source='jobidocs-doc';try{window.parent.postMessage(m,'*');}catch(e){}}
   function q(sel){return document.querySelector(sel);}
   function all(sel){return [].slice.call(document.querySelectorAll(sel));}
@@ -667,7 +711,7 @@ function editorScript(): string {
   function select(el,notify){if(editing&&editing!==el&&!el.contains(editing))finishEdit(true);clearSel();if(!el)return;selected=el;el.classList.add('selected');showToolbar(el);if(notify){var k=el.hasAttribute('data-block')?'block':el.hasAttribute('data-slot-item')?'slotItem':'slot';post({type:'select',kind:k,id:el.getAttribute('data-block')||el.getAttribute('data-slot-item')||el.getAttribute('data-slot')});}}
   function btn(label,title,cls,fn){var b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;if(cls)b.className=cls;b.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();});b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();fn();});return b;}
   function showToolbar(el){if(toolbar)toolbar.remove();toolbar=document.createElement('div');toolbar.className='etb';var isBlock=el.hasAttribute('data-block'),isItem=el.hasAttribute('data-slot-item'),isSlot=el.hasAttribute('data-slot');
-    if(isBlock||isItem){var g=btn('⋮⋮','Táhnout','grip',function(){});g.draggable=true;g.addEventListener('dragstart',function(e){startDrag(el,e);});g.addEventListener('dragend',endDrag);toolbar.appendChild(g);}
+    if(isBlock||isItem){var g=document.createElement('span');g.className='grip';g.textContent='⋮⋮';g.title='Táhnout';g.setAttribute('role','button');g.draggable=true;g.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();});g.addEventListener('dragstart',function(e){e.stopPropagation();if(editing){e.preventDefault();return;}startDrag(el,e);});g.addEventListener('dragend',endDrag);toolbar.appendChild(g);}
     if(isBlock){toolbar.appendChild(btn('↑','Posunout výš','',function(){post({type:'moveBy',id:el.getAttribute('data-block'),delta:-1});}));toolbar.appendChild(btn('↓','Posunout níž','',function(){post({type:'moveBy',id:el.getAttribute('data-block'),delta:1});}));toolbar.appendChild(btn('⧉','Duplikovat','',function(){post({type:'duplicate',id:el.getAttribute('data-block')});}));}
     if(isSlot){toolbar.appendChild(btn('+','Přidat prvek','',function(){post({type:'addSlotItem',slot:el.getAttribute('data-slot')});}));}
     if(isBlock||isItem){toolbar.appendChild(btn('⚙','Vlastnosti','',function(){post({type:'properties'});}));var s=document.createElement('span');s.className='sep';toolbar.appendChild(s);toolbar.appendChild(btn('✕','Odebrat','danger',function(){post({type:'delete'});}));}
@@ -677,8 +721,10 @@ function editorScript(): string {
   // ---- úpravy textu v dokumentu ----
   function chipify(src){var out='',re=/\\{\\{\\s*([\\w.]+)\\s*\\}\\}/g,last=0,m;while((m=re.exec(src))){out+=esc(src.slice(last,m.index)).replace(/\\n/g,'<br>');out+='<span class="var" contenteditable="false" data-var="'+esc(m[1])+'">'+esc(VARS[m[1]]||m[1])+'</span>';last=m.index+m[0].length;}out+=esc(src.slice(last)).replace(/\\n/g,'<br>');return out;}
   function serialize(el){var out='';function walk(n){for(var i=0;i<n.childNodes.length;i++){var c=n.childNodes[i];if(c.nodeType===3){out+=c.nodeValue;}else if(c.nodeType===1){var tag=c.tagName;if(c.classList.contains('var')){out+='{{'+c.getAttribute('data-var')+'}}';}else if(tag==='BR'){out+='\\n';}else if(tag==='DIV'||tag==='P'){if(out&&!/\\n$/.test(out))out+='\\n';walk(c);if(!/\\n$/.test(out))out+='\\n';}else{walk(c);}}}}walk(el);return out.replace(/\\u00a0/g,' ').replace(/\\n+$/,'');}
-  function startEdit(el){if(editing===el)return;if(editing)finishEdit(true);editing=el;editOrig=el.innerHTML;el.innerHTML=chipify(el.getAttribute('data-src')||'')||'';el.setAttribute('contenteditable','true');el.setAttribute('spellcheck','false');el.focus();var sel=window.getSelection(),range=document.createRange();range.selectNodeContents(el);range.collapse(false);sel.removeAllRanges();sel.addRange(range);var owner=el.closest('[data-block],[data-slot-item]');if(owner&&owner!==selected)select(owner,true);if(toolbar){toolbar.classList.add('edit');var vb=btn('{ }','Vložit údaj (proměnnou)','',function(){saveRange();post({type:'pickVariable'});});vb.style.width='auto';vb.style.padding='0 1.5mm';vb.textContent='＋ údaj';toolbar.insertBefore(vb,toolbar.firstChild);}}
-  function finishEdit(commit){if(!editing)return;var el=editing;editing=null;var value=serialize(el);el.removeAttribute('contenteditable');if(commit&&value!==(el.getAttribute('data-src')||'')){el.setAttribute('data-src',value);post({type:'edit',target:el.getAttribute('data-edit'),value:value});}else{el.innerHTML=editOrig;}if(toolbar)toolbar.classList.remove('edit');}
+  function dragOffFor(el){var a=el;while(a&&a!==document.body){if(a.getAttribute&&a.getAttribute('draggable')==='true'){a.setAttribute('draggable','false');dragOff.push(a);}a=a.parentElement;}}
+  function dragOn(){dragOff.forEach(function(a){a.setAttribute('draggable','true')});dragOff=[];}
+  function startEdit(el){if(editing===el)return;if(editing)finishEdit(true);editing=el;dragOffFor(el);editOrig=el.innerHTML;el.innerHTML=chipify(el.getAttribute('data-src')||'')||'';el.setAttribute('contenteditable','true');el.setAttribute('spellcheck','false');el.focus();var sel=window.getSelection(),range=document.createRange();range.selectNodeContents(el);range.collapse(false);sel.removeAllRanges();sel.addRange(range);var owner=el.closest('[data-block],[data-slot-item]');if(owner&&owner!==selected)select(owner,true);if(toolbar){toolbar.classList.add('edit');var vb=btn('{ }','Vložit údaj (proměnnou)','',function(){saveRange();post({type:'pickVariable'});});vb.style.width='auto';vb.style.padding='0 1.5mm';vb.textContent='＋ údaj';toolbar.insertBefore(vb,toolbar.firstChild);}}
+  function finishEdit(commit){if(!editing)return;var el=editing;editing=null;dragOn();var value=serialize(el);el.removeAttribute('contenteditable');if(commit&&value!==(el.getAttribute('data-src')||'')){el.setAttribute('data-src',value);post({type:'edit',target:el.getAttribute('data-edit'),value:value});}else{el.innerHTML=editOrig;}if(toolbar)toolbar.classList.remove('edit');}
   function saveRange(){var s=window.getSelection();if(s&&s.rangeCount>0&&editing&&editing.contains(s.getRangeAt(0).startContainer))savedRange=s.getRangeAt(0).cloneRange();}
   function insertVariable(key,label){if(!editing)return;editing.focus();var s=window.getSelection();if(savedRange){s.removeAllRanges();s.addRange(savedRange);}var r=s.rangeCount?s.getRangeAt(0):null;if(!r){r=document.createRange();r.selectNodeContents(editing);r.collapse(false);}r.deleteContents();var chip=document.createElement('span');chip.className='var';chip.setAttribute('contenteditable','false');chip.setAttribute('data-var',key);chip.textContent=label||VARS[key]||key;r.insertNode(chip);var sp=document.createTextNode(' ');chip.parentNode.insertBefore(sp,chip.nextSibling);r.setStartAfter(sp);r.collapse(true);s.removeAllRanges();s.addRange(r);}
   document.addEventListener('selectionchange',saveRange);
@@ -718,8 +764,9 @@ function editorScript(): string {
   function startDrag(el,e){dragging={kind:el.hasAttribute('data-slot-item')?'slotItem':'block',id:el.getAttribute('data-slot-item')||el.getAttribute('data-block'),el:el};el.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging.id);e.dataTransfer.setDragImage(el,10,10);}catch(x){}}
   function clearDrop(){all('.drop-target,.drop-before,.drop-after').forEach(function(x){x.classList.remove('drop-target');x.classList.remove('drop-before');x.classList.remove('drop-after');});}
   function endDrag(){if(dragging&&dragging.el)dragging.el.classList.remove('dragging');clearDrop();dragging=null;}
+  document.addEventListener('drop',function(e){if(dragging)e.preventDefault();});
   var body=q('.body[data-main]');
-  all('[data-block],[data-slot-item]').forEach(function(el){var isSlot=el.hasAttribute('data-slot-item');var isTop=!isSlot&&body&&el.parentElement===body;if(!isSlot&&!isTop)return;el.setAttribute('draggable','true');el.addEventListener('dragstart',function(e){if(editing){e.preventDefault();return;}if(e.target!==el&&!e.target.classList.contains('grip')){/* povolit jen z prvku samotného */}startDrag(el,e);e.stopPropagation();});el.addEventListener('dragend',endDrag);});
+  all('[data-block],[data-slot-item]').forEach(function(el){var isSlot=el.hasAttribute('data-slot-item');var isTop=!isSlot&&body&&el.parentElement===body;if(!isSlot&&!isTop)return;el.setAttribute('draggable','true');el.addEventListener('dragstart',function(e){if(editing){e.preventDefault();return;}startDrag(el,e);e.stopPropagation();});el.addEventListener('dragend',endDrag);});
   all('[data-slot]').forEach(function(slot){slot.addEventListener('dragover',function(e){if(!dragging||dragging.kind!=='slotItem')return;e.preventDefault();e.dataTransfer.dropEffect='move';clearDrop();slot.classList.add('drop-target');});slot.addEventListener('dragleave',function(){slot.classList.remove('drop-target');});slot.addEventListener('drop',function(e){if(!dragging||dragging.kind!=='slotItem')return;e.preventDefault();var items=all('[data-slot-item]').filter(function(i){return i.parentElement===slot});var idx=items.length;for(var i=0;i<items.length;i++){var r=items[i].getBoundingClientRect();if(e.clientY<r.top+r.height/2){idx=i;break;}}post({type:'moveSlotItem',id:dragging.id,toSlot:slot.getAttribute('data-slot'),index:idx});clearDrop();});});
   if(body){body.addEventListener('dragover',function(e){if(!dragging||dragging.kind!=='block')return;e.preventDefault();e.dataTransfer.dropEffect='move';clearDrop();var t=e.target.closest('[data-block]');while(t&&t.parentElement!==body)t=t.parentElement.closest('[data-block]');if(t){var r=t.getBoundingClientRect();t.classList.add(e.clientY<r.top+r.height/2?'drop-before':'drop-after');}else body.classList.add('drop-target');});
     body.addEventListener('drop',function(e){if(!dragging||dragging.kind!=='block')return;e.preventDefault();var blocks=[].slice.call(body.children).filter(function(c){return c.hasAttribute('data-block')});var idx=blocks.length;for(var i=0;i<blocks.length;i++){var r=blocks[i].getBoundingClientRect();if(e.clientY<r.top+r.height/2){idx=i;break;}}post({type:'moveBlock',id:dragging.id,toIndex:idx});clearDrop();});}

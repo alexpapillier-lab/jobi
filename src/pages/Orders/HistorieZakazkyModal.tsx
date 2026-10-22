@@ -75,7 +75,7 @@ export function HistorieZakazkyModal({ entries, loading, error, expandedId, setE
               title: "Zakázka / zařízení",
               status: "Stav",
               notes: "Popis",
-              estimated_price: "Odhadovaná cena",
+              estimated_price: "Předpokládaná cena",
               performed_repairs: "Provedené opravy",
               diagnostic_text: "Diagnostika",
               customer_name: "Zákazník",

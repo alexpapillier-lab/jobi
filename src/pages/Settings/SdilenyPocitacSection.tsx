@@ -11,6 +11,7 @@ import {
   type ZaparkovanyUcet,
 } from "../../lib/prepinaniUctu";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Nastavení → Můj účet → Sdílený počítač: PIN, zámek po nečinnosti,
  * zaparkované účty. PIN patří k účtu (server), zámek a zaparkované účty
@@ -60,7 +61,7 @@ export function SdilenyPocitacSection() {
       setPinZnovu("");
       showToast("PIN uložen", "success");
     } catch (err) {
-      showToast(`PIN se nepodařilo uložit: ${err instanceof Error ? err.message : String(err)}`, "error");
+      showToast(`PIN se nepodařilo uložit: ${textChyby(err)}`, "error");
     } finally {
       setUkladam(false);
     }

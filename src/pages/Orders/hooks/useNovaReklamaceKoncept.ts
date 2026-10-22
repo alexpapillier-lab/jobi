@@ -26,6 +26,7 @@ import {
   type KonceptReklamace,
 } from "../../../lib/reklamacePrijem";
 import { useWarrantyClaims, type WarrantyClaimRow } from "./useWarrantyClaims";
+import { objednavkaNaKonceptReklamace, odesliWebhookyHned, prevedObjednavkuNaReklamaci, type WebObjednavka } from "../../../lib/objednavky";
 import type { PolozkaQrFoceni, TicketEx } from "../typy";
 
 function vychoziPrevzeti(): string {
@@ -80,6 +81,8 @@ export function useNovaReklamaceKoncept({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [nacitamZdroj, setNacitamZdroj] = useState(false);
   const [vytvarim, setVytvarim] = useState(false);
+  /** Navržené původní zakázky k reklamaci z objednávky (podle SN a telefonu). */
+  const [navrhy, setNavrhy] = useState<TicketEx[]>([]);
 
   // Focení přes QR ke konceptu (stejné edge funkce jako u příjmu zakázky).
   const qrTokenRef = useRef<string | null>(null);
@@ -133,6 +136,28 @@ export function useNovaReklamaceKoncept({
     void vyberZdroj(zakazka);
   }, [koncept, vyberZdroj]);
 
+  /**
+   * Otevře okno z objednávky z webu (Příchozí objednávky → Reklamace):
+   * koncept z objednávky, `jista` původní zakázka se rovnou vybere, ostatní
+   * kandidáti se nabídnou nahoře ve výběru. Pobočka zůstává ta objednávky
+   * (kam zařízení přijelo), i když je původní zakázka z jiné.
+   */
+  const otevriZObjednavky = useCallback((o: WebObjednavka, n: { kandidati: TicketEx[]; jista: TicketEx | null }, branchIdDefault: string | null) => {
+    setSubmitAttempted(false);
+    setOtevreno(true);
+    setNavrhy(n.kandidati);
+    if (koncept.objednavka?.id === o.id) return;
+    if (jeKonceptRozepsany(koncept)) {
+      const co = koncept.objednavka ? `reklamaci z objednávky ${koncept.objednavka.cislo}` : koncept.zdroj?.kod ? `reklamaci k zakázce ${koncept.zdroj.kod}` : "reklamaci";
+      if (!window.confirm(`Máte rozepsanou ${co}. Nahradit ji reklamací z objednávky ${o.externi_cislo}?`)) return;
+    }
+    const zObjednavky = objednavkaNaKonceptReklamace(o, vychoziKoncept(vychoziPrevzeti()), branchIdDefault);
+    setKoncept(zObjednavky);
+    if (n.jista) {
+      void vyberZdroj(n.jista).then(() => setKoncept((k) => ({ ...k, branchId: zObjednavky.branchId ?? k.branchId })));
+    }
+  }, [koncept, vyberZdroj]);
+
   /** Zavře okno; rozepsané údaje zůstávají v konceptu. */
   const zavri = useCallback(() => setOtevreno(false), []);
 
@@ -177,13 +202,28 @@ export function useNovaReklamaceKoncept({
         serviceName,
       });
       if (!claim) return; // chyba: formulář zůstává vyplněný
+      // Reklamace z objednávky z webu: objednávka se vyřídí a web dostane
+      // oznámení (kód reklamace jako „kód v Jobi“). Selhání převodu reklamaci
+      // nevrací – objednávka jen zůstane v příchozích.
+      const objednavka = koncept.objednavka;
+      if (objednavka && activeServiceId) {
+        const sid = activeServiceId;
+        prevedObjednavkuNaReklamaci(objednavka.id, claim.id)
+          .then((zmeneno) => {
+            if (!zmeneno) showToast(`Objednávku ${objednavka.cislo} mezitím někdo vyřídil; reklamace je založená.`, "info");
+            window.dispatchEvent(new CustomEvent("jobsheet:objednavky-zmena"));
+            if (zmeneno) void odesliWebhookyHned(sid);
+          })
+          .catch((e) => showToast(`Reklamace je založená, ale objednávku ${objednavka.cislo} se nepodařilo označit jako vyřízenou: ${normalizeError(e)}`, "error"));
+      }
+      setNavrhy([]);
       vycisti();
       setOtevreno(false);
       await onCreated(claim);
     } finally {
       setVytvarim(false);
     }
-  }, [lzeVytvorit, vytvarim, zalozReklamaci, koncept, statusKey, existingClaimCodes, qrFotky, serviceName, vycisti, onCreated]);
+  }, [lzeVytvorit, vytvarim, zalozReklamaci, koncept, statusKey, existingClaimCodes, qrFotky, serviceName, vycisti, onCreated, activeServiceId]);
 
   // ⌘/Ctrl+Enter = Vytvořit reklamaci (jako u nové zakázky).
   const vytvoritRef = useRef(vytvorit);
@@ -305,6 +345,8 @@ export function useNovaReklamaceKoncept({
   return {
     otevreno,
     otevri,
+    otevriZObjednavky,
+    navrhy,
     zavri,
     zahod,
     zrusitBezDotazu,

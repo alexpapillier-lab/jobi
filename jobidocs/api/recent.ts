@@ -3,7 +3,7 @@
  * na reálných datech v editoru. Mapování řádků tabulek na DocumentData
  * odpovídá tomu, co posílá Jobi (src/lib/documentData.ts).
  */
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { DocType, DocumentData, LineItem, Party } from "../core/index.js";
 import type { SupabaseAuth } from "./documentsStore.js";
 
@@ -165,6 +165,18 @@ export async function loadRecent(serviceId: string, docType: DocType, service: P
     global: { headers: { Authorization: `Bearer ${auth.supabaseAccessToken}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  return loadRecentWithClient(sb, serviceId, docType, service, limit);
+}
+
+/** Klient pro čtení posledních dokladů: databáze a podepisování fotek. */
+export type KlientPoslednichDokladu = Pick<SupabaseClient, "from"> & KlientUloziste;
+
+/**
+ * Poslední doklady s hotovým klientem. Desktop si klienta zakládá z tokenu,
+ * který mu poslalo Jobi (`loadRecent`); webová verze Jobi předá svého
+ * přihlášeného klienta (src/lib/sablonyDokumentuWeb.ts).
+ */
+export async function loadRecentWithClient(sb: KlientPoslednichDokladu, serviceId: string, docType: DocType, service: Party, limit = 6): Promise<RecentDocument[]> {
   try {
     if (docType === "faktura") {
       const { data } = await sb.from("invoices").select("*").eq("service_id", serviceId).is("deleted_at", null).order("created_at", { ascending: false }).limit(limit);

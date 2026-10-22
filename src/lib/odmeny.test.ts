@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { castkaOdmeny, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -22,7 +22,7 @@ describe("čtení nastavení z configu", () => {
   });
 
   it("chybějící config = žádná pravidla, ne pád", () => {
-    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
+    expect(normalizujOdmeny(undefined)).toEqual({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false, kdy: { rezim: "vydani" } });
     expect(normalizujOdmeny({ verejny_zebricek: false }).verejny_zebricek).toBe(false);
   });
 
@@ -33,6 +33,64 @@ describe("čtení nastavení z configu", () => {
     expect(normalizujOdmeny(vypnute).zobrazit_v_navigaci).toBe(false);
     expect(normalizujOdmeny({ ...vypnute, zobrazit_v_navigaci: true }).zobrazit_v_navigaci).toBe(true);
     expect(normalizujOdmeny({ ...aktivni, zobrazit_v_navigaci: false }).zobrazit_v_navigaci).toBe(false);
+  });
+});
+
+describe("kdy se odměna připočítá", () => {
+  it("chybějící nebo rozbité nastavení = po vydání", () => {
+    expect(normalizujKdy(undefined)).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy(null)).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy("pridani")).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy(["pridani"])).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "blbost" })).toEqual({ rezim: "vydani" });
+    expect(normalizujOdmeny({ pravidla: [] }).kdy).toEqual({ rezim: "vydani" });
+  });
+
+  it("přidání a stav se přečtou; stav bez klíče = po vydání", () => {
+    expect(normalizujKdy({ rezim: "pridani", stav: "ready" })).toEqual({ rezim: "pridani" });
+    expect(normalizujKdy({ rezim: "stav", stav: " ready " })).toEqual({ rezim: "stav", stav: "ready" });
+    expect(normalizujKdy({ rezim: "stav" })).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "stav", stav: "  " })).toEqual({ rezim: "vydani" });
+    expect(normalizujKdy({ rezim: "stav", stav: 5 })).toEqual({ rezim: "vydani" });
+    expect(normalizujOdmeny({ kdy: { rezim: "stav", stav: "ready" } }).kdy).toEqual({ rezim: "stav", stav: "ready" });
+  });
+
+  it("každý režim má volbu s názvem a popisem", () => {
+    expect(VOLBY_KDY_ODMENY.map((v) => v.rezim)).toEqual(["vydani", "pridani", "stav"]);
+    for (const v of VOLBY_KDY_ODMENY) {
+      expect(v.nazev.length).toBeGreaterThan(0);
+      expect(v.popis.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("věta pod nadpisem a sloupec podle režimu", () => {
+    expect(vetaKdyOdmeny("vydani")).toBe("Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.");
+    expect(vetaKdyOdmeny("pridani")).toContain("přidaných");
+    expect(vetaKdyOdmeny("stav", "Připraveno")).toContain("„Připraveno“");
+    expect(vetaKdyOdmeny("stav", null)).toContain("vybraného stavu");
+    expect(sloupecKdyOdmeny("vydani")).toBe("Vydáno");
+    expect(sloupecKdyOdmeny("pridani")).toBe("Přidáno");
+    expect(sloupecKdyOdmeny("stav")).toBe("Započteno");
+  });
+
+  it("výběr stavu: bez storna, předvybraný poslední nekoncový", () => {
+    const stavy = [
+      { key: "received", label: "Přijato", isFinal: false },
+      { key: "ready", label: "Připraveno", isFinal: false },
+      { key: "issued", label: "Vydáno", isFinal: true },
+      { key: "cancelled", label: "Stornováno", isFinal: true },
+      { key: "neopr", label: "Neopraveno", isFinal: true },
+    ];
+    expect(stavyProOdmeny(stavy).map((s) => s.key)).toEqual(["received", "ready", "issued"]);
+    expect(vychoziStavOdmen(stavy)).toBe("ready");
+    expect(vychoziStavOdmen(stavy.filter((s) => s.isFinal))).toBe("issued");
+    expect(vychoziStavOdmen([])).toBeNull();
+  });
+
+  it("odpověď serveru: neznámý režim = vydání", () => {
+    expect(normalizujKdyOdpovedi(undefined)).toEqual({ rezim: "vydani", stav: null, stavNazev: null });
+    expect(normalizujKdyOdpovedi({ rezim: "stav", stav: "ready", stavNazev: "Připraveno" })).toEqual({ rezim: "stav", stav: "ready", stavNazev: "Připraveno" });
+    expect(normalizujKdyOdpovedi({ rezim: "x" }).rezim).toBe("vydani");
   });
 });
 
@@ -67,14 +125,14 @@ describe("nabídnuto navíc", () => {
     expect(vychoziNabidnuto("Výměna displeje", "Výměna displeje", pravidla)).toBeUndefined();
   });
 
-  it("oprava podle pravidla, se kterou zákazník nepřišel, je nabídnutá", () => {
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Nefunguje, nejde zapnout", pravidla)).toBe(true);
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "", pravidla)).toBe(true);
+  it("oprava podle pravidla začíná jako nenabídnutá – přepíná se ručně", () => {
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Nefunguje, nejde zapnout", pravidla)).toBe(false);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "", pravidla)).toBe(false);
+    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "chce servisní čištění", pravidla)).toBe(false);
   });
 
-  it("oprava, kterou zákazník požadoval (název nebo text pravidla), nabídnutá není", () => {
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "Servisní čištění + výměna filtru", pravidla)).toBe(false);
-    expect(vychoziNabidnuto("Servisní čištění + výměna filtru", "chce servisní čištění", pravidla)).toBe(false);
+  it("opravaVPozadavku pozná opravu v požadavku z příjmu", () => {
+    expect(opravaVPozadavku("chce servisní čištění", "Servisní čištění + výměna filtru", pravidla[0])).toBe(true);
     expect(opravaVPozadavku("Servisní čištění", "Servisní čištění + výměna filtru", null)).toBe(false);
   });
 });
@@ -114,5 +172,57 @@ describe("zaměstnanec měsíce", () => {
       { userId: "b", jmeno: "B", pocet: 2, castka: 200 },
     ])).toHaveLength(2);
     expect(zamestnanecMesice([])).toEqual([]);
+  });
+});
+
+describe("ruční odměny", () => {
+  it("náhled částky počítá stejně jako server (procenta na haléře, bez ceny nic)", () => {
+    expect(castkaRucniOdmeny({ typ: "castka", hodnota: 100 }, null)).toBe(100);
+    expect(castkaRucniOdmeny({ typ: "castka", hodnota: 100 }, 5000)).toBe(100);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 12.5 }, 390)).toBe(48.75);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, 333.33)).toBe(33.33);
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, null)).toBeNull();
+    expect(castkaRucniOdmeny({ typ: "procento", hodnota: 10 }, 0)).toBeNull();
+  });
+
+  it("popisek pravidla a čtení ceny", () => {
+    expect(popisPravidla({ typ: "castka", hodnota: 100 })).toMatch(/^100\sKč$/);
+    expect(popisPravidla({ typ: "procento", hodnota: 12.5 })).toBe("12,5 % z ceny");
+    expect(prectiCenu(" 1 290,50 ")).toBe(1290.5);
+    expect(prectiCenu("")).toBeNull();
+    expect(prectiCenu("abc")).toBeNull();
+  });
+
+  it("kontrola formuláře: pravidlo, cena u procent, povinná poznámka, měsíc", () => {
+    const castka = { id: "a", nazev: "Čištění", typ: "castka" as const, hodnota: 100 };
+    const procento = { id: "b", nazev: "Sklo", typ: "procento" as const, hodnota: 10 };
+    expect(chybaRucniOdmeny({ pravidlo: null, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/pravidlo/);
+    expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: null, obdobi: "2026-10" })).toMatch(/cenu/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "   ", zaklad: null, obdobi: "2026-10" })).toBeNull();
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "x", zaklad: null, obdobi: "2026-13" })).toMatch(/měsíc/);
+    expect(chybaRucniOdmeny({ pravidlo: castka, poznamka: "prodal sklo u pultu", zaklad: null, obdobi: "2026-10" })).toBeNull();
+    expect(chybaRucniOdmeny({ pravidlo: procento, poznamka: "x", zaklad: 390, obdobi: "2026-10" })).toBeNull();
+  });
+
+  it("odpověď přehledu: rozbité řádky pryč, neznámý stav = čeká, chybějící zakázka = null", () => {
+    const r = normalizujRucni([
+      { id: "1", userId: "u", jmeno: "Terka", pravidlo: "Čištění", castka: "100.00", zaklad: null, poznamka: "u pultu", obdobi: "2026-10", stav: "schvaleno", automaticky: true, createdAt: "2026-10-09T10:00:00Z", ticketId: null },
+      { id: "2", userId: "u", castka: 48.75, zaklad: "390", stav: "nesmysl", kod: "Z-1", ticketId: "t" },
+      { userId: "u" },
+      null,
+      "x",
+    ]);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({ id: "1", castka: 100, zaklad: null, stav: "schvaleno", automaticky: true, ticketId: null, kod: null });
+    expect(r[1]).toMatchObject({ id: "2", jmeno: "Kolega", castka: 48.75, zaklad: 390, stav: "ceka", ticketId: "t", kod: "Z-1", zakaznik: null });
+    expect(normalizujRucni(undefined)).toEqual([]);
+  });
+
+  it("pravidla z přehledu", () => {
+    expect(normalizujPravidlaRucni([{ id: "a", nazev: "Čištění", typ: "castka", hodnota: "100" }, { nazev: "bez id" }, { id: "b", typ: "procento", hodnota: 12.5 }])).toEqual([
+      { id: "a", nazev: "Čištění", typ: "castka", hodnota: 100 },
+      { id: "b", nazev: "b", typ: "procento", hodnota: 12.5 },
+    ]);
+    expect(normalizujPravidlaRucni(null)).toEqual([]);
   });
 });

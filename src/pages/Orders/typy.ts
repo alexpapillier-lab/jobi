@@ -6,6 +6,7 @@ import type React from "react";
 import type { Ticket } from "../../mock/tickets";
 import type { NavKey } from "../../layout/Sidebar";
 import type { Rezervace } from "../../lib/rezervace";
+import type { WebObjednavka } from "../../lib/objednavky";
 import type { PerformedRepair } from "../../components/orders/types";
 import type { KontrolaPoOpraveData } from "../../lib/kontrolniSeznamy";
 import type { ZapujckaData } from "../../lib/zapujcka";
@@ -34,7 +35,7 @@ export type OrdersProps = {
   /** Název aktivního servisu – jde do vodoznaku fotek. */
   serviceName?: string | null;
   smsPanelTicketIdRef?: React.MutableRefObject<string | null> | null;
-  newOrderPrefill: { customerId?: string; rezervace?: Rezervace } | null;
+  newOrderPrefill: { customerId?: string; rezervace?: Rezervace; objednavka?: WebObjednavka } | null;
   onNewOrderPrefillConsumed: () => void;
 
   openTicketIntent: OpenTicketIntent | null;
@@ -180,6 +181,8 @@ export type NewOrderDraft = {
   branchId?: string | null;
   /** Rezervace z webu, ze které zakázka vzniká – po založení se označí jako převedená. */
   rezervaceId?: string;
+  /** Objednávka z webu (web_objednavky), ze které zakázka vzniká – po založení se převede (webhook order.converted). */
+  objednavkaId?: string;
 };
 export type ModelWithHierarchy = DeviceModel & {
   fullName: string;

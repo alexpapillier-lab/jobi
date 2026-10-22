@@ -10,6 +10,9 @@
  *      se pravidla téhle zóny nevztahují. Proto Cache API přímo tady.
  *
  * Zápis (/v1/write) se nikdy necachuje a jde rovnou dál i s tokenem.
+ * Objednávky (/v1/orders) taky ne – ani GET: odpověď patří tokenu
+ * z hlavičky Authorization, kterou cache nerozlišuje. Uložená odpověď by
+ * se pak vrátila komukoli, kdo zná external_id.
  */
 
 const PUVOD = "https://ijtvcgolsdsrquqbvjrz.supabase.co";
@@ -21,8 +24,14 @@ const MAPA = {
   "/v1/booking": "/functions/v1/public-booking",
   "/v1/booking.js": "/functions/v1/public-booking/embed.js",
   "/v1/write": "/functions/v1/api-write",
+  "/v1/orders": "/functions/v1/api-orders",
+  "/v1/order-form": "/functions/v1/public-order-form",
+  "/v1/order-form.js": "/functions/v1/public-order-form/embed.js",
   "/v1/openapi.json": "/functions/v1/public-docs",
 };
+
+/** Cesty, které jdou na původ vždy přímo, i s GET a hlavičkou Authorization. */
+const BEZ_CACHE = new Set(["/v1/orders"]);
 
 /**
  * Vykreslená dokumentace. Servíruje ji Worker, ne edge funkce: Supabase
@@ -105,6 +114,16 @@ export default {
     const adresa = new URL(PUVOD + cil);
     adresa.search = url.search;
 
+    // Objednávky: vždy na původ (i GET), i s hlavičkou Authorization.
+    if (BEZ_CACHE.has(cesta)) {
+      const odpoved = await fetch(new Request(adresa.toString(), request));
+      const hlavicky = new Headers(odpoved.headers);
+      for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
+      hlavicky.set("Cache-Control", "no-store");
+      hlavicky.set("X-Jobi-Cache", "BYPASS");
+      return new Response(odpoved.body, { status: odpoved.status, headers: hlavicky });
+    }
+
     // Zápis: proxy beze změny, i s hlavičkami Authorization a Idempotency-Key.
     if (request.method === "POST") {
       return fetch(new Request(adresa.toString(), request));
@@ -153,6 +172,15 @@ export default {
       // na cizí web není v pořádku ani tak.
       const hlavickyPuvodu = new Headers(puvodni.headers);
       hlavickyPuvodu.delete("Set-Cookie");
+      // Tělo z fetch je už rozbalené, ale hlavička Content-Encoding: gzip
+      // z původu zůstává. Kdyby šla dál, runtime by tělo znovu zabalil
+      // a hrana Cloudflare by ho pro klienta bez komprese (curl bez
+      // --compressed, jiní integrátoři) zase rozbalovala – po dávkách
+      // s pauzami, 358 kB ceníku pak teklo 10–55 s místo 1 s. Bez hlavičky
+      // Worker posílá holé tělo a kompresi pro gzip/br klienty si udělá
+      // hrana sama. Content-Length patří k zabalenému tělu, takže taky pryč.
+      hlavickyPuvodu.delete("Content-Encoding");
+      hlavickyPuvodu.delete("Content-Length");
       odpoved = new Response(puvodni.body, {
         status: puvodni.status,
         statusText: puvodni.statusText,
@@ -188,9 +216,13 @@ export default {
     }
 
     const hlavicky = new Headers(odpoved.headers);
+    // Odpovědi uložené verzí 8 a starší ještě nesou Content-Encoding
+    // z původu – viz výše. Mazat i tady, ať je rychlé i to, co v cache už je.
+    hlavicky.delete("Content-Encoding");
+    hlavicky.delete("Content-Length");
     for (const [k, v] of Object.entries(CORS)) hlavicky.set(k, v);
     hlavicky.set("X-Jobi-Cache", zCache ? "HIT" : obnovit ? "REFRESH" : "MISS");
-    hlavicky.set("X-Jobi-Verze", "7");
+    hlavicky.set("X-Jobi-Verze", "9");
     hlavicky.set("X-Jobi-Zapis", potiz || (zCache ? "-" : "ok"));
 
     return new Response(request.method === "HEAD" ? null : odpoved.body, {

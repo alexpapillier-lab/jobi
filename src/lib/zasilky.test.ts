@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisloZasilky, druhaPobocka, htmlProtokolu, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
+import { cisloZasilky, druhaPobocka, stavZasilkyText, htmlProtokolu, krokyPresunu, mapZasilka, nepreveztePolozky, otevrenyKoncept, popisUmisteni, stitekUmisteni, umisteniZakazky, type Zasilka } from "./zasilky";
 
 const nazev = (id: string) => ({ b: "Brno", p: "Praha" }[id] ?? id);
 
@@ -17,6 +17,9 @@ describe("umístění zakázky", () => {
     expect(umisteniZakazky({ branchId: "b", locationBranchId: null, transitShipmentId: "z2" })).toEqual({ druh: "na_ceste", doBranchId: "b", shipmentId: "z2" });
     expect(stitekUmisteni({ druh: "jinde", branchId: "p" }, nazev)).toBe("Praha");
     expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "z" }, nazev)).toBe("→ Brno");
+    // Se známou pobočkou odeslání: odkud → kam.
+    expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "z" }, nazev, (z) => (z === "z" ? "p" : null))).toBe("Praha → Brno");
+    expect(stitekUmisteni({ druh: "na_ceste", doBranchId: "b", shipmentId: "jina" }, nazev, (z) => (z === "z" ? "p" : null))).toBe("→ Brno");
     expect(popisUmisteni({ druh: "na_ceste", doBranchId: "p", shipmentId: "z" }, nazev, "Brno")).toBe("Na cestě do pobočky Praha");
     expect(popisUmisteni({ druh: "doma" }, nazev, "Brno")).toBe("Na své pobočce (Brno)");
   });
@@ -94,7 +97,7 @@ describe("dniBezZmenyJinde", () => {
 describe("krokyPresunu", () => {
   const z = (prepis: Partial<Zasilka> & { polozkaPrevzata?: boolean }): Zasilka => ({
     id: "z", serviceId: "s", cislo: 1, fromBranchId: "b", toBranchId: "p", status: "sent", carrier: "", trackingNumber: "", note: "",
-    createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null,
+    createdBy: null, createdAt: "2026-09-10T10:00:00Z", sentBy: null, sentAt: "2026-09-10T11:00:00Z", receivedBy: null, receivedAt: null, cancelledAt: null,
     polozky: [{ id: "i", shipmentId: prepis.id ?? "z", ticketId: "t", addedAt: "2026-09-10T10:00:00Z", receivedAt: prepis.polozkaPrevzata ? "2026-09-11T08:00:00Z" : null, note: "" }],
     ...prepis,
   });
@@ -102,6 +105,12 @@ describe("krokyPresunu", () => {
 
   it("zakázka opravená doma žádné kroky nemá", () => {
     expect(krokyPresunu(t(), [], nazev, false)).toEqual({ predOpravou: [], poOprave: [] });
+  });
+
+  it("stornovaná zásilka se nepočítá – zakázka zůstala doma", () => {
+    expect(krokyPresunu(t(), [z({ status: "cancelled", cancelledAt: "2026-09-10T12:00:00Z" })], nazev, false)).toEqual({ predOpravou: [], poOprave: [] });
+    expect(nepreveztePolozky(z({ status: "cancelled" }))).toEqual([]);
+    expect(stavZasilkyText("cancelled")).toBe("Stornováno");
   });
 
   it("v konceptu: čeká na odeslání", () => {

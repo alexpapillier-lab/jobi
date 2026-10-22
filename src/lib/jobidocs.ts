@@ -11,6 +11,7 @@
 import type { DocumentData } from "./documentData";
 import { isWeb, otevriVProhlizeci } from "./platform";
 
+import { textChyby } from "../utils/errorNormalizer";
 const JOBIDOCS_API = "http://127.0.0.1:3847";
 
 /** URL pro stažení JobiDocs – stránka appjobi s sekcí Stáhnout (Jobi + JobiDocs zvlášť). */
@@ -169,7 +170,7 @@ export async function printDocument(docType: DocTypeForPrint, serviceId: string,
   try {
     return await toResult(await postJson("/v2/print", { doc_type: docType, service_id: serviceId, data }, 30000));
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 
@@ -178,7 +179,7 @@ export async function exportDocument(docType: DocTypeForPrint, serviceId: string
   try {
     return await toResult(await postJson("/v2/export", { doc_type: docType, service_id: serviceId, data, target_path: targetPath }, 60000));
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 
@@ -192,7 +193,7 @@ export async function renderPdf(docType: DocTypeForPrint, serviceId: string, dat
     }
     return { ok: true, data: await r.arrayBuffer() };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 
@@ -206,7 +207,7 @@ export async function renderHtml(docType: DocTypeForPrint, serviceId: string, da
     }
     return { ok: true, html: await r.text() };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 
@@ -218,7 +219,7 @@ export async function printViaJobiDocs(html: string, serviceId?: string): Promis
   try {
     return await toResult(await postJson("/v1/print", { html, service_id: serviceId }, 30000));
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }
 
@@ -226,6 +227,6 @@ export async function exportViaJobiDocs(html: string, targetPath: string): Promi
   try {
     return await toResult(await postJson("/v1/export", { html, target_path: targetPath }, 60000));
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: textChyby(e) };
   }
 }

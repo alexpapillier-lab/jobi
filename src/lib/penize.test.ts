@@ -188,7 +188,9 @@ describe("formát částky je všude stejný", () => {
       expect(korunami(n), `karta zakázky se rozešla na ${n}`).toBe(app);
       expect(castkaBezMenyServer(n), `SMS se rozešla na ${n}`).toBe(castkaBezMeny(n));
     }
-  });
+    // 3000 × Intl formátování: samotné trvá ~1 s, při plném běhu všech testů
+    // naráz přetahovalo výchozích 5 s.
+  }, 30_000);
 
   it("1 234,50 Kč má nedělitelnou mezeru a desetinnou čárku, ne tečku", () => {
     const s = formatCurrency(1234.5);

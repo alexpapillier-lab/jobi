@@ -82,25 +82,44 @@ serve(async (req) => {
     .maybeSingle();
   if (!clenstvi) return json({ error: "Nejsi členem tohohle servisu" }, 403);
 
-  let odpoved: Response;
-  try {
-    odpoved = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ucet}/browser-rendering/pdf`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        html,
-        // Dokument sám hlásí, že doměřil stránku a načetl obrázky i písma
-        // (fitScript v jobidocs/core nastaví data-fit="done"). Čekat jen
-        // na síť nestačí – fotky jsou data:, ty se nestahují.
-        waitForSelector: { selector: 'html[data-fit="done"]', timeout: 10000 },
-        gotoOptions: { waitUntil: "networkidle0", timeout: 20000 },
-        pdfOptions: { format: "A4", printBackground: true, preferCSSPageSize: true },
-      }),
-      signal: AbortSignal.timeout(40000),
-    });
-  } catch (e) {
-    return json({ error: `Převod na PDF se nezdařil: ${String(e).slice(0, 200)}` }, 502);
+  // Cloudflare Workers Free pustí na celý účet jen 1 požadavek za 10 s.
+  // Když tiskne víc lidí naráz, druhý dostane 429 – místo pádu do tiskového
+  // dialogu tady počkáme a zkusíme to znovu (nejvýš ~25 s čekání celkem).
+  const MAX_POKUSU = 4;
+  const telo2 = JSON.stringify({
+    html,
+    // Dokument sám hlásí, že doměřil stránku a načetl obrázky i písma
+    // (fitScript v jobidocs/core nastaví data-fit="done"). Fotky, písmo i
+    // logo jsou data:, na síť se nečeká – „networkidle0“ přidával ~0,5 s
+    // ticha navíc ke každému PDF (a platí se za čas prohlížeče).
+    waitForSelector: { selector: 'html[data-fit="done"]', timeout: 10000 },
+    gotoOptions: { waitUntil: "load", timeout: 20000 },
+    pdfOptions: { format: "a4", printBackground: true, preferCSSPageSize: true },
+  });
+  let odpoved: Response | null = null;
+  const zacatek = Date.now();
+  for (let pokus = 1; pokus <= MAX_POKUSU; pokus++) {
+    try {
+      odpoved = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ucet}/browser-rendering/pdf`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: telo2,
+        signal: AbortSignal.timeout(40000),
+      });
+    } catch (e) {
+      return json({ error: `Převod na PDF se nezdařil: ${String(e).slice(0, 200)}` }, 502);
+    }
+    if (odpoved.status !== 429 || pokus === MAX_POKUSU) break;
+    const zaSekund = Number(odpoved.headers.get("retry-after"));
+    const cekej = Math.min(10_000, Number.isFinite(zaSekund) && zaSekund > 0 ? zaSekund * 1000 : 4000);
+    if (Date.now() - zacatek + cekej > 25_000) break;
+    await odpoved.body?.cancel().catch(() => {});
+    console.log(`[document-pdf] limit Cloudflare (429), pokus ${pokus}, čekám ${cekej} ms`);
+    await new Promise((r) => setTimeout(r, cekej));
   }
+  if (!odpoved) return json({ error: "Převod na PDF se nezdařil" }, 502);
+  const msProhlizece = odpoved.headers.get("x-browser-ms-used");
+  if (msProhlizece) console.log(`[document-pdf] čas prohlížeče ${msProhlizece} ms, celkem ${Date.now() - zacatek} ms`);
 
   const typ = odpoved.headers.get("content-type") ?? "";
   if (!odpoved.ok || !typ.includes("application/pdf")) {
@@ -112,6 +131,9 @@ serve(async (req) => {
       if (j?.errors?.[0]?.message) zprava = j.errors[0].message;
     } catch { /* není JSON */ }
     console.error("[document-pdf] Cloudflare", odpoved.status, zprava);
+    if (odpoved.status === 429) {
+      return json({ error: "Teď tiskne víc lidí najednou. Zkuste to za chvíli znovu." }, 503);
+    }
     return json({ error: `Převod na PDF se nezdařil (${odpoved.status}): ${zprava}` }, 502);
   }
 

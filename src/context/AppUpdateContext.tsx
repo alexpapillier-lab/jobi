@@ -12,6 +12,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "ready" | "error";
 
 export type AppUpdateState = {
@@ -93,7 +94,7 @@ export async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugi
       return await check({ timeout: 15000 });
     } catch (err) {
       posledni = err;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = textChyby(err);
       if (!jeSitovaChyba(msg) || pokus === pauzy.length) throw err;
       await new Promise((r) => setTimeout(r, pauzy[pokus]));
     }
@@ -102,7 +103,7 @@ export async function zkontrolujSOpakovanim(): Promise<import("@tauri-apps/plugi
 }
 
 export function humanizeUpdateError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = textChyby(err);
   const low = msg.toLowerCase();
   if (jeSitovaChyba(msg)) {
     return "Nepodařilo se spojit se serverem aktualizací. Zkusí se to znovu za minutu; jinak zkontrolujte připojení.";
@@ -248,7 +249,7 @@ export function AppUpdateProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setState((s) => ({ ...s, phase: s.phase === "ready" ? "ready" : "error", checking: false, error: humanizeUpdateError(err), lastCheckedAt: Date.now() }));
       // Přechodná síťová chyba: za minutu znovu, ne až za deset (interval) nebo po restartu.
-      if (jeSitovaChyba(err instanceof Error ? err.message : String(err))) {
+      if (jeSitovaChyba(textChyby(err))) {
         opakovaniRef.current = setTimeout(() => {
           opakovaniRef.current = null;
           void checkForUpdate();

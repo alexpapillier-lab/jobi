@@ -1,7 +1,7 @@
 /**
  * Rozepsaná nová zakázka (koncept): stav okna a formuláře, uložení konceptu
  * do localStorage a odznak v navigaci, předvyplnění (zákazník, rezervace
- * z webu), našeptávač a dohledání zákazníka, opravy vybrané při příjmu,
+ * a objednávka z webu), našeptávač a dohledání zákazníka, opravy vybrané při příjmu,
  * ověření polí, zavření / zahození a fotky z telefonu ke konceptu.
  *
  * Vyneseno z Orders.tsx beze změny obsahu včetně závislostí. Založení
@@ -17,6 +17,7 @@ import type { CustomerMatch } from "../../../components/orders";
 import type { DeviceRepair, DevicesData } from "../../../lib/catalogStorage";
 import { poZmeneOprav, soucetOprav } from "../../../lib/cenaPriPrijmu";
 import { chybiPodkladZaruky } from "../../../lib/zarizeniHistorie";
+import { nazevModelu, objednavkaNaKoncept } from "../../../lib/objednavky";
 import {
   NEW_ORDER_MORE_OPEN_KEY,
   NEW_ORDER_DEVICE_MORE_OPEN_KEY,
@@ -140,6 +141,26 @@ export function useNovaZakazkaKoncept({
     // Pojistka: rezervace patří ke svému servisu, i kdyby záměr přežil přepnutí.
     const r = newOrderPrefill.rezervace && newOrderPrefill.rezervace.service_id === activeServiceId ? newOrderPrefill.rezervace : undefined;
     if (r && isDraftDirty(newDraft) && !window.confirm("Máte rozepsanou novou zakázku. Nahradit ji údaji z rezervace?")) {
+      onNewOrderPrefillConsumed();
+      return;
+    }
+    // Objednávka z webu (API, formulář): stejná cesta, mapování v lib/objednavky.
+    const o = newOrderPrefill.objednavka && newOrderPrefill.objednavka.service_id === activeServiceId ? newOrderPrefill.objednavka : undefined;
+    if (o) {
+      if (isDraftDirty(newDraft) && !window.confirm(`Máte rozepsanou novou zakázku. Nahradit ji údaji z objednávky ${o.externi_cislo}?`)) {
+        onNewOrderPrefillConsumed();
+        return;
+      }
+      const vychozi = defaultDraft().devices[0];
+      const cen = o.repair_id ? devicesData.repairs.find((x) => x.id === o.repair_id) : undefined;
+      setNewDraft((prev) => objednavkaNaKoncept(o, {
+        handoffDefault: vychozi.handoffMethod,
+        handbackDefault: vychozi.handbackMethod,
+        modelNazev: nazevModelu(devicesData, o.model_id),
+        oprava: cen ? { id: cen.id, name: cen.name, price: cen.price, costs: cen.costs, estimatedTime: cen.estimatedTime, productIds: cen.productIds } : null,
+        pridalUserId: session?.user?.id ?? undefined,
+        branchIdDefault: prev.branchId,
+      }));
       onNewOrderPrefillConsumed();
       return;
     }

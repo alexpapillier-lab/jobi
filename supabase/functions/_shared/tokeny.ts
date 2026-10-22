@@ -14,6 +14,9 @@ export const ROZSAHY = [
   "catalog:write",
   "inventory:read",
   "inventory:write",
+  // Příjem objednávek oprav z webu (POST/GET /v1/orders). Patří k modulu
+  // veřejného API ceníku – objednávka vybírá model a opravu z ceníku.
+  "orders",
 ] as const;
 
 export type Rozsah = (typeof ROZSAHY)[number];
@@ -56,6 +59,7 @@ export function nahled(token: string): string {
 
 /** Modul, který musí mít servis zapnutý, aby rozsah něco znamenal. */
 export function modulProRozsah(r: Rozsah): ModulApi {
+  if (r === "orders") return "api_catalog";
   return r.startsWith("catalog") ? "api_catalog" : "api_inventory";
 }
 

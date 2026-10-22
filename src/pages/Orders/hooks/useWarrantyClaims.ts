@@ -274,7 +274,13 @@ export function useWarrantyClaims(activeServiceId: string | null) {
 
   type ClaimUpdate = Database["public"]["Tables"]["warranty_claims"]["Update"];
   const updateClaim = useCallback(
-    async (claimId: string, payload: ClaimUpdate, popis?: string): Promise<WarrantyClaimRow | null> => {
+    async (
+      claimId: string,
+      payload: ClaimUpdate,
+      popis?: string,
+      /** tiche: bez toastu „Reklamace upravena“ (samočinné ukládání); klic: vlastní místo ve frontě, aby se zápisy různých částí detailu nepřepsaly. */
+      volby: { tiche?: boolean; klic?: string } = {},
+    ): Promise<WarrantyClaimRow | null> => {
       if (!supabase) {
         showToast("Chybí připojení.", "error");
         return null;
@@ -294,7 +300,7 @@ export function useWarrantyClaims(activeServiceId: string | null) {
          */
         if (!jeTrvalaChyba(error)) {
           ulozNaPozdeji({
-            klic: `warranty_claims:${claimId}:detail`,
+            klic: `warranty_claims:${claimId}:${volby.klic ?? "detail"}`,
             tabulka: "warranty_claims",
             id: claimId,
             data: payload as Record<string, unknown>,
@@ -309,7 +315,7 @@ export function useWarrantyClaims(activeServiceId: string | null) {
         showToast(`Chyba při úpravě reklamace: ${error.message}`, "error");
         return null;
       }
-      showToast("Reklamace upravena", "success");
+      if (!volby.tiche) showToast("Reklamace upravena", "success");
       return data as WarrantyClaimRow;
     },
     [activeServiceId]

@@ -11,6 +11,7 @@ import { supabase } from "./supabaseClient";
 import { loadServiceConfig, mergeServiceConfig } from "./serviceSettingsSync";
 import { zkratkaZConfigu } from "./servisy";
 
+import { textChyby } from "../utils/errorNormalizer";
 export type DemoStopa = {
   brandIds: string[];
   categoryIds: string[];
@@ -219,7 +220,7 @@ export async function vytvoritDemoData(serviceId: string): Promise<{ error?: str
   } catch (e) {
     // Co se stihlo vytvořit, ať nezůstane viset bez záznamu.
     await mergeServiceConfig(serviceId, { demo_data: stopa });
-    return { error: e instanceof Error ? e.message : String(e) };
+    return { error: textChyby(e) };
   }
 }
 
@@ -248,6 +249,6 @@ export async function smazatDemoData(serviceId: string): Promise<{ error?: strin
     await mergeServiceConfig(serviceId, { demo_data: null });
     return {};
   } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
+    return { error: textChyby(e) };
   }
 }

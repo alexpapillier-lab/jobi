@@ -26,6 +26,7 @@ import type { NahradniZarizeni, ZapujckaData } from "../../lib/zapujcka";
 import type { KontrolaPoOpraveData, SablonaKontroly } from "../../lib/kontrolniSeznamy";
 import type { NovaProvedenaOprava, TicketEx } from "./typy";
 import { printZapujcku } from "./tiskZakazky";
+import { ZObjednavky } from "./PrichoziObjednavky";
 import { card } from "./styly";
 
 type Props = {
@@ -183,6 +184,8 @@ export function DetailDalsiKarty({
                   <LinkIcon size={14} /> Ext: {detailedTicket.externalId}
                 </div>
               )}
+              {/* Objednávka z webu a elektronické odsouhlasení zakázkového listu. */}
+              <ZObjednavky ticketId={detailedTicket.id} />
             </div>
           </div>
         </div>

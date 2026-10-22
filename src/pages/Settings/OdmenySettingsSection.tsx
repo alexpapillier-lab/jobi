@@ -4,12 +4,21 @@ import { nactiServiceConfig, mergeServiceConfig, subscribeServiceConfig } from "
 import { useConfigNacteno } from "./useConfigNacteno";
 import { showToast } from "../../components/Toast";
 import { formatCurrency } from "../../lib/invoiceMath";
+import { supabase } from "../../lib/supabaseClient";
+import { useClenoveServisu } from "../../hooks/useClenoveServisu";
+import { useStatuses } from "../../state/StatusesStore";
 import {
   MAX_PRAVIDEL_ODMEN,
+  VOLBY_KDY_ODMENY,
+  VYCHOZI_NASTAVENI_ODMEN,
   castkaOdmeny,
   normalizujOdmeny,
   noveIdPravidla,
+  stavyProOdmeny,
+  vychoziStavOdmen,
+  type KdyOdmeny,
   type KomuOdmena,
+  type RezimOdmen,
   type NastaveniOdmen,
   type PravidloOdmeny,
   type TypOdmeny,
@@ -35,11 +44,16 @@ const pole: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, borde
  *
  * Pravidlo = text v názvu opravy + částka (Kč nebo % z ceny) + komu
  * (kdo opravu na zakázku přidal, nebo přidělený technik). Ukládá se do
- * service_settings.config.odmeny; počítá databáze (odmeny_prehled) ze
- * zakázek vydaných v měsíci, výsledek je na stránce Odměny.
+ * service_settings.config.odmeny; počítá databáze (odmeny_prehled),
+ * výsledek je na stránce Odměny. Kdy se odměna připočítá (po vydání, po
+ * přidání opravy, nebo po dosažení stavu) určuje `odmeny.kdy` – blok
+ * „Kdy se odměna připočítá“ níž. Sekce je jen pro majitele a správce
+ * (Settings.tsx, isAdmin), stejně jako pravidla.
  */
 export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { activeServiceId: string | null; onOtevritOdmeny?: () => void }) {
-  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>({ pravidla: [], verejny_zebricek: true, zobrazit_v_navigaci: false });
+  const [nastaveni, setNastaveni] = useState<NastaveniOdmen>(VYCHOZI_NASTAVENI_ODMEN);
+  const { statuses } = useStatuses();
+  const stavyKVyberu = stavyProOdmeny(statuses);
   const { nacteno, oznacNacteno } = useConfigNacteno(activeServiceId);
   const [chybaNacteni, setChybaNacteni] = useState(false);
   const hint = useSavedHint();
@@ -103,6 +117,19 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
     void ulozit({ ...nastaveni, pravidla: next });
   };
 
+  const nastavKdy = (kdy: KdyOdmeny) => void ulozit({ ...nastaveni, kdy });
+  const zvolRezim = (rezim: RezimOdmen) => {
+    if (rezim === "stav") {
+      const stav = nastaveni.kdy.stav ?? vychoziStavOdmen(statuses);
+      if (!stav) { showToast("Servis nemá žádný stav, který by šel vybrat.", "error"); return; }
+      nastavKdy({ rezim: "stav", stav });
+      return;
+    }
+    nastavKdy({ rezim });
+  };
+  // Uložený stav, který mezitím někdo smazal nebo přejmenoval na storno – databáze pak počítá po vydání.
+  const stavNeplatny = nastaveni.kdy.rezim === "stav" && !!nastaveni.kdy.stav && statuses.length > 0 && !stavyKVyberu.some((s) => s.key === nastaveni.kdy.stav);
+
   const zkouskaVysledek = (() => {
     const t = zkouska.trim();
     if (!t) return null;
@@ -114,7 +141,7 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
     <Card>
       <CardHeader
         title="Odměny za opravy"
-        description="Prémie pro tým za opravy nabídnuté zákazníkovi navíc: kdo mu prodá servisní čištění, dostane třeba 100 Kč. Když zákazník s čištěním rovnou přijde, odměna není. U opravy, na kterou sedí pravidlo, Jobi předvyplní příznak „Nabídnuto navíc“ (není v požadované opravě z příjmu) a kdo ji přidává, může ho jedním klikem otočit. Odměna vzniká vydáním zakázky (storno nic nedostane); přehled i zaměstnanec měsíce jsou na stránce Odměny. Starší zakázky bez příznaku se nepočítají."
+        description="Prémie pro tým za opravy nabídnuté zákazníkovi navíc: kdo mu prodá servisní čištění, dostane třeba 100 Kč. Když zákazník s čištěním rovnou přijde, odměna není. U opravy, na kterou sedí pravidlo, se v detailu zakázky ukáže přepínač „Nabídnuto navíc?“ – výchozí je nenabídnuto a kdo opravu zákazníkovi prodal, ho jedním klikem zapne. Kdy odměna vznikne (po vydání, po přidání opravy, nebo ve vybraném stavu), nastavíte níž; storno nic nedostane. Přehled i zaměstnanec měsíce jsou na stránce Odměny. Starší zakázky bez příznaku se nepočítají."
         right={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             {hint.node}
@@ -214,6 +241,39 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
         {zkouskaVysledek && <span style={{ fontSize: 13, color: "var(--muted)" }}>{zkouskaVysledek}</span>}
       </div>
 
+      <div data-tour="settings-odmeny-kdy" role="radiogroup" aria-label="Kdy se odměna připočítá" style={{ marginBottom: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+        <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Kdy se odměna připočítá</div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {VOLBY_KDY_ODMENY.map((v) => (
+            <label key={v.rezim} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer" }}>
+              <input type="radio" name="odmeny-kdy" checked={nastaveni.kdy.rezim === v.rezim} onChange={() => zvolRezim(v.rezim)} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />
+              <span>
+                <b>{v.nazev}</b>
+                {v.rezim === "vydani" && <span style={{ color: "var(--muted)" }}> (výchozí)</span>}
+                <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>{v.popis}</div>
+                {v.rezim === "stav" && nastaveni.kdy.rezim === "stav" && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                    <select
+                      aria-label="Stav, ve kterém se odměna připočítá"
+                      value={nastaveni.kdy.stav ?? ""}
+                      onChange={(e) => { if (e.target.value) nastavKdy({ rezim: "stav", stav: e.target.value }); }}
+                      disabled={!nacteno || chybaNacteni}
+                      style={pole}
+                    >
+                      {stavNeplatny && <option value={nastaveni.kdy.stav}>{nastaveni.kdy.stav} (stav už neexistuje)</option>}
+                      {stavyKVyberu.map((s) => (
+                        <option key={s.key} value={s.key}>{s.label}{s.isFinal ? " (koncový)" : ""}</option>
+                      ))}
+                    </select>
+                    {stavNeplatny && <span style={{ fontSize: 12, color: "var(--muted)" }}>Vybraný stav v servisu není – dokud nevyberete jiný, počítá se po vydání.</span>}
+                  </div>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
       <label data-tour="odmeny-v-navigaci" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>
         <input type="checkbox" checked={nastaveni.zobrazit_v_navigaci} onChange={(e) => void ulozit({ ...nastaveni, zobrazit_v_navigaci: e.target.checked })} disabled={!nacteno || chybaNacteni} style={{ marginTop: 3 }} />
         <span>
@@ -232,7 +292,78 @@ export function OdmenySettingsSection({ activeServiceId, onOtevritOdmeny }: { ac
 
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
         Komu se odměna připíše: u „kdo opravu přidal“ ten, kdo opravu na zakázku zapsal (u starších zakázek podle historie, jinak kdo zakázku založil); u „přidělený technik“ technik z karty Technik. Na stránce Odměny jde u každého řádku příjemce změnit nebo řádek vyřadit. Sedí‑li víc pravidel, platí první v pořadí.
+        {" "}Podle stejných pravidel si zaměstnanec může na stránce Odměny přidat odměnu i ručně (jedním klikem na tlačítko s názvem pravidla, nebo s poznámkou a číslem zakázky přes Přidat s poznámkou) – do součtů se započítá, až ji majitel nebo správce schválí; vaše ruční odměny platí hned.
       </div>
+
+      <AutoSchvalovani activeServiceId={activeServiceId} />
     </Card>
+  );
+}
+
+/**
+ * Automatické schvalování ručních odměn (tabulka odmeny_auto_schvaleni,
+ * migrace 20261009100000). Zapnutému členovi se jeho ruční odměny na
+ * stránce Odměny uloží rovnou jako schválené. Zapisovat smí jen majitel
+ * a správce (RLS) – proto samostatná tabulka, ne klíč v configu servisu.
+ */
+function AutoSchvalovani({ activeServiceId }: { activeServiceId: string | null }) {
+  const { clenove } = useClenoveServisu(activeServiceId, !!activeServiceId);
+  const [zapnuti, setZapnuti] = useState<Set<string>>(new Set());
+  const [nacteno, setNacteno] = useState(false);
+  const [chyba, setChyba] = useState<string | null>(null);
+  const [ukladam, setUkladam] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeServiceId || !supabase) return;
+    let zruseno = false;
+    // deno-lint-ignore no-explicit-any
+    void (supabase as any).from("odmeny_auto_schvaleni").select("user_id").eq("service_id", activeServiceId)
+      .then(({ data, error }: { data: { user_id: string }[] | null; error: { message: string } | null }) => {
+        if (zruseno) return;
+        if (error) { setChyba(error.message); setNacteno(false); return; }
+        setChyba(null);
+        setZapnuti(new Set((data ?? []).map((r) => String(r.user_id))));
+        setNacteno(true);
+      });
+    return () => { zruseno = true; };
+  }, [activeServiceId]);
+
+  const prepni = async (userId: string, zapnout: boolean) => {
+    if (!activeServiceId || !supabase) return;
+    setUkladam(userId);
+    // deno-lint-ignore no-explicit-any
+    const tab = (supabase as any).from("odmeny_auto_schvaleni");
+    const { error } = zapnout
+      ? await tab.upsert({ service_id: activeServiceId, user_id: userId }, { onConflict: "service_id,user_id", ignoreDuplicates: true })
+      : await tab.delete().eq("service_id", activeServiceId).eq("user_id", userId);
+    setUkladam(null);
+    if (error) { showToast(`Uložení selhalo: ${error.message}`, "error"); return; }
+    setZapnuti((s) => {
+      const n = new Set(s);
+      if (zapnout) n.add(userId); else n.delete(userId);
+      return n;
+    });
+  };
+
+  // Majitel a správce mají své ruční odměny schválené vždy – přepínač u nich nedává smysl.
+  const clenoveBezSpravcu = clenove.filter((c) => c.role !== "owner" && c.role !== "admin");
+
+  return (
+    <div data-tour="odmeny-auto-schvaleni" style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+      <div style={{ fontWeight: 800, fontSize: 13 }}>Automatické schvalování ručních odměn</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", margin: "2px 0 8px", lineHeight: 1.5 }}>
+        Zapnutému členovi se ruční odměna uloží rovnou jako schválená (v přehledu se štítkem „schváleno automaticky“). Ostatním čeká, dokud ji neschválíte na stránce Odměny.
+      </div>
+      {chyba && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nepodařilo se načíst: {chyba}</div>}
+      {!chyba && clenoveBezSpravcu.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>V týmu zatím nejsou členové bez role správce.</div>}
+      <div style={{ display: "grid", gap: 6 }}>
+        {clenoveBezSpravcu.map((c) => (
+          <label key={c.userId} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={zapnuti.has(c.userId)} disabled={!nacteno || ukladam === c.userId} onChange={(e) => void prepni(c.userId, e.target.checked)} />
+            <span>{c.jmeno}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }

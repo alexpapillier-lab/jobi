@@ -3,6 +3,7 @@ import { supabase, supabaseUrl, supabaseAnonKey, supabaseFetch } from "../../lib
 import { useEntitlements } from "../../hooks/useEntitlements";
 import { showToast } from "../../components/Toast";
 import { CheckIcon } from "../../components/icons";
+import { ApiObjednavkyNastaveni } from "./ApiObjednavkyNastaveni";
 
 type Rezim = "hidden" | "boolean" | "exact";
 
@@ -23,6 +24,7 @@ type TokenRadek = {
 const POPIS_ROZSAHU: Record<string, string> = {
   "catalog:write": "Měnit ceny a časy oprav",
   "inventory:write": "Měnit počty kusů a ceny produktů",
+  orders: "Přijímat objednávky oprav z webu",
 };
 
 async function volejSpravu(telo: Record<string, unknown>) {
@@ -569,7 +571,7 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
           }}
         />
         <div style={{ display: "grid", gap: 6 }}>
-          {(maCenik ? ["catalog:write"] : []).concat(maSklad ? ["inventory:write"] : []).map((r) => (
+          {(maCenik ? ["catalog:write"] : []).concat(maSklad ? ["inventory:write"] : []).concat(maCenik ? ["orders"] : []).map((r) => (
             <label key={r} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
               <input
                 type="checkbox"
@@ -632,6 +634,8 @@ export function ApiNastaveni({ activeServiceId }: { activeServiceId: string | nu
         platí okamžitě a nedá se vzít zpět – odvolané tokeny zůstávají v seznamu,
         ať je dohledatelné, co se kdy dělo.
       </p>
+
+      {maCenik && <ApiObjednavkyNastaveni activeServiceId={activeServiceId} tokeny={tokeny} slug={slug} />}
     </div>
   );
 }

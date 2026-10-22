@@ -17,6 +17,7 @@ import {
   pocetZakazniku,
 } from "../../lib/anonymizace";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Nastavení → Firma → Ochrana údajů.
  *
@@ -356,7 +357,7 @@ function NahledDialog({
     try {
       await onSpustit(slovo);
     } catch (e) {
-      setChyba(e instanceof Error ? e.message : String(e));
+      setChyba(textChyby(e));
       setBezi(false);
     }
   };

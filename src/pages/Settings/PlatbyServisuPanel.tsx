@@ -6,6 +6,7 @@ import { formatCurrency } from "../../lib/invoiceMath";
 import { POPIS_STAVU, kPripomenuti, mesicniPrijem, obdobiZData, prevedPlatbu, stavPlatby, type PlatbaServisu, type StavPlatby } from "../../lib/platbyServisu";
 import { nazevMesice, posunKlicMesice } from "../../lib/odmeny";
 
+import { textChyby } from "../../utils/errorNormalizer";
 /**
  * Owner → Platby servisů: kolik který servis platí měsíčně, kdy, a jestli
  * za vybraný měsíc zaplatil. Data z RPC platby_prehled, zápis přímo do
@@ -86,7 +87,7 @@ export function PlatbyServisuPanel() {
       if (d?.error) throw new Error(d.error);
       showToast(`Zkušební připomínka odešla na ${d?.prijemce ?? "váš e-mail"}.`, "success");
     } catch (e) {
-      showToast(`Odeslání selhalo: ${e instanceof Error ? e.message : String(e)}`, "error");
+      showToast(`Odeslání selhalo: ${textChyby(e)}`, "error");
     } finally {
       setPosilam(false);
     }

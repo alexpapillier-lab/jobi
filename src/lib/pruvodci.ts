@@ -74,12 +74,13 @@ const ODMENY: Pruvodce = {
   novinkaOd: "2026-09-26",
   dostupny: (k) => !!k.stranky.odmeny,
   kroky: [
-    { page: "odmeny", title: "K čemu to je", description: "Prémie za opravy, které tým zákazníkovi nabídl navíc – třeba servisní čištění ke svěřené opravě. Počítá se ze zakázek vydaných v měsíci; storno nic nedostane.", selector: sel("sidebar-nav-odmeny"), icon: "team" },
+    { page: "odmeny", title: "K čemu to je", description: "Prémie za opravy, které tým zákazníkovi nabídl navíc – třeba servisní čištění ke svěřené opravě. Do měsíce se počítají podle nastavení (výchozí je vydání zakázky); storno nic nedostane.", selector: sel("sidebar-nav-odmeny"), icon: "team" },
     { page: "odmeny", title: "Vyberte měsíc", description: "Šipkami listujete po měsících, Tento měsíc vás vrátí na aktuální.", selector: sel("odmeny-mesic"), icon: "team" },
     { page: "odmeny", title: "Podívejte se na souhrn", description: "Zaměstnanec měsíce, kolik odměn je za měsíc celkem a kolik máte vy.", selector: sel("odmeny-dlazdice"), icon: "team" },
+    { page: "odmeny", title: "Přidejte odměnu jedním klikem", description: "Odměnu, která nevznikla z opravy na zakázce, přidáte kliknutím na tlačítko s názvem pravidla – bez dalšího vyplňování, do měsíce na stránce. Překlik vezmete zpět v hlášce. Poznámku nebo číslo zakázky přidáte přes Přidat s poznámkou. Odměna od zaměstnance se započítá, až ji majitel nebo správce schválí.", selector: sel("odmeny-rychle"), icon: "statistics" },
     { page: "odmeny", title: "Klikněte na člověka v žebříčku", description: "Seznam oprav dole se zúží jen na jeho odměny. Majitel tu zaškrtnutím Vyplaceno zapíše, že odměnu předal.", selector: sel("odmeny-zebricek"), icon: "team" },
     { page: "odmeny", title: "Zkontrolujte jednotlivé opravy", description: "Každý řádek je oprava s odměnou. Majitel může změnit, komu se připíše, přepnout Nabídnuto navíc / Nenabídnuto nebo řádek vyřadit.", selector: sel("odmeny-radky"), icon: "team" },
-    { page: "odmeny", title: "Hotovo", description: "Odměna vzniká jen u opravy s příznakem Nabídnuto navíc – Jobi ho předvyplní podle pravidla a v detailu zakázky ho přepnete jedním klikem. Pravidla nastaví majitel tlačítkem Pravidla.", selector: sel("odmeny-filtr"), icon: "team" },
+    { page: "odmeny", title: "Hotovo", description: "Odměna vzniká jen u opravy s příznakem Nabídnuto navíc – nová oprava ho nemá, v detailu zakázky ho zapnete jedním klikem. Do odměn se pak počítá v měsíci, kdy se zakázka vydá. Pravidla nastaví majitel tlačítkem Pravidla.", selector: sel("odmeny-filtr"), icon: "team" },
   ],
 };
 
@@ -98,7 +99,7 @@ export const PRUVODCI: Pruvodce[] = [
     page: "dnes",
     novinkaOd: "2026-09-27",
     kroky: [
-      { page: "dnes", title: "K čemu to je", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce; kliknutím na řádek otevřete detail zakázky a po zavření jste zpátky tady.", selector: sel("sidebar-nav-dnes"), icon: "orders" },
+      { page: "dnes", title: "K čemu to je", description: "Co je potřeba dnes vyřešit, bez hledání a filtrů. Každá karta má počet v hlavičce; kliknutím na řádek otevřete detail zakázky a po zavření jste zpátky tady.", selector: sel("page-dnes"), icon: "orders" },
       { page: "dnes", title: "Vyberte Jen moje, nebo Celý tým", description: "Jen moje zúží všechny karty na zakázky přidělené vám; Celý tým ukáže všechno i se jménem technika. Když servis techniky nepřiděluje, přepínač tu není.", selector: sel("dnes-rozsah"), icon: "team" },
       { page: "dnes", title: "Začněte zakázkami po termínu", description: "Podle pole Předpokládaný termín dokončení; nejdéle po termínu je nahoře. Klikněte na zakázku a posuňte termín, nebo ji dodělejte.", selector: sel("dnes-po-terminu"), icon: "orders" },
       { page: "dnes", title: "Vyřiďte rezervace na dnes", description: "Zákazníci objednaní přes formulář na webu. Kliknutím rovnou založíte zakázku s údaji z rezervace.", selector: sel("dnes-rezervace"), icon: "customers" },
@@ -164,7 +165,7 @@ export const PRUVODCI: Pruvodce[] = [
     kroky: [
       { page: "orders", title: "K čemu to je", description: "V detailu reklamace zapisujete diagnostiku a zákroky, přepínáte stav a tisknete protokoly. Otevřete ji ze skupiny Reklamace v seznamu.", selector: sel("orders-groups"), icon: "reklamace" },
       { page: "orders", title: "Přepněte stav", description: "Klikněte na stav vedle čísla reklamace a vyberte nový. Koncový stav reklamaci uzavře.", selector: sel("reklamace-stav"), icon: "reklamace" },
-      { page: "orders", title: "Vytiskněte protokol", description: "Tisk → Přijetí reklamace vytiskne nebo uloží protokol o přijetí reklamace pro zákazníka.", selector: sel("reklamace-tisk"), icon: "doc" },
+      { page: "orders", title: "Vytiskněte protokol", description: "Tisk → Přijetí reklamace vytiskne protokol o přijetí pro zákazníka, Výdejka reklamace pak při vrácení zařízení doklad s provedenými zákroky a cenou. Zákroky se ukládají samy.", selector: sel("reklamace-tisk"), icon: "doc" },
       { page: "orders", title: "Není to reklamace", description: "Když se ukáže, že závadu záruka nekryje, klikněte na Není to reklamace: vznikne běžná zakázka (Přijato) se zákazníkem, zařízením, popisem, fotkami a diagnostikou a reklamace se uzavře stavem Převedeno na zakázku. Jde to jen jednou a jen u neuzavřené reklamace.", selector: sel("reklamace-prevest"), icon: "orders" },
     ],
   },
@@ -562,10 +563,29 @@ export const PRUVODCI: Pruvodce[] = [
     settingsSubsection: "orders_tisk_dokumentu",
     kroky: [
       { ...ns("documents", "orders_tisk_dokumentu"), title: "K čemu to je", description: "Zakázkový list, záruční list a protokoly se tisknou jedním kliknutím. Tady určíte, kdy se tisk nabídne sám; vzhled dokumentů je v JobiDocs.", selector: sel("settings-sub-orders_tisk_dokumentu"), icon: "jobidocs" },
-      { ...ns("documents", "orders_tisk_dokumentu"), title: "Otevřete JobiDocs", description: "Na desktopu klikněte na tlačítko JobiDocs – upravíte v něm rozvržení, logo, razítko a vlastní texty. Tečka vedle ukazuje, jestli je připojené; na webu se tiskne z prohlížeče.", selector: sel("settings-tisk-jobidocs"), icon: "jobidocs" },
+      { ...ns("documents", "orders_tisk_dokumentu"), title: "Otevřete JobiDocs", description: "Na desktopu klikněte na tlačítko JobiDocs – upravíte v něm rozvržení, logo, razítko a vlastní texty. Tečka vedle ukazuje, jestli je připojené. Na webu se tiskne z prohlížeče a šablony upravíte v části Šablony dokumentů.", selector: sel("settings-tisk-jobidocs"), icon: "jobidocs" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Zapněte automatický tisk", description: "Zaškrtněte Tisknout při vytvoření zakázky, nebo vyberte stav, při jehož přepnutí se dialog tisku otevře sám. Zvlášť pro zakázkový a záruční list; ukládá se hned.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Tisk u reklamací", description: "Protokol o přijetí reklamace se může tisknout při jejím vytvoření nebo přepnutí do stavu, protokol o vydání při přepnutí do stavu, který vyberete.", selector: sel("settings-tisk-reklamace"), icon: "doc" },
       { ...ns("documents", "orders_tisk_dokumentu"), title: "Hotovo", description: "Při dalším příjmu nebo přepnutí stavu se tisk nabídne sám. Ručně tisknete v detailu zakázky tlačítkem Tisk.", selector: sel("settings-tisk-automaticky"), icon: "jobidocs" },
+    ],
+  },
+  {
+    id: "nastaveni-sablony",
+    nazev: "Šablony dokumentů",
+    popis: "Zakázkový a záruční list, protokoly, faktura a smlouva přímo v prohlížeči: texty, bloky, logo, razítko a barvy.",
+    page: "settings",
+    settingsSubsection: "documents_sablony",
+    novinkaOd: "2026-10-12",
+    // Jen webová verze – na desktopu jsou šablony v JobiDocs.
+    dostupny: (k) => k.web,
+    kroky: [
+      { ...ns("documents", "documents_sablony"), title: "K čemu to je", description: "Vzhled všech dokumentů servisu bez instalace JobiDocs. Je to tentýž editor a ukládá do stejného místa: co změníte tady, platí i pro tisk z JobiDocs na počítači a naopak.", selector: sel("settings-sub-documents_sablony"), icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Klikněte na Otevřít editor šablon", description: "Editor se otevře přes celé okno, potřebuje vedle sebe osnovu, dokument a vlastnosti. Na telefonu se neotevře – šablony upravujte na počítači nebo tabletu.", selector: sel("settings-sablony-otevrit"), icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Vyberte dokument", description: "Záložky nahoře přepínají zakázkový list, záruční list, protokoly, fakturu a smlouvu o zápůjčce. Tečka u názvu znamená, že šablona je upravená.", selector: sel("sablony-typy"), klik: ["settings-sablony-otevrit"], icon: "doc" },
+      { ...ns("documents", "documents_sablony"), title: "Upravujte přímo v dokumentu", description: "Klikem vyberete blok, dalším klikem do něj píšete. Za ⋮⋮ blok přetáhnete jinam, „+“ mezi bloky vloží nový, vlastnosti vybraného prvku jsou vpravo. Náhled ukazuje ukázkovou nebo skutečnou zakázku.", selector: sel("sablony-nahled"), klik: ["settings-sablony-otevrit"], icon: "doc" },
+      { ...ns("documents", "documents_sablony"), title: "Klikněte na Uložit", description: "Uloží šablony pro celý servis (⌘/Ctrl+S). Když je mezitím uložil někdo jiný – na webu nebo v JobiDocs – zeptá se, jestli načíst jeho verzi, nebo ji přepsat.", selector: sel("sablony-ulozit"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Logo, razítko a barvy na záložce Značka", description: "Nahrajte logo a razítko z počítače (velký obrázek se sám zmenší) a vyberte vzhled, barvu a písmo – platí pro všechny dokumenty. Ukládá se stejným tlačítkem Uložit.", selector: sel("sablony-zalozka-znacka"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
+      { ...ns("documents", "documents_sablony"), title: "Hotovo", description: "Zkušební tisk otevře tiskový dialog s ukázkou. Tisk ze zakázky použije novou šablonu hned; tisk bez dialogu rovnou na tiskárnu umí jen JobiDocs na počítači.", selector: sel("sablony-zavrit"), klik: ["settings-sablony-otevrit"], icon: "jobidocs" },
     ],
   },
   {
@@ -641,8 +661,10 @@ export const PRUVODCI: Pruvodce[] = [
       { ...ns("people", "service_odmeny"), title: "Vyplňte nové pravidlo", description: "Text, který je v názvu opravy (třeba „servisní čištění“), částka v Kč nebo procento z ceny a komu: kdo opravu přidal, nebo přidělený technik.", selector: sel("odmeny-nove-pravidlo"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Klikněte na Přidat pravidlo", description: "Objeví se v tabulce nahoře; tam ho upravíte, vypnete zaškrtávátkem Aktivní nebo šipkami změníte pořadí.", selector: sel("odmeny-pridat-pravidlo"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Vyzkoušejte název opravy", description: "Napište název opravy z ceníku a hned uvidíte, jestli na ni některé pravidlo sedí a kolik dává.", selector: sel("odmeny-vyzkouset"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Zvolte, kdy se odměna připočítá", description: "Po vydání zakázky (výchozí, storno nic nedostane), hned po přidání opravy, nebo až zakázka poprvé dosáhne vybraného stavu – třeba Připraveno k vyzvednutí. Podle toho se odměna počítá do měsíce.", selector: sel("settings-odmeny-kdy"), icon: "team" },
       { ...ns("people", "service_odmeny"), title: "Ukažte Odměny týmu", description: "Zaškrtnutím Zobrazit Odměny v navigaci dostane stránku Odměny celý tým. Pod tím určíte, jestli kolegové vidí celý žebříček.", selector: sel("odmeny-v-navigaci"), icon: "team" },
-      { ...ns("people", "service_odmeny"), title: "Hotovo", description: "Odměna se počítá u zakázek vydaných v měsíci, jen u opravy s příznakem Nabídnuto navíc. Přehled je na stránce Odměny.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Schvalování ručních odměn", description: "Podle stejných pravidel si tým může na stránce Odměny přidat odměnu i ručně, s poznámkou. Schvalujete ji vy; komu věříte, tomu tu zapnete automatické schvalování.", selector: sel("odmeny-auto-schvaleni"), icon: "team" },
+      { ...ns("people", "service_odmeny"), title: "Hotovo", description: "Odměna se počítá jen u opravy s příznakem Nabídnuto navíc – v měsíci podle zvolené volby (vydání, přidání opravy, nebo stav) – a ze schválených ručních odměn. Přehled je na stránce Odměny.", selector: sel("settings-sub-service_odmeny"), icon: "team" },
     ],
   },
   {
@@ -660,6 +682,25 @@ export const PRUVODCI: Pruvodce[] = [
       { ...ns("people", "service_api"), title: "Nastavte upozornění na změnu", description: "Vložte deploy hook webu a klikněte na Uložit – po úpravě ceníku nebo skladu na něj pošleme POST. Poslat zkušební ověří, že adresa funguje.", selector: sel("api-webhook"), icon: "settings" },
       { ...ns("people", "service_api"), title: "Vytvořte token pro zápis", description: "Napište, k čemu token je, zaškrtněte rozsah a klikněte na Vytvořit token. Ukáže se jen jednou – hned ho zkopírujte.", selector: sel("api-token"), icon: "settings" },
       { ...ns("people", "service_api"), title: "Hotovo", description: "Web čte data z Jobi. Kdyby token unikl, klikněte u něj na Odvolat a vydejte nový.", selector: sel("settings-sub-service_api"), icon: "settings" },
+    ],
+  },
+  {
+    id: "objednavky-z-webu",
+    nazev: "Objednávky z webu",
+    popis: "Formulář nebo e-shop pošle objednávku opravy do Jobi, web se dozví o zakázce.",
+    page: "settings",
+    settingsSubsection: "service_api",
+    novinkaOd: "2026-10-13",
+    dostupny: (k) => !!k.moduly.api_catalog,
+    kroky: [
+      { ...ns("people", "service_api"), title: "K čemu to je", description: "Zákazník na vašem webu vyplní „Pošlete nám zařízení“ a objednávka přijde do Jobi. Když zásilka dorazí, založíte z ní zakázku jedním kliknutím a web se dozví číslo i stav zakázky.", selector: sel("api-objednavky"), icon: "orders" },
+      { ...ns("people", "service_api"), title: "Vytvořte token pro web", description: "Napište, k čemu token je (třeba „web“), zaškrtněte Přijímat objednávky oprav z webu a klikněte na Vytvořit token. Token dejte webaři – ukáže se jen jednou.", selector: sel("api-token"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Vložte adresu webhooku", description: "Adresa na vašem webu, kam pošleme oznámení o zakázce. Vyberte události a klikněte na Uložit webhook – tajemství pro ověření podpisu se ukáže jen jednou.", selector: sel("api-objednavky-webhook"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Pošlete zkušební webhook", description: "Ověří, že adresa odpovídá a web podpis přijme. Výsledek se ukáže hned pod tlačítky.", selector: sel("api-objednavky-zkusebni"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Nemáte formulář? Vložte náš", description: "Zaškrtněte Formulář je zapnutý a kód zkopírujte na web. Zákazník vyplní zařízení, závadu a předání, souhlas s podmínkami se vytiskne na zakázkovém listu.", selector: sel("api-objednavky-formular"), icon: "settings" },
+      { ...ns("people", "service_api"), title: "Sledujte doručení", description: "Posledních 20 odeslaných oznámení se stavem. Nedoručené zkusíme znovu po 1, 5 a 30 minutách.", selector: sel("api-objednavky-log"), icon: "settings" },
+      { page: "orders", title: "Vyřiďte příchozí objednávky", description: "Objednávky z webu jsou v Zakázkách nahoře. Dorazilo označí přijatou zásilku, Založit zakázku otevře příjem předvyplněný z objednávky, Zrušit ji zruší. Totéž najdete na stránce Dnes.", selector: sel("orders-objednavky"), icon: "orders" },
+      { page: "orders", title: "Hotovo", description: "Zakázka z objednávky má číslo objednávky v Externí identifikaci a v detailu řádek „Z objednávky“. Každá změna jejího stavu odejde webu webhookem.", selector: sel("orders-new-btn"), icon: "orders" },
     ],
   },
   {

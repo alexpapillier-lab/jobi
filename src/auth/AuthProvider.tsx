@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "../lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
+import { odemkniObrazovku } from "../lib/prepinaniUctu";
 
 type AuthContextType = {
   session: Session | null;
@@ -72,8 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setInitializing(false);
     if (!supabase) throw new Error("Supabase client není dostupný");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    // Zamčená obrazovka přežije odhlášení i F5; zámek tohoto člověka zruší
+    // až přihlášení jeho heslem (viz prepinaniUctu). PrepinacUctu se o tom
+    // dozví událostí, i kdyby se aplikace vykreslila dřív.
+    odemkniObrazovku([data.user?.id]);
   };
 
   const signUp = async (email: string, password: string) => {

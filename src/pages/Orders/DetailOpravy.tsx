@@ -20,6 +20,7 @@ import type { TicketReservation, TicketOrderItem } from "../../lib/purchaseOrder
 import type { Product as SkladProdukt } from "../../lib/inventoryDb";
 import type { NovaProvedenaOprava, TicketEx } from "./typy";
 import { card } from "./styly";
+import { jeRootOwnerId } from "../../lib/rootOwner";
 
 type Props = {
   detailedTicket: TicketEx;
@@ -213,8 +214,10 @@ export function DetailOpravy({
         devicesData={devicesData}
         inventoryData={inventoryData}
         vychoziSazba={hodinovaSazba ?? undefined}
-        vychoziTechnik={currentUserNickname ?? undefined}
-        vychoziTechnikId={currentUserId ?? undefined}
+        /* Majitel aplikace se jako technik nepředvyplňuje: jméno hodinové
+           práce jde na doklad zákazníkovi a majitel má být neviditelný. */
+        vychoziTechnik={jeRootOwnerId(currentUserId) ? undefined : currentUserNickname ?? undefined}
+        vychoziTechnikId={jeRootOwnerId(currentUserId) ? undefined : currentUserId ?? undefined}
         onAddToModel={(repairData) => {
           // Add repair to model in Devices
           const currentDevices = safeLoadDevicesData();

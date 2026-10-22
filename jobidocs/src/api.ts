@@ -4,6 +4,7 @@
  * je to tatáž funkce, kterou API používá pro PDF.
  */
 import type { DocType, DocumentData, DocumentsV2, SampleKind } from "../core/index";
+import type { Context, LoadedDocuments, SavedDocuments } from "./storage/types";
 
 /** Ve vývoji lze API přesměrovat: http://localhost:5173/?api=http://127.0.0.1:3848 */
 export const API_BASE = (typeof location !== "undefined" && new URLSearchParams(location.search).get("api")) || "http://127.0.0.1:3847";
@@ -20,23 +21,9 @@ export function hlavickyApi(dalsi?: Record<string, string>): Record<string, stri
   return { ...(KLIC_OKNA ? { "x-jobi-klic": KLIC_OKNA } : {}), ...(dalsi ?? {}) };
 }
 
-export type ServiceEntry = { service_id: string; service_name: string; role: string };
-export type Context = {
-  services: ServiceEntry[];
-  activeServiceId: string | null;
-  companyData: Record<string, unknown> | null;
-  canManageDocuments: boolean;
-};
+export type { Context, LoadedDocuments, ServiceEntry } from "./storage/types";
 export type Printer = { name: string; status: string; available: boolean };
 export type ActivityEntry = { ts: string; action: "print" | "export"; status: "ok" | "error" | "pending"; detail?: string };
-export type LoadedDocuments = {
-  documents: DocumentsV2;
-  version: number;
-  updated_at: string | null;
-  source: "supabase" | "context" | "local" | "default";
-  canManage: boolean;
-  online: boolean;
-};
 
 async function json<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -88,7 +75,7 @@ export const api = {
   async documents(serviceId: string): Promise<LoadedDocuments> {
     return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`, { headers: hlavickyApi() }));
   },
-  async saveDocuments(serviceId: string, documents: DocumentsV2, ifVersion?: number): Promise<{ ok: true; version: number; updated_at: string | null; documents: DocumentsV2; savedTo: "supabase" | "local" }> {
+  async saveDocuments(serviceId: string, documents: DocumentsV2, ifVersion?: number): Promise<SavedDocuments> {
     return json(await fetch(`${API_BASE}/v2/documents?service_id=${encodeURIComponent(serviceId)}`, { method: "PUT", headers: hlavickyApi({ "Content-Type": "application/json" }), body: JSON.stringify({ documents, ifVersion }) }));
   },
   async pdf(body: { service_id: string; doc_type: DocType; sample?: SampleKind; data?: DocumentData; documents?: DocumentsV2 }): Promise<Blob> {

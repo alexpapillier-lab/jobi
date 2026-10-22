@@ -18,6 +18,7 @@ import {
 } from "../../../lib/automations";
 import type { StatusMeta } from "../../../state/StatusesStore";
 
+import { textChyby } from "../../../utils/errorNormalizer";
 export type HourUnit = "hours" | "days";
 
 /** Rozpracované pravidlo v editoru – ploché, aby se dalo vázat na pole. */
@@ -297,7 +298,7 @@ export async function fetchRules(serviceId: string): Promise<LoadResult<Automati
     if (error) return { data: [], error: error.message ?? "Chyba načtení", missingTable: isMissingTable(error) };
     return { data: Array.isArray(data) ? (data as AutomationRule[]) : [], error: null, missingTable: false };
   } catch (e) {
-    return { data: [], error: e instanceof Error ? e.message : String(e), missingTable: false };
+    return { data: [], error: textChyby(e), missingTable: false };
   }
 }
 
@@ -312,7 +313,7 @@ export async function fetchRuns(serviceId: string, limit = 50): Promise<LoadResu
     if (error) return { data: [], error: error.message ?? "Chyba načtení", missingTable: isMissingTable(error) };
     return { data: Array.isArray(data) ? (data as AutomationRun[]) : [], error: null, missingTable: false };
   } catch (e) {
-    return { data: [], error: e instanceof Error ? e.message : String(e), missingTable: false };
+    return { data: [], error: textChyby(e), missingTable: false };
   }
 }
 
