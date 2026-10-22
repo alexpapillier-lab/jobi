@@ -203,12 +203,13 @@ export function DetailPrehled({
                 <CopyButton value={detailedTicket.serialOrImei} label="sériové číslo" />
               </div>
             )}
-            {/* Záruka z příjmu; u starších zakázek (null) se řádek nevykreslí. */}
-            {detailedTicket.warrantyClaim != null && (
+            {/* Jen záruční oprava z příjmu – „pozáruční“ je výchozí stav
+                zaškrtávátka, ne zjištěný fakt, tak se nevypisuje. */}
+            {detailedTicket.warrantyClaim === true && (
               <div style={{ fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 600 }}>{detailedTicket.warrantyClaim ? "Záruční oprava" : "Pozáruční oprava"}</span>
-                {detailedTicket.warrantyClaim && detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
-                {detailedTicket.warrantyClaim && detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
+                <span style={{ fontWeight: 600 }}>Záruční oprava</span>
+                {detailedTicket.purchaseDate && <span style={{ color: "var(--muted)" }}>· nákup {formatCZDate(detailedTicket.purchaseDate)}</span>}
+                {detailedTicket.purchaseProof && <span style={{ color: "var(--muted)" }}>· doklad: {detailedTicket.purchaseProof}</span>}
               </div>
             )}
             {/* Záruka na provedenou opravu – datum zapisuje databáze při vydání. */}
