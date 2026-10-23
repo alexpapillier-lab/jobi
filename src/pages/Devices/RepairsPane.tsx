@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Button, Card, Input, Label } from "../../components/ui";
 import { ChevronDownIcon, EditIcon, PlusIcon, SearchIcon, TrashIcon, WrenchIcon, XIcon } from "../../components/icons";
 import { ApiPill, IconButton, formatKc, formatMinutes, plural } from "./shared";
@@ -45,6 +45,10 @@ export type RepairsPaneProps = {
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDeleteRepair: (r: Repair) => void;
+  /** Posun opravy v pořadí (−1 nahoru, 1 dolů) – pořadí jde i do API a na web. */
+  onMoveRepair: (id: string, smer: -1 | 1) => void;
+  /** Přetažení opravy před/za jinou (drag and drop). */
+  onDropRepair: (id: string, cilId: string, za: boolean) => void;
 };
 
 function ChevronRight({ size = 12 }: { size?: number }) {
@@ -57,6 +61,10 @@ function ChevronRight({ size = 12 }: { size?: number }) {
 
 export function RepairsPane(p: RepairsPaneProps) {
   const { data, selection } = p;
+  /* Přetahování: co se táhne a kam by se pustilo (čára nad/pod kartou). */
+  const [tazena, setTazena] = useState<string | null>(null);
+  const [cil, setCil] = useState<{ id: string; za: boolean } | null>(null);
+  const tahnoutJde = p.repairs.length > 1 && !p.editingId;
 
   /* Drobečky: značka › kategorie › model, poslední je vybraný uzel. */
   const crumbs = useMemo(() => {
@@ -212,13 +220,46 @@ export function RepairsPane(p: RepairsPaneProps) {
 
       {/* Seznam oprav – řádky. */}
       <div data-tour="devices-opravy" style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-        {p.repairs.map((r) => {
+        {p.repairs.map((r, index) => {
           const isEditing = p.editingId === r.id;
           const repairModels = (r.modelIds ?? []).map((id) => modelsById.get(id)).filter((m): m is NonNullable<typeof m> => !!m);
           const showModels = selection?.kind !== "model" || repairModels.length > 1;
           const productNames = (r.productIds ?? []).map((id) => productsById.get(id)?.name).filter(Boolean) as string[];
+          const caraNad = cil?.id === r.id && !cil.za && tazena !== r.id;
+          const caraPod = cil?.id === r.id && cil.za && tazena !== r.id;
           return (
-            <Card key={r.id} style={{ padding: isEditing ? "var(--space-4)" : "10px var(--space-4)" }}>
+            <div
+              key={r.id}
+              draggable={tahnoutJde}
+              onDragStart={(e) => {
+                setTazena(r.id);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", r.id);
+              }}
+              onDragOver={(e) => {
+                if (!tazena) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const box = e.currentTarget.getBoundingClientRect();
+                const za = e.clientY > box.top + box.height / 2;
+                if (cil?.id !== r.id || cil.za !== za) setCil({ id: r.id, za });
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (tazena && cil) p.onDropRepair(tazena, cil.id, cil.za);
+                setTazena(null);
+                setCil(null);
+              }}
+              onDragEnd={() => { setTazena(null); setCil(null); }}
+              style={{
+                position: "relative",
+                opacity: tazena === r.id ? 0.45 : 1,
+                cursor: tahnoutJde ? "grab" : undefined,
+                boxShadow: caraNad ? "0 -3px 0 0 var(--accent)" : caraPod ? "0 3px 0 0 var(--accent)" : undefined,
+                borderRadius: 12,
+              }}
+            >
+            <Card style={{ padding: isEditing ? "var(--space-4)" : "10px var(--space-4)" }}>
               {isEditing ? (
                 <RepairForm
                   draft={p.editDraft}
@@ -235,6 +276,9 @@ export function RepairsPane(p: RepairsPaneProps) {
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-4)" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}>
+                      {tahnoutJde && (
+                        <span aria-hidden="true" title="Přetáhněte pro změnu pořadí" style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1, letterSpacing: -2, userSelect: "none", flexShrink: 0 }}>⋮⋮</span>
+                      )}
                       <span style={{ fontWeight: 800, fontSize: "var(--text-base)", color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {r.name}
                       </span>
@@ -274,6 +318,17 @@ export function RepairsPane(p: RepairsPaneProps) {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 0 }}>
+                      {p.repairs.length > 1 && (
+                        <>
+                          <IconButton
+                            label="Posunout výš"
+                            icon={<span aria-hidden="true" style={{ display: "inline-flex", transform: "rotate(180deg)" }}><ChevronDownIcon size={15} /></span>}
+                            disabled={index === 0}
+                            onClick={() => p.onMoveRepair(r.id, -1)}
+                          />
+                          <IconButton label="Posunout níž" icon={<ChevronDownIcon size={15} />} disabled={index === p.repairs.length - 1} onClick={() => p.onMoveRepair(r.id, 1)} />
+                        </>
+                      )}
                       <IconButton label="Upravit" icon={<EditIcon size={15} />} onClick={() => p.onStartEdit(r)} />
                       <IconButton label="Smazat" icon={<TrashIcon size={15} />} danger onClick={() => p.onDeleteRepair(r)} />
                     </div>
@@ -281,6 +336,7 @@ export function RepairsPane(p: RepairsPaneProps) {
                 </div>
               )}
             </Card>
+            </div>
           );
         })}
 

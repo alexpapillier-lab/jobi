@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { posunVPoradi, presunKPolozce } from "../lib/poradiSeznamu";
 import { useEntitlements } from "../hooks/useEntitlements";
 import { Button, Card, PageHeader } from "../components/ui";
 import { DeviceIcon, DownloadIcon, FolderIcon, WarningIcon, WrenchIcon } from "../components/icons";
@@ -1212,6 +1213,21 @@ DETALY: Výměna opotřebované baterie
     });
   };
 
+  /** Šipky u opravy: posun v zobrazeném seznamu, uloží se jako order_index (pořadí v API i na webu). */
+  const posunoutOpravu = (id: string, smer: -1 | 1) => ulozitPoradiOprav(posunVPoradi(data.repairs, filteredRepairs, id, smer));
+  const pustitOpravu = (id: string, cilId: string, za: boolean) => ulozitPoradiOprav(presunKPolozce(data.repairs, id, cilId, za));
+  const ulozitPoradiOprav = (repairs: Repair[] | null) => {
+    if (!activeServiceId || !repairs) return;
+    const nova = { ...data, repairs };
+    setData(nova);
+    saveDevicesToDb(activeServiceId, nova).then((r) => {
+      if (!r.error) return;
+      showToast("Pořadí se nepodařilo uložit: " + r.error + " Zkouším dál.", "error");
+      nahlasCekani(`zarizeni:${activeServiceId}`, "Ceník a zařízení · neuložené změny", r.error);
+      if (!jeTrvalaChyba(r.error)) naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
+    });
+  };
+
   if (showImport) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -1414,6 +1430,8 @@ DETALY: Výměna opotřebované baterie
       search={repairSearchQuery}
       onSearch={setRepairSearchQuery}
       onToggleRepairPublic={(id) => prepnoutViditelnost("repairs", id)}
+      onMoveRepair={posunoutOpravu}
+      onDropRepair={pustitOpravu}
       onBulkPublic={hromadnaViditelnost}
       onOpenImport={() => setShowImport(true)}
       canAdd={canAddRepair}
