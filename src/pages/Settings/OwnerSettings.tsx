@@ -11,6 +11,7 @@ import { ErrorLogsPanel } from "./ErrorLogsPanel";
 import { EntitlementsPanel } from "./EntitlementsPanel";
 import { ProvizePanel } from "./ProvizePanel";
 import { PlatbyServisuPanel } from "./PlatbyServisuPanel";
+import { PrepravaDpdPanel } from "./PrepravaDpdPanel";
 import { formatInviteEmailReason } from "../../utils/errorNormalizer";
 
 type ServiceItem = { service_id: string; service_name: string; role: string; active?: boolean; member_count?: number };
@@ -310,6 +311,8 @@ export function OwnerSettings({ services, refreshServices, setActiveServiceId }:
       <PlatbyServisuPanel />
 
       <ProvizePanel services={services} />
+
+      <PrepravaDpdPanel services={services} />
 
       <ErrorLogsPanel />
 

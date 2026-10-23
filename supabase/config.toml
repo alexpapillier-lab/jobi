@@ -500,3 +500,7 @@ verify_jwt = false
 # v těle) i aplikace s tokenem správce – identitu ověřuje sama uvnitř.
 [functions.gdpr-anonymizace]
 verify_jwt = false
+
+[functions.zasilka-dpd]
+# Volá ji i pg_cron (preprava_dpd_tick) s tajemstvím z Vaultu, bez JWT; uživatele ověřuje funkce sama.
+verify_jwt = false

@@ -10,6 +10,8 @@ import { useBranches } from "../context/BranchContext";
 import { useStatuses } from "../state/StatusesStore";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { StatusBadge } from "../components/tickets/StatusBadge";
+import { PrepravaDpd } from "../components/PrepravaDpd";
+import { jdeZrusit, nactiNastaveniDpd, nactiObjednavkyDpd, stavDpdText, zrusitDpd, type NastaveniDpd, type ObjednavkaDpd } from "../lib/prepravaDpd";
 import {
   cisloZasilky,
   druhaPobocka,
@@ -95,6 +97,13 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   const [potvrditSmazani, setPotvrditSmazani] = useState(false);
   const [potvrditStorno, setPotvrditStorno] = useState(false);
   const [vybraneKPrevzeti, setVybraneKPrevzeti] = useState<Set<string>>(new Set());
+  /* Přeprava DPD: jen když ji servisu zapnul majitel aplikace (Owner). */
+  const [dpd, setDpd] = useState<NastaveniDpd | null>(null);
+  const [objednavkyDpd, setObjednavkyDpd] = useState<Map<string, ObjednavkaDpd>>(new Map());
+  useEffect(() => {
+    setDpd(null);
+    if (activeServiceId) void nactiNastaveniDpd(activeServiceId).then(setDpd);
+  }, [activeServiceId]);
 
   /* Nová zásilka: odkud = aktivní pobočka (jinak pobočka pro novou zakázku),
      kam = druhá pobočka, když jsou jen dvě. */
@@ -116,6 +125,8 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
       if (error) throw new Error(error.message);
       setZasilky(z);
       setZakazky(new Map(((data ?? []) as Record<string, unknown>[]).map(mapRadek).map((r) => [r.id, r])));
+      // Objednávky DPD jen čtou; když selžou, zásilky se ukážou i bez nich.
+      setObjednavkyDpd(await nactiObjednavkyDpd(activeServiceId).catch(() => new Map()));
     } catch (error) {
       reportError({ code: "zasilky.load_failed", error, userMessage: "Zásilky se nepodařilo načíst.", source: "Zasilky", serviceId: activeServiceId });
     } finally {
@@ -137,6 +148,8 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   }, [activeServiceId, nacti]);
 
   const otevrena = useMemo(() => zasilky.find((z) => z.id === otevrenaId) ?? null, [zasilky, otevrenaId]);
+  const dpdOtevrene = otevrena ? objednavkyDpd.get(otevrena.id) ?? null : null;
+  const dpdZive = dpdOtevrene && dpdOtevrene.status !== "cancelled" ? dpdOtevrene : null;
 
   /* „Naše“ pobočka pro rozlišení příchozí / odchozí: vybraná ve filtru,
      jinak ta pro novou zakázku (domovská). */
@@ -342,7 +355,10 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
                         {z.status === "draft" ? `založeno ${datum(z.createdAt)}` : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : z.status === "cancelled" ? `stornováno ${datum(z.cancelledAt)}` : `převzato ${datum(z.receivedAt)}`}
-                        {z.trackingNumber ? ` · ${z.trackingNumber}` : ""}
+                        {(() => {
+                          const o = objednavkyDpd.get(z.id);
+                          return o && o.status !== "cancelled" ? ` · DPD ${stavDpdText(o)}` : z.trackingNumber ? ` · ${z.trackingNumber}` : "";
+                        })()}
                         {chybi > 0 ? ` · chybí ${chybi}` : ""}
                       </div>
                     </button>
@@ -379,7 +395,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                   )}
                   {otevrena.status === "draft" && (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => setPotvrditSmazani(true)} disabled={zauzlovano}>Smazat koncept</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setPotvrditSmazani(true)} disabled={zauzlovano || !!dpdZive} title={dpdZive ? "Koncept má objednanou přepravu DPD – nejdřív ji zrušte" : undefined}>Smazat koncept</Button>
                       <Button data-tour="zasilky-odeslat" size="sm" variant="primary" disabled={zauzlovano || otevrena.polozky.length === 0} onClick={() => void akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.")}>
                         Odeslat ({otevrena.polozky.length})
                       </Button>
@@ -403,6 +419,18 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                   <Input key={`${otevrena.id}-n`} defaultValue={otevrena.note} placeholder="např. křehké, 2 krabice" onBlur={(e) => { if (e.target.value.trim() !== otevrena.note) void akce(() => ulozHlavickuZasilky(otevrena.id, { note: e.target.value })); }} />
                 </label>
               </div>
+
+              {dpd?.zapnuto && (
+                <PrepravaDpd
+                  shipmentId={otevrena.id}
+                  cislo={cisloZasilky(otevrena)}
+                  objednavka={dpdOtevrene}
+                  muzeObjednat={otevrena.status === "draft" || otevrena.status === "sent"}
+                  testovaci={dpd.testovaci}
+                  serviceId={activeServiceId}
+                  onZmena={() => void nacti()}
+                />
+              )}
 
               {/* Položky */}
               <div data-tour="zasilky-polozky" style={{ display: "grid", gap: 6 }}>
@@ -520,14 +548,19 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
         open={potvrditStorno}
         title={otevrena ? `Stornovat zásilku ${cisloZasilky(otevrena)}?` : "Stornovat zásilku?"}
         message={otevrena
-          ? `Nepřevzaté zakázky (${nepreveztePolozky(otevrena).length}) se vrátí na pobočku ${nazevPobocky(otevrena.fromBranchId)}, odkud zásilka vyjela. Už převzaté zůstanou, kde jsou. Zásilka zůstane v přehledu jako stornovaná.`
+          ? `Nepřevzaté zakázky (${nepreveztePolozky(otevrena).length}) se vrátí na pobočku ${nazevPobocky(otevrena.fromBranchId)}, odkud zásilka vyjela. Už převzaté zůstanou, kde jsou. Zásilka zůstane v přehledu jako stornovaná.${
+              dpdZive ? (jdeZrusit(dpdZive) ? ` Objednaná přeprava DPD se zruší${dpdZive.pickupOrderId ? " i se svozem" : ""}.` : " Balík DPD už je na cestě – jeho vrácení řešte s DPD.") : ""}`
           : ""}
         confirmLabel="Stornovat"
         onCancel={() => setPotvrditStorno(false)}
         onConfirm={async () => {
           setPotvrditStorno(false);
           if (!otevrena) return;
-          await akce(() => stornujZasilku(otevrena.id), "Zásilka stornována.");
+          await akce(async () => {
+            // Nejdřív DPD: když zrušení svozu selže, zásilka zůstane, jak byla.
+            if (dpdZive && jdeZrusit(dpdZive)) await zrusitDpd(otevrena.id);
+            await stornujZasilku(otevrena.id);
+          }, "Zásilka stornována.");
           setZalozka("cancelled");
         }}
       />
