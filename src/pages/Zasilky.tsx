@@ -96,6 +96,8 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
   const [zauzlovano, setZauzlovano] = useState(false);
   const [potvrditSmazani, setPotvrditSmazani] = useState(false);
   const [potvrditStorno, setPotvrditStorno] = useState(false);
+  /* Prázdná zásilka (díly, nářadí, dokumenty) jde odeslat, ale až po potvrzení. */
+  const [potvrditPrazdnou, setPotvrditPrazdnou] = useState(false);
   const [vybraneKPrevzeti, setVybraneKPrevzeti] = useState<Set<string>>(new Set());
   /* Přeprava DPD: jen když ji servisu zapnul majitel aplikace (Owner). */
   const [dpd, setDpd] = useState<NastaveniDpd | null>(null);
@@ -351,7 +353,7 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                             </span>
                           )}
                         </span>
-                        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{z.polozky.length} {z.polozky.length === 1 ? "zakázka" : z.polozky.length < 5 ? "zakázky" : "zakázek"}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{z.polozky.length} {z.polozky.length === 1 ? "zakázka" : z.polozky.length >= 2 && z.polozky.length <= 4 ? "zakázky" : "zakázek"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
                         {z.status === "draft" ? `založeno ${datum(z.createdAt)}` : z.status === "sent" ? `odesláno ${datum(z.sentAt)}` : z.status === "cancelled" ? `stornováno ${datum(z.cancelledAt)}` : `převzato ${datum(z.receivedAt)}`}
@@ -396,7 +398,14 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                   {otevrena.status === "draft" && (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setPotvrditSmazani(true)} disabled={zauzlovano || !!dpdZive} title={dpdZive ? "Koncept má objednanou přepravu DPD – nejdřív ji zrušte" : undefined}>Smazat koncept</Button>
-                      <Button data-tour="zasilky-odeslat" size="sm" variant="primary" disabled={zauzlovano || otevrena.polozky.length === 0} onClick={() => void akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.")}>
+                      <Button
+                        data-tour="zasilky-odeslat"
+                        size="sm"
+                        variant="primary"
+                        disabled={zauzlovano}
+                        title={otevrena.polozky.length === 0 ? "Odeslat bez zakázek – vezete jiné věci (díly, nářadí, dokumenty)" : undefined}
+                        onClick={() => otevrena.polozky.length === 0 ? setPotvrditPrazdnou(true) : void akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.")}
+                      >
                         Odeslat ({otevrena.polozky.length})
                       </Button>
                     </>
@@ -478,6 +487,18 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
                 </div>
               )}
 
+              {/* Prázdná odeslaná zásilka: není co zaškrtávat, převzetí jedním tlačítkem. */}
+              {otevrena.status === "sent" && otevrena.polozky.length === 0 && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 13, color: "var(--muted)", flex: 1 }}>
+                    Zásilka bez zakázek{otevrena.note ? ` (${otevrena.note})` : ""}. Až dorazí na pobočku {nazevPobocky(otevrena.toBranchId)}, potvrďte převzetí.
+                  </span>
+                  <Button size="sm" variant="primary" disabled={zauzlovano} onClick={() => void akce(() => prevezmiZasilku(otevrena.id, []), "Zásilka převzata.")}>
+                    Potvrdit převzetí
+                  </Button>
+                </div>
+              )}
+
               {otevrena.status === "draft" && (
                 <div data-tour="zasilky-pridat-zakazky" style={{ display: "grid", gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -542,6 +563,19 @@ export default function Zasilky({ activeServiceId, onOpenTicket }: { activeServi
           if (!otevrena) return;
           await akce(() => smazKoncept(otevrena.id), "Koncept smazán.");
           setOtevrenaId(null);
+        }}
+      />
+      <ConfirmDialog
+        open={potvrditPrazdnou}
+        title={otevrena ? `Odeslat zásilku ${cisloZasilky(otevrena)} bez zakázek?` : "Odeslat prázdnou zásilku?"}
+        message="Zásilka nemá žádné zakázky – hodí se, když vezete díly, nářadí nebo dokumenty. Co v ní je, napište do poznámky. Cílová pobočka pak jen potvrdí převzetí."
+        confirmLabel="Odeslat"
+        onCancel={() => setPotvrditPrazdnou(false)}
+        onConfirm={async () => {
+          setPotvrditPrazdnou(false);
+          if (!otevrena) return;
+          await akce(() => odesliZasilku(otevrena.id), "Zásilka odeslána.");
+          setZalozka("sent");
         }}
       />
       <ConfirmDialog
