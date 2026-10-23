@@ -62,6 +62,17 @@ export type AdresaDpd = {
 
 export const DPD_URL = { ostre: "https://geoapi.dpd.cz/v1", test: "https://geoapi-test.dpd.cz/v1" } as const;
 
+/**
+ * Tisk štítků: arch A4 se čtyřmi pozicemi A6, štítek začíná v levém horním
+ * rohu – tiskne se na štítkový papír 4×A6 (jako na servis.iswap, 7753e77).
+ * Samotné A6 se z běžné tiskárny vytisklo zvětšené přes celou A4.
+ */
+export const TISK_STITKU = { printType: "PDF", printProperties: { pageSize: "A4", labelsPerPage: 4 } } as const;
+
+export function teloStitku(parcelNumbers: string[]) {
+  return { ...TISK_STITKU, parcels: parcelNumbers.map((parcelNumber) => ({ parcelNumber })) };
+}
+
 /** „U Vokovické školy 299/4“ → ulice + číslo popisné. Bez čísla celé jako ulice. */
 export function rozdelUlici(s: string): { street: string; houseNumber: string } {
   const t = s.trim().replace(/\s+/g, " ");

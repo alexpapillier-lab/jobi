@@ -29,6 +29,7 @@ import {
   predaniText,
   registrovanaAdresa,
   stavZTrackingu,
+  teloStitku,
   variantyZasilky,
   teloZasilky,
   vyberAdresuPlatce,
@@ -162,7 +163,7 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   if (jdeTisknoutStitek(varianta)) {
     const lRes = await dpdFetch(dpd, "/parcels/labels", {
       method: "POST",
-      body: { printType: "PDF", printProperties: { pageSize: "A6", labelsPerPage: 1 }, parcels: parcelNumbers.map((parcelNumber) => ({ parcelNumber })) },
+      body: teloStitku(parcelNumbers),
     });
     if (lRes.ok) label = base64(await lRes.arrayBuffer());
   }
@@ -219,7 +220,7 @@ async function stitek(svc: Svc, shipmentId: string) {
   const dpd = await ucetDpd(svc, data.service_id);
   const res = await dpdFetch(dpd, "/parcels/labels", {
     method: "POST",
-    body: { printType: "PDF", printProperties: { pageSize: "A6", labelsPerPage: 1 }, parcels: (data.parcel_numbers ?? []).map((parcelNumber: string) => ({ parcelNumber })) },
+    body: teloStitku(data.parcel_numbers ?? []),
   });
   if (!res.ok) throw new Chyba(`Štítek se nepodařilo stáhnout – ${await textChybyDpd(res)}`, 502);
   const label = base64(await res.arrayBuffer());
