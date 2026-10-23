@@ -95,9 +95,12 @@ export function PrepravaDpd({
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <Button size="sm" variant="soft" disabled={!!pracuje} onClick={() => void akce("label", async () => otevritStitek(await stitekDpd(shipmentId), `DPD-${cislo}.pdf`))}>
-            {pracuje === "label" ? "Stahuji…" : "Tisk štítku"}
-          </Button>
+          {/* U svozu štítek přiveze kurýr, DPD jeho tisk odmítá. */}
+          {ziva.mode === "label" && (
+            <Button size="sm" variant="soft" disabled={!!pracuje} onClick={() => void akce("label", async () => otevritStitek(await stitekDpd(shipmentId), `DPD-${cislo}.pdf`))}>
+              {pracuje === "label" ? "Stahuji…" : "Tisk štítku"}
+            </Button>
+          )}
           {ziva.status !== "delivered" && (
             <Button size="sm" variant="ghost" disabled={!!pracuje} onClick={() => void akce("track", async () => { await sledovatDpd(shipmentId); })} title="Stav se jinak aktualizuje sám každou hodinu">
               {pracuje === "track" ? "Zjišťuji…" : "Aktualizovat stav"}
@@ -146,7 +149,7 @@ export function PrepravaDpd({
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         {rezim === "label"
           ? "Vytiskne se štítek, krabici podáte na kterémkoli výdejním místě DPD."
-          : "DPD pošle kurýra na adresu pobočky odeslání. „Co nejdřív“ zkusí dnešek a další pracovní dny."}
+          : "DPD pošle kurýra na adresu pobočky odeslání, štítek přiveze s sebou. „Co nejdřív“ zkusí dnešek a další pracovní dny."}
         {" "}Číslo balíku se zapíše do zásilky, stav se pak aktualizuje sám.
       </div>
     </div>

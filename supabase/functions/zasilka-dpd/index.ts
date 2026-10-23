@@ -141,12 +141,16 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   const { shipmentId: dpdShipmentId, parcelNumbers } = cislaBaliku(await sRes.json().catch(() => null));
   if (parcelNumbers.length === 0) throw new Chyba("DPD nevrátilo číslo balíku – zkontrolujte MojeDPD, než to zkusíte znovu.", 502);
 
+  // Štítek jen u podání na výdejně. U svozu (Collection) ho přiveze kurýr –
+  // DPD tisk odmítá (ShipmentLabelsDisallowed, ověřeno 23. 10. 2026).
   let label: string | null = null;
-  const lRes = await dpdFetch(dpd, "/parcels/labels", {
-    method: "POST",
-    body: { printType: "PDF", printProperties: { pageSize: "A6", labelsPerPage: 1 }, parcels: parcelNumbers.map((parcelNumber) => ({ parcelNumber })) },
-  });
-  if (lRes.ok) label = base64(await lRes.arrayBuffer());
+  if (rezim === "label") {
+    const lRes = await dpdFetch(dpd, "/parcels/labels", {
+      method: "POST",
+      body: { printType: "PDF", printProperties: { pageSize: "A6", labelsPerPage: 1 }, parcels: parcelNumbers.map((parcelNumber) => ({ parcelNumber })) },
+    });
+    if (lRes.ok) label = base64(await lRes.arrayBuffer());
+  }
 
   let pickupOrderId: string | null = null;
   let chybaSvozu: string | null = null;
@@ -184,13 +188,14 @@ async function vytvorit(svc: Svc, uid: string, body: Record<string, unknown>) {
   const { data: ulozeno, error } = await svc.from("ticket_shipment_dpd").insert(radek).select(SLOUPCE).single();
   if (error) throw new Chyba(`Zásilka u DPD vznikla (balík ${parcelNumbers.join(", ")}), ale nepodařilo se ji uložit: ${error.message}`, 500);
   await svc.from("ticket_shipments").update({ carrier: "DPD", tracking_number: parcelNumbers.join(", ") }).eq("id", z.id);
-  return json({ ok: true, objednavka: ulozeno, labelBase64: label, varovani: chybaSvozu ?? (label ? null : "Štítek se nepodařilo stáhnout – zkuste Tisk štítku.") });
+  return json({ ok: true, objednavka: ulozeno, labelBase64: label, varovani: chybaSvozu ?? (label || rezim === "courier" ? null : "Štítek se nepodařilo stáhnout – zkuste Tisk štítku.") });
 }
 
 // ── label ───────────────────────────────────────────────────────────────────
 async function stitek(svc: Svc, shipmentId: string) {
-  const { data } = await svc.from("ticket_shipment_dpd").select("id, service_id, parcel_numbers, label_pdf").eq("shipment_id", shipmentId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data } = await svc.from("ticket_shipment_dpd").select("id, service_id, mode, parcel_numbers, label_pdf").eq("shipment_id", shipmentId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!data) throw new Chyba("K zásilce není objednaná přeprava.", 404);
+  if (data.mode === "courier") throw new Chyba("U svozu kurýrem se štítek netiskne – přiveze ho kurýr.");
   if (data.label_pdf) return json({ ok: true, labelBase64: data.label_pdf });
   const dpd = await ucetDpd(svc, data.service_id);
   const res = await dpdFetch(dpd, "/parcels/labels", {
