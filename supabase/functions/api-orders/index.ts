@@ -77,6 +77,8 @@ const ROZSAH: Rozsah = "orders";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tabulky nejsou v typech klienta
 type Svc = SupabaseClient<any, any, any>;
 
+/** Sloupce s daty objednávky, které obnova (reopen) bez hodnoty v položce smaže. */
+const OBNOVA_MAZE = ["zakaznik_jmeno", "zakaznik_telefon", "zakaznik_email", "zakaznik_firma", "zakaznik_ico", "zakaznik_dic", "zakaznik_ulice", "zakaznik_mesto", "zakaznik_psc", "zarizeni", "model_id", "sn_imei", "heslo_zarizeni", "prislusenstvi", "popis_zavady", "pozadovana_oprava", "repair_id", "doprava_tam", "doprava_zpet", "vydejni_misto", "adresa_zpet", "sledovaci_cisla", "souhlas", "poznamka", "data"];
 const SLOUPCE = "id, service_id, branch_id, externi_cislo, zdroj, stav, zakaznik_jmeno, zakaznik_telefon, zakaznik_email, zakaznik_firma, zakaznik_ico, zakaznik_dic, zakaznik_ulice, zakaznik_mesto, zakaznik_psc, zarizeni, model_id, sn_imei, heslo_zarizeni, prislusenstvi, popis_zavady, pozadovana_oprava, repair_id, doprava_tam, doprava_zpet, vydejni_misto, adresa_zpet, sledovaci_cisla, souhlas, poznamka, data, ticket_id, claim_id, created_at, updated_at, dorazilo_at, prevedeno_at";
 
 /** Reklamace, na kterou servis objednávku převedl (místo zakázky). */
@@ -294,13 +296,22 @@ serve(async (req) => {
     if (z.chyba) { chyby.push(`${prefix}: ${z.chyba}`); continue; }
     const zmena: Record<string, unknown> = { ...z.hodnoty };
     // Souhlas jen u otevřené objednávky (povoleneZmeny ho jinak vypustí).
-    const podpis = pripravSouhlas(zmena, a.souhlas, p.podpis);
+    // Obnova nahrazuje celý záznam – starý (třeba testovací) souhlas se neslučuje.
+    const podpis = pripravSouhlas(zmena, z.obnovena ? null : a.souhlas, p.podpis);
     if (z.stav && z.stav !== a.stav && a.stav !== "prevedeno") {
       zmena.stav = z.stav;
       if (z.stav === "dorazilo" && (!a.dorazilo_at || z.obnovena)) zmena.dorazilo_at = new Date().toISOString();
     }
     // Obnovu zrušené nepustit, kdyby z ní mezitím vznikla zakázka nebo reklamace.
     if (z.obnovena && (a.ticket_id || a.claim_id)) { chyby.push(`${prefix}: objednávka už je zakázka – obnovit ji nejde`); continue; }
+    /* Obnova nahrazuje záznam celý: web může stejné číslo přidělit jiné
+       objednávce (staré zkoušky smazané na webu), takže co v položce není,
+       se smaže – jinak by u skutečného zákazníka zůstal třeba testovací
+       souhlas s podpisem. */
+    if (z.obnovena) {
+      // sledovaci_cisla a data jsou NOT NULL – prázdné pole / objekt.
+      for (const k of OBNOVA_MAZE) if (!(k in zmena)) zmena[k] = k === "sledovaci_cisla" ? [] : k === "data" ? {} : null;
+    }
     const zt = await zakazka(svc, a.ticket_id);
     // Kód v Jobi: zakázka, nebo reklamace, když se objednávka převedla na ni.
     const kod = zt?.code ?? (await reklamace(svc, a.claim_id))?.code ?? null;
