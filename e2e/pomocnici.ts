@@ -108,6 +108,8 @@ export async function zalozZakazku(
     nechatOtevrene?: boolean;
     /** Zkratka servisu, kterou má číslo začínat. Bez ní se čeká zkratka testovacího servisu. */
     zkratka?: string;
+    /** Co ještě vyplnit ve formuláři těsně před „Vytvořit zakázku“ (opravy, zaškrtávátka). */
+    predVytvorenim?: () => Promise<void>;
   },
 ): Promise<string> {
   await page.getByRole("button", { name: "+ Nová zakázka" }).click();
@@ -129,6 +131,7 @@ export async function zalozZakazku(
   if (await bezPrirazeni.isVisible().catch(() => false)) {
     await bezPrirazeni.click();
   }
+  if (udaje.predVytvorenim) await udaje.predVytvorenim();
 
   await page.getByRole("button", { name: "Vytvořit zakázku" }).click();
 

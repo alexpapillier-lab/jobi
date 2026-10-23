@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { kdyOdmenyProText, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, oznaceneOpravySPravidlem, vetaNabidnutoPriPrijmu, type PravidloRucni, VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -224,5 +224,71 @@ describe("ruční odměny", () => {
       { id: "b", nazev: "b", typ: "procento", hodnota: 12.5 },
     ]);
     expect(normalizujPravidlaRucni(null)).toEqual([]);
+  });
+});
+
+describe("čeká na vydání", () => {
+  it("věta u zaškrtávátka podle režimu", () => {
+    expect(vetaNabidnutoPriPrijmu("vydani", null, true)).toBe("Odměna je zaevidovaná a připíše se po vydání zakázky. Do té doby ji uvidíte v Odměnách v části „Čeká na vydání“ – ručně ji nepřidávejte.");
+    expect(vetaNabidnutoPriPrijmu("stav", "Připraveno", true)).toContain("připíše se po přechodu zakázky do stavu „Připraveno“");
+    expect(vetaNabidnutoPriPrijmu("stav", "Připraveno", true)).toContain("v části Čeká na stav „Připraveno“ –");
+    expect(vetaNabidnutoPriPrijmu("pridani", null, true)).toBe("Odměna je zaevidovaná a připíše se hned po uložení zakázky. Ručně ji nepřidávejte.");
+    expect(vetaNabidnutoPriPrijmu("vydani", null, false)).toBe("Zaškrtněte, jen když jste opravu nabídli navíc – odměna se pak připíše po vydání zakázky.");
+    expect(kdyPripiseOdmenu("stav", "  ")).toBe("po dosažení vybraného stavu zakázky");
+    expect(nadpisCekajicich("vydani")).toBe("Čeká na vydání");
+    expect(nadpisCekajicich("pridani")).toBe("Čeká na vydání");
+  });
+
+  it("režim pro text: neznámý nebo stornovací stav = po vydání (jako server)", () => {
+    const stavy = [{ key: "ready", label: "Připraveno" }, { key: "cancelled", label: "Storno" }];
+    const najdi = (k: string) => stavy.find((s) => s.key === k);
+    expect(kdyOdmenyProText({ rezim: "stav", stav: "ready" }, najdi)).toEqual({ rezim: "stav", stavNazev: "Připraveno" });
+    expect(kdyOdmenyProText({ rezim: "stav", stav: "cancelled" }, najdi)).toEqual({ rezim: "vydani", stavNazev: null });
+    expect(kdyOdmenyProText({ rezim: "stav", stav: "smazany" }, najdi)).toEqual({ rezim: "vydani", stavNazev: null });
+    expect(kdyOdmenyProText({ rezim: "pridani" }, najdi)).toEqual({ rezim: "pridani", stavNazev: null });
+  });
+
+  it("čtení pole cekajiciNaZapocteni: starší server bez pole = prázdno, řádek bez zakázky se zahodí", () => {
+    expect(normalizujCekajiciNaZapocteni(undefined)).toEqual([]);
+    const c = normalizujCekajiciNaZapocteni([
+      { ticketId: "t1", kod: "IRP1", polozkaId: "p1", oprava: "Servisní čištění", cena: "500", pravidloId: "a", pravidlo: "Čištění", userId: null, castka: 100, stav: "repair", stavNazev: "V opravě" },
+      { kod: "bez zakázky" },
+      null,
+    ]);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ ticketId: "t1", kod: "IRP1", cena: 500, castka: 100, userId: null, jmeno: null, stavNazev: "V opravě" });
+  });
+});
+
+describe("kontrola dvojí odměny na zakázce", () => {
+  const pravidla: PravidloRucni[] = [
+    { id: "cist", nazev: "Čištění", typ: "castka", hodnota: 100, hledat: "servisní čištění" },
+    { id: "sklo", nazev: "Sklo", typ: "castka", hodnota: 50, hledat: "sklo" },
+  ];
+  const opravy = [
+    { id: "a", name: "Servisní čištění + výměna filtru", nabidnuto: true },
+    { id: "b", name: "Ochranné sklo", nabidnuto: false },
+    { id: "c", name: "Servisní čištění a sklo", nabidnuto: true },
+  ];
+
+  it("označená oprava se stejným (prvním sedícím) pravidlem = dvojí odměna", () => {
+    expect(oznaceneOpravySPravidlem(opravy, pravidla, "cist")).toEqual(["Servisní čištění + výměna filtru", "Servisní čištění a sklo"]);
+    // „Servisní čištění a sklo“ patří prvnímu pravidlu (čištění), ne sklu; „Ochranné sklo“ není označené.
+    expect(oznaceneOpravySPravidlem(opravy, pravidla, "sklo")).toEqual([]);
+  });
+
+  it("přepsání správcem má přednost před příznakem; vyřazená se nepočítá", () => {
+    expect(oznaceneOpravySPravidlem(opravy, pravidla, "sklo", [{ polozkaId: "b", nabidnuto: true, vyrazeno: false }])).toEqual(["Ochranné sklo"]);
+    expect(oznaceneOpravySPravidlem(opravy, pravidla, "cist", [{ polozkaId: "a", nabidnuto: false, vyrazeno: false }, { polozkaId: "c", nabidnuto: null, vyrazeno: true }])).toEqual([]);
+  });
+
+  it("položka bez id se páruje podle pořadí; rozbitá data nespadnou", () => {
+    expect(oznaceneOpravySPravidlem([{ name: "sklo", nabidnuto: true }], pravidla, "sklo", [{ polozkaId: "1", nabidnuto: null, vyrazeno: true }])).toEqual([]);
+    expect(oznaceneOpravySPravidlem(null, pravidla, "cist")).toEqual([]);
+    expect(oznaceneOpravySPravidlem([null, 5, { nabidnuto: true }], pravidla, "cist")).toEqual([]);
+  });
+
+  it("starší server bez hledaného textu = nejde posoudit", () => {
+    expect(oznaceneOpravySPravidlem(opravy, [{ id: "cist", nazev: "Čištění", typ: "castka", hodnota: 100 }], "cist")).toBeNull();
   });
 });

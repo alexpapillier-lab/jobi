@@ -76,6 +76,35 @@ dialogu jako dřív. Když to chceš: Cloudflare API token *Browser Rendering: E
 Actions → „Nasazení edge funkcí na produkci“ → funkce `document-pdf`, potvrzení
 `produkce`. Postup: `docs/PDF_NA_SERVERU.md`. Účtuje se podle času prohlížeče.
 
+### 6c. Odměny: „Čeká na vydání“ (migrace 20261023170000, z 23. 10. 2026)
+Proč: Arman v iSwapu zaškrtl při příjmu „Nabídnuto navíc“, na stránce Odměny
+nic neviděl (zakázka ještě nebyla vydaná) a stejné odměny zadal ručně. Teď
+stránka Odměny ukazuje sekci „Čeká na vydání“, u zaškrtávátka v příjmu je
+věta „odměna je zaevidovaná a připíše se po vydání zakázky“ a dialog Přidat
+odměnu upozorní na dvojí odměnu u zakázky s označenou opravou.
+
+**Migrace je v produkci od 23. 10. 2026 ~13:45** – nasadil ji `supabase db
+push` jiné relace (soubor ležel ve stejném checkoutu). Tělo funkce v produkci
+je shodné se souborem (md5 ověřeno), 388 sond bez neshody (nové 1740–1741:
+člen vidí jen svoje čekající, omezený člen jen svou pobočku, správce vše,
+režim přidání nic nečeká). Předem ověřeno v transakci: 3 režimy × 9 členů
+iSwapu × 4 období = 108 výstupů dosavadních polí beze změny. Migrace mění
+jen funkci `odmeny_prehled` (create or replace): pole `cekajiciNaZapocteni`
+a u pravidel `hledat`.
+
+Zbývá jen **push `main`** (web se nasadí sám). Desktop dostane změny s další
+verzí. Kontrola po nasazení: v iSwapu na Odměnách je v „Čeká na vydání“
+IRP26000227 (Arman, nevydaná).
+
+Kdyby bylo potřeba vrátit funkci: tělo `odmeny_prehled` z
+`20261009160000_root_owner_neviditelny.sql` (oddíl 8) jako nová migrace;
+web bez pole `cekajiciNaZapocteni` nic neukáže a nespadne.
+
+**Ruční odměny Armana (stav 23. 10.):** 5 duplicit (IRP26000178, 179, 183,
+226, 227) je zamítnutých, všech 7 je navázaných na zakázku. Na správce čekají
+IRP26000174 a 177 (bez příznaku Nabídnuto, 2 × 200 Kč) – o nich rozhoduje
+správce iSwapu.
+
 ## C. Rozhodnutí, na která čekám
 
 ### 7. DPH u jednotlivé faktury z detailu zakázky

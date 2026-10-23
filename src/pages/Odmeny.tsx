@@ -5,7 +5,7 @@ import { GiftIcon } from "../components/icons";
 import { Button } from "../components/ui";
 import { showPersistentToast, showToast } from "../components/Toast";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
-import { POPIS_STAVU_RUCNI, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
+import { POPIS_STAVU_RUCNI, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, type CekajiciOdmena, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
 import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
 
 /**
@@ -23,6 +23,10 @@ import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
  * pravidla, s poznámkou, volitelně k zakázce. Zaměstnancova čeká na
  * schválení (Ke schválení nahoře u správce), správcova platí hned; do
  * součtů, žebříčku i vyplácení se počítají jen schválené.
+ *
+ * Čeká na vydání (migrace 20261023170000): označené opravy, které se ještě
+ * nezapočetly (zakázka není vydaná / nedosáhla stavu). Bez nich člověk po
+ * zaškrtnutí „Nabídnuto navíc“ nic neviděl a zadal odměnu ještě ručně.
  */
 
 type Radek = {
@@ -76,6 +80,8 @@ type Prehled = {
   pravidla: PravidloRucni[];
   /** Komu se ruční odměny schvalují automaticky (správce všichni, člen jen on sám). */
   autoSchvaleni: string[];
+  /** Označené opravy, které se připíšou po vydání / dosažení stavu (správce vše, člen svoje). */
+  cekajiciNaZapocteni: CekajiciOdmena[];
 };
 
 const kc = (n: number) => formatCurrency(Number(n) || 0, "CZK");
@@ -123,6 +129,7 @@ function prevedPrehled(raw: unknown): Prehled {
     cekajici: normalizujRucni(o.cekajici),
     pravidla: normalizujPravidlaRucni(o.pravidla),
     autoSchvaleni: (Array.isArray(o.autoSchvaleni) ? o.autoSchvaleni : []).filter((x): x is string => typeof x === "string"),
+    cekajiciNaZapocteni: normalizujCekajiciNaZapocteni(o.cekajiciNaZapocteni),
   };
 }
 
@@ -186,6 +193,11 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     [data, filtrClovek]
   );
   const autoSchvaleni = useMemo(() => new Set(data?.autoSchvaleni ?? []), [data]);
+  const mojeCeka = useMemo(() => (data?.cekajiciNaZapocteni ?? []).filter((c) => !!c.userId && c.userId === data?.ja).reduce((s, c) => s + c.castka, 0), [data]);
+  const cekajiciZobrazene = useMemo(
+    () => (data?.cekajiciNaZapocteni ?? []).filter((c) => filtrClovek === "vse" || (c.userId ?? "") === filtrClovek),
+    [data, filtrClovek]
+  );
   /** Nápověda u data v tabulce: podle čeho se odměna počítá do měsíce. */
   const titulekZapocteno = data?.kdy.rezim === "pridani"
     ? "Kdy byla oprava přidána na zakázku"
@@ -349,6 +361,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
               {rychleUkladam === p.id ? "Přidávám…" : `+ ${p.nazev} · ${p.typ === "procento" ? `${p.hodnota} %` : formatCurrency(p.hodnota)}`}
             </Button>
           ))}
+          <span style={{ ...popisek, flexBasis: "100%" }}>Opravy označené na zakázce „Nabídnuto navíc“ se počítají samy – sem patří jen odměny, které na zakázce nejsou.</span>
         </div>
       )}
 
@@ -436,6 +449,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
               <div style={popisek}>
                 {moje ? `${moje.pocet} ${odmen(moje.pocet)}${moje.pocetRucnich > 0 ? ` (z toho ${moje.pocetRucnich} ručně)` : ""}` : "zatím žádná odměna"}
                 {moje && data.ja && vyplaceno.get(data.ja) ? ` · vyplaceno ${datum(vyplaceno.get(data.ja)!.vyplacenoAt)}` : ""}
+                {mojeCeka > 0 ? ` · ${kc(mojeCeka)} čeká na připsání` : ""}
               </div>
             </div>
           </div>
@@ -497,6 +511,43 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
               </label>
             )}
           </div>
+
+          {cekajiciZobrazene.length > 0 && (
+            <div data-tour="odmeny-ceka">
+              <div style={{ fontWeight: 800 }}>
+                {nadpisCekajicich(data.kdy.rezim, data.kdy.stavNazev)}: {cekajiciZobrazene.length} · {kc(cekajiciZobrazene.reduce((s, c) => s + c.castka, 0))}
+              </div>
+              <div style={{ ...popisek, margin: "2px 0 8px" }}>
+                Označené opravy jsou zaevidované a odměna se připíše {kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát.
+              </div>
+              <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      {["Zakázka", "Stav", "Oprava", "Pravidlo", ...(data.admin ? ["Komu"] : []), "Odměna"].map((h) => (
+                        <th key={h} style={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cekajiciZobrazene.map((c) => (
+                      <tr key={`${c.ticketId}-${c.polozkaId}`}>
+                        <td style={{ ...td, fontWeight: 700 }}>
+                          <button type="button" onClick={() => otevriZakazku(c.ticketId)} style={{ ...odkaz, fontSize: 13 }}>{c.kod ?? "Zakázka"}</button>
+                          <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[c.zakaznik, c.zarizeni].filter(Boolean).join(" · ")}</div>
+                        </td>
+                        <td style={{ ...td, color: "var(--muted)" }}>{c.stavNazev ?? c.stav ?? "—"}</td>
+                        <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={c.oprava}>{c.oprava}</td>
+                        <td style={{ ...td, color: "var(--muted)" }}>{c.pravidlo}</td>
+                        {data.admin && <td style={td}>{c.jmeno ?? "Nepřiřazeno"}</td>}
+                        <td style={{ ...td, fontWeight: 700 }}>{kc(c.castka)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div data-tour="odmeny-radky" style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>

@@ -120,6 +120,7 @@ import { DetailDalsiKarty } from "./Orders/DetailDalsiKarty";
 import { DetailOpravy } from "./Orders/DetailOpravy";
 import { DetailDiagnostika } from "./Orders/DetailDiagnostika";
 import { PrichoziObjednavky } from "./Orders/PrichoziObjednavky";
+import { kdyOdmenyProText } from "../lib/odmeny";
 
 export { safeLoadCompanyData } from "../lib/companyData";
 export { safeLoadDocumentsConfig } from "../lib/documentHelpers";
@@ -185,11 +186,14 @@ export default function Orders({
     pridelovaniTechnika,
     prednastaveneSlevy,
     pravidlaOdmen,
+    kdyOdmen,
     skryteSekce,
     zasilkyZapnuty,
     nastaveniZasilek,
     chatZapnuty,
   } = useNastaveniServisu(activeServiceId);
+  /** Kdy se odměna připíše – věta u „Nabídnuto navíc“ v příjmu (neplatný stav = po vydání, jako server). */
+  const kdyOdmenText = useMemo(() => kdyOdmenyProText(kdyOdmen, getByKeyServisu), [kdyOdmen, getByKeyServisu]);
 
   const {
     cloudTickets,
@@ -2143,6 +2147,7 @@ export default function Orders({
         removePlannedRepair={removePlannedRepair}
         nastavPlannedNabidnuto={nastavPlannedNabidnuto}
         pravidlaOdmen={pravidlaOdmen}
+        kdyOdmen={kdyOdmenText}
         prednastaveneSlevy={prednastaveneSlevy}
         cloudTickets={cloudTickets}
         draftCapturePreviewUrls={draftCapturePreviewUrls}

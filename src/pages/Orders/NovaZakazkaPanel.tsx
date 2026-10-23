@@ -24,7 +24,7 @@ import { popisDoOdkazu } from "../../lib/diagnosticPhotoWatermark";
 import { BARVA_SEKCE, stylSekce } from "../../lib/sekceDetailu";
 import type { Branch } from "../../lib/branches";
 import type { DeviceRepair } from "../../lib/catalogStorage";
-import type { PravidloOdmeny } from "../../lib/odmeny";
+import type { KdyOdmenyText, PravidloOdmeny } from "../../lib/odmeny";
 import type { PrednastavenaSleva } from "../../lib/prednastaveneSlevy";
 import type { ModelWithHierarchy, NewOrderDraft, ShodaZakaznika, TicketEx } from "./typy";
 import { formatIco, formatPhoneNumber, formatZipCode } from "./formatovani";
@@ -84,6 +84,7 @@ type Props = {
   removePlannedRepair: (idx: number, id: string) => void;
   nastavPlannedNabidnuto: (idx: number, id: string, nabidnuto: boolean) => void;
   pravidlaOdmen: PravidloOdmeny[];
+  kdyOdmen: KdyOdmenyText;
   prednastaveneSlevy: PrednastavenaSleva[];
   cloudTickets: TicketEx[];
   /** Fotky z telefonu k rozepsanému příjmu (QR focení ke konceptu). */
@@ -148,6 +149,7 @@ export function NovaZakazkaPanel({
   removePlannedRepair,
   nastavPlannedNabidnuto,
   pravidlaOdmen,
+  kdyOdmen,
   prednastaveneSlevy,
   cloudTickets,
   draftCapturePreviewUrls,
@@ -570,6 +572,7 @@ export function NovaZakazkaPanel({
         removePlannedRepair={removePlannedRepair}
         nastavPlannedNabidnuto={nastavPlannedNabidnuto}
         pravidlaOdmen={pravidlaOdmen}
+        kdyOdmen={kdyOdmen}
         prednastaveneSlevy={prednastaveneSlevy}
         newOrderDeviceMoreOpen={newOrderDeviceMoreOpen}
         setNewOrderDeviceMoreOpen={setNewOrderDeviceMoreOpen}

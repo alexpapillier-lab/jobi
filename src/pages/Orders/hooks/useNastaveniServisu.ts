@@ -10,7 +10,7 @@ import { VYCHOZI_ZAOKROUHLENI_PRACE, normalizujZaokrouhleni } from "../../../lib
 import { type SablonaKontroly, normalizujSablony } from "../../../lib/kontrolniSeznamy";
 import { type NahradniZarizeni, normalizujNahradni } from "../../../lib/zapujcka";
 import { normalizujSlevy, type PrednastavenaSleva } from "../../../lib/prednastaveneSlevy";
-import { normalizujOdmeny, type PravidloOdmeny } from "../../../lib/odmeny";
+import { VYCHOZI_KDY_ODMENY, normalizujOdmeny, type KdyOdmeny, type PravidloOdmeny } from "../../../lib/odmeny";
 import { normalizujSkryteSekce, type SkrytelnaSekce } from "../../../lib/sekceDetailu";
 import { normalizujNastaveniZasilek, type NastaveniZasilek } from "../../../lib/zasilky";
 
@@ -32,6 +32,8 @@ export function useNastaveniServisu(activeServiceId: string | null) {
   const [prednastaveneSlevy, setPrednastaveneSlevy] = useState<PrednastavenaSleva[]>([]);
   /** Aktivní pravidla odměn (config.odmeny) – u opravy, na kterou sedí, se nabízí příznak „nabídnuto navíc“. */
   const [pravidlaOdmen, setPravidlaOdmen] = useState<PravidloOdmeny[]>([]);
+  /** Kdy se odměna připíše (config.odmeny.kdy) – věta u „Nabídnuto navíc“ v příjmu. */
+  const [kdyOdmen, setKdyOdmen] = useState<KdyOdmeny>(VYCHOZI_KDY_ODMENY);
   /** Sekce detailu, které si servis vypnul (config.skryte_sekce_detailu). */
   const [skryteSekce, setSkryteSekce] = useState<Set<SkrytelnaSekce>>(() => new Set());
   /** Modul Přesuny mezi pobočkami (config.zasilky): karta „Kde je zakázka“ a štítek místa v seznamu. */
@@ -54,7 +56,9 @@ export function useNastaveniServisu(activeServiceId: string | null) {
     setPridelovaniTechnika(config?.pridelovani_technika !== false);
     setChatZapnuty(config?.chat !== false);
     setPrednastaveneSlevy(normalizujSlevy(config?.prednastavene_slevy));
-    setPravidlaOdmen(normalizujOdmeny(config?.odmeny).pravidla.filter((p) => p.aktivni));
+    const odmeny = normalizujOdmeny(config?.odmeny);
+    setPravidlaOdmen(odmeny.pravidla.filter((p) => p.aktivni));
+    setKdyOdmen(odmeny.kdy);
     setSkryteSekce(normalizujSkryteSekce(config?.skryte_sekce_detailu));
     setZasilkyZapnuty(config?.zasilky === true);
     setNastaveniZasilek(normalizujNastaveniZasilek(config ?? undefined));
@@ -99,6 +103,7 @@ export function useNastaveniServisu(activeServiceId: string | null) {
     pridelovaniTechnika,
     prednastaveneSlevy,
     pravidlaOdmen,
+    kdyOdmen,
     skryteSekce,
     zasilkyZapnuty,
     nastaveniZasilek,

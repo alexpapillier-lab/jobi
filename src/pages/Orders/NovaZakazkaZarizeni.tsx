@@ -17,7 +17,7 @@ import { otevriVProhlizeci } from "../../lib/platform";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { castkaSlevy, konecnaCena } from "../../lib/slevaZakazky";
 import { poRucniCene, poZmeneSlevy, soucetOprav, zakladCeny } from "../../lib/cenaPriPrijmu";
-import { najdiPravidlo, type PravidloOdmeny } from "../../lib/odmeny";
+import { najdiPravidlo, vetaNabidnutoPriPrijmu, type KdyOdmenyText, type PravidloOdmeny } from "../../lib/odmeny";
 import type { PrednastavenaSleva } from "../../lib/prednastaveneSlevy";
 import { BARVA_SEKCE, stylSekce } from "../../lib/sekceDetailu";
 import { chybiPodkladZaruky, najdiStejneZarizeni, odkazKontrolaImei, stavSerioveho } from "../../lib/zarizeniHistorie";
@@ -49,6 +49,8 @@ type Props = {
   removePlannedRepair: (idx: number, id: string) => void;
   nastavPlannedNabidnuto: (idx: number, id: string, nabidnuto: boolean) => void;
   pravidlaOdmen: PravidloOdmeny[];
+  /** Kdy se odměna připíše (platný režim a název stavu) – věta pod „Nabídnuto navíc“. */
+  kdyOdmen: KdyOdmenyText;
   prednastaveneSlevy: PrednastavenaSleva[];
   newOrderDeviceMoreOpen: boolean;
   setNewOrderDeviceMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -76,6 +78,7 @@ export function NovaZakazkaZarizeni({
   removePlannedRepair,
   nastavPlannedNabidnuto,
   pravidlaOdmen,
+  kdyOdmen,
   prednastaveneSlevy,
   newOrderDeviceMoreOpen,
   setNewOrderDeviceMoreOpen,
@@ -275,6 +278,10 @@ export function NovaZakazkaZarizeni({
                                     <span>Nabídnuto navíc: <b>{r.name}</b></span>
                                   </label>
                                 ))}
+                                {/* Kdy odměna přibude – bez toho to po zaškrtnutí vypadalo, že se nic nestalo, a odměny se zadávaly ještě ručně. */}
+                                <div data-testid="nabidnuto-veta" style={{ flexBasis: "100%", fontSize: 11, lineHeight: 1.4 }}>
+                                  {vetaNabidnutoPriPrijmu(kdyOdmen.rezim, kdyOdmen.stavNazev, planned.some((r) => r.nabidnuto && najdiPravidlo(pravidlaOdmen, r.name)))}
+                                </div>
                               </div>
                             )}
                             {planned.length > 0 && (

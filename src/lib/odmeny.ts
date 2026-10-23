@@ -21,6 +21,11 @@
  * Kdy se odměna připočítá (migrace 20261009120000, `config.odmeny.kdy`):
  * po vydání zakázky (výchozí), hned po přidání opravy, nebo až zakázka
  * poprvé dosáhne vybraného stavu. Ruční odměny se řídí svým měsícem.
+ *
+ * Čeká na vydání (migrace 20261023170000): označené opravy, které se ještě
+ * nezapočetly (nevydaná zakázka, stav nedosažen), vrací server v poli
+ * `cekajiciNaZapocteni`. Člověk tak hned po zaškrtnutí „Nabídnuto navíc“
+ * vidí, že odměna je zaevidovaná, a nezadává ji ještě ručně.
  */
 
 import { jeStornoStav } from "./stornoStav";
@@ -138,6 +143,52 @@ export function vychoziStavOdmen(stavy: readonly StavServisu[]): string | null {
   const mozne = stavyProOdmeny(stavy);
   const nekoncove = mozne.filter((s) => !s.isFinal);
   return nekoncove[nekoncove.length - 1]?.key ?? mozne[0]?.key ?? null;
+}
+
+/**
+ * Kdy se odměna za označenou opravu připíše – doplněk za „připíše se“,
+ * např. „po vydání zakázky“. Režim přidání = hned.
+ */
+export function kdyPripiseOdmenu(rezim: RezimOdmen, stavNazev?: string | null): string {
+  if (rezim === "pridani") return "hned po uložení";
+  const s = stavNazev?.trim();
+  if (rezim === "stav") return s ? `po přechodu zakázky do stavu „${s}“` : "po dosažení vybraného stavu zakázky";
+  return "po vydání zakázky";
+}
+
+/** Platný režim s názvem stavu – pro věty v aplikaci (mimo stránku Odměny, kde ho vrací server). */
+export type KdyOdmenyText = { rezim: RezimOdmen; stavNazev: string | null };
+
+/**
+ * Režim z configu + stavy servisu → režim pro text. Stejně jako server
+ * (`odmeny_prehled`): stav, který v servisu není nebo je storno, = po vydání.
+ */
+export function kdyOdmenyProText(kdy: KdyOdmeny, najdiStav: (klic: string) => { key: string; label: string } | undefined): KdyOdmenyText {
+  if (kdy.rezim !== "stav") return { rezim: kdy.rezim, stavNazev: null };
+  const st = kdy.stav ? najdiStav(kdy.stav) : undefined;
+  if (!st || jeStornoStav(st.key, st.label)) return { rezim: "vydani", stavNazev: null };
+  return { rezim: "stav", stavNazev: st.label };
+}
+
+/** Nadpis sekce čekajících odměn na stránce Odměny. */
+export function nadpisCekajicich(rezim: RezimOdmen, stavNazev?: string | null): string {
+  const s = stavNazev?.trim();
+  if (rezim === "stav") return s ? `Čeká na stav „${s}“` : "Čeká na stav zakázky";
+  return "Čeká na vydání";
+}
+
+/**
+ * Věta u zaškrtávátek „Nabídnuto navíc“ v příjmu zakázky. Po zaškrtnutí
+ * říká, že odměna je zaevidovaná a kdy přibude – a kde ji do té doby najít,
+ * aby ji nikdo nezadával ještě ručně.
+ */
+export function vetaNabidnutoPriPrijmu(rezim: RezimOdmen, stavNazev: string | null | undefined, zaskrtnuto: boolean): string {
+  const kdy = kdyPripiseOdmenu(rezim, stavNazev);
+  if (!zaskrtnuto) return `Zaškrtněte, jen když jste opravu nabídli navíc – odměna se pak připíše ${kdy}.`;
+  if (rezim === "pridani") return "Odměna je zaevidovaná a připíše se hned po uložení zakázky. Ručně ji nepřidávejte.";
+  const nadpis = nadpisCekajicich(rezim, stavNazev);
+  const cast = nadpis.includes("„") ? nadpis : `„${nadpis}“`;
+  return `Odměna je zaevidovaná a připíše se ${kdy}. Do té doby ji uvidíte v Odměnách v části ${cast} – ručně ji nepřidávejte.`;
 }
 
 /** Nadpis sloupce s datem, podle kterého se odměna počítá (Vydáno / Přidáno / Započteno). */
@@ -286,7 +337,14 @@ export function zamestnanecMesice(lide: ClovekOdmeny[]): ClovekOdmeny[] {
 export type StavRucniOdmeny = "ceka" | "schvaleno" | "zamitnuto";
 
 /** Aktivní pravidlo, jak ho vrací `odmeny_prehled` (pole `pravidla`) – výběr v dialogu Přidat odměnu. */
-export type PravidloRucni = { id: string; nazev: string; typ: TypOdmeny; hodnota: number };
+export type PravidloRucni = {
+  id: string;
+  nazev: string;
+  typ: TypOdmeny;
+  hodnota: number;
+  /** Hledaný text (server od 20261023170000) – kvůli kontrole dvojí odměny na zakázce. */
+  hledat?: string;
+};
 
 export type RucniOdmena = {
   id: string;
@@ -376,7 +434,8 @@ export function normalizujPravidlaRucni(raw: unknown): PravidloRucni[] {
     const r = x as Record<string, unknown>;
     const id = textNeboNull(r.id);
     if (!id) continue;
-    vysledek.push({ id, nazev: String(r.nazev ?? id), typ: r.typ === "procento" ? "procento" : "castka", hodnota: Math.max(0, cislo(r.hodnota)) });
+    const hledat = typeof r.hledat === "string" && r.hledat.trim() ? r.hledat.trim() : undefined;
+    vysledek.push({ id, nazev: String(r.nazev ?? id), typ: r.typ === "procento" ? "procento" : "castka", hodnota: Math.max(0, cislo(r.hodnota)), ...(hledat ? { hledat } : {}) });
   }
   return vysledek;
 }
@@ -424,3 +483,93 @@ export const POPIS_STAVU_RUCNI: Record<StavRucniOdmeny, string> = {
   schvaleno: "schváleno",
   zamitnuto: "zamítnuto",
 };
+
+// ---------------------------------------------------------------------------
+// Čeká na vydání a kontrola dvojí odměny
+// ---------------------------------------------------------------------------
+
+/** Označená oprava, která se ještě nezapočetla (pole `cekajiciNaZapocteni`). */
+export type CekajiciOdmena = {
+  ticketId: string;
+  kod: string | null;
+  zakaznik: string | null;
+  zarizeni: string | null;
+  polozkaId: string;
+  oprava: string;
+  cena: number;
+  pravidloId: string;
+  pravidlo: string;
+  /** Komu se odměna připíše; null = nejde určit. */
+  userId: string | null;
+  jmeno: string | null;
+  castka: number;
+  /** Současný stav zakázky (klíč a název). */
+  stav: string | null;
+  stavNazev: string | null;
+};
+
+/** Tolerantní čtení `cekajiciNaZapocteni`; starší server pole nemá = prázdný seznam. */
+export function normalizujCekajiciNaZapocteni(raw: unknown): CekajiciOdmena[] {
+  if (!Array.isArray(raw)) return [];
+  const vysledek: CekajiciOdmena[] = [];
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const r = x as Record<string, unknown>;
+    const ticketId = textNeboNull(r.ticketId);
+    if (!ticketId) continue;
+    vysledek.push({
+      ticketId,
+      kod: textNeboNull(r.kod),
+      zakaznik: textNeboNull(r.zakaznik),
+      zarizeni: textNeboNull(r.zarizeni),
+      polozkaId: String(r.polozkaId ?? ""),
+      oprava: String(r.oprava ?? ""),
+      cena: cislo(r.cena),
+      pravidloId: String(r.pravidloId ?? ""),
+      pravidlo: String(r.pravidlo ?? ""),
+      userId: textNeboNull(r.userId),
+      jmeno: textNeboNull(r.jmeno),
+      castka: cislo(r.castka),
+      stav: textNeboNull(r.stav),
+      stavNazev: textNeboNull(r.stavNazev),
+    });
+  }
+  return vysledek;
+}
+
+/** Přepsání správce z `odmeny_upravy` (člen ho obvykle nepřečte – pak se bere příznak z opravy). */
+export type UpravaOdmeny = { polozkaId: string; nabidnuto: boolean | null; vyrazeno: boolean };
+
+/**
+ * Opravy na zakázce, za které už odměna podle pravidla `pravidloId` běží
+ * sama (započtená i čekající): příznak „nabídnuto navíc“ (nebo přepsání
+ * správcem) a první aktivní pravidlo v pořadí, které na název sedí, je
+ * právě tohle – stejně jako v `odmeny_prehled`. Ruční odměna se stejným
+ * pravidlem by pak byla dvojí.
+ *
+ * Vrací názvy takových oprav; null = nejde posoudit (server bez `hledat`).
+ */
+export function oznaceneOpravySPravidlem(
+  opravy: unknown,
+  pravidla: PravidloRucni[],
+  pravidloId: string,
+  upravy: UpravaOdmeny[] = []
+): string[] | null {
+  if (pravidla.length === 0 || pravidla.some((p) => !p.hledat)) return null;
+  const podleId = new Map(upravy.map((u) => [u.polozkaId, u]));
+  const vysledek: string[] = [];
+  (Array.isArray(opravy) ? opravy : []).forEach((x, i) => {
+    if (!x || typeof x !== "object") return;
+    const o = x as Record<string, unknown>;
+    const nazev = typeof o.name === "string" ? o.name : "";
+    // Bez id položky páruje server podle pořadí (od 1) – stejně tady.
+    const id = typeof o.id === "string" && o.id ? o.id : String(i + 1);
+    const uprava = podleId.get(id);
+    if (uprava?.vyrazeno) return;
+    const nabidnuto = uprava?.nabidnuto ?? o.nabidnuto === true;
+    if (!nabidnuto) return;
+    const prvni = pravidla.find((p) => nazev.toLowerCase().includes((p.hledat ?? "").toLowerCase()));
+    if (prvni?.id === pravidloId) vysledek.push(nazev);
+  });
+  return vysledek;
+}

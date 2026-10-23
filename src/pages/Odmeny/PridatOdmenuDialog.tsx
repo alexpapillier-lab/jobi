@@ -4,7 +4,8 @@ import { supabase } from "../../lib/supabaseClient";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { Button, Input } from "../../components/ui";
 import type { ClenServisu } from "../../hooks/useClenoveServisu";
-import { castkaRucniOdmeny, chybaRucniOdmeny, popisPravidla, prectiCenu, type PravidloRucni } from "../../lib/odmeny";
+import { castkaRucniOdmeny, chybaRucniOdmeny, oznaceneOpravySPravidlem, popisPravidla, prectiCenu, type PravidloRucni, type UpravaOdmeny } from "../../lib/odmeny";
+import { jeStornoStav } from "../../lib/stornoStav";
 
 /**
  * Dialog „Přidat odměnu“ na stránce Odměny.
@@ -15,9 +16,15 @@ import { castkaRucniOdmeny, chybaRucniOdmeny, popisPravidla, prectiCenu, type Pr
  * z pravidla, tady je jen náhled. Zaměstnanec přidává jen sám sobě a jeho
  * odměna čeká na schválení (pokud mu správce nezapnul automatické
  * schvalování); správce vybírá komu a jeho odměna je rovnou schválená.
+ *
+ * Dvojí odměna (23. 10. 2026): má-li vybraná zakázka opravu označenou
+ * „Nabídnuto navíc“, na kterou sedí stejné pravidlo, odměna za ni běží
+ * sama (započtená i čekající na vydání) – dialog na to upozorní.
  */
 
 type Zakazka = { id: string; kod: string; detail: string };
+/** Opravy vybrané zakázky pro kontrolu dvojí odměny. */
+type OpravyZakazky = { ticketId: string; storno: boolean; opravy: unknown; upravy: UpravaOdmeny[] };
 
 const pole: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
 const popisek: React.CSSProperties = { display: "grid", gap: 4, fontSize: 12, color: "var(--muted)" };
@@ -60,6 +67,7 @@ export function PridatOdmenuDialog({
   const [zakazka, setZakazka] = useState<Zakazka | null>(null);
   const [hledani, setHledani] = useState("");
   const [napovedy, setNapovedy] = useState<Zakazka[]>([]);
+  const [opravyZakazky, setOpravyZakazky] = useState<OpravyZakazky | null>(null);
   const [ukladam, setUkladam] = useState(false);
   const [chyba, setChyba] = useState<string | null>(null);
   const poznamkaRef = useRef<HTMLTextAreaElement>(null);
@@ -93,6 +101,33 @@ export function PridatOdmenuDialog({
     return () => { zruseno = true; window.clearTimeout(casovac); };
   }, [open, hledani, serviceId]);
 
+  // Vybraná zakázka: opravy s příznakem (a přepsání správcem, pokud je
+  // volající smí číst) – kvůli upozornění na dvojí odměnu.
+  useEffect(() => {
+    if (!open || !supabase || !zakazka) return;
+    let zruseno = false;
+    void (async () => {
+      // deno-lint-ignore no-explicit-any
+      const sb = supabase as any;
+      const [{ data: t }, { data: u }] = await Promise.all([
+        sb.from("tickets").select("status, performed_repairs").eq("id", zakazka.id).maybeSingle(),
+        sb.from("odmeny_upravy").select("polozka_id, nabidnuto, vyrazeno").eq("ticket_id", zakazka.id),
+      ]);
+      if (zruseno || !t) return;
+      setOpravyZakazky({
+        ticketId: zakazka.id,
+        storno: jeStornoStav(typeof t.status === "string" ? t.status : null),
+        opravy: t.performed_repairs,
+        upravy: ((u ?? []) as Record<string, unknown>[]).map((r) => ({
+          polozkaId: String(r.polozka_id ?? ""),
+          nabidnuto: typeof r.nabidnuto === "boolean" ? r.nabidnuto : null,
+          vyrazeno: r.vyrazeno === true,
+        })),
+      });
+    })();
+    return () => { zruseno = true; };
+  }, [open, zakazka]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !ukladam) { e.preventDefault(); onClose(); } };
@@ -106,6 +141,10 @@ export function PridatOdmenuDialog({
   const nahled = pravidlo ? castkaRucniOdmeny(pravidlo, zaklad) : null;
   const jinemu = admin && !!komu && komu !== ja;
   const viditelneNapovedy = hledani.trim().length >= 2 ? napovedy : [];
+  const oznacene = useMemo(() => {
+    if (!pravidlo || !zakazka || opravyZakazky?.ticketId !== zakazka.id || opravyZakazky.storno) return [];
+    return oznaceneOpravySPravidlem(opravyZakazky.opravy, pravidla, pravidlo.id, opravyZakazky.upravy) ?? [];
+  }, [pravidlo, pravidla, zakazka, opravyZakazky]);
 
   if (!open) return null;
 
@@ -185,7 +224,7 @@ export function PridatOdmenuDialog({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text)" }}>
                   <b>{zakazka.kod}</b>
                   <span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{zakazka.detail}</span>
-                  <Button size="sm" variant="ghost" onClick={() => setZakazka(null)}>Odebrat</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setZakazka(null); setOpravyZakazky(null); }}>Odebrat</Button>
                 </div>
               ) : (
                 <div style={{ position: "relative" }}>
@@ -205,6 +244,13 @@ export function PridatOdmenuDialog({
                     </div>
                   )}
                 </div>
+              )}
+              {zakazka && oznacene.length > 0 ? (
+                <div role="alert" data-testid="odmena-dvoji" style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.5, padding: 10, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.45)", borderRadius: 8 }}>
+                  Pozor, dvojí odměna: na zakázce {zakazka.kod} je {oznacene.length === 1 ? "oprava" : "opravy"} {oznacene.map((n) => `„${n}“`).join(", ")} {oznacene.length === 1 ? "označená" : "označené"} „Nabídnuto navíc“. Odměna „{pravidlo?.nazev}“ se za {oznacene.length === 1 ? "ni" : "ně"} počítá sama – ruční by byla navíc.
+                </div>
+              ) : (
+                !zakazka && <span>Opravy označené na zakázce „Nabídnuto navíc“ se počítají samy – ručně přidávejte jen to, co na zakázce není.</span>
               )}
             </div>
 
