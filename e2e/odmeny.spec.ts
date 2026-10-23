@@ -85,6 +85,10 @@ test("pravidlo odměn se uloží, zapne stránku Odměny a po úklidu zmizí", a
     const stranka = page.locator('[data-tour="page-odmeny"]');
     await expect(stranka).toContainText(/Zaměstnan(ec|ci) měsíce/, { timeout: 30_000 });
     await expect(stranka).toContainText("Celkem odměn za měsíc");
+    // Správce má schvalování vždy na jednom místě nahoře – i když nic nečeká.
+    const keSchvaleni = page.locator('[data-tour="odmeny-ke-schvaleni"]');
+    await expect(keSchvaleni).toContainText("Ke schválení");
+    await expect(keSchvaleni).toContainText(/Nic nečeká na schválení|Schválit/);
   } finally {
     // Úklid: pravidlo pryč, přepínač jak byl. Smazání se potvrzuje oknem prohlížeče.
     await otevriOdmenyVNastaveni(page);

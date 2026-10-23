@@ -5,7 +5,8 @@ import { GiftIcon } from "../components/icons";
 import { Button } from "../components/ui";
 import { showPersistentToast, showToast } from "../components/Toast";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
-import { POPIS_STAVU_RUCNI, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, type CekajiciOdmena, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
+import { jeStornoStav } from "../lib/stornoStav";
+import { POPIS_STAVU_RUCNI, oznaceneOpravySPravidlem, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, type CekajiciOdmena, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
 import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
 
 /**
@@ -27,6 +28,12 @@ import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
  * Čeká na vydání (migrace 20261023170000): označené opravy, které se ještě
  * nezapočetly (zakázka není vydaná / nedosáhla stavu). Bez nich člověk po
  * zaškrtnutí „Nabídnuto navíc“ nic neviděl a zadal odměnu ještě ručně.
+ *
+ * Rozvržení (23. 10. 2026, majitel: „není pochopitelný, kde se má co
+ * schvalovat“): shora Ke schválení (jediné místo se schvalováním, u správce
+ * vždy viditelné), Čeká na vydání (jen informace), Přidat ruční odměnu,
+ * Započtené za měsíc (výběr měsíce, opravy, ruční) a dole Součty se
+ * žebříčkem. Každý oddíl má větu, proč tam položky jsou a co s nimi.
  */
 
 type Radek = {
@@ -283,6 +290,43 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     void nacti();
   }, [activeServiceId, data, mesic, vyplaceno, nacti]);
 
+  /* Ke schválení: ruční odměna k zakázce, na které je oprava se stejným
+     pravidlem označená „Nabídnuto navíc“, by byla dvojí (počítá se sama).
+     Výsledek patří k jedné odpovědi serveru (`pro`), po obnovení se počítá znovu. */
+  const [dvojiUSchvaleni, setDvojiUSchvaleni] = useState<{ pro: Prehled | null; mapa: Map<string, string[]> }>({ pro: null, mapa: new Map() });
+  useEffect(() => {
+    if (!supabase || !data) return;
+    const sZakazkou = data.cekajici.filter((r) => r.ticketId);
+    if (sZakazkou.length === 0) return;
+    let zruseno = false;
+    const ids = [...new Set(sZakazkou.map((r) => r.ticketId!))];
+    void (async () => {
+      // deno-lint-ignore no-explicit-any
+      const sb = supabase as any;
+      const [{ data: t }, { data: u }] = await Promise.all([
+        sb.from("tickets").select("id, status, performed_repairs").in("id", ids),
+        sb.from("odmeny_upravy").select("ticket_id, polozka_id, nabidnuto, vyrazeno").in("ticket_id", ids),
+      ]);
+      if (zruseno) return;
+      const zakazky = new Map(((t ?? []) as Record<string, unknown>[]).map((z) => [String(z.id), z]));
+      const upravy = ((u ?? []) as Record<string, unknown>[]).map((x) => ({
+        ticketId: String(x.ticket_id ?? ""),
+        polozkaId: String(x.polozka_id ?? ""),
+        nabidnuto: typeof x.nabidnuto === "boolean" ? x.nabidnuto : null,
+        vyrazeno: x.vyrazeno === true,
+      }));
+      const mapa = new Map<string, string[]>();
+      for (const r of sZakazkou) {
+        const z = zakazky.get(r.ticketId!);
+        if (!z || jeStornoStav(typeof z.status === "string" ? z.status : null)) continue;
+        const nazvy = oznaceneOpravySPravidlem(z.performed_repairs, data.pravidla, r.pravidloId, upravy.filter((x) => x.ticketId === r.ticketId));
+        if (nazvy && nazvy.length > 0) mapa.set(r.id, nazvy);
+      }
+      setDvojiUSchvaleni({ pro: data, mapa });
+    })();
+    return () => { zruseno = true; };
+  }, [data]);
+
   // --- styly ------------------------------------------------------------------
   const border = "1px solid var(--border)";
   const dlazdice: React.CSSProperties = { flex: "1 1 200px", padding: 14, borderRadius: 14, border, background: "var(--panel)", minWidth: 0 };
@@ -327,43 +371,26 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     });
   }, [activeServiceId, data, rychleKomu, mesic, clenove, nacti]);
 
+  const cekaNaSchvaleni = data?.cekajici ?? [];
+  const nazevMesiceStranky = nazevMesice(mesic);
+  const rucniVMesici = rucniZobrazene.filter((r) => r.stav !== "ceka");
+
   return (
-    <div style={{ display: "grid", gap: 16, padding: "0 0 24px" }}>
+    <div style={{ display: "grid", gap: 20, padding: "0 0 24px" }}>
+      {/* ── Hlavička: co stránka je a jak odměna vzniká ─────────────────── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
+        <div style={{ minWidth: 0, flex: "1 1 420px" }}>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             <GiftIcon size={22} /> Odměny
           </div>
-          <div style={{ ...popisek, marginTop: 4 }}>Prémie za opravy nabídnuté zákazníkovi navíc (ne za ty, se kterými přišel).{data ? ` ${vetaKdyOdmeny(data.kdy.rezim, data.kdy.stavNazev)}` : ""}</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div data-tour="odmeny-mesic" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, -1))} aria-label="Předchozí měsíc">‹</Button>
-          <span style={{ fontWeight: 800, minWidth: 130, textAlign: "center" }}>{nazevMesice(mesic)}</span>
-          <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, 1))} disabled={mesic >= tentoMesic} aria-label="Další měsíc">›</Button>
-          {mesic !== tentoMesic && <Button size="sm" variant="ghost" onClick={() => setMesic(tentoMesic)}>Tento měsíc</Button>}
+          <div style={{ ...popisek, marginTop: 4, lineHeight: 1.5 }}>
+            Prémie za opravy nabídnuté zákazníkovi navíc. Oprava označená na zakázce „Nabídnuto navíc“ se připíše sama
+            {data ? ` ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)}` : ""}. Ručně se přidává jen to, co na zakázce není –
+            {data?.admin ? " takovou odměnu od zaměstnance schvalujete vy." : " takovou odměnu schvaluje majitel nebo správce."}
+          </div>
         </div>
         <Button data-tour="odmeny-pridat" size="sm" variant="primary" onClick={() => { setPridavamPravidlo(undefined); setPridavam(true); }} disabled={!data || data.pravidla.length === 0} title={data && data.pravidla.length === 0 ? "Servis nemá žádné aktivní pravidlo odměn" : "Přidat odměnu s poznámkou nebo číslem zakázky"}>+ Přidat s poznámkou</Button>
-        </div>
       </div>
-
-      {data && data.pravidla.length > 0 && (
-        <div data-tour="odmeny-rychle" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)" }}>
-          <span style={{ ...popisek, fontWeight: 700 }}>Přidat odměnu jedním klikem{mesic !== tentoMesic ? ` (do ${nazevMesice(mesic)})` : ""}:</span>
-          {data.admin && clenove.length > 0 && (
-            <select value={rychleKomu} onChange={(e) => setRychleKomu(e.target.value)} aria-label="Komu odměnu přidat" style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
-              <option value="">mně</option>
-              {clenove.filter((c) => c.userId !== data.ja).map((c) => <option key={c.userId} value={c.userId}>{c.jmeno}</option>)}
-            </select>
-          )}
-          {data.pravidla.map((p) => (
-            <Button key={p.id} size="sm" variant="soft" disabled={rychleUkladam !== null} onClick={() => void rychlePridat(p)} title={p.typ === "procento" ? "Odměna v procentech – zeptá se na cenu" : "Přidá odměnu hned, bez poznámky"}>
-              {rychleUkladam === p.id ? "Přidávám…" : `+ ${p.nazev} · ${p.typ === "procento" ? `${p.hodnota} %` : formatCurrency(p.hodnota)}`}
-            </Button>
-          ))}
-          <span style={{ ...popisek, flexBasis: "100%" }}>Opravy označené na zakázce „Nabídnuto navíc“ se počítají samy – sem patří jen odměny, které na zakázce nejsou.</span>
-        </div>
-      )}
 
       {chyba && <div style={{ padding: 16, borderRadius: 12, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)", color: "var(--text)", fontSize: 13 }}>{chyba}</div>}
       {!chyba && nacitam && !data && <div style={popisek}>Načítám…</div>}
@@ -375,60 +402,287 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
         </div>
       )}
 
-      {data && data.cekajici.length > 0 && (
-        <div data-tour="odmeny-ke-schvaleni" style={{ border: "1px solid var(--accent)", borderRadius: 14, background: "var(--accent-soft)", padding: 12, display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 800 }}>{data.admin ? `Ke schválení: ${data.cekajici.length}` : `Čeká na schválení: ${data.cekajici.length}`}</div>
-          {data.cekajici.map((r) => (
-            <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap", padding: "8px 10px", borderRadius: 10, background: "var(--panel)", border }}>
-              <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13 }}>
-                <div>
-                  <b>{r.jmeno}</b> · {r.pravidlo} · <b>{kc(r.castka)}</b>
-                  {r.zaklad !== null && <span style={popisek}> (z {kc(r.zaklad)})</span>}
-                  <span style={popisek}> · {nazevMesice(r.obdobi)}</span>
-                </div>
-                <div style={{ marginTop: 2, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{r.poznamka}</div>
-                <div style={popisek}>
-                  {r.ticketId && (
-                    <>
-                      <button type="button" onClick={() => otevriZakazku(r.ticketId!)} style={odkaz}>{r.kod ?? "Zakázka"}</button>
-                      {[r.zakaznik, r.zarizeni].some(Boolean) && ` ${[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}`}
-                      {" · "}
-                    </>
+      {/* ── 1. Ke schválení: jediné místo, kde se něco schvaluje ───────────── */}
+      {data && (data.admin || cekaNaSchvaleni.length > 0) && (
+        <Sekce
+          dataTour="odmeny-ke-schvaleni"
+          nadpis={data.admin ? "Ke schválení" : "Čeká na schválení"}
+          pocet={cekaNaSchvaleni.length}
+          zvyraznit={cekaNaSchvaleni.length > 0}
+          popis={data.admin
+            ? "Ruční odměny od zaměstnanců. Započtou se do součtů až po schválení. Odměny za označené opravy se neschvalují – připíšou se samy."
+            : "Vaše ruční odměny. Započtou se, až je majitel nebo správce schválí."}
+        >
+          {cekaNaSchvaleni.length === 0 ? (
+            <div style={{ ...popisek, padding: "4px 2px" }}>Nic nečeká na schválení.</div>
+          ) : cekaNaSchvaleni.map((r) => {
+            const dvoji = dvojiUSchvaleni.pro === data ? dvojiUSchvaleni.mapa.get(r.id) : undefined;
+            return (
+              <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap", padding: "10px 12px", borderRadius: 10, background: "var(--panel)", border }}>
+                <div style={{ flex: "1 1 300px", minWidth: 0, fontSize: 13, display: "grid", gap: 3 }}>
+                  <div>
+                    <b>{r.jmeno}</b> · {r.pravidlo} · <b>{kc(r.castka)}</b>
+                    {r.zaklad !== null && <span style={popisek}> (z {kc(r.zaklad)})</span>}
+                    <span style={popisek}> · započte se do měsíce {nazevMesice(r.obdobi)}</span>
+                  </div>
+                  <div style={popisek}>
+                    Proč tu je: ruční odměnu zadal(a) {r.vytvorilJmeno ?? r.jmeno}{r.createdAt ? ` ${datum(r.createdAt)}` : ""}
+                    {r.ticketId && (
+                      <>
+                        {" · zakázka "}
+                        <button type="button" onClick={() => otevriZakazku(r.ticketId!)} style={odkaz}>{r.kod ?? "otevřít"}</button>
+                        {[r.zakaznik, r.zarizeni].some(Boolean) && ` ${[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}`}
+                      </>
+                    )}
+                  </div>
+                  {r.poznamka && <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>„{r.poznamka}“</div>}
+                  {dvoji && dvoji.length > 0 && (
+                    <div role="alert" data-testid="schvaleni-dvoji" style={{ marginTop: 4, padding: "6px 8px", borderRadius: 8, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.45)", lineHeight: 1.45 }}>
+                      Pozor, dvojí odměna: na zakázce je {dvoji.map((n) => `„${n}“`).join(", ")} s „Nabídnuto navíc“ – za to se odměna počítá sama. Nejspíš zamítnout.
+                    </div>
                   )}
-                  {r.vytvoril && r.vytvoril === r.userId ? "přidal sám" : `přidal ${r.vytvorilJmeno ?? "—"}`}
-                  {r.createdAt ? ` ${datum(r.createdAt)}` : ""}
+                  {data.admin && !autoSchvaleni.has(r.userId) && (
+                    <button type="button" onClick={() => void zapniAutoSchvalovani(r.userId, r.jmeno)} style={{ ...odkaz, justifySelf: "start", fontWeight: 500, textDecoration: "underline" }}>
+                      Tomuto člověku schvalovat automaticky
+                    </button>
+                  )}
                 </div>
-                {data.admin && !autoSchvaleni.has(r.userId) && (
-                  <button type="button" onClick={() => void zapniAutoSchvalovani(r.userId, r.jmeno)} style={{ ...odkaz, marginTop: 4, fontWeight: 500, textDecoration: "underline" }}>
-                    Tomuto člověku schvalovat automaticky
-                  </button>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                {data.admin ? (
-                  zamitam?.id === r.id ? (
-                    <>
-                      <input value={zamitam.duvod} onChange={(e) => setZamitam({ id: r.id, duvod: e.target.value })} placeholder="Důvod (nepovinné)" aria-label="Důvod zamítnutí" style={{ ...pole, width: 180 }} autoFocus />
-                      <Button size="sm" variant="danger" onClick={() => void rozhodni(r, "zamitnuto", zamitam.duvod)}>Zamítnout</Button>
-                      <Button size="sm" variant="ghost" onClick={() => setZamitam(null)}>Zpět</Button>
-                    </>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  {data.admin ? (
+                    zamitam?.id === r.id ? (
+                      <>
+                        <input value={zamitam.duvod} onChange={(e) => setZamitam({ id: r.id, duvod: e.target.value })} placeholder="Důvod (nepovinné)" aria-label="Důvod zamítnutí" style={{ ...pole, width: 180 }} autoFocus />
+                        <Button size="sm" variant="danger" onClick={() => void rozhodni(r, "zamitnuto", zamitam.duvod)}>Zamítnout</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setZamitam(null)}>Zpět</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="primary" onClick={() => void rozhodni(r, "schvaleno")}>Schválit</Button>
+                        <Button size="sm" variant="soft" onClick={() => setZamitam({ id: r.id, duvod: dvoji?.length ? "Dvojí odměna – oprava je na zakázce označená Nabídnuto navíc" : "" })}>Zamítnout</Button>
+                      </>
+                    )
                   ) : (
-                    <>
-                      <Button size="sm" variant="primary" onClick={() => void rozhodni(r, "schvaleno")}>Schválit</Button>
-                      <Button size="sm" variant="soft" onClick={() => setZamitam({ id: r.id, duvod: "" })}>Zamítnout</Button>
-                    </>
-                  )
-                ) : (
-                  r.vytvoril === data.ja && <Button size="sm" variant="ghost" onClick={() => void smazRucni(r)}>Smazat</Button>
-                )}
+                    r.vytvoril === data.ja && <Button size="sm" variant="ghost" onClick={() => void smazRucni(r)}>Smazat</Button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            );
+          })}
+        </Sekce>
       )}
 
+      {/* ── 2. Čeká na vydání: jen informace, nic se neschvaluje ─────────── */}
+      {data && cekajiciZobrazene.length > 0 && (
+        <Sekce
+          dataTour="odmeny-ceka"
+          nadpis={nadpisCekajicich(data.kdy.rezim, data.kdy.stavNazev)}
+          pocet={cekajiciZobrazene.length}
+          souhrn={kc(cekajiciZobrazene.reduce((s, c) => s + c.castka, 0))}
+          popis={`Jen pro informaci, nic se tu neschvaluje. Označené opravy jsou zaevidované a odměna se připíše sama ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát.`}
+        >
+          <div style={{ overflowX: "auto", border, borderRadius: 12, background: "var(--panel)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Zakázka", "Stav teď", "Oprava", "Pravidlo", ...(data.admin ? ["Komu"] : []), "Odměna"].map((h) => (
+                    <th key={h} style={th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cekajiciZobrazene.map((c) => (
+                  <tr key={`${c.ticketId}-${c.polozkaId}`}>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <button type="button" onClick={() => otevriZakazku(c.ticketId)} style={{ ...odkaz, fontSize: 13 }}>{c.kod ?? "Zakázka"}</button>
+                      <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[c.zakaznik, c.zarizeni].filter(Boolean).join(" · ")}</div>
+                    </td>
+                    <td style={{ ...td, color: "var(--muted)" }}>{c.stavNazev ?? c.stav ?? "—"}</td>
+                    <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={c.oprava}>{c.oprava}</td>
+                    <td style={{ ...td, color: "var(--muted)" }}>{c.pravidlo}</td>
+                    {data.admin && <td style={td}>{c.jmeno ?? "Nepřiřazeno"}</td>}
+                    <td style={{ ...td, fontWeight: 700 }}>{kc(c.castka)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Sekce>
+      )}
+
+      {/* ── 3. Přidat ruční odměnu ───────────────────────────────────────── */}
+      {data && data.pravidla.length > 0 && (
+        <Sekce
+          dataTour="odmeny-rychle"
+          nadpis="Přidat ruční odměnu"
+          popis={`Jen za to, co na zakázce není (třeba sklo prodané u pultu). Opravy označené „Nabídnuto navíc“ se počítají samy. Jedním klikem se přidá do měsíce ${nazevMesiceStranky}${data.admin ? "" : " a půjde ke schválení"}.`}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {data.admin && clenove.length > 0 && (
+              <select value={rychleKomu} onChange={(e) => setRychleKomu(e.target.value)} aria-label="Komu odměnu přidat" style={{ padding: "4px 8px", borderRadius: 8, border, background: "var(--panel)", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                <option value="">mně</option>
+                {clenove.filter((c) => c.userId !== data.ja).map((c) => <option key={c.userId} value={c.userId}>{c.jmeno}</option>)}
+              </select>
+            )}
+            {data.pravidla.map((p) => (
+              <Button key={p.id} size="sm" variant="soft" disabled={rychleUkladam !== null} onClick={() => void rychlePridat(p)} title={p.typ === "procento" ? "Odměna v procentech – zeptá se na cenu" : "Přidá odměnu hned, bez poznámky"}>
+                {rychleUkladam === p.id ? "Přidávám…" : `+ ${p.nazev} · ${p.typ === "procento" ? `${p.hodnota} %` : formatCurrency(p.hodnota)}`}
+              </Button>
+            ))}
+          </div>
+        </Sekce>
+      )}
+
+      {/* ── 4. Započtené za měsíc ─────────────────────────────────────────── */}
       {data && (
-        <>
+        <Sekce
+          dataTour="odmeny-zapoctene"
+          nadpis={`Započtené – ${nazevMesiceStranky}`}
+          popis={`Co se do měsíce opravdu počítá: označené opravy (${vetaKdyOdmeny(data.kdy.rezim, data.kdy.stavNazev).replace(/^Počítá se z/, "z").replace(/\.$/, "")}) a schválené ruční odměny.`}
+          vpravo={(
+            <div data-tour="odmeny-mesic" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, -1))} aria-label="Předchozí měsíc">‹</Button>
+              <span style={{ fontWeight: 800, minWidth: 130, textAlign: "center" }}>{nazevMesiceStranky}</span>
+              <Button size="sm" variant="soft" onClick={() => setMesic((m) => posunKlicMesice(m, 1))} disabled={mesic >= tentoMesic} aria-label="Další měsíc">›</Button>
+              {mesic !== tentoMesic && <Button size="sm" variant="ghost" onClick={() => setMesic(tentoMesic)}>Tento měsíc</Button>}
+            </div>
+          )}
+        >
+          <div data-tour="odmeny-filtr" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select value={filtrClovek} onChange={(e) => setFiltrClovek(e.target.value)} style={pole} aria-label="Filtr podle člověka">
+              <option value="vse">Všichni ({data.radky.length})</option>
+              {data.lide.map((l) => (
+                <option key={l.userId ?? "nikdo"} value={l.userId ?? ""}>{l.jmeno} ({l.pocet})</option>
+              ))}
+            </select>
+            <Button size="sm" variant="soft" onClick={() => void nacti()} disabled={nacitam}>{nacitam ? "Načítám…" : "Obnovit"}</Button>
+            {data.admin && onOtevritNastaveni && <Button size="sm" variant="ghost" onClick={onOtevritNastaveni}>Pravidla</Button>}
+            {data.admin && pocetNenabidnutych > 0 && (
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }} title="Opravy podle pravidla, které nebyly nabídnuté navíc (zákazník s nimi přišel, nebo jde o starší zakázku bez příznaku). Jdou označit ručně.">
+                <input type="checkbox" checked={ukazatNenabidnute} onChange={(e) => setUkazatNenabidnute(e.target.checked)} />
+                <span>Ukázat i nenabídnuté ({pocetNenabidnutych})</span>
+              </label>
+            )}
+          </div>
+
+          <div style={{ fontWeight: 700, fontSize: 13, marginTop: 4 }}>Za označené opravy <span style={{ ...popisek, fontWeight: 500 }}>– připsané automaticky{data.admin ? "; u řádku můžete změnit komu, přepnout Nabídnuto nebo řádek vyřadit" : ""}</span></div>
+          <div data-tour="odmeny-radky" style={{ overflowX: "auto", border, borderRadius: 12, background: "var(--panel)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Zakázka", sloupecKdyOdmeny(data.kdy.rezim), "Oprava", "Cena", "Pravidlo", "Komu", "Odměna", ...(data.admin ? [""] : [])].map((h, i) => (
+                    <th key={`${h}-${i}`} style={th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {zobrazene.map((r) => (
+                  <tr key={`${r.ticketId}-${r.polozkaId}`} style={{ opacity: r.vyrazeno || !r.nabidnuto ? 0.5 : 1 }}>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <button type="button" onClick={() => otevriZakazku(r.ticketId)} style={{ ...odkaz, fontSize: 13 }}>{r.kod ?? "—"}</button>
+                      <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}</div>
+                    </td>
+                    <td style={{ ...td, color: "var(--muted)" }} title={titulekZapocteno}>{r.zapocteno ? datum(r.zapocteno) : "—"}</td>
+                    <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={r.oprava}>{r.oprava}</td>
+                    <td style={{ ...td, color: "var(--muted)" }}>{kc(r.cena)}</td>
+                    <td style={{ ...td, color: "var(--muted)" }}>{r.pravidlo}</td>
+                    <td style={td}>
+                      {data.admin ? (
+                        <select value={r.userId ?? ""} onChange={(e) => void ulozUpravu(r, { userId: e.target.value || null })} style={{ ...pole, padding: "4px 8px" }} aria-label="Komu se odměna připíše" title={r.prepsano ? "Ručně změněno" : r.komu === "technik" ? "Přidělený technik" : "Kdo opravu přidal"}>
+                          <option value="">— nepřiřazeno —</option>
+                          {clenove.map((c) => (
+                            <option key={c.userId} value={c.userId}>{c.jmeno}</option>
+                          ))}
+                          {r.userId && !clenove.some((c) => c.userId === r.userId) && <option value={r.userId}>{r.jmeno ?? "Bývalý člen"}</option>}
+                        </select>
+                      ) : (
+                        r.jmeno ?? "—"
+                      )}
+                      {r.prepsano && <span style={{ ...popisek, marginLeft: 6 }} title="Příjemce ručně změněn">✎</span>}
+                    </td>
+                    <td style={{ ...td, fontWeight: 700, textDecoration: r.vyrazeno || !r.nabidnuto ? "line-through" : undefined }}>
+                      {kc(r.castka)}
+                      {!r.nabidnuto && <span style={{ ...popisek, marginLeft: 6, fontWeight: 500 }}>nenabídnuto</span>}
+                      {r.vyrazeno && <span style={{ ...popisek, marginLeft: 6, fontWeight: 500 }}>vyřazeno</span>}
+                    </td>
+                    {data.admin && (
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { nabidnuto: !r.nabidnuto })} title={r.nabidnuto ? "Zákazník s opravou přišel – odměna nenáleží" : "Oprava byla nabídnutá navíc – počítat odměnu"}>{r.nabidnuto ? "Nenabídnuto" : "Nabídnuto navíc"}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { vyrazeno: !r.vyrazeno })}>{r.vyrazeno ? "Vrátit" : "Vyřadit"}</Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {zobrazene.length === 0 && (
+                  <tr><td colSpan={data.admin ? 8 : 7} style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>V tomto měsíci žádná označená oprava.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {rucniVMesici.length > 0 && (
+            <div data-tour="odmeny-rucni" style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginTop: 4 }}>Ruční odměny <span style={{ ...popisek, fontWeight: 500 }}>– schválené se počítají, zamítnuté ne{data.admin ? "; schválenou jde ještě zamítnout" : ""}</span></div>
+              <div style={{ overflowX: "auto", border, borderRadius: 12, background: "var(--panel)" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      {["Kdo", "Pravidlo", "Odměna", "Poznámka", "Zakázka", "Stav", "Přidal", ""].map((h, i) => (
+                        <th key={`${h}-${i}`} style={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rucniVMesici.map((r) => (
+                      <tr key={r.id} style={{ opacity: r.stav === "schvaleno" ? 1 : 0.65 }}>
+                        <td style={{ ...td, fontWeight: 700 }}>{r.jmeno}</td>
+                        <td style={{ ...td, color: "var(--muted)" }}>{r.pravidlo}</td>
+                        <td style={{ ...td, fontWeight: 700, textDecoration: r.stav === "zamitnuto" ? "line-through" : undefined }}>
+                          {kc(r.castka)}
+                          {r.zaklad !== null && <div style={{ ...popisek, fontWeight: 500 }}>z {kc(r.zaklad)}</div>}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "normal", minWidth: 180, maxWidth: 320, overflowWrap: "anywhere" }}>{r.poznamka}</td>
+                        <td style={td}>
+                          {r.ticketId ? (
+                            <button type="button" onClick={() => otevriZakazku(r.ticketId!)} style={{ ...odkaz, fontSize: 13 }}>{r.kod ?? "Zakázka"}</button>
+                          ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                          {(r.zakaznik || r.zarizeni) && <div style={{ ...popisek, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}</div>}
+                        </td>
+                        <td style={td}>
+                          <span style={{ fontWeight: 600, color: r.stav === "zamitnuto" ? "rgba(239,68,68,0.9)" : "var(--text)" }}>
+                            {r.stav === "schvaleno" && r.automaticky ? "schváleno automaticky" : POPIS_STAVU_RUCNI[r.stav]}
+                          </span>
+                          {!r.automaticky && r.schvalilJmeno && <div style={popisek}>{r.schvalilJmeno}{r.schvalenoAt ? ` · ${datum(r.schvalenoAt)}` : ""}</div>}
+                          {r.stav === "zamitnuto" && r.duvodZamitnuti && <div style={{ ...popisek, whiteSpace: "normal", maxWidth: 220 }}>{r.duvodZamitnuti}</div>}
+                        </td>
+                        <td style={{ ...td, color: "var(--muted)" }}>
+                          {r.vytvorilJmeno ?? "—"}
+                          {r.createdAt ? <div style={popisek}>{datum(r.createdAt)}</div> : null}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          {data.admin && r.stav === "zamitnuto" && <Button size="sm" variant="ghost" onClick={() => void rozhodni(r, "schvaleno")}>Schválit</Button>}
+                          {data.admin && r.stav === "schvaleno" && zamitam?.id !== r.id && <Button size="sm" variant="ghost" onClick={() => setZamitam({ id: r.id, duvod: "" })}>Zamítnout</Button>}
+                          {data.admin && <Button size="sm" variant="ghost" onClick={() => void smazRucni(r)}>Smazat</Button>}
+                          {data.admin && zamitam?.id === r.id && r.stav === "schvaleno" && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <input value={zamitam.duvod} onChange={(e) => setZamitam({ id: r.id, duvod: e.target.value })} placeholder="Důvod (nepovinné)" aria-label="Důvod zamítnutí" style={{ ...pole, width: 160 }} autoFocus />
+                              <Button size="sm" variant="danger" onClick={() => void rozhodni(r, "zamitnuto", zamitam.duvod)}>Zamítnout</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setZamitam(null)}>Zpět</Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </Sekce>
+      )}
+
+      {/* ── 5. Součty, žebříček, síň slávy ────────────────────────────────── */}
+      {data && (
+        <Sekce dataTour="odmeny-soucty" nadpis={`Součty – ${nazevMesiceStranky}`} popis={data.admin || data.verejny ? "Kliknutím na člověka v žebříčku zúžíte seznamy výš jen na jeho odměny." : undefined}>
           <div data-tour="odmeny-dlazdice" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...dlazdice, borderColor: vitezove.length > 0 ? "var(--accent)" : undefined, background: vitezove.length > 0 ? "var(--accent-soft)" : "var(--panel)" }}>
               <div style={popisek}>{vitezove.length > 1 ? "Zaměstnanci měsíce" : "Zaměstnanec měsíce"}</div>
@@ -455,7 +709,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
           </div>
 
           {(data.admin || data.verejny) && (
-            <div data-tour="odmeny-zebricek" style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
+            <div data-tour="odmeny-zebricek" style={{ overflowX: "auto", border, borderRadius: 12, background: "var(--panel)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
@@ -495,180 +749,9 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             </div>
           )}
 
-          <div data-tour="odmeny-filtr" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select value={filtrClovek} onChange={(e) => setFiltrClovek(e.target.value)} style={pole} aria-label="Filtr podle člověka">
-              <option value="vse">Všichni ({data.radky.length})</option>
-              {data.lide.map((l) => (
-                <option key={l.userId ?? "nikdo"} value={l.userId ?? ""}>{l.jmeno} ({l.pocet})</option>
-              ))}
-            </select>
-            <Button size="sm" variant="soft" onClick={() => void nacti()} disabled={nacitam}>{nacitam ? "Načítám…" : "Obnovit"}</Button>
-            {data.admin && onOtevritNastaveni && <Button size="sm" variant="ghost" onClick={onOtevritNastaveni}>Pravidla</Button>}
-            {data.admin && pocetNenabidnutych > 0 && (
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }} title="Opravy podle pravidla, které nebyly nabídnuté navíc (zákazník s nimi přišel, nebo jde o starší zakázku bez příznaku). Jdou označit ručně.">
-                <input type="checkbox" checked={ukazatNenabidnute} onChange={(e) => setUkazatNenabidnute(e.target.checked)} />
-                <span>Ukázat i nenabídnuté ({pocetNenabidnutych})</span>
-              </label>
-            )}
-          </div>
-
-          {cekajiciZobrazene.length > 0 && (
-            <div data-tour="odmeny-ceka">
-              <div style={{ fontWeight: 800 }}>
-                {nadpisCekajicich(data.kdy.rezim, data.kdy.stavNazev)}: {cekajiciZobrazene.length} · {kc(cekajiciZobrazene.reduce((s, c) => s + c.castka, 0))}
-              </div>
-              <div style={{ ...popisek, margin: "2px 0 8px" }}>
-                Označené opravy jsou zaevidované a odměna se připíše {kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)} – do měsíce, kdy se to stane. Ručně je nepřidávejte, byla by dvakrát.
-              </div>
-              <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr>
-                      {["Zakázka", "Stav", "Oprava", "Pravidlo", ...(data.admin ? ["Komu"] : []), "Odměna"].map((h) => (
-                        <th key={h} style={th}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cekajiciZobrazene.map((c) => (
-                      <tr key={`${c.ticketId}-${c.polozkaId}`}>
-                        <td style={{ ...td, fontWeight: 700 }}>
-                          <button type="button" onClick={() => otevriZakazku(c.ticketId)} style={{ ...odkaz, fontSize: 13 }}>{c.kod ?? "Zakázka"}</button>
-                          <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[c.zakaznik, c.zarizeni].filter(Boolean).join(" · ")}</div>
-                        </td>
-                        <td style={{ ...td, color: "var(--muted)" }}>{c.stavNazev ?? c.stav ?? "—"}</td>
-                        <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={c.oprava}>{c.oprava}</td>
-                        <td style={{ ...td, color: "var(--muted)" }}>{c.pravidlo}</td>
-                        {data.admin && <td style={td}>{c.jmeno ?? "Nepřiřazeno"}</td>}
-                        <td style={{ ...td, fontWeight: 700 }}>{kc(c.castka)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <div data-tour="odmeny-radky" style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {["Zakázka", sloupecKdyOdmeny(data.kdy.rezim), "Oprava", "Cena", "Pravidlo", "Komu", "Odměna", ...(data.admin ? [""] : [])].map((h, i) => (
-                    <th key={`${h}-${i}`} style={th}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {zobrazene.map((r) => (
-                  <tr key={`${r.ticketId}-${r.polozkaId}`} style={{ opacity: r.vyrazeno || !r.nabidnuto ? 0.5 : 1 }}>
-                    <td style={{ ...td, fontWeight: 700 }}>
-                      {onOpenTicket ? (
-                        <button type="button" onClick={() => onOpenTicket(r.ticketId)} style={{ background: "transparent", border: "none", padding: 0, color: "var(--accent)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>{r.kod ?? "—"}</button>
-                      ) : (r.kod ?? "—")}
-                      <div style={{ ...popisek, fontWeight: 500, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}</div>
-                    </td>
-                    <td style={{ ...td, color: "var(--muted)" }} title={titulekZapocteno}>{r.zapocteno ? datum(r.zapocteno) : "—"}</td>
-                    <td style={{ ...td, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={r.oprava}>{r.oprava}</td>
-                    <td style={{ ...td, color: "var(--muted)" }}>{kc(r.cena)}</td>
-                    <td style={{ ...td, color: "var(--muted)" }}>{r.pravidlo}</td>
-                    <td style={td}>
-                      {data.admin ? (
-                        <select value={r.userId ?? ""} onChange={(e) => void ulozUpravu(r, { userId: e.target.value || null })} style={{ ...pole, padding: "4px 8px" }} aria-label="Komu se odměna připíše" title={r.prepsano ? "Ručně změněno" : r.komu === "technik" ? "Přidělený technik" : "Kdo opravu přidal"}>
-                          <option value="">— nepřiřazeno —</option>
-                          {clenove.map((c) => (
-                            <option key={c.userId} value={c.userId}>{c.jmeno}</option>
-                          ))}
-                          {r.userId && !clenove.some((c) => c.userId === r.userId) && <option value={r.userId}>{r.jmeno ?? "Bývalý člen"}</option>}
-                        </select>
-                      ) : (
-                        r.jmeno ?? "—"
-                      )}
-                      {r.prepsano && <span style={{ ...popisek, marginLeft: 6 }} title="Příjemce ručně změněn">✎</span>}
-                    </td>
-                    <td style={{ ...td, fontWeight: 700, textDecoration: r.vyrazeno || !r.nabidnuto ? "line-through" : undefined }}>
-                      {kc(r.castka)}
-                      {!r.nabidnuto && <span style={{ ...popisek, marginLeft: 6, fontWeight: 500 }}>nenabídnuto</span>}
-                    </td>
-                    {data.admin && (
-                      <td style={{ ...td, whiteSpace: "nowrap" }}>
-                        <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { nabidnuto: !r.nabidnuto })} title={r.nabidnuto ? "Zákazník s opravou přišel – odměna nenáleží" : "Oprava byla nabídnutá navíc – počítat odměnu"}>{r.nabidnuto ? "Nenabídnuto" : "Nabídnuto navíc"}</Button>
-                        <Button size="sm" variant="ghost" onClick={() => void ulozUpravu(r, { vyrazeno: !r.vyrazeno })}>{r.vyrazeno ? "Vrátit" : "Vyřadit"}</Button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {zobrazene.length === 0 && (
-                  <tr><td colSpan={data.admin ? 8 : 7} style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>Žádné opravy s odměnou.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {rucniZobrazene.length > 0 && (
-            <div data-tour="odmeny-rucni">
-              <div style={{ fontWeight: 800, marginBottom: 8 }}>Ruční odměny</div>
-              <div style={{ overflowX: "auto", border, borderRadius: 14, background: "var(--panel)" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr>
-                      {["Kdo", "Pravidlo", "Odměna", "Poznámka", "Zakázka", "Stav", "Přidal", ""].map((h, i) => (
-                        <th key={`${h}-${i}`} style={th}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rucniZobrazene.map((r) => {
-                      const mohuSmazat = data.admin || (r.stav === "ceka" && r.vytvoril === data.ja);
-                      return (
-                        <tr key={r.id} style={{ opacity: r.stav === "schvaleno" ? 1 : 0.65 }}>
-                          <td style={{ ...td, fontWeight: 700 }}>{r.jmeno}</td>
-                          <td style={{ ...td, color: "var(--muted)" }}>{r.pravidlo}</td>
-                          <td style={{ ...td, fontWeight: 700, textDecoration: r.stav === "zamitnuto" ? "line-through" : undefined }}>
-                            {kc(r.castka)}
-                            {r.zaklad !== null && <div style={{ ...popisek, fontWeight: 500 }}>z {kc(r.zaklad)}</div>}
-                          </td>
-                          <td style={{ ...td, whiteSpace: "normal", minWidth: 180, maxWidth: 320, overflowWrap: "anywhere" }}>{r.poznamka}</td>
-                          <td style={td}>
-                            {r.ticketId ? (
-                              <button type="button" onClick={() => otevriZakazku(r.ticketId!)} style={{ ...odkaz, fontSize: 13 }}>{r.kod ?? "Zakázka"}</button>
-                            ) : <span style={{ color: "var(--muted)" }}>—</span>}
-                            {(r.zakaznik || r.zarizeni) && <div style={{ ...popisek, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{[r.zakaznik, r.zarizeni].filter(Boolean).join(" · ")}</div>}
-                          </td>
-                          <td style={td}>
-                            <span style={{ fontWeight: 600, color: r.stav === "zamitnuto" ? "rgba(239,68,68,0.9)" : r.stav === "ceka" ? "var(--accent)" : "var(--text)" }}>
-                              {r.stav === "schvaleno" && r.automaticky ? "schváleno automaticky" : POPIS_STAVU_RUCNI[r.stav]}
-                            </span>
-                            {r.stav !== "ceka" && !r.automaticky && r.schvalilJmeno && <div style={popisek}>{r.schvalilJmeno}{r.schvalenoAt ? ` · ${datum(r.schvalenoAt)}` : ""}</div>}
-                            {r.stav === "zamitnuto" && r.duvodZamitnuti && <div style={{ ...popisek, whiteSpace: "normal", maxWidth: 220 }}>{r.duvodZamitnuti}</div>}
-                          </td>
-                          <td style={{ ...td, color: "var(--muted)" }}>
-                            {r.vytvorilJmeno ?? "—"}
-                            {r.createdAt ? <div style={popisek}>{datum(r.createdAt)}</div> : null}
-                          </td>
-                          <td style={{ ...td, whiteSpace: "nowrap" }}>
-                            {data.admin && r.stav !== "schvaleno" && <Button size="sm" variant="ghost" onClick={() => void rozhodni(r, "schvaleno")}>Schválit</Button>}
-                            {data.admin && r.stav === "schvaleno" && zamitam?.id !== r.id && <Button size="sm" variant="ghost" onClick={() => setZamitam({ id: r.id, duvod: "" })}>Zamítnout</Button>}
-                            {mohuSmazat && <Button size="sm" variant="ghost" onClick={() => void smazRucni(r)}>Smazat</Button>}
-                            {data.admin && zamitam?.id === r.id && r.stav === "schvaleno" && (
-                              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                                <input value={zamitam.duvod} onChange={(e) => setZamitam({ id: r.id, duvod: e.target.value })} placeholder="Důvod (nepovinné)" aria-label="Důvod zamítnutí" style={{ ...pole, width: 160 }} autoFocus />
-                                <Button size="sm" variant="danger" onClick={() => void rozhodni(r, "zamitnuto", zamitam.duvod)}>Zamítnout</Button>
-                                <Button size="sm" variant="ghost" onClick={() => setZamitam(null)}>Zpět</Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
           {sinSlavy.length > 0 && (data.admin || data.verejny) && (
             <div>
-              <div style={{ fontWeight: 800, marginBottom: 8 }}>Síň slávy</div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Síň slávy</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {sinSlavy.map((m) => (
                   <button key={m.klic} type="button" onClick={() => setMesic(m.klic)} style={{ ...pole, cursor: "pointer", textAlign: "left", minWidth: 150, borderColor: m.klic === mesic ? "var(--accent)" : "var(--border)" }}>
@@ -680,7 +763,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
               </div>
             </div>
           )}
-        </>
+        </Sekce>
       )}
 
       {/* Montuje se při každém otevření znovu = čistý formulář s měsícem ze stránky. */}
@@ -704,5 +787,43 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Oddíl stránky: nadpis s počtem, věta „proč to tu je / co s tím“ a obsah.
+ * Zvýrazněný oddíl (Ke schválení s položkami) má barevný rámeček.
+ */
+function Sekce({ dataTour, nadpis, pocet, souhrn, popis, zvyraznit, vpravo, children }: {
+  dataTour: string;
+  nadpis: string;
+  pocet?: number;
+  /** Např. součet částek vedle počtu. */
+  souhrn?: string;
+  popis?: string;
+  zvyraznit?: boolean;
+  vpravo?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      data-tour={dataTour}
+      style={{ display: "grid", gap: 10, padding: 14, borderRadius: 14, border: `1px solid ${zvyraznit ? "var(--accent)" : "var(--border)"}`, background: zvyraznit ? "var(--accent-soft)" : "var(--panel-2, var(--panel))" }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 320px" }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 850, color: "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {nadpis}
+            {pocet !== undefined && (
+              <span style={{ fontSize: 12, fontWeight: 800, padding: "1px 8px", borderRadius: 999, background: pocet > 0 && zvyraznit ? "var(--accent)" : "var(--panel)", color: pocet > 0 && zvyraznit ? "var(--accent-contrast, #fff)" : "var(--muted)", border: "1px solid var(--border)" }}>{pocet}</span>
+            )}
+            {souhrn && <span style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>{souhrn}</span>}
+          </h2>
+          {popis && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>{popis}</div>}
+        </div>
+        {vpravo}
+      </div>
+      {children}
+    </section>
   );
 }
