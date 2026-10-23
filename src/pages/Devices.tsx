@@ -1216,16 +1216,11 @@ DETALY: Výměna opotřebované baterie
   /** Šipky u opravy: posun v zobrazeném seznamu, uloží se jako order_index (pořadí v API i na webu). */
   const posunoutOpravu = (id: string, smer: -1 | 1) => ulozitPoradiOprav(posunVPoradi(data.repairs, filteredRepairs, id, smer));
   const pustitOpravu = (id: string, cilId: string, za: boolean) => ulozitPoradiOprav(presunKPolozce(data.repairs, id, cilId, za));
+  /* Jen do stavu – uloží odložené uložení (500 ms), takže víc přetažení
+     za sebou jde do databáze jedním zápisem a ve správném pořadí. */
   const ulozitPoradiOprav = (repairs: Repair[] | null) => {
     if (!activeServiceId || !repairs) return;
-    const nova = { ...data, repairs };
-    setData(nova);
-    saveDevicesToDb(activeServiceId, nova).then((r) => {
-      if (!r.error) return;
-      showToast("Pořadí se nepodařilo uložit: " + r.error + " Zkouším dál.", "error");
-      nahlasCekani(`zarizeni:${activeServiceId}`, "Ceník a zařízení · neuložené změny", r.error);
-      if (!jeTrvalaChyba(r.error)) naplanujOpakovaniZarizeni(OPAKOVAT_PO_MS);
-    });
+    setData((prev) => ({ ...prev, repairs }));
   };
 
   if (showImport) {

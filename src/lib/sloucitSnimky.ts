@@ -46,7 +46,37 @@ export function sloucSeznam<T extends SIdem>(zaklad: T[], moje: T[], jejich: T[]
     if (!vMych.has(id)) vysledek.delete(id); // smazal jsem
   }
 
-  return [...vysledek.values()];
+  /* Pořadí (ceník: order_index = pozice v seznamu). Když jsem položky
+     přeskládal, platí moje pořadí – jinak by přenačtení během ukládání
+     přetažení vrátilo zpátky. Cizí přírůstky, které u mě nejsou, zůstanou
+     za svým předchůdcem z databáze. Když jsem pořadí neměnil, bere se
+     databázové (kolega mohl přeskládat on). */
+  if (!zmenilJsemPoradi(zaklad, moje)) return [...vysledek.values()];
+  const out: T[] = [];
+  const pouzite = new Set<string>();
+  for (const x of moje) {
+    const v = vysledek.get(x.id);
+    if (v) { out.push(v); pouzite.add(x.id); }
+  }
+  // Cizí přírůstky vložit za položku, která je v databázi před nimi.
+  const jejichIds = jejich.map((x) => x.id);
+  for (const [i, id] of jejichIds.entries()) {
+    if (pouzite.has(id) || !vysledek.has(id)) continue;
+    const pred = jejichIds.slice(0, i).reverse().find((p) => pouzite.has(p));
+    const kam = pred ? out.findIndex((x) => x.id === pred) + 1 : 0;
+    out.splice(kam, 0, vysledek.get(id)!);
+    pouzite.add(id);
+  }
+  return out;
+}
+
+/** Je relativní pořadí společných položek u mě jiné než v základu? */
+function zmenilJsemPoradi(zaklad: SIdem[], moje: SIdem[]): boolean {
+  const vMych = new Set(moje.map((x) => x.id));
+  const vZakladu = new Set(zaklad.map((x) => x.id));
+  const a = zaklad.filter((x) => vMych.has(x.id)).map((x) => x.id);
+  const b = moje.filter((x) => vZakladu.has(x.id)).map((x) => x.id);
+  return a.some((id, i) => id !== b[i]);
 }
 
 /**

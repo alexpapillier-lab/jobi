@@ -152,7 +152,18 @@ export async function loadDevicesFromDb(serviceId: string | null): Promise<LoadD
 }
 
 /** Uloží data zařízení do databáze. Používá upsert a smaže odstraněné záznamy. */
-export async function saveDevicesToDb(serviceId: string | null, data: DevicesData): Promise<{ error?: string }> {
+/* Ukládání ceníku po řadě. Každé uložení zapisuje celý ceník; když běžela
+   dvě najednou (rychlé přetahování oprav, změna během ukládání), mohlo
+   starší doběhnout až po novějším a vrátit pořadí i úpravy zpátky. */
+let frontaUkladani: Promise<unknown> = Promise.resolve();
+
+export function saveDevicesToDb(serviceId: string | null, data: DevicesData): Promise<{ error?: string }> {
+  const krok = frontaUkladani.then(() => ulozDevicesToDb(serviceId, data));
+  frontaUkladani = krok.catch(() => undefined);
+  return krok;
+}
+
+async function ulozDevicesToDb(serviceId: string | null, data: DevicesData): Promise<{ error?: string }> {
   const supabase = getSupabaseClient();
   if (!supabase || !serviceId) {
     return { error: "No Supabase or serviceId" };

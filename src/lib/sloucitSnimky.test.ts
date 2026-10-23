@@ -76,3 +76,21 @@ describe("sloučení celé struktury", () => {
     expect(out.verze).toBe(2);
   });
 });
+
+describe("sloucSeznam – pořadí", () => {
+  const x = (ids: string) => ids.split("").map((id) => ({ id, v: 1 }));
+  const ids = (a: { id: string }[]) => a.map((y) => y.id).join("");
+
+  it("moje přeskládání vyhraje nad starým pořadím z databáze", () => {
+    expect(ids(sloucSeznam(x("abc"), x("cab"), x("abc")))).toBe("cab");
+  });
+
+  it("bez mého přeskládání platí pořadí z databáze (kolega přeskládal)", () => {
+    expect(ids(sloucSeznam(x("abc"), x("abc"), x("bca")))).toBe("bca");
+  });
+
+  it("cizí přírůstek zůstane za svým předchůdcem z databáze", () => {
+    expect(ids(sloucSeznam(x("abc"), x("cab"), x("abdc")))).toBe("cabd");
+    expect(ids(sloucSeznam(x("abc"), x("cab"), x("dabc")))).toBe("dcab");
+  });
+});
