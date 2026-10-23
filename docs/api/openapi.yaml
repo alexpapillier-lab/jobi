@@ -669,6 +669,7 @@ components:
       properties:
         external_id: { type: string, maxLength: 100, description: Číslo objednávky ve vašem systému (SRV-2026-0123). Jedinečné v servisu. }
         status: { type: string, enum: [new, in_transit, arrived, cancelled] }
+        reopen: { type: boolean, description: "Jen se status arrived: obnoví zrušenou objednávku, když balík fyzicky dorazil (vrátí se mezi příchozí jako Dorazilo). U objednávky převedené na zakázku/reklamaci se odmítne." }
         source: { type: string, maxLength: 80, description: "Odkud objednávka je (web, e-shop). Bez něj název tokenu." }
         branch_id: { type: [string, "null"], format: uuid, description: "Pobočka servisu, kam zařízení jede." }
         customer:

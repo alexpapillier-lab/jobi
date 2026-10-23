@@ -297,8 +297,10 @@ serve(async (req) => {
     const podpis = pripravSouhlas(zmena, a.souhlas, p.podpis);
     if (z.stav && z.stav !== a.stav && a.stav !== "prevedeno") {
       zmena.stav = z.stav;
-      if (z.stav === "dorazilo" && !a.dorazilo_at) zmena.dorazilo_at = new Date().toISOString();
+      if (z.stav === "dorazilo" && (!a.dorazilo_at || z.obnovena)) zmena.dorazilo_at = new Date().toISOString();
     }
+    // Obnovu zrušené nepustit, kdyby z ní mezitím vznikla zakázka nebo reklamace.
+    if (z.obnovena && (a.ticket_id || a.claim_id)) { chyby.push(`${prefix}: objednávka už je zakázka – obnovit ji nejde`); continue; }
     const zt = await zakazka(svc, a.ticket_id);
     // Kód v Jobi: zakázka, nebo reklamace, když se objednávka převedla na ni.
     const kod = zt?.code ?? (await reklamace(svc, a.claim_id))?.code ?? null;

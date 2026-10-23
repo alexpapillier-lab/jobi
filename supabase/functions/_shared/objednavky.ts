@@ -206,6 +206,8 @@ export type PolozkaObjednavky = {
   stav?: StavDb;
   /** Obrázek podpisu ze `consent.signature_image` – nahrává ho edge funkce do úložiště. */
   podpis?: ObrazekPodpisu;
+  /** `reopen: true` – obnovit zrušenou objednávku, když balík fyzicky dorazil (jen se `status: arrived`). */
+  obnovit?: boolean;
 };
 
 // ── Elektronické odsouhlasení (consent) ─────────────────────────────────────
@@ -390,6 +392,8 @@ export function overObjednavku(vstup: unknown, prefix: string): VysledekOvereni 
     const s = typeof r.status === "string" ? STAV_Z_API[r.status.trim()] : undefined;
     if (!s) fail(`status musí být new, in_transit, arrived nebo cancelled`);
   }
+  if ("reopen" in r && r.reopen !== undefined && r.reopen !== null && typeof r.reopen !== "boolean") fail("reopen musí být true nebo false");
+  if (r.reopen === true && r.status !== "arrived") fail("reopen jde jen se status arrived (balík fyzicky dorazil)");
   text(r, "source", "source", "zdroj", 80);
   uuid(r, "branch_id", "branch_id", "branch_id");
 
@@ -488,7 +492,7 @@ export function overObjednavku(vstup: unknown, prefix: string): VysledekOvereni 
 
   if (chyba) return { ok: false, chyba };
   const stav = typeof r.status === "string" ? STAV_Z_API[r.status.trim()] : undefined;
-  return { ok: true, polozka: { externiCislo: ext, hodnoty: h, ...(stav ? { stav } : {}), ...(podpis ? { podpis } : {}) } };
+  return { ok: true, polozka: { externiCislo: ext, hodnoty: h, ...(stav ? { stav } : {}), ...(podpis ? { podpis } : {}), ...(r.reopen === true ? { obnovit: true } : {}) } };
 }
 
 /**
@@ -588,12 +592,17 @@ export function objednavkaProApi(o: RadekObjednavky, zakazka: ZakazkaApi, reklam
  *  - zrušená: nic.
  * Vrací povolené hodnoty a případnou chybu (pak se nezmění nic).
  */
-export function povoleneZmeny(stavNyni: string, p: PolozkaObjednavky): { hodnoty: Record<string, unknown>; stav?: StavDb; chyba?: string } {
+export function povoleneZmeny(stavNyni: string, p: PolozkaObjednavky): { hodnoty: Record<string, unknown>; stav?: StavDb; chyba?: string; obnovena?: boolean } {
   if (jeOtevrena(stavNyni)) return { hodnoty: p.hodnoty, ...(p.stav ? { stav: p.stav } : {}) };
   if (stavNyni === "zrusena") {
-    return { hodnoty: {}, chyba: "objednávka je zrušená, měnit ji nejde" };
+    /* Obnova: servis objednávku zrušil (třeba při úklidu bez pohybu), ale
+       balík pak fyzicky dorazil – web pošle `reopen: true` + `arrived` a
+       objednávka se vrátí mezi příchozí jako Dorazilo, s daty z položky. */
+    if (p.obnovit && p.stav === "dorazilo") return { hodnoty: p.hodnoty, stav: "dorazilo", obnovena: true };
+    return { hodnoty: {}, chyba: "objednávka je zrušená, měnit ji nejde (když balík dorazil, pošlete reopen: true se status arrived)" };
   }
   // prevedeno
+  if (p.obnovit) return { hodnoty: {}, chyba: "objednávka už je zakázka – obnovit ji nejde" };
   if (p.stav && p.stav !== "dorazilo") {
     return { hodnoty: {}, chyba: p.stav === "zrusena" ? "objednávka už je zakázka – zrušte ji v Jobi" : "objednávka už je zakázka, stav se řídí zakázkou" };
   }

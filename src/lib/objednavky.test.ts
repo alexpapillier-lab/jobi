@@ -185,6 +185,22 @@ describe("povoleneZmeny podle stavu objednávky", () => {
     expect(povoleneZmeny("zrusena", p).chyba).toMatch(/zrušená/);
   });
 
+  it("zrušená + reopen s arrived: obnoví jako Dorazilo i s daty; převedenou ne", () => {
+    expect(povoleneZmeny("zrusena", { ...p, obnovit: true })).toEqual({ hodnoty: p.hodnoty, stav: "dorazilo", obnovena: true });
+    expect(povoleneZmeny("zrusena", { ...p, stav: "na_ceste", obnovit: true }).chyba).toMatch(/zrušená/);
+    expect(povoleneZmeny("prevedeno", { ...p, obnovit: true }).chyba).toMatch(/už je zakázka/);
+  });
+
+  it("reopen jen jako boolean a jen se status arrived", () => {
+    const zaklad = { external_id: "SRV-1", device: { name: "Dyson V15" } };
+    const ok = overObjednavku({ ...zaklad, status: "arrived", reopen: true }, "orders[0]");
+    expect(ok.ok && ok.polozka.obnovit).toBe(true);
+    expect(overObjednavku({ ...zaklad, status: "in_transit", reopen: true }, "orders[0]")).toMatchObject({ ok: false, chyba: expect.stringMatching(/reopen jde jen se status arrived/) });
+    expect(overObjednavku({ ...zaklad, status: "arrived", reopen: "ano" }, "orders[0]")).toMatchObject({ ok: false });
+    const bez = overObjednavku({ ...zaklad, status: "arrived" }, "orders[0]");
+    expect(bez.ok && bez.polozka.obnovit).toBeUndefined();
+  });
+
   it("lisiSe nehledí na pořadí klíčů z jsonb", () => {
     const radek = { sledovaci_cisla: [{ url: null, smer: "tam", cislo: "1", dopravce: "dpd" }], zarizeni: "x" };
     expect(lisiSe(radek, { sledovaci_cisla: [{ dopravce: "dpd", cislo: "1", smer: "tam", url: null }] })).toBe(false);

@@ -133,7 +133,17 @@ Stavy objednávky:
 
 Po převodu na zakázku jde přes API měnit už jen `shipping.tracking`
 (např. číslo zásilky zpět), `note` a `data`; stav se řídí zakázkou.
-Zrušenou objednávku měnit nejde.
+Zrušenou objednávku měnit nejde – s jedinou výjimkou: **když balík
+fyzicky dorazil**, pošlete u položky `"reopen": true` spolu se
+`"status": "arrived"` (a celou položkou jako u nové objednávky). Objednávka
+se obnoví jako Dorazilo, data se přepíšou z položky a vrátí se mezi
+příchozí. U objednávky, ze které už je zakázka nebo reklamace, se reopen
+odmítne („objednávka už je zakázka“). `reopen` s jiným stavem je chyba.
+
+```json
+{ "orders": [{ "external_id": "SRV-2026-0362", "status": "arrived", "reopen": true,
+  "customer": { "name": "…" }, "device": { "name": "Dyson V15" } }] }
+```
 
 ### Stav objednávky a zakázky
 
