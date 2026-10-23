@@ -4,7 +4,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { formatCurrency } from "../../lib/invoiceMath";
 import { Button, Input } from "../../components/ui";
 import type { ClenServisu } from "../../hooks/useClenoveServisu";
-import { castkaRucniOdmeny, chybaRucniOdmeny, oznaceneOpravySPravidlem, popisPravidla, prectiCenu, type PravidloRucni, type UpravaOdmeny } from "../../lib/odmeny";
+import { castkaRucniOdmeny, chybaRucniOdmeny, sPobockou, serverNeznaPobocku, oznaceneOpravySPravidlem, popisPravidla, prectiCenu, type PravidloRucni, type UpravaOdmeny } from "../../lib/odmeny";
 import { jeStornoStav } from "../../lib/stornoStav";
 
 /**
@@ -34,6 +34,7 @@ export function PridatOdmenuDialog({
   onClose,
   onUlozeno,
   serviceId,
+  branchId = null,
   pravidla,
   vychoziMesic,
   vychoziPravidloId,
@@ -47,6 +48,8 @@ export function PridatOdmenuDialog({
   /** Po uložení – stránka si přenačte přehled. */
   onUlozeno: (stav: string) => void;
   serviceId: string;
+  /** Pobočka z horní lišty: odměna bez zakázky patří do ní (s zakázkou rozhoduje pobočka zakázky). */
+  branchId?: string | null;
   pravidla: PravidloRucni[];
   /** Měsíc zobrazený na stránce („2026-10“). */
   vychoziMesic: string;
@@ -154,8 +157,7 @@ export function PridatOdmenuDialog({
     if (!supabase || !pravidlo) return;
     setUkladam(true);
     setChyba(null);
-    // deno-lint-ignore no-explicit-any
-    const { data, error } = await (supabase as any).rpc("odmeny_rucni_pridat", {
+    const parametry = {
       p_service_id: serviceId,
       p_pravidlo_id: pravidlo.id,
       p_poznamka: poznamka.trim() || null,
@@ -163,7 +165,12 @@ export function PridatOdmenuDialog({
       p_ticket_id: zakazka?.id ?? null,
       p_zaklad: pravidlo.typ === "procento" ? zaklad : null,
       p_user_id: admin && komu ? komu : null,
-    });
+    };
+    // deno-lint-ignore no-explicit-any
+    const rpc = (p: Record<string, unknown>) => (supabase as any).rpc("odmeny_rucni_pridat", p);
+    let { data, error } = await rpc(sPobockou(parametry, branchId));
+    // Starší databáze pobočku nezná – odměna se uloží bez ní.
+    if (error && branchId && serverNeznaPobocku(error)) ({ data, error } = await rpc(parametry));
     setUkladam(false);
     if (error) { setChyba(error.message || "Uložení selhalo."); return; }
     const stav = data && typeof data === "object" && typeof (data as Record<string, unknown>).stav === "string" ? String((data as Record<string, unknown>).stav) : "ceka";

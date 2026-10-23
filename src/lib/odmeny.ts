@@ -573,3 +573,43 @@ export function oznaceneOpravySPravidlem(
   });
   return vysledek;
 }
+
+// ---------------------------------------------------------------------------
+// Pobočka z horní lišty (migrace 20261023190000)
+// ---------------------------------------------------------------------------
+
+/**
+ * Starší databáze (bez migrace 20261023190000) parametr `p_branch_id` nezná
+ * a PostgREST vrátí PGRST202 „Could not find the function“. Stránka pak
+ * zavolá znovu bez pobočky a řekne, že čísla jsou za všechny pobočky.
+ */
+export function serverNeznaPobocku(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; message?: unknown };
+  if (e.code === "PGRST202") return true;
+  return typeof e.message === "string" && /could not find the function/i.test(e.message) && e.message.includes("p_branch_id");
+}
+
+/** Parametry RPC s pobočkou jen když je vybraná – „Všechny pobočky“ projde i na starší databázi. */
+export function sPobockou<T extends Record<string, unknown>>(parametry: T, branchId: string | null): T & { p_branch_id?: string } {
+  return branchId ? { ...parametry, p_branch_id: branchId } : parametry;
+}
+
+/**
+ * Věta pod nadpisem stránky Odměny: za kterou pobočku čísla jsou.
+ * Servis bez poboček (nebo člen s jedinou) = null, nic se neukazuje.
+ */
+export function vetaPobockyOdmen(v: { vicePobocek: boolean; nazev: string | null; serverUmi: boolean }): string | null {
+  if (!v.vicePobocek) return null;
+  if (!v.nazev) return "Čísla za všechny pobočky.";
+  if (!v.serverUmi) return `Čísla jsou zatím za všechny pobočky – podle pobočky ${v.nazev} se začnou řídit po aktualizaci databáze.`;
+  return `Jen pobočka ${v.nazev}: odměny za zakázky přijaté na téhle pobočce a ruční odměny k nim nebo přidané v ní. Ruční odměny bez zakázky přidané ve „Všech pobočkách“ jsou vidět jen tam.`;
+}
+
+/** „Další 2 ruční odměny čekají…“ – čekající ruční odměny, které ve vybrané pobočce nejsou. */
+export function vetaCekajiciJinde(pocet: number): string | null {
+  if (!Number.isFinite(pocet) || pocet <= 0) return null;
+  const n = Math.floor(pocet);
+  const co = n === 1 ? "Další 1 ruční odměna čeká" : n <= 4 ? `Další ${n} ruční odměny čekají` : `Dalších ${n} ručních odměn čeká`;
+  return `${co} na schválení v jiné pobočce (nebo bez pobočky) – uvidíte ${n === 1 ? "ji" : "je"} po přepnutí na „Všechny pobočky“.`;
+}

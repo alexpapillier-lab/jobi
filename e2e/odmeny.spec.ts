@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Request } from "@playwright/test";
 import { prihlasSe, testovaciJmeno, vidZakazku, zalozZakazku, zavriDetail } from "./pomocnici";
 
 /**
@@ -245,6 +245,140 @@ test("označená oprava z příjmu čeká na vydání, po vydání se připíše
     // Sekce bez dalších čekajících zmizí úplně – stačí, že v ní zakázka není.
     if (serverUmi) await expect(ceka.filter({ hasText: kod })).toHaveCount(0);
   } finally {
+    await smazPravidlo(page, hledat);
+  }
+});
+
+/** Pobočky testovacího servisu (viz pobocky-pristup.spec.ts). */
+const POBOCKY = { hlavni: "Hlavní pobočka", brno: "Brno – E2E" };
+
+/**
+ * Na stránce Odměn přepne pobočku v horní liště (null = Všechny pobočky)
+ * a počká, až stránka přenačte přehled. Vrací parametry prvního volání
+ * odmeny_prehled (s pobočkou, nebo bez ní) a poslední úspěšnou odpověď –
+ * se starší databází první volání s pobočkou selže a stránka zavolá znovu bez ní.
+ */
+async function prepniPobockuNaOdmenach(page: Page, pobocka: string | null): Promise<{ parametry: Record<string, unknown>; odpoved: Record<string, unknown> }> {
+  const lista = page.getByRole("group", { name: "Přepnout pobočku" }).filter({ visible: true }).first();
+  await expect(lista).toBeVisible({ timeout: 20_000 });
+  const tlacitko = lista.getByRole("button", { name: pobocka ?? "Všechny pobočky", exact: true });
+  const parametry: Record<string, unknown>[] = [];
+  const zachyt = (r: Request) => {
+    if (r.url().includes("/rpc/odmeny_prehled") && r.method() === "POST") parametry.push((r.postDataJSON() ?? {}) as Record<string, unknown>);
+  };
+  page.on("request", zachyt);
+  const odpoved = page.waitForResponse((r) => r.url().includes("/rpc/odmeny_prehled") && r.request().method() === "POST" && r.ok(), { timeout: 30_000 });
+  if ((await tlacitko.getAttribute("aria-pressed")) === "true") {
+    // Už vybraná – přenačíst ručně.
+    await page.locator('[data-tour="odmeny-filtr"]').getByRole("button", { name: "Obnovit", exact: true }).click();
+  } else {
+    await tlacitko.click();
+  }
+  const json = await (await odpoved).json().catch(() => null);
+  page.off("request", zachyt);
+  await expect(page.locator('[data-tour="odmeny-filtr"]').getByRole("button", { name: "Obnovit", exact: true })).toBeEnabled({ timeout: 30_000 });
+  return { parametry: parametry[0] ?? {}, odpoved: json && typeof json === "object" ? (json as Record<string, unknown>) : {} };
+}
+
+/*
+ * Majitel iSwapu přepnutý na Brno viděl na stránce Odměny odměny za zakázky
+ * Prahy – stránka pobočku z horní lišty vůbec nepoužívala. Teď se řídí
+ * pobočkou jako Zakázky a Statistiky: nadpis řekne, za kterou pobočku čísla
+ * jsou, zakázka jiné pobočky se neukáže a ruční odměna přidaná v Brně
+ * patří Brnu.
+ */
+test("stránka Odměny se řídí pobočkou z horní lišty", async ({ page }) => {
+  test.setTimeout(300_000);
+  const nazev = testovaciJmeno("E2E pobočka odměna");
+  const hledat = `e2e-pobocka-${Date.now().toString(36)}`;
+  const oprava = `Servisní čištění ${hledat}`;
+  const zakaznik = testovaciJmeno("Odměna pobočka");
+  let pridanaRucni = false;
+
+  await prihlasSe(page);
+  await otevriOdmenyVNastaveni(page);
+  try {
+    await pridejPravidlo(page, nazev, hledat, "150");
+    await page.reload();
+    await expect(page.getByRole("button", { name: "+ Nová zakázka" })).toBeVisible({ timeout: 45_000 });
+    await page.waitForLoadState("networkidle").catch(() => {});
+
+    // Zakázka s označenou opravou v Hlavní pobočce (nová zakázka jde do aktivní pobočky).
+    await page.getByRole("group", { name: "Přepnout pobočku" }).filter({ visible: true }).first()
+      .getByRole("button", { name: POBOCKY.hlavni, exact: true }).click();
+    const kod = await zalozZakazku(page, {
+      zakaznik,
+      zarizeni: "Telefon (odměny pobočka)",
+      predVytvorenim: async () => {
+        await page.getByLabel("Název další opravy").first().fill(oprava);
+        await page.getByLabel("Cena další opravy").first().fill("300");
+        await page.getByTitle("Přidat opravu k zakázce").first().click();
+        await page.getByRole("checkbox", { name: new RegExp(`Nabídnuto navíc: ${oprava}`) }).check();
+      },
+    });
+
+    await otevriStrankuOdmeny(page);
+    const stranka = page.locator('[data-tour="page-odmeny"]');
+    const nadpis = stranka.getByTestId("odmeny-nadpis-pobocka");
+    const veta = stranka.getByTestId("odmeny-pobocka");
+    const ceka = page.locator('[data-tour="odmeny-ceka"]');
+
+    // Hlavní pobočka: pobočka jde do RPC, nadpis ji jmenuje, zakázka čeká na vydání.
+    const hlavni = await prepniPobockuNaOdmenach(page, POBOCKY.hlavni);
+    expect(typeof hlavni.parametry.p_branch_id, "odmeny_prehled dostane vybranou pobočku").toBe("string");
+    await expect(nadpis).toContainText(POBOCKY.hlavni);
+    // Pobočku umí databáze s migrací 20261023190000 (e2e jede proti produkci).
+    const serverUmi = "pobocka" in hlavni.odpoved;
+    if (serverUmi) {
+      expect(hlavni.odpoved.pobocka).toBe(hlavni.parametry.p_branch_id);
+      await expect(veta).toContainText(`Jen pobočka ${POBOCKY.hlavni}`);
+      await expect(ceka).toContainText(kod, { timeout: 20_000 });
+      await expect(page.locator('[data-tour="odmeny-dlazdice"]')).toContainText(`měsíce · ${POBOCKY.hlavni}`);
+    } else {
+      await expect(veta).toContainText("zatím za všechny pobočky");
+    }
+
+    // Brno: zakázka Hlavní pobočky tu není.
+    const brno = await prepniPobockuNaOdmenach(page, POBOCKY.brno);
+    expect(brno.parametry.p_branch_id).not.toBe(hlavni.parametry.p_branch_id);
+    await expect(nadpis).toContainText(POBOCKY.brno);
+    if (serverUmi) {
+      await expect(page.locator('[data-tour="odmeny-soucty"]')).toContainText(`Součty – `);
+      await expect(page.locator('[data-tour="odmeny-soucty"]')).toContainText(`· ${POBOCKY.brno}`);
+      await expect(page.locator(`[data-tour="odmeny-ceka"]:has-text("${kod}")`)).toHaveCount(0);
+
+      // Ruční odměna jedním klikem v Brně patří Brnu: v Brně je, v Hlavní ne.
+      await page.locator('[data-tour="odmeny-rychle"]').getByRole("button", { name: new RegExp(`^\\+ ${nazev} · `) }).click();
+      pridanaRucni = true;
+      await expect(page.getByText(new RegExp(`${nazev} · .* – přidáno`)).first()).toBeVisible({ timeout: 20_000 });
+      const rucni = page.locator('[data-tour="odmeny-rucni"]');
+      await expect(rucni).toContainText(nazev, { timeout: 20_000 });
+      await prepniPobockuNaOdmenach(page, POBOCKY.hlavni);
+      await expect(page.locator(`[data-tour="odmeny-rucni"]:has-text("${nazev}")`)).toHaveCount(0);
+      await expect(ceka).toContainText(kod);
+    } else {
+      // Starší databáze: stránka čísla neschová, jen řekne, že jsou za všechny.
+      await expect(veta).toContainText("zatím za všechny pobočky");
+      await expect(ceka).toContainText(kod, { timeout: 20_000 });
+      test.info().annotations.push({ type: "přeskočeno", description: "Databáze ještě nezná p_branch_id (migrace 20261023190000 není nasazená) – filtr podle pobočky se ověřil jen sondami 1760–1765." });
+    }
+
+    // Všechny pobočky: bez parametru (projde i na starší databázi), zakázka je vidět.
+    const vse = await prepniPobockuNaOdmenach(page, null);
+    expect("p_branch_id" in vse.parametry, "Všechny pobočky = bez p_branch_id").toBe(false);
+    await expect(nadpis).toContainText("Všechny pobočky");
+    await expect(veta).toContainText("Čísla za všechny pobočky.");
+    await expect(ceka).toContainText(kod, { timeout: 20_000 });
+    if (serverUmi) await expect(page.locator('[data-tour="odmeny-rucni"]')).toContainText(nazev);
+  } finally {
+    // Úklid ruční odměny (je jen se serverem, který pobočku umí) – správce ji smaže ve Všech pobočkách.
+    if (pridanaRucni) await prepniPobockuNaOdmenach(page, null).catch(() => {});
+    const radek = page.locator('[data-tour="odmeny-rucni"] tr').filter({ hasText: nazev });
+    if ((await radek.count().catch(() => 0)) > 0) {
+      page.once("dialog", (d) => void d.accept());
+      await radek.first().getByRole("button", { name: "Smazat" }).click().catch(() => {});
+      await expect(radek).toHaveCount(0, { timeout: 20_000 }).catch(() => {});
+    }
     await smazPravidlo(page, hledat);
   }
 });

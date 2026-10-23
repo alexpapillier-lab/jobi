@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { formatCurrency } from "../lib/invoiceMath";
 import { GiftIcon } from "../components/icons";
 import { Button } from "../components/ui";
 import { showPersistentToast, showToast } from "../components/Toast";
 import { useClenoveServisu } from "../hooks/useClenoveServisu";
+import { useBranches } from "../context/BranchContext";
 import { jeStornoStav } from "../lib/stornoStav";
-import { POPIS_STAVU_RUCNI, oznaceneOpravySPravidlem, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, type CekajiciOdmena, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
+import { serverNeznaPobocku, sPobockou, vetaCekajiciJinde, vetaPobockyOdmen, POPIS_STAVU_RUCNI, oznaceneOpravySPravidlem, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, type CekajiciOdmena, normalizujKdyOdpovedi, sloupecKdyOdmeny, vetaKdyOdmeny, type RezimOdmen, hraniceMesice, klicMesice, nazevMesice, normalizujPravidlaRucni, normalizujRucni, posunKlicMesice, zamestnanecMesice, type ClovekOdmeny, type PravidloRucni, type RucniOdmena } from "../lib/odmeny";
 import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
 
 /**
@@ -34,6 +35,13 @@ import { PridatOdmenuDialog } from "./Odmeny/PridatOdmenuDialog";
  * vždy viditelné), Čeká na vydání (jen informace), Přidat ruční odměnu,
  * Započtené za měsíc (výběr měsíce, opravy, ruční) a dole Součty se
  * žebříčkem. Každý oddíl má větu, proč tam položky jsou a co s nimi.
+ *
+ * Pobočka (migrace 20261023190000): stránka se řídí pobočkou z horní lišty
+ * jako Zakázky a Statistiky – řádky, součty, zaměstnanec měsíce, síň slávy,
+ * Čeká na vydání i ruční odměny jsou za vybranou pobočku (zakázka podle
+ * pobočky příjmu, ruční bez zakázky podle pobočky, ve které se přidala).
+ * Vyplácení je za celý servis, v pobočce se jen ukazuje. Starší databáze
+ * pobočku nezná – stránka pak ukáže čísla za všechny a řekne to.
  */
 
 type Radek = {
@@ -89,6 +97,12 @@ type Prehled = {
   autoSchvaleni: string[];
   /** Označené opravy, které se připíšou po vydání / dosažení stavu (správce vše, člen svoje). */
   cekajiciNaZapocteni: CekajiciOdmena[];
+  /** Za kterou pobočku čísla opravdu jsou; null = všechny (i když databáze filtr ještě neumí). */
+  pobocka: string | null;
+  /** Pobočka byla vybraná, ale databáze ji nezná (bez migrace 20261023190000) – čísla jsou za všechny. */
+  pobockaNeumi: boolean;
+  /** Čekající ruční odměny, které ve vybrané pobočce nejsou vidět. */
+  cekajiciJinde: number;
 };
 
 const kc = (n: number) => formatCurrency(Number(n) || 0, "CZK");
@@ -97,7 +111,7 @@ const cislo = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ?
 /** 1 odměna, 2 odměny, 5 odměn */
 const odmen = (n: number) => (n === 1 ? "odměna" : n >= 2 && n <= 4 ? "odměny" : "odměn");
 
-function prevedPrehled(raw: unknown): Prehled {
+function prevedPrehled(raw: unknown, pobockaNeumi = false): Prehled {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const pole = (v: unknown) => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
   return {
@@ -137,6 +151,9 @@ function prevedPrehled(raw: unknown): Prehled {
     pravidla: normalizujPravidlaRucni(o.pravidla),
     autoSchvaleni: (Array.isArray(o.autoSchvaleni) ? o.autoSchvaleni : []).filter((x): x is string => typeof x === "string"),
     cekajiciNaZapocteni: normalizujCekajiciNaZapocteni(o.cekajiciNaZapocteni),
+    pobocka: typeof o.pobocka === "string" ? o.pobocka : null,
+    pobockaNeumi,
+    cekajiciJinde: cislo(o.cekajiciJinde),
   };
 }
 
@@ -157,27 +174,38 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
   const [rychleUkladam, setRychleUkladam] = useState<string | null>(null);
   /** Ruční odměna, u které správce právě píše důvod zamítnutí. */
   const [zamitam, setZamitam] = useState<{ id: string; duvod: string } | null>(null);
+  /** Pobočka z horní lišty (null = všechny) – stejný filtr jako Zakázky a Statistiky. */
+  const { activeBranchId, isMulti: vicePobocek, branchById } = useBranches();
+  /** Při rychlém přepínání pobočky / měsíce platí jen poslední odpověď. */
+  const posledniDotaz = useRef(0);
 
   const nacti = useCallback(async () => {
     if (!supabase || !activeServiceId) return;
+    const poradi = ++posledniDotaz.current;
     setNacitam(true);
     setChyba(null);
     const h = hraniceMesice(mesic);
-    // deno-lint-ignore no-explicit-any
-    const { data: d, error } = await (supabase as any).rpc("odmeny_prehled", {
+    const zaklad = {
       p_service_id: activeServiceId,
       p_od: h.od.toISOString(),
       p_do: h.do.toISOString(),
       p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Prague",
-    });
+    };
+    // deno-lint-ignore no-explicit-any
+    const rpc = (parametry: Record<string, unknown>) => (supabase as any).rpc("odmeny_prehled", parametry);
+    let { data: d, error } = await rpc(sPobockou(zaklad, activeBranchId));
+    // Databáze bez migrace 20261023190000 pobočku nezná: čísla za všechny, a stránka to řekne.
+    const pobockaNeumi = !!error && !!activeBranchId && serverNeznaPobocku(error);
+    if (pobockaNeumi) ({ data: d, error } = await rpc(zaklad));
+    if (poradi !== posledniDotaz.current) return;
     setNacitam(false);
     if (error) {
       setChyba(error.message);
       setData(null);
       return;
     }
-    setData(prevedPrehled(d));
-  }, [activeServiceId, mesic]);
+    setData(prevedPrehled(d, pobockaNeumi));
+  }, [activeServiceId, mesic, activeBranchId]);
 
   useEffect(() => {
     setData(null);
@@ -346,11 +374,15 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
     if (p.typ === "procento") { setPridavamPravidlo(p.id); setPridavam(true); return; }
     const komu = data.admin && rychleKomu ? rychleKomu : null;
     setRychleUkladam(p.id);
-    // deno-lint-ignore no-explicit-any
-    const { data: v, error } = await (supabase as any).rpc("odmeny_rucni_pridat", {
+    const zaklad = {
       p_service_id: activeServiceId, p_pravidlo_id: p.id, p_poznamka: null, p_obdobi: mesic,
       p_ticket_id: null, p_zaklad: null, p_user_id: komu,
-    });
+    };
+    // Odměna bez zakázky patří pobočce, ve které se přidala – jinak by v ní hned zmizela.
+    // deno-lint-ignore no-explicit-any
+    let { data: v, error } = await (supabase as any).rpc("odmeny_rucni_pridat", sPobockou(zaklad, activeBranchId));
+    // deno-lint-ignore no-explicit-any
+    if (error && activeBranchId && serverNeznaPobocku(error)) ({ data: v, error } = await (supabase as any).rpc("odmeny_rucni_pridat", zaklad));
     setRychleUkladam(null);
     if (error) { showToast(`Přidání selhalo: ${error.message}`, "error"); return; }
     const id = typeof v?.id === "string" ? v.id : null;
@@ -369,10 +401,19 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
         })();
       },
     });
-  }, [activeServiceId, data, rychleKomu, mesic, clenove, nacti]);
+  }, [activeServiceId, data, rychleKomu, mesic, clenove, nacti, activeBranchId]);
 
   const cekaNaSchvaleni = data?.cekajici ?? [];
   const nazevMesiceStranky = nazevMesice(mesic);
+  /** Název pobočky, za kterou čísla jsou (null = všechny) – do nadpisů a dlaždice zaměstnance měsíce. */
+  const nazevPobockyDat = data?.pobocka ? (branchById(data.pobocka)?.name ?? "vybraná pobočka") : null;
+  const zaPobocku = nazevPobockyDat ? ` · ${nazevPobockyDat}` : "";
+  const vetaPobocky = vetaPobockyOdmen({
+    vicePobocek,
+    nazev: activeBranchId ? (branchById(activeBranchId)?.name ?? "vybraná pobočka") : null,
+    serverUmi: !data?.pobockaNeumi,
+  });
+  const cekajiciJinde = data ? vetaCekajiciJinde(data.cekajiciJinde) : null;
   const rucniVMesici = rucniZobrazene.filter((r) => r.stav !== "ceka");
 
   return (
@@ -382,12 +423,22 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
         <div style={{ minWidth: 0, flex: "1 1 420px" }}>
           <div style={{ fontSize: 22, fontWeight: 950, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             <GiftIcon size={22} /> Odměny
+            {vicePobocek && (
+              <span data-testid="odmeny-nadpis-pobocka" style={{ fontSize: 15, fontWeight: 800, color: activeBranchId ? "var(--accent)" : "var(--muted)" }}>
+                · {activeBranchId ? (branchById(activeBranchId)?.name ?? "vybraná pobočka") : "Všechny pobočky"}
+              </span>
+            )}
           </div>
           <div style={{ ...popisek, marginTop: 4, lineHeight: 1.5 }}>
             Prémie za opravy nabídnuté zákazníkovi navíc. Oprava označená na zakázce „Nabídnuto navíc“ se připíše sama
             {data ? ` ${kdyPripiseOdmenu(data.kdy.rezim, data.kdy.stavNazev)}` : ""}. Ručně se přidává jen to, co na zakázce není –
             {data?.admin ? " takovou odměnu od zaměstnance schvalujete vy." : " takovou odměnu schvaluje majitel nebo správce."}
           </div>
+          {vetaPobocky && (
+            <div data-testid="odmeny-pobocka" style={{ ...popisek, marginTop: 4, lineHeight: 1.5, color: data?.pobockaNeumi ? "var(--text)" : "var(--muted)" }}>
+              {vetaPobocky}
+            </div>
+          )}
         </div>
         <Button data-tour="odmeny-pridat" size="sm" variant="primary" onClick={() => { setPridavamPravidlo(undefined); setPridavam(true); }} disabled={!data || data.pravidla.length === 0} title={data && data.pravidla.length === 0 ? "Servis nemá žádné aktivní pravidlo odměn" : "Přidat odměnu s poznámkou nebo číslem zakázky"}>+ Přidat s poznámkou</Button>
       </div>
@@ -413,8 +464,9 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             ? "Ruční odměny od zaměstnanců. Započtou se do součtů až po schválení. Odměny za označené opravy se neschvalují – připíšou se samy."
             : "Vaše ruční odměny. Započtou se, až je majitel nebo správce schválí."}
         >
+          {cekajiciJinde && <div data-testid="odmeny-cekajici-jinde" style={{ ...popisek, padding: "0 2px" }}>{cekajiciJinde}</div>}
           {cekaNaSchvaleni.length === 0 ? (
-            <div style={{ ...popisek, padding: "4px 2px" }}>Nic nečeká na schválení.</div>
+            <div style={{ ...popisek, padding: "4px 2px" }}>{cekajiciJinde ? "V téhle pobočce nic nečeká na schválení." : "Nic nečeká na schválení."}</div>
           ) : cekaNaSchvaleni.map((r) => {
             const dvoji = dvojiUSchvaleni.pro === data ? dvojiUSchvaleni.mapa.get(r.id) : undefined;
             return (
@@ -536,7 +588,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
       {data && (
         <Sekce
           dataTour="odmeny-zapoctene"
-          nadpis={`Započtené – ${nazevMesiceStranky}`}
+          nadpis={`Započtené – ${nazevMesiceStranky}${zaPobocku}`}
           popis={`Co se do měsíce opravdu počítá: označené opravy (${vetaKdyOdmeny(data.kdy.rezim, data.kdy.stavNazev).replace(/^Počítá se z/, "z").replace(/\.$/, "")}) a schválené ruční odměny.`}
           vpravo={(
             <div data-tour="odmeny-mesic" style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -682,10 +734,18 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
 
       {/* ── 5. Součty, žebříček, síň slávy ────────────────────────────────── */}
       {data && (
-        <Sekce dataTour="odmeny-soucty" nadpis={`Součty – ${nazevMesiceStranky}`} popis={data.admin || data.verejny ? "Kliknutím na člověka v žebříčku zúžíte seznamy výš jen na jeho odměny." : undefined}>
+        <Sekce
+          dataTour="odmeny-soucty"
+          nadpis={`Součty – ${nazevMesiceStranky}${zaPobocku}`}
+          popis={[
+            data.admin || data.verejny ? "Kliknutím na člověka v žebříčku zúžíte seznamy výš jen na jeho odměny." : "",
+            // Vyplácí se člověku za celý servis – v pobočce by se zapsala jen její část.
+            data.admin && nazevPobockyDat ? "Vyplacení se zaškrtává ve „Všech pobočkách“ (částka za celý servis)." : "",
+          ].filter(Boolean).join(" ") || undefined}
+        >
           <div data-tour="odmeny-dlazdice" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <div style={{ ...dlazdice, borderColor: vitezove.length > 0 ? "var(--accent)" : undefined, background: vitezove.length > 0 ? "var(--accent-soft)" : "var(--panel)" }}>
-              <div style={popisek}>{vitezove.length > 1 ? "Zaměstnanci měsíce" : "Zaměstnanec měsíce"}</div>
+              <div style={popisek}>{vitezove.length > 1 ? "Zaměstnanci měsíce" : "Zaměstnanec měsíce"}{zaPobocku}</div>
               <div style={velke}>{vitezove.length > 0 ? `🏆 ${vitezove.map((v) => v.jmeno).join(" a ")}` : "—"}</div>
               <div style={popisek}>{vitezove.length > 0 ? `${kc(vitezove[0].castka)} · ${vitezove[0].pocet} ${odmen(vitezove[0].pocet)}` : "zatím nikdo nemá odměnu"}</div>
             </div>
@@ -729,13 +789,13 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
                         <td style={td}>{l.pocet}{l.pocetRucnich > 0 && <span style={{ ...popisek, marginLeft: 6 }} title="Z toho ručně přidaných odměn">({l.pocetRucnich} ručně)</span>}</td>
                         <td style={{ ...td, fontWeight: 700 }}>{kc(l.castka)}</td>
                         <td style={td} onClick={(e) => e.stopPropagation()}>
-                          {data.admin && l.userId ? (
+                          {data.admin && l.userId && !data.pobocka ? (
                             <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                               <input type="checkbox" checked={!!v} onChange={() => void prepniVyplaceno(l)} />
                               <span style={popisek}>{v ? `${datum(v.vyplacenoAt)} · ${kc(v.castka)}` : "ne"}</span>
                             </label>
                           ) : (
-                            <span style={{ color: v ? "var(--text)" : "var(--muted)" }}>{v ? datum(v.vyplacenoAt) : "ne"}</span>
+                            <span style={{ color: v ? "var(--text)" : "var(--muted)" }} title={data.admin && data.pobocka ? "Vyplácí se za celý servis – zaškrtněte ve „Všech pobočkách“" : undefined}>{v ? datum(v.vyplacenoAt) : "ne"}</span>
                           )}
                         </td>
                       </tr>
@@ -777,6 +837,7 @@ export function Odmeny({ activeServiceId, onOpenTicket, onOtevritNastaveni }: { 
             void nacti();
           }}
           serviceId={activeServiceId}
+          branchId={activeBranchId}
           pravidla={data.pravidla}
           vychoziMesic={mesic}
           vychoziPravidloId={pridavamPravidlo}

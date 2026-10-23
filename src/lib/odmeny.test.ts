@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kdyOdmenyProText, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, oznaceneOpravySPravidlem, vetaNabidnutoPriPrijmu, type PravidloRucni, VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
+import { serverNeznaPobocku, sPobockou, vetaCekajiciJinde, vetaPobockyOdmen, kdyOdmenyProText, kdyPripiseOdmenu, nadpisCekajicich, normalizujCekajiciNaZapocteni, oznaceneOpravySPravidlem, vetaNabidnutoPriPrijmu, type PravidloRucni, VOLBY_KDY_ODMENY, normalizujKdy, normalizujKdyOdpovedi, sloupecKdyOdmeny, stavyProOdmeny, vetaKdyOdmeny, vychoziStavOdmen, castkaOdmeny, castkaRucniOdmeny, chybaRucniOdmeny, normalizujPravidlaRucni, normalizujRucni, popisPravidla, prectiCenu, hraniceMesice, klicMesice, najdiPravidlo, nazevMesice, normalizujOdmeny, opravaVPozadavku, posunKlicMesice, vychoziNabidnuto, zamestnanecMesice, type PravidloOdmeny } from "./odmeny";
 
 const pravidlo = (p: Partial<PravidloOdmeny>): PravidloOdmeny => ({
   id: "x", nazev: "", hledat: "čištění", typ: "castka", hodnota: 100, komu: "pridal", aktivni: true, ...p,
@@ -290,5 +290,35 @@ describe("kontrola dvojí odměny na zakázce", () => {
 
   it("starší server bez hledaného textu = nejde posoudit", () => {
     expect(oznaceneOpravySPravidlem(opravy, [{ id: "cist", nazev: "Čištění", typ: "castka", hodnota: 100 }], "cist")).toBeNull();
+  });
+});
+
+describe("pobočka z horní lišty", () => {
+  it("starší databáze bez p_branch_id se pozná podle PGRST202", () => {
+    expect(serverNeznaPobocku({ code: "PGRST202", message: "Could not find the function public.odmeny_prehled(p_branch_id, p_do, p_od, p_service_id, p_tz)" })).toBe(true);
+    expect(serverNeznaPobocku({ message: "Could not find the function public.odmeny_rucni_pridat(p_branch_id, …) in the schema cache" })).toBe(true);
+    expect(serverNeznaPobocku({ code: "42501", message: "Na tuto pobočku nemáte přístup." })).toBe(false);
+    expect(serverNeznaPobocku(null)).toBe(false);
+    expect(serverNeznaPobocku("PGRST202")).toBe(false);
+  });
+
+  it("pobočka se posílá jen vybraná – Všechny pobočky jdou bez parametru", () => {
+    expect(sPobockou({ p_service_id: "s" }, null)).toEqual({ p_service_id: "s" });
+    expect(sPobockou({ p_service_id: "s" }, "b1")).toEqual({ p_service_id: "s", p_branch_id: "b1" });
+  });
+
+  it("věta pod nadpisem říká, za kterou pobočku čísla jsou", () => {
+    expect(vetaPobockyOdmen({ vicePobocek: false, nazev: null, serverUmi: true })).toBeNull();
+    expect(vetaPobockyOdmen({ vicePobocek: true, nazev: null, serverUmi: true })).toBe("Čísla za všechny pobočky.");
+    expect(vetaPobockyOdmen({ vicePobocek: true, nazev: "Brno", serverUmi: true })).toMatch(/^Jen pobočka Brno:/);
+    expect(vetaPobockyOdmen({ vicePobocek: true, nazev: "Brno", serverUmi: false })).toMatch(/zatím za všechny pobočky/);
+  });
+
+  it("čekající jinde: skloňování a nic pro nulu", () => {
+    expect(vetaCekajiciJinde(0)).toBeNull();
+    expect(vetaCekajiciJinde(Number.NaN)).toBeNull();
+    expect(vetaCekajiciJinde(1)).toMatch(/^Další 1 ruční odměna čeká .* uvidíte ji /);
+    expect(vetaCekajiciJinde(3)).toMatch(/^Další 3 ruční odměny čekají .* uvidíte je /);
+    expect(vetaCekajiciJinde(7)).toMatch(/^Dalších 7 ručních odměn čeká/);
   });
 });
